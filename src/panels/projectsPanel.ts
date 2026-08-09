@@ -123,6 +123,26 @@ export interface ProjectsPanelDeps {
      *  The host re-resolves the line from the code — see its implementation. */
     backlogOpenItem(id: string, target: { code?: string; line?: number }, mode?: string):
         { error?: string; code?: string; line?: number };
+    // ---- Faz 5: the track, worked from the tab that shows it ----
+    /** Record one event against a code by hand — the panel's own `by: 'panel'`
+     *  row. Appends to the ledger; it never edits or removes one. */
+    trackRecord(id: string, code: string, event: string, note?: string): { error?: string };
+    /**
+     * Reconstruct history for items closed before any of this was recorded.
+     *
+     * ‼️ `apply` is the whole safety of it: false SHOWS what would be written and
+     * touches nothing, and the page has to ask twice. Exactly the body the
+     * `projects.tracks.backfill` op runs, so a button and an agent cannot
+     * propose two different histories for one ledger.
+     */
+    trackBackfill(id: string, apply: boolean, code?: string): {
+        error?: string; scanned?: number; partial?: boolean; mentions?: number;
+        codes?: string[]; rows?: number; proposed?: unknown[]; applied?: boolean;
+    };
+    /** Rebuild `Backloglog.md` out of the ledger, keeping every line the human
+     *  wrote in it. */
+    trackRebuild(id: string): { error?: string };
+
     /** Open a document the way the user opens report links elsewhere — VS Code,
      *  the rendered preview, Obsidian, or their own app. */
     openProjectDoc(id: string, rel: string, mode?: string): void;
@@ -662,6 +682,46 @@ export class ProjectsPanel {
                 const res = this.deps.backlogArchive(id);
                 this.done(res.error, res.error ? undefined
                     : (res.moved ? `${res.moved} closed item${res.moved === 1 ? '' : 's'} archived.` : 'Nothing closed to archive.'));
+                break;
+            }
+            // ---- the track ----
+            case 'trackRecord': {
+                if (!id) { break; }
+                const res = this.deps.trackRecord(id, String(msg.code ?? ''),
+                    String(msg.event ?? 'touch'),
+                    typeof msg.note === 'string' && msg.note.trim() ? msg.note.trim() : undefined);
+                this.done(res.error, res.error ? undefined
+                    : `Recorded against ${String(msg.code ?? '').toUpperCase()}.`);
+                break;
+            }
+            // ‼️ A PREVIEW IS NOT A `done()`. It writes nothing, so a repaint that
+            // said "Saved" would be a lie, and the proposed rows have to reach the
+            // page as their own message — they are the answer, not a side effect.
+            case 'trackBackfill': {
+                if (!id) { break; }
+                const apply = msg.apply === true;
+                const res = this.deps.trackBackfill(id, apply,
+                    typeof msg.code === 'string' && msg.code ? msg.code : undefined);
+                void this.panel.webview.postMessage({
+                    type: 'trackBackfill', apply,
+                    error: res.error ?? null,
+                    scanned: res.scanned ?? 0, partial: res.partial === true,
+                    mentions: res.mentions ?? 0, codes: res.codes ?? [],
+                    rows: res.rows ?? 0, proposed: res.proposed ?? []
+                });
+                if (apply && !res.error) {
+                    this.done(undefined, res.rows
+                        ? `${res.rows} reconstructed row${res.rows === 1 ? '' : 's'} written to the ledger.`
+                        : 'Nothing to reconstruct — no turn quotes those codes.');
+                } else if (res.error) {
+                    this.refresh();
+                }
+                break;
+            }
+            case 'trackRebuild': {
+                if (!id) { break; }
+                const res = this.deps.trackRebuild(id);
+                this.done(res.error, res.error ? undefined : 'Backloglog rebuilt from the ledger.');
                 break;
             }
             case 'savePeople':

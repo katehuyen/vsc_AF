@@ -245,7 +245,16 @@
     function wire(vscode, hooks) {
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: b.dataset.afnav })));
-        document.querySelectorAll('[data-afact]').forEach(b =>
+        // ‼️ SCOPED TO THE HEADER, and that is not tidiness. `data-afact` is also
+        // what afForm.js puts on a card's Submit and Cancel, so an unscoped query
+        // bound every form button on the page to this handler as well: pressing
+        // Save in any AFForm card posted a spurious
+        // { type:'headerAction', action:'submit' } alongside the page's own
+        // message. Harmless only for as long as no `related` action is ever named
+        // "submit" or "cancel" — which is exactly the kind of collision that is
+        // invisible until it is not. A header action lives in `.af-head` and
+        // nowhere else, so this is the whole fix.
+        document.querySelectorAll('.af-head [data-afact]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'headerAction', action: b.dataset.afact })));
         // A claimed nav button opens its menu; the menu's first item is the
         // page's own meaning, the second is the plain page (wired by data-afnav

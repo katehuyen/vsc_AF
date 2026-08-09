@@ -2194,6 +2194,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog.promote', 'projects.backlog.open',
             'projects.backlog.queue', 'projects.backlog.tidy', 'projects.backlog.gather',
             'projects.track', 'projects.tracks', 'projects.tracks.backfill',
+            // P-5 — the Track tab's ↻ button, and therefore an agent's too.
+            'projects.backloglog',
             // B-2 — the fleet page can MAKE an agent, so the bridge can too.
             'agents.create', 'agents.roots', 'agents.pack.import']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
@@ -2227,6 +2229,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && ['multi', 'stale', 'turn'].every(d => trackBlock.includes(d)));
         ok('…and says why `touch` exists, since a log of endings is the obvious wrong design',
             /not finished/.test(trackBlock));
+        const logBlock = src.slice(src.indexOf("op: 'projects.backloglog'"),
+            src.indexOf("op: 'projects.backloglog'") + 2200);
+        ok('‼️ backloglog\'s contract promises the human\'s own lines survive the rebuild',
+            /HUMAN/.test(logBlock) && /untouched/.test(logBlock));
+        ok('…and says it notices a box ticked outside Agent Farm rather than leaving a silent gap',
+            /outside/.test(logBlock) && /silent gaps/.test(logBlock));
         const blOpenBlock = src.slice(src.indexOf("op: 'projects.backlog.open'"),
             src.indexOf("op: 'projects.backlog.open'") + 2600);
         ok('‼️ backlog.open promises the line is resolved from the CODE at call time',

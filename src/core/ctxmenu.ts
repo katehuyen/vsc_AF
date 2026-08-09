@@ -81,6 +81,11 @@ const TIMELINE_SESSION = "webviewSection == 'afTimelineSession'";
 
 /** The Projects page's own objects. */
 const BACKLOG_ROW = "webviewSection == 'afBacklogRow'";
+/** A row on the Track tab: an item's history, not the item. What it can offer
+ *  is deliberately narrower than the backlog row's — editing an item belongs to
+ *  the tab that owns it, and two surfaces writing the same field differently is
+ *  the defect the projects system already paid for once. */
+const TRACK_ROW = "webviewSection == 'afTrackRow'";
 const PLAN_ITEM = "webviewSection == 'afPlanItem'";
 const DOC_ROW = "webviewSection == 'afDocRow'";
 const PROJECT_ROW = "webviewSection == 'afProjectRow'";
@@ -183,6 +188,7 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     // Only a coded, open item has a place in the queue to move.
     { id: CTX_PREFIX + 'blMove', label: 'Move in the queue', group: '3_move@1', when: `${BACKLOG_ROW} && afQueued` },
     { id: CTX_PREFIX + 'blCopy', label: 'Copy', group: '5_copy@1', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'trkCopy', label: 'Copy', group: '5_copy@1', when: TRACK_ROW },
     { id: CTX_PREFIX + 'planOpenWith', label: 'Open the plan with', group: '1_open@2', when: PLAN_ITEM },
     { id: CTX_PREFIX + 'docOpenWith', label: 'Open with', group: '1_open@2', when: DOC_ROW },
     { id: CTX_PREFIX + 'projCopy', label: 'Copy', group: '5_copy@1', when: PROJECT_ROW },
@@ -372,6 +378,37 @@ export const CTX_ITEMS: CtxItem[] = [
         ['code', 'The code — quote it at an agent'],
         ['text', 'The words'],
         ['both', 'Code and words']
+    ]),
+
+    // ---- a track row: an item's HISTORY --------------------------------
+    // ‼️ Every entry here either opens something or narrows the view. Nothing
+    // edits the item — that is the Backlog tab's job, and "Show it in the
+    // Backlog" is the one line that carries a reader there.
+    {
+        id: 'trackOpen', title: 'Open the backlog at this item', act: 'trkGo',
+        when: TRACK_ROW, group: '1_open@1'
+    },
+    {
+        id: 'trackOnly', title: 'Show only this item\'s history', act: 'trkOnly',
+        when: TRACK_ROW, group: '1_open@2'
+    },
+    {
+        id: 'trackBacklog', title: 'Show it in the Backlog tab', act: 'trkBacklog',
+        when: TRACK_ROW, group: '4_link@1'
+    },
+    {
+        id: 'trackRecord', title: 'Record an event against it…', act: 'trkRecord',
+        when: TRACK_ROW, group: '2_edit@1'
+    },
+    {
+        id: 'trackFillOne', title: 'Reconstruct its history…', act: 'trkFillOne',
+        when: TRACK_ROW, group: '2_edit@2'
+    },
+    ...picker(CTX_PREFIX + 'trkCopy', TRACK_ROW, 'trkCopy', [
+        ['code', 'The code'],
+        ['stamp', 'Where it was closed — session#turn'],
+        ['sessions', 'Every session id that worked it'],
+        ['report', 'The whole history, as text']
     ]),
 
     // ---- a plan item ----------------------------------------------------

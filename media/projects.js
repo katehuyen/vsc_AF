@@ -82,7 +82,26 @@
                 // next capture jump the queue too.
                 if (!ev.data.error) { blCap.text = ''; blCap.at = ''; }
             }
+            // The record card makes the same bargain: the card closes only once
+            // the ledger has the row. A refusal keeps the note somebody wrote.
+            if (trkForm && trkForm.sending) {
+                trkForm.sending = false;
+                if (ev.data.error) { trkForm.msg = ev.data.error; } else { trkForm = null; }
+            }
             return;                                   // the data message repaints
+        }
+        // The reconstruct preview — its own message because it WRITES NOTHING and
+        // the proposed rows are the answer rather than a side effect.
+        if (ev.data.type === 'trackBackfill') {
+            if (trkFill) {
+                trkFill.running = false;
+                trkFill.res = ev.data;
+                // Applied and clean: the card has said what it had to say, and
+                // the rows it proposed are now part of the history below it.
+                if (ev.data.apply && !ev.data.error) { trkFill = null; }
+            }
+            render();
+            return;
         }
         if (ev.data.type === 'suggestedFolder') {
             if (creating && !creating.folderTouched) { creating.folder = ev.data.folder || ''; render(); }
@@ -763,25 +782,77 @@
                     padding:6px 12px; font-size:12px; opacity:.7; cursor:pointer; color:inherit; }
                 .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
                 .pj-tab.on { opacity:1; border-bottom-color:var(--vscode-focusBorder,#3794ff); font-weight:600; }
-                /* track — the sketch; see trackHtml() for what is deliberately absent */
-                .pj-trk-bar { margin-bottom:10px; }
+                /* track — four views over one ledger; see trackHtml() */
+                .pj-trk-stats { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+                .pj-trk-stat { font-size:12px; opacity:.85; white-space:nowrap; background:none;
+                    border:none; padding:0; color:inherit; }
+                button.pj-trk-stat { cursor:pointer; text-decoration:underline dotted; }
+                .pj-trk-stat b { font-size:13px; opacity:1; }
+                .pj-trk-stat.warn b { color:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-views { display:inline-flex; gap:2px; }
+                .pj-trk-view { font-size:12px; padding:3px 10px; border-radius:5px; cursor:pointer;
+                    background:none; color:inherit; border:1px solid transparent; }
+                .pj-trk-view:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-trk-view.on { background:var(--vscode-list-activeSelectionBackground);
+                    color:var(--vscode-list-activeSelectionForeground); font-weight:600; }
+                .pj-trk-sep { width:1px; align-self:stretch; margin:0 4px;
+                    background:var(--vscode-panel-border); }
                 .pj-trk-item { border:1px solid var(--vscode-widget-border,#4443); border-radius:6px;
                     padding:7px 10px; margin-bottom:7px; }
-                .pj-trk-head { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
-                .pj-trk-state { font-size:11px; opacity:.6; }
-                .pj-trk-words { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
-                    white-space:nowrap; opacity:.85; }
+                .pj-trk-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+                .pj-trk-code { font-size:12px; cursor:pointer; background:none; border:none; padding:0;
+                    color:inherit; font-family:var(--vscode-editor-font-family,monospace);
+                    text-decoration:underline dotted; }
+                .pj-trk-code:hover { color:var(--vscode-textLink-activeForeground,#4daafc); }
+                .pj-trk-state { font-size:11px; opacity:.65; padding:0 5px; border-radius:4px;
+                    border:1px solid var(--vscode-widget-border,#4443); }
+                .pj-trk-state.s-done { opacity:.5; }
+                .pj-trk-state.s-doing { border-color:var(--vscode-charts-green,#3fb950); opacity:.9; }
+                .pj-trk-state.s-gone { border-color:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-sum { font-size:11px; opacity:.7; white-space:nowrap; }
+                .pj-trk-words { flex:1 1 320px; min-width:0; opacity:.85; }
+                .pj-trk-m { font-size:11px; opacity:.8; padding:0 5px; border-radius:4px;
+                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
+                button.pj-trk-m { cursor:pointer; }
+                .pj-trk-m.warn { border-color:var(--vscode-editorWarning-foreground,#d29922); }
                 .pj-trk-stamp { font-size:11px; opacity:.7; }
                 .pj-trk-run { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:4px;
                     padding-left:6px; border-left:2px solid var(--vscode-widget-border,#4443); }
-                .pj-trk-sid { font-size:11px; opacity:.8; }
+                .pj-trk-run.loose { border-left-style:dashed; opacity:.85; }
+                .pj-trk-sid { font-size:11px; opacity:.8;
+                    font-family:var(--vscode-editor-font-family,monospace); }
                 .pj-trk-turn { font-size:11px; padding:1px 7px; border-radius:9px; cursor:pointer;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 .pj-trk-turn:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-trk-ev { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
+                    border:1px solid var(--vscode-widget-border,#4443); white-space:nowrap; }
+                .pj-trk-ev.e-done { border-color:var(--vscode-charts-green,#3fb950); }
+                .pj-trk-ev.e-cancelled { opacity:.6; }
+                .pj-trk-ev.e-doing { border-color:var(--vscode-charts-blue,#3794ff); }
+                .pj-trk-ev.e-reopen { border-color:var(--vscode-editorWarning-foreground,#d29922); }
                 .pj-trk-doubt { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     background:var(--vscode-inputValidation-warningBackground,#663); }
                 .pj-trk-note { margin-top:5px; padding-left:8px; font-size:12px; opacity:.9;
                     border-left:2px solid var(--vscode-focusBorder,#3794ff); }
+                /* timeline view */
+                .pj-trk-day { font-size:11px; text-transform:uppercase; opacity:.55; margin:10px 0 3px; }
+                .pj-trk-tl { display:flex; gap:8px; align-items:center; padding:2px 4px; border-radius:4px; }
+                .pj-trk-tl:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-trk-tltime { font-size:11px; opacity:.6; width:44px; flex:0 0 auto; }
+                .pj-trk-tlnote { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; font-size:12px; opacity:.75; }
+                .pj-trk-more { margin:10px 0; display:flex; gap:10px; align-items:center; }
+                /* code chips — sessions and gaps */
+                .pj-trk-codes { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+                .pj-trk-scode { font-size:11px; padding:2px 7px; border-radius:5px; cursor:pointer;
+                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit;
+                    display:inline-flex; gap:5px; align-items:center; }
+                .pj-trk-scode:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-trk-scodee { opacity:.6; font-size:10px; }
+                .pj-trk-gaps .pj-card { margin-bottom:10px; }
+                /* the reconstruct preview */
+                .pj-trk-fillrows { max-height:260px; overflow:auto; margin:6px 0; }
+                .pj-trk-fillrow { display:flex; gap:8px; align-items:center; padding:1px 0; font-size:11px; }
                 /* cards */
                 .pj-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-bottom:12px; }
                 .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px; }
@@ -3123,66 +3194,1106 @@
     }
 
     // -----------------------------------------------------------------------
-    // the track — a code, and the turns it was worked in
+    // the track — a project's work history, joined to the turns it happened in
     // -----------------------------------------------------------------------
 
     /**
-     * ‼️ A SKETCH, ON PURPOSE, AND THE COMMENT IS PART OF THE DELIVERY.
+     * What the reader has narrowed the history to.
      *
-     * The record this reads lives in two files that work with no extension
-     * running — `Backloglog.md` and the ledger beside it — so nothing here is
-     * load-bearing. What it is for is to show what the surface can BE: a project's
-     * whole history of work, filterable, with every turn a door into the
-     * transcript where it happened. Only that last part is built, because only
-     * that part had no substitute. Filters, ordering, a search across projects and
-     * a table view are a later job, and pretending at them with dead controls
-     * would be worse than leaving them out.
+     * ‼️ THE AXES ARE IN TWO FAMILIES AND THE SPLIT IS THE DESIGN. `q`, `areas`,
+     * `states` and `onlyNote` are questions about the ITEM (which code);
+     * `events`, `sources`, `doubts`, `agents`, the dates and the two toggles
+     * beside them are questions about a RECORD (which moment). Both narrow the
+     * same list, and a row survives when it passes the item test AND still has a
+     * record left — so "done, by developer, in the last week" answers with the
+     * items, their turns and their sessions all agreeing, in every one of the
+     * four views. A filter that meant one thing in Items and another in Timeline
+     * would make the view switch a different page rather than a different
+     * question.
+     *
+     * `states` starts at null and not, as the backlog's does, at open+doing: a
+     * history whose finished items were hidden by default would be a history of
+     * nothing.
      */
-    function trackHtml() {
-        const d = td().track;
-        if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog log'); }
-        const rows = d.rows || [];
-        if (!rows.length) {
-            return `<p class="muted">Nothing tracked yet. From the moment an item is closed —
-                from this page, or by an agent through <code>projects.backlog.check</code> —
-                the session and the turn it happened in are recorded here and written into
-                <code>${C.esc(d.path || 'Backloglog.md')}</code>.</p>`;
+    const trkFilterDefaults = () => ({
+        q: '', areas: [], events: [], sources: [], doubts: [],
+        /** null = every state · any subset of open · doing · done · cancelled */
+        states: null,
+        /** null = every agent · a subset. A panel click and an outside edit
+         *  belong to no agent, and any narrowing here drops them. */
+        agents: null,
+        from: '', to: '',
+        onlyDoubt: false, onlyNote: false, hideBackfill: false
+    });
+    let trkFilter = trkFilterDefaults();
+    let trkView = 'items';
+    let trkSort = 'last';
+    let trkDesc = true;
+    let trkFiltersOpen = false;
+    let trkHelpOpen = false;
+    /** Codes opened past the text cut. Kept across repaints: this page rebuilds
+     *  on every host push, and closing what somebody opened to read is the small
+     *  betrayal the rest of the page is careful about. */
+    const trkOpen = new Set();
+    /** The "record an event" card: null = closed, else the draft. */
+    let trkForm = null;
+    /**
+     * The reconstruct card: `{ code, running, res }`.
+     *
+     * ‼️ `res` is the HOST's own preview and it is held here so that pressing
+     * Apply does not scan the transcript corpus a second time — and, more
+     * importantly, so that what is applied is exactly what was shown. A second
+     * scan could legitimately return different rows (a session ended in
+     * between), and a confirmation that applies something other than what it
+     * displayed is worse than no confirmation.
+     */
+    let trkFill = null;
+    /** How many rows the Timeline draws before it says so. Raised by its own
+     *  button; never a silent cut. */
+    let trkCap = 300;
+
+    const TRK_VIEWS = [
+        {
+            id: 'items', label: '⬢ Items',
+            tip: 'One card per backlog code: every session and every turn it was worked in, oldest first, with the closing note somebody wrote for it. The answer to "how was this solved last time".'
+        },
+        {
+            id: 'timeline', label: '≡ Timeline',
+            tip: 'Every recorded moment, newest first, whichever code it was about. The answer to "what happened here lately" — and unlike the project Timeline tab, this one is the BACKLOG\'s history rather than the folder\'s.'
+        },
+        {
+            id: 'sessions', label: '⌸ Sessions',
+            tip: 'One card per session: which codes it touched and what it did to them. The answer to "what did that run actually get through".'
+        },
+        {
+            id: 'gaps', label: '⚕ Gaps',
+            tip: 'What this record does NOT know: codes with no history at all, attributions that are a best effort, rows that were reconstructed rather than watched. A log is only worth as much as its holes are visible.'
         }
-        const body = rows.map(r => {
-            const sessions = (r.sessions || []).map(s => {
-                const turns = (s.turns || []).map(t =>
-                    `<button class="pj-trk-turn" data-trackturn="${C.esc(s.file)}" data-trackts="${t.ts}"
-                        title="Open this session's transcript at turn ${t.n}">#${t.n}</button>`).join('');
-                // The run IS a session, so it gets the session menu every other
-                // surface gives one — the point of the shared contract.
-                return `<div class="pj-trk-run"
-                    ${window.AFSessionCtx.row({ sessionId: s.session, file: s.file, agentName: s.agent })}>
-                    <code class="pj-trk-sid" title="${C.esc(s.session)} — ${window.AFSessionCtx.HINT}">${C.esc(s.short)}</code>
-                    ${turns || '<span class="muted small">no turn recorded</span>'}
-                    <span class="muted small">${C.esc(s.agent || '?')}</span>
-                    ${s.uncertain ? `<span class="pj-trk-doubt" title="The attribution is a best effort: ${C.esc(s.uncertain)}">${C.esc(s.uncertain)}</span>` : ''}
-                    <span class="muted small">${C.esc((s.events || []).join(' · '))}</span>
-                </div>`;
-            }).join('');
-            return `<div class="pj-trk-item">
-                <div class="pj-trk-head">
-                    <b>${C.esc(r.code)}</b>
-                    <span class="pj-trk-state">${C.esc(r.state || '—')}</span>
-                    <span class="pj-trk-words">${C.esc(r.text || '')}</span>
-                    ${r.stamp ? `<code class="pj-trk-stamp" title="Where it was closed — the same stamp is on the backlog line">${C.esc(r.stamp)}</code>` : ''}
-                </div>
-                ${sessions}
-                ${r.note ? `<div class="pj-trk-note">${C.esc(r.note)}</div>` : ''}
+    ];
+
+    const TRK_EVENTS = [
+        { id: 'touch', icon: '·', tip: '"Worked on, not finished" — the attempts. A log of endings alone throws away exactly the part somebody needs three months later.' },
+        { id: 'doing', icon: '▶', tip: 'Started — the line in the backlog went from [ ] to [/].' },
+        { id: 'done', icon: '✓', tip: 'Closed as finished.' },
+        { id: 'cancelled', icon: '✕', tip: 'Closed without being done — the code stays spent.' },
+        { id: 'reopen', icon: '↺', tip: 'Put back to open after having been closed.' }
+    ];
+    const TRK_EVENT_ICON = {};
+    TRK_EVENTS.forEach(e => { TRK_EVENT_ICON[e.id] = e.icon; });
+
+    const TRK_SOURCES = [
+        { id: 'agent', tip: 'An agent wrote it through the bridge, mid-turn — so the session and the turn are its own.' },
+        { id: 'panel', tip: 'Somebody clicked in Agent Farm. Real and observed, but it happened in no session, so there is no turn to point at.' },
+        { id: 'outside', tip: 'The file changed without us — a box ticked in Obsidian. Noticed on the next read; the moment it really happened is not knowable.' },
+        { id: 'backfill', tip: 'Reconstructed afterwards from a transcript that quotes the code. Never watched happening, and always marked.' }
+    ];
+
+    const TRK_DOUBTS = [
+        { id: 'multi', tip: 'More than one live session of that agent could have been the caller.' },
+        { id: 'none', tip: 'Nothing was live — no session could be named at all.' },
+        { id: 'stale', tip: 'The only candidate session had been quiet too long to credit.' },
+        { id: 'turn', tip: 'The session is certain; which turn of it is not.' },
+        { id: 'guess', tip: 'Reconstructed from a date and a mention, never observed.' }
+    ];
+
+    const TRK_SORTS = [
+        { id: 'last', label: 'last worked' },
+        { id: 'first', label: 'first worked' },
+        { id: 'turns', label: 'turns spent' },
+        { id: 'sessions', label: 'sessions' },
+        { id: 'span', label: 'span — first to last' },
+        { id: 'closed', label: 'closed' },
+        { id: 'code', label: 'code' },
+        { id: 'state', label: 'state' },
+        { id: 'area', label: 'area' }
+    ];
+
+    /** How much of a long item is drawn on a Track card. Shorter than the
+     *  backlog's, because here the words are context for the history rather than
+     *  the thing being read — and `more`, or the hover, gives all of it. */
+    const TRK_CUT = 170;
+
+    /** The dropdown axes, declared once and read twice (html + wire), the way
+     *  the backlog's are — an axis that reached one and not the other would be a
+     *  filter that draws and does nothing. */
+    function trkPicks() {
+        const d = td().track || {};
+        return [
+            {
+                id: 'trk-states', key: 'states', label: 'state', allLabel: 'every state', width: 200,
+                title: 'The item\'s state in the backlog RIGHT NOW — not what the event said. A code that was closed and reopened reads as open here and still carries its done event.',
+                options: [
+                    { v: 'open', t: 'open' }, { v: 'doing', t: 'doing' },
+                    { v: 'done', t: 'done' }, { v: 'cancelled', t: 'cancelled' }
+                ]
+            },
+            {
+                id: 'trk-agents', key: 'agents', label: 'agent', allLabel: 'every agent', width: 210,
+                title: 'Whose sessions the records came from. A panel click and an outside edit belong to no agent, so any narrowing here drops them.',
+                options: (d.agents || []).map(a => ({ v: a, t: a }))
+            }
+        ];
+    }
+    const trkPickHtml = () => trkPicks().map(p => window.AFFilter.multi({
+        id: p.id, label: p.label, allLabel: p.allLabel, options: p.options,
+        selected: trkFilter[p.key], title: p.title, width: p.width
+    })).join('');
+
+    const trkData = () => td().track;
+
+    /**
+     * Every record in the payload, flattened and joined to the item it is about.
+     *
+     * Built once per paint and cached on the payload object, because four views
+     * and nine filter axes all read the same list — and the payload is replaced
+     * wholesale by the host on every push, so the cache cannot go stale.
+     */
+    function trkFlat(d) {
+        if (d._flat) { return d._flat; }
+        const out = [];
+        for (const row of (d.rows || [])) {
+            for (const run of (row.sessions || [])) {
+                for (const e of (run.events || [])) { out.push({ row: row, run: run, ev: e }); }
+            }
+            for (const e of (row.loose || [])) { out.push({ row: row, run: null, ev: e }); }
+        }
+        d._flat = out;
+        return out;
+    }
+
+    /** What the search box is matched against — the code, the item's words, the
+     *  closing note, every agent, every session id and every event note. Built
+     *  once per row and cached with it. */
+    function trkHay(row) {
+        if (row._hay === undefined) {
+            const parts = [row.code, row.text, row.note, row.section, row.stamp];
+            for (const s of (row.sessions || [])) {
+                parts.push(s.session, s.short, s.agent);
+                for (const e of (s.events || [])) { parts.push(e.note); }
+            }
+            for (const e of (row.loose || [])) { parts.push(e.note, e.by); }
+            row._hay = parts.filter(Boolean).join(' ');
+        }
+        return row._hay;
+    }
+
+    /** `2026-08-09` → local midnight, or the last millisecond of that day. A
+     *  date box that meant UTC would drop a day's records east of Greenwich. */
+    function trkDayMs(day, end) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || '').trim());
+        if (!m) { return 0; }
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        if (!isFinite(d.getTime())) { return 0; }
+        return end ? d.getTime() + 86400000 - 1 : d.getTime();
+    }
+
+    /** The ITEM half of the narrowing. */
+    function trkPassRow(row, q) {
+        const f = trkFilter;
+        if (f.areas.length && f.areas.indexOf(row.area || '') < 0) { return false; }
+        if (f.states && f.states.indexOf(row.state || 'open') < 0) { return false; }
+        if (f.onlyNote && !String(row.note || '').trim()) { return false; }
+        return q.empty || q.test(trkHay(row));
+    }
+
+    /** The RECORD half. */
+    function trkPassEvent(x) {
+        const f = trkFilter;
+        const e = x.ev;
+        if (f.events.length && f.events.indexOf(e.event) < 0) { return false; }
+        if (f.sources.length && f.sources.indexOf(e.by) < 0) { return false; }
+        if (f.hideBackfill && e.by === 'backfill') { return false; }
+        if (f.onlyDoubt && !e.uncertain) { return false; }
+        if (f.doubts.length && f.doubts.indexOf(e.uncertain || '') < 0) { return false; }
+        if (f.agents && f.agents.indexOf(e.agent || '') < 0) { return false; }
+        const from = trkDayMs(f.from, false);
+        if (from && e.ts < from) { return false; }
+        const to = trkDayMs(f.to, true);
+        return !(to && e.ts > to);
+    }
+
+    /**
+     * The whole narrowing, once per paint.
+     *
+     * ‼️ A ROW WITH NOTHING LEFT IS NOT DRAWN. Filtering to `done` events and
+     * still listing every item that has ever been touched — with an empty body —
+     * would be a list that answers a question nobody asked. With no record-level
+     * filter on, every record survives and every row stands, so the common case
+     * costs one pass and changes nothing.
+     */
+    function trkSelect(d) {
+        const q = window.AFQuery.compile(trkFilter.q);
+        const rows = (d.rows || []).filter(r => trkPassRow(r, q));
+        const live = new Set(rows.map(r => r.code));
+        const events = trkFlat(d).filter(x => live.has(x.row.code) && trkPassEvent(x));
+        const kept = new Set(events.map(x => x.row.code));
+        return { q: q, events: events, rows: rows.filter(r => kept.has(r.code)) };
+    }
+
+    /** The surviving records of one row, grouped back under their runs — so a
+     *  card draws exactly what the filter left, and nothing it implies. */
+    function trkRunsOf(row, events) {
+        const runs = [];
+        const loose = [];
+        for (const x of events) {
+            if (x.row.code !== row.code) { continue; }
+            if (!x.run) { loose.push(x.ev); continue; }
+            let g = runs.find(r => r.run === x.run);
+            if (!g) { g = { run: x.run, events: [] }; runs.push(g); }
+            g.events.push(x.ev);
+        }
+        runs.sort((a, b) => a.run.firstTs - b.run.firstTs);
+        loose.sort((a, b) => a.ts - b.ts);
+        return { runs: runs, loose: loose };
+    }
+
+    /** Which turns a set of records points at, deduplicated, each keeping the
+     *  EARLIEST moment — that timestamp is the address the session viewer
+     *  scrolls to, and a later one would land past what the reader wanted. */
+    function trkTurnsOf(events) {
+        const seen = new Map();
+        for (const e of events) {
+            if (!e.turn) { continue; }
+            if (!seen.has(e.turn) || e.ts < seen.get(e.turn)) { seen.set(e.turn, e.ts); }
+        }
+        return Array.from(seen.keys()).sort((a, b) => a - b).map(n => ({ n: n, ts: seen.get(n) }));
+    }
+
+    /** `6d` · `4h` · `12m` · '' — how long something ran, in the biggest unit
+     *  that is not a lie. Nothing at all for a span under a minute. */
+    function trkSpan(from, to) {
+        const ms = (to || 0) - (from || 0);
+        if (!from || ms < 60000) { return ''; }
+        const d = Math.round(ms / 86400000);
+        if (d >= 1) { return d + 'd'; }
+        const h = Math.round(ms / 3600000);
+        return h >= 1 ? h + 'h' : Math.round(ms / 60000) + 'm';
+    }
+
+    /** `done: 12` lines, heaviest first — the shape every stat hover here uses. */
+    function trkCountLines(counts, order) {
+        const keys = Object.keys(counts);
+        keys.sort((a, b) => (counts[b] - counts[a])
+            || ((order || []).indexOf(a) - (order || []).indexOf(b)));
+        return keys.map(k => `${k}: ${counts[k]}`);
+    }
+
+    /** Everything the top bar states, out of the list the filters left. */
+    function trkStats(d, sh) {
+        const sessions = new Set();
+        const agents = new Set();
+        const turns = new Set();
+        const byEvent = {};
+        const bySource = {};
+        const byDoubt = {};
+        let first = 0;
+        let last = 0;
+        for (const x of sh.events) {
+            const e = x.ev;
+            if (e.session) { sessions.add(e.session); }
+            if (e.agent) { agents.add(e.agent); }
+            if (e.session && e.turn) { turns.add(e.session + '#' + e.turn); }
+            byEvent[e.event] = (byEvent[e.event] || 0) + 1;
+            bySource[e.by] = (bySource[e.by] || 0) + 1;
+            if (e.uncertain) { byDoubt[e.uncertain] = (byDoubt[e.uncertain] || 0) + 1; }
+            if (!first || e.ts < first) { first = e.ts; }
+            if (e.ts > last) { last = e.ts; }
+        }
+        return {
+            rows: sh.rows.length, events: sh.events.length,
+            sessions: sessions.size, agents: agents.size, turns: turns.size,
+            byEvent: byEvent, bySource: bySource, byDoubt: byDoubt,
+            first: first, last: last,
+            coded: (d.rows || []).length + (d.untracked || []).length
+        };
+    }
+
+    /**
+     * How many turns items of each SIZE actually took in this project.
+     *
+     * ‼️ THE ONE FIGURE THAT EXISTS NOWHERE ELSE. The backlog holds an estimate
+     * (`effort`) and the ledger holds what happened (`turns`); neither file can
+     * compare them and this tab is the only place both are open. It is what
+     * makes a size mean something the second year.
+     */
+    function trkEffortStats(d) {
+        if (d._eff) { return d._eff; }
+        const by = {};
+        for (const r of (d.rows || [])) {
+            if (!r.effort || !r.turns) { continue; }
+            (by[r.effort] = by[r.effort] || []).push(r.turns);
+        }
+        const out = {};
+        for (const k of Object.keys(by)) {
+            const list = by[k].slice().sort((a, b) => a - b);
+            out[k] = { n: list.length, median: list[Math.floor(list.length / 2)], max: list[list.length - 1] };
+        }
+        d._eff = out;
+        return out;
+    }
+
+    function trkOrder(rows) {
+        const dir = trkDesc ? -1 : 1;
+        const num = {
+            last: r => r.lastTs, first: r => r.firstTs, turns: r => r.turns,
+            sessions: r => (r.sessions || []).length,
+            span: r => Math.max(0, (r.lastTs || 0) - (r.firstTs || 0)),
+            closed: r => r.closedTs,
+            state: r => BL_STATE_ORDER.indexOf(r.state || 'open')
+        }[trkSort];
+        const list = rows.slice();
+        list.sort((a, b) => {
+            let d = 0;
+            if (trkSort === 'code') { d = blCompareCodes(a.code, b.code); }
+            else if (trkSort === 'area') { d = String(a.area || '').localeCompare(String(b.area || '')); }
+            else if (num) { d = (num(a) || 0) - (num(b) || 0); }
+            // ‼️ The tie-break is NOT reversed with the direction. Ordering by
+            // size descending should still list the codes inside one size the
+            // way a person reads them; flipping both makes the second key look
+            // random every time the arrow is pressed.
+            return (d * dir) || blCompareCodes(a.code, b.code);
+        });
+        return list;
+    }
+
+    /** How many axes are narrowing the history — the number on the ⚙ chip,
+     *  because a filter you have forgotten you set is indistinguishable from a
+     *  ledger that has lost your records. */
+    function trkActiveFilters() {
+        const f = trkFilter;
+        let n = 0;
+        ['areas', 'events', 'sources', 'doubts'].forEach(k => { if (f[k].length) { n++; } });
+        ['states', 'agents'].forEach(k => { if (f[k]) { n++; } });
+        ['onlyDoubt', 'onlyNote', 'hideBackfill'].forEach(k => { if (f[k]) { n++; } });
+        if (f.q.trim()) { n++; }
+        if (f.from || f.to) { n++; }
+        return n;
+    }
+
+    /** One axis's own clear, drawn only when that axis is narrowing something —
+     *  the backlog's rule, for the same reason. */
+    function trkRowClear(axis, count, what) {
+        if (!count) { return ''; }
+        return `<button class="pj-chip clearf" data-trkclearf="${axis}"
+            title="Clear the ${C.esc(what)} filter only (${count} on) — the other rows stay as they are">✕</button>`;
+    }
+
+    const trkChip = (attr, value, on, label, title) =>
+        `<button class="pj-chip${on ? ' on' : ''}" data-${attr}="${C.esc(value)}"
+            title="${C.esc(title)}">${C.esc(label)}</button>`;
+
+    const trkStat = (value, label, title) =>
+        `<span class="pj-trk-stat" title="${C.esc(title)}"><b>${C.esc(String(value))}</b> ${C.esc(label)}</span>`;
+
+    // -----------------------------------------------------------------------
+
+    function trackHtml() {
+        const d = trkData();
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog log'); }
+        // ‼️ NOT called `sel` — that is the module's own "which project" helper,
+        // and shadowing it inside the longest function on the page is a trap
+        // waiting for whoever adds the first line here that needs the project.
+        const shown = trkSelect(d);
+        const s = trkStats(d, shown);
+        const active = trkActiveFilters();
+        const body = trkView === 'timeline' ? trkTimelineHtml(d, shown)
+            : trkView === 'sessions' ? trkSessionsHtml(d, shown)
+                : trkView === 'gaps' ? trkGapsHtml(d, shown)
+                    : trkItemsHtml(d, shown);
+
+        return `
+        <div class="pj-docbar">
+            ${trkStatBarHtml(d, s)}
+            ${trkHelpHtml(d)}
+            ${/* ‼️ BOTH FILES ARE NAMED, ALWAYS. The document is one button away
+                  (Open with, at the end of this bar) and the LEDGER is the raw
+                  data behind everything on the page — a reader who cannot see
+                  where it is has to take the whole tab on trust. */''}
+            <span class="muted small" title="${C.esc(window.AFTip.lines([
+            `Log: ${d.path || 'not created yet'}`,
+            `Ledger: ${d.ledger}`,
+            `Records: ${d.events}`,
+            '',
+            'The log is shared — its data lines are rewritten from the ledger and every line you write in it is kept. The ledger is append-only and is never edited in place.'
+        ]))}">${C.esc(d.path || 'Backloglog.md')} · <code>${C.esc(d.ledger)}</code></span>
+            <span class="grow"></span>
+            <button class="secondary" data-act="trkForm"
+                title="Record one event against a code by hand — the row you would have got if an agent had been asked to say what it did. It is stamped as coming from this panel, which means it is real but has no session and no turn: a click happens in no conversation, and a record that claimed one would point at a transcript where nothing happened.">✎ Record</button>
+            <button class="secondary" data-act="trkFill"
+                title="Reconstruct the history of items that were closed before any of this was recorded, by searching the transcripts for the code itself. A clue or nothing: a row is only proposed where the code was literally written in a turn. It runs as a preview first and writes nothing until you say so.">⚕ Reconstruct</button>
+            <button class="secondary" data-act="trkRebuild"
+                title="Write Backloglog.md again out of the ledger. Every line YOU wrote in it — closing notes, warnings, corrections — is read back and written out untouched; only the data lines and the session rows are regenerated. A box you ticked in Obsidian is noticed here and recorded, so the log has no silent gaps. Nothing is written when the result is identical to what is on disk.">↻ Rebuild the log</button>
+            ${d.path ? openWithHtml(d.path) : ''}
+        </div>
+
+        ${trkFormHtml(d)}
+        ${trkFillHtml(d)}
+
+        <div class="pj-chips-row">
+            <span class="pj-trk-views">
+                ${TRK_VIEWS.map(v => `<button class="pj-trk-view${trkView === v.id ? ' on' : ''}"
+                    data-trkview="${v.id}" title="${C.esc(v.tip)}">${C.esc(v.label)}</button>`).join('')}
+            </span>
+            <span class="pj-trk-sep"></span>
+            <button class="pj-chip${!trkFilter.areas.length ? ' on' : ''}" data-trkarea=""
+                title="Every area. Areas add up rather than replace each other — click two and you see both.">all areas</button>
+            ${(d.areas || []).map(a => trkChip('trkarea', a.code,
+            trkFilter.areas.indexOf(a.code) >= 0, a.code, `${a.label} — narrow the history to this area`)).join('')}
+            <span class="grow"></span>
+            <button class="pj-chip${trkFiltersOpen ? ' on' : ''}" data-act="trkFilters"
+                title="Event kind, where the record came from, why an attribution is doubted, and the dates">⚙ filters${active ? ` (${active})` : ''}</button>
+            ${active ? '<button class="pj-chip" data-act="trkClear" title="Drop every filter and show the whole record again">clear</button>' : ''}
+        </div>
+
+        ${trkFiltersOpen ? trkFilterPanelHtml() : ''}
+
+        <div class="pj-chips-row">
+            <span class="pj-bl-qwrap">
+                <input id="trk-q" class="pj-bl-q" placeholder="search code, words, note, agent or session"
+                    value="${C.esc(trkFilter.q)}"
+                    title="${C.esc(window.AFQuery.tip('Searched against each item\'s code and words, its closing note, every agent and session id in its history, and every event note.'))}">
+                ${trkFilter.q.trim() ? '<button class="pj-bl-qx" data-trkclearf="q" title="Clear the search box only">✕</button>' : ''}
+            </span>
+            ${trkPickHtml()}
+            <select id="trk-sort" title="Ordering. 'last worked' is the default because the question this tab is opened with is almost always what happened recently; 'turns spent' and 'span' are the two that answer how expensive something actually was.">
+                ${TRK_SORTS.map(o => `<option value="${o.id}"${trkSort === o.id ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('')}
+            </select>
+            <button class="pj-bl-badge" data-act="trkDir"
+                title="${trkDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${trkDesc ? '↓' : '↑'}</button>
+            <span class="grow"></span>
+            <span class="muted small pj-bl-count${shown.rows.length < (d.rows || []).length ? ' narrowed' : ''}">${shown.rows.length} of ${(d.rows || []).length} tracked${shown.events.length !== d.events ? ` · ${shown.events.length} of ${d.events} events` : ''}</span>
+        </div>
+
+        ${d.truncated ? `<p class="muted small">⚠ This ledger holds more records than one paint carries; the
+            newest are shown. The whole file is <code>${C.esc(d.ledger)}</code> and
+            <code>projects.tracks</code> reads all of it.</p>` : ''}
+
+        ${body}`;
+    }
+
+    /** The counters, each carrying the derived figures its own row implies —
+     *  docs/CONVENTIONS.md → Hover: a thin tooltip is a bug. */
+    function trkStatBarHtml(d, s) {
+        const gaps = d.gaps || {};
+        const span = trkSpan(s.first, s.last);
+        const days = s.first && s.last ? Math.max(1, Math.round((s.last - s.first) / 86400000)) : 0;
+        return `<span class="pj-trk-stats">
+            ${trkStat(s.rows, 'tracked', window.AFTip.lines([
+            `Coded items in the backlog: ${s.coded}`,
+            `With a recorded history: ${(d.rows || []).length}`,
+            `Shown by the current filter: ${s.rows}`,
+            `No history at all: ${gaps.untracked || 0}`,
+            (d.rows || []).length && s.coded
+                ? `Covered: ${Math.round((d.rows || []).length / s.coded * 100)}% of the coded backlog` : ''
+        ]))}
+            ${trkStat(s.events, 'events', window.AFTip.lines([
+            `Events shown: ${s.events} of ${d.events}`,
+            ...trkCountLines(s.byEvent, TRK_EVENTS.map(e => e.id)),
+            '',
+            ...trkCountLines(s.bySource, TRK_SOURCES.map(x => x.id))
+        ]))}
+            ${trkStat(s.sessions, 'sessions', window.AFTip.lines([
+            `Sessions: ${s.sessions}`,
+            s.rows ? `Per item: ${(s.sessions / s.rows).toFixed(1)}` : '',
+            `Agents: ${s.agents}`,
+            `Records with no session at all: ${gaps.noSession || 0}`
+        ]))}
+            ${trkStat(s.turns, 'turns', window.AFTip.lines([
+            `Distinct session-turns: ${s.turns}`,
+            s.rows ? `Per item: ${(s.turns / s.rows).toFixed(1)}` : '',
+            s.sessions ? `Per session: ${(s.turns / s.sessions).toFixed(1)}` : '',
+            days ? `Per day over the span: ${(s.turns / days).toFixed(1)}` : ''
+        ]))}
+            ${span ? trkStat(span, 'span', window.AFTip.lines([
+            `First: ${window.AFTime.full(s.first)}`,
+            `Last: ${window.AFTime.full(s.last)}`,
+            days ? `Days: ${days}` : '',
+            days ? `Events per day: ${(s.events / days).toFixed(1)}` : ''
+        ])) : ''}
+            ${gaps.uncertain ? `<button class="pj-trk-stat warn" data-act="trkDoubtOnly"
+                title="${C.esc(window.AFTip.lines([
+            `Records whose attribution is a best effort: ${gaps.uncertain}`,
+            ...trkCountLines(s.byDoubt, TRK_DOUBTS.map(x => x.id)),
+            '',
+            'Press to show only those.'
+        ]))}"><b>${gaps.uncertain}</b> uncertain</button>` : ''}
+            ${gaps.untracked ? `<button class="pj-trk-stat" data-trkview="gaps"
+                title="${C.esc(`${gaps.untracked} coded item(s) have no recorded history at all — closed before any of this existed, or worked without anybody saying so. Press to see them.`)}"><b>${gaps.untracked}</b> untracked</button>` : ''}
+        </span>`;
+    }
+
+    function trkFilterPanelHtml() {
+        const f = trkFilter;
+        return `<div class="pj-bl-filters">
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">event</span>
+                ${TRK_EVENTS.map(e => trkChip('trkevent', e.id,
+            f.events.indexOf(e.id) >= 0, `${e.icon} ${e.id}`, e.tip)).join('')}
+                ${trkRowClear('events', f.events.length, 'event kind')}
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">from</span>
+                ${TRK_SOURCES.map(x => trkChip('trksource', x.id,
+                f.sources.indexOf(x.id) >= 0, x.id, x.tip)).join('')}
+                ${trkRowClear('sources', f.sources.length, 'source')}
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">doubt</span>
+                ${TRK_DOUBTS.map(x => trkChip('trkdoubt', x.id,
+                    f.doubts.indexOf(x.id) >= 0, x.id, x.tip)).join('')}
+                ${trkRowClear('doubts', f.doubts.length, 'doubt')}
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">when</span>
+                <label class="pj-chk" title="Records from this day onwards, in this machine's own timezone">from
+                    <input id="trk-from" type="date" value="${C.esc(f.from)}"></label>
+                <label class="pj-chk" title="Records up to the end of this day">to
+                    <input id="trk-to" type="date" value="${C.esc(f.to)}"></label>
+                ${[[7, 'last 7 days'], [30, 'last 30 days'], [90, 'last 90 days']].map(x =>
+                        `<button class="pj-chip" data-trkdays="${x[0]}" title="${C.esc('Set the from box to ' + x[1])}">${C.esc(x[1])}</button>`).join('')}
+                ${trkRowClear('when', (f.from || f.to) ? 1 : 0, 'date')}
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">and</span>
+                ${trkChip('trktoggle', 'onlyDoubt', f.onlyDoubt, '⚠ only uncertain',
+                            'Only records whose session or turn is a best effort — the ones worth checking before quoting.')}
+                ${trkChip('trktoggle', 'onlyNote', f.onlyNote, '✎ only with a closing note',
+                                'Only items somebody wrote a note for in Backloglog — the histories that were explained rather than merely recorded.')}
+                ${trkChip('trktoggle', 'hideBackfill', f.hideBackfill, '⚕ hide reconstructed',
+                                    'Drop every row that was worked out afterwards from a transcript, leaving only what was actually watched happening.')}
+            </div>
+        </div>`;
+    }
+
+    /**
+     * ‼️ THE TAB EXPLAINS ITSELF FROM A ?, the way the backlog's does — and what
+     * needs explaining here is not the controls but the CONTRACT: two files, two
+     * owners, and what "uncertain" is admitting to. A reader who does not know
+     * that the ledger is append-only and that their own notes are safe will
+     * either not trust the page or will edit the wrong file.
+     */
+    function trkHelpHtml(d) {
+        if (!trkHelpOpen) {
+            return `<span class="pj-helpw"><button class="pj-help" data-trkhelp
+                title="What this record is, who owns which half of it, and what an uncertain row is admitting">?</button></span>`;
+        }
+        return `<span class="pj-helpw">
+            <button class="pj-help on" data-trkhelp title="Close">?</button>
+            <span class="pj-helppop" data-trkhelppop>
+                <span class="pj-helpp"><b>A backlog code is permanent; a transcript holds every word.</b>
+                    What was missing is the join — the code could not be asked "show me the turns you were
+                    worked in", so hundreds of sessions sat on disk as an unsearchable pile.
+                    <b>That join is this tab.</b> Every turn number here is a door: press it and that
+                    transcript opens at that moment.</span>
+                <span class="pj-helpp"><b>Two files, two owners.</b> The <b>ledger</b>
+                    (<code>${C.esc(d.ledger || '')}</code>) is the machine's: append-only, one JSON object per
+                    line, never edited in place — which is what makes two windows and an agent writing in the
+                    same second safe. The <b>log</b> (<code>${C.esc(d.path || 'Backloglog.md')}</code>) is
+                    shared: Agent Farm rewrites each item's data line and its session rows out of the ledger,
+                    and <b>every other line inside an item is yours and is kept exactly as you leave it</b>.
+                    That is where the closing note goes. Nothing on this page writes it.</span>
+                <span class="pj-helpp"><b>Where a record comes from is part of the record.</b>
+                    <b>agent</b> — written mid-turn, so the session and turn are its own · <b>panel</b> — a
+                    click here: real, but it happened in no session · <b>outside</b> — the file changed
+                    without us, a box ticked in Obsidian, noticed on the next read · <b>backfill</b> —
+                    reconstructed afterwards and always marked as such.</span>
+                <span class="pj-helpp"><b>“uncertain” is not noise — it is the design.</b> Guessing a
+                    session id silently would be the worst possible failure: a wrong id looks exactly like a
+                    right one. So when the caller cannot be named the record says WHY —
+                    <b>multi</b> (two live sessions could have been it) · <b>none</b> (nothing was live) ·
+                    <b>stale</b> (the candidate had gone quiet) · <b>turn</b> (session sure, turn not) ·
+                    <b>guess</b> (reconstructed, never observed).</span>
+                <span class="pj-helpp"><b>The hole this cannot close, narrowed.</b> Ticking a box in
+                    Obsidian produces no event anywhere and nothing is watching that keystroke. What happens
+                    instead is that every read compares the state the ledger implies with the state the line
+                    shows, and records the difference as an <b>outside</b> event — so the log has no silent
+                    gaps, and the moment it prints is honestly labelled "noticed", not invented.</span>
+                <span class="pj-helpp"><b>Estimates get marked here.</b> An item's size badge carries the
+                    turns it actually took and the median for that size in this project. It is the one figure
+                    that needs both files open, and the reason a size is worth setting at all.</span>
+            </span>
+        </span>`;
+    }
+
+    // ---- the record-an-event card ----------------------------------------
+
+    /**
+     * ‼️ A FORM ON THE PAGE, not a chain of input boxes (docs/CONVENTIONS.md →
+     * Making things). Three fields, and the third one is the point: an event
+     * with no note is a tick, and a tick is what this whole mechanism exists to
+     * be better than.
+     */
+    function trkFormHtml(d) {
+        if (!trkForm) { return ''; }
+        const F = window.AFForm;
+        const codes = (d.rows || []).map(r => r.code)
+            .concat((d.untracked || []).map(u => u.code));
+        codes.sort(blCompareCodes);
+        // ‼️ An empty picker is a control that cannot work, and "pick the item"
+        // is the wrong complaint when there is nothing to pick. The reason is
+        // one sentence and it names the fix.
+        if (!codes.length) {
+            return F.card({
+                id: 'trk-form', title: 'Record an event',
+                submit: 'Nothing to record against', msg: 'This backlog has no coded item yet — '
+                    + 'only a code can be tracked, because it is the one handle that survives the item '
+                    + 'being reworded or moved. File a capture under an area on the Backlog tab first.',
+                warn: true, body: ''
+            });
+        }
+        return F.card({
+            id: 'trk-form', title: 'Record an event',
+            lede: 'appended to the ledger, stamped as coming from this panel',
+            submit: trkForm.sending ? 'Recording…' : 'Record it',
+            msg: trkForm.msg || '', warn: true,
+            body: F.grid([
+                F.sel('code', 'Item', codes.map(c => ({ id: c, label: c })), trkForm.code,
+                    { tip: 'Only a coded item can be tracked — a code is the one handle that survives the item being reworded or moved.' }),
+                F.sel('event', 'What happened', TRK_EVENTS.map(e => ({
+                    id: e.id, label: `${e.icon} ${e.id}`, title: e.tip
+                })), trkForm.event,
+                    { tip: 'touch is the one to reach for: "worked on, not finished" is the history a log of endings throws away. A state change is usually better made on the Backlog tab, which moves the checkbox as well.' }),
+                F.area('note', 'One line — what you did, or why it is not finished', trkForm.note,
+                    { rows: 2, ph: 'root cause found, fix is in the parser…', tip: 'This is the event\'s own caption. The item\'s CLOSING note is a different thing and lives in Backloglog.md, where you can rewrite it.' })
+            ])
+        });
+    }
+
+    // ---- the reconstruct card --------------------------------------------
+
+    /**
+     * ‼️ TWO PRESSES, AND THE SECOND ONE APPLIES EXACTLY WHAT THE FIRST DREW.
+     * The preview held in `trkFill.res` is the host's own answer; Apply sends
+     * the same request with `apply` set rather than re-deriving anything here.
+     */
+    function trkFillHtml(d) {
+        if (!trkFill) { return ''; }
+        const res = trkFill.res;
+        const rows = (res && res.proposed) || [];
+        const body = trkFill.running
+            ? '<p class="muted small">Searching the transcripts for these codes… one scan for all of them, so this is seconds rather than minutes.</p>'
+            : !res
+                ? ''
+                : res.error
+                    ? `<p class="pj-flash bad">${C.esc(res.error)}</p>`
+                    : !res.rows
+                        ? `<p class="muted small">Nothing to reconstruct. ${res.scanned} transcript(s) were read and
+                            ${res.mentions} mention(s) of a code were found, but none of them belongs to an item
+                            that still has no observed history. <b>That is the honest answer</b> — an item nobody
+                            ever quoted stays visibly blank rather than being handed an invented row.</p>`
+                        : `<p class="small">${res.rows} row(s) would be written for
+                            <b>${res.codes.length}</b> code(s), from ${res.scanned} transcript(s).
+                            ${res.partial ? '<b>⚠ The scan hit its budget and did not read everything</b> — what is below is a floor, not the whole picture. ' : ''}
+                            Every one of them is stamped <code>backfill</code> + <code>guess</code>, so it can
+                            always be told apart from something that was watched happening.</p>
+                        <div class="pj-trk-fillrows">${rows.map(r => `<div class="pj-trk-fillrow">
+                            <code>${C.esc(r.code)}</code>
+                            <span class="pj-trk-ev e-${C.esc(r.event)}">${C.esc(TRK_EVENT_ICON[r.event] || '·')} ${C.esc(r.event)}</span>
+                            <code class="pj-trk-sid">${C.esc(r.short || '—')}</code>
+                            <span class="muted small">${r.turn ? '#' + r.turn : ''}</span>
+                            <span class="muted small" title="${C.esc(window.AFTime.tip(r.ts, 'Reconstructed moment'))}">${C.esc(window.AFTime.stamp(r.ts))}</span>
+                            <span class="muted small">${C.esc(r.note || '')}</span>
+                        </div>`).join('')}</div>
+                        ${res.rows > rows.length ? `<p class="muted small">…and ${res.rows - rows.length} more; the preview lists the first ${rows.length}.</p>` : ''}`;
+        return `<div class="pj-card pj-trk-fill">
+            <div class="pj-card-h">Reconstruct history${trkFill.code ? ` — ${C.esc(trkFill.code)} only` : ''}
+                <button class="pj-x secondary" data-act="trkFillClose" title="Close — nothing is written">✕</button>
+            </div>
+            <p class="small muted">‼️ A clue or nothing. A row is proposed only where the code was
+                <b>literally written</b> in a turn — never inferred from one date being near another — and only
+                for items that have no observed history at all. Only the dialog is searched, not tool output:
+                a turn that merely read the backlog file mentions every code in it and proves nothing.</p>
+            ${body}
+            <div class="pj-row">
+                <button data-act="trkFillRun" ${trkFill.running ? 'disabled' : ''}
+                    title="Search and show what would be written. Nothing is saved.">${res ? 'Search again' : 'Preview'}</button>
+                <button data-act="trkFillApply" ${(!res || res.error || !res.rows || trkFill.running) ? 'disabled' : ''}
+                    title="Append exactly the rows above to the ledger and rebuild Backloglog. They stay marked as reconstructed for ever.">Write ${res && res.rows ? res.rows : ''} row(s) to the ledger</button>
+                <span class="grow"></span>
+                <span class="muted small">${C.esc(d.ledger || '')}</span>
+            </div>
+        </div>`;
+    }
+
+    // ---- the four views ---------------------------------------------------
+
+    function trkItemsHtml(d, sh) {
+        if (!sh.rows.length) { return trkEmptyHtml(d); }
+        return `<div class="pj-trk">${trkOrder(sh.rows)
+            .map(r => trkItemHtml(d, r, sh.events)).join('')}</div>`;
+    }
+
+    /** What this item is PART OF and what is part of it — the same relation the
+     *  backlog draws, stated here because a history that ignores composition
+     *  makes an epic look untouched while all of its parts were worked. */
+    function trkFamilyHtml(row) {
+        const out = [];
+        if (row.parent) {
+            out.push(`<button class="pj-trk-m" data-trkonly="${C.esc(row.parent)}"
+                title="${C.esc(`Part of ${row.parent} — press to see that item's history instead.`)}">↳ ${C.esc(row.parent)}</button>`);
+        }
+        if ((row.children || []).length) {
+            out.push(`<span class="pj-trk-m"
+                title="${C.esc(`${row.children.length} item(s) are part of this one: ${row.children.join(', ')}. Each keeps its own history — closing a whole never closed its parts.`)}">⊂ ${row.children.length}</span>`);
+        }
+        return out.join('');
+    }
+
+    function trkEffortHtml(d, row) {
+        if (!row.effort || !row.turns) { return ''; }
+        const st = trkEffortStats(d)[row.effort];
+        // ‼️ No denominator worth dividing by: three sized items with a history
+        // is not a baseline, and "twice the median" computed from two numbers is
+        // noise dressed as a measurement (docs/CONVENTIONS.md → Hover).
+        if (!st || st.n < 3) {
+            return `<span class="pj-trk-m" title="${C.esc(window.AFTip.lines([
+                `Size: ${row.effort}`, `Turns recorded: ${row.turns}`,
+                'Too few sized items have a history in this project to say whether that is a lot.'
+            ]))}">${C.esc(row.effort)} · ${row.turns}t</span>`;
+        }
+        const over = row.turns > st.median * 2;
+        return `<span class="pj-trk-m${over ? ' warn' : ''}" title="${C.esc(window.AFTip.lines([
+            `Size: ${row.effort}`, `Turns: ${row.turns}`,
+            `Median for ${row.effort} here: ${st.median} (${st.n} items)`,
+            `Heaviest ${row.effort}: ${st.max} turns`,
+            over ? 'This one took more than twice the median for its size.' : ''
+        ]))}">${C.esc(row.effort)} · ${row.turns}t</span>`;
+    }
+
+    function trkTextHtml(row) {
+        const full = row.text || '(no longer in the backlog — the code was removed or renamed)';
+        const open = trkOpen.has(row.code);
+        const cut = !open && full.length > TRK_CUT;
+        const body = cut ? full.slice(0, TRK_CUT).replace(/\s+\S*$/, '') + '…' : full;
+        const more = full.length > TRK_CUT
+            ? ` <button class="pj-bl-more" data-trkmore="${C.esc(row.code)}">${open ? 'less' : 'more'}</button>`
+            : '';
+        return window.AFTip.wrap(
+            `<span class="pj-trk-words">${C.esc(body)}${more}</span>`,
+            `${row.code} · ${window.AFTip.sizeNote(full)}`, full);
+    }
+
+    function trkItemHtml(d, row, events) {
+        const grouped = trkRunsOf(row, events);
+        const runs = grouped.runs.map(g => trkRunHtml(d, row, g.run, g.events)).join('')
+            + grouped.loose.map(e => trkLooseHtml(e)).join('');
+        const state = row.state || 'gone';
+        const sessions = grouped.runs.length;
+        const turns = grouped.runs.reduce((n, g) => n + Math.max(trkTurnsOf(g.events).length, 1), 0);
+        const span = trkSpan(row.firstTs, row.lastTs);
+        return `<div class="pj-trk-item" data-trkrow data-code="${C.esc(row.code)}"
+            data-line="${row.line || 0}" ${trkCtx(row)}>
+            <div class="pj-trk-head">
+                <code class="pj-trk-code" data-trkgo="${C.esc(row.code)}"
+                    title="${C.esc(`${row.code} — permanent, quote it at an agent. Click to open the backlog AT THIS ITEM'S LINE in ${blOpenModeName()}. ${window.AFCtx.HINT}`)}">${C.esc(row.code)}</code>
+                <span class="pj-trk-state s-${C.esc(state)}"
+                    title="${C.esc(`Its state in the backlog right now — the checkbox decides that, the ledger only says how it got there.${row.section ? '\nSection: ' + row.section : ''}`)}">${C.esc(state)}</span>
+                <span class="pj-trk-sum" title="${C.esc(window.AFTip.lines([
+            `Sessions: ${sessions}`,
+            `Turns: ${turns}`,
+            row.firstTs ? `First: ${window.AFTime.stamp(row.firstTs)}` : '',
+            row.lastTs ? `Last: ${window.AFTime.stamp(row.lastTs)}` : '',
+            span ? `Span: ${span}` : '',
+            sessions ? `Turns per session: ${(turns / sessions).toFixed(1)}` : ''
+        ]))}>⊞ ${sessions} · ⤳ ${turns}${span ? ' · ' + span : ''}</span>
+                ${trkTextHtml(row)}
+                <span class="grow"></span>
+                ${trkEffortHtml(d, row)}
+                ${trkFamilyHtml(row)}
+                ${row.backfilled ? `<span class="pj-trk-m" title="${C.esc('Part of this history was reconstructed afterwards from a transcript rather than watched happening. Those rows are marked guess on the runs below.')}">⚕</span>` : ''}
+                ${row.doubtful ? `<span class="pj-trk-doubt" title="${C.esc('At least one attribution here is a best effort — the run that carries it says why.')}">uncertain</span>` : ''}
+                ${row.stamp ? `<code class="pj-trk-stamp" title="${C.esc(`Closed at ${row.stamp} — the same stamp is written on the backlog line, so it is there with no extension running.${row.closedTs ? '\n' + window.AFTime.full(row.closedTs) : ''}`)}">${C.esc(row.stamp)}</code>` : ''}
+                <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
+                    title="Open the backlog at this item's line">↗</button>
+                <button class="pj-bl-act" data-trkcopy="${C.esc(row.code)}"
+                    title="Copy the code">⧉</button>
+                <button class="pj-bl-act" data-trkrec="${C.esc(row.code)}"
+                    title="Record an event against this code by hand">✎</button>
+                <button class="pj-bl-act" data-trkfill="${C.esc(row.code)}"
+                    title="Reconstruct this one item's history from the transcripts (preview first)">⚕</button>
+            </div>
+            ${runs}
+            ${row.note ? `<div class="pj-trk-note" title="${C.esc('Your own closing note, read out of Backloglog.md. This page never writes it — edit it there.')}">${C.esc(row.note)}</div>` : ''}
+        </div>`;
+    }
+
+    /** One session's share of an item's history. The run IS a session, so it
+     *  carries the same right-click menu every other surface gives one. */
+    function trkRunHtml(d, row, run, events) {
+        const info = (d.sessionInfo || {})[run.session] || {};
+        const turns = trkTurnsOf(events);
+        const first = events.reduce((t, e) => (!t || e.ts < t ? e.ts : t), 0);
+        const last = events.reduce((t, e) => (e.ts > t ? e.ts : t), 0);
+        const share = info.turns && turns.length
+            ? `${turns.length} of its ${info.turns} turns (${Math.round(turns.length / info.turns * 100)}%)` : '';
+        // ‼️ The session's COST is stated as the session's, never divided by the
+        // item: one run touches many codes and a per-item share of it would be a
+        // figure with a denominator nobody can defend.
+        const head = window.AFTip.lines([
+            `Session: ${run.session}`,
+            info.agent ? `Agent: ${info.agent}` : (run.agent ? `Agent: ${run.agent}` : ''),
+            (info.models || []).length ? `Model: ${info.models.join(', ')}` : '',
+            info.turns ? `Session turns: ${info.turns}` : '',
+            share ? `This item: ${share}` : '',
+            first ? `Worked here: ${window.AFTime.stamp(first)}` : '',
+            trkSpan(first, last) ? `Over: ${trkSpan(first, last)}` : '',
+            typeof info.cost === 'number' && info.cost > 0
+                ? `Session cost: $${info.cost.toFixed(2)} — the whole run, not this item's share` : '',
+            info.title ? '' : '',
+            window.AFSessionCtx.HINT
+        ]);
+        return `<div class="pj-trk-run"
+            ${window.AFSessionCtx.row({ sessionId: run.session, file: run.file, agentName: run.agent, title: info.title })}>
+            <code class="pj-trk-sid" title="${C.esc(head)}">${C.esc(run.short)}</code>
+            ${turns.length
+                ? turns.map(t => `<button class="pj-trk-turn" data-trackturn="${C.esc(run.file)}" data-trackts="${t.ts}"
+                    title="${C.esc(`Open this transcript at turn ${t.n} — ${window.AFTime.stamp(t.ts)}`)}">#${t.n}</button>`).join('')
+                : `<span class="muted small" title="${C.esc('The session is known; which turn of it is not. That is what the turn doubt means — it is not a missing link, it is an honest one.')}">no turn recorded</span>`}
+            <span class="muted small" title="${C.esc(window.AFTime.tip(first, 'First record in this session'))}">${C.esc(window.AFTime.clock(first))}</span>
+            <span class="muted small">${C.esc(run.agent || info.agent || '?')}</span>
+            ${events.map(e => trkEvHtml(e)).join('')}
+            ${run.uncertain ? `<span class="pj-trk-doubt"
+                title="${C.esc((TRK_DOUBTS.find(x => x.id === run.uncertain) || {}).tip || 'a best effort')}">${C.esc(run.uncertain)}</span>` : ''}
+        </div>`;
+    }
+
+    /** A record with no session to point at, and the row says which KIND of
+     *  nothing it is: a moment we watched (a panel click) or one we merely
+     *  noticed (a box ticked in Obsidian, whose real moment nobody recorded). */
+    function trkLooseHtml(e) {
+        return `<div class="pj-trk-run loose">
+            <code class="pj-trk-sid" title="${C.esc('No session — this did not happen inside a conversation, so there is no transcript to open.')}">no session</code>
+            <span class="muted small" title="${C.esc(window.AFTime.tip(e.ts, e.uncertain === 'none' ? 'Noticed' : 'Happened'))}">${C.esc(window.AFTime.stamp(e.ts))}${e.uncertain === 'none' ? ' noticed' : ''}</span>
+            ${trkEvHtml(e)}
+            ${e.note ? `<span class="muted small">${C.esc(e.note)}</span>` : ''}
+        </div>`;
+    }
+
+    /** One event, as a chip. The note rides in the hover rather than on the row:
+     *  a run with five events would otherwise be five sentences wide. */
+    function trkEvHtml(e) {
+        const def = TRK_EVENTS.find(x => x.id === e.event) || { tip: '' };
+        const src = TRK_SOURCES.find(x => x.id === e.by);
+        return `<span class="pj-trk-ev e-${C.esc(e.event)}" title="${C.esc(window.AFTip.lines([
+            `${e.event} · ${window.AFTime.stamp(e.ts)}`,
+            `Recorded by: ${e.by}`,
+            e.note ? `Note: ${e.note}` : '',
+            e.uncertain ? `Uncertain: ${e.uncertain}` : '',
+            '', def.tip, src ? src.tip : ''
+        ]))}">${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}</span>`;
+    }
+
+    // ---- Timeline ---------------------------------------------------------
+
+    function trkTimelineHtml(d, sh) {
+        if (!sh.events.length) { return trkEmptyHtml(d); }
+        const list = sh.events.slice().sort((a, b) => (b.ev.ts - a.ev.ts)
+            || blCompareCodes(a.row.code, b.row.code));
+        const shown = list.slice(0, trkCap);
+        let day = '';
+        const rows = shown.map(x => {
+            const e = x.ev;
+            const d2 = window.AFTime.stamp(e.ts).split(',')[0];
+            const head = d2 === day ? '' : `<div class="pj-trk-day">${C.esc(d2)}</div>`;
+            day = d2;
+            return head + `<div class="pj-trk-tl" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
+                <span class="pj-trk-tltime" title="${C.esc(window.AFTime.tip(e.ts, 'Recorded'))}">${C.esc(window.AFTime.clock(e.ts))}</span>
+                ${trkEvHtml(e)}
+                <button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}"
+                    title="${C.esc(`${x.row.code} — press to see only this item's history. ${x.row.text ? '\n\n' + x.row.text.slice(0, 400) : ''}`)}">${C.esc(x.row.code)}</button>
+                ${e.session
+                    ? `<button class="pj-trk-turn" data-trackturn="${C.esc((x.run && x.run.file) || '')}" data-trackts="${e.ts}"
+                        title="${C.esc(`Open ${e.session} at ${e.turn ? 'turn ' + e.turn : 'this moment'}`)}">${C.esc(e.short || '')}${e.turn ? ' #' + e.turn : ''}</button>`
+                    : '<span class="muted small">no session</span>'}
+                <span class="muted small">${C.esc(e.agent || e.by)}</span>
+                <span class="pj-trk-tlnote">${C.esc(e.note || x.row.text || '')}</span>
             </div>`;
         }).join('');
-        return `<div class="pj-trk">
-            <div class="pj-trk-bar muted small">
-                ${rows.length} tracked · ${d.events} events ·
-                <code>${C.esc(d.path || '—')}</code> ·
-                ledger <code>${C.esc(d.ledger)}</code>
+        return `<div class="pj-trk">${rows}
+            ${list.length > shown.length ? `<div class="pj-trk-more">
+                <button data-act="trkCapMore">Show ${Math.min(300, list.length - shown.length)} more</button>
+                <span class="muted small">${shown.length} of ${list.length} records drawn</span>
+            </div>` : ''}</div>`;
+    }
+
+    // ---- Sessions ---------------------------------------------------------
+
+    function trkSessionsHtml(d, sh) {
+        if (!sh.events.length) { return trkEmptyHtml(d); }
+        const groups = new Map();
+        for (const x of sh.events) {
+            const key = x.ev.session || '';
+            let g = groups.get(key);
+            if (!g) {
+                g = {
+                    session: key, file: (x.run && x.run.file) || '', agent: x.ev.agent || '',
+                    short: x.ev.short || 'no session', first: x.ev.ts, last: x.ev.ts,
+                    codes: new Map(), turns: new Set()
+                };
+                groups.set(key, g);
+            }
+            g.first = Math.min(g.first, x.ev.ts);
+            g.last = Math.max(g.last, x.ev.ts);
+            if (!g.agent && x.ev.agent) { g.agent = x.ev.agent; }
+            if (x.ev.turn) { g.turns.add(x.ev.turn); }
+            const c = g.codes.get(x.row.code) || { row: x.row, events: [] };
+            c.events.push(x.ev);
+            g.codes.set(x.row.code, c);
+        }
+        const list = Array.from(groups.values()).sort((a, b) => b.last - a.last);
+        return `<div class="pj-trk">${list.map(g => {
+            const info = (d.sessionInfo || {})[g.session] || {};
+            const codes = Array.from(g.codes.values())
+                .sort((a, b) => blCompareCodes(a.row.code, b.row.code));
+            const closed = codes.filter(c => c.events.some(e => e.event === 'done' || e.event === 'cancelled'));
+            return `<div class="pj-trk-item"
+                ${g.session ? window.AFSessionCtx.row({ sessionId: g.session, file: g.file, agentName: g.agent, title: info.title }) : ''}>
+                <div class="pj-trk-head">
+                    <code class="pj-trk-sid" title="${C.esc(window.AFTip.lines([
+                g.session ? `Session: ${g.session}` : 'No session — panel clicks and outside edits',
+                info.title ? `Title: ${info.title}` : '',
+                info.agent || g.agent ? `Agent: ${info.agent || g.agent}` : '',
+                (info.models || []).length ? `Model: ${info.models.join(', ')}` : '',
+                info.turns ? `Session turns: ${info.turns}` : '',
+                g.turns.size ? `Turns that touched the backlog: ${g.turns.size}`
+                    + (info.turns ? ` (${Math.round(g.turns.size / info.turns * 100)}%)` : '') : '',
+                `Codes touched: ${codes.length}`,
+                closed.length ? `Closed here: ${closed.map(c => c.row.code).join(', ')}` : '',
+                typeof info.cost === 'number' && info.cost > 0 ? `Session cost: $${info.cost.toFixed(2)}` : '',
+                g.session ? window.AFSessionCtx.HINT : ''
+            ]))}">${C.esc(g.short)}</code>
+                    <span class="muted small">${C.esc(g.agent || '—')}</span>
+                    <span class="muted small" title="${C.esc(window.AFTime.tip(g.first, 'First backlog record in this session'))}">${C.esc(window.AFTime.stamp(g.first))}</span>
+                    <span class="pj-trk-sum">⤳ ${g.turns.size || '—'}${info.turns ? ' of ' + info.turns : ''} turns · ${codes.length} code(s)</span>
+                    <span class="grow"></span>
+                    ${closed.length ? `<span class="pj-trk-m" title="${C.esc('Items this session closed: ' + closed.map(c => c.row.code).join(', '))}">✓ ${closed.length} closed</span>` : ''}
+                    ${g.file ? `<button class="pj-bl-act" data-trackturn="${C.esc(g.file)}" data-trackts="${g.first}"
+                        title="Open this transcript at the first moment it touched the backlog">↗</button>` : ''}
+                </div>
+                <div class="pj-trk-run">
+                    ${codes.map(c => `<button class="pj-trk-scode" data-trkonly="${C.esc(c.row.code)}"
+                        title="${C.esc(window.AFTip.lines([
+                c.row.code + (c.row.state ? ' · ' + c.row.state : ''),
+                'In this session: ' + c.events.map(e => e.event).join(', '),
+                '', c.row.text || ''
+            ]))}">${C.esc(c.row.code)}
+                        <span class="pj-trk-scodee">${c.events.map(e => C.esc(TRK_EVENT_ICON[e.event] || '·')).join('')}</span>
+                    </button>`).join('')}
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+    }
+
+    // ---- Gaps -------------------------------------------------------------
+
+    /**
+     * ‼️ THE VIEW THAT SAYS WHAT IS MISSING. Every other view lists what the
+     * ledger knows, and a record that only ever shows what it knows looks
+     * complete. The question a reader actually has before trusting it is how
+     * much never reached it — and that answer only exists here, where the
+     * backlog and the ledger are both open.
+     */
+    function trkGapsHtml(d, sh) {
+        const gaps = d.gaps || {};
+        const untracked = (d.untracked || []).filter(u =>
+            !trkFilter.areas.length || trkFilter.areas.indexOf(u.area || '') >= 0);
+        const doubts = {};
+        const looses = [];
+        for (const x of trkFlat(d)) {
+            if (x.ev.uncertain) { doubts[x.ev.uncertain] = (doubts[x.ev.uncertain] || 0) + 1; }
+            if (!x.run) { looses.push(x); }
+        }
+        const covered = (d.rows || []).length;
+        const coded = covered + (d.untracked || []).length;
+        return `<div class="pj-trk pj-trk-gaps">
+            <div class="pj-card">
+                <div class="pj-card-h">Coverage</div>
+                <p class="small">${covered} of ${coded} coded item(s) have a recorded history —
+                    <b>${coded ? Math.round(covered / coded * 100) : 0}%</b>. The rest were closed before any
+                    of this existed, or were worked without anybody saying so. Neither is a bug; what would be
+                    a bug is not being able to see it.</p>
             </div>
-            ${body}
+
+            <div class="pj-card">
+                <div class="pj-card-h">No history at all — ${untracked.length}</div>
+                ${untracked.length
+                ? `<div class="pj-trk-codes">${untracked.map(u => `<button class="pj-trk-scode"
+                        data-trkgo="${C.esc(u.code)}" title="${C.esc(window.AFTip.lines([
+                    `${u.code} · ${u.state}`, 'Nothing recorded against it.',
+                    'Press to open the backlog at its line.', '', u.text || ''
+                ]))}">${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`).join('')}</div>
+                    <div class="pj-row">
+                        <button data-act="trkFill" title="Search every transcript for these codes and show what could be reconstructed. Preview first; nothing is written until you say so.">⚕ Reconstruct what can be found</button>
+                        <span class="muted small">a clue or nothing — an item nobody ever quoted stays blank</span>
+                    </div>`
+                : '<p class="muted small">Every coded item in the backlog has a history. That is the state this tab exists to reach.</p>'}
+            </div>
+
+            <div class="pj-card">
+                <div class="pj-card-h">Best-effort attributions — ${gaps.uncertain || 0}</div>
+                ${gaps.uncertain
+                ? `<p class="small">These records name a session or a turn they are not certain of, and they say
+                    why rather than guessing silently — a wrong session id looks exactly like a right one.</p>
+                    <div class="pj-trk-codes">${TRK_DOUBTS.filter(x => doubts[x.id]).map(x =>
+                    `<button class="pj-trk-scode" data-trkdoubt="${x.id}"
+                            title="${C.esc(x.tip + '\n\nPress to filter the other views down to these.')}">${C.esc(x.id)}
+                            <span class="pj-trk-scodee">${doubts[x.id]}</span></button>`).join('')}</div>`
+                : '<p class="muted small">Every record here names its session and its turn with certainty.</p>'}
+            </div>
+
+            <div class="pj-card">
+                <div class="pj-card-h">Reconstructed rather than watched — ${gaps.backfilled || 0}</div>
+                <p class="small">${gaps.backfilled
+                ? `${gaps.backfilled} row(s) were worked out afterwards from a transcript that quotes the code.
+                    They are stamped <code>backfill</code> + <code>guess</code> for ever, and
+                    <b>⚕ hide reconstructed</b> in the filters takes them out of every view so what is left is
+                    only what was observed.`
+                : 'Nothing here was reconstructed — every row was recorded as it happened.'}</p>
+            </div>
+
+            <div class="pj-card">
+                <div class="pj-card-h">No session to point at — ${gaps.noSession || 0}</div>
+                ${looses.length
+                ? `<p class="small">A click in this panel, or a box ticked in Obsidian. Real, and deliberately
+                        not given a session: nothing was running, so there is no transcript these lead to.</p>
+                    ${looses.slice(0, 40).map(x => `<div class="pj-trk-run loose">
+                        <button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}">${C.esc(x.row.code)}</button>
+                        ${trkEvHtml(x.ev)}
+                        <span class="muted small">${C.esc(window.AFTime.stamp(x.ev.ts))}${x.ev.uncertain === 'none' ? ' noticed' : ''}</span>
+                        <span class="muted small">${C.esc(x.ev.note || '')}</span>
+                    </div>`).join('')}`
+                : '<p class="muted small">Every record here happened inside a session.</p>'}
+            </div>
+
+            <p class="muted small">The raw data is <code>${C.esc(d.ledger || '')}</code> — append-only, one JSON
+                object per line. Nothing on this page edits or deletes a line in it; a correction is its own
+                event, which is the same discipline an agent has.</p>
         </div>`;
+    }
+
+    /** Nothing to draw — and the two reasons for that are different answers. */
+    function trkEmptyHtml(d) {
+        if (!(d.rows || []).length) {
+            return `<p class="muted">Nothing recorded yet. From the moment an item is closed — from the
+                Backlog tab, or by an agent through <code>projects.backlog.check</code> — the session and the
+                turn it happened in are recorded here and written into
+                <code>${C.esc(d.path || 'Backloglog.md')}</code>.
+                ${(d.untracked || []).length ? `This project has ${(d.untracked || []).length} coded item(s)
+                    already; <b>⚕ Reconstruct</b> can look for them in the transcripts you already have.` : ''}</p>`;
+        }
+        return `<p class="muted small">Nothing matches. ${trkActiveFilters()} filter(s) are on —
+            <b>clear</b> beside ⚙ shows the whole record again.</p>`;
+    }
+
+    /** What a Track row publishes to its right-click menu. The words are NOT in
+     *  here: this attribute is written into every row, and carrying the item's
+     *  text would put the whole history into the markup a second time. */
+    function trkCtx(row) {
+        return window.AFCtx.row('afTrackRow', {
+            code: row.code, line: row.line || 0,
+            afStamp: row.stamp || '', afState: row.state || '',
+            afDoubtful: !!row.doubtful
+        });
     }
 
     /**
@@ -3363,10 +4474,10 @@
         document.querySelectorAll('[data-tab]').forEach(el =>
             el.addEventListener('click', () => { tab = el.dataset.tab; render(); }));
 
-        // ‼️ The one thing the Track tab actually does: a turn number is a door.
-        // `ts` is what the session viewer scrolls to — the turn NUMBER is for the
-        // reader, the timestamp is the address, and sending the number would land
-        // every click at the top of the transcript.
+        // ‼️ The thing the Track tab is FOR: a turn number is a door. `ts` is
+        // what the session viewer scrolls to — the turn NUMBER is for the reader,
+        // the timestamp is the address, and sending the number would land every
+        // click at the top of the transcript.
         document.querySelectorAll('[data-trackturn]').forEach(el =>
             el.addEventListener('click', () => {
                 if (!el.dataset.trackturn) { return; }
@@ -3375,6 +4486,156 @@
                     ts: Number(el.dataset.trackts) || 0
                 });
             }));
+
+        // ---- the track. Every narrowing is page-side (the host ships the whole
+        // ledger, so a chip is a repaint); the three things that WRITE go to the
+        // host, which owns the files.
+        const trkId = () => { const p = sel(); return p ? p.id : ''; };
+        /** Toggle one value in a list axis, the way the backlog's chips do:
+         *  axes add up rather than replace each other. */
+        const trkToggleList = (key, value) => {
+            const list = trkFilter[key];
+            const at = list.indexOf(value);
+            if (at >= 0) { list.splice(at, 1); } else { list.push(value); }
+            render();
+        };
+        document.querySelectorAll('[data-trkview]').forEach(el =>
+            el.addEventListener('click', () => {
+                trkView = el.dataset.trkview;
+                trkCap = 300;
+                render();
+            }));
+        document.querySelectorAll('[data-trkarea]').forEach(el =>
+            el.addEventListener('click', () => {
+                const a = el.dataset.trkarea;
+                if (!a) { trkFilter.areas = []; render(); return; }
+                trkToggleList('areas', a);
+            }));
+        document.querySelectorAll('[data-trkevent]').forEach(el =>
+            el.addEventListener('click', () => trkToggleList('events', el.dataset.trkevent)));
+        document.querySelectorAll('[data-trksource]').forEach(el =>
+            el.addEventListener('click', () => trkToggleList('sources', el.dataset.trksource)));
+        // ‼️ From the Gaps view this also has to OPEN the filter panel and leave
+        // Gaps — a chip that silently set a filter on a page which does not draw
+        // that filter is a control whose effect is invisible.
+        document.querySelectorAll('[data-trkdoubt]').forEach(el =>
+            el.addEventListener('click', () => {
+                if (trkView === 'gaps') { trkView = 'timeline'; trkFiltersOpen = true; }
+                trkToggleList('doubts', el.dataset.trkdoubt);
+            }));
+        document.querySelectorAll('[data-trktoggle]').forEach(el =>
+            el.addEventListener('click', () => {
+                const k = el.dataset.trktoggle;
+                trkFilter[k] = !trkFilter[k];
+                render();
+            }));
+        document.querySelectorAll('[data-trkdays]').forEach(el =>
+            el.addEventListener('click', () => {
+                const d = new Date(Date.now() - Number(el.dataset.trkdays) * 86400000);
+                trkFilter.from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                trkFilter.to = '';
+                render();
+            }));
+        document.querySelectorAll('[data-trkclearf]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const axis = el.dataset.trkclearf;
+                if (axis === 'q') { trkFilter.q = ''; }
+                else if (axis === 'when') { trkFilter.from = ''; trkFilter.to = ''; }
+                else { trkFilter[axis] = []; }
+                render();
+            }));
+        document.querySelectorAll('[data-trkhelp]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                trkHelpOpen = !trkHelpOpen;
+                render();
+            }));
+        // Keeping a long item open is a repaint away, and the set survives the
+        // host's own pushes — see trkOpen.
+        document.querySelectorAll('[data-trkmore]').forEach(el =>
+            el.addEventListener('click', () => {
+                const code = el.dataset.trkmore;
+                if (trkOpen.has(code)) { trkOpen.delete(code); } else { trkOpen.add(code); }
+                render();
+            }));
+        // The code is the link to the backlog LINE. The host re-resolves it from
+        // the code against the file as it is now — this page can have been open
+        // for an hour with Obsidian editing underneath it.
+        document.querySelectorAll('[data-trkgo]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({
+                type: 'backlogOpenItem', id: trkId(), code: el.dataset.trkgo
+            })));
+        document.querySelectorAll('[data-trkcopy]').forEach(el =>
+            el.addEventListener('click', () =>
+                window.AFTextTools.copyFrom(el, el.dataset.trkcopy)));
+        // ‼️ ONE ITEM, WHOLE — the question a code raises. It goes through the
+        // SEARCH box rather than a hidden focus variable, so the narrowing is
+        // visible, removable and works identically in all four views.
+        document.querySelectorAll('[data-trkonly]').forEach(el =>
+            el.addEventListener('click', () => {
+                trkFilter.q = el.dataset.trkonly;
+                trkView = 'items';
+                trkOpen.add(el.dataset.trkonly);
+                render();
+            }));
+        document.querySelectorAll('[data-trkrec]').forEach(el =>
+            el.addEventListener('click', () => {
+                trkForm = { code: el.dataset.trkrec, event: 'touch', note: '' };
+                render();
+            }));
+        document.querySelectorAll('[data-trkfill]').forEach(el =>
+            el.addEventListener('click', () => {
+                trkFill = { code: el.dataset.trkfill, running: false, res: null };
+                render();
+            }));
+        const trkq = document.getElementById('trk-q');
+        if (trkq) {
+            // The backlog's bargain: filter on every keystroke without repainting
+            // the caret out from under the person typing.
+            trkq.addEventListener('input', () => {
+                trkFilter.q = trkq.value;
+                render();
+                const again = document.getElementById('trk-q');
+                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            });
+        }
+        const trkSortSel = document.getElementById('trk-sort');
+        if (trkSortSel) {
+            trkSortSel.addEventListener('change', () => { trkSort = trkSortSel.value; render(); });
+        }
+        // ‼️ `change`, never `input` — a date box fires input mid-gesture and the
+        // repaint would shut the calendar under the cursor (docs/CONVENTIONS.md).
+        ['from', 'to'].forEach(k => {
+            const el = document.getElementById('trk-' + k);
+            if (el) { el.addEventListener('change', () => { trkFilter[k] = el.value; render(); }); }
+        });
+        trkPicks().forEach(p => window.AFFilter.wireMulti({
+            id: p.id, options: p.options,
+            onChange: v => { trkFilter[p.key] = v; render(); }
+        }));
+        // The record card is an AFForm, so it reads itself back — nothing here
+        // lists its field ids a second time.
+        // ‼️ SCOPED TO THE CARD. AFForm reads and binds by attribute, and this
+        // page draws ten other tabs — a document-wide wire would bind whatever
+        // else happened to carry one.
+        const trkCard = document.getElementById('trk-form');
+        if (trkForm && trkCard) {
+            window.AFForm.wire(trkCard, {
+                onEdit: v => { trkForm.code = v.code; trkForm.event = v.event; trkForm.note = v.note; },
+                onCancel: () => { trkForm = null; render(); },
+                onSubmit: () => {
+                    trkForm.msg = '';
+                    if (!trkForm.code) { trkForm.msg = 'Pick the item this is about.'; render(); return; }
+                    trkForm.sending = true;
+                    vscode.postMessage({
+                        type: 'trackRecord', id: trkId(), code: trkForm.code,
+                        event: trkForm.event || 'touch', note: trkForm.note || ''
+                    });
+                    render();
+                }
+            });
+        }
 
         // Timeline chips. An exclusion set, so a kind appearing for the first
         // time shows up instead of being hidden by a filter nobody set.
@@ -4246,6 +5507,53 @@
                     blFilter = blFilterDefaults();
                     render();
                     break;
+                // ---- the track ----
+                case 'trkFilters': trkFiltersOpen = !trkFiltersOpen; render(); break;
+                case 'trkDir': trkDesc = !trkDesc; render(); break;
+                case 'trkClear': trkFilter = trkFilterDefaults(); render(); break;
+                case 'trkCapMore': trkCap += 300; render(); break;
+                case 'trkDoubtOnly':
+                    trkFilter.onlyDoubt = !trkFilter.onlyDoubt;
+                    render();
+                    break;
+                case 'trkForm':
+                    // Opened from the bar with no row in mind: the first code is
+                    // a starting point, not a guess about what the user meant.
+                    trkForm = trkForm ? null : {
+                        code: (((trkData() || {}).rows || [])[0] || {}).code || '',
+                        event: 'touch', note: ''
+                    };
+                    render();
+                    break;
+                case 'trkFill':
+                    trkFill = trkFill ? null : { code: '', running: false, res: null };
+                    render();
+                    break;
+                case 'trkFillClose': trkFill = null; render(); break;
+                case 'trkFillRun':
+                    if (!trkFill) { break; }
+                    trkFill.running = true;
+                    trkFill.res = null;
+                    vscode.postMessage({
+                        type: 'trackBackfill', id, apply: false,
+                        ...(trkFill.code ? { code: trkFill.code } : {})
+                    });
+                    render();
+                    break;
+                // ‼️ The SAME request with apply set — not a re-derivation here.
+                // A second scan could legitimately return different rows, and a
+                // confirmation that writes something other than what it showed
+                // is worse than no confirmation at all.
+                case 'trkFillApply':
+                    if (!trkFill || !trkFill.res || !trkFill.res.rows) { break; }
+                    trkFill.running = true;
+                    vscode.postMessage({
+                        type: 'trackBackfill', id, apply: true,
+                        ...(trkFill.code ? { code: trkFill.code } : {})
+                    });
+                    render();
+                    break;
+                case 'trkRebuild': vscode.postMessage({ type: 'trackRebuild', id }); break;
                 case 'newDoc': {
                     const name = ((document.getElementById('doc-name') || {}).value || '').trim();
                     if (!name) { break; }
@@ -4320,18 +5628,20 @@
      * replaced on a repaint, `document` is not, so once is enough.
      */
     document.addEventListener('click', ev => {
-        if (!blMenu && !blHelpOpen) { return; }
+        if (!blMenu && !blHelpOpen && !trkHelpOpen) { return; }
         if (blOwnsGesture(ev)) { return; }
         blMenu = null;
         blHelpOpen = false;
+        trkHelpOpen = false;
         render();
     });
     // Esc closes it too — the menu covers the row it belongs to, and reaching for
     // the mouse to dismiss something you opened by mistake is a small tax.
     document.addEventListener('keydown', ev => {
-        if (ev.key !== 'Escape' || (!blMenu && !blHelpOpen)) { return; }
+        if (ev.key !== 'Escape' || (!blMenu && !blHelpOpen && !trkHelpOpen)) { return; }
         blMenu = null;
         blHelpOpen = false;
+        trkHelpOpen = false;
         render();
     });
 
@@ -4417,7 +5727,16 @@
                 blJump = ctx.key;
                 render();
                 return;
+            // ‼️ It lands ON the item, not merely on the tab. "Where has this
+            // been worked?" answered with a page listing eighty other codes is
+            // the same failure as answering it with the file path — so the
+            // narrowing goes through the Track tab's own search box, where it is
+            // visible and removable, and the item is opened past its cut.
             case 'blTrack':
+                trkFilter = trkFilterDefaults();
+                trkFilter.q = ctx.code || '';
+                trkView = 'items';
+                if (ctx.code) { trkOpen.add(ctx.code); }
                 tab = 'track';
                 syncView();
                 render();
@@ -4446,6 +5765,57 @@
                 const text = (item && item.text) || String(ctx.text || '');
                 copyOut(arg === 'code' ? code : arg === 'text' ? text
                     : [code, text].filter(Boolean).join(' — '));
+                return;
+            }
+
+            // ---- a track row ----
+            // ‼️ The four page actions here are the row's own buttons, called by
+            // the same names — the whole point of the relay. Nothing below talks
+            // to the host in a shape a button does not already use.
+            case 'trkGo':
+                vscode.postMessage({ type: 'backlogOpenItem', id: id(), code: ctx.code || '' });
+                return;
+            case 'trkBacklog':
+                // The item, in the tab that can EDIT it. Track deliberately
+                // cannot: two tabs doing the same write differently is the defect
+                // the projects system already paid for once.
+                blFilter = blFilterDefaults();
+                blFilter.states = null;
+                blFilter.q = ctx.code || '';
+                tab = 'backlog';
+                syncView();
+                render();
+                return;
+            case 'trkOnly':
+                trkFilter.q = ctx.code || '';
+                trkView = 'items';
+                if (ctx.code) { trkOpen.add(ctx.code); }
+                render();
+                return;
+            case 'trkRecord':
+                trkForm = { code: ctx.code || '', event: 'touch', note: '' };
+                render();
+                return;
+            case 'trkFillOne':
+                trkFill = { code: ctx.code || '', running: false, res: null };
+                render();
+                return;
+            case 'trkCopy': {
+                const row = ((td().track || {}).rows || []).find(r => r.code === ctx.code) || {};
+                copyOut(arg === 'code' ? (ctx.code || '')
+                    : arg === 'stamp' ? String(ctx.afStamp || '')
+                        : arg === 'sessions'
+                            ? (row.sessions || []).map(s => s.session).join('\n')
+                            // Something a person pastes into a note or a message:
+                            // the code, what happened to it, and where to look.
+                            : [
+                                `${ctx.code} — ${row.state || 'unknown'}`,
+                                row.text || '',
+                                (row.sessions || []).map(s =>
+                                    `${s.short} ${s.span} · ${window.AFTime.stamp(s.firstTs)} · ${s.agent || '?'}`).join('\n'),
+                                row.stamp ? `closed at ${row.stamp}` : '',
+                                row.note || ''
+                            ].filter(Boolean).join('\n'));
                 return;
             }
 

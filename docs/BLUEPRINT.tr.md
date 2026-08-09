@@ -902,9 +902,20 @@ Kod kalıcıydı, transkriptler diskteydi, ama aralarında **bağ yoktu**: `K-8`
 
 **Kapanış izi dosyada da kalır.** Kapanan kalemin backlog satırına `[closed:: 9c4d1f2a#3]` yazılır — geçmişin tamamı değil, yalnızca son nokta, satırı şişirmeyen tek bilgi. Sebep dayanıklılık: Agent Farm çalışmıyorken dosyaya Obsidian'la bakan biri de "bu iş nerede bitti" sorusunun cevabını görsün. Damga, kutuyu değiştiren **tek karakterlik** yazmayı bozmamak için satırı yeniden kurmayan ayrı bir yazmayla konur.
 
-**Track sekmesi bilerek bir eskizdir.** Kayıt, eklenti çalışmasa da işleyen iki dosyada durduğu için sekmenin taşıyıcı bir işlevi yok; ne olabileceğini gösteriyor. Şimdiden yaptığı ve yerine başka bir şey konamayan tek şey şu: **tur numarası bir kapıdır** — basınca o transkript o anda açılır. Süzgeçler, sıralama ve projeler arası arama sonraki bir işin konusu, ve ölü düğmelerle var gibi gösterilmedi.
+**Track sekmesi: tek defter, dört soru.** Başka hiçbir yerin yapamadığı şey o birleştirme — **tur numarası bir kapıdır**, basınca o transkript o anda açılır. Etrafında artık tek bir daraltmayı paylaşan dört görünüm var; bir görünümde kurduğunuz süzgeç diğerinde de geçerlidir:
 
-**Köprü:** `projects.track` (bu turda bu kalemle uğraştım — `touch` dâhil) · `projects.tracks` ("bu daha önce nasıl çözülmüştü": oturumlar, turlar, kapanış) · `projects.tracks.backfill` (kanıta dayalı geriye dönük doldurma, varsayılan olarak önizleme) · `projects.backlog.check` artık aynı kaydı *kendisi* düşer ve `note` ile kapanış notunu alır.
+- **⬢ Items** — kod başına bir kart: hangi oturumlarda ve hangi turlarda çalışıldığı, eskiden yeniye, altında birinin yazdığı kapanış notu. *Bu daha önce nasıl çözülmüştü?* Kart ayrıca yalnızca iki dosya birlikte açıkken var olan figürü taşır: backlog'un verdiği boyut, gerçekte harcanan tur sayısı ve **o boyutun bu projedeki medyanı** (medyanı anmaya değecek kadar boyutlanmış kalem varsa).
+- **≡ Timeline** — hangi kodla ilgili olursa olsun her kayıtlı an, yeniden eskiye. *Burada son zamanlarda ne oldu?* — klasörün değil, **backlog'un** tarihi.
+- **⌸ Sessions** — oturum başına bir kart: hangi kodlara dokunmuş, onlara ne yapmış ve oturumun kendi turlarının kaçı backlog'a gitmiş. *O koşu gerçekte neyi bitirdi?*
+- **⚕ Gaps** — kaydın **bilmediği** şeyler: hiç geçmişi olmayan kodlar (kapsama oranıyla birlikte), gerekçesine göre ayrılmış "elden geldiğince" atıflar, izlenmek yerine geriye dönük kurulmuş satırlar ve işaret edecek oturumu olmayan kapanışlar. Bir kayıt, delikleri görünür olduğu kadar değerlidir.
+
+**Süzme iki eksende yürür** ve ikisi bilerek farklı şeyler sorar: *kalem* (kod · metin · kapanış notu · geçmişindeki her ajan ve oturum kimliği · her olay notu üzerinde arama; alan chip'leri; durum) ve *kayıt* (olay türü, kaydın nereden geldiği, atıfın neden şüpheli olduğu, tarih aralığı ve üç anahtar — yalnız şüpheliler · yalnız kapanış notu olanlar · geriye dönük kurulanları gizle). Bir satır ancak kalem testini geçer **ve geriye bir kaydı kalırsa** çizilir; gövdesi boş bir kart hiç görünmez. Sıralama: son çalışılan (varsayılan) · ilk çalışılan · harcanan tur · oturum · süre · kapanış · kod · durum · alan.
+
+**Üç eylem, ikisi iki kez sorar.** **✎ Record** deftere elle bir olay yazar — `panel` damgalı, yani gerçek ama hiçbir oturuma ait değil; çünkü bir tıklama hiçbir konuşmanın içinde geçmez. **⚕ Reconstruct** geriye dönük doldurmayı **önce önizleme** olarak koşar: yazacağı satırları tek tek gösterir, ikinci basış da yeniden hesaplamadan *tam o satırları* yazar. **↻ Rebuild the log** `Backloglog.md`'yi defterden yeniden kurar, sizin yazdığınız her satırı koruyarak. Satıra sağ tıklayınca aynı şeyler artı *yalnız bu kalemi göster*, *Backlog sekmesinde göster* ve kopyalar (kod · kapanış damgası · her oturum kimliği · geçmişin tamamı metin olarak).
+
+Sekme kalemi **bilerek düzenleyemez** — öncelik yok, boyut yok, kuyruk yok. O iş Backlog sekmesinin; aynı alanı iki yüzeyin iki türlü yazması bu sistemin bedelini bir kez ödediği hatadır.
+
+**Köprü:** `projects.track` (bu turda bu kalemle uğraştım — `touch` dâhil) · `projects.tracks` ("bu daha önce nasıl çözülmüştü": oturumlar, turlar, kapanış) · `projects.tracks.backfill` (kanıta dayalı geriye dönük doldurma, varsayılan olarak önizleme) · `projects.backloglog` (belgeyi defterden yeniden kur) · `projects.backlog.check` aynı kaydı *kendisi* düşer ve `note` ile kapanış notunu alır.
 
 ### Agent Portfolio — filo tek ekranda
 
