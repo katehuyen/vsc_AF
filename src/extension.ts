@@ -4578,7 +4578,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
-                const state = (optStr(args, 'state') ?? 'done') as BacklogState;
+                // ‼️ `optStr` returns '' for an absent arg, and `'' ?? 'done'`
+                // is '' — so the documented default never applied and every
+                // call that left `state` out was refused with a message about
+                // a value it had not sent. `||` is the operator this wants.
+                const state = (optStr(args, 'state') || 'done') as BacklogState;
                 need(BACKLOG_STATES.includes(state),
                     `state must be one of ${BACKLOG_STATES.join(', ')}`);
                 let touched = ''; let code: string | null = null;
@@ -4692,7 +4696,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const code = argStr(args, 'code').trim().toUpperCase();
                 need(code, 'say which item moves: code');
-                const dest = (optStr(args, 'dest') ?? optStr(args, 'destCode') ?? '').trim().toUpperCase();
+                // `||`, not `??`: optStr returns '' for an absent arg, so `??`
+                // never reaches the alias and `destCode` was silently dead.
+                const dest = (optStr(args, 'dest') || optStr(args, 'destCode') || '').trim().toUpperCase();
                 need(dest, 'say where it lands: dest (a code)');
                 const place = optStr(args, 'place') === 'before' ? 'before' : 'after';
                 let queue: string[] = [];
