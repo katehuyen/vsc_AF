@@ -13683,13 +13683,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // file), and the key route hands over to the vault's own
                     // form, which is the one surface allowed to hold a value.
                     engines: () => engineMatrix(),
-                    engineLogin: (command: string) => {
-                        const term = vscode.window.createTerminal({ name: 'Agent Farm: sign in' });
+                    engineCommand: (command: string) => {
+                        const term = vscode.window.createTerminal({ name: 'Agent Farm: engine' });
                         term.show();
+                        // `false` is the whole safety of this gesture: the line
+                        // is TYPED, not submitted, so nothing installs or signs
+                        // in until the user has read it and pressed Enter.
                         term.sendText(command, false);
                         void vscode.window.showInformationMessage(
                             `Agent Farm: "${command}" is typed into a terminal — press Enter to run it. `
-                            + 'The sign-in happens in your browser and the CLI keeps the grant; Agent Farm never sees it.');
+                            + 'Nothing is run for you, and no credential passes through Agent Farm.');
                     },
                     engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
                     // Which editor a .md document opens in — reports and answers

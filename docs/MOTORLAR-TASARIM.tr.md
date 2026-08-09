@@ -19,6 +19,13 @@ abonelikle ödeniyor:**
 |---|---|---|---|
 | Claude Code | Claude Pro / Max planı | `~/.claude/.credentials.json` → `claudeAiOauth` | bu makinede doğrulandı, 2026-08-09 |
 | Codex | ChatGPT Plus / Pro / Team planı | `~/.codex/auth.json` → `auth_mode: "chatgpt"`, `OPENAI_API_KEY: null` | bu makinede doğrulandı, 2026-08-09 |
+> **‼️ Düzeltme (3.98.0, ölçüm 2026-08-09).** Yukarıdaki Codex satırı kimliğin
+> yerini doğru söylüyor ama **motorun kullanılabilir olduğu anlamına gelmiyordu.**
+> `codex` bu makinede **PATH'te yok** — `npm ls -g` de göstermiyor. Yani durum
+> "girişi yapılmış bir hesap, çalıştıracak CLI yok". Bu, ekranın adlandırması
+> gereken kendi başına bir hâldir: `nextStep` artık "kurulu değil" der, kurulum
+> komutunu satıra yazar ve "giriş zaten diskte, tek kalan adım bu" diye ekler.
+> Faz 1 raporunun "zaten öyle kullanıyorsunuz" cümlesi bu yüzden yanlıştı.
 | Gemini / Antigravity | **API anahtarı** | — | "Google ile giriş" yolu Haziran 2026'da kapatıldı |
 
 Yani anahtar merkezli bir ekran, **istisnayı** merkeze alan bir ekrandır. Kullanıcı
@@ -59,12 +66,22 @@ bağlantısı. Satır soldan sağa okunur: ad → rozet (*on a plan* / *on a key
 rengidir. Rozetin hover'ı figürleri taşır (komut, yol, okunduğu dosya, son
 tazeleme, anahtar adı), açıklama satırı ne yapılacağını söyler.
 
-Üç jest, üçünü de host yapar:
+Jestler, hepsini host yapar:
 
-- **Sign in with a plan** — bir terminal açar ve komutu **yazar, çalıştırmaz**
-  (`sendText(command, false)`). Tarayıcı girişini başlatmak kullanıcının işidir.
-- **Add / Replace key** — kasanın kendi formunu tam o adla açar.
+- **Install `<komut>`** — CLI yoksa satırın **birincil** düğmesi budur (3.98.0).
+  Kurulmamış bir motora "giriş yap" demek, olmayan bir komuta giriş yapmaktır;
+  satır bulunduğu adımı önerir. Terminale `npm install -g …` **yazar,
+  çalıştırmaz.**
+- **Sign in with a plan** — yalnız CLI varken görünür. Aynı jest: komutu
+  terminale **yazar, çalıştırmaz** (`sendText(command, false)`). Tarayıcı
+  girişini başlatmak kullanıcının işidir.
+- **Add / Replace key** — kasanın kendi formunu tam o adla açar. Her iki
+  durumda da durur: anahtar CLI'dan önce hazırlanabilir.
 - **Docs** — yalnız `https://`.
+
+İkisi tek bağlamadır (`data-engcmd` → `engineCommand`): yaptıkları iş aynı —
+bir satırı terminale yazmak. `engineLogin` adı, bir kurulum komutunu da taşımaya
+başladığı anda yalan söylüyordu.
 
 **Köprü:** `engines.status` (`args: id?`). Aynı matrisi döndürür; **hiçbir
 kimlik bilgisi geçmez** ve buradan bir kimlik bilgisi ayarlanamaz. Test

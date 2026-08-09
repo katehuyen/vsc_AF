@@ -38,8 +38,13 @@ const by = (list, id) => list.find(e => e.id === id);
     // ‼️ The whole complaint in one assertion: a state is not an answer.
     ok('‼️ no row stops at naming a state — each one says what to do',
         list.every(e => /install|Sign in|sign in|vault|PATH/.test(e.next)));
-    ok('…and a missing CLI is named as the first problem, not the key',
-        list.every(e => /not on PATH/.test(e.next)));
+    // ‼️ …and a missing CLI is named as the first problem, not the key — AND
+    // the row carries the command that fixes it. "Install it" with no line to
+    // run is the same dead end as "not configured": the user is told the state
+    // and left to find the gesture.
+    ok('…and a missing CLI is named as the first problem, with the install line on it',
+        list.every(e => /not installed on this machine/.test(e.next)
+            && /Install it with: npm install -g \S+/.test(e.next)));
     ok('the summary counts what can run', JSON.stringify(enginesSummary(list))
         === JSON.stringify({ ready: 0, total: 3, onPlan: 0 }));
 }
@@ -156,10 +161,16 @@ const by = (list, id) => list.find(e => e.id === id);
     // agentfarm-dev.md: a user-triggerable function reaches the bridge in the
     // same commit as the feature, never later.
     ok('…and the bridge, in the same commit', /op: 'engines\.status'/.test(ext));
-    ok('the sign-in is a terminal command, not something the extension performs',
-        /engineLogin: \(command: string\) => \{/.test(ext) && /createTerminal/.test(ext));
-    ok('‼️ …and it is TYPED, not run — a browser login is the user\'s to start',
+    ok('the install and the sign-in are terminal commands, not things the extension performs',
+        /engineCommand: \(command: string\) => \{/.test(ext) && /createTerminal/.test(ext));
+    ok('‼️ …and the line is TYPED, not run — the user reads it and presses Enter',
         /term\.sendText\(command, false\)/.test(ext));
+    // ‼️ An engine that is not installed cannot be signed into. The row that
+    // offered a login for a missing command is the case this guards: the two
+    // buttons are mutually exclusive and keyed on `cli.found`.
+    ok('a missing CLI offers Install, and only then a sign-in',
+        /const install = !e\.cli\.found && e\.installCommand/.test(js)
+        && /const login = e\.cli\.found && e\.loginCommand/.test(js));
     ok('the key route hands over to the vault\'s own form',
         /engineKey: \(name: string\) => \{ SecretsPanel\.compose\(secretsDeps, name\); \}/.test(ext));
     ok('‼️ the probe asks the vault for a NAME and never for a value',

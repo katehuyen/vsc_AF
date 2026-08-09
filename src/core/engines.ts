@@ -79,6 +79,15 @@ export interface EngineStatus {
     next: string;
     /** the command that signs this engine in, when signing in is the answer */
     loginCommand?: string;
+    /**
+     * ‼️ …and the command that PUTS IT THERE, because "not on PATH" is a state
+     * with no gesture attached to it. This machine is the case that proves the
+     * gap: `~/.codex/auth.json` holds a live ChatGPT sign-in while `codex` is
+     * not installed at all — an account with nothing to run it. A row that says
+     * "install it" and stops is the same "not configured" this whole module
+     * exists to replace.
+     */
+    installCommand?: string;
     /** how this engine is normally paid for — the sentence the panel prints
      *  under its name, because "it needs an API key" is false for two of three */
     billing: string;
@@ -108,6 +117,7 @@ interface EngineSpec {
     billing: string;
     docs: string;
     loginCommand?: string;
+    installCommand?: string;
     read(probe: EngineProbe): EngineAuth;
 }
 
@@ -142,6 +152,7 @@ const SPECS: EngineSpec[] = [
         billing: 'A Claude Pro or Max plan, signed in once in the browser. An API key is the alternative, not the normal route.',
         docs: 'https://code.claude.com/docs/en/authentication',
         loginCommand: 'claude /login',
+        installCommand: 'npm install -g @anthropic-ai/claude-code',
         read(probe) {
             const creds = json(probe.readHome(CLAUDE_CREDS));
             if (creds && creds.claudeAiOauth) {
@@ -173,6 +184,7 @@ const SPECS: EngineSpec[] = [
         billing: 'A ChatGPT Plus, Pro, Team or Business plan, signed in once in the browser — exactly like Claude Code. An API key is the alternative.',
         docs: 'https://developers.openai.com/codex/auth',
         loginCommand: 'codex login',
+        installCommand: 'npm install -g @openai/codex',
         read(probe) {
             const auth = json(probe.readHome(CODEX_AUTH));
             if (auth) {
@@ -215,6 +227,7 @@ const SPECS: EngineSpec[] = [
         // taken away.
         billing: 'An API key. The "sign in with Google" route this CLI used to have was retired in June 2026, so a plan is no longer a way to pay for it.',
         docs: 'https://github.com/google-gemini/gemini-cli',
+        installCommand: 'npm install -g @google/gemini-cli',
         read(probe) {
             if (probe.existsHome(GEMINI_OAUTH)) {
                 return {
@@ -243,7 +256,16 @@ const SPECS: EngineSpec[] = [
  */
 function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
     if (!cli.found) {
-        return `${spec.label} is not on PATH — install it, or point Agent Farm at it. Nothing here can start until the command exists.`;
+        // ‼️ A SIGNED-IN ACCOUNT WITH NO CLI IS ITS OWN STATE, and the one this
+        // machine is actually in: `~/.codex/auth.json` says the ChatGPT plan is
+        // live while `codex` is nowhere on PATH. Reporting only "not on PATH"
+        // there reads as "start over", when in fact the sign-in is done and the
+        // install is the only thing missing — so the row says so.
+        const grant = auth.mode === 'subscription' ? ' The sign-in is already on disk, so this is the only step left.'
+            : auth.mode === 'apikey' ? ' The key is already there, so this is the only step left.' : '';
+        return `${spec.label} is not installed on this machine — nothing can start until the ${spec.command} command exists.`
+            + (spec.installCommand ? ` Install it with: ${spec.installCommand}.` : '')
+            + grant;
     }
     if (auth.mode === 'subscription') {
         return `Ready, on a plan. Nothing to pay per token and no key to keep.`;
@@ -272,6 +294,7 @@ export function readEngines(probe: EngineProbe): EngineStatus[] {
             ready: cli.found && auth.mode !== 'none',
             next: nextStep(spec, cli, auth),
             loginCommand: spec.loginCommand,
+            installCommand: spec.installCommand,
             billing: spec.billing,
             docs: spec.docs
         };

@@ -73,6 +73,40 @@ does has to know about this, and no page should re-invent it.
 
 ---
 
+## Looking at it
+
+**‼️ A VISUAL CHANGE IS NOT DONE UNTIL SOMEBODY HAS SEEN IT.** Nothing between
+writing a CSS rule and shipping a VSIX draws these pages: the page script runs
+in a webview, the tests read its markup as strings, and every string assertion
+in this repo passes just as happily on ten tabs in one hue and a six-character
+badge in a 92px box. Both of those shipped. Both were obvious in one look.
+
+```
+node test/render_page.js <fixture>            → dist/render/<fixture>.html
+node test/shoot_page.js  <fixture>            → …and a PNG beside it
+node test/render_page.js track --only timeline --light
+```
+
+- `render_page.js` runs the REAL page script through the tests' own DOM shim
+  (`lib_page_dom.js`), wraps its markup in `media/common.css` and a stand-in for
+  the editor's theme variables, and writes one self-contained HTML file.
+- `shoot_page.js` photographs it with a headless Chrome **already on the
+  machine** — no Playwright download. It uses a throwaway profile: the user's
+  own browser windows are never touched, which is not a nicety.
+- **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
+  with one open item and one closed one makes any palette look balanced; a real
+  ledger is mostly `done`, which is how a scheme that shouts on `done` becomes
+  one flat green. Give it the real distribution, and give it Turkish text —
+  that is what these pages actually carry.
+- **Check the light theme too** (`--light`). `color-mix` over a dark fallback
+  and `color:#fff` on a chip are the two that fail there and only there.
+
+It asserts nothing and is not in `npm test` — a page that looks right proves
+the CSS, never the behaviour. It is the looking glass, and looking is the part
+that kept being skipped.
+
+---
+
 ## Copy
 
 One clipboard path and one receipt: `AFTextTools.copyFrom(el, value)`. The async

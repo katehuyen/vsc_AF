@@ -281,13 +281,27 @@
             e.auth.refreshedAt ? `Last refreshed: ${new Date(e.auth.refreshedAt).toLocaleString()}` : '',
             `Key name: ${e.key.env}${e.key.inVault ? ' — in the vault' : ' — not in the vault'}`
         ]);
+        // ‼️ A ROW OFFERS THE STEP IT IS ACTUALLY ON. An engine that is not
+        // installed cannot be signed into, and telling somebody to sign in to a
+        // command that does not exist is the "not configured" this section was
+        // built to stop. So while the CLI is missing, Install is the gesture and
+        // it is the primary one; the plan sign-in appears once there is
+        // something to sign in TO. The key box stays either way — a key is
+        // storable before the CLI arrives and costs nothing to have ready.
+        const install = !e.cli.found && e.installCommand
+            ? `<button class="small" data-engcmd="${C.esc(e.installCommand)}"
+                title="${C.esc(`Write ${e.installCommand} into a terminal — it is NOT run for you, so you can read it first. Node and npm have to be on this machine.`)}">Install ${C.esc(e.cli.command)}</button>`
+            : '';
+        const login = e.cli.found && e.loginCommand
+            ? `<button class="secondary small" data-engcmd="${C.esc(e.loginCommand)}"
+                title="${C.esc(`Write ${e.loginCommand} into a terminal — it is NOT run for you. The sign-in happens in your browser and the CLI keeps the grant itself; Agent Farm never sees it.`)}">Sign in with a plan</button>`
+            : '';
         return `<div class="setitem eng eng-${tone}">
             <div class="sethead">
                 <span class="setname">${C.esc(e.label)}</span>
                 <span class="engbadge b-${tone}" title="${C.esc(facts)}">${C.esc(badge)}</span>
                 <span style="flex:1"></span>
-                ${e.loginCommand ? `<button class="secondary small" data-englogin="${C.esc(e.loginCommand)}"
-                    title="${C.esc(`Open a terminal and run ${e.loginCommand}. The sign-in happens in your browser and the CLI keeps the grant itself — Agent Farm never sees it.`)}">Sign in with a plan</button>` : ''}
+                ${install}${login}
                 <button class="secondary small" data-engkey="${C.esc(e.key.env)}"
                     title="${C.esc(`${e.key.inVault ? 'Replace' : 'Store'} ${e.key.env} in the OS keychain. This is the pay-per-token route; the value never reaches this page.`)}">${e.key.inVault ? 'Replace key' : 'Add key'}</button>
                 <button class="secondary small" data-engdocs="${C.esc(e.docs)}" title="${C.esc(e.docs)}">Docs</button>
@@ -592,9 +606,15 @@
         // Engines — three gestures, and the host owns all three: a terminal it
         // opens, the vault form it already has, and a link. Nothing about a
         // credential is decided on this page.
-        document.querySelectorAll('[data-englogin]').forEach(b =>
+        //
+        // ‼️ ONE GESTURE, NOT TWO. Install and Sign in do exactly the same
+        // thing — write a command into a terminal without running it — so they
+        // are one binding carrying whichever command the row offered. It was
+        // called `engineLogin` while it already wrote something that was not a
+        // login; a handler whose name is a lie is the next reader's bug.
+        document.querySelectorAll('[data-engcmd]').forEach(b =>
             b.addEventListener('click', () =>
-                vscode.postMessage({ type: 'engineLogin', command: b.dataset.englogin })));
+                vscode.postMessage({ type: 'engineCommand', command: b.dataset.engcmd })));
         document.querySelectorAll('[data-engkey]').forEach(b =>
             b.addEventListener('click', () =>
                 vscode.postMessage({ type: 'engineKey', name: b.dataset.engkey })));

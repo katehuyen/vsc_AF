@@ -777,37 +777,61 @@
                 .pj-flash.bad { background:var(--vscode-inputValidation-errorBackground, #a00); color:var(--vscode-foreground); }
                 .pj-summary { margin:4px 0 0; }
                 /* tabs
-                   ‼️ THE HANDLE THE WHOLE PAGE IS OPERATED BY. Every sub-page of
-                   a project is reached from this one row, and it used to be drawn
-                   as quietly as the lines above and below it: same weight, same
-                   grey, one thin underline on the selected one. A row that opens
-                   nine pages cannot read as one more line of metadata, so each
-                   tab carries its OWN colour — the same hue in its underline, in
-                   its glyph and in the selected tab's tint, so the eye learns the
-                   position and the colour together. It is a tint and a 2px rule,
-                   not a block of paint: the page below is what is being read. */
-                .pj-tabs { display:flex; gap:2px; margin:14px 0 12px; flex-wrap:wrap;
-                    border-bottom:1px solid var(--vscode-panel-border); }
-                .pj-tab { background:none; border:none; border-radius:5px 5px 0 0;
-                    border-bottom:2px solid color-mix(in srgb, var(--tabc) 26%, transparent);
-                    padding:6px 12px; font-size:12px; opacity:.68; cursor:pointer; color:inherit;
-                    --tabc:var(--vscode-focusBorder,#3794ff); }
-                .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground);
-                    border-bottom-color:color-mix(in srgb, var(--tabc) 60%, transparent); }
-                .pj-tab.on { opacity:1; font-weight:600; border-bottom-color:var(--tabc);
+                   ‼️ THE HANDLE THE WHOLE PAGE IS OPERATED BY, DRAWN AS ONE.
+                   Every sub-page of a project is reached from this one row, so
+                   it must not read as one more line of metadata between the
+                   summary above it and the table below. It is drawn as what it
+                   is: a row of FILES in a drawer. Each tab has a coloured grip
+                   along its top edge — the strip you see above a folder — its
+                   own faint tint in the body, and its own frame; the selected
+                   one comes forward, takes the page's own background, and its
+                   bottom edge cuts through the strip the row sits on, which is
+                   what makes it read as being IN FRONT rather than merely
+                   marked. Ten hues, one per tab, so the eye learns position and
+                   colour together; the tint is faint on purpose (the page below
+                   is what is being read) but never absent, because a tab with no
+                   colour until you select it teaches nothing. */
+                .pj-tabs { display:flex; gap:3px; margin:18px 0 16px; flex-wrap:wrap;
+                    align-items:flex-end; padding:0 2px;
+                    border-bottom:2px solid var(--vscode-panel-border); }
+                .pj-tab { position:relative; margin-bottom:-2px;
                     background:color-mix(in srgb, var(--tabc) 14%, transparent);
-                    box-shadow:inset 0 -1px 0 color-mix(in srgb, var(--tabc) 40%, transparent); }
-                /* Nine hues, fixed to the tab rather than to its position, so a
-                   tab that is added or moved does not repaint the whole row. */
+                    border:1px solid color-mix(in srgb, var(--tabc) 32%, transparent);
+                    border-bottom:none; border-radius:7px 7px 0 0;
+                    padding:9px 14px 6px; font-size:12px; opacity:.85; cursor:pointer; color:inherit;
+                    --tabc:var(--vscode-focusBorder,#3794ff); }
+                /* the grip: the coloured back of the file, above the label */
+                .pj-tab::before { content:''; position:absolute; left:-1px; right:-1px; top:0;
+                    height:4px; border-radius:7px 7px 0 0;
+                    background:color-mix(in srgb, var(--tabc) 58%, transparent); }
+                .pj-tab:hover { opacity:1;
+                    background:color-mix(in srgb, var(--tabc) 24%, transparent);
+                    border-color:color-mix(in srgb, var(--tabc) 55%, transparent); }
+                .pj-tab:hover::before { background:var(--tabc); }
+                .pj-tab.on { opacity:1; font-weight:600; padding:10px 15px 8px;
+                    color:var(--vscode-foreground);
+                    background:var(--vscode-editor-background);
+                    border-color:color-mix(in srgb, var(--tabc) 75%, transparent); }
+                .pj-tab.on::before { background:var(--tabc); height:5px; }
+                /* Ten hues, fixed to the tab rather than to its position, so a
+                   tab that is added or moved does not repaint the whole row. Six
+                   are the editor's own chart colours; the four between them are
+                   mixed from those, so the row still follows the user's theme
+                   and still has ten tabs nobody has to count along to find.
+                   Settings is deliberately neutral — it is not one of the
+                   readings, it is the way out of them. */
                 .pj-tab.tb-overview { --tabc:var(--vscode-charts-blue,#3794ff); }
+                .pj-tab.tb-timeline { --tabc:var(--vscode-charts-orange,#d18616); }
+                .pj-tab.tb-sessions { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-green,#3fb950) 45%, var(--vscode-charts-blue,#3794ff)); }
                 .pj-tab.tb-plan { --tabc:var(--vscode-charts-green,#3fb950); }
                 .pj-tab.tb-backlog { --tabc:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-tab.tb-track { --tabc:var(--vscode-charts-purple,#b180d7); }
-                .pj-tab.tb-timeline { --tabc:var(--vscode-charts-orange,#d18616); }
-                .pj-tab.tb-docs { --tabc:var(--vscode-charts-foreground,#8ab4f8); }
+                .pj-tab.tb-docs { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-orange,#d18616) 45%, var(--vscode-charts-foreground,#cccccc)); }
                 .pj-tab.tb-people { --tabc:var(--vscode-charts-red,#f14c4c); }
-                .pj-tab.tb-cost { --tabc:var(--vscode-charts-yellow,#d7ba7d); }
-                .pj-tab.tb-sessions { --tabc:var(--vscode-charts-blue,#3794ff); }
+                .pj-tab.tb-cost { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-yellow,#d7ba7d) 55%, var(--vscode-charts-green,#3fb950)); }
                 .pj-tab.tb-settings { --tabc:var(--vscode-descriptionForeground,#9d9d9d); }
                 /* track — four views over one ledger; see trackHtml()
                    ‼️ THE TRACK'S OWN COLOUR SYSTEM. It rhymes with the backlog
@@ -846,8 +870,11 @@
                 .pj-trk-item.st-open { --stc:var(--vscode-charts-blue,#3794ff); }
                 .pj-trk-item.st-doing { --stc:var(--vscode-charts-yellow,#d7ba7d);
                     background:color-mix(in srgb, var(--stc) 8%, transparent); }
-                .pj-trk-item.st-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent); }
-                .pj-trk-item.st-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 45%, transparent); }
+                /* Settled work keeps its hue and loses its voice: the rule is
+                   still green, faintly, so a closed card is recognisable — but
+                   it is the open and the moving ones that carry the page. */
+                .pj-trk-item.st-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 38%, transparent); }
+                .pj-trk-item.st-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 35%, transparent); }
                 .pj-trk-item.st-gone { --stc:var(--vscode-editorWarning-foreground,#d29922); }
                 /* Reconstructed rather than watched — the one thing a reader has
                    to be able to see before trusting a row (see TRK_SOURCES). */
@@ -883,22 +910,43 @@
                 .pj-trk-turn { font-size:11px; padding:1px 7px; border-radius:9px; cursor:pointer;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 .pj-trk-turn:hover { background:var(--vscode-list-hoverBackground); }
-                /* The event chip is FILLED, not outlined: it is the one mark on a
-                   row that says what actually happened, and four outlines in four
-                   tints is exactly the "everything is pale" the tab was. A plain
-                   touch stays outlined on purpose — it is most of the ledger,
-                   and a list where every row shouts says nothing. */
+                /* ‼️ WHAT IS FILLED IS WHAT IS STILL MOVING — AND "done" IS NOT.
+                   Filling every closed record turned the page into one flat
+                   green, because a real project's ledger is mostly closed work:
+                   painting the majority is painting the background, and then
+                   the two rows that actually need an eye are the same weight as
+                   the eighty that do not. So the scale is by ATTENTION, not by
+                   sentiment: a FILL means it is still moving or it went wrong
+                   (doing, reopen), an OUTLINE in its own hue means it is
+                   settled and recognisable at a glance (done, cancelled), and
+                   the quiet majority (touch) carries no hue at all. */
                 .pj-trk-ev { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     border:1px solid var(--vscode-widget-border,#4443); white-space:nowrap; }
-                .pj-trk-ev.e-done { background:var(--vscode-charts-green,#3fb950); color:#fff;
-                    border-color:transparent; opacity:1; }
-                .pj-trk-ev.e-cancelled { background:var(--vscode-charts-red,#f14c4c); color:#fff;
-                    border-color:transparent; opacity:.8; }
+                .pj-trk-ev.e-done { opacity:1; color:var(--vscode-charts-green,#3fb950);
+                    border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent);
+                    background:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 10%, transparent); }
+                .pj-trk-ev.e-cancelled { opacity:.9; color:var(--vscode-charts-red,#f14c4c);
+                    border-color:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 50%, transparent);
+                    background:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 9%, transparent); }
                 .pj-trk-ev.e-doing { background:var(--vscode-charts-blue,#3794ff); color:#fff;
                     border-color:transparent; opacity:1; }
                 .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
                     border-color:transparent; opacity:1; }
-                .pj-trk-ev.e-touch { opacity:.7; }
+                .pj-trk-ev.e-touch { opacity:.6; }
+                /* The work TYPE, in the backlog's own hues — the one place the
+                   two pages deliberately share a palette, because a #bug is
+                   the same red wherever it is drawn and a reader who has learnt
+                   it once should not have to learn it twice. Everything else
+                   here is the track's own axis (see above). */
+                .pj-trk-kind { font-size:10px; padding:0 5px; border-radius:8px; white-space:nowrap;
+                    opacity:.9; color:#fff; }
+                .pj-trk-kind.t-bug { background:var(--vscode-charts-red,#f14c4c); }
+                .pj-trk-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); }
+                .pj-trk-kind.t-ux { background:var(--vscode-charts-green,#3fb950); }
+                .pj-trk-kind.t-research { background:var(--vscode-charts-purple,#b180d7); }
+                .pj-trk-kind.t-chore, .pj-trk-kind.t-debt, .pj-trk-kind.t-doc, .pj-trk-kind.t-idea {
+                    background:none; color:inherit; opacity:.7;
+                    border:1px solid var(--vscode-widget-border,#4443); }
                 .pj-trk-doubt { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     background:var(--vscode-inputValidation-warningBackground,#663); }
                 .pj-trk-note { margin-top:5px; padding-left:8px; font-size:12px; opacity:.9;
@@ -916,23 +964,39 @@
                 .pj-trk-tl { display:flex; gap:8px; align-items:center; padding:2px 4px; border-radius:4px;
                     --stc:var(--vscode-widget-border,#4443);
                     border-left:3px solid var(--stc); }
-                .pj-trk-tl.e-done { --stc:var(--vscode-charts-green,#3fb950); }
-                .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 70%, transparent); }
+                .pj-trk-tl.e-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent); }
+                .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 55%, transparent); }
                 .pj-trk-tl.e-doing { --stc:var(--vscode-charts-blue,#3794ff); }
                 .pj-trk-tl.e-reopen { --stc:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-trk-tl:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-trk-tltime { font-size:11px; opacity:.6; flex:0 0 62px; white-space:nowrap;
+                /* ‼️ A COLUMN IS AS WIDE AS ITS OWN WIDEST VALUE, AND NOT A PIXEL
+                   MORE. Every width here used to be a round number typed by
+                   hand — 92px for a chip that says "done", 120px for an id, 64px
+                   for a four-character code — which is a column sized by
+                   guessing rather than by looking at what goes in it, and it
+                   wastes exactly the room the note column needed. The numbers
+                   are now MEASURED at render time from the rows actually being
+                   drawn (trkTlWidths) and arrive as --tl-* character counts
+                   on the list, so the columns still line up (that is the whole
+                   reason they are fixed at all) without paying for text nobody
+                   has. The +Npx is the padding and border the box adds around
+                   its characters; ch resolves against each column's own
+                   font-size, which is why it is applied on the column itself. */
+                .pj-trk-tltime { font-size:11px; opacity:.6; white-space:nowrap;
+                    flex:0 0 calc(var(--tl-time, 5) * 1ch + 2px);
                     font-variant-numeric:tabular-nums; }
-                .pj-trk-tl .pj-trk-ev { flex:0 0 92px; text-align:center; }
-                .pj-trk-tl .pj-trk-code { flex:0 0 64px; text-align:left; white-space:nowrap; }
+                .pj-trk-tl .pj-trk-ev { flex:0 0 calc(var(--tl-ev, 9) * 1ch + 16px); text-align:center; }
+                .pj-trk-tl .pj-trk-code { text-align:left; white-space:nowrap; }
                 /* …and when a column is wrapped for its hover panel, the WRAPPER
                    is the flex child, so it is the wrapper that carries the width
                    (see the cls argument of AFTip.wrap). */
-                .pj-trk-tl > .af-tipw.tl-code { flex:0 0 64px; }
+                .pj-trk-tl > .af-tipw.tl-code { flex:0 0 calc(var(--tl-code, 5) * 1ch + 2px); font-size:12px; }
                 .pj-trk-tl > .af-tipw.tl-note { flex:1 1 auto; min-width:0; }
-                .pj-trk-tl .pj-trk-turn { flex:0 0 120px; white-space:nowrap;
-                    overflow:hidden; text-overflow:ellipsis; text-align:left; }
-                .pj-trk-tlwho { font-size:11px; opacity:.6; flex:0 0 90px; white-space:nowrap;
+                .pj-trk-tl .pj-trk-turn { white-space:nowrap; text-align:left;
+                    flex:0 0 calc(var(--tl-sid, 12) * 1ch + 18px);
+                    overflow:hidden; text-overflow:ellipsis; }
+                .pj-trk-tlwho { font-size:11px; opacity:.6; white-space:nowrap;
+                    flex:0 0 calc(var(--tl-who, 9) * 1ch + 2px);
                     overflow:hidden; text-overflow:ellipsis; }
                 .pj-trk-tlnote { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-size:12px; opacity:.75; }
@@ -958,7 +1022,26 @@
                 .pj-trk-scodee { opacity:.6; font-size:10px; }
                 .pj-trk-m.closed { color:var(--vscode-charts-green,#3fb950); opacity:1;
                     border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 60%, transparent); }
-                .pj-trk-gaps .pj-card { margin-bottom:10px; }
+                /* ‼️ ON THE GAPS VIEW THE COLOUR ANSWERS THE CARD'S OWN QUESTION.
+                   Five cards, each a KIND of hole, and every one of them was
+                   the same grey whether it held forty problems or none — so the
+                   whole view read as a checklist of things to worry about even
+                   when the honest answer was "nothing here". The rule now is
+                   green when this particular hole is closed, its own hue when
+                   it is not: amber for coverage nobody recorded, yellow for an
+                   attribution that is a best effort, purple for a row worked
+                   out afterwards (the same purple the item cards use for it),
+                   and blue for the records that have no session ON PURPOSE —
+                   which is not a fault and must not be drawn as one. */
+                .pj-trk-gaps .pj-card { margin-bottom:10px;
+                    --gpc:var(--vscode-widget-border,#4443); border-left:3px solid var(--gpc); }
+                .pj-trk-gaps .pj-card.gp-ok { --gpc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 50%, transparent); }
+                .pj-trk-gaps .pj-card.gp-warn { --gpc:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-gaps .pj-card.gp-doubt { --gpc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-trk-gaps .pj-card.gp-fill { --gpc:var(--vscode-charts-purple,#b180d7); }
+                .pj-trk-gaps .pj-card.gp-none { --gpc:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 45%, transparent); }
+                .pj-trk-gaps .gp-n { color:var(--gpc); font-weight:600; }
+                .pj-trk-gaps .pj-card-h { border-bottom:1px solid color-mix(in srgb, var(--gpc) 30%, transparent); }
                 /* the reconstruct preview */
                 .pj-trk-fillrows { max-height:260px; overflow:auto; margin:6px 0; }
                 .pj-trk-fillrow { display:flex; gap:8px; align-items:center; padding:1px 0; font-size:11px; }
@@ -4159,6 +4242,7 @@
                     title="${C.esc(`${row.code} — permanent, quote it at an agent. Click to open the backlog AT THIS ITEM'S LINE in ${blOpenModeName()}. ${window.AFCtx.HINT}`)}">${C.esc(row.code)}</code>
                 <span class="pj-trk-state s-${C.esc(state)}"
                     title="${C.esc(`Its state in the backlog right now — the checkbox decides that, the ledger only says how it got there.${row.section ? '\nSection: ' + row.section : ''}`)}">${C.esc(state)}</span>
+                ${trkKindsHtml(row)}
                 <span class="pj-trk-sum" title="${C.esc(window.AFTip.lines([
             `Sessions: ${sessions}`,
             `Turns: ${turns}`,
@@ -4240,6 +4324,45 @@
         </div>`;
     }
 
+    /**
+     * The work TYPE, in the backlog's own colours — deliberately the one thing
+     * the two pages share (see the `.pj-trk-kind` note in the CSS). A code with
+     * no tag draws nothing rather than an empty box: most lines have one, and a
+     * placeholder on the rest is a column of nothing.
+     */
+    function trkKindsHtml(row) {
+        return (row.kinds || []).map(k =>
+            `<span class="pj-trk-kind t-${C.esc(k)}"
+                title="${C.esc(`Work type: ${k} — the same tag, and the same colour, the Backlog tab gives it.`)}">${C.esc(k)}</span>`
+        ).join('');
+    }
+
+    /**
+     * ‼️ THE TIMELINE'S COLUMN WIDTHS, MEASURED FROM THE ROWS BEING DRAWN.
+     *
+     * Fixed columns are right — the list is a table and a table lines up — but
+     * a fixed column typed by hand is a guess, and every one of these was too
+     * wide by half. So the widest actual value in each column is counted here,
+     * in characters, and the CSS turns that into a width (see `--tl-*`). A
+     * floor keeps a one-row page from drawing a two-character column; there is
+     * no ceiling, because the note is the only unbounded column and it is the
+     * one that takes what is left.
+     */
+    function trkTlWidths(shown) {
+        const w = { time: 5, ev: 6, code: 4, sid: 9, who: 5 };
+        const wide = (k, s) => { if (s && s.length > w[k]) { w[k] = s.length; } };
+        for (const x of shown) {
+            const e = x.ev;
+            wide('time', window.AFTime.clock(e.ts));
+            wide('ev', `${TRK_EVENT_ICON[e.event] || '·'} ${e.event}`);
+            wide('code', x.row.code);
+            wide('sid', e.session ? `${e.short || ''}${e.turn ? ' #' + e.turn : ''}` : '');
+            wide('who', e.agent || e.by);
+        }
+        return `--tl-time:${w.time}; --tl-ev:${w.ev}; --tl-code:${w.code};`
+            + ` --tl-sid:${w.sid}; --tl-who:${w.who};`;
+    }
+
     /** One event, as a chip. The note rides in the hover rather than on the row:
      *  a run with five events would otherwise be five sentences wide. */
     function trkEvHtml(e) {
@@ -4302,7 +4425,7 @@
                 'tl-note tip-right')}
             </div>`;
         }).join('');
-        return `<div class="pj-trk">${rows}
+        return `<div class="pj-trk" style="${trkTlWidths(shown)}">${rows}
             ${list.length > shown.length ? `<div class="pj-trk-more">
                 <button data-act="trkCapMore">Show ${Math.min(300, list.length - shown.length)} more</button>
                 <span class="muted small">${shown.length} of ${list.length} records drawn</span>
@@ -4454,17 +4577,21 @@
         }
         const covered = (d.rows || []).length;
         const coded = covered + (d.untracked || []).length;
+        const pct = coded ? Math.round(covered / coded * 100) : 0;
+        // The card's own answer decides its colour (see the gaps note in the
+        // CSS): a section with nothing in it is a good state, not a grey one.
+        const cov = pct >= 90 ? 'gp-ok' : pct >= 70 ? 'gp-doubt' : 'gp-warn';
         return `<div class="pj-trk pj-trk-gaps">
-            <div class="pj-card">
+            <div class="pj-card ${cov}">
                 <div class="pj-card-h">Coverage</div>
                 <p class="small">${covered} of ${coded} coded item(s) have a recorded history —
-                    <b>${coded ? Math.round(covered / coded * 100) : 0}%</b>. The rest were closed before any
+                    <b class="gp-n">${pct}%</b>. The rest were closed before any
                     of this existed, or were worked without anybody saying so. Neither is a bug; what would be
                     a bug is not being able to see it.</p>
             </div>
 
-            <div class="pj-card">
-                <div class="pj-card-h">No history at all — ${untracked.length}</div>
+            <div class="pj-card ${untracked.length ? 'gp-warn' : 'gp-ok'}">
+                <div class="pj-card-h">No history at all — <span class="gp-n">${untracked.length}</span></div>
                 ${untracked.length
                 ? `<div class="pj-trk-codes">${untracked.map(u => window.AFTip.wrap(
                     `<button class="pj-trk-scode c-gap" data-trkgo="${C.esc(u.code)}">${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
@@ -4480,8 +4607,8 @@
                 : '<p class="muted small">Every coded item in the backlog has a history. That is the state this tab exists to reach.</p>'}
             </div>
 
-            <div class="pj-card">
-                <div class="pj-card-h">Best-effort attributions — ${gaps.uncertain || 0}</div>
+            <div class="pj-card ${gaps.uncertain ? 'gp-doubt' : 'gp-ok'}">
+                <div class="pj-card-h">Best-effort attributions — <span class="gp-n">${gaps.uncertain || 0}</span></div>
                 ${gaps.uncertain
                 ? `<p class="small">These records name a session or a turn they are not certain of, and they say
                     why rather than guessing silently — a wrong session id looks exactly like a right one.</p>
@@ -4492,8 +4619,8 @@
                 : '<p class="muted small">Every record here names its session and its turn with certainty.</p>'}
             </div>
 
-            <div class="pj-card">
-                <div class="pj-card-h">Reconstructed rather than watched — ${gaps.backfilled || 0}</div>
+            <div class="pj-card ${gaps.backfilled ? 'gp-fill' : 'gp-ok'}">
+                <div class="pj-card-h">Reconstructed rather than watched — <span class="gp-n">${gaps.backfilled || 0}</span></div>
                 <p class="small">${gaps.backfilled
                 ? `${gaps.backfilled} row(s) were worked out afterwards from a transcript that quotes the code.
                     They are stamped <code>backfill</code> + <code>guess</code> for ever, and
@@ -4502,8 +4629,8 @@
                 : 'Nothing here was reconstructed — every row was recorded as it happened.'}</p>
             </div>
 
-            <div class="pj-card">
-                <div class="pj-card-h">No session to point at — ${gaps.noSession || 0}</div>
+            <div class="pj-card ${looses.length ? 'gp-none' : 'gp-ok'}">
+                <div class="pj-card-h">No session to point at — <span class="gp-n">${gaps.noSession || 0}</span></div>
                 ${looses.length
                 ? `<p class="small">A click in this panel, or a box ticked in Obsidian. Real, and deliberately
                         not given a session: nothing was running, so there is no transcript these lead to.</p>
