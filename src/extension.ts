@@ -114,6 +114,7 @@ import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus
 } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
+import { effortsFor, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
@@ -7184,6 +7185,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         hasEnv: (name: string): boolean => !!process.env[name]
     };
     const engineMatrix = (): EngineStatus[] => readEngines(engineProbe);
+    /**
+     * S-20 — WHICH MODELS EACH ENGINE OFFERS TODAY, through the same probe.
+     *
+     * Read on every call, never cached: Codex rewrites its catalog whenever the
+     * CLI talks to the service, and a list captured at activation is exactly the
+     * stale list this replaces. It is cheap — one small JSON per engine — and
+     * the alias setting is passed as the fallback for engines that publish
+     * nothing (see core/models.ts).
+     */
+    const engineModelMatrix = () =>
+        readEngineModels(engineProbe, cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']));
 
     /**
      * ‼️ ONE REAL TURN AGAINST AN ENGINE — the only thing that proves a call
@@ -7536,6 +7548,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // list is the user's own alias knowledge base, the CLI list their
         // profiles, the defaults their launchDefaults.
         modelAliases: () => cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
+        // S-20 — and what each ENGINE offers, so the form's Model box follows
+        // its Engine box instead of always listing Claude's aliases.
+        engineModels: () => engineModelMatrix(),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -8210,15 +8225,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (next) { agent = next; }
                 continue;
             }
+            // ‼️ S-20 — the model and effort rows belong to the ENGINE that is
+            // selected right now, not to a constant. Picking Codex and then
+            // being offered `sonnet` could only ever produce a `--model` the
+            // engine rejects; the sub-picker therefore reads the engine's own
+            // catalog, and the effort list narrows to what THAT model supports.
+            const em = () => engineModelMatrix()[(o.engine || merged.engine || 'claude') as EngineId];
             if (pick.act === 'model') {
-                const v = await pickChoice('Model for this session',
-                    modelChoices(cfg().get<string[]>('modelAliases', [])), merged.model ?? '', true);
+                const cur = em();
+                const v = await pickChoice(`Model for this session — ${cur.note}`,
+                    cur.models, merged.model ?? '', true);
                 if (v !== undefined) { o.model = v; }
                 continue;
             }
             if (pick.act === 'effort') {
                 const v = await pickChoice('Reasoning effort for this session',
-                    EFFORT_CHOICES, merged.effort ?? '', false);
+                    effortsFor(em(), o.model ?? merged.model ?? ''), merged.effort ?? '', false);
                 if (v !== undefined) { o.effort = v; }
                 continue;
             }
@@ -8640,6 +8662,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // walk itself is `engineMatrix`, shared with the Engines page and the
         // bridge, so all three refuse the same engine for the same reason.
         engines: () => engineOptions(engineMatrix()),
+        // S-20 — …and what each of them currently offers as a model, so the
+        // composer's Model and Effort boxes follow the Engine box.
+        engineModels: () => engineModelMatrix(),
         launchDefaults: () => launchDefaults(),
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
@@ -15199,6 +15224,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const list = id ? all.filter(e => e.id === id) : all;
                 need(!id || list.length > 0, `no engine called "${id}" — try claude, codex or gemini`);
                 return { ...enginesSummary(all), engines: list };
+            }
+        },
+        {
+            op: 'engines.models',
+            describe: 'WHICH MODELS AN ENGINE OFFERS RIGHT NOW, and which reasoning efforts each of '
+                + 'those models supports — read from the engine\'s own catalog, not from a list typed '
+                + 'into this extension. Use it before you pass `model` to console.start / sessions.start '
+                + '/ tasks.add / missions.start: a model name from the wrong engine is a --model its CLI '
+                + 'can only reject, and on an unattended task that failure lands in an archive file '
+                + 'nobody reads for hours. Per engine: models [{id,label,detail}] with "Default" first, '
+                + 'efforts keyed by model id ("" = the list to use for a model with no stated '
+                + 'vocabulary), defaultEffort, `source` ("catalog" = the engine\'s own answer, '
+                + '"settings" = it published nothing and this is agentFarm.modelAliases) and `note` '
+                + 'saying which of those it was and how old it is. args: id? (claude | codex | gemini)',
+            handler: (args) => {
+                const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
+                const all = engineModelMatrix();
+                need(!id || !!(all as Record<string, unknown>)[id],
+                    `no engine called "${id}" — try claude, codex or gemini`);
+                return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
             }
         },
         {

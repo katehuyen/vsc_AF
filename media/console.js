@@ -2029,9 +2029,38 @@
         return `<span class="ebadge" title="${C.esc(tip)}">${C.esc(s.engineLabel)}</span>`;
     }
 
+    /**
+     * ‼️ S-20 — THE MODEL BOX BELONGS TO THE ENGINE, NOT TO THE PAGE.
+     *
+     * One list served every engine, so choosing Codex still offered Claude's
+     * aliases — four values its CLI can only reject — while its own /model was
+     * offering six others. `DATA.engineModels` carries what each engine is
+     * currently offering (read from the engine's own catalog, not from a
+     * constant); the flat `DATA.models` stays as the fallback for a build or an
+     * engine that publishes nothing.
+     */
+    function modelsFor(engineId) {
+        const em = (DATA.engineModels || {})[engineId || 'claude'];
+        return (em && em.models) || DATA.models || [];
+    }
+    /** …and the effort vocabulary of THAT model: Codex states its levels per
+     *  model (five for luna, four for 5.5), so one shared list was wrong for
+     *  both. Falls back to the engine's shared list, then the page's. */
+    function effortsForModel(engineId, model) {
+        const em = (DATA.engineModels || {})[engineId || 'claude'];
+        if (!em || !em.efforts) { return DATA.efforts || []; }
+        return em.efforts[String(model || '')] || em.efforts[''] || DATA.efforts || [];
+    }
+    /** The one line a picker's tooltip carries: where this list came from and
+     *  how old it is — a list nobody can date is a list nobody can distrust. */
+    function modelNote(engineId) {
+        const em = (DATA.engineModels || {})[engineId || 'claude'];
+        return (em && em.note) || '';
+    }
+
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id)}</option>`).join('');
+            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(o.detail || '')}">${C.esc(o.label || o.id)}</option>`).join('');
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
             ? (dead ? 'This session has ended — start a new one to keep talking.'
@@ -2074,11 +2103,11 @@
                     ${C.esc(s.agentName)}
                 </span>
                 ${engineBadge(s)}
-                <label class="permlbl" title="${C.esc(modelTip)}">model
-                    <select id="c-model-live">${opts(DATA.models, s.model)}</select>
+                <label class="permlbl" title="${C.esc(modelTip + ' · ' + modelNote(s.engine))}">model
+                    <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>
                 <label class="permlbl" title="${C.esc(effortTip)}">effort
-                    <select id="c-effort-live">${opts(DATA.efforts, s.effort)}</select>
+                    <select id="c-effort-live">${opts(effortsForModel(s.engine, s.model), s.effort)}</select>
                 </label>
                 <label class="permlbl" title="${C.esc(permTip)}">permissions
                     <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
@@ -2107,8 +2136,8 @@
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
                 </select>`}
                 <select id="c-engine" title="Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.">${engineOptionsHtml(engineNow())}</select>
-                <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
-                <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
+                <select id="c-model" title="Model for the new session (--model). ${C.esc(modelNote(engineNow()))}">${opts(modelsFor(engineNow()), st.model)}</select>
+                <select id="c-effort" title="Reasoning effort (--effort)">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>
                 <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
                 <select id="c-proj" title="Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar's active project is the window's answer, not this session's, and neither writes the other.">
                     <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
@@ -2290,7 +2319,18 @@
         // than into `st` because the refusal lives there (a webview's disabled
         // attribute is a courtesy, not a guard) and because the choice has to
         // survive a repaint that rebuilds this whole row.
-        byId('c-engine', 'change', e => vscode.postMessage({ type: 'setEngine', id: e.target.value }));
+        byId('c-engine', 'change', e => {
+            // ‼️ A MODEL BELONGS TO ONE ENGINE. Carrying `sonnet` over to Codex
+            // would leave a value in the box that its CLI can only reject, so a
+            // chosen model — and the effort that was chosen for it — is dropped
+            // the moment the new engine stops offering it. Keeping it quietly is
+            // how the box came to disagree with the engine in the first place.
+            const next = e.target.value;
+            if (!modelsFor(next).some(m => m.id === (st.model || ''))) {
+                st.model = ''; st.effort = ''; save();
+            }
+            vscode.postMessage({ type: 'setEngine', id: next });
+        });
         // giving the pin back: the picker returns, and st keeps whatever agent
         // was pinned as its starting selection
         byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));

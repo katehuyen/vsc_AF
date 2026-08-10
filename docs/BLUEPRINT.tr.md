@@ -1581,6 +1581,45 @@ denetlenir, hangisi önce biterse koşu orada durur, ve **planlayıcıya brief'i
 token bütçesi de söylenir** — yalnızca "$5.00 left" gören bir lead hiç harcama
 yapılmamış gibi plan yapardı.
 
+### Model kutusu motorun kendisine sorar (3.103.0) {#engine-models}
+
+Motor ekseni indi ama **yanındaki kutu inmedi**: hangi motor seçilirse seçilsin
+model listesi `agentFarm.modelAliases` idi — elle yazılmış dört Claude takma adı.
+Codex seçildiğinde kutuda hâlâ `sonnet` yazıyordu; o motorun CLI'ı bunu yalnızca
+reddedebilirdi, üstelik kendi `/model`'i o sırada altı başka model sunuyordu.
+
+Aynı kökten ikinci bir çürüme daha vardı ve o yalnız Codex'i ilgilendirmiyordu:
+**sabit bir liste bir son kullanma tarihidir.** Yarın çıkan bir model akşam
+CLI'ın içindedir, aylar sonra hâlâ bu listede yoktur — çünkü bir sabit ancak
+biri varlığını hatırlarsa değişir.
+
+Bu yüzden liste artık **yazılmıyor, okunuyor** (`core/models.ts`):
+
+- **Codex** — `~/.codex/models_cache.json`, CLI'ın servise karşı tazelediği
+  kendi kataloğu. `visibility: "list"` süzülür, `priority` sırasına dizilir:
+  terminaldeki `/model` ile **aynı satırlar, aynı sırada**. Katalog her modelin
+  **kendi** akıl yürütme dağarcığını da taşır, bu yüzden efor kutusunun cevabı da
+  buradan gelir — luna'nın beş seviyesi vardır, 5.5'in dördü; tek ortak liste
+  ikisi için de yanlıştı.
+- **Claude Code** — diskte tam katalog yok: takma adlar CLI'ın içindedir ve
+  `~/.claude/.claude.json` yalnızca `additionalModelOptionsCache`'i tutar, yani
+  **bu hesaba** ayrıca verilenleri. Dolayısıyla Claude = senin takma ad listen
+  **artı** CLI'ın hesap için kaydettikleri; yeni tanımlanan bir model hiçbir
+  ayar düzenlenmeden kutuda belirir.
+- **Gemini** — ölçülmüş bir katalog yok, o yüzden iddia da yok: ayar listesi
+  durur ve kutunun `source`'u bunu söyler.
+
+Kutu **nereden geldiğini ve ne kadar eski olduğunu** yazar (`note`), çünkü
+tarihlenemeyen bir listeden şüphelenilemez. Katalog okunamazsa (Codex kurulu ama
+hiç koşmamış) takma ad listesine düşülür — ama **sessizce değil**: not, gösterilen
+şeyin motorun kendi cevabı olmadığını söyler.
+
+**Motor değişince model düşer.** `sonnet` Codex'e taşınsaydı kutuda o CLI'ın
+reddedeceği bir değer kalırdı; seçilen model yeni motorun listesinde yoksa efor
+ile birlikte bırakılır. Ajanlar da körlemesine ad geçirmesin diye köprüde
+`engines.models` var: motor başına modeller, model başına eforlar, ve cevabın
+motorun kendisinden mi ayardan mı geldiği.
+
 ## Medya Üretim Hattı
 
 1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.

@@ -740,6 +740,14 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                 const id = argStr(args, 'id');
                 let answerPath = optStr(args, 'answerPath') || undefined;
                 const answerBody = optStr(args, 'answer');
+                // The second leg never fails quietly — an answer that was asked for
+                // and not written is said out loud, exactly as notices.post does it.
+                let answerError: string | undefined;
+                if (!answerPath && args.answer !== undefined && !answerBody) {
+                    answerError = 'answer was not a usable string, so no answer file was written — '
+                        + 'if you built the JSON in PowerShell, cast the text with [string] '
+                        + '(Get-Content -Raw hands back a decorated object).';
+                }
                 if (!answerPath && answerBody && deps.writeAnswer) {
                     const it = store.get(id);
                     try {
@@ -749,7 +757,9 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                             body: answerBody,
                             agentName: optStr(args, 'agent') || undefined
                         });
-                    } catch { /* answer write best-effort; the stamp still applies */ }
+                    } catch (e) {
+                        answerError = 'answer file could not be written: ' + String((e as Error)?.message ?? e).slice(0, 200);
+                    }
                 }
                 need(store.stamp(id, {
                     stamp: args.stamp !== undefined ? optStr(args, 'stamp') : undefined,
@@ -758,7 +768,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                     reportPath: args.reportPath !== undefined ? optStr(args, 'reportPath') : undefined,
                     status: optStr(args, 'status') as QueueStatus || undefined
                 }), 'Work item not found — queue.list shows current ids.');
-                changed(); return { ok: true, answerPath };
+                changed(); return { ok: true, answerPath, answerError };
             }
         },
         {

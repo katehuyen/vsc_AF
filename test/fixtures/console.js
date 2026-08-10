@@ -115,15 +115,56 @@ const data = () => ({
         { id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer' },
         { id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager' }
     ],
+    // The flat pair is the pre-engine FALLBACK, so it stays Claude's own.
     models: [
         { id: '', label: 'Default' }, { id: 'haiku', label: 'haiku' },
-        { id: 'sonnet', label: 'sonnet' }, { id: 'opus', label: 'opus' },
-        { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra' }
+        { id: 'sonnet', label: 'sonnet' }, { id: 'opus', label: 'opus' }
     ],
     efforts: [
         { id: '', label: 'Default' }, { id: 'low', label: 'low' },
         { id: 'medium', label: 'medium' }, { id: 'high', label: 'high' }
     ],
+    // S-20 — what each engine is offering TODAY. Drawn so the picture answers
+    // the question the item asked: with Codex in play, is the model box showing
+    // Codex's models or Claude's aliases?
+    engineModels: {
+        claude: {
+            models: [
+                { id: '', label: 'Default' }, { id: 'haiku', label: 'haiku' },
+                { id: 'sonnet', label: 'sonnet' }, { id: 'opus', label: 'opus' },
+                { id: 'claude-fable-5[1m]', label: 'Fable', detail: 'Most capable for your hardest tasks' }
+            ],
+            efforts: { '': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'high', label: 'high' }] },
+            defaultEffort: {}, source: 'catalog',
+            note: 'Your aliases plus 1 model Claude Code has recorded for this account.'
+        },
+        codex: {
+            models: [
+                { id: '', label: 'Default' },
+                { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', detail: 'Latest frontier agentic coding model. · gpt-5.6-sol' },
+                { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', detail: 'Balanced agentic coding model for everyday work. · gpt-5.6-terra' },
+                { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', detail: 'Fast and affordable agentic coding model. · gpt-5.6-luna' },
+                { id: 'gpt-5.5', label: 'GPT-5.5', detail: 'Frontier model for complex coding. · gpt-5.5' },
+                { id: 'gpt-5.4', label: 'GPT-5.4', detail: 'Strong model for everyday coding. · gpt-5.4' },
+                { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini', detail: 'Small, fast and cost-efficient. · gpt-5.4-mini' }
+            ],
+            efforts: {
+                '': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'high', label: 'high' }],
+                'gpt-5.6-terra': [
+                    { id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'medium', label: 'medium' },
+                    { id: 'high', label: 'high' }, { id: 'xhigh', label: 'xhigh' },
+                    { id: 'max', label: 'max' }, { id: 'ultra', label: 'ultra' }
+                ]
+            },
+            defaultEffort: { 'gpt-5.6-terra': 'medium' }, source: 'catalog',
+            note: '6 models, read from Codex\'s own catalog — the same rows its /model offers. Refreshed today.'
+        },
+        gemini: {
+            models: [{ id: '', label: 'Default' }, { id: 'sonnet', label: 'sonnet' }],
+            efforts: {}, defaultEffort: {}, source: 'settings',
+            note: 'This engine states no model catalog.'
+        }
+    },
     permissions: [
         { id: '', label: 'Default' }, { id: 'plan', label: 'plan' },
         { id: 'acceptEdits', label: 'acceptEdits' },

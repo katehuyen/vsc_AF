@@ -588,10 +588,24 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 const agentName = optStr(args, 'agent') || undefined;
                 let reportPath = optStr(args, 'reportPath') || undefined;
                 const reportBody = optStr(args, 'report');
+                // ‼️ The second leg NEVER fails quietly. A caller that asked for a
+                // report and did not get one used to read `ok: true` and believe the
+                // job was delivered — measured 2026-08-10, a 14 KB guide the user
+                // never received. The notice still posts (it is the caller's message
+                // and losing it too would help nobody), but the answer says what
+                // happened to the report.
+                let reportError: string | undefined;
+                if (!reportPath && args.report !== undefined && !reportBody) {
+                    reportError = 'report was not a usable string, so no report file was written — '
+                        + 'if you built the JSON in PowerShell, cast the text with [string] '
+                        + '(Get-Content -Raw hands back a decorated object).';
+                }
                 if (!reportPath && reportBody && deps.writeReport) {
                     try {
                         reportPath = deps.writeReport({ title, name: optStr(args, 'reportName') || undefined, body: reportBody, agentName });
-                    } catch { /* report write best-effort; the notice still posts */ }
+                    } catch (e) {
+                        reportError = 'report file could not be written: ' + String((e as Error)?.message ?? e).slice(0, 200);
+                    }
                 }
                 const n = deps.store.add({
                     title,
@@ -606,7 +620,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, unread: deps.store.unread() };
             }
         },
         {

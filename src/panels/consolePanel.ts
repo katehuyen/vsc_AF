@@ -13,6 +13,7 @@ import {
 } from '../core/consoleresume';
 import { EngineId, engineNote, engineOf, ENGINES } from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
+import { EngineModels } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
@@ -72,6 +73,15 @@ export interface ConsoleDeps {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     modelAliases(): string[];
+    /**
+     * S-20 — the model/effort vocabulary PER ENGINE, read from what each engine
+     * is currently offering rather than from a constant. A dep and read on every
+     * payload, for the same reason `engines` is: the Codex catalog is refreshed
+     * by the CLI behind our back, and a list captured at activation would be the
+     * stale list this exists to replace. Optional — absent means every engine
+     * falls back to the flat `models`/`efforts` lists.
+     */
+    engineModels?(): Record<EngineId, EngineModels>;
     /**
      * ‼️ WHICH ENGINES THIS MACHINE CAN ACTUALLY START (X-18).
      *
@@ -435,8 +445,12 @@ export class ConsolePanel {
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),
+            // The flat pair stays as the FALLBACK every surface had before
+            // engines existed; `engineModels` below is what a picker actually
+            // reads once it knows which engine is in play.
             models: modelChoices(this.deps.modelAliases()),
             efforts: EFFORT_CHOICES,
+            engineModels: this.deps.engineModels?.() ?? null,
             // Two lists, because they are two different questions. Starting a
             // session picks a FLAG (and "Default" — pass none — is a real
             // answer). Moving a running one sends `set_permission_mode`, which

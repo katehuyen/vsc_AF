@@ -174,6 +174,36 @@ const DATA = {
             { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved' }
         ],
         defaults: { model: '', effort: '', permissionMode: '' },
+        // S-20 — what each ENGINE currently offers. The flat pair above is the
+        // fallback; this is what the Model box must actually read once the form
+        // knows which engine will run the task.
+        engineModels: {
+            claude: {
+                models: [
+                    { id: '', label: 'Default' }, { id: 'haiku', label: 'haiku' }, { id: 'opus', label: 'opus' }
+                ],
+                efforts: {}, defaultEffort: {}, source: 'settings', note: 'your agentFarm.modelAliases list.'
+            },
+            codex: {
+                models: [
+                    { id: '', label: 'Default' },
+                    { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+                    { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' }
+                ],
+                efforts: {
+                    '': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' }],
+                    'gpt-5.6-terra': [
+                        { id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'ultra', label: 'ultra' }
+                    ]
+                },
+                defaultEffort: { 'gpt-5.6-terra': 'medium' }, source: 'catalog',
+                note: '2 models, read from Codex\'s own catalog.'
+            }
+        },
+        engines: [
+            { id: 'claude', label: 'Claude Code', ready: true, next: 'Ready, on a plan.' },
+            { id: 'codex', label: 'Codex', ready: true, next: 'Ready, on a plan.' }
+        ],
         clis: [{ name: 'codex', detail: 'codex exec' }],
         projects: [{ id: 'prj_1', name: 'AgentFarm', icon: '◧' }, { id: 'prj_2', name: 'TalkScribe', icon: '' }],
         activeProjectId: 'prj_1'
@@ -657,6 +687,29 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         /id="nt-project"/.test(html()) && /value="prj_1" selected/.test(html()));
     ok('…and "no project" is a real choice rather than an empty row',
         html().includes('— no project —'));
+    // ‼️ S-20 — THE MODEL BOX FOLLOWS THE ENGINE BOX. Queuing a Codex task from
+    // a Claude alias list produces a `--model` its CLI rejects, and unattended
+    // is where that is worst: nothing fails visibly, the shell error lands in an
+    // archive file read hours later. So the list must change when the engine does.
+    ok('the engine picker is on the form', /id="nt-engine"/.test(html()));
+    ok('…and on Claude the box is the alias list', html().includes('>opus<'));
+    fld('nt-engine').value = 'codex';
+    fld('nt-engine').fire('change');
+    ok('‼️ choosing Codex swaps the model list to the ENGINE\'s own models',
+        html().includes('>GPT-5.6-Sol<') && !html().includes('>opus<'));
+    ok('…and the effort box narrows to what that engine states',
+        html().includes('>low<') && !html().includes('>xhigh<'));
+    fld('nt-model').value = 'gpt-5.6-terra';
+    fld('nt-model').fire('change');
+    ok('…and choosing a model narrows effort again to ITS own levels',
+        html().includes('>ultra<'));
+    // a model belongs to one engine: carrying it back would leave a value the
+    // other CLI cannot take
+    fld('nt-engine').value = '';
+    fld('nt-engine').fire('change');
+    ok('‼️ going back to Claude drops the model that engine never had',
+        html().includes('>opus<') && !html().includes('>GPT-5.6-Terra<'));
+
     ok('it offers a queue priority', /id="nt-priority"/.test(html()));
     ok('it offers a working folder', /id="nt-workdir"/.test(html()));
     ok('the CLI picker appears because a profile exists',

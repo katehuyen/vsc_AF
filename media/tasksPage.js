@@ -647,6 +647,37 @@
             <select id="nt-${id}">${opts}</select></label>`;
     }
 
+    /**
+     * ‼️ S-20 — THE MODEL LIST BELONGS TO THE ENGINE THE RUN WILL USE.
+     *
+     * The form offered `agentFarm.modelAliases` whatever the Engine box said,
+     * so a Codex task could be queued with `--model sonnet` — and unattended is
+     * where that is worst: nothing fails visibly, a shell error lands in an
+     * archive file read hours later. `L.engineModels` carries what each engine
+     * currently offers, read from the engine's own catalog rather than from a
+     * constant that goes stale the day a model ships.
+     */
+    function ntEngineModels(engine) {
+        const map = (DATA.launch || {}).engineModels || {};
+        return map[engine || 'claude'] || null;
+    }
+    function ntModels(engine) {
+        const em = ntEngineModels(engine);
+        return (em && em.models) || (DATA.launch || {}).models || [];
+    }
+    /** The levels THAT model supports — Codex states them per model. */
+    function ntEfforts(engine, model) {
+        const em = ntEngineModels(engine);
+        const fallback = (DATA.launch || {}).efforts || [];
+        if (!em || !em.efforts) { return fallback; }
+        return em.efforts[String(model || '')] || em.efforts[''] || fallback;
+    }
+    /** Where the list came from and how old it is, for the box's tooltip. */
+    function ntModelNote(engine) {
+        const em = ntEngineModels(engine);
+        return (em && em.note) || 'from your own agentFarm.modelAliases list.';
+    }
+
     /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
     function pickSel(id, label, list, value, title) {
         const opts = list.map(o =>
@@ -1097,10 +1128,11 @@
                     </select></label>` : ''}
                 ${wantsRun && c.kind !== 'template' ? `
                 ${engineSel(c.engine)}
-                ${choiceSel('model', 'Model', L.models, c.model,
-            'Which model runs it — from your own agentFarm.modelAliases list. Beats the model-policy rules in Farm Settings.')}
-                ${choiceSel('effort', 'Effort', L.efforts, c.effort,
-                'How much reasoning per turn. Mechanical work does not need the expensive end — and a run nobody is watching is exactly where that choice is worth making.')}
+                ${choiceSel('model', 'Model', ntModels(c.engine), c.model,
+            'Which model runs it. ‼️ The list belongs to the ENGINE above: '
+            + ntModelNote(c.engine) + ' Beats the model-policy rules in Farm Settings.')}
+                ${choiceSel('effort', 'Effort', ntEfforts(c.engine, c.model), c.effort,
+                'How much reasoning per turn — the levels the chosen model actually supports. Mechanical work does not need the expensive end, and a run nobody is watching is exactly where that choice is worth making.')}
                 ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
                     'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.')}
                 <label class="ntf" title="${c.kind === 'task'
@@ -1624,14 +1656,27 @@
                 'debounceSec', 'cooldownSec', 'maxPerHour',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
                     byId('nt-' + id, 'input', () => readComposer()));
-            ['agent', 'mode', 'engine', 'model', 'effort', 'permissionMode', 'project', 'cli',
+            ['agent', 'mode', 'effort', 'permissionMode', 'project', 'cli',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
-            // ‼️ These five REDRAW, because they change which fields exist:
-            // "weekly" adds a day picker, "watch" a path, a guard its own row.
-            // A field that only appears after a reload is a field nobody finds.
-            ['every', 'ttype', 'act', 'guardKind'].forEach(id =>
+            // ‼️ These REDRAW, because they change which fields — or which
+            // OPTIONS — exist: "weekly" adds a day picker, "watch" a path, a
+            // guard its own row; and (S-20) the engine decides which models the
+            // Model box may offer while the model decides the Effort box's
+            // levels. A field that only appears after a reload is a field
+            // nobody finds.
+            ['every', 'ttype', 'act', 'guardKind', 'model'].forEach(id =>
                 byId('nt-' + id, 'change', () => { readComposer(); render(); }));
+            byId('nt-engine', 'change', () => {
+                readComposer();
+                // A model belongs to one engine: `sonnet` carried over to Codex
+                // is a --model its CLI can only reject, so it is dropped rather
+                // than left sitting in a box that now disagrees with the engine.
+                if (composer && !ntModels(composer.engine).some(m => m.id === (composer.model || ''))) {
+                    composer.model = ''; composer.effort = '';
+                }
+                render();
+            });
             byId('nt-guardRecursive', 'change', () => readComposer());
             byId('nt-enabled', 'change', () => readComposer());
             // The Add button's own words follow the "start it now" box, so what

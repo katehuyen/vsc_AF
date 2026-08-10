@@ -249,6 +249,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const reg = new BridgeRegistry();
     const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-report-'));
     const writeReport = (a) => {
+        if (a.name === 'THROW') { throw new Error('no room on device'); }
         const file = path.join(reportDir, `2026-07-22_${(a.name || a.title).replace(/[\\/:*?"<>|]+/g, ' ').trim()}.md`);
         fs.writeFileSync(file, a.body, 'utf8');
         return file;
@@ -281,6 +282,18 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('report leg returns a reportPath', rep.ok && typeof rep.result.reportPath === 'string' && /AI-Ozet\.md$/.test(rep.result.reportPath));
     ok('report file actually written with full body', rep.ok && fs.existsSync(rep.result.reportPath) && /Dolu dolu/.test(fs.readFileSync(rep.result.reportPath, 'utf8')));
     ok('notice stores reportPath', store.notices.find(n => n.id === rep.result.id).reportPath === rep.result.reportPath);
+    ok('a delivered report says nothing about an error', rep.ok && rep.result.reportError === undefined);
+    // ‼️ the second leg never fails quietly: a report asked for and not written
+    // used to answer `ok: true` with no word about it (measured 2026-08-10 — a
+    // 14 KB guide the user never received).
+    const bad = await reg.dispatch('notices.post', { title: 'rapor kayboldu', report: { value: 'x', Length: 1 } });
+    ok('unusable report is reported back', bad.ok && /not a usable string/.test(bad.result.reportError));
+    ok('unusable report still posts the notice', bad.ok && store.notices.some(n => n.id === bad.result.id));
+    ok('unusable report leaves no reportPath', bad.ok && bad.result.reportPath === undefined);
+    const boom = await reg.dispatch('notices.post', {
+        title: 'disk dolu', report: '# x', reportName: 'THROW'
+    });
+    ok('a failing report write is reported back', boom.ok && /could not be written: no room/.test(boom.result.reportError));
     // pre-written file: reportPath links as-is (no writeReport call)
     const rep2 = await reg.dispatch('notices.post', { title: 'linked', reportPath: 'D:/known/report.md' });
     ok('reportPath passthrough', rep2.ok && store.notices.find(n => n.id === rep2.result.id).reportPath === 'D:/known/report.md');

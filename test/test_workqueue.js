@@ -329,6 +329,10 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         /(^|[\\/])2026-07-24_developer_zen-pad-fix\.md$/.test(st.result.answerPath));
     ok('cevap file written to CEVAPLAR', st.ok && fs.existsSync(st.result.answerPath) && /Dolu dolu/.test(fs.readFileSync(st.result.answerPath, 'utf8')));
     ok('item stores answerPath + resolution', store.get(add.result.id).answerPath === st.result.answerPath && store.get(add.result.id).resolution === 'kısa cevap');
+    ok('a delivered cevap says nothing about an error', st.ok && st.result.answerError === undefined);
+    // the second leg never fails quietly (same rule as notices.post)
+    const badAns = await reg.dispatch('queue.stamp', { id: add.result.id, answer: { value: 'x', Length: 1 } });
+    ok('unusable cevap is reported back', badAns.ok && /not a usable string/.test(badAns.result.answerError));
 
     // remove guards through the bridge
     const rmLive = await reg.dispatch('queue.remove', { id: add2.result.id });

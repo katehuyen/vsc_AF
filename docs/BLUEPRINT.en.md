@@ -1540,6 +1540,46 @@ window against a $5 ceiling it can never reach. `maxTokens` (default 2 000 000,
 the planner is told the token budget in its briefing — a lead that only ever saw
 "$5.00 left" would plan as if nothing had been spent.
 
+### The model box asks the engine itself (3.103.0) {#engine-models}
+
+The engine axis reached every surface, but **the box beside it did not**:
+whichever engine was chosen, the model list was `agentFarm.modelAliases` — four
+Claude aliases typed by hand. Picking Codex still offered `sonnet`, a value its
+CLI can only reject, while its own `/model` was offering six others.
+
+A second rot grew from the same root, and it was not about Codex at all: **a
+hardcoded list is an expiry date.** A model released tomorrow is in the CLI that
+evening and still missing here months later, because a constant only changes
+when somebody remembers it exists.
+
+So the list is no longer written — it is READ (`core/models.ts`):
+
+- **Codex** — `~/.codex/models_cache.json`, the catalog the CLI refreshes
+  against the service. Filtered by `visibility: "list"` and sorted by
+  `priority`: the **same rows in the same order** its `/model` draws. The
+  catalog also carries each model's OWN reasoning vocabulary, so the effort box
+  is answered from here too — luna has five levels, 5.5 has four, and one shared
+  list was wrong for both.
+- **Claude Code** — no full catalog on disk: the aliases live inside the CLI
+  bundle and `~/.claude/.claude.json` holds only `additionalModelOptionsCache`,
+  what **this account** was additionally granted. So Claude is your alias list
+  **plus** whatever the CLI recorded for the account, which is how a newly
+  granted model appears without an edit.
+- **Gemini** — nothing measured, so nothing claimed: the setting stands and the
+  box's `source` says so.
+
+Each box states **where its list came from and how old it is** (`note`), because
+a list nobody can date is a list nobody can distrust. When a catalog cannot be
+read (Codex installed but never run) the aliases stand in — but **not quietly**:
+the note says what is being shown is not the engine's own answer.
+
+**Changing the engine drops the model.** Carrying `sonnet` over to Codex would
+leave a value in the box its CLI cannot take, so a chosen model — and the effort
+chosen for it — is dropped once the new engine stops offering it. And so agents
+do not pass names blindly either, the bridge carries `engines.models`: models per
+engine, efforts per model, and whether the answer came from the engine or the
+setting.
+
 ## Media Production Pipeline
 
 ### 🎬 Studio — the pipeline on one page (3.30.0) {#studio}

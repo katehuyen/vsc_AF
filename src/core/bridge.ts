@@ -72,6 +72,31 @@ export class BridgeRegistry {
     }
 }
 
+/**
+ * Undo PowerShell's silent string→object mangling.
+ *
+ * `Get-Content -Raw` does not hand back a bare String: it decorates the object
+ * with note properties (PSPath, PSDrive, ReadCount…). `ConvertTo-Json` then
+ * serialises that decorated object as a JSON OBJECT — `{ "value": "...",
+ * "Length": 14651, "PSPath": "..." }` — instead of a string. Short literals are
+ * unaffected, so this only ever bites the LONG arg (a report body, a document,
+ * a prompt read from a file) and it bites it silently: `optStr` sees a non-
+ * string, answers '', and the op carries on as if the caller had passed
+ * nothing. Measured 2026-08-10: a 14 KB report vanished this way with an
+ * `ok: true` response.
+ *
+ * The signature is unmistakable (a string `value` plus PowerShell's own
+ * `Length`/`PSPath`), so the bridge unwraps it for the same reason it strips a
+ * BOM — it must accept what the callers actually produce.
+ */
+function unwrapPsString(v: unknown): unknown {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) { return v; }
+    const o = v as Record<string, unknown>;
+    if (typeof o.value !== 'string') { return v; }
+    const looksPs = typeof o.Length === 'number' || typeof o.PSPath === 'string';
+    return looksPs ? o.value : v;
+}
+
 /** Validate a request file's content. Errors are messages for the response. */
 export function parseBridgeRequest(text: string): { op: string; args: Record<string, unknown> } | { error: string } {
     // Strip a UTF-8 BOM — PowerShell's `Set-Content -Encoding utf8` (the natural
@@ -89,9 +114,11 @@ export function parseBridgeRequest(text: string): { op: string; args: Record<str
     if (typeof o.op !== 'string' || !o.op.trim()) {
         return { error: 'Missing "op" — call { "op": "farm.ops" } to list operations.' };
     }
-    const args = o.args && typeof o.args === 'object' && !Array.isArray(o.args)
+    const raw = o.args && typeof o.args === 'object' && !Array.isArray(o.args)
         ? o.args as Record<string, unknown>
         : {};
+    const args: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw)) { args[k] = unwrapPsString(v); }
     return { op: o.op.trim(), args };
 }
 

@@ -32,6 +32,29 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         parseBridgeRequest('﻿{"op":"farm.ops"}').op === 'farm.ops');
     ok('surrounding whitespace tolerated',
         parseBridgeRequest('\n  {"op":"tasks.list"}  \n').op === 'tasks.list');
+    // PowerShell's `Get-Content -Raw` returns a DECORATED string (PSPath,
+    // ReadCount…), so ConvertTo-Json emits an object instead of a string and the
+    // long arg — a report body, a document — silently arrives as nothing.
+    // Measured 2026-08-10: a 14 KB report vanished under an `ok: true`.
+    {
+        const psShaped = JSON.stringify({
+            op: 'notices.post',
+            args: {
+                title: 'kept as-is',
+                report: { value: '# rapor\n\ngövde', Length: 15, PSPath: 'C:\\x\\y.md', ReadCount: 1 },
+                sections: [{ title: 't', body: 'b' }]
+            }
+        });
+        const r = parseBridgeRequest(psShaped);
+        ok('PowerShell-mangled string unwrapped', r.args.report === '# rapor\n\ngövde');
+        ok('plain string args untouched', r.args.title === 'kept as-is');
+        ok('legitimate object/array args untouched',
+            Array.isArray(r.args.sections) && r.args.sections[0].body === 'b');
+    }
+    ok('an object with value but no PowerShell markers is left alone', (() => {
+        const r = parseBridgeRequest('{"op":"x","args":{"a":{"value":"v","other":1}}}');
+        return r.args.a && r.args.a.value === 'v';
+    })());
 }
 
 // ---------- registry: register, catalog, dispatch ----------
@@ -151,6 +174,53 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ NO CREDENTIAL CROSSES THE BRIDGE — not the access token, not the refresh token',
             !wire.includes('sk-secret-do-not-leak') && !wire.includes('rt-secret')
             && !/access_token|refresh_token/.test(wire));
+    }
+
+    // ---------- S-20: engines.models, registered the way the extension does ----------
+    // ‼️ The op exists so an agent told "run this on Codex with the fast model"
+    // can find out what Codex actually calls its models. Without it the only
+    // available names are Claude's aliases, and passing one is a --model the CLI
+    // rejects — on an unattended task, hours later, in a file nobody reads.
+    {
+        const { readEngineModels } = require(path.join(__dirname, '..', 'out', 'core', 'models.js'));
+        const probe = {
+            readHome: rel => (rel === '.codex/models_cache.json'
+                ? JSON.stringify({
+                    fetched_at: '2026-08-10T06:57:08.834Z',
+                    models: [{
+                        slug: 'gpt-5.6-sol', display_name: 'GPT-5.6-Sol', priority: 1, visibility: 'list',
+                        description: 'Latest frontier agentic coding model.',
+                        default_reasoning_level: 'low',
+                        supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }]
+                    }]
+                })
+                : undefined),
+            existsHome: () => false, which: () => undefined, hasSecret: () => false, hasEnv: () => false
+        };
+        const r3 = new BridgeRegistry();
+        r3.register([{
+            op: 'engines.models',
+            describe: 'Which models an engine offers right now. args: id?',
+            handler: (args) => {
+                const id = String((args && args.id) || '').trim().toLowerCase();
+                const all = readEngineModels(probe, ['sonnet', 'opus']);
+                need(!id || !!all[id], `no engine called "${id}"`);
+                return id ? { [id]: all[id] } : all;
+            }
+        }]);
+        ok('engines.models is in the catalogue',
+            (await r3.dispatch('farm.ops', {})).result.some(c => c.op === 'engines.models'));
+        const one = await r3.dispatch('engines.models', { id: 'codex' });
+        ok('‼️ it answers with the ENGINE\'s models, not the alias list',
+            one.ok && one.result.codex.models.map(m => m.id).join() === ',gpt-5.6-sol');
+        ok('…and with the efforts that model supports',
+            one.result.codex.efforts['gpt-5.6-sol'].map(e => e.id).join() === ',low,high');
+        ok('…and says the answer came from the engine itself', one.result.codex.source === 'catalog');
+        const claude = await r3.dispatch('engines.models', { id: 'claude' });
+        ok('a different engine gets a different list',
+            claude.ok && claude.result.claude.models.map(m => m.id).includes('sonnet'));
+        const bad = await r3.dispatch('engines.models', { id: 'nope' });
+        ok('an unknown engine is refused by name', !bad.ok && /no engine called "nope"/.test(bad.error));
     }
 
     // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------

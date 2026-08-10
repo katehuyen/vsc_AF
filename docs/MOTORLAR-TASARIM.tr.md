@@ -321,6 +321,59 @@ sayar, `guardReason` hangisi biterse orada durur, ve **planlayıcıya söylenir*
 brief'teki bütçe satırı token kalanını da yazar, yoksa bir lead bütün tur boyunca
 "$5.00 left" görüp hiç harcama yapılmamış gibi plan yapardı.
 
+### 5.4 Model ve efor listeleri motorun kendisinden okunur (S-20) — ÖLÇÜLDÜ (2026-08-10)
+
+Motor ekseni (5.1.2) her yüzeye indi, **yanındaki kutu inmedi.** Hangi motor
+seçilirse seçilsin model listesi `agentFarm.modelAliases` idi. Kullanıcının
+bildirdiği hâl: *"Codex seçildiği halde modeller hâlâ Claude modelleri seçme
+kutusunda… halbuki terminalde `/model` yazınca gpt-5.6-sol … çıkıyor."*
+
+Ve kullanıcının teşhisi yalnız Codex'i işaret etmiyordu: **sabit liste bir son
+kullanma tarihidir** — yeni bir Claude modeli çıktığında da eklenti körleşir.
+
+**Nerede ölçüldü.**
+
+| Motor | Katalog | İçindekiler |
+|---|---|---|
+| Codex | `~/.codex/models_cache.json` (197 KB, CLI tazeler) | `models[]`: `slug`, `display_name`, `description`, `visibility`, `priority`, `default_reasoning_level`, `supported_reasoning_levels[]`, `context_window`, `fetched_at` |
+| Claude Code | tam katalog **yok**; `~/.claude/.claude.json` → `additionalModelOptionsCache` | `{value,label,description}` — bu hesaba ayrıca verilenler (ölçümde: Fable) |
+| Gemini | yok | — |
+
+`visibility: "list"` süzülüp `priority`'ye göre dizildiğinde çıkan liste,
+kullanıcının terminalde saydığı altı satırla **birebir** aynıdır:
+`gpt-5.6-sol` (1) · `gpt-5.6-terra` (2) · `gpt-5.6-luna` (3) · `gpt-5.5` (7) ·
+`gpt-5.4` (16) · `gpt-5.4-mini` (23). Gizlenen ikisi (`gpt-5.6-sol-wm` yönlendirme
+takma adı, `codex-auto-review`) bir insana sunulmaz — onları listelemek "daha
+eksiksiz" değil, makinenin kendi tesisatını kullanıcıya açmaktır.
+
+**Efor de modelin kendisinindir.** `supported_reasoning_levels` model başına
+değişir (terra'da altı seviye — `ultra` dahil —, 5.5'te dört) ve her seviye kendi
+açıklamasını taşır. Tek ortak `EFFORT_CHOICES` listesi ikisi için de yanlıştı.
+
+**Uygulama** — `core/models.ts`, `engines.ts` ile aynı biçimde saf ve enjekte
+edilen `EngineProbe` üzerinden:
+
+- `readCodexCatalog` / `readClaudeExtras` — diskteki iki biçim.
+- `readEngineModels(probe, aliases)` → motor başına
+  `{ models, efforts (model id'siyle anahtarlanmış, `''` = ortak liste),
+  defaultEffort, source: 'catalog' | 'settings', fetchedAt, note }`.
+- **Hiç önbelleklenmez**, her çağrıda okunur: Codex kataloğu CLI servise her
+  konuştuğunda değişir, aktivasyonda yakalanan bir liste tam da burada
+  değiştirilmek istenen bayat listedir. Maliyeti motor başına küçük bir JSON.
+- **Düşüş sessiz değildir.** Katalog okunamazsa (Codex kurulu ama hiç koşmamış)
+  takma ad listesine düşülür, ama `source: 'settings'` olur ve `note` gösterilenin
+  motorun kendi cevabı olmadığını yazar — çünkü Codex altında sessizce sunulan bir
+  Claude takma adı, bu modülün var olma sebebidir.
+
+**Yüzeyler.** Console bestecisi ve çalışan oturumun canlı kutuları
+(`modelsFor`/`effortsForModel`), New-task formu (`ntModels`/`ntEfforts` — motor ve
+model kutuları artık formu **yeniden çizer**, çünkü hangi seçeneklerin var olduğunu
+onlar belirler), `Start Session…` alt seçicisi, ve köprüde `engines.models`.
+
+**Motor değişince model düşer.** `sonnet` Codex'e taşınsaydı kutuda o CLI'ın
+reddedeceği bir değer kalırdı; yeni motorun listesinde olmayan model, seçilen
+eforla birlikte bırakılır.
+
 ## 6. Faz 4 — adanmış panel (X-14) · KARAR ALINDI
 
 X-3 "Ayarlar sayfasından açılan, bu işe adanmış bir yönetim paneli" diyor ve

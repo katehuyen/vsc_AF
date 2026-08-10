@@ -7,6 +7,7 @@ import { describePrecondition, Precondition, rollupAutomationLog } from '../core
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
+import { EngineModels } from '../core/models';
 import {
     FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
     RunDimensions, ScheduleKind, TaskManager, TaskMode, WorkflowStep
@@ -59,6 +60,10 @@ export interface TasksDeps {
      * first time they edited it.
      */
     modelAliases(): string[];
+    /** S-20 — model/effort rows PER ENGINE, read from what each engine offers
+     *  today. It matters most here: nobody is sitting in front of a task, so a
+     *  `--model` the engine rejects surfaces hours later in an archive file. */
+    engineModels?(): Record<string, EngineModels>;
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
@@ -401,6 +406,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
         launch: {
             models: modelChoices(deps.modelAliases()),
             efforts: EFFORT_CHOICES,
+            engineModels: deps.engineModels?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // ‼️ X-18 — the engine axis reaches unattended work too, and this is
             // where it matters MOST: nobody is sitting in front of a task, so an
