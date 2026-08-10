@@ -687,7 +687,14 @@
      * The money is one hover away, and both strips under the conversation carry
      * it in full.
      */
-    const tokBadge = (tokens, wTokens) => (tokens ? `${C.fmtTokW(tokens, wTokens)} tok` : '');
+    // ‼️ U-38 — THE CARD SHOWS THE RAW FIGURE ONLY, AND SPELLS IT `tk`.
+    // The weighted count is the honest answer to "how much of the 5h window did
+    // this burn" and it is kept everywhere it can be read properly — the
+    // tables, the hover below, the Dashboard. On a card this narrow it was a
+    // second number competing with the engine badge for the same few pixels,
+    // and two numbers nobody can tell apart are worse than one. `tok` → `tk`
+    // for the same three characters of room.
+    const tokBadge = (tokens) => (tokens ? `${C.fmtTok(tokens)} tk` : '');
     // The card has room for one line of hover, so the weighted figure is spelled
     // out there rather than left as a glyph — see charts.js WEIGHTED_TIP.
     // ‼️ It takes the SESSION, not three numbers, because whether the money half
@@ -884,8 +891,22 @@
 
     /** `developer (#407c78cb)` — the id is how a row is matched against a tab,
      *  a terminal or a log line, so it rides with the agent's name. */
-    const who = (agentName, sessionId) =>
-        `${C.esc(agentName || 'session')}${sessionId ? ` <span class="sid">(#${C.esc(String(sessionId).slice(0, 8))})</span>` : ''}`;
+    /**
+     * ‼️ U-38 — THE ID CAME OFF THE LINE WHEN THE BADGE WENT ON IT.
+     *
+     * `agent name (#019fe7bc)` plus an engine badge plus a token figure is
+     * three things in a card one column wide, and the id was the one being
+     * cut — `(#019f…` says nothing at all, which is worse than not drawing
+     * it. It is a value you COPY, never one you read at a glance, so it
+     * belongs in the hover with the rest of the row's figures.
+     */
+    const who = (agentName, sessionId) => C.esc(agentName || 'session');
+    /** …and the identity line's hover, which now carries it. Figures only,
+     *  `Label: value` — the card's own tooltip says what the row IS. */
+    const whoTip = (agentName, sessionId) => window.AFTip.lines([
+        'Agent: ' + (agentName || 'session'),
+        sessionId ? 'Session: ' + sessionId : ''
+    ]);
 
     /**
      * The kinds of line the Console shows, and what each one matches.
@@ -1217,9 +1238,9 @@
                  })}
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
-                    <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
+                    <span class="n" title="${C.esc(whoTip(s.agentName, s.sessionId))}"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
                     ${engineBadge(s)}
-                    <span class="m" title="${C.esc(tokTip(s, sessionSpend(s).cost))}">${tokBadge(s.tokens, s.wTokens)}</span>
+                    <span class="m" title="${C.esc(tokTip(s, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1246,7 +1267,7 @@
             <div class="srow back" data-back="${C.esc(r.sessionId)}"
                  title="Continue this conversation here — it ended when the window did, and picks up with everything that was said">
                 <div class="h">
-                    <span class="n">${who(r.agentName, r.sessionId)}</span>
+                    <span class="n" title="${C.esc(whoTip(r.agentName, r.sessionId))}">${who(r.agentName, r.sessionId)}</span>
                     <button class="only" data-backforget="${C.esc(r.sessionId)}" title="Take it off this shelf">✕</button>
                 </div>
                 <div class="t2">${C.esc(r.title || '(no name)')}</div>
@@ -1396,7 +1417,7 @@
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r, r.cost))}">${tokBadge(r.tokens, r.wTokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // How many of how many — a list that silently ends at fifteen is why
         // the filter had to exist in the first place.

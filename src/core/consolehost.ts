@@ -16,6 +16,7 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
 import { CodexState, newCodexState, translateCodex } from './codexproto';
 import {
@@ -365,7 +366,7 @@ export class ConsoleHost {
         };
         this.sessions.set(id, hosted);
 
-        child.stdout?.on('data', d => this.onData(id, String(d)));
+        this.readStdout(id, child);
         child.stderr?.on('data', d => {
             const text = String(d).trim();
             // The CLI writes progress noise to stderr too; only keep what looks
@@ -535,7 +536,7 @@ export class ConsoleHost {
         h.buffer = '';
         h.turn = { prompt, attachments, tries: (h.turn?.tries ?? 0), stderr: '' };
 
-        child.stdout?.on('data', d => this.onData(id, String(d)));
+        this.readStdout(id, child);
         // ‼️ STDERR IS COLLECTED, NOT PRINTED AS IT ARRIVES. A per-turn engine
         // writes its whole diagnosis to stderr and then exits, and the LAST
         // thing it says is the one that matters — printing each chunk as its own
@@ -689,6 +690,38 @@ export class ConsoleHost {
         if (!h) { return; }
         h.state = fn(h.state);
         this.fire(id);
+    }
+
+    /**
+     * ‼️ U-36 — A CHUNK BOUNDARY IS NOT A CHARACTER BOUNDARY.
+     *
+     * `String(buffer)` decodes each chunk on its own, and a chunk ends
+     * wherever the pipe happened to flush — which on a Turkish reply lands
+     * in the middle of a two-byte `ü` / `ı` / `ş` often enough to see. The
+     * two halves each decode to U+FFFD and the user reads `hazır\uFFFD\uFFFDm`.
+     * Nothing upstream is wrong: the engine sent correct UTF-8 and this
+     * reader cut it.
+     *
+     * `StringDecoder` is the fix and the whole of it: it holds an incomplete
+     * trailing sequence back until the next chunk completes it. One decoder
+     * per child, because the held bytes belong to that stream — sharing one
+     * across sessions would splice two conversations together at a boundary.
+     *
+     * It is not engine-specific and never was: Claude simply got lucky more
+     * often, because its stream-json lines are shorter and flush on their own
+     * newlines. The same cut was always possible there.
+     */
+    private readStdout(id: string, child: cp.ChildProcess): void {
+        const decoder = new StringDecoder('utf8');
+        child.stdout?.on('data', (d: Buffer | string) => this.onData(
+            id, typeof d === 'string' ? d : decoder.write(d)));
+        // Whatever the last chunk left dangling is not a character and never
+        // will be; flushing it keeps a truncated stream from swallowing its
+        // final line rather than merely mangling one glyph.
+        child.stdout?.on('end', () => {
+            const tail = decoder.end();
+            if (tail) { this.onData(id, tail); }
+        });
     }
 
     private onData(id: string, chunk: string): void {

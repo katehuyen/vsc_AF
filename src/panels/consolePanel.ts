@@ -17,7 +17,7 @@ import { EngineModels } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
+import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -301,6 +301,45 @@ export class ConsolePanel {
     }
 
     /** Live update while the panel is open (the host fires on every event). */
+    /**
+     * ‼️ U-37 — A SESSION ON A NEW ENGINE NEVER GOT A NAME, AND THE CAUSE WAS
+     * ONE WORD.
+     *
+     * The title was read from `index.all()`, which is DELIBERATELY the
+     * Claude-only half: external sessions are kept out of it so Claude's
+     * analytics can never see them (see core/sessionSource.ts). A Codex or
+     * Antigravity card therefore looked itself up in a list it is structurally
+     * absent from, found nothing, and read "(no name yet)" for ever — which
+     * looked like a naming feature that had not been built for them rather
+     * than a lookup in the wrong list.
+     *
+     * Three layers, in order: the index (a rename or a transcript-derived
+     * name, from EITHER half), then the conversation itself. The last one is
+     * the one that makes a name appear immediately: the host already holds
+     * the first thing the user said, and `conversationTitle` is the same
+     * function the transcript scan uses — so a hosted session is named by the
+     * same rule as a terminal one, and it is named on the FIRST message
+     * instead of whenever a transcript happens to be parsed.
+     */
+    private titleFor(s: { sessionId?: string; messages?: { role?: string; text?: string }[] }): string {
+        const id = s.sessionId;
+        if (id) {
+            const known = this.deps.index.all().find(x => x.sessionId === id)
+                ?? this.deps.index.external().find(x => x.sessionId === id);
+            if (known?.title && known.title !== '(untitled session)') { return known.title; }
+        }
+        for (const m of s.messages ?? []) {
+            if (m.role !== 'user' || !m.text) { continue; }
+            // `conversationTitle` returns '' for a slash command, a harness
+            // notice or an attachment-only message — the same judgment the
+            // transcript scan makes, so the two cannot name a session
+            // differently. An empty answer means "keep looking".
+            const said = conversationTitle(m.text);
+            if (said) { return said; }
+        }
+        return '';
+    }
+
     static refreshIfOpen(): void {
         ConsolePanel.current?.refresh();
     }
@@ -366,9 +405,7 @@ export class ConsolePanel {
                 reportsCost: engineOf(s.engine).reportsCost,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
-                title: (s.sessionId
-                    ? this.deps.index.all().find(x => x.sessionId === s.sessionId)?.title
-                    : undefined) ?? '',
+                title: this.titleFor(s),
                 status: s.status, cost: s.costUSD, turns: s.turns,
                 // the texts themselves, not a count: a message that is waiting
                 // is not in the conversation yet, so the composer has to show it

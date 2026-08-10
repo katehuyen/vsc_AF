@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.105.0",
+  "version": "3.106.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",

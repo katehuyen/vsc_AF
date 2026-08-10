@@ -239,12 +239,21 @@ const html = allHtml;
 
 // ---------- the row says who, which session, and what it costs ----------
 {
-    ok('the card carries the agent AND the session id',
-        /developer<span class="sid">\(#407c78cb\)<\/span>/.test(html().replace(/\s+</g, '<')));
-    // One figure fits a 250px card, and it is the TOKENS: "$0.03" does not say
-    // whether that was haiku thinking briefly or opus barely starting.
-    ok('…the tokens it spent, not the dollars', html().includes('48200t tok')
+    // ‼️ U-38 — THE ID MOVED INTO THE HOVER, because the engine badge took the
+    // room it used to have and a cut id (`(#019f…`) says nothing at all. It is
+    // a value you copy, never one you read at a glance.
+    ok('the card carries the agent, and the id is one hover away',
+        /developer/.test(html())
+        && !/<span class="sid">/.test(html())
+        && /Session: 407c78cb-/.test(html()));
+    // One figure fits a 250px card, and it is the RAW token count: "$0.03"
+    // does not say whether that was haiku thinking briefly or opus barely
+    // starting — and the weighted figure beside it was a second number nobody
+    // could tell from the first at that size.
+    ok('…the tokens it spent, not the dollars', html().includes('48200t tk')
         && !html().includes('$0.12 (48200t)'));
+    ok('‼️ …the RAW one only: no ⚖ pair competing with the engine badge',
+        !/⚖/.test(html()));
     // The hover spells out BOTH figures: the raw total and what it charged the
     // 5h limit. The card itself has room only for the pair; the sentence that
     // says which is which lives here (see charts.js WEIGHTED_TIP).
@@ -801,7 +810,7 @@ const html = allHtml;
     const list = els['c-list'] ? els['c-list']._html : '';
     ok('the shelf is on top of the left panel', /Where you left off/.test(list));
     ok('…with the session named and handled', /developer/.test(list) && /Kalan eksikler/.test(list)
-        && /\(#9c67e970\)/.test(list));
+        && /Session: 9c67e970-/.test(list));
     ok('…and says it is one click from continuing', /click to continue/.test(list));
 
     posted.length = 0;
@@ -945,7 +954,7 @@ const html = allHtml;
     // the rows themselves
     push(withResume());
     ok('a resumable row leads with what it spent, in tokens',
-        />812000t tok</.test(rlist()));
+        />812000t tk</.test(rlist()));
     ok('…with the dollars moved into the tooltip, where the space is free',
         /title="812000t raw tokens · \$0\.31 spent"/.test(rlist()));
     ok('…says how long ago in days, not in hours',
