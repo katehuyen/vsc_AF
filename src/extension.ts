@@ -3853,7 +3853,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.start',
-            describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? (claude — the default — or codex; ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; Codex is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends, the controls apply to the NEXT turn, and a permission mode becomes a sandbox chosen up front because the engine cannot stop and ask. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ A subscription engine states no per-turn price, so a Codex session reports tokens and no dollars — that is the engine, not a missing figure.',
+            describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? (claude — the default — codex, or agy; ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; Codex and agy are ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. On Codex a permission mode becomes a sandbox chosen up front because the engine cannot stop and ask; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — the mode is a request the Antigravity app\'s own tool-permission setting can overrule, the session only sees the folder it was given, and there is no way to hand it an image. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ A subscription engine states no per-turn price, so a Codex or agy session reports tokens and no dollars — that is the engine, not a missing figure.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
@@ -7194,8 +7194,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the alias setting is passed as the fallback for engines that publish
      * nothing (see core/models.ts).
      */
-    const engineModelMatrix = () =>
-        readEngineModels(engineProbe, cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']));
+    /**
+     * ‼️ …AND THE ONE CATALOG THAT IS NOT ON DISK (S-21).
+     *
+     * Antigravity publishes nothing: `agy models` asks the service and prints
+     * the answer, measured at ~3.4 s. That is nothing to do once and far too
+     * much to do on every picker draw, so it is fetched in the BACKGROUND, kept
+     * with the time it arrived, and offered as whatever is currently known. It
+     * costs no tokens — it is a list, not a turn — which is why it may refresh
+     * itself at all, unlike the health check next door.
+     *
+     * Never blocks a draw: until the first answer arrives the model box falls
+     * back to the alias list and SAYS SO (see core/models.ts).
+     */
+    let agyCatalog: { text?: string; fetchedAt?: number; fetching?: boolean } = {};
+    const AGY_CATALOG_TTL = 6 * 60 * 60 * 1000;
+    const refreshAgyCatalog = (force = false): void => {
+        if (agyCatalog.fetching) { return; }
+        if (!force && agyCatalog.fetchedAt && Date.now() - agyCatalog.fetchedAt < AGY_CATALOG_TTL) { return; }
+        // Nothing is spawned for an engine this machine does not have.
+        if (!engineProbe.which('agy')) { return; }
+        agyCatalog = { ...agyCatalog, fetching: true };
+        // ‼️ No shell, and stdout only: the banner ("Fetching available models…")
+        // goes to STDERR and the rows come back as clean `id<TAB>label` lines —
+        // measured. Reading the two together would put the banner in the picker.
+        cp.execFile('agy', ['models'], {
+            timeout: 30000, windowsHide: true, shell: false, maxBuffer: 1024 * 1024
+        }, (err, stdout) => {
+            const text = String(stdout ?? '');
+            agyCatalog = err && !text.trim()
+                ? { ...agyCatalog, fetching: false }
+                : { text, fetchedAt: Date.now(), fetching: false };
+        });
+    };
+    const engineModelMatrix = () => {
+        refreshAgyCatalog();
+        return readEngineModels(
+            engineProbe,
+            cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
+            { text: agyCatalog.text, fetchedAt: agyCatalog.fetchedAt }
+        );
+    };
 
     /**
      * ‼️ ONE REAL TURN AGAINST AN ENGINE — the only thing that proves a call
@@ -7207,10 +7246,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spawn, and because it spends a turn of the user's plan it is NEVER run on
      * a timer, on page open, or by a refresh — only by the button.
      */
-    const engineRunner: EngineRunner = (command, args, timeoutMs) =>
+    const engineRunner: EngineRunner = (command, args, timeoutMs, shell = true) =>
         new Promise((resolve, reject) => {
             cp.execFile(command, args, {
-                timeout: timeoutMs, windowsHide: true, shell: true,
+                // ‼️ THE ENGINE DECIDES (engineTest.ts). Under a shell the
+                // arguments are joined and NOT quoted, which turns a sentence
+                // into five arguments; an engine whose check carries one asks
+                // for no shell and its argv arrives intact.
+                timeout: timeoutMs, windowsHide: true, shell,
                 // A chatty engine must not be able to blow up the host.
                 maxBuffer: 4 * 1024 * 1024
             }, (err, stdout, stderr) => {
@@ -7863,7 +7906,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // A terminal session gets the same project context a Console one does —
         // including on a resume, where the flag is not inherited (measured).
         const contextFile = merged.projectContextFile ?? projectContextFileFor(projectId || undefined);
-        const command = buildLaunchCommand(spec.exe, { ...merged, projectContextFile: contextFile });
+        // ‼️ The folder is passed as a DIMENSION, not just as the terminal's cwd:
+        // Antigravity works in its own scratch workspace unless it is handed one
+        // (`--add-dir`), so the same directory the terminal opens in has to be on
+        // the command line too (see LaunchOptions.cwd).
+        const command = buildLaunchCommand(spec.exe, {
+            ...merged, projectContextFile: contextFile, cwd: merged.cwd ?? cwd ?? agent.dir
+        });
         // ‼️ …EXCEPT ON AN ENGINE WITH NO SYSTEM-PROMPT CHANNEL, WHICH SAYS SO.
         // `codex` takes no `--append-system-prompt-file` (measured against its
         // own --help): prompt, AGENTS.md, config, nothing else. The brief is
@@ -8091,7 +8140,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (;;) {
             const merged = withDefaults(o, launchDefaults());
             const spec = engineOf(merged.engine);
-            const command = buildLaunchCommand(spec.exe, merged);
+            // The preview line has to be the line that will run, `--add-dir`
+            // included, or the launcher shows one command and starts another.
+            const command = buildLaunchCommand(spec.exe, { ...merged, cwd: merged.cwd ?? agent.dir });
             const d = launchDefaults();
             const inherited = (own: string | undefined, def: string | undefined) =>
                 !own?.trim() && def?.trim() ? ' (from your defaults)' : '';
@@ -15217,12 +15268,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the engine reads and whether the vault holds a secret under it, and `next` — the one '
                 + 'thing to do. ‼️ NO CREDENTIAL VALUE IS EVER RETURNED and none can be set from here: '
                 + 'signing in is the CLI\'s own command in a terminal, and keys are the panel-only vault '
-                + '(the deliberate secrets exception). args: id? (claude | codex | gemini)',
+                + '(the deliberate secrets exception). args: id? (claude | codex | gemini | agy)',
             handler: (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 const all = engineMatrix();
                 const list = id ? all.filter(e => e.id === id) : all;
-                need(!id || list.length > 0, `no engine called "${id}" — try claude, codex or gemini`);
+                need(!id || list.length > 0, `no engine called "${id}" — try claude, codex, gemini or agy`);
                 return { ...enginesSummary(all), engines: list };
             }
         },
@@ -15237,12 +15288,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'efforts keyed by model id ("" = the list to use for a model with no stated '
                 + 'vocabulary), defaultEffort, `source` ("catalog" = the engine\'s own answer, '
                 + '"settings" = it published nothing and this is agentFarm.modelAliases) and `note` '
-                + 'saying which of those it was and how old it is. args: id? (claude | codex | gemini)',
+                + 'saying which of those it was and how old it is. ‼️ ONE ENGINE\'S CATALOG IS NOT ON '
+                + 'DISK: Antigravity publishes nothing, so `agy` is asked directly (`agy models`, ~3s, '
+                + 'no tokens — it is a list, not a turn) and the answer is kept for six hours. Until the '
+                + 'first answer arrives its `source` is "settings" and the note says the list is almost '
+                + 'certainly wrong for it; pass `refresh` to fetch it again now, which is what to do '
+                + 'after a model is granted or withdrawn. '
+                + 'args: id? (claude | codex | gemini | agy), refresh? (re-ask agy for its list)',
             handler: (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
+                if (args.refresh === true) { refreshAgyCatalog(true); }
                 const all = engineModelMatrix();
                 need(!id || !!(all as Record<string, unknown>)[id],
-                    `no engine called "${id}" — try claude, codex or gemini`);
+                    `no engine called "${id}" — try claude, codex, gemini or agy`);
                 return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
             }
         },
@@ -15257,11 +15315,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'engine\'s smallest model, a four-word prompt, and read-only sandboxing where the '
                 + 'engine offers it, so it can never touch a file. Returns ok, how long it took, and '
                 + 'the engine\'s OWN words when it failed — never an invented reason. No credential '
-                + 'is read or returned. args: id (claude | codex | gemini)',
+                + 'is read or returned. args: id (claude | codex | gemini | agy)',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
                 const engine = engineMatrix().find(e => e.id === id);
-                need(!!engine, `no engine called "${id}" — try claude, codex or gemini`);
+                need(!!engine, `no engine called "${id}" — try claude, codex, gemini or agy`);
                 // Refuse rather than spend: there is nothing to call.
                 need(engine!.cli.found,
                     `${engine!.label} is not installed — ${engine!.next}`);

@@ -1189,11 +1189,25 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         && /const refused = this\.opts\.engineRefusal\?\.\(task\.engine\);/.test(tasks));
     ok('…and only when the task names one — a CLI profile is a different mechanism',
         /if \(task\.engine && !task\.cli\)/.test(tasks));
+    // ‼️ ASKED BY ENGINE, NOT BY NAME. When Codex was the only per-turn engine
+    // these were `codexRunArgs` / `codexTuiArgs` called directly; a second one
+    // would have meant an `if` here and another in the Console and another in
+    // the launcher. The dispatch is `consoleEngine.ts`'s job now.
     ok('a per-turn engine gets its own command, not claude\'s flags',
-        /codexRunArgs\(\{/.test(tasks) && /codexTuiArgs\(\{/.test(tasks));
+        /runArgs\(engine\.id, \{/.test(tasks) && /tuiArgs\(engine\.id, \{/.test(tasks));
     ok('‼️ …with the prompt on stdin, which is what lets it carry the project brief',
-        /stdio: \[perTurn \? 'pipe' : 'ignore', 'pipe', 'pipe'\]/.test(tasks)
-        && /codexContextPrefix\(this\.readContext\(ctxFile\)\)/.test(tasks));
+        /stdio: \[pipePrompt \? 'pipe' : 'ignore', 'pipe', 'pipe'\]/.test(tasks)
+        && /engineContextPrefix\(this\.readContext\(ctxFile\)\)/.test(tasks));
+    // ‼️ …EXCEPT ON THE ENGINE WITH NO PIPE FOR IT. `agy --print` takes the
+    // prompt as its value and reads nothing from stdin (measured), so that run
+    // is an argv array spawned with NO shell — the only way a multi-line prompt
+    // survives on Windows.
+    ok('‼️ …and the engine that takes its prompt in argv is spawned without a shell',
+        /engine\.promptOn === 'argv'/.test(tasks)
+        && /\['--print', perTurnPrompt, \.\.\.runArgs\(/.test(tasks)
+        && /cp\.spawn\(engine\.exe, argv, \{[\s\S]{0,200}shell: false,/.test(tasks));
+    ok('‼️ …and it is told which folder it may see, or it answers about its own scratch one',
+        /cwd: task\.workDir \?\? agent\.dir/.test(tasks));
     ok('…and agentFarm.taskExtraArgs, the model policy and --output-format json '
         + 'are NOT passed to a binary that has never heard of them',
         /if \(!profile && !perTurn\)/.test(tasks)
@@ -1201,6 +1215,12 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     ok('the archive says which engine produced it, and what the sandbox was',
         /- Engine: \$\{engine\.label\}/.test(tasks)
         && /- Sandbox: \$\{codexSandboxFor\(task\.permissionMode\)\}/.test(tasks));
+    // ‼️ …and NOT the same sentence for an engine where it means something else:
+    // on Antigravity the mode is a request the app's own setting can overrule
+    // (measured — plan mode still wrote a file), so that archive says permissions,
+    // not sandbox.
+    ok('‼️ …and an engine whose mode is not a sandbox does not claim one',
+        /- Permissions: \$\{engineModeNote\(engine\.id, task\.permissionMode\)\}/.test(tasks));
     ok('‼️ …and that the json contract was not applied, where a reader will find it',
         /json was NOT applied/.test(tasks));
 }

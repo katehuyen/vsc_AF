@@ -14,7 +14,7 @@
  * own default stays in charge.
  */
 
-import { codexTuiArgs, engineOf, EngineId, ENGINES } from './consoleEngine';
+import { engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
 
 /** One offered value of a launch dimension. `id: ''` is always "leave it alone". */
 export interface LaunchChoice {
@@ -55,6 +55,16 @@ export interface LaunchOptions {
      * path is quoted here for the same reason a name is.
      */
     projectContextFile?: string;
+    /**
+     * ‼️ THE FOLDER, WHICH ON ONE ENGINE IS NOT OPTIONAL.
+     *
+     * Claude Code and Codex work in the process's own directory and the terminal
+     * already sets it. Antigravity does NOT: measured, it reports the cwd back
+     * and then works in `~/.gemini/antigravity-cli/scratch` unless the folder is
+     * handed to it with `--add-dir`. Left out, a terminal session on that engine
+     * opens in the right place and answers about the wrong one.
+     */
+    cwd?: string;
 }
 
 /** The three dimensions the launcher offers. Kept verbatim from `claude --help`
@@ -107,23 +117,45 @@ export function quoteArg(s: string): string {
 /**
  * The interactive line for an engine that is NOT Claude Code.
  *
- * ‼️ THREE OF CLAUDE'S DIMENSIONS HAVE NO CODEX EQUIVALENT, AND THEY ARE
- * DROPPED LOUDLY RATHER THAN QUIETLY:
- *   · `-n` (session display name) — Codex names its own sessions;
- *   · `--append-system-prompt-file` — this engine has NO system-prompt channel
- *     (see CODEX_HAS_NO_SYSTEM_PROMPT_FLAG), so a project brief cannot ride the
- *     command line at all and the caller has to put it in the prompt;
- *   · `--resume <id>` — `codex resume <id>` is its own subcommand with its own
- *     flag vocabulary, and guessing at it is exactly what this codebase does not
- *     do. A resume on this engine goes through the Console, which has measured
- *     it (`codex exec resume`).
+ * ‼️ TWO OF CLAUDE'S DIMENSIONS HAVE NO EQUIVALENT ON EITHER OF THEM, AND THEY
+ * ARE DROPPED LOUDLY RATHER THAN QUIETLY:
+ *   · `-n` (session display name) — these engines name their own sessions;
+ *   · `--append-system-prompt-file` — neither has a system-prompt channel (see
+ *     CODEX_HAS_NO_SYSTEM_PROMPT_FLAG / AGY_HAS_NO_SYSTEM_PROMPT_FLAG), so a
+ *     project brief cannot ride the command line at all and the caller has to
+ *     put it in the prompt.
+ *
+ * ‼️ AND THE THIRD ONE — RESUME — DEPENDS ON WHICH ENGINE IT IS, which is the
+ * measurement that stopped this from being one rule. `codex resume <id>` is its
+ * own subcommand with its own flag vocabulary and nobody here has measured it,
+ * so a Codex resume goes through the Console. `agy --conversation <id>` is an
+ * ordinary flag on the ordinary command, measured to come back with the same id
+ * and the context carried — so on that engine a terminal resume is real, and
+ * refusing it "because it is not Claude" would have been a rule pretending to be
+ * a fact (see EngineTransport.resumeInTerminal).
+ *
  * `describeLaunch` names the engine so a picker cannot claim otherwise.
  */
-function buildCodexCommand(exe: string, o: LaunchOptions): string {
-    const parts = [exe || 'codex', ...codexTuiArgs({
-        model: o.model, effort: o.effort, permissionMode: o.permissionMode
+function buildOtherEngineCommand(exe: string, engine: EngineId, o: LaunchOptions): string {
+    const spec = ENGINES[engine];
+    const parts = [exe || spec.exe, ...tuiArgs(engine, {
+        model: o.model, effort: o.effort, permissionMode: o.permissionMode,
+        // Only the engine that needs it is given it — `codexTuiArgs` uses `-C`
+        // for the same job and the terminal already sets the directory there.
+        ...(engine === 'agy' ? { cwd: o.cwd } : {}),
+        ...(spec.resumeInTerminal
+            ? { conversation: o.resume, continueLast: o.continueLast }
+            : {})
     })];
-    if (o.prompt?.trim()) { parts.push(quoteArg(o.prompt)); }
+    if (o.prompt?.trim()) {
+        // ‼️ THE FIRST PROMPT IS A FLAG ON ONE AND A POSITIONAL ON THE OTHER.
+        // `agy` has no positional prompt at all: `-i` runs one and then STAYS
+        // interactive, which is what "start a session with this in it" means —
+        // `--print` would answer once and exit, leaving the user staring at a
+        // shell where they expected a conversation.
+        if (engine === 'agy') { parts.push('-i', quoteArg(o.prompt)); }
+        else { parts.push(quoteArg(o.prompt)); }
+    }
     return parts.join(' ');
 }
 
@@ -133,7 +165,7 @@ function buildCodexCommand(exe: string, o: LaunchOptions): string {
 export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
     const spec = engineOf(o.engine);
     if (spec.id !== 'claude') {
-        return buildCodexCommand(exe && exe !== 'claude' ? exe : spec.exe, o);
+        return buildOtherEngineCommand(exe && exe !== 'claude' ? exe : spec.exe, spec.id, o);
     }
     const parts = [exe || 'claude'];
     // Resume/continue first — they say WHICH conversation; the rest tunes it.
@@ -226,12 +258,15 @@ export function validateLaunch(o: LaunchOptions): string[] {
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');
     }
-    // ‼️ REFUSED, NOT SILENTLY DROPPED. `codex resume` is its own subcommand with
-    // its own flag vocabulary and nobody here has measured it; the measured
-    // resume on this engine is `codex exec resume`, which is the Console's path.
-    // Building a terminal line that ignores the id would open a NEW conversation
-    // while the caller believed it had continued one.
-    if (o.engine && o.engine !== 'claude' && (o.resume || o.continueLast)) {
+    // ‼️ REFUSED, NOT SILENTLY DROPPED — AND ONLY ON THE ENGINE THAT CANNOT DO
+    // IT. `codex resume` is its own subcommand with its own flag vocabulary and
+    // nobody here has measured it; the measured resume there is `codex exec
+    // resume`, which is the Console's path. Building a terminal line that
+    // ignored the id would open a NEW conversation while the caller believed it
+    // had continued one. Antigravity takes `--conversation <id>` on the ordinary
+    // command (measured), so it is not refused — the rule follows the engine's
+    // own vocabulary rather than "is it Claude".
+    if (o.engine && (o.resume || o.continueLast) && !engineOf(o.engine).resumeInTerminal) {
         errors.push(`${engineOf(o.engine).label} cannot be resumed from a terminal here — continue it in the Console, which resumes the thread by id`);
     }
     return errors;

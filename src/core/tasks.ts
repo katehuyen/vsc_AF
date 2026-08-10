@@ -9,7 +9,7 @@ import {
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
-    codexContextPrefix, codexModeNote, codexRunArgs, codexSandboxFor, codexTuiArgs, engineOf
+    codexSandboxFor, engineContextPrefix, engineModeNote, engineOf, runArgs, tuiArgs
 } from './consoleEngine';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
@@ -1102,12 +1102,20 @@ export class TaskManager implements vscode.Disposable {
                 // terminal the user has to read. The flags come from the measured
                 // vocabulary instead (consoleEngine.ts), and the permission mode
                 // becomes this engine's sandbox because it has nobody to ask.
+                const engine = engineOf(task.engine);
                 command = [
-                    engineOf(task.engine).exe,
-                    ...codexTuiArgs({
+                    engine.exe,
+                    ...tuiArgs(engine.id, {
                         model: task.model, effort: task.effort,
-                        permissionMode: task.permissionMode
+                        permissionMode: task.permissionMode,
+                        // ‼️ Antigravity works in its own scratch folder unless it
+                        // is handed one; the terminal's cwd below is not enough.
+                        cwd: task.workDir ?? agent.dir
                     }),
+                    // …and its first prompt is `-i`, not a positional: `--print`
+                    // would answer once and exit where a person expected to sit
+                    // in the conversation.
+                    ...(engine.id === 'agy' ? ['-i'] : []),
                     `"${p}"`
                 ].join(' ');
             } else {
@@ -1192,10 +1200,24 @@ export class TaskManager implements vscode.Disposable {
             (profile ? `- CLI: ${profile.name}\n` : '') +
             (policy ? `- Model policy: ${policy.reason}\n` : '') +
             (perTurn && task.model ? `- Model: ${task.model}\n` : '') +
-            // ‼️ …and that on this engine the mode is a SANDBOX, not a question
-            // it will ever ask. The word alone would carry an assumption it
-            // cannot keep (see codexModeNote).
-            (perTurn ? `- Sandbox: ${codexSandboxFor(task.permissionMode)} — ${codexModeNote(task.permissionMode)}\n` : '') +
+            // ‼️ …and what the mode actually MEANS on this engine, which is not
+            // the same sentence twice. On Codex it is a SANDBOX and never a
+            // question it will ask; on Antigravity it is a request the app's own
+            // permission setting can overrule — measured, plan mode still wrote
+            // a file. The word alone would carry an assumption neither can keep.
+            (perTurn
+                ? engine.id === 'agy'
+                    ? `- Permissions: ${engineModeNote(engine.id, task.permissionMode)}\n`
+                    : `- Sandbox: ${codexSandboxFor(task.permissionMode)} — ${engineModeNote(engine.id, task.permissionMode)}\n`
+                : '') +
+            // ‼️ AND THAT THE BODY BELOW IS AN ENVELOPE, NOT A TRANSCRIPT. This
+            // engine states no price, so its token count is the only record of
+            // what the run cost — and the count, the answer and the conversation
+            // id all ride in the one object `--output-format json` prints. A
+            // plain-text run would read more easily and record none of it.
+            (perTurn && engine.id === 'agy'
+                ? '- Output: one `agy --output-format json` envelope — `response` is the answer, `usage` is what it cost, `conversation_id` is what resumes it\n'
+                : '') +
             // ‼️ AND WHAT THIS ENGINE COULD NOT HONOUR. The JSON output contract
             // is `claude -p --output-format json` — one envelope with the result,
             // the cost and the session id in it. `codex exec --json` is a
@@ -1244,31 +1266,55 @@ export class TaskManager implements vscode.Disposable {
         // not mangle. Everything Claude's path expresses as flags is expressed
         // here in the measured vocabulary instead (codexRunArgs).
         const perTurnPrompt = perTurn
-            ? codexContextPrefix(this.readContext(ctxFile)) + task.prompt
+            ? engineContextPrefix(this.readContext(ctxFile)) + task.prompt
             : '';
+        // ‼️ …EXCEPT ON THE ENGINE THAT HAS NO PIPE FOR IT. `agy --print` takes
+        // the prompt as its VALUE and reads nothing from stdin (measured: an
+        // empty `--print` with the text piped in exits 1). So on that engine the
+        // whole run is an argv array spawned with NO SHELL — the only way a
+        // multi-line prompt survives on Windows — and the string-and-a-shell
+        // path below is left exactly as it was for everything else.
+        const argv = perTurn && engine.promptOn === 'argv'
+            ? ['--print', perTurnPrompt, ...runArgs(engine.id, {
+                model: task.model, effort: task.effort,
+                permissionMode: task.permissionMode,
+                // …and it must be told which folder it may see, or it answers
+                // about its own scratch workspace instead.
+                cwd: task.workDir ?? agent.dir
+            })]
+            : undefined;
         // A named CLI profile runs a DIFFERENT binary, which knows nothing about
         // --append-system-prompt-file; the project context is claude's channel
         // and stays on claude's path.
         const command = profile
             ? buildCliCommand(profile.headless, task.prompt, this.extraArgs())
             : perTurn
-                ? [engine.exe, ...codexRunArgs({
+                ? [engine.exe, ...runArgs(engine.id, {
                     model: task.model, effort: task.effort,
                     permissionMode: task.permissionMode
                 })].join(' ')
                 : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
-        const child = cp.spawn(command, {
-            cwd: task.workDir ?? agent.dir,
-            shell: true,
-            windowsHide: true,
-            // closed stdin: claude won't wait 3s for piped input. A per-turn
-            // engine is the exception — its instruction IS what goes down that
-            // pipe, and it is closed immediately after (measured: the CLI waits
-            // for EOF, and an open pipe is a run that never starts).
-            stdio: [perTurn ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-            env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
-        });
-        if (perTurn) {
+        const pipePrompt = perTurn && !argv;
+        const child = argv
+            ? cp.spawn(engine.exe, argv, {
+                cwd: task.workDir ?? agent.dir,
+                shell: false,
+                windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
+            })
+            : cp.spawn(command, {
+                cwd: task.workDir ?? agent.dir,
+                shell: true,
+                windowsHide: true,
+                // closed stdin: claude won't wait 3s for piped input. A per-turn
+                // engine is the exception — its instruction IS what goes down that
+                // pipe, and it is closed immediately after (measured: the CLI waits
+                // for EOF, and an open pipe is a run that never starts).
+                stdio: [pipePrompt ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+                env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
+            });
+        if (pipePrompt) {
             try {
                 child.stdin?.write(perTurnPrompt);
                 child.stdin?.end();

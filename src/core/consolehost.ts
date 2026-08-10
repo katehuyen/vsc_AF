@@ -16,9 +16,10 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AgyState, newAgyState, translateAgy } from './agyproto';
 import { CodexState, newCodexState, translateCodex } from './codexproto';
 import {
-    codexArgs, codexContextPrefix, codexPromptText, EngineId, EngineTransport, engineOf
+    EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
@@ -47,6 +48,19 @@ import {
  */
 export function looksLikeUri(s: string): boolean {
     return /^[a-z][a-z0-9+.-]+:/i.test(String(s ?? '').trim());
+}
+
+/**
+ * The conversation a per-turn engine would resume — whatever that engine calls
+ * it.
+ *
+ * ‼️ ONE QUESTION, ONE ANSWER. Codex calls it a `thread_id` and Antigravity a
+ * `conversation_id`, and they arrive on different events; every caller that
+ * needs "which conversation is this" asks here instead of reaching into the
+ * translator's own state and getting it right for one engine only.
+ */
+function threadOf(h: { codex?: CodexState; agy?: AgyState }): string | undefined {
+    return h.agy?.conversationId ?? h.codex?.threadId;
 }
 
 /**
@@ -206,6 +220,17 @@ interface Hosted {
     /** The per-turn engine's translation state: its thread id, which turn it is
      *  on, and the tool calls still open (see codexproto.ts). */
     codex?: CodexState;
+    /**
+     * …and Antigravity's, which is a DIFFERENT state because it is a different
+     * protocol (agyproto.ts): its own conversation id, its own step counter, and
+     * the reply text it is still accumulating from deltas.
+     *
+     * ‼️ Two fields rather than one union on purpose. A session talks to exactly
+     * one engine for its whole life, so only one of them is ever set, and the
+     * translator that reads it is chosen by the same `engine` that created it —
+     * `threadOf` is the one place that asks "whichever of these exists".
+     */
+    agy?: AgyState;
     /** The turn a per-turn engine is running: what was said, what rode with it,
      *  what the engine has complained about, and how many times this exact turn
      *  has been attempted (see the thread-store conflict in `runTurn`). */
@@ -421,8 +446,10 @@ export class ConsoleHost {
             },
             engine,
             // A resume already knows the thread; a fresh session learns it from
-            // the first `thread.started`.
-            codex: { ...newCodexState(), ...(init.resume ? { threadId: init.resume } : {}) },
+            // the first `thread.started` (Codex) / `init` (Antigravity).
+            ...(engine.id === 'agy'
+                ? { agy: { ...newAgyState(), ...(init.resume ? { conversationId: init.resume } : {}) } }
+                : { codex: { ...newCodexState(), ...(init.resume ? { threadId: init.resume } : {}) } }),
             // ‼️ Read HERE, at spawn, exactly like the Claude path writes the
             // file here — and only for a session that is starting. A resume is
             // continuing a thread that was already told, and telling it again
@@ -459,29 +486,39 @@ export class ConsoleHost {
         // other channel for it (see Hosted.context). Consumed before the spawn
         // so a retried turn does not send it twice.
         if (h.context) {
-            prompt = codexContextPrefix(h.context) + prompt;
+            prompt = engineContextPrefix(h.context) + prompt;
             h.context = undefined;
         }
-        const args = codexArgs({
-            thread: h.codex?.threadId ?? h.state.sessionId,
+        const args = turnArgs(h.engine.id, {
+            thread: threadOf(h) ?? h.state.sessionId,
             model: h.state.model,
             effort: h.state.effort,
             permissionMode: h.state.permissionMode,
             cwd: h.state.cwd,
-            // ‼️ An image cannot be described, it has to be SEEN, and this engine
-            // takes one the only way it offers: as a file it opens itself. Every
-            // other kind of attachment travels as a path inside the prompt, the
-            // same judgement the Claude side makes (see Attachment).
+            // ‼️ An image cannot be described, it has to be SEEN, and Codex takes
+            // one the only way it offers: as a file it opens itself. Every other
+            // kind of attachment travels as a path inside the prompt, the same
+            // judgement the Claude side makes (see Attachment). Antigravity has
+            // no image flag at all, and `enginePromptText` has already put the
+            // picture's path in the prompt for it.
             images: attachments.filter(a => a.kind === 'image').map(a => a.path)
         });
+        // ‼️ WHERE THE PROMPT GOES IS THE ENGINE'S ANSWER, NOT A HABIT (measured
+        // per engine — see EngineTransport.promptOn). Codex reads it from stdin
+        // and would otherwise wait for a second copy; `agy` takes it as the value
+        // of `--print` and refuses an empty one.
+        const inArgv = h.engine.promptOn === 'argv';
+        const spawnArgs = inArgv ? ['--print', prompt, ...args] : args;
         let child: cp.ChildProcess;
         try {
-            // shell:true for the same reason the persistent path uses it — the
-            // engine is a shim on Windows. Nothing user-typed reaches the command
-            // line: the prompt travels on stdin and every flag value comes from a
-            // fixed vocabulary (consoleEngine.ts).
-            child = cp.spawn(h.engine.exe, args, {
-                cwd: h.state.cwd, shell: true, windowsHide: true,
+            // ‼️ AND WHETHER A SHELL SEES THAT COMMAND LINE FOLLOWS FROM IT.
+            // `claude` and `codex` are shims on Windows and need one; nothing
+            // user-typed reaches their command line. `agy` is a real .exe AND
+            // carries the message in argv, so a shell here would destroy any
+            // multi-line prompt — it is spawned without one and the argument
+            // arrives byte-for-byte.
+            child = cp.spawn(h.engine.exe, spawnArgs, {
+                cwd: h.state.cwd, shell: h.engine.spawnShell, windowsHide: true,
                 stdio: ['pipe', 'pipe', 'pipe']
             });
         } catch (e) {
@@ -579,7 +616,10 @@ export class ConsoleHost {
         });
 
         try {
-            child.stdin?.write(prompt);
+            // The prompt is already in argv on an engine that takes it there;
+            // stdin is still closed, because a pipe left open is a process that
+            // may sit waiting for input nobody is going to send.
+            if (!inArgv) { child.stdin?.write(prompt); }
             child.stdin?.end();
         } catch {
             this.endTurn(id, 'the prompt could not be delivered');
@@ -663,15 +703,25 @@ export class ConsoleHost {
             if (!line.trim()) { continue; }
             let parsed: unknown;
             try { parsed = JSON.parse(line); } catch { continue; }
-            // ‼️ A SECOND ENGINE IS A TRANSLATION, NOT A SECOND REDUCER. Codex
-            // shares no field name with Claude's stream (codexproto.ts), so its
-            // lines are turned into the events this reducer already understands
-            // and everything downstream — state, panel, cost strip, transcript —
-            // stays one code path.
+            // ‼️ ANOTHER ENGINE IS A TRANSLATION, NOT ANOTHER REDUCER. Neither
+            // Codex (codexproto.ts) nor Antigravity (agyproto.ts) shares a single
+            // field name with Claude's stream, so their lines are turned into the
+            // events this reducer already understands and everything downstream —
+            // state, panel, cost strip, transcript — stays one code path. That is
+            // what makes a third engine a file rather than a fork.
             if (h.engine.shape === 'perTurn') {
-                const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
-                h.codex = t.state;
-                for (const ev of t.events) {
+                const events = h.engine.id === 'agy'
+                    ? (() => {
+                        const t = translateAgy(h.agy ?? newAgyState(), parsed, { model: h.state.model });
+                        h.agy = t.state;
+                        return t.events;
+                    })()
+                    : (() => {
+                        const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
+                        h.codex = t.state;
+                        return t.events;
+                    })();
+                for (const ev of events) {
                     const rr = reduceEvent(h.state, ev, now);
                     h.state = rr.state;
                     changed = changed || rr.changed;
@@ -753,7 +803,7 @@ export class ConsoleHost {
             turnStartedAt: Date.now(), turnTokensAt: h.state.tokens
         };
         this.fire(id);
-        this.runTurn(id, codexPromptText(next.text));
+        this.runTurn(id, enginePromptText(h.engine.id, next.text));
     }
 
     private write(id: string, line: string): boolean {
@@ -814,7 +864,7 @@ export class ConsoleHost {
         }
         if (r.send) {
             if (perTurn) {
-                this.runTurn(id, codexPromptText(text.trim(), ready), ready);
+                this.runTurn(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
             } else {
                 this.write(id, userMessageLine(text.trim(), ready));
             }

@@ -31,6 +31,12 @@
  *     account — which is how a newly-granted model appears without an edit.
  *   · Gemini — nothing measured, so nothing claimed: the setting stands, and
  *     the source says so rather than implying a catalog exists.
+ *   · Antigravity (S-21, measured 2026-08-10) — NOTHING ON DISK AT ALL, and
+ *     that is the interesting case. `agy models` asks the service and prints the
+ *     answer; there is no `models_cache.json` anywhere under `~/.gemini`. So its
+ *     catalog cannot be read the way the other two are — it has to be RUN. The
+ *     parser is here and pure (`readAgyCatalog`); the spawning and the caching
+ *     of its output belong to the caller, which passes the text in.
  *
  * Pure over injected readers, exactly like `engines.ts`: the whole matrix is
  * testable without a home directory.
@@ -173,6 +179,98 @@ export function readClaudeExtras(text: string | undefined): LaunchChoice[] {
         }));
 }
 
+/**
+ * ‼️ ANTIGRAVITY'S CATALOG IS A LIST OF COMBINATIONS, AND THE PICKER NEEDS THE
+ * AXES BACK.
+ *
+ * `agy models` prints one tab-separated row per SELECTABLE model, and eight of
+ * the eleven rows on this machine are the same three models at three efforts:
+ *
+ *   gemini-3.6-flash-high      Gemini 3.6 Flash (High)
+ *   gemini-3.6-flash-medium    Gemini 3.6 Flash (Medium)
+ *   gemini-3.6-flash-low       Gemini 3.6 Flash (Low)
+ *   …
+ *   claude-sonnet-4-6          Claude Sonnet 4.6 (Thinking)
+ *   gpt-oss-120b-medium        GPT-OSS 120B (Medium)
+ *
+ * Offering all eleven as models would be the literal answer and the wrong one:
+ * the effort box beside it would then be dead, and the CLI REFUSES the pair
+ * anyway — *invalid model selection (--model "gemini-3.6-flash-low" --effort
+ * "medium")*. Its own error message is what says the axes are real: *gemini-3.1-pro
+ * has no "medium" effort (available: low, high)*. So the rows are split back
+ * into base × effort, which is exactly the shape S-20 already built for Codex,
+ * and the split is confirmed by that message — this parser derives `low, high`
+ * for `gemini-3.1-pro` from the list alone.
+ *
+ * ‼️ THE SPLIT NEEDS BOTH HALVES TO AGREE. The id must end in `-low|-medium|-high`
+ * AND the label in `(Low)|(Medium)|(High)`. `claude-opus-4-6-thinking` ends in a
+ * suffix that is not an effort, and `claude-sonnet-4-6` carries `(Thinking)` in
+ * its label without one in its id; requiring both keeps either from being
+ * mistaken for an effort and silently losing a model.
+ */
+export function readAgyCatalog(text: string | undefined): {
+    models: LaunchChoice[];
+    efforts: Record<string, LaunchChoice[]>;
+} | undefined {
+    const lines = String(text ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { return undefined; }
+
+    const order: string[] = [];
+    const bases = new Map<string, { label: string; efforts: string[] }>();
+    for (const line of lines) {
+        // The CLI prints `id<TAB>label`; a row with no tab is not a model row
+        // (it is a banner, or a version of this command nobody has measured) and
+        // is skipped rather than guessed at.
+        const tab = line.indexOf('\t');
+        if (tab <= 0) { continue; }
+        const id = line.slice(0, tab).trim();
+        const label = line.slice(tab + 1).trim();
+        if (!id || /\s/.test(id)) { continue; }
+
+        const m = /^(.*)-(low|medium|high)$/i.exec(id);
+        const suffix = m ? m[2].toLowerCase() : '';
+        const labelled = suffix && new RegExp(`\\(\\s*${suffix}\\s*\\)\\s*$`, 'i').test(label);
+        const base = labelled ? m![1] : id;
+        const baseLabel = labelled ? label.replace(/\s*\([^()]*\)\s*$/, '').trim() || base : label || id;
+
+        if (!bases.has(base)) { bases.set(base, { label: baseLabel, efforts: [] }); order.push(base); }
+        if (labelled) { bases.get(base)!.efforts.push(suffix); }
+    }
+    if (!order.length) { return undefined; }
+
+    const models: LaunchChoice[] = [DEFAULT_ROW];
+    const efforts: Record<string, LaunchChoice[]> = {};
+    for (const base of order) {
+        const row = bases.get(base)!;
+        models.push({
+            id: base,
+            label: row.label,
+            // the base id is what goes on the command line, so a picker showing a
+            // pretty name has to keep it readable somewhere
+            detail: row.efforts.length
+                ? `${base} · ${row.efforts.join(', ')}`
+                : `${base} · one setting, no effort to choose`
+        });
+        if (row.efforts.length) {
+            efforts[base] = [
+                { id: '', label: 'Default', detail: 'no --effort flag — the engine\'s own choice for this model' },
+                ...row.efforts.map(e => ({
+                    id: e, label: e,
+                    detail: `passed as --effort — this model offers ${row.efforts.join(', ')}`
+                }))
+            ];
+        } else {
+            // ‼️ AN EMPTY LIST, NOT THE SHARED ONE. A model the catalog gives no
+            // efforts for takes no `--effort` at all, and offering the generic
+            // low/medium/high there would build a command line the CLI refuses.
+            efforts[base] = [
+                { id: '', label: 'Default', detail: 'this model has no effort setting — the box is not used' }
+            ];
+        }
+    }
+    return { models, efforts };
+}
+
 /** `2026-08-10T06:57:08Z` → `10.08.2026` in the user's locale, or ''. */
 function ageNote(fetchedAt: number | undefined): string {
     if (!fetchedAt) { return ''; }
@@ -191,7 +289,17 @@ function ageNote(fetchedAt: number | undefined): string {
  * note says the catalog was not found, because a Claude alias silently offered
  * for Codex is exactly the bug this module exists to end.
  */
-export function readEngineModels(probe: EngineProbe, aliases: string[]): Record<EngineId, EngineModels> {
+export function readEngineModels(
+    probe: EngineProbe, aliases: string[],
+    /**
+     * ‼️ THE ONE CATALOG THAT IS NOT ON DISK. `agy models` has to be RUN, and
+     * running a command on every picker draw is not something this module gets
+     * to decide — so the caller spawns it, caches the output with its age, and
+     * hands the text in. Absent means "not fetched yet", which is a different
+     * thing from "the engine has none" and the note says which.
+     */
+    agyCatalog?: { text?: string; fetchedAt?: number }
+): Record<EngineId, EngineModels> {
     const safe = <T>(fn: () => T): T | undefined => { try { return fn(); } catch { return undefined; } };
     const settingsModels = [DEFAULT_ROW, ...fromAliases(aliases)];
     const staticEfforts = { '': EFFORT_CHOICES };
@@ -240,7 +348,32 @@ export function readEngineModels(probe: EngineProbe, aliases: string[]): Record<
         note: 'This engine states no model catalog, so this is the agentFarm.modelAliases list.'
     };
 
-    return { claude, codex, gemini };
+    const agyRows = safe(() => readAgyCatalog(agyCatalog?.text));
+    const agy: EngineModels = agyRows
+        ? {
+            models: agyRows.models,
+            // ‼️ NO `''` FALLBACK ENTRY. On this engine every model states its own
+            // effort vocabulary — including "none" — so a shared list would only
+            // ever be the wrong one; a model the catalog has never heard of gets
+            // EFFORT_CHOICES through `effortsFor`, which is the honest guess.
+            efforts: agyRows.efforts,
+            defaultEffort: {},
+            source: 'catalog',
+            fetchedAt: agyCatalog?.fetchedAt,
+            note: `${agyRows.models.length - 1} models, read from Antigravity's own \`agy models\` — the same list its picker offers. `
+                + 'Each one carries its own effort vocabulary, and a model with none takes no --effort at all.'
+                + ageNote(agyCatalog?.fetchedAt)
+        }
+        : {
+            models: settingsModels,
+            efforts: staticEfforts,
+            defaultEffort: {},
+            source: 'settings',
+            note: 'Antigravity keeps no model catalog on disk — its list comes from `agy models`, which has not answered yet. '
+                + 'Until it does this is the agentFarm.modelAliases list, which is almost certainly wrong for this engine.'
+        };
+
+    return { claude, codex, gemini, agy };
 }
 
 /** The effort rows for one engine+model — the per-model vocabulary when the

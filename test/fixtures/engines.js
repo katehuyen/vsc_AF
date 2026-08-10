@@ -52,6 +52,26 @@ const engines = () => ([
         installCommand: 'npm install -g @google/gemini-cli',
         billing: 'An API key. The "sign in with Google" route this CLI used to have was retired in June 2026, so a plan is no longer a way to pay for it.',
         docs: 'https://github.com/google-gemini/gemini-cli'
+    },
+    {
+        // ‼️ THE FOURTH STATE, AND THE ONE THE LAYOUT HAD NEVER BEEN DRAWN FOR:
+        // an engine with NO KEY AT ALL and no install command. Every other row
+        // ends in an "Add key" button and names a variable; this one has neither
+        // — the sign-in belongs to the Antigravity app — so the fixture is here
+        // to make sure the row still reads as a row rather than as a gap where a
+        // button used to be.
+        id: 'agy', label: 'Antigravity',
+        cli: { command: 'agy', found: true, path: 'C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe' },
+        auth: {
+            mode: 'subscription', file: '.gemini/antigravity-cli/cache/onboarding.json',
+            detail: 'Signed in through the Antigravity app (consumer onboarding complete). '
+                + 'The grant itself belongs to the app — there is no credential file here to read, and no key.'
+        },
+        key: { env: '', inVault: false },
+        ready: true,
+        next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
+        billing: 'A Google account signed into the Antigravity app — the CLI borrows that sign-in. There is no API key for this engine and nothing to keep in the vault.',
+        docs: 'https://antigravity.google'
     }
 ]);
 

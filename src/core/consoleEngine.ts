@@ -34,6 +34,7 @@
 // owns "and how does a turn reach one". Two lists of engine names would drift
 // the first time a third engine arrived.
 import { EngineId } from './engines';
+import { agyArgs, agyModeNote, agyRunArgs, agyTuiArgs, AgyTurnInit } from './agy';
 
 export { EngineId };
 
@@ -59,22 +60,67 @@ export interface EngineTransport {
     reportsCost: boolean;
     /** Human name for the surfaces. */
     label: string;
+    /**
+     * ‼️ WHERE THE PROMPT TRAVELS — measured per engine, and they disagree.
+     *
+     * `stdin` — Codex: given the prompt as an argument it STILL drains stdin
+     * when stdin is a pipe and waits for a second copy that never comes.
+     * `argv`  — Antigravity: `--print` takes the prompt as its value and refuses
+     * an empty one (*empty prompt. Usage: agy --print "your prompt here"*);
+     * nothing is read from stdin at all.
+     *
+     * Getting this backwards does not fail loudly — it hangs, or it sends an
+     * empty turn — which is why it is a field and not a habit.
+     */
+    promptOn: 'stdin' | 'argv';
+    /**
+     * ‼️ AND WHETHER A SHELL IS ALLOWED TO SEE THE COMMAND LINE.
+     *
+     * `claude` and `codex` are `.cmd` shims on Windows and need one; nothing
+     * user-typed reaches their command line, so it is safe. `agy` is a real
+     * `.exe` AND carries the prompt in argv — a multi-line message does not
+     * survive `cmd.exe`, so it is spawned with no shell and the argument arrives
+     * byte-for-byte (verified with newlines, quotes, a backtick, `$`, `%`, `&`).
+     */
+    spawnShell: boolean;
+    /**
+     * Can a conversation be picked up again from a TERMINAL launch?
+     *
+     * Claude has `--resume`; Antigravity has `--conversation <id>` and
+     * `--continue`, ordinary flags on the ordinary command. Codex does NOT: its
+     * resume is a separate subcommand with a different flag vocabulary, and the
+     * one this codebase has measured is `codex exec resume`, which belongs to
+     * the Console. A launcher that ignored that would open a NEW conversation
+     * while the caller believed it had continued one.
+     */
+    resumeInTerminal: boolean;
 }
 
 export const ENGINES: Record<EngineId, EngineTransport> = {
     claude: {
         id: 'claude', exe: 'claude', shape: 'persistent',
-        liveControls: true, reportsCost: true, label: 'Claude Code'
+        liveControls: true, reportsCost: true, label: 'Claude Code',
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: true
     },
     codex: {
         id: 'codex', exe: 'codex', shape: 'perTurn',
         // A per-turn engine has nothing to change mid-turn: the flags of the
         // NEXT turn are the controls, and they take effect the moment it starts.
-        liveControls: false, reportsCost: false, label: 'Codex'
+        liveControls: false, reportsCost: false, label: 'Codex',
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false
     },
     gemini: {
         id: 'gemini', exe: 'gemini', shape: 'perTurn',
-        liveControls: false, reportsCost: false, label: 'Gemini'
+        liveControls: false, reportsCost: false, label: 'Gemini',
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false
+    },
+    agy: {
+        // ‼️ `agy`, and the label is "Antigravity" — NOT "Gemini". The row above
+        // is `@google/gemini-cli`, a different program. This one is Google's
+        // agent app, and the models it offers include Anthropic's.
+        id: 'agy', exe: 'agy', shape: 'perTurn',
+        liveControls: false, reportsCost: false, label: 'Antigravity',
+        promptOn: 'argv', spawnShell: false, resumeInTerminal: true
     }
 };
 
@@ -310,7 +356,95 @@ export function codexContextPrefix(context: string): string {
  */
 export function engineNote(id: string | undefined): string {
     const e = engineOf(id);
-    return e.shape === 'persistent'
-        ? 'One long-lived process: a message typed mid-turn steers that turn, and model, effort and permissions can be changed while it runs. It reports what each turn cost.'
-        : 'One process per turn: a message typed mid-turn is HELD until the turn ends, the pickers are the NEXT turn\'s flags, and the permission mode becomes a sandbox chosen up front — this engine cannot stop and ask. It runs on a plan, so it counts tokens and states no price.';
+    if (e.shape === 'persistent') {
+        return 'One long-lived process: a message typed mid-turn steers that turn, and model, effort and permissions can be changed while it runs. It reports what each turn cost.';
+    }
+    if (e.id === 'agy') {
+        // ‼️ THE SAME SHAPE, A DIFFERENT SENTENCE. Saying "a sandbox chosen up
+        // front" here would be a promise this engine does not keep: measured,
+        // its permission flags do not restrain it — the Antigravity app's own
+        // setting does (see agyModeNote).
+        return 'One process per turn: a message typed mid-turn is HELD until the turn ends, and the pickers are the NEXT turn\'s flags. '
+            + 'It sees only the folders it is given, cannot be handed a picture, and takes its permissions from the Antigravity app rather than from this box. '
+            + 'It runs on an account, so it counts tokens and states no price.';
+    }
+    return 'One process per turn: a message typed mid-turn is HELD until the turn ends, the pickers are the NEXT turn\'s flags, and the permission mode becomes a sandbox chosen up front — this engine cannot stop and ask. It runs on a plan, so it counts tokens and states no price.';
+}
+
+// ---------------------------------------------------------------------------
+// S-21 — ONE CALL SITE PER JOB, WHATEVER THE ENGINE IS
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ THE DISPATCH LIVES HERE, NOT AT THE CALL SITES.
+ *
+ * When Codex was the only per-turn engine, `ConsoleHost`, `TaskManager` and the
+ * launcher each called `codexArgs` / `codexRunArgs` / `codexTuiArgs` by name.
+ * Adding a second per-turn engine that way would have put an `if (engine ===
+ * 'agy')` in each of them — three places to forget, and the fourth engine would
+ * make it four. The vocabularies stay in their own files (`consoleEngine.ts` for
+ * Codex, `agy.ts` for Antigravity); what is shared is which one gets asked.
+ */
+
+/** One hosted turn's dimensions, in the words every per-turn engine understands.
+ *  `thread` is whatever that engine calls a conversation it can pick up again. */
+export interface TurnInit {
+    thread?: string;
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+    cwd?: string;
+    /** Image files to attach — ignored by an engine with no image channel, and
+     *  that engine says so rather than dropping them silently. */
+    images?: string[];
+}
+
+/** The command line for ONE hosted turn on any per-turn engine. */
+export function turnArgs(engine: string | undefined, o: TurnInit): string[] {
+    const spec = engineOf(engine);
+    if (spec.id === 'agy') {
+        const init: AgyTurnInit = {
+            conversation: o.thread, model: o.model, effort: o.effort,
+            permissionMode: o.permissionMode, cwd: o.cwd
+        };
+        return agyArgs(init);
+    }
+    return codexArgs(o as CodexTurnInit);
+}
+
+/** …and for one unattended run — a headless task. */
+export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
+    return engineOf(engine).id === 'agy' ? agyRunArgs(o) : codexRunArgs(o);
+}
+
+/** …and for the interactive command a person is about to watch in a terminal. */
+export function tuiArgs(
+    engine: string | undefined, o: CodexRunInit & { conversation?: string; continueLast?: boolean }
+): string[] {
+    return engineOf(engine).id === 'agy' ? agyTuiArgs(o) : codexTuiArgs(o);
+}
+
+/** The one line beside a permission picker: what this mode does HERE. */
+export function engineModeNote(engine: string | undefined, mode: string | undefined): string {
+    return engineOf(engine).id === 'agy' ? agyModeNote(mode) : codexModeNote(mode);
+}
+
+/** The prompt as a per-turn engine receives it — the same wording on both, so
+ *  the same instruction cannot behave differently for no visible reason. */
+export function enginePromptText(
+    engine: string | undefined, text: string, attachments: { kind: string; path: string }[] = []
+): string {
+    const spec = engineOf(engine);
+    if (spec.id !== 'agy') { return codexPromptText(text, attachments); }
+    // ‼️ NO IMAGE CHANNEL ON THIS ONE (agy.ts): Codex keeps images out of the
+    // prompt because `-i` can carry them. Here there is no `-i`, so a picture is
+    // named as a path like everything else — the agent is told where it is and
+    // cannot look at it, which is better than it never being mentioned.
+    return codexPromptText(text, attachments.map(a => ({ ...a, kind: 'file' })));
+}
+
+/** The project brief, fenced, for an engine with no system-prompt channel —
+ *  which is both of the per-turn ones. */
+export function engineContextPrefix(context: string): string {
+    return codexContextPrefix(context);
 }

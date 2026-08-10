@@ -19,9 +19,18 @@
  *   · Codex — `~/.codex/auth.json` carries `auth_mode`, and on this user's
  *     machine it reads `chatgpt` with `OPENAI_API_KEY: null`: a ChatGPT
  *     subscription, no API key anywhere. Measured 2026-08-09.
- *   · Gemini / Antigravity — the Google-account login was retired in June 2026,
- *     so this one really is an API key now, which is exactly the kind of fact a
+ *   · Gemini — the `gemini-cli` Google-account login was retired in June 2026,
+ *     so that one really is an API key now, which is exactly the kind of fact a
  *     panel has to state instead of leaving the user to discover.
+ *   · Antigravity (`agy`) — a THIRD arrangement, and the one that breaks the
+ *     pattern: the sign-in belongs to the Antigravity DESKTOP APP and the CLI
+ *     borrows it. There is no key, no `agy login`, and no credential file this
+ *     extension can read — measured 2026-08-10: no `~/.agy`, no
+ *     `~/.antigravity`, nothing under `~/.gemini` that names a token, nothing in
+ *     the Windows credential store. What IS on disk is the CLI's record that the
+ *     account finished onboarding, and its own log naming the account it
+ *     authenticated as. So this row is read from the state the CLI keeps, and
+ *     the row says where the grant actually lives rather than inventing a file.
  *
  * Which means an "API keys" screen is the wrong screen. What a person needs to
  * see is, per engine: is the CLI here, HOW is it paid for, is it signed in, and
@@ -31,7 +40,7 @@
  * matrix can be tested without a keychain, a home directory or a spawn.
  */
 
-export type EngineId = 'claude' | 'codex' | 'gemini';
+export type EngineId = 'claude' | 'codex' | 'gemini' | 'agy';
 
 /** How an engine is being paid for, as far as we can see from disk. */
 export type AuthMode =
@@ -60,7 +69,15 @@ export interface EngineAuth {
 }
 
 export interface EngineKey {
-    /** the environment variable the engine reads */
+    /**
+     * The environment variable the engine reads — EMPTY when the engine has no
+     * key route at all.
+     *
+     * ‼️ Empty is a real answer, not a missing one: Antigravity is paid for by
+     * an app sign-in and has no key to store, so a surface that draws an "Add
+     * key" box for it is offering a gesture that leads nowhere. Every surface
+     * checks this before it draws that box.
+     */
     env: string;
     /** …and whether the vault holds a secret under that exact name */
     inVault: boolean;
@@ -113,11 +130,22 @@ interface EngineSpec {
     id: EngineId;
     label: string;
     command: string;
+    /** '' when the engine has no key route — see EngineKey.env. */
     env: string;
     billing: string;
     docs: string;
     loginCommand?: string;
     installCommand?: string;
+    /**
+     * …or, for an engine that does NOT arrive by a command, the one sentence
+     * that says how it does arrive. Antigravity ships with a desktop app; a row
+     * offering `npm install -g` for it would send the user to a package that
+     * does not exist.
+     */
+    installHint?: string;
+    /** What to do when nothing is signed in and there is no `loginCommand` to
+     *  offer — the branch that must never end in "not configured". */
+    signInHint?: string;
     read(probe: EngineProbe): EngineAuth;
 }
 
@@ -142,6 +170,13 @@ function json(text: string | undefined): Record<string, unknown> | undefined {
 const CLAUDE_CREDS = '.claude/.credentials.json';
 const CODEX_AUTH = '.codex/auth.json';
 const GEMINI_OAUTH = '.gemini/oauth_creds.json';
+/** Antigravity's CLI keeps its own state here; the SIGN-IN is not in it. */
+const AGY_HOME = '.gemini/antigravity-cli';
+/** …but whether the account finished signing in IS, in 150 bytes. Deliberately
+ *  this file and not the CLI's log: the log carries the account's email and
+ *  grows without limit, and reading a growing file on every panel draw is a
+ *  cost that arrives months later. */
+const AGY_ONBOARDING = '.gemini/antigravity-cli/cache/onboarding.json';
 
 const SPECS: EngineSpec[] = [
     {
@@ -243,6 +278,51 @@ const SPECS: EngineSpec[] = [
             }
             return { mode: 'none', detail: 'No key.' };
         }
+    },
+    {
+        // ‼️ THE ROW ABOVE IS NOT THIS ONE, AND THE CONFUSION IS THE POINT OF
+        // SAYING SO. `gemini` is `@google/gemini-cli`, a separate program that
+        // is not installed on this machine. Antigravity is Google's agent app,
+        // its CLI is `agy`, and the models it offers are Gemini's *and*
+        // Claude's *and* an open-weights one — so naming it "Gemini" would be
+        // wrong in both directions at once.
+        id: 'agy',
+        label: 'Antigravity',
+        command: 'agy',
+        // ‼️ NO KEY EXISTS FOR THIS ENGINE. Not "we have not found one yet" —
+        // measured: no `agy login`, no key variable in its help, no credential
+        // file. An empty env is the honest answer and the surfaces read it.
+        env: '',
+        billing: 'A Google account signed into the Antigravity app — the CLI borrows that sign-in. There is no API key for this engine and nothing to keep in the vault.',
+        docs: 'https://antigravity.google',
+        installHint: 'It arrives with the Antigravity app rather than from a package registry; install that, then run `agy install` once to put the command on PATH.',
+        signInHint: 'Open the Antigravity app and sign in with your Google account — the CLI borrows that sign-in. This engine has no key and no sign-in command of its own.',
+        read(probe) {
+            const onboarding = json(probe.readHome(AGY_ONBOARDING));
+            if (onboarding) {
+                const consumer = onboarding.consumerOnboardingComplete === true;
+                const enterprise = onboarding.enterpriseOnboardingComplete === true;
+                if (consumer || enterprise) {
+                    return {
+                        mode: 'subscription', file: AGY_ONBOARDING,
+                        detail: `Signed in through the Antigravity app (${enterprise ? 'enterprise' : 'consumer'} onboarding complete). `
+                            + 'The grant itself belongs to the app — there is no credential file here to read, and no key.'
+                    };
+                }
+                return {
+                    mode: 'none',
+                    file: AGY_ONBOARDING,
+                    detail: 'The CLI has run, but no completed sign-in is recorded.'
+                };
+            }
+            if (probe.existsHome(AGY_HOME)) {
+                return {
+                    mode: 'none',
+                    detail: 'The CLI keeps state here but has never recorded a finished sign-in.'
+                };
+            }
+            return { mode: 'none', detail: 'The CLI has never run on this machine.' };
+        }
     }
 ];
 
@@ -264,7 +344,8 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
         const grant = auth.mode === 'subscription' ? ' The sign-in is already on disk, so this is the only step left.'
             : auth.mode === 'apikey' ? ' The key is already there, so this is the only step left.' : '';
         return `${spec.label} is not installed on this machine — nothing can start until the ${spec.command} command exists.`
-            + (spec.installCommand ? ` Install it with: ${spec.installCommand}.` : '')
+            + (spec.installCommand ? ` Install it with: ${spec.installCommand}.`
+                : spec.installHint ? ` ${spec.installHint}` : '')
             + grant;
     }
     if (auth.mode === 'subscription') {
@@ -274,9 +355,14 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
         return `Ready, on a key (${spec.env}) — this one is billed per token.`
             + (spec.loginCommand ? ` A plan is the cheaper route for daily work: ${spec.loginCommand}.` : '');
     }
-    return spec.loginCommand
-        ? `Sign in once with your plan — run ${spec.loginCommand} in a terminal — or put ${spec.env} in the vault to pay per token.`
-        : `Put ${spec.env} in the vault. This engine has no plan sign-in.`;
+    if (spec.loginCommand) {
+        return `Sign in once with your plan — run ${spec.loginCommand} in a terminal — or put ${spec.env} in the vault to pay per token.`;
+    }
+    // ‼️ AN ENGINE WITH NO KEY AND NO LOGIN COMMAND STILL GETS A STEP. Without
+    // this branch Antigravity's row would read "Put  in the vault", which is
+    // both nonsense and the "not configured" dead end this module replaces.
+    if (!spec.env) { return spec.signInHint ?? `${spec.label} is not signed in.`; }
+    return `Put ${spec.env} in the vault. This engine has no plan sign-in.`;
 }
 
 /** The whole matrix, in the order the panel draws it. */
@@ -290,7 +376,10 @@ export function readEngines(probe: EngineProbe): EngineStatus[] {
             label: spec.label,
             cli,
             auth,
-            key: { env: spec.env, inVault: !!safe(() => probe.hasSecret(spec.env)) },
+            // An engine with no key route is never asked about one: `hasSecret('')`
+            // is a question with no meaning, and an answer to it would put a
+            // nameless entry in the vault's own hover.
+            key: { env: spec.env, inVault: !!spec.env && !!safe(() => probe.hasSecret(spec.env)) },
             ready: cli.found && auth.mode !== 'none',
             next: nextStep(spec, cli, auth),
             loginCommand: spec.loginCommand,

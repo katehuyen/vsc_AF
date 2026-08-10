@@ -264,7 +264,7 @@
      * name the engine reads. See src/core/engines.ts.
      */
     const ENGINE_TERMS = 'engine engines model models cli claude codex openai gemini '
-        + 'antigravity api key apikey login sign in subscription plan auth credentials secret vault';
+        + 'antigravity agy google api key apikey login sign in subscription plan auth credentials secret vault';
 
     function engineRow(e) {
         const T = window.AFTip;
@@ -279,7 +279,11 @@
             `Billing: ${e.auth.mode === 'subscription' ? 'a plan' : e.auth.mode === 'apikey' ? 'per token' : 'nothing set up'}`,
             e.auth.file ? `Read from: ~/${e.auth.file}` : '',
             e.auth.refreshedAt ? `Last refreshed: ${new Date(e.auth.refreshedAt).toLocaleString()}` : '',
-            `Key name: ${e.key.env}${e.key.inVault ? ' — in the vault' : ' — not in the vault'}`
+            // An engine with no key route says so rather than naming a variable
+            // that does not exist (see the Engines page).
+            e.key.env
+                ? `Key name: ${e.key.env}${e.key.inVault ? ' — in the vault' : ' — not in the vault'}`
+                : 'Key: this engine has none — nothing to store'
         ]);
         // ‼️ A ROW OFFERS THE STEP IT IS ACTUALLY ON. An engine that is not
         // installed cannot be signed into, and telling somebody to sign in to a
@@ -302,8 +306,8 @@
                 <span class="engbadge b-${tone}" title="${C.esc(facts)}">${C.esc(badge)}</span>
                 <span style="flex:1"></span>
                 ${install}${login}
-                <button class="secondary small" data-engkey="${C.esc(e.key.env)}"
-                    title="${C.esc(`${e.key.inVault ? 'Replace' : 'Store'} ${e.key.env} in the OS keychain. This is the pay-per-token route; the value never reaches this page.`)}">${e.key.inVault ? 'Replace key' : 'Add key'}</button>
+                ${e.key.env ? `<button class="secondary small" data-engkey="${C.esc(e.key.env)}"
+                    title="${C.esc(`${e.key.inVault ? 'Replace' : 'Store'} ${e.key.env} in the OS keychain. This is the pay-per-token route; the value never reaches this page.`)}">${e.key.inVault ? 'Replace key' : 'Add key'}</button>` : ''}
                 <button class="secondary small" data-engdocs="${C.esc(e.docs)}" title="${C.esc(e.docs)}">Docs</button>
             </div>
             <div class="setdesc">${C.esc(e.billing)}</div>

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.103.0",
+  "version": "3.104.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -7890,9 +7890,10 @@
                 "",
                 "claude",
                 "codex",
-                "gemini"
+                "gemini",
+                "agy"
               ],
-              "description": "Which engine every new session, task and automation starts on. Empty = Claude Code, which is what every launch meant before engines existed. ‼️ A per-turn engine such as Codex behaves differently: a message typed mid-turn is HELD until the turn ends, the model/effort/permission pickers are the NEXT turn's flags, the permission mode becomes a sandbox chosen up front (it cannot stop and ask), and it reports tokens rather than a price because it runs against a plan. An engine that is not installed or not signed in on this machine is refused at start — see Agent Farm: Open Engines."
+              "description": "Which engine every new session, task and automation starts on. Empty = Claude Code, which is what every launch meant before engines existed. ‼️ A per-turn engine such as Codex or Antigravity behaves differently: a message typed mid-turn is HELD until the turn ends, the model/effort/permission pickers are the NEXT turn's flags, and it reports tokens rather than a price because it runs against a plan. On Codex the permission mode becomes a sandbox chosen up front (it cannot stop and ask); on Antigravity ('agy') the real restraint is the Antigravity app's own tool-permission setting rather than this one, and it only sees folders it is explicitly given. 'agy' is Antigravity, Google's agent app — NOT the separate 'gemini' CLI above it. An engine that is not installed or not signed in on this machine is refused at start — see Agent Farm: Open Engines."
             },
             "model": {
               "type": "string",

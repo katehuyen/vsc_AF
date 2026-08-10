@@ -63,7 +63,13 @@
                 : e.auth.mode === 'apikey' ? 'per token' : 'nothing set up'),
             e.auth.file ? 'Read from: ~/' + e.auth.file : '',
             e.auth.refreshedAt ? 'Last refreshed: ' + window.AFTime.full(e.auth.refreshedAt) : '',
-            'Key name: ' + e.key.env + (e.key.inVault ? ' — in the vault' : ' — not in the vault')
+            // ‼️ An engine with no key route says THAT, rather than naming a
+            // variable that does not exist. Antigravity is paid for by an app
+            // sign-in; "Key name: " with nothing after it is the sort of blank
+            // this page exists to stop producing.
+            e.key.env
+                ? 'Key name: ' + e.key.env + (e.key.inVault ? ' — in the vault' : ' — not in the vault')
+                : 'Key: this engine has none — nothing to store'
         ]);
     }
 
@@ -126,9 +132,15 @@
             + '<span class="engbadge b-' + b.tone + '" title="' + esc(factsOf(e)) + '">' + esc(b.text) + '</span>'
             + '<span class="grow"></span>'
             + install + login + test
-            + '<button class="secondary small" data-engkey="' + esc(e.key.env) + '" title="'
-            + esc((e.key.inVault ? 'Replace ' : 'Store ') + e.key.env + ' in the OS keychain. This is the pay-per-token route; the value never reaches this page.')
-            + '">' + (e.key.inVault ? 'Replace key' : 'Add key') + '</button>'
+            // ‼️ NO KEY BUTTON FOR AN ENGINE WITH NO KEY. Drawing it would offer
+            // a gesture that opens a vault form with no name to fill in — worse
+            // than absent, because a user would reasonably conclude the key is
+            // what they are missing.
+            + (e.key.env
+                ? '<button class="secondary small" data-engkey="' + esc(e.key.env) + '" title="'
+                + esc((e.key.inVault ? 'Replace ' : 'Store ') + e.key.env + ' in the OS keychain. This is the pay-per-token route; the value never reaches this page.')
+                + '">' + (e.key.inVault ? 'Replace key' : 'Add key') + '</button>'
+                : '')
             + '<button class="secondary small" data-engdocs="' + esc(e.docs) + '" title="' + esc(e.docs) + '">Docs</button>'
             + '</div>'
             + '<div class="engbill">' + esc(e.billing) + '</div>'
@@ -186,6 +198,9 @@
                 <b>A plan sign-in lives in the CLI's own credentials file and never passes through Agent Farm</b>;
                 a key is the other route and is kept in the OS keychain (the Secrets page is the full table),
                 injected into an agent's environment under the exact name the engine reads.
+                A third arrangement exists and has no box on this page at all: <b>Antigravity is signed in
+                inside its own desktop app</b>, so it has no key, no login command and no credential file
+                here to read — its row says what it found instead.
                 Everything above a card's verdict line was read off disk — <b>only ⚡ Test proves a call gets through</b>,
                 and it costs one real turn.</p>
             ${list.map(cardHtml).join('')}`;

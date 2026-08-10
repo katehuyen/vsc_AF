@@ -32,21 +32,73 @@ const by = (list, id) => list.find(e => e.id === id);
 // ---------- nothing installed: every row still says what to do ----------
 {
     const list = readEngines(probe({}));
-    ok('all three engines are always listed', list.length === 3
-        && ['claude', 'codex', 'gemini'].every(id => !!by(list, id)));
+    ok('all four engines are always listed', list.length === 4
+        && ['claude', 'codex', 'gemini', 'agy'].every(id => !!by(list, id)));
     ok('nothing is ready on an empty machine', list.every(e => !e.ready));
     // ‼️ The whole complaint in one assertion: a state is not an answer.
     ok('‼️ no row stops at naming a state — each one says what to do',
         list.every(e => /install|Sign in|sign in|vault|PATH/.test(e.next)));
     // ‼️ …and a missing CLI is named as the first problem, not the key — AND
-    // the row carries the command that fixes it. "Install it" with no line to
-    // run is the same dead end as "not configured": the user is told the state
-    // and left to find the gesture.
-    ok('…and a missing CLI is named as the first problem, with the install line on it',
-        list.every(e => /not installed on this machine/.test(e.next)
-            && /Install it with: npm install -g \S+/.test(e.next)));
+    // the row carries the way to fix it. "Install it" with nothing to do is the
+    // same dead end as "not configured": the user is told the state and left to
+    // find the gesture.
+    ok('…and a missing CLI is named as the first problem, with the install step on it',
+        list.every(e => /not installed on this machine/.test(e.next))
+        && ['claude', 'codex', 'gemini'].every(id => /Install it with: npm install -g \S+/.test(by(list, id).next)));
+    // ‼️ …INCLUDING THE ONE THAT DOES NOT COME FROM A PACKAGE REGISTRY. Offering
+    // `npm install -g agy` would send the user to something that does not exist,
+    // so that row names the app it ships with instead — a different sentence for
+    // the same job, which is why `installHint` exists at all.
+    ok('‼️ an engine with no install COMMAND still says how it arrives',
+        !by(list, 'agy').installCommand
+        && /Antigravity app/.test(by(list, 'agy').next)
+        && /agy install/.test(by(list, 'agy').next));
     ok('the summary counts what can run', JSON.stringify(enginesSummary(list))
-        === JSON.stringify({ ready: 0, total: 3, onPlan: 0 }));
+        === JSON.stringify({ ready: 0, total: 4, onPlan: 0 }));
+}
+
+// ---------- Antigravity: signed in through an APP, with no key anywhere ----------
+{
+    // The measured shape (2026-08-10): the sign-in belongs to the Antigravity
+    // desktop app and nothing on disk holds a token — what IS there is the CLI's
+    // note that onboarding finished.
+    const list = readEngines(probe({
+        path: ['agy'],
+        files: {
+            '.gemini/antigravity-cli/cache/onboarding.json': JSON.stringify({
+                consumerOnboardingComplete: true,
+                enterpriseOnboardingComplete: false,
+                onboardingComplete: true
+            })
+        }
+    }));
+    const agy = by(list, 'agy');
+    ok('‼️ an app sign-in is read as a SUBSCRIPTION, not as a missing key',
+        agy.auth.mode === 'subscription' && agy.ready);
+    ok('…and it says WHERE the grant actually lives, instead of naming a file that has none',
+        /Antigravity app/.test(agy.auth.detail) && /no credential file/.test(agy.auth.detail));
+    ok('…naming the file the state was read from', agy.auth.file === '.gemini/antigravity-cli/cache/onboarding.json');
+    // ‼️ THE POINT OF THE EMPTY `env`. Every other row offers a key as the other
+    // route; this engine has none, and a row that named one would send the user
+    // to store a secret nothing reads.
+    ok('‼️ an engine with no key route reports an EMPTY key name, not a guessed one',
+        agy.key.env === '' && agy.key.inVault === false);
+    ok('…and no login command is invented for a CLI that has none',
+        !agy.loginCommand);
+    ok('the plan row reads as ready and says there is nothing to keep',
+        /Ready, on a plan/.test(agy.next));
+}
+
+// ---------- Antigravity installed but never signed in ----------
+{
+    const list = readEngines(probe({ path: ['agy'], files: { '.gemini/antigravity-cli': '' } }));
+    const agy = by(list, 'agy');
+    ok('an unsigned Antigravity is not ready', !agy.ready && agy.auth.mode === 'none');
+    // ‼️ The branch that would otherwise print "Put  in the vault" — a sentence
+    // with a hole in it, which is exactly the "not configured" this module ends.
+    ok('‼️ …and its next step is a real instruction, not a blank key name',
+        !/Put\s+in the vault/.test(agy.next)
+        && /Antigravity app/.test(agy.next) && /no key/.test(agy.next));
 }
 
 // ---------- Codex on a ChatGPT plan — the measured shape ----------
@@ -135,8 +187,8 @@ const by = (list, id) => list.find(e => e.id === id);
     };
     let list = null;
     try { list = readEngines(angry); } catch { /* recorded below */ }
-    ok('‼️ a machine that refuses every question still renders three rows',
-        !!list && list.length === 3 && list.every(e => !e.ready && !!e.next));
+    ok('‼️ a machine that refuses every question still renders every row',
+        !!list && list.length === 4 && list.every(e => !e.ready && !!e.next));
 }
 
 // ---------- the stamp parser, on its own ----------

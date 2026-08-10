@@ -22,9 +22,18 @@
 
 import { EngineId } from './engines';
 
-/** What a test run needs from the outside world. */
+/**
+ * What a test run needs from the outside world.
+ *
+ * ‼️ `shell` IS PART OF THE CONTRACT, not a detail of the caller. Under a shell
+ * the arguments are joined with spaces and NOT quoted, which is harmless when
+ * every argument is one token and fatal when one of them is a sentence: `agy
+ * --print Reply with exactly: OK` hands the CLI a one-word prompt and four
+ * arguments it never asked for. Engines whose command line carries a sentence
+ * say so and are spawned directly.
+ */
 export type EngineRunner = (
-    command: string, args: string[], timeoutMs: number
+    command: string, args: string[], timeoutMs: number, shell?: boolean
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 export interface EngineTestResult {
@@ -54,6 +63,9 @@ interface TestSpec {
     args: string[];
     /** a run that has not answered by now is a failure worth reporting */
     timeoutMs: number;
+    /** false when an argument is a sentence — see EngineRunner. Default true,
+     *  because two of these engines are `.cmd` shims and need one. */
+    shell?: boolean;
     /** what a healthy answer looks like on stdout */
     expect(stdout: string): boolean;
 }
@@ -88,6 +100,27 @@ const SPECS: TestSpec[] = [
         args: ['-p', PROMPT],
         timeoutMs: 90000,
         expect: out => /\S/.test(out)
+    },
+    {
+        id: 'agy',
+        command: 'agy',
+        // ‼️ THE SMALLEST MODEL IN ITS OWN CATALOG, NAMED. Left to itself this
+        // CLI defaults to `gemini-3.1-pro`, and a health check must not be the
+        // most expensive turn on the account. `--output-format json` gives one
+        // object to read instead of an event stream, and `--print-timeout` is
+        // stated because the default is five minutes and this check has its own.
+        args: [
+            '--print', PROMPT,
+            '--model', 'gemini-3.6-flash-low',
+            '--output-format', 'json',
+            '--print-timeout', '2m'
+        ],
+        // ‼️ NO SHELL: the prompt above is a sentence (see EngineRunner).
+        shell: false,
+        timeoutMs: 150000,
+        // The envelope says so itself, and a run that answered with an error
+        // still exits 0 — so the status is the proof, not the exit code.
+        expect: out => /"status"\s*:\s*"SUCCESS"/.test(out)
     }
 ];
 
@@ -100,6 +133,11 @@ export function firstFault(stderr: string, stdout: string): string {
         const msg = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(ev[0]);
         if (msg) { return msg[1].replace(/\\"/g, '"').slice(0, 300); }
     }
+    // …and Antigravity puts its own complaint on the envelope's `error`, in
+    // words worth keeping whole: "invalid model selection … conflicts with
+    // --effort=medium" names the flag, which no generic line ever would.
+    const agyError = /"error"\s*:\s*"((?:[^"\\]|\\.)+)"/.exec(hay);
+    if (agyError) { return agyError[1].replace(/\\"/g, '"').slice(0, 300); }
     const line = hay.split('\n').map(l => l.trim())
         .find(l => l && /error|fatal|denied|forbidden|unauthor|expired|refused/i.test(l));
     return (line ?? '').slice(0, 300);
@@ -119,7 +157,7 @@ export async function testEngine(
     }
     const started = now();
     try {
-        const r = await run(spec.command, spec.args, spec.timeoutMs);
+        const r = await run(spec.command, spec.args, spec.timeoutMs, spec.shell ?? true);
         const ms = now() - started;
         const answered = r.code === 0 && spec.expect(r.stdout);
         if (answered) {

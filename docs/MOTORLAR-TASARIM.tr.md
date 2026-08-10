@@ -26,7 +26,8 @@ abonelikle ödeniyor:**
 > gereken kendi başına bir hâldir: `nextStep` artık "kurulu değil" der, kurulum
 > komutunu satıra yazar ve "giriş zaten diskte, tek kalan adım bu" diye ekler.
 > Faz 1 raporunun "zaten öyle kullanıyorsunuz" cümlesi bu yüzden yanlıştı.
-| Gemini / Antigravity | **API anahtarı** | — | "Google ile giriş" yolu Haziran 2026'da kapatıldı |
+| Gemini (`gemini-cli`) | **API anahtarı** | — | "Google ile giriş" yolu Haziran 2026'da kapatıldı |
+| Antigravity (`agy`) | **Antigravity uygulamasının Google girişi** | uygulamanın kendisinde — diskte okunabilir anahtar/token **yok** | bu makinede doğrulandı, 2026-08-10 (bkz. 5.5) |
 
 Yani anahtar merkezli bir ekran, **istisnayı** merkeze alan bir ekrandır. Kullanıcı
 "arayüz yok" derken haklıydı ama eksik olan şey anahtar kutusu değil, şu dört
@@ -373,6 +374,108 @@ onlar belirler), `Start Session…` alt seçicisi, ve köprüde `engines.models`
 **Motor değişince model düşer.** `sonnet` Codex'e taşınsaydı kutuda o CLI'ın
 reddedeceği bir değer kalırdı; yeni motorun listesinde olmayan model, seçilen
 eforla birlikte bırakılır.
+
+### 5.5 Dördüncü motor: Antigravity (`agy`) — ÖLÇÜLDÜ (2026-08-10, agy 1.1.11)
+
+**‼️ ÖNCE ADLANDIRMA, çünkü karışıklık kalemin kendisiydi.** Yukarıdaki `gemini`
+satırı `@google/gemini-cli`'dir ve **bu makinede kurulu değildir**. Antigravity
+Google'ın ajan uygulamasıdır, CLI'ı `agy`'dir, ve sunduğu modeller Gemini'nin
+*ve* Anthropic'in *ve* açık ağırlıklı bir modelin modelleridir. Yani ona "Gemini"
+demek iki yönden birden yanlış olurdu; motorun adı **Antigravity**, kimliği
+`agy`. `core/antigravity.ts` ise bambaşka bir şeydir (AGENTS.md kural senkronu),
+motor değildir — motor `core/agy.ts` + `core/agyproto.ts`.
+
+**Zarf Claude Code'a benziyor, protokol hiçbirine benzemiyor.**
+
+| Soru | Claude Code | Codex | **Antigravity** |
+|---|---|---|---|
+| tur şekli | tek uzun süreçli | tur başına süreç | **tur başına süreç** |
+| prompt nereden | stdin (JSON) | **stdin** (`-`) | **argv** (`--print <metin>`) |
+| kabuk | gerekli (.cmd) | gerekli (.cmd) | **YOK** (gerçek .exe) |
+| devam | `--resume` | `exec resume <id>` alt komutu | **`--conversation <id>` bayrağı** |
+| çalışma klasörü | sürecin cwd'si | `-C` / sürecin cwd'si | **`--add-dir` — yoksa scratch** |
+| sistem promptu | `--append-system-prompt-file` | yok | **yok** |
+| görsel | mesajın içinde | `-i <dosya>` | **hiç yok** |
+| ücret | dolar bildirir | token, ücret yok | **token, ücret yok** |
+
+**Tasarımı değiştiren beş ölçüm:**
+
+1. **‼️ `--add-dir` isteğe bağlı değildir.** Sürecin cwd'si `init` olayında geri
+   bildiriliyor ve sonra **yok sayılıyor**: ajan
+   `~/.gemini/antigravity-cli/scratch` içinde çalışıyor. Ölçüldü — bir depoda
+   `package.json` soruldu, scratch klasörüne baktı ve "dosya yok" dedi;
+   `--add-dir <cwd>` ile aynı soru gerçek sürüm dizesini döndürdü. **Yanlış
+   klasör hakkında sessizce cevap veren bir motor, reddeden bir motordan
+   kötüdür.**
+2. **‼️ Prompt argv'de gider, stdin'de değil** — Codex'in tam tersi. Ölçüldü:
+   `printf … | agy -p ""` → çıkış 1, *empty prompt. Usage: agy --print "your
+   prompt here"*. Dolayısıyla süreç **kabuksuz** başlatılmalı (çok satırlı bir
+   prompt `cmd.exe`'den sağ çıkmaz) ve `agy` gerçek bir `.exe` olduğu için buna
+   zaten gerek de yok. Satır sonları, çift tırnak, ters tırnak, `$`, `%` ve `&`
+   taşıyan bir promptla doğrulandı: olduğu gibi ulaştı.
+3. **‼️ `--effort`, efor taşıyan bir model adıyla ÇAKIŞIR** ve CLI bunu kendisi
+   söylüyor: *invalid model selection (--model "gemini-3.6-flash-low" --effort
+   "medium")*. Kataloğun satırları taban×efor kombinasyonlarıdır; `--effort`'u
+   alan şey **taban** addır. CLI'ın kendi hata mesajı ekseni doğruluyor:
+   *gemini-3.1-pro has no "medium" effort (available: low, high)* — ve
+   `readAgyCatalog` bu listeyi yalnızca satırlardan aynen türetiyor.
+4. **‼️ İzin modu bu motorda bir güvence DEĞİLDİR.** `--mode plan`,
+   `--mode accept-edits`, `--sandbox` ve `--dangerously-skip-permissions`
+   kabul ediliyor; ama ölçüldü: **`--mode plan` ile "WROTE yazan bir dosya
+   oluştur" denildiğinde dosya oluştu.** `init` olayı ne verilirse verilsin
+   `permission_mode: always-proceed` diyor, çünkü hükmeden ayar Antigravity
+   uygulamasının kendi `toolPermission` ayarıdır
+   (`~/.gemini/antigravity-cli/settings.json`). Bayrak yine gönderiliyor — motorun
+   kendi dağarcığıdır — ama **hiçbir yüzey onu bir güvence gibi sunmuyor**;
+   `agyModeNote` bunu her seçicide yazıyor.
+5. **‼️ Print modunun varsayılan zaman aşımı 5 dakikadır** (`--print-timeout`,
+   `5m0s`). Altı dakika düşünen bir tur kimsenin seçmediği bir varsayılanla
+   kesilirdi; her başsız çağrı kendi süresini yazıyor.
+
+**Kimlik: dosya yok, uygulamanın kendisi var.** `~/.agy` yok, `~/.antigravity`
+yok, `~/.gemini` altında token adı geçen hiçbir şey yok, Windows kimlik
+deposunda da yok. `agy login` diye bir komut da yok. Giriş **Antigravity masaüstü
+uygulamasının**; CLI onu ödünç alıyor (log: `OAuth: authenticated successfully
+as …`, `authMethod=consumer`). Diskte okunabilen tek şey CLI'ın onboarding'i
+bitirdiğine dair notu: `~/.gemini/antigravity-cli/cache/onboarding.json`, 150
+bayt. Satır bunu okuyor ve **grant'ın nerede olduğunu söylüyor** — olmayan bir
+dosyayı adlandırmak yerine. Bu yüzden `EngineKey.env` bu motorda **boş**tur ve
+boşluk gerçek bir cevaptır: yüzeyler "Add key" düğmesini çizmiyor, çünkü hiçbir
+şeyin okumadığı bir sırrı saklatmak kullanıcıyı yanlış eksiğe yönlendirirdi.
+
+**Akış protokolü.** Üç olay: `init` · `step_update` · `result`. Metin, düşünme,
+araç çağrısı, araç çıktısı ve token sayısı — hepsi tek olay tipinin üstünde
+biniyor.
+
+| Agent Farm'ın beklediği | Antigravity |
+|---|---|
+| oturum kimliği | `init.conversation_id` |
+| asistan metni | `step_type: agent_response` + biriken `text_delta` |
+| araç çağrısı | `step_type: tool` + `tool_name` + `tool_info.parameters` |
+| araç sonucu | aynı adımın `DONE` hâli + `tool_info.output` |
+| tur sonu | `event: result` (`status: SUCCESS|ERROR`; **ücret yok**) |
+| hata | `result.error` (motorun kendi cümlesi) |
+
+**‼️ İki sayma tuzağı, ikisi de Codex'inkinin tersi.** (1) `result.usage`,
+adımların usage'ının **TOPLAMIDIR** — ölçüldü: 17456+117+5385+5627+5760+2413 =
+36758 ve `result` tam olarak 36758 diyor. İkisini birden saymak her turu ikiye
+katlardı; adımlar sayılıyor, `result` sayılmıyor. (2) `input_tokens` önbellekten
+geleni **İÇERMEZ** — Claude gibi, Codex'in tersine. Codex'in düzeltmesini buraya
+uygulamak bir hatayı düzeltmez, her turu **eksik** sayardı. `thinking_tokens` ise
+`output_tokens`'ın içindedir (ölçüldü: output 151, thinking 146).
+
+**Model kataloğu diskte yoktur — çalıştırılır.** `agy models` servise sorup
+`id<TAB>etiket` satırlarını **stdout**'a basıyor ("Fetching available models…"
+banner'ı stderr'de), ~3,4 sn, **token harcamadan** — bu bir liste, bir tur değil.
+Bu yüzden katalog arka planda çekiliyor, geliş zamanıyla saklanıyor ve altı saat
+taze sayılıyor; `engines.models { refresh: true }` yeniden sordurur. İlk cevap
+gelene kadar kutu takma ad listesine düşüyor ve **bunun bu motor için neredeyse
+kesin yanlış olduğunu yazıyor**.
+
+**Kanıt.** `test/smoke_agy_console.mjs` — gerçek iki turluk bir Console oturumu:
+aynı konuşma, taşınan bağlam, oturumun kendi klasöründeki dosyayı okuyan ajan,
+kabuğun yok edeceği çok satırlı bir prompt, sayılan token, uydurulmamış ücret.
+Adaptör körlemesine değil, bu koşu görülerek yazıldı.
 
 ## 6. Faz 4 — adanmış panel (X-14) · KARAR ALINDI
 

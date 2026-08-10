@@ -161,7 +161,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         const all = await r2.dispatch('engines.status', {});
         ok('it dispatches and counts what can run',
-            all.ok && all.result.total === 3 && all.result.ready === 1 && all.result.onPlan === 1);
+            all.ok && all.result.total === 4 && all.result.ready === 1 && all.result.onPlan === 1);
         const one = await r2.dispatch('engines.status', { id: 'codex' });
         ok('…and answers about one engine when asked',
             one.ok && one.result.engines.length === 1 && one.result.engines[0].id === 'codex');

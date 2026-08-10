@@ -232,8 +232,12 @@ const base = read('src/panels/base.ts');
         /let engine = \(launchDefaults\(\)\.engine \|\| 'claude'\);/.test(ext));
     ok('the full launcher has an Engine row of its own',
         /label: '\$\(server-process\) Engine'/.test(ext) && /act: 'engine'/.test(ext));
+    // ‼️ …WITH THE FOLDER ON IT. Antigravity works in its own scratch workspace
+    // unless it is handed one (`--add-dir`), so the preview the launcher prints
+    // has to be the line that will actually run — otherwise it shows a command
+    // that reads this repo and starts one that reads somewhere else.
     ok('…and builds the command line for THAT engine, not always claude\'s',
-        /const command = buildLaunchCommand\(spec\.exe, merged\);/.test(ext));
+        /const command = buildLaunchCommand\(spec\.exe, \{ \.\.\.merged, cwd: merged\.cwd \?\? agent\.dir \}\);/.test(ext));
     ok('…and can save it as the default for every session',
         /engine: spec\.id === 'claude' \? '' : spec\.id,/.test(ext));
 
