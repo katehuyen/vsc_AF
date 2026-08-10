@@ -4972,7 +4972,7 @@
             sessTable = window.AFSessionsTable.create({
                 vscode, C,
                 containerId: 'pj-sessions',
-                columns: ['origin', 'title', 'agent', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'cost'],
+                columns: ['origin', 'title', 'agent', 'engine', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'cost'],
                 tableN: 25,
                 stateKey: 'project'
             });

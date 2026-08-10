@@ -33,8 +33,28 @@ export interface SpeakerConfig {
 
 export const DEFAULT_SPEAKER_CONFIG: SpeakerConfig = { template: '{ai}', casing: 'page', fallback: 'agent' };
 
-/** The engine word from a model id: 'claude' | 'gemini' | 'codex', or '' if unknown. */
-export function aiName(rawModel: string | undefined | null): string {
+/**
+ * The engine word for a speaker label.
+ *
+ * ‼️ U-35 — THE MODEL ID IS A GUESS, AND THE SESSION'S OWN ENGINE IS NOT.
+ * This used to read the id alone, which was safe while a model name implied
+ * its vendor and stopped being safe the moment Antigravity started serving
+ * three vendors' models at once: measured in its catalog, `gpt-oss-120b` is
+ * an open-weights model on an Antigravity account and this function called
+ * it Codex, while `claude-sonnet-4-6` from the same list was called Claude.
+ * Both are wrong in the way that matters — they name a product the user is
+ * not talking to.
+ *
+ * So when the caller KNOWS which engine the session ran on, that wins; the
+ * id is the fallback for a transcript that carries no engine, which is every
+ * transcript written before this existed.
+ */
+export function aiName(rawModel: string | undefined | null, engine?: string | null): string {
+    const e = String(engine ?? '').trim().toLowerCase();
+    // 'agy' is Antigravity's id; the word a person reads is its own name, not
+    // the vendor of whichever model it happened to route to.
+    if (e === 'agy') { return 'antigravity'; }
+    if (e === 'codex' || e === 'gemini' || e === 'claude') { return e; }
     const m = String(rawModel ?? '').toLowerCase();
     if (!m || m === '<synthetic>') { return ''; }
     if (m.startsWith('claude')) { return 'claude'; }
@@ -61,11 +81,12 @@ function extractVersion(m: string): string {
     return nums.slice(0, 2).join('.');
 }
 
-/** Split a model id into its composable parts (all lowercase, '' where absent). */
-export function parseModel(rawModel: string | undefined | null): SpeakerParts {
+/** Split a model id into its composable parts (all lowercase, '' where absent).
+ *  `engine` is the session's own, when the caller has it — see aiName. */
+export function parseModel(rawModel: string | undefined | null, engine?: string | null): SpeakerParts {
     const m = String(rawModel ?? '').toLowerCase().trim();
     if (!m || m === '<synthetic>') { return { ai: '', model: '', version: '', raw: '' }; }
-    const ai = aiName(m);
+    const ai = aiName(m, engine);
     const raw = ai === 'claude' ? m.replace(/^claude-/, '') : m;
     let model = '';
     for (const f of FAMILIES) { if (m.includes(f)) { model = f; break; } }

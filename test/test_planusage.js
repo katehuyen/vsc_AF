@@ -721,7 +721,32 @@ const LIVE_PAYLOAD = {
         ok('a live event can flip the window without waiting for the next tick',
             /live\.onDidUpdate\(\(\) => planUsageBar\.fleetChanged\(\)\)/.test(ext));
         ok('what the indicator reads is pushed to an open card in the same step',
-            /onRefresh: snap => DashboardPanel\.pushPlanUsage\(snap, planBeat\(\)\)/.test(ext));
+            /onRefresh: snap => DashboardPanel\.pushPlanUsage\(snap, planBeat\(\)/.test(ext));
+
+        // ‼️ U-27 — THE INDICATOR HAS AN ENGINE AXIS, AND BOTH SURFACES SHARE IT.
+        // The figure used to be Claude's with nothing saying so, on a machine
+        // running four engines. These pin the two halves of the fix: the bar is
+        // told every engine's state, and the CHOICE is one setting rather than a
+        // copy per surface — the failure mode of the card and the bar disagreeing.
+        ok('‼️ the indicator is handed every engine, not just Claude\'s snapshot',
+            /engines: engineUsageMatrix,/.test(ext) && /engine: usageEngine,/.test(ext));
+        ok('…and the card is pushed the same matrix on the same beat',
+            /pushPlanUsage\(snap, planBeat\(\), engineUsageMatrix\(\), usageEngine\(\)\)/.test(ext));
+        ok('‼️ …with ONE store behind the choice: the setting both write',
+            /await cfg\(\)\.update\('planUsageEngine', want, vscode\.ConfigurationTarget\.Global\)/.test(ext));
+        ok('an engine this build does not know is refused, by name',
+            /is not an engine this build knows/.test(ext));
+        ok('…and the whole matrix is on the bridge for an agent to read',
+            /op: 'usage\.engines'/.test(ext) && /NEVER TREAT A MISSING FIGURE AS 0%/.test(ext));
+        {
+            const bar = fs.readFileSync(path.resolve(__dirname, '../src/views/planUsageBar.ts'), 'utf8');
+            ok('the hover offers every engine as a link, with its figure on the row',
+                /command:agentfarm\.setUsageEngine\?/.test(bar) && /usageSummary\(e\)/.test(bar));
+            ok('‼️ …and the link is actually enabled, or it renders as dead text',
+                /enabledCommands: \['agentfarm\.planUsageRefresh', 'agentfarm\.setUsageEngine'\]/.test(bar));
+            ok('‼️ an engine with no figures is never coloured as if it were at 0%',
+                /const peak = enginePeak\(shown\);/.test(bar));
+        }
         ok('an agent asking usage.plan is told how live the answer is',
             /beat: planBeat\(\),/.test(ext));
         // ‼️ "nothing changed" and "we are not allowed to look" read identically

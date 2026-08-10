@@ -16,7 +16,8 @@ const path = require('path');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { readCodexCatalog, readClaudeExtras, readEngineModels, effortsFor } =
+const { readCodexCatalog, readClaudeExtras, readEngineModels, effortsFor,
+    modelFamily, modelVariant, mergeModelRows } =
     require(path.join(__dirname, '..', 'out', 'core', 'models.js'));
 const { EFFORT_CHOICES } = require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
 
@@ -160,6 +161,52 @@ const CLAUDE_STATE = JSON.stringify({
     ok('Claude keeps the flag list read off its own --help',
         effortsFor(m.claude, 'sonnet').length === EFFORT_CHOICES.length);
     ok('no engine at all is still answerable', effortsFor(undefined, 'x').length === EFFORT_CHOICES.length);
+}
+
+// ---------- U-32: one model is one row, whatever it is called ----------
+//
+// The complaint, verbatim: the list showed "fable" and "Fable" — two rows for
+// one model, differing by a capital letter. Measured cause: the alias `fable`
+// and the CLI's own `claude-fable-5[1m]`, deduplicated by id against id, which
+// cannot see that they are the same thing.
+{
+    ok('the vendor prefix is not part of the identity', modelFamily('claude-fable-5') === 'fable');
+    ok('neither is the version tail', modelFamily('claude-sonnet-4-6') === 'sonnet');
+    ok('neither is the variant marker', modelFamily('claude-fable-5[1m]') === 'fable');
+    ok('an alias is already its own family', modelFamily('fable') === 'fable');
+    ok('a foreign id is left alone', modelFamily('gpt-oss-120b') === 'gpt-oss-120b');
+    ok('an empty id has no family', modelFamily('') === '');
+    ok('the variant is read, not assumed', modelVariant('claude-fable-5[1m]') === '1m');
+    ok('…and a plain id has none', modelVariant('fable') === '');
+
+    const rows = mergeModelRows([
+        { id: 'sonnet', label: 'sonnet', detail: 'passed as --model' },
+        { id: 'fable', label: 'fable', detail: 'passed as --model' },
+        { id: 'claude-fable-5[1m]', label: 'Fable', detail: 'Fable 5 · Most capable' },
+        { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', detail: 'the dated id' }
+    ]);
+    const labels = rows.map(r => r.label);
+    ok('‼️ the same model is never two look-alike rows',
+        !labels.some((l, i) => labels.some((o, j) => i !== j && o.toLowerCase() === l.toLowerCase())));
+    ok('‼️ …and a variant is drawn AS a variant', labels.includes('Fable · 1m'));
+    ok('the alias keeps the id that goes on the command line',
+        rows.some(r => r.id === 'fable') && rows.some(r => r.id === 'claude-fable-5[1m]'));
+    ok('a dated id folded into its alias leaves ONE sonnet',
+        rows.filter(r => modelFamily(r.id) === 'sonnet').length === 1);
+    ok('…and the alias that survived is the short one',
+        rows.find(r => modelFamily(r.id) === 'sonnet').id === 'sonnet');
+    ok('…having borrowed what the catalog knew about it',
+        /the dated id/.test(rows.find(r => r.id === 'sonnet').detail));
+    ok('an empty id contributes nothing', mergeModelRows([{ id: '', label: 'x', detail: '' }]).length === 0);
+}
+
+// ---------- …and the same, through the real matrix ----------
+{
+    const m = readEngineModels(probe({ '.claude/.claude.json': CLAUDE_STATE }), ['haiku', 'sonnet', 'opus', 'fable']);
+    const labels = m.claude.models.map(x => x.label.toLowerCase());
+    ok('‼️ no two Claude rows read the same', new Set(labels).size === labels.length);
+    ok('the granted model is still offered', m.claude.models.some(x => x.id === 'claude-fable-5[1m]'));
+    ok('…and the note says duplicates were folded', /listed once/.test(m.claude.note));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

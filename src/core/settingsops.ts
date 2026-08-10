@@ -53,6 +53,7 @@ const CATEGORY_OF: Record<string, string> = {
     // core
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
+    agentEngineDefaults: 'core',
     modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', projects: 'core',
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
@@ -74,6 +75,7 @@ const CATEGORY_OF: Record<string, string> = {
     quotaBrakeBasis: 'cost',
     planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost',
     planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
+    planUsageEngine: 'cost',
     mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',
     costAnomalyMinUsd: 'cost', forecastDays: 'cost', agentRowCostUnit: 'cost',
     // tasks & automation
@@ -90,7 +92,7 @@ const CATEGORY_OF: Record<string, string> = {
     embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
     embeddingsSecret: 'search', semanticMaxSessions: 'search',
     // multi-CLI
-    cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', relayFeeds: 'cli',
+    cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', agyHome: 'cli', relayFeeds: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',

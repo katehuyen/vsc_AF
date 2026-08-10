@@ -283,6 +283,10 @@ export function htmlShell(
     // carries UTC in its hover" cannot hold on a page that had to opt in.
     const time = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTime.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
+    // Which engine a thing ran on, drawn the same way and in the same colour on
+    // every surface. Ships everywhere for the reason U-26 was filed: a badge
+    // invented per page is a badge that disagrees per page.
+    const engine = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afEngine.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -325,6 +329,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
+<script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

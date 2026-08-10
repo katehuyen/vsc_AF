@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { barText, peakPercent, PlanUsageSnapshot, PlanUsageService, untilText } from '../core/planusage';
+import { PlanUsageSnapshot, PlanUsageService, remainingText, untilText } from '../core/planusage';
+import { EngineUsage, engineBarText, enginePeak, usageSummary } from '../core/engineUsage';
 import { OPEN_DASHBOARD_AT_TOP } from './statusBar';
 import { clockUtc as afClockUtc } from '../core/aftime';
 
@@ -51,6 +52,20 @@ export interface PlanUsageBarOptions {
     dangerAt(): number;
     /** called after every refresh, so other surfaces ride the same beat */
     onRefresh?(snap: PlanUsageSnapshot | undefined): void;
+    /**
+     * ‼️ U-27 — EVERY ENGINE'S ANSWER, AND WHICH ONE IS ON SHOW.
+     *
+     * The item used to print Claude's percentages with nothing on it saying
+     * they were Claude's. On a machine running four engines that is not a
+     * missing label, it is a wrong answer: the reader attributes the figure
+     * to whatever they are working in. So the bar has an axis now — the
+     * chosen engine is what it prints, and the hover lists all four with a
+     * link each, because a picker you have to find in Settings is a picker
+     * for a choice you make once and this is one you make per task.
+     */
+    engines?(): EngineUsage[];
+    /** the engine currently on show ('claude' when nothing was chosen) */
+    engine?(): string;
 }
 
 export class PlanUsageBar implements vscode.Disposable {
@@ -133,18 +148,33 @@ export class PlanUsageBar implements vscode.Disposable {
     /** Settings changed — re-read them now rather than at the next wake. */
     refresh(): void { void this.tick(); }
 
+    /** The engine on show, with its figures — or undefined when nothing can
+     *  be drawn at all (no engine list yet, or the chosen id is gone). */
+    private shown(): EngineUsage | undefined {
+        const list = this.opts.engines?.() ?? [];
+        if (!list.length) { return undefined; }
+        const want = (this.opts.engine?.() ?? 'claude').trim().toLowerCase();
+        return list.find(e => e.id === want) ?? list[0];
+    }
+
     paint(): void {
-        const snap = this.opts.service.current();
-        const text = this.opts.enabled() ? barText(snap) : undefined;
+        const shown = this.shown();
+        const text = this.opts.enabled()
+            ? engineBarText(shown, at => remainingText(at) || '')
+            : undefined;
         if (!text) { this.item.hide(); return; }
         this.item.text = text;
-        const peak = peakPercent(snap);
+        // ‼️ THE COLOUR FOLLOWS THE ENGINE ON SHOW, and an engine with no
+        // figures is never coloured: `enginePeak` returns 0 for a state that
+        // is not `ok`, which is the difference between "nothing used" and
+        // "nothing known" that the rest of this feature turns on.
+        const peak = enginePeak(shown);
         this.item.backgroundColor = peak >= this.opts.dangerAt()
             ? new vscode.ThemeColor('statusBarItem.errorBackground')
             : peak >= this.opts.warnAt()
                 ? new vscode.ThemeColor('statusBarItem.warningBackground')
                 : undefined;
-        this.item.tooltip = this.tooltip(snap);
+        this.item.tooltip = this.tooltip(this.opts.service.current());
         this.item.show();
     }
 
@@ -164,8 +194,54 @@ export class PlanUsageBar implements vscode.Disposable {
             : `_Idle: re-read every ${Math.max(1, Math.round(beat / 60000))} min._`;
     }
 
+    /**
+     * ‼️ THE ENGINE PICKER LIVES IN THE HOVER, AND EVERY ROW IS A LINK.
+     *
+     * The row for each engine says what it currently reads, so the choice is
+     * made with the four answers in front of you rather than by switching
+     * and looking. The one on show is marked; the others are `command:` links
+     * that switch and repaint. A trusted MarkdownString is what makes those
+     * links clickable at all.
+     */
+    private engineLines(): string[] {
+        const list = this.opts.engines?.() ?? [];
+        if (list.length < 2) { return []; }
+        const cur = (this.opts.engine?.() ?? 'claude').trim().toLowerCase();
+        const out = ['', '**Show instead**', ''];
+        for (const e of list) {
+            const args = encodeURIComponent(JSON.stringify([e.id]));
+            const figure = usageSummary(e);
+            out.push(e.id === cur
+                ? `- **${e.label}** — ${figure}`
+                : `- [${e.label}](command:agentfarm.setUsageEngine?${args}) — ${figure}`);
+        }
+        return out;
+    }
+
     private tooltip(snap: PlanUsageSnapshot | undefined): vscode.MarkdownString {
-        const lines = ['**Claude plan usage**', ''];
+        const shown = this.shown();
+        // The heading names WHOSE limits these are — the whole point of U-27.
+        const lines = [`**${shown ? shown.label : 'Claude Code'} — plan usage**`, ''];
+        // An engine that is not Claude answers from its own record, so the
+        // Claude-shaped body below (endpoint state, backoff, beat) does not
+        // apply to it and is replaced by what that engine actually knows.
+        if (shown && shown.id !== 'claude') {
+            if (shown.state === 'ok' && shown.bars.length) {
+                for (const b of shown.bars) {
+                    lines.push(`- ${b.title}: **${b.percent}%**`
+                        + (b.resetsAt ? ` — resets ${untilText(b.resetsAt)}` : ''));
+                }
+                if (shown.plan) { lines.push('', `Plan: ${shown.plan}`); }
+                if (shown.fetchedAt) { lines.push(`As of ${new Date(shown.fetchedAt).toLocaleString()}`); }
+            } else {
+                lines.push(`_${usageSummary(shown)}_`);
+            }
+            lines.push('', shown.note);
+            const md = new vscode.MarkdownString([...lines, ...this.engineLines()].join('\n'));
+            md.isTrusted = true;
+            md.supportHtml = false;
+            return md;
+        }
         if (!snap) {
             lines.push('_Not checked yet._');
         } else if (snap.state !== 'ok') {
@@ -182,8 +258,11 @@ export class PlanUsageBar implements vscode.Disposable {
         }
         lines.push(this.beatLine(), '');
         lines.push('[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_');
-        const md = new vscode.MarkdownString(lines.join('\n'));
-        md.isTrusted = { enabledCommands: ['agentfarm.planUsageRefresh'] };
+        const md = new vscode.MarkdownString([...lines, ...this.engineLines()].join('\n'));
+        // ‼️ BOTH commands, or the engine rows render as dead text. A trusted
+        // MarkdownString with an allow-list silently drops every link that is
+        // not on it — which is exactly the failure that looks like a CSS bug.
+        md.isTrusted = { enabledCommands: ['agentfarm.planUsageRefresh', 'agentfarm.setUsageEngine'] };
         return md;
     }
 

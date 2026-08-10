@@ -442,3 +442,113 @@ export function geminiSessionsSource(
         cacheMs
     );
 }
+
+// ---------------------------------------------------------------------------
+// Antigravity — ~/.gemini/antigravity-cli/cache/conversation_metadata.json
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ THE ENGINE THAT WAS STRUCTURALLY INVISIBLE (U-26).
+ *
+ * An Engine column that can never print one of the four engines is not a
+ * column, it is a claim. Antigravity was that engine: nothing in this file
+ * read it, so no `agy` conversation had ever appeared in a sessions table.
+ *
+ * Its real transcript cannot be read here, and that is worth stating rather
+ * than working around. Measured 2026-08-10: each conversation is a SQLite db
+ * under `conversations/<id>.db`, and its `steps` table stores `step_payload`
+ * as protobuf BLOBs with no schema on disk — decoding that is guesswork with
+ * a version number attached to it.
+ *
+ * What IS readable is the CLI's own index of those conversations, which
+ * carries exactly the columns a session row needs: the id, a Preview that
+ * serves as the title, the step count, when it was last touched, and the
+ * WORKSPACE — which is what attributes the conversation to an agent, the same
+ * way every other source does it.
+ *
+ * `file` stays empty on purpose: the convention in this module is that an
+ * empty `file` means "no transcript a viewer could open", and offering one
+ * that leads to a protobuf blob would be worse than offering none. Tokens and
+ * cost are honestly zero for the same reason the live-events source reports
+ * zero — this index does not carry them, and inventing a number would put a
+ * fabricated figure in a spend column.
+ */
+export function agySessionsSource(
+    agyHome: () => string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    cacheMs = 60_000
+): SessionSource {
+    let cache: SessionInfo[] = [];
+    let cachedSig = '';
+    let lastScan = 0;
+    return {
+        id: 'agy',
+        scan(): SessionInfo[] {
+            const home = agyHome();
+            if (!home) { return cache = []; }
+            const file = path.join(home, 'cache', 'conversation_metadata.json');
+            const now = Date.now();
+            let st: fs.Stats;
+            try { st = fs.statSync(file); } catch { return cache = []; }
+            const sig = `${st.size}:${st.mtimeMs}`;
+            if (sig === cachedSig && now - lastScan < cacheMs) { return cache; }
+            cachedSig = sig;
+            lastScan = now;
+
+            let root: Record<string, unknown>;
+            try { root = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>; }
+            catch { return cache = []; }
+            const convs = root.conversations;
+            if (!convs || typeof convs !== 'object') { return cache = []; }
+
+            const cutoff = now - SCAN_DAYS * 24 * 3600 * 1000;
+            const out: SessionInfo[] = [];
+            for (const [key, raw] of Object.entries(convs as Record<string, unknown>)) {
+                if (!raw || typeof raw !== 'object') { continue; }
+                const row = raw as Record<string, unknown>;
+                // the CLI's own bookkeeping threads are not the user's sessions
+                if (row.is_internal === true) { continue; }
+                const sum = (row.summary && typeof row.summary === 'object'
+                    ? row.summary : {}) as Record<string, unknown>;
+                const id = String(sum.ID ?? key).trim();
+                if (!id) { continue; }
+                const ts = stamp(row.last_modified_time) ?? stamp(sum.UpdatedAt);
+                if (!ts || ts < cutoff) { continue; }
+                const info = blankInfo('', id, 'agy', ts);
+                const title = String(sum.Title ?? '').trim() || String(sum.Preview ?? '').trim();
+                if (title) { info.title = truncate(title, 120); info.autoTitle = info.title; }
+                else { info.title = info.autoTitle = 'Antigravity session'; }
+                const cwd = firstWorkspace(sum.WorkspaceURIs);
+                if (cwd) {
+                    info.cwd = cwd;
+                    const who = resolveAgent(cwd);
+                    if (who.agentId) { info.agentId = who.agentId; }
+                    if (who.agentName) { info.agentName = who.agentName; }
+                }
+                out.push(info);
+            }
+            return cache = out;
+        }
+    };
+}
+
+/** `2026-06-26T21:45:33.9462384+07:00` — more decimals than Date.parse takes,
+ *  so the fraction is trimmed to milliseconds first. */
+function stamp(v: unknown): number | undefined {
+    if (typeof v !== 'string' || !v.trim()) { return undefined; }
+    const t = Date.parse(v.replace(/(\.\d{3})\d+/, '$1'));
+    return Number.isFinite(t) ? t : undefined;
+}
+
+/** `file:///D:/zone/agent/temp` → `D:\zone\agent\temp`. A URI this module
+ *  cannot make sense of yields nothing rather than a half-decoded path. */
+function firstWorkspace(v: unknown): string | undefined {
+    const first = Array.isArray(v) ? v.find(x => typeof x === 'string' && x.trim()) : undefined;
+    if (!first) { return undefined; }
+    const raw = String(first).trim();
+    if (!raw.startsWith('file://')) { return raw; }
+    try {
+        const p = decodeURIComponent(raw.replace(/^file:\/\/\/?/, ''));
+        return /^[a-z]:/i.test(p) ? p.replace(/\//g, '\\') : '/' + p;
+    } catch { return undefined; }
+}

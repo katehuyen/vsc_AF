@@ -25,6 +25,14 @@ const CONT = '\\u0080-\\u00BF' + Object.keys(CP1252_HIGH)
 const RUN = new RegExp(`(?:[\\u00C2-\\u00F4][${CONT}]{1,3})+`, 'g');
 // C1 controls have no business in source text at all, mangled or not.
 const C1 = new RegExp('[' + String.fromCharCode(0x80) + '-' + String.fromCharCode(0x9F) + ']', 'g');
+// ...and so do C0 controls. NUL is the one that actually happened: an editing tool
+// wrote a literal U+0000 where a "\u0000" escape was meant, and it survived
+// everything - tsc compiled it, the bundle shipped it, and grep quietly reclassified
+// the whole source file as binary. Tab, newline and carriage return are the three
+// that belong in text; every other C0 byte is damage.
+const C0 = new RegExp('[' + String.fromCharCode(0x00) + '-' + String.fromCharCode(0x08)
+  + String.fromCharCode(0x0B) + String.fromCharCode(0x0C)
+  + String.fromCharCode(0x0E) + '-' + String.fromCharCode(0x1F) + ']', 'g');
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 const ROOT = path.join(__dirname, '..');
@@ -83,7 +91,7 @@ for (const file of files) {
   // plenty of lead+continuation pairs by accident ("ac..." is c-cedilla + ellipsis) and
   // those are not damage - if it cannot be reversed, there is nothing to report.
   const runs = [...text.matchAll(RUN)].filter(m => decodeRun(m[0]) !== null);
-  const ctrls = [...text.matchAll(C1)];
+  const ctrls = [...text.matchAll(C1), ...text.matchAll(C0)];
   if (!runs.length && !ctrls.length) { pass++; continue; }
   fail++;
   for (const m of [...runs, ...ctrls]) {

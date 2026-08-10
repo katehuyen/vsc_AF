@@ -14,7 +14,7 @@
     const sessTable = window.AFSessionsTable.create({
         vscode, C,
         containerId: 'sessblock',
-        columns: ['origin', 'agent', 'project', 'title', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
+        columns: ['origin', 'agent', 'engine', 'project', 'title', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
         tableN: 20, // dashboard default; the All chip toggles back to this
         stateKey: 'dash',
         fallbackSort: persisted.sessSort,
@@ -124,6 +124,10 @@
             if (!ev.data.push) { puBusy = false; }
             if (ev.data.usage) { DATA.planUsage = ev.data.usage; }
             if (ev.data.beat) { DATA.planUsageBeat = ev.data.beat; }
+            // U-27 — the same message carries every engine and the chosen one,
+            // so a tab can never be a beat behind the tab beside it.
+            if (ev.data.engines) { DATA.planUsageEngines = ev.data.engines; }
+            if (ev.data.engine) { DATA.planUsageEngine = ev.data.engine; }
             render();
             armPlanUsage();
             return;
@@ -252,7 +256,16 @@
             .cmpctl { display:inline-flex; gap:6px; align-items:center; font-size:12px; font-weight:400; }
             .cmpctl input[type=date] { padding:1px 4px; }
             .cmpctl input[type=number] { width:52px; padding:1px 4px; }
-        </style>`;
+            /* U-27 — the engine strip on the plan card. Deliberately quieter than
+           the page's own tabs: this is a filter on one card, not navigation. */
+        .pu-tabs { display:flex; gap:4px; margin:8px 0 2px; flex-wrap:wrap; }
+        .pu-tab { font-size:10px; padding:1px 7px; border-radius:9px; cursor:pointer;
+            background:transparent; color:var(--vscode-foreground); opacity:.6;
+            border:1px solid var(--vscode-widget-border,#4444); }
+        .pu-tab:hover { opacity:.9; }
+        .pu-tab.on { opacity:1; border-color:var(--vscode-focusBorder,#007fd4); }
+        .pu-tf { opacity:.7; margin-left:2px; }
+    </style>`;
         if (cmpRows) {
             // windowed mode: figures the host computed for [from, to]
             const all = cmpSorted(cmpRows, CMP_SORTS_WIN);
@@ -333,8 +346,47 @@
         return `Resets ${when} · in ${h > 0 ? h + 'h ' : ''}${m}m`;
     }
 
+    /**
+     * ‼️ U-27 — THE CARD HAS AN ENGINE AXIS, AND IT IS THE STATUS BAR'S AXIS.
+     *
+     * One tab per engine, the chosen one open, and choosing here writes the
+     * same setting the indicator's hover writes — so the two cannot end up
+     * showing different engines, which is the whole failure mode of putting
+     * the same choice in two places.
+     *
+     * Each tab carries its own figure, so the answer to "which one should I
+     * be worried about" is on the strip rather than behind four clicks.
+     */
+    function planTabs() {
+        const list = DATA.planUsageEngines || [];
+        if (list.length < 2) { return ''; }
+        const cur = puEngineId();
+        return `<div class="pu-tabs">` + list.map(e => {
+            const on = e.id === cur;
+            // ‼️ a figure, or the honest word for why there is none — never a
+            // 0% for an engine nobody can measure (see core/engineUsage.ts)
+            const fig = e.state === 'ok' && (e.bars || []).length
+                ? Math.max.apply(null, e.bars.map(b => b.percent)) + '%'
+                : e.state === 'no-plan' ? 'per-token'
+                    : e.state === 'not-published' ? 'n/a' : '—';
+            return `<button class="pu-tab${on ? ' on' : ''}" data-puengine="${C.esc(e.id)}"
+                title="${C.esc(e.label + ' — ' + (e.note || ''))}">
+                ${C.esc(e.label.split(' ')[0])} <span class="pu-tf">${C.esc(fig)}</span></button>`;
+        }).join('') + `</div>`;
+    }
+
+    const puEngineId = () => (DATA.planUsageEngine || 'claude');
+    const puEngineRow = () => (DATA.planUsageEngines || []).find(e => e.id === puEngineId());
+
     function planCard() {
-        const pu = DATA.planUsage;
+        const eng = puEngineRow();
+        // Claude keeps the endpoint-shaped snapshot (state, backoff, beat);
+        // every other engine answers from its own record, which is a different
+        // set of facts and is drawn from the matrix instead.
+        const pu = eng && eng.id !== 'claude'
+            ? { state: eng.state === 'ok' ? 'ok' : 'other', bars: eng.bars || [],
+                plan: eng.plan || '', fetchedAt: eng.fetchedAt || 0, note: eng.note || '' }
+            : DATA.planUsage;
         const beat = DATA.planUsageBeat || { ms: 0, active: false };
         // the beat is a fact about the page, so it is stated on the page: how
         // often these figures are re-read, and which of the two windows we are in
@@ -358,7 +410,14 @@
                     <div class="sub">${C.esc(puReset(b.resetsAt))}</div>
                 </div>`;
             }).join('');
-            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${window.AFTime.clockUtc(pu.fetchedAt)} · ${beatText}</div>`;
+            // ‼️ THE BEAT BELONGS TO THE ENDPOINT, SO IT IS ONLY CLAIMED FOR IT.
+            // Codex's figure is read off a file it wrote at its last turn; saying
+            // "auto every 5 min" under it would promise a refresh nothing performs.
+            const isClaude = !eng || eng.id === 'claude';
+            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}`
+                + `${pu.fetchedAt ? (isClaude ? 'updated ' : 'as of ') + window.AFTime.clockUtc(pu.fetchedAt) : 'no reading yet'}`
+                + `${isClaude ? ' · ' + beatText : ''}</div>`
+                + (isClaude ? '' : `<div class="sub muted">${C.esc(eng.note)}</div>`);
         }
         // The card's own controls are one ⟳; everything else about the plan
         // window (check it now, reset the token lap, clear it) lived only in the
@@ -369,6 +428,7 @@
             ${window.AFCtx.row('afPlanUsage', { puText: bars })}
             title="${C.esc(window.AFCtx.hint('What the subscription window has left'))}">
             <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>
+            ${planTabs()}
             ${body}${foot}
         </div>`;
     }
@@ -698,6 +758,14 @@
             // force: the ⟳ means "now", not "if the cache happens to be stale"
             puBtn.addEventListener('click', () => { if (!puBusy) { askPlanUsage(true); render(); } });
         }
+        // ‼️ The engine tabs post the choice to the HOST rather than setting it
+        // here: the host writes the setting the status bar reads, and pushes the
+        // answer back — which is what keeps the two surfaces on one choice
+        // instead of two that drift (U-27).
+        document.querySelectorAll('[data-puengine]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'setUsageEngine', id: b.dataset.puengine
+            })));
 
         // ---- Agent comparison controls ----
         const wireCmp = (id, ev, fn) => {

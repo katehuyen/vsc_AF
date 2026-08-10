@@ -223,6 +223,96 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('an unknown engine is refused by name', !bad.ok && /no engine called "nope"/.test(bad.error));
     }
 
+    // ---------- U-27: usage.engines, registered the way the extension does ----------
+    // ‼️ The op exists so an agent asking "how much is left" cannot be handed
+    // Claude's percentage for a Codex run. Its sharpest contract is what it does
+    // NOT do: an engine whose quota nobody can read comes back as `not-published`
+    // with no bars, never as 0%.
+    {
+        const EU = require(path.join(__dirname, '..', 'out', 'core', 'engineUsage.js'));
+        const LINE = JSON.stringify({
+            type: 'event_msg',
+            payload: {
+                type: 'token_count',
+                rate_limits: {
+                    primary: { used_percent: 7, window_minutes: 10080, resets_at: 1786903688 },
+                    secondary: null, plan_type: 'plus'
+                }
+            }
+        });
+        const probe = { newestFiles: () => ['a.jsonl'], readTail: () => LINE };
+        const r4 = new BridgeRegistry();
+        r4.register([{
+            op: 'usage.engines',
+            describe: 'What is left on every engine\'s plan. args: id?',
+            handler: (args) => {
+                const id = String((args && args.id) || '').trim().toLowerCase();
+                const all = EU.readEngineUsage(probe, () => 1786903000000, {
+                    state: 'ok', plan: 'max', fetchedAt: 1, note: 'from the endpoint',
+                    bars: [{ id: 'five_hour', title: 'Current session', percent: 86, resetsAt: 0 }]
+                });
+                need(!id || all.some(e => e.id === id), `no engine called "${id}"`);
+                return { shown: 'claude', engines: (id ? all.filter(e => e.id === id) : all) };
+            }
+        }]);
+        ok('usage.engines is in the catalogue',
+            (await r4.dispatch('farm.ops', {})).result.some(c => c.op === 'usage.engines'));
+        const all = await r4.dispatch('usage.engines', {});
+        ok('every engine answers', all.ok && all.result.engines.length === 4);
+        const by = Object.fromEntries(all.result.engines.map(e => [e.id, e]));
+        ok('Codex\'s own transcript is a real quota reading',
+            by.codex.state === 'ok' && by.codex.bars[0].percent === 7);
+        ok('‼️ an engine nobody can measure says so, and shows NO bar',
+            by.agy.state === 'not-published' && by.agy.bars.length === 0);
+        ok('‼️ …and a per-token engine is not a plan at 0% either',
+            by.gemini.state === 'no-plan' && by.gemini.bars.length === 0);
+        ok('the op says which engine the indicator is showing', all.result.shown === 'claude');
+        const badU = await r4.dispatch('usage.engines', { id: 'nope' });
+        ok('an unknown engine is refused by name', !badU.ok && /no engine called "nope"/.test(badU.error));
+    }
+
+    // ---------- U-29: agents.defaults, registered the way the extension does ----------
+    // ‼️ The op answers the question the item was filed for: an agent set to
+    // `sonnet` for Claude is set to NOTHING for Codex, and the old single default
+    // made those two look identical.
+    {
+        const AD = require(path.join(__dirname, '..', 'out', 'core', 'agentDefaults.js'));
+        const store = AD.withAgentDefault({}, 'D:/agents/dev', 'codex', { model: 'gpt-5.6-terra' });
+        const ENG = [{ id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }];
+        const r5 = new BridgeRegistry();
+        r5.register([{
+            op: 'agents.defaults',
+            describe: 'What "Default" means for an agent on an engine. args: agent?, engine?',
+            handler: (args) => {
+                const want = String((args && args.engine) || '').trim().toLowerCase();
+                need(!want || ENG.some(e => e.id === want), `no engine called "${want}"`);
+                return [{
+                    agent: 'dev', dir: 'D:/agents/dev',
+                    engines: ENG.filter(e => !want || e.id === want).map(e => ({
+                        id: e.id, label: e.label,
+                        model: AD.resolveDefault(e.id, 'model', {
+                            agentFile: e.id === 'claude' ? 'sonnet' : '',
+                            farm: AD.storedDefault(store, 'D:/agents/dev', e.id).model,
+                            launch: '', engineLabel: e.label
+                        })
+                    }))
+                }];
+            }
+        }]);
+        ok('agents.defaults is in the catalogue',
+            (await r5.dispatch('farm.ops', {})).result.some(c => c.op === 'agents.defaults'));
+        const res = await r5.dispatch('agents.defaults', {});
+        const eng = Object.fromEntries(res.result[0].engines.map(e => [e.id, e]));
+        ok('Claude resolves from the agent\'s own settings file',
+            eng.claude.model.value === 'sonnet' && eng.claude.model.origin === 'agent-file');
+        ok('‼️ …and Codex does NOT inherit that file',
+            eng.codex.model.value === 'gpt-5.6-terra' && eng.codex.model.origin === 'farm');
+        ok('…and every answer says which layer decided it',
+            /passes it as --model/.test(eng.codex.model.note));
+        const badD = await r5.dispatch('agents.defaults', { engine: 'nope' });
+        ok('an unknown engine is refused by name', !badD.ok && /no engine called "nope"/.test(badD.error));
+    }
+
     // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------
     // Registers the real handler shape (backed by the compiled antigravity + codex
     // functions) and dispatches it, proving the op is catalogued and honours its

@@ -105,6 +105,22 @@ It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part
 that kept being skipped.
 
+**‼️ …AND WHEN THE QUESTION IS A NUMBER, MEASURE IT.** A picture answers "does
+this look right"; it does not answer "how wide is that box, and what is
+deciding it". Widths in this repo have been argued about in *shares of numbers
+nobody read off the screen*, and a share of a guess is a guess.
+
+```
+node test/render_page.js console
+node test/measure_page.js console "[...document.querySelectorAll('.crow select')].map(e => e.id + ' ' + Math.round(e.getBoundingClientRect().width))"
+```
+
+`measure_page.js` runs the same rendered file through the same already-installed
+Chrome, evaluates one expression against the laid-out DOM and prints what it
+returns. It uses `--dump-dom`, **not** a debug port: opening a CDP connection on
+a user's machine is a thing to ask about first, and a DOM dump needs no
+permission at all.
+
 ---
 
 ## Copy
@@ -366,6 +382,47 @@ Every surface that shows a session carries the full session menu —
 `AFSessionCtx.row(...)` on the row, and `infoCtx` on a page whose whole subject
 is one session (`AFHeader.html`). A page that shows an object and offers only
 Copy/Paste on it is unfinished.
+
+---
+
+## Which engine (the badge)
+
+**‼️ ONE BADGE, ONE COLOUR PER ENGINE, EVERY SURFACE — `media/afEngine.js`.**
+The badge was invented on the Console, for Codex, in one colour, with one rule:
+*Claude is the default, so it wears nothing.* Every part of that turned out to
+be wrong once there were four engines and the user had to read a table:
+
+- **A row with no badge is unreadable.** It means "Claude" or it means "this
+  surface never learned about engines", and those look identical.
+- **One purple for every non-Claude engine** answers "not the default" and not
+  "which one" — which is the actual question in a list of sessions.
+- **A colour invented per page** is a colour that disagrees per page.
+
+So: `window.AFEngine.badge(id, title)`, colours in `media/common.css`
+(`.af-eng.claude|.codex|.gemini|.agy|.other`), and an id this build has never
+heard of is still drawn — as itself, in the neutral colour. An external CLI
+profile can put any name in a session's `source`, and dropping the badge there
+would hide the one fact the column exists to show.
+
+The `title` follows the hover rule above: **figures, `Label: value`**. What an
+engine *changes about talking to it* is a separate affordance (the `?` beside
+the composer's engine box), never the badge.
+
+---
+
+## "Default" never stands alone
+
+**‼️ A BOX WHOSE ONLY WORD IS "Default" IS A BOX WITH NO REFERENT.** The user's
+own wording of the bug: *I may have set that agent's default to sonnet for
+Claude, but if I open the same agent with Codex, what does Default still mean
+there, and which model does it correspond to? That part is a mystery.*
+
+Every default-shaped box names **the value it will actually produce and who
+decided it** — `Default → sonnet`, not `Default`. `core/agentDefaults.ts`
+resolves the layers (the agent's own file · Agent Farm's per-engine store ·
+the fleet-wide `launchDefaults` · the CLI) and returns the sentence with the
+value, so the words the box prints and the value the launcher sends come from
+one function and cannot disagree.
 
 ---
 

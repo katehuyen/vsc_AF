@@ -95,9 +95,15 @@
      *  percentage is measured against (see colgroupHtml). They sum to 100 for
      *  the full set and are re-normalised for any subset. */
     const SHARE = {
-        agent: 9.048, project: 20.679, title: 28.610, when: 5.056, duration: 5.522,
-        turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387, tokens: 8.962,
-        ctx: 5.241, cost: 3.906
+        // ‼️ U-26 — THREE CHANGES, ALL ASKED FOR AND ALL IN ONE PLACE.
+        // Agent was too narrow to hold a name (9.048 → 13.572, +50%);
+        // Project was taking a fifth of the table for a word (20.679 →
+        // 5.170, −75%); and ENGINE is new, at what a badge actually needs.
+        // The rest are untouched, and the whole set is re-normalised over
+        // whichever columns a page asks for, so nothing else moves either.
+        agent: 13.572, engine: 6.200, project: 5.170, title: 28.610, when: 5.056,
+        duration: 5.522, turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387,
+        tokens: 8.962, ctx: 5.241, cost: 3.906
     };
 
     /**
@@ -571,6 +577,16 @@
          * `{ head, body }` for AFTip: `head` is one line of scale (what this is,
          * how big), `body` is the thing itself, whole.
          */
+        // The Engine cell's hover, figures only (CONVENTIONS → a cell hover is
+        // `Label: value`, never an explanation — the definition is on the <th>).
+        TIP.engine = r => [
+            line('Engine', window.AFEngine.label(r.engine)),
+            line('Models', modelNames(r).join(', ')),
+            line('Transcript', r.file ? 'on disk' : 'none this build can open'),
+            line('Cost reported', r.cost ? C.fmtUSD(r.cost) : 'no — plan or account billing'),
+            line('Tokens', r.tokens ? C.fmtTok(r.tokens) : 'not published by this CLI')
+        ];
+
         const TIPBOX = {
             title: r => {
                 const prompt = String(r.firstPrompt || '');
@@ -607,6 +623,12 @@
         const HEAD = {
             origin: '<th class="origcell" title="Who started the session: 🧑 you · 🤖 automation">By</th>',
             agent: '<th title="Agent whose folder the session ran in. ● running · sub = sub-agent · ⌨ terminal · ⎋ interrupt">Agent</th>',
+            // ‼️ WHICH ENGINE RAN IT — the column this table never had. Four
+            // engines write sessions now and the table listed them as if they
+            // were one, so "why did that one cost nothing" had no answer on
+            // the row. The badge and its colour come from AFEngine, the same
+            // ones the Console and the Engines page draw.
+            engine: '<th title="Which CLI ran the session: Claude · Codex · Gemini · Antigravity">Engine</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests">Title</th>',
@@ -630,6 +652,7 @@
                 return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r))}">${o.glyph}</td>`;
             },
             agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
+            engine: r => `<td title="${tipOf(TIP.engine(r))}">${window.AFEngine.badge(r.engine)}</td>`,
             // ‼️ The title cell hands its hover to the rich panel: the answer to
             // "what was this session actually asked to do" is the opening
             // PROMPT, whole, and a native tooltip cannot hold one.

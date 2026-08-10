@@ -32,7 +32,7 @@
         // listed with no answer to "which project was that for", while the
         // filter panel underneath could already narrow by project — a filter
         // over a column the reader could not see.
-        columns: ['origin', 'title', 'project', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
+        columns: ['origin', 'engine', 'title', 'project', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
         tableN: 50, // agent-page default; the All chip toggles back to this
         stateKey: 'agent'
     });

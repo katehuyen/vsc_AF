@@ -102,16 +102,62 @@
         return r.candidates.length ? 'The subfolders below are the agents.' : 'No agent folders found here yet — a subfolder becomes an agent once it has a CLAUDE.md, .claude or memory/.';
     }
 
-    // Per-agent default model — options come from the user's model-name
-    // knowledge base (agentFarm.modelAliases: add a name once, it appears in
-    // every picker permanently), plus whatever full id the folder already
-    // carries, plus a free-text "custom…" entry for anything not listed.
-    const modelAliases = () =>
-        (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
+    /**
+     * ‼️ U-29/U-33 — THE PER-AGENT DEFAULT IS PER ENGINE, AND IT SAYS WHAT IT
+     * RESOLVES TO.
+     *
+     * One box used to serve every engine, and it wrote `.claude/settings.local.json`
+     * — a file only Claude Code reads. So a `sonnet` typed here meant something
+     * on Claude and nothing at all on the other three, while looking exactly the
+     * same on all four; and the word "Default" had no referent a reader could
+     * find. Both are fixed by the same two moves: the strip below chooses WHICH
+     * ENGINE these defaults are for, and every box names the value it will
+     * actually resolve to.
+     */
+    const agentEngine = () => (DATA.agentDefaultsEngine || 'claude');
+    const engineRows = () => (DATA.engines || []);
+    const engineLabel = id => {
+        const e = engineRows().find(x => x.id === id);
+        return e ? e.label : (window.AFEngine ? window.AFEngine.label(id) : id);
+    };
+
+    /** The strip above the agent list: which engine the boxes below edit. */
+    function agentEngineTabs() {
+        const rows = engineRows();
+        if (rows.length < 2) { return ''; }
+        const cur = agentEngine();
+        return `<div class="agtabs">
+            <span class="muted small">Defaults for</span>
+            ${rows.map(e => `<button class="agtab${e.id === cur ? ' on' : ''}" data-agengine="${C.esc(e.id)}"
+                title="${C.esc(e.label + ' — ' + (e.billing || ''))}">${C.esc(e.label)}</button>`).join('')}
+            <span class="muted small">${C.esc(agentEngineNote(cur))}</span>
+        </div>`;
+    }
+
+    /** Where THIS engine's answer is kept — the difference the user has to
+     *  know, said once above the list rather than in every row's hover. */
+    function agentEngineNote(id) {
+        return id === 'claude'
+            ? 'written to each agent\u2019s .claude/settings.local.json \u2014 the CLI reads it itself, terminal sessions included'
+            : 'kept by Agent Farm and passed as --model/--effort \u2014 this engine has no per-folder settings file';
+    }
+
+    // Model names for the CHOSEN engine, read from that engine's own catalog
+    // where it has one (see core/models.ts); the alias list is the fallback
+    // for an engine that publishes nothing.
+    const modelAliases = () => {
+        const em = (DATA.engineModels || {})[agentEngine()];
+        if (em && em.models && em.models.length) {
+            return em.models.filter(m => m.id).map(m => m.id);
+        }
+        return (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
+    };
     let customModelDir = ''; // the chip whose custom-model input is open
 
     function agentModelSel(c) {
-        const cur = c.model || '';
+        const eng = agentEngine();
+        const per = (c.engines || {})[eng] || {};
+        const cur = per.model || '';
         if (customModelDir === c.dir) {
             return `<input type="text" class="agmodel agcustom" data-agcustom="${C.esc(c.dir)}" value="${C.esc(cur)}"
                 placeholder="model id — Enter saves, Esc cancels"
@@ -119,11 +165,35 @@
         }
         const aliases = modelAliases();
         const opts = cur && aliases.indexOf(cur) < 0 ? [cur].concat(aliases) : aliases;
+        // ‼️ THE FIRST ROW NAMES WHAT IT RESOLVES TO. "Default" on its own is
+        // the mystery this item was filed about; `per.resolved` is computed by
+        // core/agentDefaults.ts and carries both the value and who decided it.
+        const res = per.resolved || {};
+        const zero = res.value ? `Default \u2192 ${res.value}` : 'Default (the CLI decides)';
         return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
-            title="Default model for this agent's sessions — written to the agent's .claude/settings.local.json. The list is your agentFarm.modelAliases knowledge base; custom… takes any free-text id.">
-            <option value=""${cur ? '' : ' selected'}>model: CLI default</option>
+            title="${C.esc('Default model for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
+            <option value=""${cur ? '' : ' selected'}>${C.esc(zero)}</option>
             ${opts.map(m => `<option value="${C.esc(m)}"${cur === m ? ' selected' : ''}>${C.esc(m)}</option>`).join('')}
             <option value="__custom__">custom…</option>
+        </select>`;
+    }
+
+    /** …and the effort beside it, from the same engine's own vocabulary: a
+     *  model with no effort levels must not be offered five (see core/models.ts). */
+    function agentEffortSel(c) {
+        const eng = agentEngine();
+        const per = (c.engines || {})[eng] || {};
+        const em = (DATA.engineModels || {})[eng] || {};
+        const list = ((em.efforts || {})[per.model || ''] || (em.efforts || {})[''] || [])
+            .filter(e => e.id);
+        if (!list.length) { return ''; }
+        const cur = per.effort || '';
+        const res = per.resolvedEffort || {};
+        const zero = res.value ? `effort \u2192 ${res.value}` : 'effort: default';
+        return `<select class="agmodel" data-ageffort="${C.esc(c.dir)}"
+            title="${C.esc('Default reasoning effort for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
+            <option value=""${cur ? '' : ' selected'}>${C.esc(zero)}</option>
+            ${list.map(e => `<option value="${C.esc(e.id)}"${cur === e.id ? ' selected' : ''}>${C.esc(e.label || e.id)}</option>`).join('')}
         </select>`;
     }
 
@@ -136,7 +206,7 @@
             ? `<a data-openagent="${C.esc(c.agentId)}" title="Open this agent's page">${C.esc(c.name)}</a>`
             : C.esc(c.name);
         return `<span class="agchip" title="${C.esc(c.dir)}">${name}
-            ${agentModelSel(c)}
+            ${agentModelSel(c)}${agentEffortSel(c)}
             <a class="agex" data-exclude="${C.esc(c.dir)}" title="Never treat this folder as an agent (undo any time with Include)">Exclude</a></span>`;
     }
 
@@ -174,9 +244,10 @@
             <code>CLAUDE.md</code>, <code>.claude</code> or <code>memory/</code> become agents; a root whose subfolders are agents is a
             <b>nest</b> (its own CLAUDE.md = shared instructions); a root with no agent-like subfolders is one agent itself.
             <b>Exclude</b> keeps a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session
-            ownership) until you Include it back. Each agent chip carries a <b>model</b> dropdown — the default model for that agent's
-            sessions, written to its <code>.claude/settings.local.json</code>; new agents are seeded from <code>agentFarm.newAgentModel</code>.
+            ownership) until you Include it back. Each agent chip carries a <b>model</b> and an <b>effort</b> dropdown — that agent's
+            defaults <i>for the engine selected below</i>; new agents are seeded from <code>agentFarm.newAgentModel</code>.
             <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
+            ${agentEngineTabs()}
             ${dupes ? `<div class="seterr">⚠ The roots list contains the same folder more than once (case/slash spelling differs) — this distorts discovery. <a id="afcleandupes">Clean duplicates</a></div>` : ''}
             ${reports.map(rootItemHtml).join('')}
             ${stale.length ? `<div class="setitem">
@@ -546,6 +617,13 @@
                 .rootbadge.warn { background:var(--vscode-inputValidation-warningBackground, #664d00);
                     color:var(--vscode-foreground); }
                 .aglist { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+                /* U-29 — which engine the per-agent boxes below are editing. */
+                .agtabs { display:flex; gap:5px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
+                .agtab { font-size:10px; padding:1px 8px; border-radius:9px; cursor:pointer;
+                    background:transparent; color:var(--vscode-foreground); opacity:.6;
+                    border:1px solid var(--vscode-widget-border,#4444); }
+                .agtab:hover { opacity:.9; }
+                .agtab.on { opacity:1; border-color:var(--vscode-focusBorder,#007fd4); }
                 .agchip { font-size:11px; padding:2px 10px; border-radius:10px; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .agchip a { cursor:pointer; }
@@ -708,13 +786,24 @@
                     if (inp && inp.focus) { inp.focus(); }
                     return;
                 }
-                vscode.postMessage({ type: 'agentModel', dir: el.dataset.agmodel, model: el.value });
+                vscode.postMessage({ type: 'agentModel', dir: el.dataset.agmodel, model: el.value, engine: agentEngine() });
             }));
+        document.querySelectorAll('[data-ageffort]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'agentEffort', dir: el.dataset.ageffort, effort: el.value, engine: agentEngine()
+            })));
+        // ‼️ The engine strip is a PAGE state, not a per-agent one: it says which
+        // engine's defaults the boxes below are editing. Kept on the host so it
+        // survives the refresh that follows every write.
+        document.querySelectorAll('[data-agengine]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'agentDefaultsEngine', engine: b.dataset.agengine
+            })));
         document.querySelectorAll('[data-agcustom]').forEach(el =>
             el.addEventListener('keydown', ev => {
                 if (ev.key === 'Enter') {
                     customModelDir = '';
-                    vscode.postMessage({ type: 'agentModel', dir: el.dataset.agcustom, model: el.value.trim() });
+                    vscode.postMessage({ type: 'agentModel', dir: el.dataset.agcustom, model: el.value.trim(), engine: agentEngine() });
                 } else if (ev.key === 'Escape') {
                     customModelDir = '';
                     render();

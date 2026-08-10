@@ -10,7 +10,11 @@ import {
     validateRawClaudeSettings
 } from '../core/claudesettings';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { EngineStatus } from '../core/engines';
+import { EngineId, EngineStatus } from '../core/engines';
+import {
+    AgentEngineDefaults, resolveDefault, storedDefault, withAgentDefault
+} from '../core/agentDefaults';
+import { EngineModels } from '../core/models';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
 import { handleAfNav, htmlShell } from './base';
@@ -74,6 +78,9 @@ export interface FarmSettingsDeps {
     engineKey?(name: string): void;
     /** Open the Engines panel — the page this section is the summary of (X-14). */
     openEngines?(): void;
+    /** U-29 — what each engine currently offers, so the per-agent model box
+     *  is drawn from the engine's own catalog rather than a typed list. */
+    engineModels?(): Record<string, EngineModels>;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -83,6 +90,10 @@ const CONFIG_SECTION = 'agentFarm';
 export class FarmSettingsPanel {
     private static current: FarmSettingsPanel | undefined;
     private disposables: vscode.Disposable[] = [];
+    /** Which engine the per-agent default boxes are editing. Page state, so
+     *  it lives here rather than in a setting: it is a view, not a preference,
+     *  and it has to survive the refresh that follows every write. */
+    private defaultsEngine: EngineId = 'claude';
 
     static show(deps: FarmSettingsDeps, focus?: string): void {
         if (FarmSettingsPanel.current) {
@@ -99,6 +110,11 @@ export class FarmSettingsPanel {
         FarmSettingsPanel.current = new FarmSettingsPanel(panel, deps, focus);
     }
 
+    /** Redraw if the page is up — used when something OUTSIDE the settings
+     *  system changes what this page offers, e.g. an engine's model catalog
+     *  answering after the page was drawn (U-31). */
+    static refreshIfOpen(): void { FarmSettingsPanel.current?.refresh(); }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: FarmSettingsDeps, focus?: string) {
         this.panel.webview.html = htmlShell(
             this.panel.webview,
@@ -113,6 +129,90 @@ export class FarmSettingsPanel {
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration(CONFIG_SECTION)) { this.refresh(); }
         }, null, this.disposables);
+    }
+
+    /**
+     * ‼️ U-29/U-33 — EVERY AGENT'S DEFAULTS, PER ENGINE, WITH WHAT "Default"
+     * RESOLVES TO ALREADY WORKED OUT.
+     *
+     * The webview must not do this: the resolution walks three layers (the
+     * agent's own Claude settings file, Agent Farm's per-engine store, the
+     * fleet-wide launchDefaults) and only the host can read two of them. It is
+     * computed here, once per draw, by the pure module that also decides what
+     * the launcher does — so the sentence the box prints and the value the
+     * session gets can never disagree.
+     */
+    private foldersWithDefaults(): unknown {
+        const rep = this.deps.agentFolders?.();
+        if (!rep) { return null; }
+        const store = vscode.workspace.getConfiguration()
+            .get<AgentEngineDefaults>('agentFarm.agentEngineDefaults', {}) ?? {};
+        const launch = vscode.workspace.getConfiguration()
+            .get<{ model?: string; effort?: string }>('agentFarm.launchDefaults', {}) ?? {};
+        const engines = (this.deps.engines?.() ?? []).map(e => ({ id: e.id, label: e.label }));
+        const ids: EngineId[] = engines.length
+            ? engines.map(e => e.id as EngineId)
+            : ['claude', 'codex', 'gemini', 'agy'];
+        return {
+            ...rep,
+            reports: rep.reports.map(r => ({
+                ...r,
+                candidates: r.candidates.map(c => {
+                    const per: Record<string, unknown> = {};
+                    for (const id of ids) {
+                        const label = engines.find(e => e.id === id)?.label ?? id;
+                        const own = storedDefault(store, c.dir, id);
+                        const agentFile = id === 'claude' ? this.agentFileModel(c.dir) : '';
+                        per[id] = {
+                            model: id === 'claude' ? (agentFile || own.model || '') : (own.model || ''),
+                            effort: own.effort || '',
+                            resolved: resolveDefault(id, 'model', {
+                                agentFile, farm: own.model, launch: launch.model, engineLabel: label
+                            }),
+                            resolvedEffort: resolveDefault(id, 'effort', {
+                                farm: own.effort, launch: launch.effort, engineLabel: label
+                            })
+                        };
+                    }
+                    return { ...c, engines: per };
+                })
+            }))
+        };
+    }
+
+    /**
+     * One agent's default for one NON-Claude engine.
+     *
+     * ‼️ THIS IS A SETTING AND NOT A FILE, AND THE DIFFERENCE IS STATED RATHER
+     * THAN HIDDEN: Codex, Gemini and Antigravity have no per-folder settings
+     * file, so there is nowhere on disk that a session started outside Agent
+     * Farm would read. Agent Farm keeps the value and passes it as a flag when
+     * IT starts the session — which is what the box's own hover says.
+     */
+    private async writeFarmDefault(
+        dir: string, engine: unknown, patch: { model?: string; effort?: string }
+    ): Promise<void> {
+        const id = String(engine ?? '').trim().toLowerCase();
+        const ids = (this.deps.engines?.() ?? []).map(e => String(e.id));
+        if (!id || (ids.length && !ids.includes(id))) { return; }
+        const cfg = vscode.workspace.getConfiguration();
+        const store = cfg.get<AgentEngineDefaults>('agentFarm.agentEngineDefaults', {}) ?? {};
+        await cfg.update('agentFarm.agentEngineDefaults',
+            withAgentDefault(store, dir, id as EngineId, patch),
+            vscode.ConfigurationTarget.Global);
+    }
+
+    /** What `<agent>/.claude/settings.local.json` says — Claude's own layer,
+     *  and the only one that works for a session started in a terminal. */
+    private agentFileModel(dir: string): string {
+        for (const name of ['settings.local.json', 'settings.json']) {
+            try {
+                const raw = fs.readFileSync(path.join(dir, '.claude', name), 'utf8');
+                const v = validateRawClaudeSettings(raw);
+                if (v.ok && typeof v.json.model === 'string') { return v.json.model.trim(); }
+            } catch { /* not there, or not ours to read */ }
+        }
+        return '';
     }
 
     private categories(): SettingsCategory[] {
@@ -154,7 +254,14 @@ export class FarmSettingsPanel {
             // the user's model-name knowledge base — feeds every model picker
             modelAliases: vscode.workspace.getConfiguration()
                 .get<string[]>('agentFarm.modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
-            folders: this.deps.agentFolders?.() ?? null,
+            // ‼️ U-29 — WHAT EACH ENGINE ACTUALLY OFFERS. The per-agent model box
+            // used to draw the alias list whatever engine it was for, which is
+            // the same expiry-dated constant core/models.ts exists to end.
+            engineModels: this.deps.engineModels?.() ?? null,
+            // …and which engine the boxes are currently editing (page state,
+            // held on the host so it survives the refresh after every write).
+            agentDefaultsEngine: this.defaultsEngine,
+            folders: this.foldersWithDefaults(),
             categories: this.categories(),
             profiles: this.deps.getProfiles().map(p => ({
                 name: p.name, savedAt: p.savedAt, count: Object.keys(p.values).length
@@ -481,16 +588,46 @@ export class FarmSettingsPanel {
                 await cfg.update('agentFarm.excludeAgentDirs', next, vscode.ConfigurationTarget.Global);
                 break;
             }
+            // ‼️ U-29 — WHICH ENGINE THESE DEFAULTS ARE FOR is now part of the
+            // message, and it decides WHERE the value goes: Claude's into the
+            // file its own CLI reads, every other engine's into Agent Farm's
+            // store (they have no per-folder settings file — see
+            // core/agentDefaults.ts).
+            case 'agentDefaultsEngine': {
+                const want = String(msg.engine ?? '').trim().toLowerCase();
+                const ids = (this.deps.engines?.() ?? []).map(e => String(e.id));
+                if (ids.length && !ids.includes(want)) { break; }
+                this.defaultsEngine = (want || 'claude') as EngineId;
+                this.refresh();
+                break;
+            }
+            case 'agentEffort': {
+                const dir = String(msg.dir ?? '');
+                const known = this.deps.agentFolders?.().reports
+                    .some(r => r.candidates.some(c => c.dir === dir));
+                if (!dir || !known) { break; }
+                await this.writeFarmDefault(dir, msg.engine, { effort: String(msg.effort ?? '').trim() });
+                this.refresh();
+                break;
+            }
             case 'agentModel': {
-                // Per-agent default model → the agent's .claude/settings.local.json
-                // ('' clears the key, the CLI default takes over). Only scanned
-                // agent folders are writable from here — the webview must not be
-                // able to point us at arbitrary paths.
+                // Per-agent default model. Only scanned agent folders are
+                // writable from here — the webview must not be able to point us
+                // at arbitrary paths.
                 const dir = String(msg.dir ?? '');
                 const model = String(msg.model ?? '').trim();
                 const known = this.deps.agentFolders?.().reports
                     .some(r => r.candidates.some(c => c.dir === dir));
                 if (!dir || !known) { break; }
+                const engine = String(msg.engine ?? 'claude').trim().toLowerCase();
+                if (engine && engine !== 'claude') {
+                    await this.writeFarmDefault(dir, engine, { model });
+                    this.refresh();
+                    break;
+                }
+                // …and Claude's still goes in the file, because that is what
+                // makes it apply to a session started in a terminal too.
+                ('' as string);
                 const file = path.join(dir, '.claude', 'settings.local.json');
                 let json: Record<string, unknown> = {};
                 try {

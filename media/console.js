@@ -443,25 +443,30 @@
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
         .pchip.none { opacity:.45; background:none; color:inherit; }
         .pchip-hint { opacity:.6; font-style:italic; }
-        /* ‼️ WHICH ENGINE — a badge, and only when it is not the default (X-18).
-           It borrows the project badge's shape on purpose: the two answer the
-           same kind of question about a row ("what is this session, really")
-           and a second visual language for it would be noise. The colour is the
-           editor's own "different" colour rather than a status colour: an engine
-           is not a warning. */
-        /* ‼️ flex:none IS THE WHOLE FIX, AND IT WAS FOUND BY LOOKING. Inside the
-           name span — which truncates, as a name should — the badge on the
-           BUSIEST card read "C…": the one row where knowing the engine matters
-           most was the one row that could not say it. It is a sibling of the
-           name now, and it never shrinks; the name gives up the space instead. */
-        .ebadge { flex:none; font-size:9px; padding:0 5px; border-radius:7px; cursor:help;
-            border:1px solid var(--vscode-charts-purple,#b180d7);
-            color:var(--vscode-charts-purple,#b180d7); white-space:nowrap; }
+        /* Which engine: media/afEngine.js draws it and media/common.css colours
+           it, so this page, the sessions tables and a session's own page cannot
+           disagree about what a Codex row looks like (U-26). The one rule that
+           belongs to THIS page is that the badge never shrinks: it sits beside a
+           name that truncates, and on the busiest card it used to read "C…". */
+        .af-eng { cursor:help; }
         .srow .h .n { flex:1 1 auto; min-width:0; }
-        /* the line under the controls: what this engine changes about talking */
-        .enote { font-size:10px; opacity:.75; margin-top:6px; line-height:1.45; }
-        .enote b { opacity:1; }
-        .enote .bad { display:block; margin-top:2px; color:var(--vscode-editorWarning-foreground,#cca700); }
+        /* ‼️ U-30 — WHAT THE ENGINE CHANGES IS A HOVER, NOT A PARAGRAPH.
+           It used to be three printed lines under the controls, in the one strip
+           of the page where there is no room: sixty words explaining per-turn
+           processes, sitting under a composer, every draw. It is the same text —
+           it just waits to be asked for now. The trigger is one character wide
+           and sits beside the box it is about. */
+        /* The wrapper is the flex CHILD, so it is the thing that has to be
+           sized — sizing the trigger inside it leaves a 6px column with a 14px
+           mark spilling out of it (measured). */
+        .ehintw { flex:none; display:inline-flex; align-items:center; }
+        .ehint { display:inline-block; font-size:10px; width:14px; height:14px; line-height:13px;
+            text-align:center; border-radius:50%; cursor:help; opacity:.6;
+            border:1px solid var(--vscode-widget-border,#4444); }
+        .ehint:hover { opacity:1; }
+        /* an engine that cannot run is the one case the mark itself must show */
+        .ehint.bad { opacity:.9; color:var(--vscode-editorWarning-foreground,#cca700);
+            border-color:var(--vscode-editorWarning-foreground,#cca700); }
         /* "no price" is a FACT, not a missing value — quiet, never alarming */
         .noprice { opacity:.6; font-style:italic; }
         /* the same fact, on a session row: which project it was started under */
@@ -502,9 +507,46 @@
         .chip .x:hover { opacity:1; color:var(--vscode-charts-red,#e51400); }
         /* the whole composer is the drop target — a small one would be a game */
         .composer.drop { outline:2px dashed var(--vscode-focusBorder,#007fd4); outline-offset:3px; }
-        .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
-        .crow select { font-size:11px; padding:2px 4px; }
-        .crow .grow { flex:1; }
+        /**
+         * ‼️ U-28 — THE BUTTONS DO NOT MOVE, AND THE BOXES NO LONGER SIZE
+         * THEMSELVES.
+         *
+         * Two faults, one cause. The row was flex-wrap:wrap over selects with
+         * no declared width, so every box was as wide as its longest OPTION:
+         * a long project name or "Gemini — not signed in" grew its own box,
+         * pushed everything right, and dropped Send onto a second line. The
+         * control you are reaching for moved because of a string in a box next
+         * to it.
+         *
+         * Measured before the change (fixture console, 1400px window, 1030px
+         * row): agent 121 · engine 145 · model 97 · effort 66 · permission 133
+         * · project 105 — and those are the SHORT values this fixture happens to
+         * carry. The widths below are declared instead, at the shares asked for
+         * against the real, content-driven sizes: agent −25%, engine −35%,
+         * permission −30%, project −60%.
+         *
+         * And when it still does not fit, the row shrinks in a chosen ORDER
+         * rather than wherever flexbox likes: project and permission first (they
+         * are the rightmost and the least often changed), then the engine, and
+         * the agent last. Send and its neighbours never shrink and never wrap.
+         */
+        .crow { display:flex; gap:6px; align-items:center; flex-wrap:nowrap; margin-top:7px; min-width:0; }
+        .crow select { font-size:11px; padding:2px 4px; min-width:0; }
+        .crow .grow { flex:1 1 0; min-width:0; }
+        /* the identity end of the row: sized, shrinkable, in that order */
+        #c-agent { flex:1 1 120px; max-width:120px; }
+        #c-engine { flex:2 1 118px; max-width:118px; }
+        #c-model, #c-model-live { flex:1 1 112px; max-width:112px; }
+        #c-effort, #c-effort-live { flex:1 1 82px; max-width:82px; }
+        #c-perm { flex:3 1 104px; max-width:104px; }
+        #c-proj { flex:3 1 104px; max-width:104px; }
+        /* the label wrappers of the running composer are sized by their select */
+        .crow .permlbl { min-width:0; flex:0 1 auto; }
+        /* ‼️ THE RIGHT-HAND GROUP IS FIXED. Whatever else gives way, these keep
+           their size and their place: a button that moves is a button you have
+           to look for. */
+        .crow #c-live, .crow #c-send, .crow button { flex:none; }
+        .crow #c-live { display:inline-flex; align-items:center; gap:6px; }
         /* HELD back on purpose: not said yet, and still yours to change
            (see queueHtml) */
         .qwait:empty { display:none; }
@@ -2007,26 +2049,45 @@
      * are the next turn's flags, and the permission mode is a sandbox picked up
      * front. That is too much to learn from a tooltip on a dropdown.
      */
-    function engineNoteHtml(id) {
+    function engineHintHtml(id) {
         const e = engineRow(id);
-        if (!e || e.id === 'claude') { return ''; }
-        return `<div class="enote"><b>${C.esc(e.label)}</b> ${C.esc(e.note || '')}
-            ${e.ready ? '' : `<span class="bad">${C.esc(e.next)}</span>`}</div>`;
+        if (!e) { return ''; }
+        // ‼️ CLAUDE GETS ONE TOO (U-26/U-30). The old rule was "draw nothing for
+        // the default", which left the reader unable to tell "this engine
+        // changes nothing" from "nobody wrote a note". Every engine answers the
+        // same question now; what differs is the answer.
+        const body = window.AFTip.lines([
+            e.note || 'Nothing about this engine changes how the composer behaves.',
+            e.billing || '',
+            e.ready ? '' : e.next
+        ]);
+        const head = `${e.label} · ${e.ready ? 'ready' : 'cannot run here'}`;
+        return window.AFTip.wrap(
+            `<span class="ehint${e.ready ? '' : ' bad'}">?</span>`, head, body, 'ehintw');
     }
 
     /**
-     * The badge a card / a running composer wears. Claude wears none: it is the
-     * default and a badge on every row is a badge nobody reads. A second engine
-     * is the exception, so it is the thing that gets marked.
+     * The badge a card / a running composer wears.
+     *
+     * ‼️ U-26 — CLAUDE WEARS ONE TOO, AND THE RULE IT REPLACES WAS THE PROBLEM.
+     * "The default wears nothing" reads fine on a page with one engine on it and
+     * falls apart on a list with four: an unbadged row means "Claude" or it
+     * means "this row predates engines", and there is nothing on it to tell you
+     * which. Every row answers now, in the engine's own fixed colour — the same
+     * badge, from the same component, that the sessions tables and the session
+     * page draw (media/afEngine.js).
+     *
+     * The hover stays FIGURES, `Label: value` (docs/CONVENTIONS.md): what this
+     * engine changes about talking to it is the ? beside the box, not here.
      */
     function engineBadge(s) {
-        if (!s || !s.engine || s.engine === 'claude') { return ''; }
-        const tip = `This session runs on ${s.engineLabel}`
-            + (s.turnShape === 'perTurn'
-                ? ' — one process per TURN: a message typed while it is working is held until the turn ends, and the model/effort/permission boxes apply to the NEXT turn.'
-                : '.')
-            + (s.reportsCost ? '' : ' It runs on a plan, so it counts tokens and states no price.');
-        return `<span class="ebadge" title="${C.esc(tip)}">${C.esc(s.engineLabel)}</span>`;
+        if (!s) { return ''; }
+        return window.AFEngine.badge(s.engine, window.AFTip.lines([
+            'Engine: ' + (s.engineLabel || window.AFEngine.label(s.engine)),
+            'Shape: ' + (s.turnShape === 'perTurn' ? 'one process per turn' : 'one long-lived process'),
+            'Mid-turn message: ' + (s.turnShape === 'perTurn' ? 'held until the turn ends' : 'steers this turn'),
+            'Price per turn: ' + (s.reportsCost ? 'reported' : 'not reported — plan or account billing')
+        ]));
     }
 
     /**
@@ -2102,7 +2163,7 @@
             ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
                     ${C.esc(s.agentName)}
                 </span>
-                ${engineBadge(s)}
+                ${engineBadge(s)}${engineHintHtml(s.engine)}
                 <label class="permlbl" title="${C.esc(modelTip + ' · ' + modelNote(s.engine))}">model
                     <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>
@@ -2136,6 +2197,7 @@
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
                 </select>`}
                 <select id="c-engine" title="Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.">${engineOptionsHtml(engineNow())}</select>
+                ${engineHintHtml(engineNow())}
                 <select id="c-model" title="Model for the new session (--model). ${C.esc(modelNote(engineNow()))}">${opts(modelsFor(engineNow()), st.model)}</select>
                 <select id="c-effort" title="Reasoning effort (--effort)">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>
                 <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
@@ -2175,7 +2237,6 @@
                             ${window.AFTextTools.html('c')}
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
-                        <div id="c-enote"></div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
                     </div>
                 </div>
@@ -2758,14 +2819,27 @@
                     type: 'queueTake', id: DATA.selected, index: Number(b.dataset.qdrop)
                 })));
         }
-        // What the engine changes — under the controls, for the engine that is
-        // actually in play: the running session's, or the one the composer is
-        // about to start on.
-        slot('c-enote', engineNoteHtml(s ? s.engine : engineNow()));
-
         // deliberately NOT a slot: it repaints itself on a timer while the turn
         // runs, so its html is never what `written` last saw
         paintWorking();
+
+        /**
+         * ‼️ …AND NOW THAT EVERYTHING BELOW THE TRANSCRIPT HAS FINISHED CHANGING
+         * HEIGHT, THE TAIL IS RE-PINNED (U-28).
+         *
+         * The live strip is a SIBLING of the scroller, not part of it. When a
+         * turn starts it appears and takes two lines out of `.talk`'s height —
+         * after `talkinner` was written and pinned. `scrollTop` is preserved, so
+         * the same scrollTop against a shorter box is no longer the bottom, and
+         * the last line sat one row below the fold until the reader dragged it
+         * back. Measured as worse on the per-turn engines because their strip
+         * carries more, but it was never Claude-only.
+         *
+         * `pinned` is the reading taken BEFORE anything was written, so a reader
+         * who had scrolled up to read something is still left where they were —
+         * that rule does not change, it is only applied later.
+         */
+        if (pinned && talkEl) { talkEl.scrollTop = talkEl.scrollHeight; }
 
         if (slot('c-status', statusHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };

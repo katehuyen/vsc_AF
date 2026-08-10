@@ -75,15 +75,137 @@ const engines = () => ([
     }
 ]);
 
-const data = () => ({
-    focus: '', profiles: [], prompts: null, modelAliases: [],
+/**
+ * ‼️ U-29 — THE AGENT FOLDERS SECTION, WITH THE THING THAT WAS A MYSTERY.
+ *
+ * The per-agent default used to be one box that wrote Claude's settings file
+ * whatever engine it was for. It is per engine now, and every box names what
+ * "Default" resolves to — which is a VISUAL claim, so it is drawn here rather
+ * than only asserted as a string. The two agents below are the two cases that
+ * matter: one with a Claude default set in its own file and nothing for the
+ * other engines, and one with the opposite.
+ */
+const resolved = (value, origin, note) => ({ value, origin, note });
+
+const folders = () => ({
+    excludes: [],
+    reports: [{
+        root: 'D:\\zone\\agent\\ajanlar',
+        kind: 'nest',
+        duplicate: false,
+        candidates: [
+            {
+                dir: 'D:\\zone\\agent\\ajanlar\\developer', name: 'developer',
+                excluded: false, agentId: 'developer', model: 'sonnet',
+                engines: {
+                    claude: {
+                        model: 'sonnet', effort: '',
+                        resolved: resolved('sonnet', 'agent-file',
+                            'sonnet — this agent\u2019s own .claude/settings.local.json, which Claude Code reads itself.'),
+                        resolvedEffort: resolved('', 'cli', 'Claude Code decides.')
+                    },
+                    codex: {
+                        model: 'gpt-5.6-terra', effort: 'high',
+                        resolved: resolved('gpt-5.6-terra', 'farm',
+                            'gpt-5.6-terra — set here for this agent on Codex; passed as --model.'),
+                        resolvedEffort: resolved('high', 'farm', 'high — passed as --effort.')
+                    },
+                    gemini: {
+                        model: '', effort: '',
+                        resolved: resolved('', 'cli', 'Gemini decides — nothing is set for this agent.'),
+                        resolvedEffort: resolved('', 'cli', 'Gemini decides.')
+                    },
+                    agy: {
+                        model: '', effort: '',
+                        resolved: resolved('', 'cli', 'Antigravity decides — nothing is set for this agent.'),
+                        resolvedEffort: resolved('', 'cli', 'Antigravity decides.')
+                    }
+                }
+            },
+            {
+                dir: 'D:\\zone\\agent\\ajanlar\\basit', name: 'basit',
+                excluded: false, agentId: 'basit', model: '',
+                engines: {
+                    claude: {
+                        model: '', effort: '',
+                        resolved: resolved('haiku', 'launch-defaults',
+                            'haiku — from agentFarm.launchDefaults, which applies to every agent.'),
+                        resolvedEffort: resolved('low', 'launch-defaults', 'low — from agentFarm.launchDefaults.')
+                    },
+                    codex: {
+                        model: '', effort: '',
+                        resolved: resolved('haiku', 'launch-defaults',
+                            'haiku — from agentFarm.launchDefaults, which applies to every agent and every engine.'),
+                        resolvedEffort: resolved('low', 'launch-defaults', 'low — from agentFarm.launchDefaults.')
+                    },
+                    gemini: { model: '', effort: '', resolved: resolved('', 'cli', 'Gemini decides.'), resolvedEffort: resolved('', 'cli', '') },
+                    agy: { model: '', effort: '', resolved: resolved('', 'cli', 'Antigravity decides.'), resolvedEffort: resolved('', 'cli', '') }
+                }
+            }
+        ]
+    }]
+});
+
+/** What each engine currently offers — the same shape core/models.ts returns. */
+const engineModels = () => ({
+    claude: {
+        models: [{ id: '', label: 'Default' }, { id: 'haiku', label: 'haiku' },
+            { id: 'sonnet', label: 'sonnet' }, { id: 'opus', label: 'opus' },
+            { id: 'fable', label: 'fable' },
+            { id: 'claude-fable-5[1m]', label: 'Fable · 1m' }],
+        efforts: { '': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'high', label: 'high' }] },
+        defaultEffort: {}, source: 'catalog', note: 'aliases plus what the CLI recorded for this account'
+    },
+    codex: {
+        models: [{ id: '', label: 'Default' }, { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+            { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' }],
+        efforts: {
+            '': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' }, { id: 'high', label: 'high' }],
+            'gpt-5.6-terra': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' },
+                { id: 'medium', label: 'medium' }, { id: 'high', label: 'high' }]
+        },
+        defaultEffort: {}, source: 'catalog', note: 'read from Codex\u2019s own catalog'
+    },
+    gemini: {
+        models: [{ id: '', label: 'Default' }], efforts: { '': [{ id: '', label: 'Default' }] },
+        defaultEffort: {}, source: 'settings', note: 'this engine states no model catalog'
+    },
+    agy: {
+        models: [{ id: '', label: 'Default' }, { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+            { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
+            { id: 'gpt-oss-120b', label: 'GPT-OSS 120B' }],
+        efforts: {
+            'gemini-3.6-flash': [{ id: '', label: 'Default' }, { id: 'low', label: 'low' },
+                { id: 'medium', label: 'medium' }, { id: 'high', label: 'high' }],
+            'claude-sonnet-4-6': [{ id: '', label: 'Default' }]
+        },
+        defaultEffort: {}, source: 'catalog', note: 'read from Antigravity\u2019s own `agy models`'
+    }
+});
+
+const base = () => ({
+    focus: '', profiles: [], prompts: null, modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
     categories: [{
         id: 'live', label: 'Live', items: [
             { key: 'agentFarm.livePort', type: 'number', default: 0, description: 'listener port', value: 9000, modified: true }
         ]
     }],
-    folders: { excludes: [], reports: [] },
+    folders: folders(),
+    engineModels: engineModels(),
+    agentDefaultsEngine: 'claude',
     engines: engines()
 });
 
-module.exports = { script: 'settings.js', data, engines };
+const data = base;
+
+/** Two pictures, because the point of the change is that they DIFFER: the same
+ *  two agents with the boxes editing Claude's defaults, and then Codex's. */
+const variants = () => ([
+    { id: 'engines', label: 'Settings — agent defaults for CLAUDE', data: base() },
+    {
+        id: 'engines-codex', label: 'Settings — the same agents, defaults for CODEX',
+        data: { ...base(), agentDefaultsEngine: 'codex' }
+    }
+]);
+
+module.exports = { script: 'settings.js', data, variants, engines, folders, engineModels };

@@ -793,7 +793,8 @@ const mkRow = (i, extra) => Object.assign({
 // at a 1314px table: Title 462px against 457px, Cost 41px against 48px. Nobody
 // chose that. These assertions are about the choice that replaced it.
 {
-    const DASH = ['origin', 'agent', 'project', 'title', 'when', 'duration', 'turns',
+    // the Dashboard's real column set — Engine among them since U-26
+    const DASH = ['origin', 'agent', 'engine', 'project', 'title', 'when', 'duration', 'turns',
         'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'];
     const mk = (id, cols, n) => {
         const t = sandbox.window.AFSessionsTable.create({
@@ -806,6 +807,9 @@ const mkRow = (i, extra) => Object.assign({
     const widths = html => (colgroup(html).match(/width:([^"]+)"/g) || [])
         .map(s => s.replace(/width:|"/g, ''));
 
+    // the declared shares themselves, read from the component rather than
+    // re-derived from a colgroup that has already been normalised
+    const TABLE_SRC = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
     const dash = mk('wdash', DASH, 20);
     const page = mk('wpage', DASH, 200);
     ok('the layout is declared, not inferred', /table class="sesstable"/.test(dash));
@@ -834,12 +838,30 @@ const mkRow = (i, extra) => Object.assign({
         Math.abs(share(dash, 'title', DASH) / share(dash, 'project', DASH)
             - share(agentPage, 'title', AGENT_COLS) / share(agentPage, 'project', AGENT_COLS)) < 0.01);
 
-    // The one deliberate change to the measured baseline: Title gives up a
+    // The first deliberate change to the measured baseline: Title gives up a
     // quarter of itself. It held 462px of the 1210px the px columns leave in a
-    // 1314px table — 38.15% — and a quarter off that is 28.61%, which comes back
-    // out of the browser as 346px (re-measured, same conditions).
-    ok('‼️ Title is a quarter narrower than the layout it replaced',
-        Math.abs(share(dash, 'title', DASH) - 28.61) < 0.1);
+    // 1314px table — 38.15% — and a quarter off that is the 28.610 DECLARED for
+    // it, which is the number this pins. What that comes out as on screen now
+    // depends on who else is in the row, and that is the point of normalising.
+    ok('‼️ Title still declares a quarter less than the layout it replaced',
+        /title: 28\.610/.test(TABLE_SRC));
+
+    // ‼️ U-26 — and the three changes the user asked for, checked as RATIOS
+    // against that same measured baseline rather than as pixels, because the
+    // shares are re-normalised for every column set.
+    ok('‼️ Agent is half again as wide as it was (it could not hold a name)',
+        Math.abs(13.572 / 9.048 - 1.5) < 0.001 && /agent: 13\.572/.test(TABLE_SRC));
+    ok('‼️ Project keeps a quarter of what it was taking',
+        Math.abs(5.170 / 20.679 - 0.25) < 0.001 && /project: 5\.170/.test(TABLE_SRC));
+    ok('‼️ …and Engine is a column now, in every embedding of the table',
+        /engine: 6\.200/.test(TABLE_SRC)
+        && DASH.indexOf('engine') >= 0
+        && share(dash, 'engine', DASH) > 0);
+    // Project shrank by more than Agent and Engine took, so the remainder goes
+    // back to everyone in proportion — which is the rule this file already
+    // states, applied rather than re-argued.
+    ok('…so every other column is fractionally wider, none of them re-designed',
+        share(dash, 'title', DASH) > 28.61 && share(dash, 'when', DASH) > 5.056);
 
     // A glyph column is px, not a share: a share would make the checkbox column
     // grow with the monitor.

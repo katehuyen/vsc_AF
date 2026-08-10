@@ -21,7 +21,7 @@
         // Every column the component has. On the Dashboard some of them are a
         // luxury the width cannot afford; here there is nothing else on the page
         // to compete with them.
-        columns: ['origin', 'agent', 'project', 'title', 'when', 'duration', 'turns',
+        columns: ['origin', 'agent', 'engine', 'project', 'title', 'when', 'duration', 'turns',
             'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
         tableN: DATA.sessionTableN || 200,
         stateKey: 'sessionsPage'

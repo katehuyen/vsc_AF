@@ -18,7 +18,7 @@ import { speakText } from './core/briefing';
 import { buildOtlpTraces } from './core/otel';
 import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
-import { codexSessionsSource, geminiSessionsSource } from './core/cliTranscripts';
+import { agySessionsSource, codexSessionsSource, geminiSessionsSource } from './core/cliTranscripts';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
@@ -71,6 +71,8 @@ import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
+import { EngineUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
+import { AgentEngineDefaults, resolveDefault, storedDefault } from './core/agentDefaults';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -109,7 +111,7 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
-import { codexSandboxFor, ENGINES, engineNote, engineOf } from './core/consoleEngine';
+import { codexSandboxFor, ENGINES, engineNote, engineOf, runArgs } from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus
 } from './core/engines';
@@ -1011,8 +1013,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => expandEnvPath(cfg().get<string>('geminiDir', '').trim()) || path.join(os.homedir(), '.gemini', 'tmp'),
         () => agents,
         () => pricing);
+    // ‼️ THE FOURTH ENGINE, WHICH HAD NEVER APPEARED IN A SESSIONS TABLE AT ALL
+    // (U-26). Its own transcripts are protobuf inside per-conversation SQLite
+    // files; what is readable is the CLI's index of them, which carries the id,
+    // a title, the time and the workspace — see agySessionsSource.
+    const agySource = agySessionsSource(
+        () => expandEnvPath(cfg().get<string>('agyHome', '').trim())
+            || path.join(os.homedir(), '.gemini', 'antigravity-cli'),
+        resolveAgentByCwd);
     const refreshExternalSessions = () =>
-        index.setExternal(buildExternalSessions([externalSessionSource, codexSource, geminiSource]));
+        index.setExternal(buildExternalSessions(
+            [externalSessionSource, codexSource, geminiSource, agySource]));
     refreshExternalSessions();
     let externalSessTimer: NodeJS.Timeout | undefined;
     context.subscriptions.push(live.onDidUpdate(() => {
@@ -3498,6 +3509,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'usage.engines',
+            describe: '‼️ WHAT IS LEFT ON EVERY ENGINE\'S PLAN, and — where there is nothing to read — '
+                + 'the reason, never a zero. `usage.plan` answers for Claude only, which was fine while '
+                + 'Claude was the only engine and is a wrong answer now: a percentage whose subject is '
+                + 'not stated gets attributed to whatever the reader is working in. Per engine: `state` '
+                + '("ok" = real figures · "not-published" = the CLI keeps a quota and writes it nowhere '
+                + 'readable · "no-plan" = billed per token, there is no window to be a percentage OF · '
+                + '"unknown" = it publishes one but has not written it here yet), `bars` '
+                + '[{id,title,percent,resetsAt}], `plan`, `fetchedAt` and a `note` saying where the '
+                + 'figure came from and how old it is. WHERE EACH ONE COMES FROM (measured 2026-08-10): '
+                + 'Claude = Anthropic\'s usage endpoint, live; Codex = the `rate_limits` block its own '
+                + 'rollout transcript records at each turn boundary, so it is free but as old as its '
+                + 'last turn; Gemini = an API key, no plan; Antigravity = nothing on disk at all. '
+                + '‼️ NEVER TREAT A MISSING FIGURE AS 0% — that is the one mistake this op is shaped to '
+                + 'prevent. `shown` is the engine the status bar is currently displaying '
+                + '(agentFarm.planUsageEngine). args: id? (claude | codex | gemini | agy)',
+            handler: (args) => {
+                const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
+                const all = engineUsageMatrix();
+                need(!id || all.some(e => e.id === id),
+                    `no engine called "${id}" — try ${all.map(e => e.id).join(', ')}`);
+                const rows = (id ? all.filter(e => e.id === id) : all).map(e => ({
+                    id: e.id, label: e.label, state: e.state, plan: e.plan || null,
+                    fetchedAt: e.fetchedAt ? new Date(e.fetchedAt).toISOString() : null,
+                    note: e.note,
+                    bars: e.bars.map(b => ({
+                        id: b.id, title: b.title, percent: b.percent,
+                        resetsAt: b.resetsAt ? new Date(b.resetsAt).toISOString() : null
+                    }))
+                }));
+                return { shown: usageEngine(), engines: rows };
+            }
+        },
+        {
             op: 'usage.window',
             describe: 'The rolling 5-hour window as the TRANSCRIPTS record it, in both units: `tokens` (raw — everything that moved, cache reads and all) and `wTokens` (⚖ weighted the way the plan limit charges: output x5, cache-write x1.25, cache-read x0.1, Opus x5 over Sonnet). ‼️ THE TWO ARE NOT INTERCHANGEABLE and are not even proportional: measured over 32 days of real transcripts their ratio ranges 0.80x to 3.86x, and the eight heaviest windows sit in a ±13% band by weighted total (75.5M-96.7M) while spanning 111M-175M raw. Only `wTokens` tracks how full the window is. Also returns `pct` against whichever ceilings are configured (windowTokenLimit / windowWeightedTokenLimit; null when neither is set) and the lap counter when one is running. For the REAL subscription figure from Anthropic, use usage.plan. args: none',
             handler: () => {
@@ -3628,7 +3673,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     resume: optStr(args, 'resume'),
                     continueLast: args.continue === true
                 };
-                const merged = withDefaults(o, launchDefaults());
+                const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
                 const errors = validateLaunch(merged);
                 need(!errors.length, errors.join(' · '));
                 // …and whether this machine can run it. The same sentence the
@@ -6848,6 +6893,74 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion
     });
 
+    /**
+     * ‼️ U-27 — THE LIMIT IS PER ENGINE, AND ONLY ONE OF THEM HAS AN ENDPOINT.
+     *
+     * `planUsage` above asks Anthropic. The other three are read off disk (or
+     * honestly reported as unreadable) by core/engineUsage.ts, which is pure —
+     * this is the probe that gives it a home directory, and nothing here makes a
+     * network call.
+     */
+    const usageProbe: UsageProbe = {
+        newestFiles: (relDir, ext, limit) => {
+            const root = relDir === '.codex/sessions'
+                ? path.join(expandEnvPath(cfg().get<string>('codexHome', '').trim())
+                    || path.join(os.homedir(), '.codex'), 'sessions')
+                : path.join(os.homedir(), relDir);
+            const found: { p: string; t: number }[] = [];
+            const walk = (dir: string, depth: number): void => {
+                if (depth > 6) { return; }
+                let entries: fs.Dirent[] = [];
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+                for (const e of entries) {
+                    const p = path.join(dir, e.name);
+                    if (e.isDirectory()) { walk(p, depth + 1); }
+                    else if (e.name.endsWith(ext)) {
+                        try { found.push({ p, t: fs.statSync(p).mtimeMs }); } catch { /* gone */ }
+                    }
+                }
+            };
+            walk(root, 0);
+            return found.sort((a, b) => b.t - a.t).slice(0, limit).map(x => x.p);
+        },
+        // The last N bytes only: a rollout can be tens of megabytes and the line
+        // wanted is written at every turn boundary, so the tail always has one.
+        readTail: (abs, bytes) => {
+            let fd: number | undefined;
+            try {
+                const size = fs.statSync(abs).size;
+                const start = Math.max(0, size - bytes);
+                const len = size - start;
+                if (len <= 0) { return ''; }
+                fd = fs.openSync(abs, 'r');
+                const buf = Buffer.alloc(len);
+                fs.readSync(fd, buf, 0, len, start);
+                return buf.toString('utf8');
+            } catch { return undefined; }
+            finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already gone */ } } }
+        }
+    };
+    const engineUsageMatrix = (): EngineUsage[] => {
+        const snap = planUsage.current();
+        return readEngineUsage(
+            usageProbe,
+            p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } },
+            {
+                state: !snap ? 'unknown' : snap.state === 'ok' ? 'ok' : 'not-published',
+                bars: snap?.state === 'ok' ? snap.bars : [],
+                plan: snap?.plan ?? '',
+                fetchedAt: snap?.fetchedAt ?? 0,
+                note: snap?.note
+                    ?? (snap ? 'Read from Anthropic\'s own usage endpoint — the figures /usage prints in the CLI.'
+                        : 'Not read yet.')
+            });
+    };
+    /** Which engine the indicator is currently showing. A choice, so it is
+     *  remembered; a setting, so the Settings page and the bridge can both see
+     *  it without a command of their own. */
+    const usageEngine = (): string =>
+        (cfg().get<string>('planUsageEngine', 'claude') || 'claude').trim().toLowerCase();
+
     // …and the two percentages that decide whether to start the next long turn,
     // permanently in the status bar rather than behind a page you have to open
     // (see PlanUsageBar). Same service, so it shares the one request budget.
@@ -6858,11 +6971,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         active: fleetActive,
         warnAt: () => cfg().get<number>('planUsageWarnPercent', 80),
         dangerAt: () => cfg().get<number>('planUsageDangerPercent', 95),
+        // U-27 — the engine axis. Read live, so switching engines from the hover
+        // (or editing the setting) repaints without a reload.
+        engines: engineUsageMatrix,
+        engine: usageEngine,
         // whatever the indicator just read goes to an open Dashboard card in
         // the same step: two surfaces on one beat can never drift apart
-        onRefresh: snap => DashboardPanel.pushPlanUsage(snap, planBeat())
+        onRefresh: snap => DashboardPanel.pushPlanUsage(snap, planBeat(), engineUsageMatrix(), usageEngine())
     });
     context.subscriptions.push(planUsageBar);
+    /**
+     * ‼️ ONE CHOICE, TWO SURFACES, NO SECOND STORE (U-27). The hover's links and
+     * the Dashboard card's tabs both call this, and it writes the SETTING — so
+     * the status bar and an open card cannot end up showing different engines,
+     * and the Settings page sees the same value without being told.
+     */
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'agentfarm.setUsageEngine', async (id?: string) => {
+            const want = String(id ?? '').trim().toLowerCase();
+            const known = engineUsageMatrix().map(e => String(e.id));
+            if (!known.includes(want)) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${want}" is not an engine this build knows — ${known.join(', ')}.`);
+                return;
+            }
+            await cfg().update('planUsageEngine', want, vscode.ConfigurationTarget.Global);
+            planUsageBar.paint();
+            DashboardPanel.pushPlanUsage(planUsage.current(), planBeat(), engineUsageMatrix(), want);
+        }));
     // Every live hook event may have crossed the idle/active line; the bar acts
     // on the EDGE only — a turn starting and a turn ending each earn one
     // immediate read, the beat carries the rest.
@@ -6934,6 +7070,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return snap;
         },
         planUsageBeat: planBeat,
+        // U-27 — the card's mini tabs and the status bar read the same two.
+        planUsageEngines: engineUsageMatrix,
+        planUsageEngine: usageEngine,
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
         agentProjects: () => agentProjectNames(
@@ -7206,26 +7345,79 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *
      * Never blocks a draw: until the first answer arrives the model box falls
      * back to the alias list and SAYS SO (see core/models.ts).
+     *
+     * ‼️ …AND WHEN IT DOES ARRIVE, THE OPEN PAGES ARE TOLD (U-31). This is the
+     * half that was missing and the whole of the bug the user saw: the fetch was
+     * started by a draw that had already happened, so the answer landed in a
+     * variable nobody read again. Choosing Antigravity kept offering
+     * `haiku / sonnet / opus / fable` — four names its CLI can only reject — for
+     * the life of the panel, and reopening it was the only cure. A background
+     * read that changes what a picker should offer has to end in a redraw, or it
+     * is a read nobody can see.
      */
     let agyCatalog: { text?: string; fetchedAt?: number; fetching?: boolean } = {};
     const AGY_CATALOG_TTL = 6 * 60 * 60 * 1000;
-    const refreshAgyCatalog = (force = false): void => {
-        if (agyCatalog.fetching) { return; }
-        if (!force && agyCatalog.fetchedAt && Date.now() - agyCatalog.fetchedAt < AGY_CATALOG_TTL) { return; }
+    /** Resolves when the fetch in flight finishes — so a caller that asked for
+     *  a refresh gets the NEW list back rather than the one it was refreshing
+     *  away from. Undefined when nothing is in flight. */
+    let agyInFlight: Promise<void> | undefined;
+    /** Redraw whatever is open that draws a model box. Cheap and idempotent —
+     *  each `refreshIfOpen` is a no-op when its panel is not up. */
+    const modelPickersChanged = (): void => {
+        ConsolePanel.refreshIfOpen();
+        TasksPanel.refreshIfOpen();
+        FarmSettingsPanel.refreshIfOpen();
+        MissionsPanel.refreshIfOpen();
+        EnginesPanel.refreshIfOpen();
+    };
+    const refreshAgyCatalog = (force = false): Promise<void> => {
+        if (agyCatalog.fetching) { return agyInFlight ?? Promise.resolve(); }
+        if (!force && agyCatalog.fetchedAt && Date.now() - agyCatalog.fetchedAt < AGY_CATALOG_TTL) {
+            return Promise.resolve();
+        }
         // Nothing is spawned for an engine this machine does not have.
-        if (!engineProbe.which('agy')) { return; }
+        if (!engineProbe.which('agy')) { return Promise.resolve(); }
         agyCatalog = { ...agyCatalog, fetching: true };
+        let settle = (): void => { /* replaced below */ };
+        agyInFlight = new Promise<void>(res => { settle = res; });
         // ‼️ No shell, and stdout only: the banner ("Fetching available models…")
         // goes to STDERR and the rows come back as clean `id<TAB>label` lines —
         // measured. Reading the two together would put the banner in the picker.
-        cp.execFile('agy', ['models'], {
+        const child = cp.execFile('agy', ['models'], {
             timeout: 30000, windowsHide: true, shell: false, maxBuffer: 1024 * 1024
         }, (err, stdout) => {
             const text = String(stdout ?? '');
+            const before = agyCatalog.text ?? '';
             agyCatalog = err && !text.trim()
                 ? { ...agyCatalog, fetching: false }
                 : { text, fetchedAt: Date.now(), fetching: false };
+            // Only a CHANGED list redraws: a six-hourly refresh that returns the
+            // same eleven rows must not rebuild every open page for nothing.
+            if ((agyCatalog.text ?? '') !== before) { modelPickersChanged(); }
+            agyInFlight = undefined;
+            settle();
         });
+        /**
+         * ‼️ AND THIS ONE LINE IS THE WHOLE BUG — `agy models` DOES NOT EXIT
+         * WHILE ITS STDIN IS OPEN.
+         *
+         * Measured 2026-08-10, same machine, same binary, four ways:
+         *
+         *   execFile, stdin left open   20 000 ms → SIGTERM, 0 lines, 0 bytes
+         *   exec through a shell        20 000 ms → SIGTERM, 0 lines, 0 bytes
+         *   execFile + `stdin.end()`     3 892 ms → 11 lines
+         *   full path + `stdin.end()`    3 954 ms → 11 lines
+         *
+         * So every fetch this extension has ever made was killed by its own
+         * timeout with nothing to show, `agyCatalog.text` never became anything,
+         * and the model box fell back to the four Claude aliases — permanently,
+         * on an engine that would reject all four. It looked like a refresh
+         * problem and it was a handshake: the CLI waits for a stdin it is never
+         * going to be given, and closing it is the answer. Nothing else here
+         * matters if this line goes away.
+         */
+        child.stdin?.end();
+        return agyInFlight;
     };
     const engineModelMatrix = () => {
         refreshAgyCatalog();
@@ -7235,6 +7427,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             { text: agyCatalog.text, fetchedAt: agyCatalog.fetchedAt }
         );
     };
+    // ‼️ WARMED ONCE, OFF THE ACTIVATION PATH (U-31). The first person to open a
+    // picker should not be the one who pays for the fetch AND sees the wrong
+    // list while it runs. Eight seconds after the window settles is late enough
+    // not to compete with activation and early enough that the catalog is
+    // usually there before anybody chooses an engine. It spawns nothing when
+    // `agy` is not on PATH, and the redraw above covers the case where somebody
+    // is quicker than the timer.
+    const agyWarm = setTimeout(() => refreshAgyCatalog(), 8000);
+    context.subscriptions.push({ dispose: () => clearTimeout(agyWarm) });
 
     /**
      * ‼️ ONE REAL TURN AGAINST AN ENGINE — the only thing that proves a call
@@ -7339,7 +7540,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The mechanism that started this run, straight off the index's own
         // record (see publishLaunchers) — never re-derived here.
         launchedByFor: (sessionId: string) =>
-            index.all().find(s => s.sessionId === sessionId)?.launchedBy
+            index.all().find(s => s.sessionId === sessionId)?.launchedBy,
+        // ‼️ …and BOTH lists are searched. `index.all()` is deliberately the
+        // Claude-only half (external sessions are kept out of it so Claude
+        // analytics never see them), so asking only there would answer "claude"
+        // for every Codex and Antigravity session — the exact wrong answer for
+        // the one field whose job is to tell them apart.
+        engineFor: (sessionId: string) =>
+            index.external().find(s => s.sessionId === sessionId)?.source
+            ?? (index.all().some(s => s.sessionId === sessionId) ? 'claude' : undefined)
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -7875,6 +8084,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
 
+    /**
+     * ‼️ U-29/U-33 — THE AGENT'S OWN DEFAULT, FOR THE ENGINE IT IS ABOUT TO RUN ON.
+     *
+     * The layer that was missing entirely. `launchDefaults` is fleet-wide and
+     * an agent's `.claude/settings.local.json` is Claude's alone, so setting a
+     * model for one agent on Codex was a thing the UI let you type and nothing
+     * ever read. This inserts the per-agent, per-engine store between the
+     * caller's explicit choice and the fleet-wide default — and only there:
+     * anything the caller actually asked for still wins.
+     *
+     * Claude is deliberately NOT given a `--model` from here. Its own CLI reads
+     * the agent's settings file itself, so passing the same value again would be
+     * a second source of truth that silently overrides a file the user may have
+     * edited by hand between the two.
+     */
+    /** What an agent's own `.claude/settings.local.json` says — Claude's layer,
+     *  and the one that applies even to a session started in a terminal. */
+    const agentClaudeModel = (dir: string): string => {
+        for (const name of ['settings.local.json', 'settings.json']) {
+            try {
+                const raw = fs.readFileSync(path.join(dir, '.claude', name), 'utf8');
+                const json = JSON.parse(raw) as Record<string, unknown>;
+                if (typeof json.model === 'string' && json.model.trim()) { return json.model.trim(); }
+            } catch { /* not there, or not ours to read */ }
+        }
+        return '';
+    };
+
+    const withAgentEngineDefaults = (agent: AgentInfo, o: LaunchOptions): LaunchOptions => {
+        const engine = ((o.engine ?? launchDefaults().engine ?? '') || 'claude') as EngineId;
+        if (engine === 'claude') { return o; }
+        const store = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+        const own = storedDefault(store, agent.dir, engine);
+        return {
+            ...o,
+            model: (o.model ?? '').trim() || own.model || '',
+            effort: (o.effort ?? '').trim() || own.effort || ''
+        };
+    };
+
     /** Build + launch one claude session. Defaults fill whatever the caller
      *  left open; an invalid value is reported here rather than in a terminal
      *  the user then has to read. Returns the command line that ran. */
@@ -7882,7 +8131,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string,
         project?: string
     ): string | undefined => {
-        const merged = withDefaults(o, launchDefaults());
+        const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
         const errors = validateLaunch(merged);
         if (errors.length) {
             void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
@@ -8138,7 +8387,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         let projectSeeded = !!project;
         const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
         for (;;) {
-            const merged = withDefaults(o, launchDefaults());
+            const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
             const spec = engineOf(merged.engine);
             // The preview line has to be the line that will run, `--add-dir`
             // included, or the launcher shows one command and starts another.
@@ -9080,7 +9329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const startConsoleSession = (
         agent: AgentInfo, o: LaunchOptions = {}, project?: string
     ): void => {
-        const merged = withDefaults(o, launchDefaults());
+        const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
         // The same refusal every other entry point uses, on this side of every
         // picker: a hosted session on a missing CLI dies on its first turn.
         const refused = engineRefusal(engineMatrix(), merged.engine);
@@ -13865,11 +14114,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const logFile = path.join(taskManager.outputsDir, `schtask-${schedule.id}.log`);
             fs.mkdirSync(taskManager.outputsDir, { recursive: true });
             const cmdFile = path.join(scriptsDir, `af-${schedule.id}.cmd`);
+            // ‼️ U-34 — THE SCRIPT RUNS THE ENGINE THE SCHEDULE WOULD RUN, NOT
+            // `claude`. This script is what fires when VS Code is closed, so a
+            // hard-coded `claude -p` quietly ran a DIFFERENT engine from the one
+            // the same schedule uses inside the farm — and on a machine without
+            // Claude installed it ran nothing at all, with the failure only
+            // visible in a log file nobody opens. The engine is the fleet
+            // default, which is what an unattended task gets.
+            const schedSpec = engineOf(launchDefaults().engine);
+            const schedCmd = schedSpec.id === 'claude'
+                ? `claude -p "${sanitizePrompt(schedule.prompt)}"`
+                : [schedSpec.exe, ...runArgs(schedSpec.id, { cwd: agent.dir }),
+                    `"${sanitizePrompt(schedule.prompt)}"`].join(' ');
             fs.writeFileSync(cmdFile,
                 `@echo off\r\n` +
-                `rem Agent Farm scheduled task: ${schedule.title} (${agent.name})\r\n` +
+                `rem Agent Farm scheduled task: ${schedule.title} (${agent.name}) on ${schedSpec.label}\r\n` +
                 `cd /d "${agent.dir}"\r\n` +
-                `claude -p "${sanitizePrompt(schedule.prompt)}" >> "${logFile}" 2>&1\r\n`,
+                `${schedCmd} >> "${logFile}" 2>&1\r\n`,
                 'utf8');
             const hm = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
             const dowNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -13892,7 +14153,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Agent Farm: script written and the schtasks command copied to clipboard. ` +
                 `Paste it into a terminal to register the Windows scheduled task ` +
                 `(runs even when VS Code is closed; output goes to the task log). ` +
-                `Note: 'claude' must be on PATH for the scheduler.`,
+                `Note: '${schedSpec.exe}' must be on PATH for the scheduler — that is the engine `
+                + `this schedule runs on (agentFarm.launchDefaults.engine).`,
                 'Open script', 'Open log folder');
             if (choice === 'Open script') {
                 void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cmdFile));
@@ -14117,6 +14379,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // installed, does a call get through, what did it cost to
                     // find out — is not what a list of `agentFarm.*` keys is for.
                     openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
+                    // U-29 — the per-agent model box reads the chosen engine's own
+                    // catalog, not a list typed into a setting.
+                    engineModels: () => engineModelMatrix(),
                     engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
@@ -15295,13 +15560,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'certainly wrong for it; pass `refresh` to fetch it again now, which is what to do '
                 + 'after a model is granted or withdrawn. '
                 + 'args: id? (claude | codex | gemini | agy), refresh? (re-ask agy for its list)',
-            handler: (args) => {
+            handler: async (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
-                if (args.refresh === true) { refreshAgyCatalog(true); }
+                // ‼️ AWAITED, NOT FIRED AND FORGOTTEN. `refresh:true` used to
+                // start the fetch and answer from the cache it was refreshing
+                // away from — so the caller was handed the stale list and told
+                // it was fresh. It takes ~4 s; the caller asked for it.
+                if (args.refresh === true) { await refreshAgyCatalog(true); }
                 const all = engineModelMatrix();
                 need(!id || !!(all as Record<string, unknown>)[id],
                     `no engine called "${id}" — try claude, codex, gemini or agy`);
                 return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
+            }
+        },
+        {
+            op: 'agents.defaults',
+            describe: '‼️ WHAT "Default" ACTUALLY MEANS FOR AN AGENT ON AN ENGINE — the question that '
+                + 'had no answer. A per-agent default used to be one value written to that agent\'s '
+                + '.claude/settings.local.json, a file ONLY Claude Code reads; the same box on a Codex '
+                + 'or Antigravity row was a choice that went nowhere. Now the default is per engine, '
+                + 'and this op resolves it the way the launcher will: for each engine, `model` and '
+                + '`effort` each come back with `value` (what will actually be sent, "" = nothing), '
+                + '`origin` ("agent-file" = the agent\'s own Claude settings, which apply even to a '
+                + 'terminal session · "farm" = kept by Agent Farm and passed as a flag, so a session '
+                + 'you start yourself will NOT have it · "launch-defaults" = the fleet-wide setting · '
+                + '"cli" = nothing is set anywhere) and a `note` saying so in one line. Read this '
+                + 'before assuming a model: an agent tuned for Claude is not tuned for the engine you '
+                + 'are about to start it on. args: agent? (name or id; omitted = every agent), '
+                + 'engine? (claude | codex | gemini | agy)',
+            handler: (args) => {
+                const who = (optStr(args, 'agent') ?? '').trim();
+                const wantEngine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
+                const all = engineMatrix();
+                need(!wantEngine || all.some(e => e.id === wantEngine),
+                    `no engine called "${wantEngine}" — try ${all.map(e => e.id).join(', ')}`);
+                const store = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+                const d = launchDefaults();
+                const list = who ? [findAgent(who)] : agents;
+                return list.filter(Boolean).map(a => ({
+                    agent: a.name,
+                    dir: a.dir,
+                    engines: all
+                        .filter(e => !wantEngine || e.id === wantEngine)
+                        .map(e => {
+                            const own = storedDefault(store, a.dir, e.id);
+                            const file = e.id === 'claude' ? agentClaudeModel(a.dir) : '';
+                            return {
+                                id: e.id,
+                                label: e.label,
+                                model: resolveDefault(e.id, 'model', {
+                                    agentFile: file, farm: own.model, launch: d.model, engineLabel: e.label
+                                }),
+                                effort: resolveDefault(e.id, 'effort', {
+                                    farm: own.effort, launch: d.effort, engineLabel: e.label
+                                })
+                            };
+                        })
+                }));
             }
         },
         {

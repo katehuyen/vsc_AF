@@ -163,7 +163,8 @@ export function readCodexCatalog(text: string | undefined): {
  * `additionalModelOptionsCache` is the CLI's own note of the models the account
  * was granted beyond the built-in names — the one place on disk that knows
  * about a model this extension has never heard of. Its rows carry a label and
- * a description already, so they are shown as the CLI words them.
+ * a description already, so the words are the CLI's; what they are MERGED with
+ * is this module's job (see `mergeModelRows`).
  */
 export function readClaudeExtras(text: string | undefined): LaunchChoice[] {
     const root = json(text);
@@ -177,6 +178,93 @@ export function readClaudeExtras(text: string | undefined): LaunchChoice[] {
             label: String(m.label ?? '').trim() || String(m.value).trim(),
             detail: String(m.description ?? '').trim() || 'offered to this account by the CLI'
         }));
+}
+
+// ---------------------------------------------------------------------------
+// U-32 — ONE MODEL IS ONE ROW, WHATEVER IT IS CALLED WHERE IT CAME FROM
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ THE SAME MODEL ARRIVED TWICE UNDER TWO NAMES, AND THE PICKER BELIEVED BOTH.
+ *
+ * Measured on this machine: the user's `agentFarm.modelAliases` carries `fable`
+ * and the CLI's own cache carries `claude-fable-5[1m]` labelled `Fable`. One
+ * model, two rows, and the two labels differ only by a capital letter — the
+ * picker read as if the account had two Fables. Deduplication was `id`
+ * against `id`, which cannot see that.
+ *
+ * So identity is the FAMILY, derived by taking off the three things that do not
+ * change which model it is: the vendor prefix, the version tail, and the
+ * bracketed variant marker. `claude-fable-5[1m]`, `claude-fable-5` and `fable`
+ * all reduce to `fable`; `claude-sonnet-4-6` reduces to `sonnet`.
+ */
+export function modelFamily(id: string): string {
+    let s = String(id ?? '').trim().toLowerCase();
+    if (!s) { return ''; }
+    s = s.replace(/\[[^\]]*\]\s*$/, '');                 // the variant, not the model
+    s = s.replace(/^(?:claude|anthropic|models|openai|google)[-/]/, '');
+    // version tail: `-5`, `-4-6`, `-20260401`, `-latest`, `-preview`
+    s = s.replace(/(?:[-_](?:\d+|latest|preview))+$/, '');
+    return s || String(id ?? '').trim().toLowerCase();
+}
+
+/**
+ * …and what makes a row DIFFERENT from the plain family.
+ *
+ * `[1m]` is the only marker in the wild today, and it is READ rather than
+ * assumed: a bracketed suffix is the CLI's way of saying "same model, other
+ * terms", so a row carrying one is a real second choice and must survive the
+ * merge — but it may never be drawn as if it were the bare model.
+ */
+export function modelVariant(id: string): string {
+    const m = /\[([^\]]+)\]\s*$/.exec(String(id ?? '').trim());
+    return m ? m[1].trim() : '';
+}
+
+/**
+ * Merge rows from several sources into one list with no model shown twice.
+ *
+ * ‼️ THE ALIAS KEEPS THE ID, THE CATALOG LENDS THE WORDS. Where both sources
+ * describe the same family+variant, the FIRST row's id survives — the callers
+ * pass the aliases first, and an alias is the name that keeps resolving to the
+ * latest model after the dated id has been retired. What the CLI's row
+ * contributes is its label and its description, which is the half the alias
+ * never had.
+ *
+ * A row that IS a variant is labelled as one, so `Fable` and `fable` can never
+ * again sit next to each other looking like the same offer twice.
+ */
+export function mergeModelRows(rows: LaunchChoice[]): LaunchChoice[] {
+    const byKey = new Map<string, LaunchChoice>();
+    const order: string[] = [];
+    for (const row of rows) {
+        const id = String(row?.id ?? '').trim();
+        if (!id) { continue; }
+        const variant = modelVariant(id);
+        const key = JSON.stringify([modelFamily(id), variant]);
+        const kept = byKey.get(key);
+        if (!kept) {
+            byKey.set(key, {
+                id,
+                // a variant never wears the bare name — that is the duplicate
+                label: variant ? `${row.label || id} · ${variant}` : (row.label || id),
+                detail: row.detail || ''
+            });
+            order.push(key);
+            continue;
+        }
+        // The same model, described again. Take whatever the second source
+        // knows that the first did not, and say which id is actually sent.
+        const bare = kept.label.toLowerCase() === kept.id.toLowerCase();
+        if (bare && row.label && row.label.toLowerCase() !== id.toLowerCase()) {
+            kept.label = variant ? `${row.label} · ${variant}` : row.label;
+        }
+        const extra = [row.detail, kept.id === id ? '' : id].filter(Boolean).join(' · ');
+        if (extra && !(row.detail && kept.detail.includes(row.detail))) {
+            kept.detail = kept.detail ? `${kept.detail} · ${extra}` : extra;
+        }
+    }
+    return order.map(k => byKey.get(k)!);
 }
 
 /**
@@ -325,17 +413,21 @@ export function readEngineModels(
         };
 
     const extras = safe(() => readClaudeExtras(probe.readHome(CLAUDE_STATE))) ?? [];
-    const seen = new Set<string>();
-    const claudeModels = [DEFAULT_ROW, ...fromAliases(aliases), ...extras]
-        .filter(m => { const k = m.id.toLowerCase(); if (seen.has(k)) { return false; } seen.add(k); return true; });
+    // ‼️ MERGED BY FAMILY, NOT BY ID (U-32). The aliases go in first so their
+    // short, version-free names are the ones that end up on the command line;
+    // the CLI's rows lend their label and description, and a row that is only a
+    // VARIANT of one already listed is drawn as the variant it is.
+    const claudeRows = mergeModelRows([...fromAliases(aliases), ...extras]);
     const claude: EngineModels = {
-        models: claudeModels,
+        models: [DEFAULT_ROW, ...claudeRows],
         efforts: staticEfforts,
         defaultEffort: {},
         source: extras.length ? 'catalog' : 'settings',
         note: extras.length
             ? `Your agentFarm.modelAliases plus ${extras.length} model(s) Claude Code has recorded for this `
-            + 'account — a newly granted model shows up here without an edit.'
+            + 'account — a newly granted model shows up here without an edit. '
+            + 'A model named twice (an alias and the CLI\'s dated id) is listed once; a 1m-context variant '
+            + 'keeps its own row and says so.'
             : 'Claude Code keeps no model catalog on disk, so this is your agentFarm.modelAliases list. '
             + 'Add a new alias there when one ships.'
     };

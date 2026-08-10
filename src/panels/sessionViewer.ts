@@ -42,6 +42,13 @@ export interface ViewerDeps {
      *  see SessionInfo.launchedBy. Decides the origin and names the schedule
      *  in the subtitle instead of "automation run". */
     launchedByFor?(sessionId: string): { kind: string; label: string } | undefined;
+    /**
+     * ‼️ WHICH ENGINE RAN IT (U-26). Not derivable here: this page is built by
+     * PARSING one transcript, and a transcript does not name the CLI that wrote
+     * it — `SessionInfo.source` does, and only the index has that. Absent means
+     * Claude, which is what an unset `source` has always meant.
+     */
+    engineFor?(sessionId: string): string | undefined;
 }
 
 interface ViewMessage {
@@ -592,6 +599,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         // entrypoint (see core/sessions.ts sessionOrigin).
         origin: sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
         launchedBy: deps.launchedByFor?.(sessionId) ?? null,
+        // The badge beside the title — see EngineFor above for why it is asked
+        // for rather than worked out.
+        engine: deps.engineFor?.(sessionId) || 'claude',
         firstTs,
         lastTs,
         models: [...models],

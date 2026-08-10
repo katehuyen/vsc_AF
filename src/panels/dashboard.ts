@@ -33,6 +33,9 @@ export interface DashboardDeps {
     /** Plan usage card: the beat it must run on — ms between automatic reads
      *  (0 = manual only) and which window that is (an agent mid-turn = fast). */
     planUsageBeat?(): { ms: number; active: boolean };
+    /** U-27 — every engine's limit state, and the one currently on show. */
+    planUsageEngines?(): unknown[];
+    planUsageEngine?(): string;
     /** B1: per-project rollup for the Projects card (empty = no projects declared). */
     projects?(): ProjectRollup[];
     /** B1: agent name → project name, so rows can be grouped client-side. */
@@ -173,6 +176,11 @@ export function sessionRowPool(
         topTools: Object.entries(s.tools ?? {})
             .sort((a, b) => b[1] - a[1]).slice(0, 4)
             .map(([name, n]) => ({ name, n })),
+        // ‼️ WHICH ENGINE RAN IT (U-26). `source` is the external-CLI id and is
+        // undefined for a Claude transcript — which is the whole reason the
+        // table could not say "Claude" out loud: the answer was an absence.
+        // Named once, here, so every embedding of the table reads the same field.
+        engine: s.source ?? 'claude',
         // The circumstances of the run, all read verbatim off the transcript.
         branch: s.gitBranch ?? '',
         version: s.version ?? '',
@@ -376,6 +384,10 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         // a network round trip.
         planUsage: deps.planUsage?.(),
         planUsageBeat: deps.planUsageBeat?.() ?? { ms: 5 * 60000, active: false },
+        // every engine's limit state, and which one the card opens on — the
+        // same two the status bar draws from (U-27)
+        planUsageEngines: deps.planUsageEngines?.() ?? [],
+        planUsageEngine: deps.planUsageEngine?.() ?? 'claude',
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -445,9 +457,22 @@ export class DashboardPanel {
      * `push: true` marks it as unsolicited: the card's ⟳ must keep showing it
      * is busy until ITS answer arrives, not until any answer arrives.
      */
-    static pushPlanUsage(usage: PlanUsageSnapshot | undefined, beat: { ms: number; active: boolean }): void {
+    /**
+     * ‼️ U-27 — THE PUSH CARRIES EVERY ENGINE, NOT JUST CLAUDE'S SNAPSHOT.
+     * The card grew mini tabs, and a tab whose figures arrive on a different
+     * beat from the tab beside it is two cards pretending to be one — so all
+     * four ride the same message the indicator already sends.
+     */
+    static pushPlanUsage(
+        usage: PlanUsageSnapshot | undefined,
+        beat: { ms: number; active: boolean },
+        engines?: unknown[],
+        engine?: string
+    ): void {
         if (!DashboardPanel.current) { return; }
-        void DashboardPanel.current.panel.webview.postMessage({ type: 'planUsage', usage, beat, push: true });
+        void DashboardPanel.current.panel.webview.postMessage({
+            type: 'planUsage', usage, beat, engines, engine, push: true
+        });
     }
 
     private constructor(readonly panel: vscode.WebviewPanel, private deps: DashboardDeps, projectFilter?: string) {
@@ -528,6 +553,13 @@ export class DashboardPanel {
                 // the page, not a quick-pick: a project is edited where it can
                 // be seen
                 void vscode.commands.executeCommand('agentfarm.openProjects');
+                break;
+            // U-27 — the card's engine tabs. The COMMAND owns the choice (it
+            // writes the setting the status bar reads and pushes both surfaces),
+            // so this hands it over rather than keeping a second copy.
+            case 'setUsageEngine':
+                void vscode.commands.executeCommand('agentfarm.setUsageEngine',
+                    typeof msg.id === 'string' ? msg.id : '');
                 break;
             case 'pinSession':
                 // the star already flipped in the webview — pass the state it

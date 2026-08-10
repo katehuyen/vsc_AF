@@ -1086,7 +1086,16 @@
             </style>
             ${window.AFHeader.html({
                 page: 'viewer',
-                title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml(),
+                // ‼️ U-26 — WHICH ENGINE, ON THE PAGE ITSELF. The table row it
+                // was opened from says so at a glance; the page it opens then
+                // dropped the fact entirely, so the one screen with room for it
+                // was the one screen that did not answer "what ran this".
+                title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml()
+                    + window.AFEngine.badge(DATA.engine, window.AFTip.lines([
+                        'Engine: ' + window.AFEngine.label(DATA.engine),
+                        DATA.models && DATA.models.length ? 'Models: ' + DATA.models.join(', ') : '',
+                        'Transcript: ' + (DATA.file ? 'on disk' : 'none this build can open')
+                    ])),
                 sub: subLineHtml(),
                 // The whole session action set, on the heading — the same menu
                 // every table row carries (afSessionCtx.js).

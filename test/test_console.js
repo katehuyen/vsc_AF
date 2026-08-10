@@ -1416,12 +1416,39 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 
     ok('‼️ a running session wears its engine on the CARD, at a glance',
         /function engineBadge\(s\)/.test(js) && /\$\{engineBadge\(s\)\}/.test(js));
-    ok('…and the default engine wears none — a badge on every row is a badge nobody reads',
-        /if \(!s \|\| !s\.engine \|\| s\.engine === 'claude'\) \{ return ''; \}/.test(js));
-    ok('…the badge says what a per-turn engine changes about talking to it',
-        /one process per TURN/.test(js) && /held until the turn ends/.test(js));
-    ok('…and the composer prints that in full under its controls',
-        /function engineNoteHtml\(id\)/.test(js) && /c-enote/.test(js));
+    // ‼️ U-26 — THE RULE FLIPPED, AND THE OLD ONE IS WHY. "The default wears
+    // nothing" left an unbadged row meaning either "Claude" or "this surface
+    // never learned about engines", with nothing on the row to tell them apart.
+    ok('‼️ …and CLAUDE wears one too, so no row is silent about its engine',
+        !/s\.engine === 'claude'\) \{ return ''; \}/.test(js)
+        && /window\.AFEngine\.badge\(s\.engine/.test(js));
+    ok('…drawn by the shared component, not by a colour this page invented',
+        !/\.ebadge \{/.test(js));
+    ok('…and its hover is FIGURES, the way a cell hover has to be',
+        /'Shape: ' \+ \(s\.turnShape === 'perTurn' \? 'one process per turn'/.test(js)
+        && /'Mid-turn message: '/.test(js));
+    // U-30 — the same text, no longer printed at the reader. It was three
+    // lines under the composer, in the narrowest strip on the page; it is a
+    // one-character trigger opening the rich panel now.
+    ok('‼️ …and the composer offers that as a HOVER, not as a paragraph',
+        /function engineHintHtml\(id\)/.test(js)
+        && /window\.AFTip\.wrap\(/.test(js)
+        && !/c-enote/.test(js) && !/class="enote"/.test(js));
+    ok('…offered for EVERY engine, so "no note" cannot be mistaken for "none written"',
+        /Nothing about this engine changes how the composer behaves/.test(js));
+    ok('…and an engine that cannot run marks its own trigger',
+        /ehint\$\{e\.ready \? '' : ' bad'\}/.test(js));
+
+    // U-28 — the row is a row: declared widths, a chosen shrink order, no wrap.
+    ok('‼️ the composer row cannot wrap its buttons onto a second line',
+        /\.crow \{ display:flex; gap:6px; align-items:center; flex-wrap:nowrap;/.test(js));
+    ok('…every box has a declared width instead of its longest option',
+        /#c-agent \{ flex:1 1 120px/.test(js) && /#c-engine \{ flex:2 1 118px/.test(js)
+        && /#c-perm \{ flex:3 1 104px/.test(js) && /#c-proj \{ flex:3 1 104px/.test(js));
+    ok('…and the right-hand buttons never give up a pixel',
+        /\.crow #c-live, \.crow #c-send, \.crow button \{ flex:none; \}/.test(js));
+    ok('‼️ …and the tail is re-pinned AFTER the live strip has taken its height',
+        /if \(pinned && talkEl\) \{ talkEl\.scrollTop = talkEl\.scrollHeight; \}/.test(js));
     ok('the live controls stop promising "applied live" on an engine that has none',
         /const live = !s \|\| s\.steerable !== false;/.test(js)
         && /There is no running process to ask\./.test(js));

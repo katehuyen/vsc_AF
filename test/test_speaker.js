@@ -68,5 +68,28 @@ ok('charts.js defines parseModel', /function parseModel\(/.test(charts));
 ok('charts.js defines renderSpeaker', /function renderSpeaker\(/.test(charts));
 ok('charts.js exports parseModel/renderSpeaker/aiLabel', /parseModel,\s*renderSpeaker,\s*aiLabel/.test(charts));
 
+// U-35 — the speaker's engine, when the session knows it.
+//
+// Antigravity serves three vendors' models from one account, so reading the
+// vendor off the model id names a product the user is not talking to:
+// measured in its catalog, `gpt-oss-120b` is an open-weights model there and
+// `claude-sonnet-4-6` is Claude's, and neither is Codex or Anthropic to the
+// person typing into `agy`.
+{
+    ok('‼️ the session\'s own engine beats the model id',
+        S.aiName('gpt-oss-120b', 'agy') === 'antigravity'
+        && S.aiName('claude-sonnet-4-6', 'agy') === 'antigravity');
+    ok('…and it is the engine\'s own name, not its vendor\'s',
+        S.aiName('gemini-3.6-flash', 'agy') === 'antigravity');
+    ok('a known engine is used verbatim',
+        S.aiName('anything', 'codex') === 'codex' && S.aiName('anything', 'claude') === 'claude');
+    ok('no engine falls back to the id, exactly as before',
+        S.aiName('claude-fable-5') === 'claude' && S.aiName('gpt-5.6-terra') === 'codex'
+        && S.aiName('gemini-3.1-pro') === 'gemini');
+    ok('an unknown engine does not shadow a readable id',
+        S.aiName('claude-fable-5', 'something-else') === 'claude');
+    ok('parseModel carries the engine through',
+        S.parseModel('gpt-oss-120b', 'agy').ai === 'antigravity');
+}
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) { process.exit(1); }

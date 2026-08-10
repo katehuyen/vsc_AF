@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.104.0",
+  "version": "3.105.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -359,6 +359,12 @@
       {
         "command": "agentfarm.planUsageRefresh",
         "title": "Check Plan Usage Now (session 5h + weekly %)",
+        "category": "Agent Farm",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "agentfarm.setUsageEngine",
+        "title": "Show Another Engine's Limit in the Status Bar",
         "category": "Agent Farm",
         "icon": "$(dashboard)"
       },
@@ -8128,6 +8134,18 @@
           "default": true,
           "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar — \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
         },
+        "agentFarm.planUsageEngine": {
+          "type": "string",
+          "enum": ["claude", "codex", "gemini", "agy"],
+          "enumDescriptions": [
+            "Claude Code — read from Anthropic's own usage endpoint, refreshed on the beat below.",
+            "Codex — read from its own transcript, which records the limit the service returned on its last turn. Free, but as old as that turn.",
+            "Gemini — billed per token against an API key: there is no plan window, so the indicator says so instead of showing a bar.",
+            "Antigravity — publishes no quota figure this machine can read; the indicator says so rather than showing 0%."
+          ],
+          "default": "claude",
+          "description": "Which engine's remaining limit the status bar shows. Every engine reports differently and only Claude has an endpoint to ask — hover the indicator to see all four at once and switch between them, or use the mini tabs on the Dashboard's Plan usage card. Both write this setting, so the two surfaces always agree."
+        },
         "agentFarm.planUsageWarnPercent": {
           "type": "number",
           "default": 80,
@@ -8241,6 +8259,16 @@
           "type": "string",
           "default": "",
           "description": "Gemini CLI tmp dir whose chat files feed the external-session history. Empty = ~/.gemini/tmp."
+        },
+        "agentFarm.agentEngineDefaults": {
+          "type": "object",
+          "default": {},
+          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine."
+        },
+        "agentFarm.agyHome": {
+          "type": "string",
+          "default": "",
+          "description": "Antigravity CLI home whose conversation index feeds the external-session history. Its own transcripts are protobuf inside per-conversation SQLite files and are not read; the index gives the title, the time and the workspace. Empty = ~/.gemini/antigravity-cli."
         },
         "agentFarm.mediaBaseUrl": {
           "type": "string",
