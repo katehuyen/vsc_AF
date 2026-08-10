@@ -315,3 +315,63 @@ export function enginesSummary(list: EngineStatus[]): { ready: number; total: nu
         onPlan: list.filter(e => e.ready && e.auth.mode === 'subscription').length
     };
 }
+
+// ---------------------------------------------------------------------------
+// X-18 — the engine axis, as every surface that STARTS something sees it
+// ---------------------------------------------------------------------------
+
+/**
+ * One engine as a PICKER draws it.
+ *
+ * ‼️ ONE LIST, EVERY SURFACE. The Console composer, the ▶ on a sidebar row, the
+ * task form, a mission's team and the bridge all offer the same rows in the
+ * same order with the same refusal sentence — because the alternative is five
+ * places deciding independently what "not ready" means, and four of them
+ * getting it wrong the first time an engine is half-installed. The heavy answer
+ * (`EngineStatus`) is computed once and narrowed here; nothing re-derives it.
+ */
+export interface EngineOption {
+    id: EngineId;
+    label: string;
+    /** can a session be started on it RIGHT NOW */
+    ready: boolean;
+    /** what to do about it — `EngineStatus.next`, never "not configured" */
+    next: string;
+    /** how it is paid for: a plan, a key, or nothing yet */
+    auth: AuthMode;
+    /** the sentence under its name in a picker */
+    billing: string;
+}
+
+export function engineOptions(list: EngineStatus[]): EngineOption[] {
+    return list.map(e => ({
+        id: e.id, label: e.label, ready: e.ready, next: e.next,
+        auth: e.auth.mode, billing: e.billing
+    }));
+}
+
+/**
+ * ‼️ THE REFUSAL, WORDED ONCE.
+ *
+ * Returns the sentence to refuse with, or `undefined` when the engine can run.
+ * An engine that is not installed produces a session that dies on its first
+ * turn with a shell error — an answer strictly worse than "it is not installed,
+ * here is the command", which `EngineStatus.next` already knows. Every entry
+ * point calls this before it spawns anything, so the same wrong choice is
+ * refused the same way whether it came from a panel, a quick pick or the bridge.
+ *
+ * An empty id means `claude` — what every caller written before engines existed
+ * means, and what nothing may start refusing.
+ */
+export function engineRefusal(
+    list: { id: EngineId; label: string; ready: boolean; next: string }[],
+    id: string | undefined
+): string | undefined {
+    const want = String(id ?? '').trim().toLowerCase() || 'claude';
+    const row = list.find(e => e.id === want);
+    if (!row) {
+        return `"${want}" is not an engine this build knows — ${list.map(e => e.id).join(', ')}.`;
+    }
+    if (row.ready) { return undefined; }
+    return `${row.label} cannot run on this machine — ${row.next}`;
+}

@@ -109,8 +109,10 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
-import { ENGINES } from './core/consoleEngine';
-import { readEngines, enginesSummary, EngineId, EngineStatus } from './core/engines';
+import { codexSandboxFor, ENGINES, engineNote, engineOf } from './core/consoleEngine';
+import {
+    readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus
+} from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
@@ -1380,6 +1382,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
             cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
+            // X-18 — a task naming an engine is checked against this machine
+            // before it spawns, with the same sentence every other surface uses.
+            engineRefusal: (engine) => engineRefusal(engineMatrix(), engine),
             // The project the task was CREATED under — not the active one now.
             // A queued task can start hours later, in a window that has moved on.
             activeProjectId: () => activeProjectId() || undefined,
@@ -2403,6 +2408,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const member = spec.team.find(m => m.agentId === step.agentId)
                         ?? spec.team.find(m => m.agentName === step.agentName);
                     if (member?.model) { task.model = member.model; }
+                    // ‼️ X-18 — the member's engine, then the mission's, then
+                    // claude. A delegation IS a task, so nothing else is needed:
+                    // the readiness check, the flag vocabulary and the sandbox
+                    // translation all already live on the task's launch path.
+                    const wanted = (member?.engine || spec.engine || '').trim();
+                    if (wanted && wanted !== 'claude') { task.engine = wanted; }
                     if (spec.workdir) { task.workDir = spec.workdir; }
                     step.taskId = task.id;
                     step.status = 'running';
@@ -2633,23 +2644,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
         if (!lead) { return 'Pick a lead agent.'; }
         const modelOk = (m: string) => /^[\w.:-]+$/.test(m);
-        const teamIn = Array.isArray(input.team) ? input.team as { agentId?: unknown; role?: unknown; model?: unknown }[] : [];
+        const teamIn = Array.isArray(input.team)
+            ? input.team as { agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown }[]
+            : [];
         const team: MissionSpec['team'] = [];
         for (const t of teamIn) {
             const a = agents.find(x => x.id === String(t.agentId ?? ''));
             if (a && !team.some(m => m.agentId === a.id)) {
                 const model = String(t.model ?? '').trim().slice(0, 60);
                 if (model && !modelOk(model)) { return `Model "${model}" (${a.name}) has illegal characters — use a plain model id/alias.`; }
+                // ‼️ The engine is validated the same way the model is: a plain
+                // name only. It reaches a command line, and a stored value must
+                // never be able to smuggle shell syntax — and an engine this
+                // build does not know is dropped rather than passed on to fail
+                // at spawn time (`engineOf` would fall back to claude anyway).
+                const memberEngine = String(t.engine ?? '').trim().toLowerCase();
                 team.push({
                     agentId: a.id, agentName: a.name,
                     role: String(t.role ?? '').trim() || undefined,
-                    model: model || undefined
+                    model: model || undefined,
+                    engine: memberEngine in ENGINES ? memberEngine : undefined
                 });
             }
         }
         if (!team.length) { return 'Pick at least one team agent.'; }
         const plannerModel = String(input.plannerModel ?? '').trim().slice(0, 60);
         if (plannerModel && !modelOk(plannerModel)) { return `Planner model "${plannerModel}" has illegal characters — use a plain model id/alias.`; }
+        // The mission-wide engine for its DELEGATIONS. Refused here, before the
+        // mission exists, if this machine cannot run it: a mission that plans
+        // three rounds and then fails every delegation has spent planner turns
+        // to discover something one disk read knew.
+        const missionEngine = String(input.engine ?? '').trim().toLowerCase();
+        if (missionEngine && missionEngine !== 'claude') {
+            const refused = engineRefusal(engineMatrix(), missionEngine);
+            if (refused) { return refused; }
+        }
         const workdir = String(input.workdir ?? '').trim();
         if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
         const num = (v: unknown, d: number, min: number, max: number) => {
@@ -2660,6 +2689,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             maxRounds: num(input.maxRounds, DEFAULT_MISSION_LIMITS.maxRounds, 1, 30),
             maxTasks: num(input.maxTasks, DEFAULT_MISSION_LIMITS.maxTasks, 1, 60),
             maxCostUSD: num(input.maxCostUSD, DEFAULT_MISSION_LIMITS.maxCostUSD, 0.1, 500),
+            // ‼️ X-19 — the ceiling that still binds on a plan-billed delegate.
+            // 0 is allowed and means "no token ceiling", which is what a mission
+            // created before this had.
+            maxTokens: num(input.maxTokens, DEFAULT_MISSION_LIMITS.maxTokens, 0, 200_000_000),
             maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 5, 24 * 60),
             maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, 6)
         };
@@ -2672,6 +2705,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             team,
             workdir: workdir || undefined,
             plannerModel: plannerModel || undefined,
+            // The mission-wide engine for DELEGATIONS; a member may override it.
+            // The planner stays on Claude Code by design — see MissionSpec.engine.
+            engine: missionEngine in ENGINES && missionEngine !== 'claude' ? missionEngine : undefined,
             limits,
             approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round',
             createdAt: Date.now()
@@ -2836,10 +2872,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.list',
-            describe: 'Current task queue/board rows. args: none',
+            describe: 'Current task queue/board rows. Each row says which ENGINE it runs on and whether that '
+                + 'engine reports a price at all — a `costUSD` of 0 on a plan-billed engine is not a cheap '
+                + 'run, it is a run with no dollar figure to report (`tokens` is the measure there). args: none',
             handler: () => taskManager.tasks.map(t => ({
                 id: t.id, title: t.title, agent: t.agentName, status: t.status,
-                mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD
+                mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD,
+                tokens: t.tokens ?? 0,
+                engine: t.engine ?? 'claude',
+                reportsCost: engineOf(t.engine).reportsCost
             }))
         },
         {
@@ -2854,21 +2895,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'run time — a queued task can sit for hours and the window will have moved on), which CLI '
                 + 'profile executes it, how urgent it is, and where it runs. '
                 + 'args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), '
+                + 'engine? (claude — the default — or codex; ‼️ ON A PER-TURN ENGINE THE RUN IS SHAPED '
+                + 'DIFFERENTLY: `permissionMode` becomes a SANDBOX chosen up front because the engine cannot '
+                + 'stop and ask ("Default" therefore means read-only there), the project brief travels inside '
+                + 'the prompt rather than as a system prompt (that engine has no such channel), '
+                + 'agentFarm.taskExtraArgs and the model-policy rules do NOT apply (they are Claude\'s '
+                + 'vocabulary), outputContract:"json" is not available, and the finished run reports TOKENS '
+                + 'and no dollar figure because it goes against a plan. An engine that is not installed or '
+                + 'not signed in is refused before anything spawns — ask engines.status), '
                 + 'model? (alias or id), effort? (low|medium|high|xhigh|max), '
                 + 'permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), '
-                + 'cli? (a name from agentFarm.cliProfiles), project? (id or name; "" = explicitly none, '
+                + 'cli? (a name from agentFarm.cliProfiles — a DIFFERENT axis from `engine`: a CLI profile is '
+                + 'a command template for a binary Agent Farm knows nothing about, so passing both is refused), '
+                + 'project? (id or name; "" = explicitly none, '
                 + 'omit to inherit the window\'s active project), priority? (higher runs sooner), '
                 + 'workDir? (run it here instead of the agent folder), start? (default true)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
                 const permissionMode = optStr(args, 'permissionMode') ?? '';
+                const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
                 // The same validation the launcher does, for the same reason: a
                 // typo fails here with a readable message instead of the CLI
                 // refusing to start inside an archived output nobody reads.
-                const errors = validateLaunch({ effort, permissionMode });
+                const errors = validateLaunch({
+                    effort, permissionMode, ...(engine ? { engine: engine as EngineId } : {})
+                });
                 need(!errors.length, errors.join(' · '));
+                // …and whether this machine can run it, before anything spawns.
+                if (engine && engine !== 'claude') {
+                    const refused = engineRefusal(engineMatrix(), engine);
+                    need(!refused, refused ?? '');
+                }
                 const cli = optStr(args, 'cli') ?? '';
+                // ‼️ TWO EXECUTORS IS NOT A PREFERENCE, IT IS A CONTRADICTION.
+                // Ranking them silently would make one of the two arguments a
+                // no-op that the caller believes took effect.
+                need(!(cli && engine && engine !== 'claude'),
+                    'a task runs on ONE executor: pass `engine` (a machine Agent Farm understands) or `cli` (a command template from agentFarm.cliProfiles), not both');
                 if (cli) {
                     const known = cfg().get<CliProfile[]>('cliProfiles', []).map(p => p?.name);
                     need(known.includes(cli),
@@ -2889,6 +2953,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const task = taskManager.addTask(agent, argStr(args, 'title'), argStr(args, 'prompt'),
                     optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless', {
                         ...(projectExtra ?? {}),
+                        ...(engine && engine !== 'claude' ? { engine } : {}),
                         ...(optStr(args, 'model') ? { model: optStr(args, 'model') as string } : {}),
                         ...(effort ? { effort } : {}),
                         ...(permissionMode ? { permissionMode } : {}),
@@ -2900,8 +2965,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id: task.id, status: task.status,
                     agent: task.agentName, mode: task.mode,
+                    engine: task.engine ?? 'claude',
+                    // …and what that engine means for the figures this caller
+                    // will read back later — stated on the way in rather than
+                    // discovered as a missing number (see X-19).
+                    reportsCost: engineOf(task.engine).reportsCost,
                     model: task.model ?? null, effort: task.effort ?? null,
                     permissionMode: task.permissionMode ?? null,
+                    ...(engineOf(task.engine).shape === 'perTurn'
+                        ? { sandbox: codexSandboxFor(task.permissionMode) } : {}),
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
                     priority: task.priority ?? 0
                 };
@@ -3076,13 +3148,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.start',
-            describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?}]), title?, workdir?, plannerModel?, approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, maxMinutes?, maxParallel?',
+            describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?}]), '
+                + 'title?, workdir?, plannerModel?, '
+                + 'engine? (which engine the DELEGATIONS run on — claude, the default, or codex; a team member '
+                + 'may override it with its own `engine`. ‼️ THE PLANNER ALWAYS RUNS ON CLAUDE CODE: the '
+                + 'mission\'s control flow parses `claude -p --output-format json` and spends --disallowedTools '
+                + 'and --max-turns, none of which the other engine has. An engine that cannot run here is '
+                + 'refused before the mission is created), '
+                + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
+                + 'maxTokens? (‼️ THE CEILING THAT STILL BINDS WHEN THE ENGINE STATES NO PRICE — a delegate on '
+                + 'a subscription engine reports tokens and no dollars, so maxCostUSD can never be reached by '
+                + 'it; default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?',
             handler: (args) => {
                 const lead = findAgent(argStr(args, 'lead'));
                 const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
-                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "..." }]');
+                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "..." }]');
                 const team = teamIn.map(t => ({
-                    agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model
+                    agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
+                    engine: t.engine
                 }));
                 const err = createMission({ ...args, leadAgentId: lead.id, team });
                 need(!err, err ?? '');
@@ -3101,6 +3184,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
+                    // ‼️ X-19 — the other currency, and on a plan-billed team the
+                    // only one that moves. A caller reading `costUSD: 0` off a
+                    // mission that ran all morning is not looking at a cheap run.
+                    tokens: r.totalTokens ?? 0,
                     // a waiting run says WHAT it waits for, so an agent knows to
                     // call missions.answer / missions.approve
                     pendingQuestion: missionQuestions.get(r.id)?.question ?? null,
@@ -3526,10 +3613,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.start',
-            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+            describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? (claude — the default — or codex; ‼️ on a terminal this opens THAT engine\'s own TUI, and three of Claude\'s dimensions have no equivalent there: `name` (-n), the project brief (that engine has no system-prompt channel, so a terminal session is NOT told about the project and says so) and resume/continue (refused — `codex exec resume` is measured only on the Console\'s path). An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions; on a per-turn engine this becomes a SANDBOX chosen up front, because it cannot stop and ask), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
+                const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
                 const o: LaunchOptions = {
+                    ...(engine ? { engine: engine as EngineId } : {}),
                     model: optStr(args, 'model'),
                     effort: optStr(args, 'effort'),
                     permissionMode: optStr(args, 'permissionMode'),
@@ -3538,8 +3627,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     resume: optStr(args, 'resume'),
                     continueLast: args.continue === true
                 };
-                const errors = validateLaunch(withDefaults(o, launchDefaults()));
+                const merged = withDefaults(o, launchDefaults());
+                const errors = validateLaunch(merged);
                 need(!errors.length, errors.join(' · '));
+                // …and whether this machine can run it. The same sentence the
+                // panels refuse with; the launch functions check it again, but a
+                // bridge caller deserves the reason in its RESPONSE rather than
+                // in a warning toast nobody is there to read.
+                const engineRefused = engineRefusal(engineMatrix(), merged.engine);
+                need(!engineRefused, engineRefused ?? '');
                 const surface = optStr(args, 'surface') || 'terminal';
                 need(surface === 'terminal' || surface === 'console',
                     `surface must be "terminal" or "console", not "${surface}"`);
@@ -3547,13 +3643,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // an agent starting work under project X must not move the
                 // project the person in front of the window is working in.
                 const project = resolveLaunchProject(args.project);
+                const spec = engineOf(merged.engine);
+                // What the caller is getting, stated on the way in: the shape of
+                // a turn, whether it can be steered, and whether it will ever
+                // report a price (see console.start, which answers the same way).
+                const shape = {
+                    engine: spec.id, turnShape: spec.shape,
+                    steerable: spec.liveControls, reportsCost: spec.reportsCost
+                };
                 if (surface === 'console') {
                     startConsoleSession(agent, o, project);
-                    return { agent: agent.name, cwd: agent.dir, surface };
+                    return { agent: agent.name, cwd: agent.dir, surface, ...shape };
                 }
                 const command = startClaudeSession(agent, o, undefined, undefined, project);
                 need(command, 'launch rejected — see the warning in the window');
-                return { agent: agent.name, cwd: agent.dir, surface, command };
+                return { agent: agent.name, cwd: agent.dir, surface, command, ...shape };
             }
         },
         {
@@ -7436,6 +7540,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
         launchDefaults: () => launchDefaults(),
+        // X-18 — the same matrix the Console, the ▶ picker and the bridge use.
+        engines: () => engineOptions(engineMatrix()),
         cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
         projects: () => projectStore.all().map(p => ({ id: p.id, name: p.name, icon: p.icon })),
         activeProjectId: () => activeProject()?.id,
@@ -7702,6 +7808,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launchDefaults = (): LaunchDefaults => {
         const d = cfg().get<LaunchDefaults>('launchDefaults', {}) ?? {};
         return {
+            // ‼️ WHICH ENGINE, ONCE (X-18). Empty keeps meaning `claude`, so a
+            // settings file written before engines existed behaves identically.
+            engine: (d.engine ?? '').trim().toLowerCase(),
             model: (d.model ?? '').trim(),
             effort: (d.effort ?? '').trim(),
             permissionMode: (d.permissionMode ?? '').trim()
@@ -7721,6 +7830,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
             return undefined;
         }
+        // ‼️ AND WHETHER THIS MACHINE CAN RUN IT AT ALL (X-18). `validateLaunch`
+        // knows the NAMES; this knows the machine. Opening a terminal on an
+        // engine that is not installed puts a "command not found" in front of
+        // the user instead of the one line that fixes it.
+        const spec = engineOf(merged.engine);
+        const refused = engineRefusal(engineMatrix(), spec.id);
+        if (refused) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+            return undefined;
+        }
         // The project is resolved ONCE and used for both halves of the launch —
         // what the session is TOLD (the context file) and what it is FILED under
         // (the stamp). Two reads of `activeProjectId()` could land either side
@@ -7728,14 +7847,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const projectId = project !== undefined ? project : activeProjectId();
         // A terminal session gets the same project context a Console one does —
         // including on a resume, where the flag is not inherited (measured).
-        const command = buildLaunchCommand('claude', {
-            ...merged,
-            projectContextFile: merged.projectContextFile
-                ?? projectContextFileFor(projectId || undefined)
-        });
-        // Terminal name stays "claude: <agent>" — agentfarm.focusSessionTerminal
-        // and the interrupt resolver both find windows by that exact shape.
-        launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command,
+        const contextFile = merged.projectContextFile ?? projectContextFileFor(projectId || undefined);
+        const command = buildLaunchCommand(spec.exe, { ...merged, projectContextFile: contextFile });
+        // ‼️ …EXCEPT ON AN ENGINE WITH NO SYSTEM-PROMPT CHANNEL, WHICH SAYS SO.
+        // `codex` takes no `--append-system-prompt-file` (measured against its
+        // own --help): prompt, AGENTS.md, config, nothing else. The brief is
+        // therefore NOT sent here, and the honest thing is to say it once rather
+        // than let a session look briefed when it is not. (The Console's Codex
+        // path can do better — it puts the brief inside the first prompt — but a
+        // terminal is the user's own conversation and this would be typing into
+        // it on their behalf.)
+        if (contextFile && spec.id !== 'claude') {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${spec.label} has no system-prompt channel, so this terminal session was NOT told about the project. `
+                + 'Start it in the Console instead if it needs the brief — there the brief rides in on the first message.');
+        }
+        // Terminal name stays "<engine>: <agent>" — agentfarm.focusSessionTerminal
+        // and the interrupt resolver both find windows by that exact shape, and
+        // "claude" is still the name for the engine everything else assumes.
+        launchClaudeTerminal(`${spec.exe}: ${agent.name}`, cwd ?? agent.dir, command,
             undefined, sessionId, projectId);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
@@ -7945,7 +8075,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
         for (;;) {
             const merged = withDefaults(o, launchDefaults());
-            const command = buildLaunchCommand('claude', merged);
+            const spec = engineOf(merged.engine);
+            const command = buildLaunchCommand(spec.exe, merged);
             const d = launchDefaults();
             const inherited = (own: string | undefined, def: string | undefined) =>
                 !own?.trim() && def?.trim() ? ' (from your defaults)' : '';
@@ -7966,6 +8097,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 {
                     label: '$(hubot) Agent', description: agent.name,
                     detail: 'which folder the session opens in', act: 'agent'
+                },
+                // ‼️ WHICH ENGINE (X-18) — and it sits above the model on
+                // purpose: it decides what the rows below it MEAN. The model
+                // list, the permission vocabulary and whether a turn can be
+                // steered at all are all different on a per-turn engine.
+                {
+                    label: '$(server-process) Engine',
+                    description: spec.label + inherited(o.engine, d.engine),
+                    detail: engineNote(spec.id), act: 'engine'
                 },
                 // WHERE is a dimension of the launch like the model is — the
                 // launcher used to decide it silently (always a terminal).
@@ -8036,16 +8176,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const remembered = {
                     ...lastLaunch(),
-                    [agent.id]: { model: o.model, effort: o.effort, permissionMode: o.permissionMode }
+                    [agent.id]: {
+                        // the engine rides along: the second time you start the
+                        // same kind of session it is one Enter, engine included
+                        engine: o.engine, model: o.model, effort: o.effort,
+                        permissionMode: o.permissionMode
+                    }
                 };
                 await context.globalState.update(LAST_LAUNCH_KEY, remembered);
                 await context.globalState.update(SURFACE_KEY, where);
                 return;
             }
+            if (pick.act === 'engine') {
+                const v = await pickEngine(spec.id, `Session for ${agent.name}`);
+                if (v !== undefined) { o.engine = v as EngineId; }
+                continue;
+            }
             if (pick.act === 'where') {
-                // no project row in the sub-picker: this picker already has one,
-                // and the same question asked twice is the same answer twice
-                const v = await pickRunSurface(`Session for ${agent.name}`);
+                // no project or engine row in the sub-picker: this picker already
+                // has both, and the same question asked twice is the same answer
+                // twice — it would also silently overwrite what was chosen here.
+                const v = await pickRunSurface(`Session for ${agent.name}`, { engine: false });
                 if (v) { where = v.surface; }
                 continue;
             }
@@ -8131,12 +8282,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick.act === 'default') {
                 try {
                     await cfg().update('launchDefaults', {
+                        // ‼️ The engine is saved as '' when it is the default, not
+                        // as "claude": an explicit value would freeze this file
+                        // against a future default, and '' has always meant "the
+                        // one every caller means".
+                        engine: spec.id === 'claude' ? '' : spec.id,
                         model: merged.model ?? '', effort: merged.effort ?? '',
                         permissionMode: merged.permissionMode ?? ''
                     }, vscode.ConfigurationTarget.Global);
                     void vscode.window.showInformationMessage(
                         `Agent Farm: every session now starts with ${describeLaunch({
-                            model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode
+                            engine: merged.engine, model: merged.model,
+                            effort: merged.effort, permissionMode: merged.permissionMode
                         })} (agentFarm.launchDefaults).`);
                 } catch (e) {
                     void vscode.window.showWarningMessage(
@@ -8478,6 +8635,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         modelAliases: () => cfg().get<string[]>('modelAliases', []),
+        // X-18 — the engine axis, from the one place that knows what this
+        // machine can run. The panel holds the answer for a few seconds; the
+        // walk itself is `engineMatrix`, shared with the Engines page and the
+        // bridge, so all three refuse the same engine for the same reason.
+        engines: () => engineOptions(engineMatrix()),
         launchDefaults: () => launchDefaults(),
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
@@ -8680,8 +8842,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick.none ? '' : (pick.id ?? '');
     };
 
-    /** What a start picker settled: where it runs, and what it belongs to. */
-    interface RunChoice { surface: RunSurface; projectId: string }
+    /**
+     * ‼️ WHICH ENGINE — the list, and the refusal, in a quick pick (X-18).
+     *
+     * The same three facts every other surface shows: the name, whether it can
+     * run here, and — when it cannot — the ONE thing to do about it. An engine
+     * that is not ready stays IN the list (hiding it makes "this build has no
+     * Codex" and "your Codex is not signed in" look identical) but choosing it
+     * does not start anything: the row's own `next` is shown and the picker
+     * comes back, so the answer arrives where the question was asked.
+     *
+     * Returns the chosen id, or `undefined` when it was cancelled.
+     */
+    const pickEngine = async (current: string, what: string): Promise<string | undefined> => {
+        interface Row extends vscode.QuickPickItem { id: string; ready: boolean; next: string }
+        for (;;) {
+            const rows: Row[] = engineOptions(engineMatrix()).map(e => ({
+                label: `${e.id === (current || 'claude') ? '$(check) ' : '$(blank) '}${e.ready ? '$(pass) ' : '$(circle-slash) '}${e.label}`,
+                description: e.ready
+                    ? (e.auth === 'subscription' ? 'ready — on a plan' : 'ready — on a key')
+                    : 'cannot run here',
+                detail: e.ready ? e.billing : e.next,
+                id: e.id, ready: e.ready, next: e.next
+            }));
+            const pick = await vscode.window.showQuickPick(rows, {
+                placeHolder: `${what} — which engine?`, ignoreFocusOut: true, matchOnDetail: true
+            });
+            if (!pick) { return undefined; }
+            if (pick.ready) { return pick.id; }
+            // Not a dead end: say why, offer the page that can fix it, come back.
+            const go = await vscode.window.showWarningMessage(
+                `Agent Farm: ${pick.next}`, 'Open Engines');
+            if (go === 'Open Engines') {
+                EnginesPanel.show(enginesPanelDeps);
+                return undefined;
+            }
+        }
+    };
+
+    /** What a start picker settled: which engine, where it runs, and what it
+     *  belongs to. */
+    interface RunChoice { surface: RunSurface; projectId: string; engine: string }
 
     /**
      * ‼️ A NEW SESSION IS OFFERED THE SAME CHOICES WHEREVER IT IS STARTED FROM,
@@ -8697,8 +8898,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * be a question whose answer is thrown away.
      */
     const pickRunSurface = async (
-        what: string, opts: { project?: boolean } = {}
+        what: string, opts: { project?: boolean; engine?: boolean } = {}
     ): Promise<RunChoice | undefined> => {
+        // ‼️ `engine: false` is for the ONE caller that already has an engine row
+        // of its own (the full launcher). Asking there too would not merely
+        // repeat the question — it would silently overwrite the answer.
+        const askEngine = opts.engine !== false;
         interface Item extends vscode.QuickPickItem { surface?: RunSurface; act?: string }
         const last = context.globalState.get<RunSurface>(SURFACE_KEY);
         // The window's answer is this launch's STARTING answer (see
@@ -8706,11 +8911,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // you have chosen here, the row stops crediting the status bar for it.
         let projectId = opts.project ? seedLaunchProject() : '';
         let seeded = !!projectId;
+        // ‼️ The engine opens on the DEFAULT, not on the last thing chosen here:
+        // it is a setting (`agentFarm.launchDefaults.engine`), and a picker that
+        // silently remembered a one-off would make the setting a lie.
+        let engine = (launchDefaults().engine || 'claude');
         for (;;) {
+            const spec = ENGINES[engine as EngineId] ?? ENGINES.claude;
             const where: Item[] = [
                 {
                     label: '$(terminal) In a terminal',
-                    description: 'a real claude terminal — the full TUI, slash commands, /resume',
+                    description: `a real ${spec.exe} terminal — the full TUI`
+                        + (spec.id === 'claude' ? ', slash commands, /resume' : ''),
                     surface: 'terminal'
                 },
                 {
@@ -8722,8 +8933,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             for (const it of where) {
                 if (it.surface === last) { it.description += ' • last used'; }
             }
+            // ‼️ THE ENGINE IS A DIMENSION LIKE THE OTHERS, AND IT COMES FIRST —
+            // it decides what the other rows even mean (a terminal is a
+            // different program, a permission mode becomes a sandbox, a turn
+            // stops being steerable). One row naming the current answer; the
+            // list itself is one step in, exactly like the project row.
+            const engineRow: Item = {
+                label: '$(server-process) Engine',
+                description: spec.label + (spec.id === 'claude' ? '' : ' • one process per turn, no per-turn price'),
+                detail: engineNote(spec.id),
+                act: 'engine'
+            };
+            const engineRows: Item[] = askEngine
+                ? [{ label: 'Runs on', kind: vscode.QuickPickItemKind.Separator }, engineRow]
+                : [];
             const items: Item[] = opts.project
                 ? [
+                    ...engineRows,
                     { label: 'Filed under', kind: vscode.QuickPickItemKind.Separator },
                     launchProjectRow(projectId, seeded),
                     // ‼️ THE WAY OUT IS A ROW, NOT A HABIT. A project that
@@ -8740,11 +8966,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Where it runs', kind: vscode.QuickPickItemKind.Separator },
                     ...where
                 ]
-                : where;
+                : askEngine
+                    ? [
+                        ...engineRows,
+                        { label: 'Where it runs', kind: vscode.QuickPickItemKind.Separator },
+                        ...where
+                    ]
+                    : where;
             const pick = await vscode.window.showQuickPick(items, {
                 placeHolder: `${what} — where should it run?`, ignoreFocusOut: true
             });
             if (!pick) { return undefined; }
+            if (pick.act === 'engine') {
+                const chosen = await pickEngine(engine, what);
+                if (chosen !== undefined) { engine = chosen; }
+                continue;   // back to this picker, now showing what it will run on
+            }
             if (pick.act === 'project') {
                 const chosen = await pickLaunchProject(projectId, what);
                 if (chosen !== undefined) { projectId = chosen; seeded = false; }
@@ -8752,7 +8989,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (!pick.surface) { continue; }
             await context.globalState.update(SURFACE_KEY, pick.surface);
-            return { surface: pick.surface, projectId };
+            return { surface: pick.surface, projectId, engine };
         }
     };
 
@@ -8768,8 +9005,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agent: AgentInfo, o: LaunchOptions = {}, project?: string
     ): void => {
         const merged = withDefaults(o, launchDefaults());
+        // The same refusal every other entry point uses, on this side of every
+        // picker: a hosted session on a missing CLI dies on its first turn.
+        const refused = engineRefusal(engineMatrix(), merged.engine);
+        if (refused) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+            return;
+        }
         const id = consoleHost.start({
             agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+            engine: engineOf(merged.engine).id,
             model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode,
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
@@ -12101,6 +12346,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const id = already?.id ?? consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId, ...launchDefaults(),
+                    // ‼️ A RESUME'S ENGINE IS THE SESSION'S, NOT THE DEFAULT —
+                    // and every row this command can reach is a Claude session.
+                    // The index is built from `~/.claude/projects`; a Codex
+                    // conversation lives in the CLI's own thread store and never
+                    // appears here. Letting `launchDefaults().engine` through
+                    // would hand a Claude transcript id to `codex exec resume`,
+                    // which would refuse it — or worse, open a NEW thread while
+                    // the panel showed the old conversation's history.
+                    engine: 'claude',
                     // ‼️ …and the project it is TOLD about is its OWN, never the
                     // window's active one — see sessionOwnProject. The context
                     // does not survive `--resume` (measured), so this is the
@@ -12563,7 +12817,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // composer, and it opens on the window's active project when
                 // there is one (see launchProjectRow).
                 const chosen: RunChoice | undefined = arg?.surface
-                    ? { surface: arg.surface, projectId: '' }
+                    ? { surface: arg.surface, projectId: '', engine: launchDefaults().engine || 'claude' }
                     : await pickRunSurface(`New session for ${agent.name}`, { project: true });
                 if (!chosen) { return; }
                 if (chosen.surface === 'console') {
@@ -12585,11 +12839,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      * only ever a row to clean up.
                      */
                     ConsolePanel.show(consoleDeps, {
-                        agentId: agent.id, pinAgent: true, projectId: chosen.projectId
+                        agentId: agent.id, pinAgent: true, projectId: chosen.projectId,
+                        // …and the engine the picker settled on, carried into the
+                        // composer's own box rather than asked a second time.
+                        engine: chosen.engine
                     });
                     return;
                 }
-                startClaudeSession(agent, {}, undefined, undefined, chosen.projectId);
+                startClaudeSession(agent, { engine: chosen.engine as EngineId },
+                    undefined, undefined, chosen.projectId);
             }),
 
         vscode.commands.registerCommand('agentfarm.continueSession',

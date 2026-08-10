@@ -577,6 +577,7 @@
             title: '', prompt: '', mode: 'headless',
             // The launcher's own defaults are the starting point, exactly as
             // they would be for a session started by hand.
+            engine: d.engine || '',
             model: d.model || '', effort: d.effort || '', permissionMode: d.permissionMode || '',
             cli: '', workDir: '', priority: 0,
             // ‼️ A TASK OPENS ON THE WINDOW'S PROJECT; AN AUTOMATION DOES NOT.
@@ -1039,6 +1040,31 @@
             .concat((L.clis || []).map(p =>
                 `<option value="${C.esc(p.name)}"${p.name === c.cli ? ' selected' : ''}>${C.esc(p.name)}</option>`))
             .join('');
+        /**
+         * ‼️ WHICH ENGINE (X-18) — and it matters MORE here than in the Console.
+         *
+         * Nobody is sitting in front of an unattended run. An engine that is not
+         * installed does not fail visibly: it writes a shell error into an
+         * archived file that is read hours later, if at all. So a row that
+         * cannot run is offered `disabled` with the one thing to do about it,
+         * exactly as the composer offers it, and the extension refuses it again
+         * before the spawn (TaskManagerOptions.engineRefusal).
+         *
+         * It is NOT the CLI row below. A CLI profile is a command template for a
+         * binary Agent Farm knows nothing about; an engine is a machine it
+         * understands — readiness, flags, sandbox and billing all included.
+         * Drawn only when there is more than one engine to choose between.
+         */
+        const engineSel = cur => {
+            const list = L.engines || [];
+            if (list.length < 2) { return ''; }
+            const chosen = cur || L.defaults?.engine || 'claude';
+            const opts = list.map(e => `<option value="${e.id === 'claude' ? '' : C.esc(e.id)}"${
+                e.id === chosen ? ' selected' : ''}${e.ready ? '' : ' disabled'} title="${C.esc(e.next)}"
+                >${C.esc(e.label)}${e.ready ? '' : ' — cannot run here'}</option>`).join('');
+            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine such as Codex the permission mode below becomes a SANDBOX chosen up front — it cannot stop and ask — and the run states no dollar figure, because it goes against a plan and counts tokens instead. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
+                <select id="nt-engine">${opts}</select></label>`;
+        };
         const LEDE = {
             task: 'A task is one claude run. Everything except the agent and the prompt is optional — an empty field means no flag, and the agent\'s own settings stay in charge.',
             schedule: 'A schedule is a task that has not happened yet: it runs on its own at a set time, so it takes every dimension a task takes — and a guard, so it does not wake an agent for nothing.',
@@ -1070,6 +1096,7 @@
                         <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
                     </select></label>` : ''}
                 ${wantsRun && c.kind !== 'template' ? `
+                ${engineSel(c.engine)}
                 ${choiceSel('model', 'Model', L.models, c.model,
             'Which model runs it — from your own agentFarm.modelAliases list. Beats the model-policy rules in Farm Settings.')}
                 ${choiceSel('effort', 'Effort', L.efforts, c.effort,
@@ -1123,6 +1150,7 @@
             if (el) { composer[key] = !!el.checked; }
         };
         v('prompt', 'prompt'); v('title', 'title'); v('agent', 'agent'); v('mode', 'mode');
+        v('engine', 'engine');
         v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
@@ -1596,7 +1624,7 @@
                 'debounceSec', 'cooldownSec', 'maxPerHour',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
                     byId('nt-' + id, 'input', () => readComposer()));
-            ['agent', 'mode', 'model', 'effort', 'permissionMode', 'project', 'cli',
+            ['agent', 'mode', 'engine', 'model', 'effort', 'permissionMode', 'project', 'cli',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These five REDRAW, because they change which fields exist:

@@ -17,7 +17,9 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CodexState, newCodexState, translateCodex } from './codexproto';
-import { codexArgs, codexPromptText, EngineId, EngineTransport, engineOf } from './consoleEngine';
+import {
+    codexArgs, codexContextPrefix, codexPromptText, EngineId, EngineTransport, engineOf
+} from './consoleEngine';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
     CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, editQueued, hostArgs,
@@ -213,6 +215,22 @@ interface Hosted {
          *  afterwards is an ordinary ending rather than a death */
         reported?: boolean;
     };
+    /**
+     * ‼️ THE PROJECT BRIEF, WAITING FOR THE FIRST PROMPT — per-turn engines only.
+     *
+     * Claude Code takes the brief on the command line as an extra system prompt
+     * (`--append-system-prompt-file`) and it is invisible to the conversation.
+     * `codex` has NO such channel — measured against its own `--help`: prompt,
+     * `AGENTS.md`, config, nothing else. Left as it was, a Codex session started
+     * under a project simply never heard about it, which is worse than not
+     * offering the project box at all: the badge on the card said it was filed
+     * under something the agent had never been told.
+     *
+     * So on this engine the brief rides INSIDE the first prompt, fenced
+     * (`codexContextPrefix`), and is consumed exactly once — the thread carries
+     * it from then on, the same way the system prompt does not repeat.
+     */
+    context?: string;
     buffer: string;
     reqSeq: number;
     /**
@@ -405,6 +423,12 @@ export class ConsoleHost {
             // A resume already knows the thread; a fresh session learns it from
             // the first `thread.started`.
             codex: { ...newCodexState(), ...(init.resume ? { threadId: init.resume } : {}) },
+            // ‼️ Read HERE, at spawn, exactly like the Claude path writes the
+            // file here — and only for a session that is starting. A resume is
+            // continuing a thread that was already told, and telling it again
+            // would put the brief in the middle of a conversation as if the user
+            // had typed it.
+            context: init.resume ? undefined : this.readProjectContext(projectId),
             buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
@@ -431,6 +455,13 @@ export class ConsoleHost {
     private runTurn(id: string, prompt: string, attachments: Attachment[] = []): boolean {
         const h = this.sessions.get(id);
         if (!h || h.closed || h.engine.shape !== 'perTurn') { return false; }
+        // The brief, once, on the way into the first turn — this engine has no
+        // other channel for it (see Hosted.context). Consumed before the spawn
+        // so a retried turn does not send it twice.
+        if (h.context) {
+            prompt = codexContextPrefix(h.context) + prompt;
+            h.context = undefined;
+        }
         const args = codexArgs({
             thread: h.codex?.threadId ?? h.state.sessionId,
             model: h.state.model,
@@ -555,6 +586,21 @@ export class ConsoleHost {
             return false;
         }
         return true;
+    }
+
+    /**
+     * The project brief as TEXT, for an engine with no system-prompt flag.
+     *
+     * The same file the Claude path hands over on the command line — written by
+     * the same call, so the two engines are told the same thing and a brief that
+     * changed is current on both. Unreadable is not an error worth stopping a
+     * session for: the session simply starts unbriefed, which is the state it
+     * would have been in with no project at all.
+     */
+    private readProjectContext(projectId: string | undefined): string | undefined {
+        const file = this.projectContextFile(projectId);
+        if (!file) { return undefined; }
+        try { return fs.readFileSync(file, 'utf8').trim() || undefined; } catch { return undefined; }
     }
 
     /** Close a per-turn engine's turn that ended without saying so. The SESSION

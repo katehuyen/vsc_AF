@@ -161,15 +161,10 @@ export function codexPromptText(
  * add a flag cannot add it to only one of them.
  */
 export function codexArgs(o: CodexTurnInit): string[] {
-    const sandbox = codexSandboxFor(o.permissionMode);
     const model = o.model?.trim();
-    const effort = o.effort?.trim();
     // `-c key=value` is accepted by BOTH shapes, which is why the settings that
     // have to survive a resume are expressed that way rather than as flags.
-    const config = [
-        '-c', `sandbox_mode="${sandbox}"`,
-        ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : [])
-    ];
+    const config = codexConfig(o);
     const images = (o.images ?? []).flatMap(p => ['-i', p]);
     if (o.thread) {
         return [
@@ -200,3 +195,122 @@ export function codexArgs(o: CodexTurnInit): string[] {
  * accept it.
  */
 export const CODEX_RESUME_REFUSES = ['-s', '--sandbox', '-C', '--cd'];
+
+// ---------------------------------------------------------------------------
+// X-18 — the same engine, on the surfaces that are NOT the hosted Console
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ A TASK AND A TERMINAL ARE NOT THE CONSOLE, AND THE COMMAND IS NOT THE SAME.
+ *
+ * The hosted path asks for `--json` because something is translating it
+ * (codexproto.ts). A task's output is an archived markdown file a PERSON reads,
+ * and a terminal is a person watching — JSONL in either place is a log dump
+ * where a conversation was wanted. Measured on this machine (codex-cli 0.147.0,
+ * 2026-08-10) with the plain form:
+ *
+ *   OpenAI Codex v0.147.0
+ *   --------
+ *   workdir: … · model: gpt-5.6-terra · provider: openai
+ *   approval: never · sandbox: read-only · reasoning effort: low
+ *   session id: 019fe859-…
+ *   --------
+ *   user … codex … tokens used 260
+ *
+ * — which is exactly the header a task archive wants, written by the engine
+ * itself rather than reconstructed. `-o <file>` additionally writes the final
+ * message alone, so a workflow step can read a result without parsing a log.
+ */
+export interface CodexRunInit {
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+    cwd?: string;
+    /** where the LAST message should be written, for a caller that wants the
+     *  answer without the transcript around it (`-o`) */
+    lastMessageFile?: string;
+}
+
+/** The `-c key=value` pairs both shapes accept, in one place so a setting that
+ *  must survive a resume can never be expressed as a flag by accident. */
+function codexConfig(o: { permissionMode?: string; effort?: string }): string[] {
+    const effort = o.effort?.trim();
+    return [
+        '-c', `sandbox_mode="${codexSandboxFor(o.permissionMode)}"`,
+        ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : [])
+    ];
+}
+
+/**
+ * ONE unattended Codex run — a headless task.
+ *
+ * ‼️ THE PROMPT STILL TRAVELS ON STDIN (`-`), for a second reason on top of the
+ * measured one: a task's prompt is multi-line by nature and this command line is
+ * handed to a shell, where multi-line text does not survive on any platform.
+ * Callers therefore pipe it — see `TaskManager.spawnHeadless`.
+ */
+export function codexRunArgs(o: CodexRunInit): string[] {
+    return [
+        'exec', '--skip-git-repo-check',
+        ...codexConfig(o),
+        ...(o.model?.trim() ? ['-m', o.model.trim()] : []),
+        ...(o.cwd ? ['-C', `"${o.cwd}"`] : []),
+        ...(o.lastMessageFile ? ['-o', `"${o.lastMessageFile}"`] : []),
+        '-'
+    ];
+}
+
+/**
+ * The INTERACTIVE engine — `codex [flags] [PROMPT]`, the TUI a person sits in.
+ *
+ * Measured from `codex --help` (0.147.0): the bare command takes `-m`, `-s`,
+ * `-C`, `-c` and a positional prompt, exactly like `exec` does. `-s` is spelled
+ * out here rather than pushed through `-c`, because this shape accepts it and a
+ * person reading the line they are about to run should see the sandbox in words.
+ */
+export function codexTuiArgs(o: CodexRunInit & { prompt?: string }): string[] {
+    return [
+        '-s', codexSandboxFor(o.permissionMode),
+        ...(o.effort?.trim() ? ['-c', `model_reasoning_effort="${o.effort.trim()}"`] : []),
+        ...(o.model?.trim() ? ['-m', o.model.trim()] : []),
+        ...(o.cwd ? ['-C', `"${o.cwd}"`] : [])
+    ];
+}
+
+/**
+ * ‼️ WHAT CODEX HAS NO CHANNEL FOR — said out loud instead of dropped.
+ *
+ * Claude Code takes an extra system prompt on the command line
+ * (`--append-system-prompt-file`), which is how a session is told which project
+ * it belongs to before the user types anything. `codex` has no equivalent: its
+ * only inputs are the prompt, `AGENTS.md` in the working folder and its own
+ * config. So on this engine the project brief has to ride INSIDE the first
+ * prompt, and the surfaces say so rather than letting a session look briefed
+ * when it is not.
+ */
+export const CODEX_HAS_NO_SYSTEM_PROMPT_FLAG = true;
+
+/** The brief, as the first prompt of a per-turn engine carries it. Fenced and
+ *  labelled so the agent can tell the handed-over context from the instruction
+ *  — the same separation the system-prompt channel gives for free on Claude. */
+export function codexContextPrefix(context: string): string {
+    const text = String(context ?? '').trim();
+    if (!text) { return ''; }
+    return `<project-context>\n${text}\n</project-context>\n\n`;
+}
+
+/**
+ * One line for a surface: what changes about talking to this engine.
+ *
+ * ‼️ THE DIFFERENCE IS NOT COSMETIC AND MUST NOT BE DISCOVERED BY LOSING A
+ * MESSAGE. On a persistent engine a message typed mid-turn steers that turn; on
+ * a per-turn engine it is held until the turn ends, the pickers are the NEXT
+ * turn's flags, and the permission mode is a sandbox chosen up front because the
+ * engine has nobody to ask. Every picker that offers the engine prints this.
+ */
+export function engineNote(id: string | undefined): string {
+    const e = engineOf(id);
+    return e.shape === 'persistent'
+        ? 'One long-lived process: a message typed mid-turn steers that turn, and model, effort and permissions can be changed while it runs. It reports what each turn cost.'
+        : 'One process per turn: a message typed mid-turn is HELD until the turn ends, the pickers are the NEXT turn\'s flags, and the permission mode becomes a sandbox chosen up front — this engine cannot stop and ask. It runs on a plan, so it counts tokens and states no price.';
+}

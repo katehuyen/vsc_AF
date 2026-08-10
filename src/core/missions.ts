@@ -36,18 +36,47 @@ export interface MissionTeamMember {
     /** Optional model override for THIS member's delegations; empty = the
      *  agent's own model chain / model policy. */
     model?: string;
+    /**
+     * ‼️ WHICH ENGINE THIS MEMBER'S DELEGATIONS RUN ON (X-18). Empty = the
+     * mission's own `engine`, and empty there = `claude`.
+     *
+     * Per MEMBER rather than per mission alone, because that is the shape of the
+     * decision people actually make: the reviewer on a plan-billed engine, the
+     * writer on the one with the better rates. The planner is deliberately NOT
+     * covered by this — see MissionSpec.engine.
+     */
+    engine?: string;
 }
 
 export interface MissionLimits {
     maxRounds: number;
     maxTasks: number;
     maxCostUSD: number;
+    /**
+     * ‼️ X-19 — WHAT A COST CEILING MEANS ON AN ENGINE THAT STATES NO COST.
+     *
+     * It means NOTHING, and that was the hole. `maxCostUSD` is the one limit
+     * with teeth in a mission: rounds and tasks are coarse, minutes only bite on
+     * something slow. A delegate running on a subscription engine reports no
+     * price at all (codexproto.ts emits no `total_cost_usd` rather than a zero),
+     * so `run.totalCostUSD` never moves for it — a mission of Codex delegates
+     * could burn its whole plan window against a $5 ceiling that can never be
+     * reached. That is not a cap, it is the appearance of one.
+     *
+     * So the ceiling has a second currency, and it is the one a plan is actually
+     * spent in. Both are checked; whichever runs out first stops the mission.
+     * 0 = no token ceiling, which is what every mission written before this had.
+     */
+    maxTokens: number;
     maxMinutes: number;
     maxParallel: number;
 }
 
 export const DEFAULT_MISSION_LIMITS: MissionLimits = {
-    maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2
+    // 2 000 000 tokens is roughly a heavy day's work on a plan — chosen to be a
+    // real backstop rather than a leash, in the same spirit as $5.
+    maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxTokens: 2_000_000,
+    maxMinutes: 120, maxParallel: 2
 };
 
 export interface MissionSpec {
@@ -62,6 +91,20 @@ export interface MissionSpec {
     /** Optional model override for PLANNER calls only (delegates keep their own
      *  policies) — smart model plans, cheap models execute. */
     plannerModel?: string;
+    /**
+     * The engine every delegation runs on unless the member overrides it (X-18).
+     * Empty = `claude`.
+     *
+     * ‼️ THE PLANNER IS NOT ON THIS AXIS, AND THAT IS A DECISION, NOT AN
+     * OVERSIGHT. A planner call is `claude -p --output-format json` and the
+     * mission's whole control flow parses that envelope: the decision JSON, the
+     * cost, the session id that carries the lead's context from round to round.
+     * It also spends `--disallowedTools` and `--max-turns`, neither of which
+     * exists on the other engine. Nobody has measured an equivalent, and this
+     * codebase does not ship a translation it has not run. Delegates are
+     * ordinary tasks and were free the moment tasks grew an engine.
+     */
+    engine?: string;
     limits: MissionLimits;
     approvalMode: MissionApprovalMode;
     createdAt: number;
@@ -125,6 +168,14 @@ export interface MissionRun {
     /** 1-2 compact lines per round — resume-fallback material + UI history. */
     ledger: string[];
     totalCostUSD: number;
+    /**
+     * ‼️ THE OTHER CURRENCY (X-19). Every token the run has spent — the planner's
+     * and every delegate's — whether or not that engine also stated a price.
+     * This is what a plan is actually spent in, and on a subscription engine it
+     * is the ONLY thing that moves. Optional so a run written before this reads
+     * back as 0 rather than NaN.
+     */
+    totalTokens?: number;
     startedAt: number;
     endedAt?: number;
     /** Milliseconds spent waiting on the user — excluded from the wall clock. */
@@ -232,15 +283,24 @@ export function parsePlannerDecision(
 // prompts
 // ---------------------------------------------------------------------------
 
-export interface RemainingBudget { rounds: number; tasks: number; costUSD: number; minutes: number }
+export interface RemainingBudget {
+    rounds: number; tasks: number; costUSD: number; minutes: number;
+    /** ‼️ X-19 — the ceiling that still binds when the engine states no price.
+     *  `Infinity` when no token ceiling is set, so nothing ever stops on it. */
+    tokens: number;
+}
 
 export function remainingBudget(spec: MissionSpec, run: MissionRun, now: number): RemainingBudget {
     const spentTasks = run.rounds.reduce((a, r) => a + r.steps.length, 0);
     const elapsedMin = (now - run.startedAt - (run.waitedMs ?? 0)) / 60_000;
+    // A spec written before token ceilings existed has no `maxTokens` field at
+    // all; `?? 0` is what makes that mission behave exactly as it always did.
+    const maxTokens = spec.limits.maxTokens ?? 0;
     return {
         rounds: spec.limits.maxRounds - run.rounds.length,
         tasks: spec.limits.maxTasks - spentTasks,
         costUSD: Math.round((spec.limits.maxCostUSD - run.totalCostUSD) * 100) / 100,
+        tokens: maxTokens > 0 ? maxTokens - (run.totalTokens ?? 0) : Infinity,
         minutes: Math.round(spec.limits.maxMinutes - elapsedMin)
     };
 }
@@ -248,6 +308,8 @@ export function remainingBudget(spec: MissionSpec, run: MissionRun, now: number)
 /** Non-null when some limit is exhausted — the next round is finish-only. */
 export function guardReason(rem: RemainingBudget): string | null {
     if (rem.costUSD <= 0) { return `the cost budget is spent (${rem.costUSD} USD left)`; }
+    // ‼️ The one ceiling a plan-billed delegate can actually reach (X-19).
+    if (rem.tokens <= 0) { return 'the token budget is spent'; }
     if (rem.rounds <= 0) { return 'the round limit is reached'; }
     if (rem.tasks <= 0) { return 'the task limit is reached'; }
     if (rem.minutes <= 0) { return 'the time limit is reached'; }
@@ -272,7 +334,13 @@ Rules:
 - Mind the remaining budget; prefer finishing with a partial result over burning it.`;
 
 function remLine(rem: RemainingBudget): string {
-    return `Remaining budget: ${rem.rounds} round(s), ${rem.tasks} task(s), $${rem.costUSD.toFixed(2)}, ~${rem.minutes} min.`;
+    // ‼️ The token line is only written when there IS one, and it is written for
+    // the planner's benefit: a mission whose delegates run on a plan sees its
+    // dollar figure stand still all the way to the end, and a lead told only
+    // "$5.00 left" would plan as if nothing had been spent.
+    const tokens = isFinite(rem.tokens)
+        ? `, ${Math.max(0, Math.round(rem.tokens / 1000))}k tokens` : '';
+    return `Remaining budget: ${rem.rounds} round(s), ${rem.tasks} task(s), $${rem.costUSD.toFixed(2)}${tokens}, ~${rem.minutes} min.`;
 }
 
 export interface TeamHint { name: string; role?: string; hint?: string }
@@ -633,6 +701,7 @@ export class MissionEngine {
             }
             if (pr.sessionId) { run.plannerSessionId = pr.sessionId; }
             run.totalCostUSD += pr.costUSD ?? 0;
+            run.totalTokens = (run.totalTokens ?? 0) + (pr.tokens ?? 0);
 
             const parsed = parsePlannerDecision(pr.raw ?? '', spec);
             if (!parsed.ok) {
@@ -765,6 +834,12 @@ export class MissionEngine {
                 if (this.cancelRequested) { this.end('cancelled'); return; }
             }
             run.totalCostUSD += round.steps.reduce((a, s) => a + (s.costUSD ?? 0), 0);
+            // ‼️ …and the tokens, which is the half that moves on a plan-billed
+            // delegate. Without this a wave of Codex steps advanced no limit at
+            // all: no dollars (there are none), and rounds/tasks are too coarse
+            // to be a budget.
+            run.totalTokens = (run.totalTokens ?? 0)
+                + round.steps.reduce((a, s) => a + (s.tokens ?? 0), 0);
             run.ledger.push(ledgerLine(round));
             deps.onUpdate(run);
             roundMsg = buildRoundMessage(

@@ -1091,11 +1091,17 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('cost is never written without the tokens it bought', /const spend = /.test(js));
     ok('the running turn is priced while it runs, not guessed at',
-        /estimateCost\(/.test(panel) && /s\.turnUsage\s*\n?\s*\? this\.deps\.estimateCost/.test(panel));
+        /estimateCost\(/.test(panel)
+        && /s\.turnUsage && engineOf\(s\.engine\)\.reportsCost\s*\n?\s*\? this\.deps\.estimateCost/.test(panel));
     // …at the model IT is running on. `model` is the picker plus whatever a
     // switch has since moved it to, i.e. possibly the NEXT turn's model.
     ok('…and priced at the model the turn itself is running on',
         /estimateCost\(s\.turnModel \|\| s\.model \|\| ''/.test(panel));
+    // ‼️ X-19 — and NOT priced at all on an engine that states no price. Our
+    // rate card is Anthropic's; running it over a ChatGPT plan's tokens is wrong
+    // twice, and the number it produces reads as authoritative.
+    ok('…and not priced at all on an engine that reports no cost',
+        /NOT ESTIMATED AT ALL on an engine that states no price/.test(panel));
     ok('…and the panel says out loud that the live figure is an estimate',
         /is an estimate/.test(panel) || /an estimate/.test(panel));
 }
@@ -1381,6 +1387,61 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /s\.projectId === id && s\.projectName/.test(js));
     ok('…and the picker still answers for the new session it is about',
         /<option value=""\$\{DATA\.activeProjectId \? '' : ' selected'\}>/.test(js));
+}
+
+// ---------- X-18/X-19: which engine is answering, on the surface ----------
+//
+// ‼️ THE COMPOSER STARTED EVERY SESSION ON `claude` WITHOUT SAYING SO. A second
+// engine existed, was measured, was wired end to end — and the one page you talk
+// to an agent from had no box for it. Worse, the two engines are NOT two
+// spellings of the same thing: on one a message typed mid-turn steers that turn,
+// on the other it is held; on one the pickers are live controls, on the other
+// they are the next turn's flags; one reports a price per turn and the other
+// runs on a plan and does not. All of that has to be readable at a glance from
+// the card, or a person will discover it by losing a message.
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('the composer has an engine box, and only when starting a session',
+        /<select id="c-engine"/.test(js) && /type: 'setEngine'/.test(js));
+    ok('‼️ …offering an engine that cannot run here as DISABLED rather than hiding it',
+        /\$\{e\.ready \? '' : ' disabled'\}/.test(js));
+    ok('…with the one thing to do about it on the row itself',
+        /title="\$\{C\.esc\(e\.next\)\}"/.test(js));
+    ok('the panel checks it again on its own side of the webview wall',
+        /const refused = engineRefusal\(this\.engineList\(\), engine\)/.test(panel));
+    ok('…and passes the engine to the host', /engine: engine as EngineId,/.test(panel));
+    ok('…while the matrix is held for a few seconds, not walked per streamed line',
+        /ENGINE_TTL_MS/.test(panel) && /private engineList\(\)/.test(panel));
+
+    ok('‼️ a running session wears its engine on the CARD, at a glance',
+        /function engineBadge\(s\)/.test(js) && /\$\{engineBadge\(s\)\}/.test(js));
+    ok('…and the default engine wears none — a badge on every row is a badge nobody reads',
+        /if \(!s \|\| !s\.engine \|\| s\.engine === 'claude'\) \{ return ''; \}/.test(js));
+    ok('…the badge says what a per-turn engine changes about talking to it',
+        /one process per TURN/.test(js) && /held until the turn ends/.test(js));
+    ok('…and the composer prints that in full under its controls',
+        /function engineNoteHtml\(id\)/.test(js) && /c-enote/.test(js));
+    ok('the live controls stop promising "applied live" on an engine that has none',
+        /const live = !s \|\| s\.steerable !== false;/.test(js)
+        && /There is no running process to ask\./.test(js));
+    ok('…and the permission list is the START vocabulary there, not the live one',
+        /opts\(live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions, s\.permissionMode\)/.test(js));
+
+    // X-19 — the money half.
+    ok('‼️ a plan-billed session shows TOKENS where the dollars would be',
+        /function engineSpend\(s, cost, tokens, wTokens\)/.test(js)
+        && /on a plan, no price/.test(js));
+    ok('…and says why there is no figure rather than printing a zero',
+        /would read as "free", which is why nothing is invented/.test(js));
+    ok('…the running turn too, with no "~": the tokens are exact',
+        /tokens this turn/.test(js));
+    ok('…and the session line and the card hover follow the same rule',
+        /const tokTip = \(s, cost\)/.test(js)
+        && /runs on a plan — no per-turn price/.test(js));
+    ok('the payload carries the engine and what it means, per session',
+        /engine: s\.engine \?\? 'claude',/.test(panel)
+        && /reportsCost: engineOf\(s\.engine\)\.reportsCost/.test(panel));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

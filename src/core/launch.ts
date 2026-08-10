@@ -14,6 +14,8 @@
  * own default stays in charge.
  */
 
+import { codexTuiArgs, engineOf, EngineId, ENGINES } from './consoleEngine';
+
 /** One offered value of a launch dimension. `id: ''` is always "leave it alone". */
 export interface LaunchChoice {
     id: string;
@@ -22,6 +24,14 @@ export interface LaunchChoice {
 }
 
 export interface LaunchOptions {
+    /**
+     * ‼️ WHICH ENGINE (X-18). Absent means `claude` — what every caller written
+     * before engines existed means, and what this whole module was built around.
+     * It is a dimension like the model, not a different launcher: one set of
+     * choices, one command builder, so a surface cannot offer a session on an
+     * engine it then fails to start.
+     */
+    engine?: EngineId;
     /** --model (alias or full id); '' = the agent's / CLI's own default */
     model?: string;
     /** --effort: low | medium | high | xhigh | max; '' = default */
@@ -94,9 +104,37 @@ export function quoteArg(s: string): string {
     return '"' + String(s ?? '').replace(/"/g, "'").replace(/`/g, '').replace(/\s+/g, ' ').trim() + '"';
 }
 
+/**
+ * The interactive line for an engine that is NOT Claude Code.
+ *
+ * ‼️ THREE OF CLAUDE'S DIMENSIONS HAVE NO CODEX EQUIVALENT, AND THEY ARE
+ * DROPPED LOUDLY RATHER THAN QUIETLY:
+ *   · `-n` (session display name) — Codex names its own sessions;
+ *   · `--append-system-prompt-file` — this engine has NO system-prompt channel
+ *     (see CODEX_HAS_NO_SYSTEM_PROMPT_FLAG), so a project brief cannot ride the
+ *     command line at all and the caller has to put it in the prompt;
+ *   · `--resume <id>` — `codex resume <id>` is its own subcommand with its own
+ *     flag vocabulary, and guessing at it is exactly what this codebase does not
+ *     do. A resume on this engine goes through the Console, which has measured
+ *     it (`codex exec resume`).
+ * `describeLaunch` names the engine so a picker cannot claim otherwise.
+ */
+function buildCodexCommand(exe: string, o: LaunchOptions): string {
+    const parts = [exe || 'codex', ...codexTuiArgs({
+        model: o.model, effort: o.effort, permissionMode: o.permissionMode
+    })];
+    if (o.prompt?.trim()) { parts.push(quoteArg(o.prompt)); }
+    return parts.join(' ');
+}
+
 /** Build the command line for a launch. `exe` lets a caller reuse it for a
- *  wrapper; everything else follows `claude --help` exactly. */
+ *  wrapper; everything else follows `claude --help` exactly — or, on another
+ *  engine, that engine's own measured help (see buildCodexCommand). */
 export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
+    const spec = engineOf(o.engine);
+    if (spec.id !== 'claude') {
+        return buildCodexCommand(exe && exe !== 'claude' ? exe : spec.exe, o);
+    }
     const parts = [exe || 'claude'];
     // Resume/continue first — they say WHICH conversation; the rest tunes it.
     if (o.resume) { parts.push('--resume', o.resume); }
@@ -120,6 +158,11 @@ export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
 /** One-line summary of what is set, for a picker row / a toast. */
 export function describeLaunch(o: LaunchOptions): string {
     const bits: string[] = [];
+    // The engine leads, and only when it is not the default: a line that says
+    // "Codex · opus" would be nonsense, and one that says "Claude Code" on every
+    // launch spends a column on the answer nobody asked for.
+    const spec = engineOf(o.engine);
+    if (spec.id !== 'claude') { bits.push(spec.label); }
     if (o.model?.trim()) { bits.push(o.model.trim()); }
     if (o.effort?.trim()) { bits.push('effort ' + o.effort.trim()); }
     if (o.permissionMode?.trim()) { bits.push(o.permissionMode.trim()); }
@@ -137,6 +180,10 @@ export interface LaunchProfile extends LaunchOptions {
  *  dimensions that make sense for EVERY session, including resumes. Name and
  *  first prompt are per-launch by nature and deliberately not defaultable. */
 export interface LaunchDefaults {
+    /** ‼️ WHICH ENGINE, SET ONCE (X-18). "Always Codex" is a preference, not a
+     *  choice to be repeated on every launch — and an empty value keeps meaning
+     *  `claude`, so an existing settings file changes nothing. */
+    engine?: string;
     model?: string;
     effort?: string;
     permissionMode?: string;
@@ -146,8 +193,10 @@ export interface LaunchDefaults {
 export function withDefaults(o: LaunchOptions, d: LaunchDefaults | undefined): LaunchOptions {
     const pick = (own: string | undefined, def: string | undefined) =>
         (own?.trim() ? own.trim() : (def?.trim() ?? ''));
+    const engine = pick(o.engine, d?.engine);
     return {
         ...o,
+        ...(engine ? { engine: engine as EngineId } : {}),
         model: pick(o.model, d?.model),
         effort: pick(o.effort, d?.effort),
         permissionMode: pick(o.permissionMode, d?.permissionMode)
@@ -160,6 +209,12 @@ export function withDefaults(o: LaunchOptions, d: LaunchDefaults | undefined): L
 export function validateLaunch(o: LaunchOptions): string[] {
     const errors: string[] = [];
     const known = (list: LaunchChoice[], v: string) => list.some(c => c.id === v);
+    // ‼️ The NAME only — whether the engine can RUN is a question about this
+    // machine and belongs to core/engines.ts (`engineRefusal`). A typo has to
+    // fail here, before anything spawns, with the list of real names.
+    if (o.engine && !(o.engine in ENGINES)) {
+        errors.push(`engine "${o.engine}" is not one of: ${Object.keys(ENGINES).join(', ')}`);
+    }
     if (o.effort?.trim() && !known(EFFORT_CHOICES, o.effort.trim())) {
         errors.push(`effort "${o.effort.trim()}" is not one of: ` +
             EFFORT_CHOICES.filter(c => c.id).map(c => c.id).join(', '));
@@ -170,6 +225,14 @@ export function validateLaunch(o: LaunchOptions): string[] {
     }
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');
+    }
+    // ‼️ REFUSED, NOT SILENTLY DROPPED. `codex resume` is its own subcommand with
+    // its own flag vocabulary and nobody here has measured it; the measured
+    // resume on this engine is `codex exec resume`, which is the Console's path.
+    // Building a terminal line that ignores the id would open a NEW conversation
+    // while the caller believed it had continued one.
+    if (o.engine && o.engine !== 'claude' && (o.resume || o.continueLast)) {
+        errors.push(`${engineOf(o.engine).label} cannot be resumed from a terminal here — continue it in the Console, which resumes the thread by id`);
     }
     return errors;
 }

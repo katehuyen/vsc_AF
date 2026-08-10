@@ -204,6 +204,58 @@ taşınan bağlam, sayılan token, uydurulmamış ücret.
 izin modu önden bir kum havuzuna çevrilir ve yüzeyler bunun aynı şey OLMADIĞINI
 söyler (`codexModeNote`).
 
+### 5.1.2 Uygulandı (3.102.0) — motor ekseni her yüzeye indi (X-18)
+
+Faz 3'ün kalan yarısı: **oturum açan hiçbir yüzey artık sessizce `claude`
+başlatmıyor.** Eksen tek bir kelime dağarcığından besleniyor —
+`engineOptions()` satırı, `engineRefusal()` ise reddi **tek bir cümleyle**
+yazıyor (`core/engines.ts`). Beş giriş noktasının her birinin kendi cümlesini
+kurması, dördünün onu yanlış kurması demekti.
+
+| Yüzey | Nerede sorulur | Hazır olmayan motor |
+|---|---|---|
+| Console bestecisi | Ajan kutusunun yanında bir `select` | `disabled`, satırda `next` |
+| Sol paneldeki ▶ | `pickRunSurface` → **Runs on** satırı → `pickEngine` | seçilebilir ama başlatmaz; `next` + "Open Engines" |
+| Tam başlatıcı (Start Session…) | `$(server-process) Engine` satırı | aynı `pickEngine` |
+| Görevler / zamanlamalar / tetikleyiciler | Form'daki **Engine** kutusu | `disabled`; koşucu ayrıca spawn öncesi reddeder |
+| Misyonlar | Misyonun `engine`'i + üye başına `engine` | misyon **yaratılırken** reddedilir |
+| Köprü | `console.start` · `sessions.start` · `tasks.add` · `missions.start` | cevabın kendisinde reddedilir |
+
+**‼️ Hazır olmayan motor listeden GİZLENMEZ.** Gizlemek "bu sürümde Codex yok"
+ile "Codex'iniz giriş yapmamış"ı aynı görünüşe indirir; satır durur, seçilemez,
+ve yanında yapılacak tek şey yazar.
+
+**‼️ Codex'in sistem-prompt kanalı YOKTUR — ölçüldü.** `codex --help`: prompt,
+`AGENTS.md`, config; başka bir giriş yok. Claude'un
+`--append-system-prompt-file`'ı burada karşılıksız. Sonuç, bulunması gereken bir
+yalandı: **proje altında açılan bir Codex oturumu o projeye FİŞLENİYOR, kartta
+rozeti görünüyor ve brief'i hiç duymamış oluyordu.** Artık brief ilk turun
+promptunun içine, `<project-context>` ile çitlenmiş olarak biniyor
+(`codexContextPrefix`) ve **bir kez** tüketiliyor. Terminal yolunda bu yapılmaz —
+orası kullanıcının kendi konuşmasıdır, onun adına yazmak olurdu — bunun yerine
+bir bilgi kutusu "bu oturuma proje anlatılmadı, brief gerekiyorsa Console'da
+başlat" der.
+
+**Görevlerde tur başına motor.** Ölçüldü (2026-08-10): düz `codex exec`
+(yani `--json` olmadan) kendi başlığını basıyor — `workdir · model · provider ·
+approval · sandbox · reasoning effort · session id` — sonra konuşmayı ve
+`tokens used` satırını. Bir görev arşivinin istediği başlık tam olarak budur ve
+motorun kendisi yazıyor. Prompt yine **stdin**'den gidiyor (`-`), bu sefer ikinci
+bir sebeple: görev promptu doğası gereği çok satırlıdır ve komut satırı bir
+kabuğa veriliyor. `-o <dosya>` son mesajı ayrıca yazıyor.
+
+Bu motorda **uygulanmayan** üç şey, arşivin başlığında yazılı: `agentFarm.taskArgs`
+ve model-politikası kuralları (ikisi de Claude'un dağarcığı), ve
+`outputContract: "json"` (`claude -p --output-format json` zarfı; `codex exec
+--json` bambaşka bir şey — JSONL olay akışı).
+
+**Misyonlarda:** delegasyonlar motor eksenine sahip (üye → misyon → claude),
+**planlayıcı ise bilerek Claude Code'da kalıyor.** Misyonun bütün denetim akışı
+`claude -p --output-format json` zarfını ayrıştırır (karar JSON'u, ücret, turdan
+tura bağlamı taşıyan oturum kimliği) ve `--disallowedTools` ile `--max-turns`
+harcar; ikisi de öteki motorda yok. Ölçülmemiş bir çeviri bu depoda sevk
+edilmez.
+
 ### 5.2 Bu makinedeki engel — Kaspersky (2026-08-09)
 
 CLI kuruldu (`0.147.0`), giriş **çalışıyor** (`codex login status` →
@@ -233,6 +285,41 @@ gerekiyorsa Şifreli Bağlantı Taraması istisnası).
 > kaydı olarak duruyor**: "hazır" diyen bir ekranın neden hâlâ yalan
 > söyleyebildiğinin ve bunu yalnız gerçek bir çağrının ortaya çıkardığının
 > kanıtı — Engines sayfasındaki ⚡ Test düğmesinin varlık sebebi.
+
+### 5.3 Abonelikle koşan motorda ücret yoktur, token vardır (X-19)
+
+**Sorun bir eksik sayı değil, YANLIŞ bir sayıydı.** Codex bir planla koşar ve tur
+için fiyat söylemez; adaptör de bilerek `total_cost_usd` yazmaz (sıfır yazmak
+"bu tur bedavaydı" diye okunurdu). Ama eklentinin her yüzeyi dolar basıyordu, ve
+`$0.00` küçük bir rakam değildir — **yanlış** bir rakamdır.
+
+Kural: **`reportsCost: false` olan bir motorda dolar yazılmaz; token yazılır ve
+neden dolar olmadığı söylenir.** Nerede uygulandı:
+
+- **Konsolun maliyet şeridi** — çalışan tur `14.3k tokens this turn` der, "~"
+  yoktur (token kesindir, tahmin değil).
+- **Oturum satırı ve kart hover'ı** — `46.2k tokens · on a plan, no price`.
+- **Turu kapatan satır** ve transkriptteki `result` satırı — aynı biçim.
+- **Canlı tahmin hiç yapılmaz.** `estimateCost` Anthropic'in fiyat kartıdır; onu
+  bir ChatGPT planının tokenlerine uygulamak iki kez yanlış olurdu (yanlış
+  tarifeler, ve fatura modelinin hiç içermediği bir fiyat).
+- **Köprü** — `tasks.list` ve `tasks.add` satır başına `reportsCost` döndürür ve
+  sözleşmesinde "plan tabanlı bir motorda `costUSD: 0` ucuz bir koşu DEĞİLDİR"
+  yazar; `missions.status` doları yanında tokeni de verir.
+
+**‼️ Ve maliyet tavanının bu motorda ne anlama geldiğinin cevabı: hiçbir şey —
+ikinci bir para birimi eklenene kadar.** Bir misyonda dişi olan tek sınır
+`maxCostUSD`'dir (tur ve görev sayıları kaba, dakikalar yalnız yavaş işi keser).
+Abonelikli bir delege hiç dolar bildirmediği için `totalCostUSD` onun için hiç
+kıpırdamaz: Codex delegelerinden kurulu bir misyon, **asla ulaşılamayacak** bir
+5 dolarlık tavana karşı bütün plan penceresini yakabilirdi. Bu bir tavan değil,
+tavan görüntüsüdür.
+
+Bu yüzden `MissionLimits.maxTokens` eklendi (varsayılan 2 000 000, `0` = tavan
+yok, eski misyonlar birebir eskisi gibi davranır). `remainingBudget` ikisini de
+sayar, `guardReason` hangisi biterse orada durur, ve **planlayıcıya söylenir** —
+brief'teki bütçe satırı token kalanını da yazar, yoksa bir lead bütün tur boyunca
+"$5.00 left" görüp hiç harcama yapılmamış gibi plan yapardı.
 
 ## 6. Faz 4 — adanmış panel (X-14) · KARAR ALINDI
 

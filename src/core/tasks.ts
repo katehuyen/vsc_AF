@@ -9,6 +9,9 @@ import {
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
+    codexContextPrefix, codexModeNote, codexRunArgs, codexSandboxFor, codexTuiArgs, engineOf
+} from './consoleEngine';
+import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
@@ -77,6 +80,20 @@ export interface FarmTask {
      */
     effort?: string;
     permissionMode?: string;
+    /**
+     * ‼️ WHICH ENGINE RUNS IT (X-18). Empty = `claude`, which is what every task
+     * ever written means and what nothing may start reinterpreting.
+     *
+     * This is NOT the same axis as `cli` below. A CLI profile is a command
+     * TEMPLATE for a binary Agent Farm knows nothing about: it is spawned, its
+     * output is archived, and that is the whole relationship. An engine is a
+     * machine the extension understands — its readiness is checked before the
+     * spawn, its flags are built from a measured vocabulary, its permission mode
+     * is translated into that engine's own sandbox, and how it is BILLED is
+     * known (see `reportsCost`). The two can coexist; a task states one or the
+     * other, and stating both is refused rather than silently ranked.
+     */
+    engine?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -106,6 +123,8 @@ export interface FarmTask {
  * and the CLI already decide stays in charge.
  */
 export interface RunDimensions {
+    /** which engine — see FarmTask.engine. Empty = claude. */
+    engine?: string;
     model?: string;
     effort?: string;
     permissionMode?: string;
@@ -127,6 +146,7 @@ export interface RunDimensions {
 export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     const r: Partial<FarmTask> = {};
     if (!d) { return r; }
+    if (d.engine) { r.engine = d.engine; }
     if (d.model) { r.model = d.model; }
     if (d.effort) { r.effort = d.effort; }
     if (d.permissionMode) { r.permissionMode = d.permissionMode; }
@@ -457,6 +477,17 @@ export interface TaskManagerOptions {
     activeProjectId?: () => string | undefined;
     /** J5: alternative CLI profiles ({prompt}/{args} templates). */
     cliProfiles?: () => CliProfile[];
+    /**
+     * ‼️ CAN THIS MACHINE RUN THAT ENGINE — asked BEFORE the spawn (X-18).
+     *
+     * Returns the refusal sentence, or undefined. Injected rather than computed
+     * here for the reason this whole module is pure-ish: the answer needs PATH,
+     * the home directory and the secret vault, and none of those belong to a
+     * task store. A task queued last week on an engine that has since been
+     * uninstalled fails HERE, with the one line that fixes it, instead of
+     * producing an output file containing a shell's "command not found".
+     */
+    engineRefusal?: (engine: string | undefined) => string | undefined;
     /** F3: global browser-step allowlist + per-step approval gate. */
     browserAllowHosts?: () => string[];
     /** Resolve to true to run the browser step; false cancels it. */
@@ -941,7 +972,8 @@ export class TaskManager implements vscode.Disposable {
         // returned object still work — the field is the same field.)
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
-            | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir' | 'missionId'>>
+            | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
+            | 'missionId'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -1035,6 +1067,22 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for task "${task.title}" not found.`);
             return false;
         }
+        // ‼️ The engine is checked before anything is spawned, and only when the
+        // task actually names one — a CLI profile is a different mechanism with
+        // its own binary, and asking the engine matrix about it would refuse a
+        // profile that works perfectly well.
+        if (task.engine && !task.cli) {
+            const refused = this.opts.engineRefusal?.(task.engine);
+            if (refused) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${task.title}" did not start — ${refused}`);
+                task.status = 'failed';
+                task.endedAt = Date.now();
+                task.deferredReason = refused;
+                this.save();
+                return false;
+            }
+        }
         task.status = 'running';
         task.startedAt = Date.now();
         task.deferredReason = undefined;
@@ -1047,6 +1095,21 @@ export class TaskManager implements vscode.Disposable {
             let command: string;
             if (profile) {
                 command = buildCliCommand(profile.interactive ?? profile.headless, task.prompt, extra);
+            } else if (engineOf(task.engine).shape === 'perTurn') {
+                // ‼️ ANOTHER ENGINE IS ANOTHER PROGRAM, NOT ANOTHER FLAG SET.
+                // `agentFarm.taskArgs` (`extra`) is claude's vocabulary — passing
+                // it to `codex` would produce "unexpected argument" and a
+                // terminal the user has to read. The flags come from the measured
+                // vocabulary instead (consoleEngine.ts), and the permission mode
+                // becomes this engine's sandbox because it has nobody to ask.
+                command = [
+                    engineOf(task.engine).exe,
+                    ...codexTuiArgs({
+                        model: task.model, effort: task.effort,
+                        permissionMode: task.permissionMode
+                    }),
+                    `"${p}"`
+                ].join(' ');
             } else {
                 const policy = this.modelArgs(task);
                 if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
@@ -1096,6 +1159,14 @@ export class TaskManager implements vscode.Disposable {
         return parts.join(' ');
     }
 
+    /** The project brief as TEXT — for an engine with no system-prompt channel.
+     *  Unreadable is not worth failing a run over: it runs unbriefed, which is
+     *  the state a task with no project would have been in. */
+    private readContext(file: string | undefined): string {
+        if (!file) { return ''; }
+        try { return fs.readFileSync(file, 'utf8').trim(); } catch { return ''; }
+    }
+
     /** J5: resolve the task's CLI profile (undefined = the default claude executor). */
     private cliProfileFor(task: FarmTask): CliProfile | undefined {
         if (!task.cli) { return undefined; }
@@ -1108,12 +1179,32 @@ export class TaskManager implements vscode.Disposable {
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
         const profile = this.cliProfileFor(task);
-        const policy = profile ? undefined : this.modelArgs(task);
+        const engine = engineOf(task.engine);
+        const perTurn = !profile && engine.shape === 'perTurn';
+        const policy = profile || perTurn ? undefined : this.modelArgs(task);
         const header = `# ${task.title}\n\n` +
             `- Agent: ${task.agentName}\n` +
             `- Started: ${new Date().toLocaleString()}\n` +
+            // ‼️ WHICH ENGINE, IN THE ARCHIVE ITSELF. Months later this file is
+            // the only record of the run, and "why does this output look nothing
+            // like the others" has exactly one answer.
+            (engine.id !== 'claude' ? `- Engine: ${engine.label}\n` : '') +
             (profile ? `- CLI: ${profile.name}\n` : '') +
             (policy ? `- Model policy: ${policy.reason}\n` : '') +
+            (perTurn && task.model ? `- Model: ${task.model}\n` : '') +
+            // ‼️ …and that on this engine the mode is a SANDBOX, not a question
+            // it will ever ask. The word alone would carry an assumption it
+            // cannot keep (see codexModeNote).
+            (perTurn ? `- Sandbox: ${codexSandboxFor(task.permissionMode)} — ${codexModeNote(task.permissionMode)}\n` : '') +
+            // ‼️ AND WHAT THIS ENGINE COULD NOT HONOUR. The JSON output contract
+            // is `claude -p --output-format json` — one envelope with the result,
+            // the cost and the session id in it. `codex exec --json` is a
+            // different thing entirely (a JSONL event stream), so the contract is
+            // not applied here. A workflow condition reading `json:` off this
+            // output will simply not match, and that has to be findable in the
+            // file rather than debugged from the outside.
+            (perTurn && task.outputContract === 'json'
+                ? '- Output contract: json was NOT applied — that envelope is Claude Code\'s own format and this engine has no equivalent\n' : '') +
             // The rest of the launch, written down where the run itself is: an
             // archived output that does not say what the run was told to be is
             // half a record.
@@ -1130,11 +1221,11 @@ export class TaskManager implements vscode.Disposable {
         // Effort and permission mode ride on the same path the model does, and
         // only on claude's: a named CLI profile is a different binary that knows
         // nothing about these flags (same rule as the project context below).
-        if (!profile) {
+        if (!profile && !perTurn) {
             const launch = this.launchArgs(task);
             if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
         }
-        if (task.outputContract === 'json') {
+        if (task.outputContract === 'json' && !perTurn) {
             extra = (extra ? extra + ' ' : '') + '--output-format json';
         }
         // The project this task was created under, told to the agent before its
@@ -1142,22 +1233,47 @@ export class TaskManager implements vscode.Disposable {
         // unquoted path breaks on a space and inline multi-line text breaks
         // outright (measured — see core/projectContext.ts).
         const ctxFile = this.opts.projectContextFile?.(task);
-        if (ctxFile && !ctxFile.includes('"')) {
+        if (ctxFile && !ctxFile.includes('"') && !perTurn) {
             extra = (extra ? extra + ' ' : '') + `--append-system-prompt-file "${ctxFile}"`;
         }
+        // ‼️ ON A PER-TURN ENGINE THE PROMPT GOES DOWN A PIPE, NOT ONTO THE
+        // COMMAND LINE — which is what lets it carry the project brief and its
+        // own newlines. `codex` has no system-prompt flag at all (measured
+        // against its own --help), so the brief has to be part of the prompt or
+        // it does not reach the run; and stdin is the one channel a shell does
+        // not mangle. Everything Claude's path expresses as flags is expressed
+        // here in the measured vocabulary instead (codexRunArgs).
+        const perTurnPrompt = perTurn
+            ? codexContextPrefix(this.readContext(ctxFile)) + task.prompt
+            : '';
         // A named CLI profile runs a DIFFERENT binary, which knows nothing about
         // --append-system-prompt-file; the project context is claude's channel
         // and stays on claude's path.
         const command = profile
             ? buildCliCommand(profile.headless, task.prompt, this.extraArgs())
-            : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
+            : perTurn
+                ? [engine.exe, ...codexRunArgs({
+                    model: task.model, effort: task.effort,
+                    permissionMode: task.permissionMode
+                })].join(' ')
+                : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
         const child = cp.spawn(command, {
             cwd: task.workDir ?? agent.dir,
             shell: true,
             windowsHide: true,
-            stdio: ['ignore', 'pipe', 'pipe'], // closed stdin: claude won't wait 3s for piped input
+            // closed stdin: claude won't wait 3s for piped input. A per-turn
+            // engine is the exception — its instruction IS what goes down that
+            // pipe, and it is closed immediately after (measured: the CLI waits
+            // for EOF, and an open pipe is a run that never starts).
+            stdio: [perTurn ? 'pipe' : 'ignore', 'pipe', 'pipe'],
             env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
         });
+        if (perTurn) {
+            try {
+                child.stdin?.write(perTurnPrompt);
+                child.stdin?.end();
+            } catch { /* the close handler reports what the run did */ }
+        }
         this.processes.set(task.id, child);
         child.stdout?.on('data', chunk => stream.write(chunk));
         child.stderr?.on('data', chunk => stream.write(chunk));
@@ -1473,7 +1589,8 @@ export class TaskManager implements vscode.Disposable {
         task: FarmTask, newPrompt?: string,
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
-                'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir' | 'priority' | 'projectId'>>
+                'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
+                | 'priority' | 'projectId'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
             this.resumeWorkflowFromTask(task);
@@ -1497,6 +1614,9 @@ export class TaskManager implements vscode.Disposable {
                 // window moved on to in the meantime — a rerun of the same work is
                 // the same work.
                 projectId: over && 'projectId' in over ? over.projectId : task.projectId,
+                // …and on the engine it ran on. A retry that silently moved to
+                // another engine would be a different run wearing the same name.
+                engine: over?.engine ?? task.engine,
                 model: over?.model ?? task.model,
                 effort: over?.effort ?? task.effort,
                 permissionMode: over?.permissionMode ?? task.permissionMode,

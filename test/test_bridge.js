@@ -1619,7 +1619,11 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'sessions.shelf', 'sessions.interrupt']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
-        const startBlock = src.slice(src.indexOf("op: 'sessions.start'"), src.indexOf("op: 'sessions.start'") + 3000);
+        // To the NEXT op, not a fixed window: the description grew again when
+        // the engine axis arrived, and a window that stops inside the prose
+        // tests the prose rather than the handler.
+        const startBlock = src.slice(src.indexOf("op: 'sessions.start'"),
+            src.indexOf("op: 'sessions.rename'"));
         ok('sessions.start calls the shared launcher, not its own command builder',
             /startClaudeSession\(agent, o[,)]/.test(startBlock) && /validateLaunch/.test(startBlock));
         ok('sessions.start says it is interactive and points at tasks.add for headless work',
@@ -1664,6 +1668,47 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /const resolveLaunchProject = \(raw: unknown\): string \| undefined =>/.test(src)
             && /if \(raw === undefined\) \{ return undefined; \}/.test(src)
             && /if \(!key\) \{ return ''; \}/.test(src));
+        // ---------- X-18/X-19: the engine reaches UNATTENDED work too ----------
+        //
+        // ‼️ THIS IS WHERE IT MATTERS MOST, AND WHERE IT WAS MISSING LONGEST.
+        // Nobody sits in front of a task or a mission: an engine that cannot run
+        // writes a shell error into an archived file that is read hours later,
+        // and a plan-billed delegate reports no dollars at all — so a mission's
+        // USD ceiling, the only limit with teeth, could never be reached by it.
+        {
+            const addBlock = src.slice(src.indexOf("op: 'tasks.add'"), src.indexOf("op: 'tasks.cancel'"));
+            ok('tasks.add takes an engine', /engine\? \(claude — the default — or codex/.test(addBlock));
+            ok('…and refuses one this machine cannot run BEFORE anything spawns',
+                /engineRefusal\(engineMatrix\(\), engine\)/.test(addBlock));
+            ok('‼️ …and refuses `engine` together with `cli`, rather than silently '
+                + 'ranking two executors and making one argument a no-op',
+                /a task runs on ONE executor/.test(addBlock));
+            ok('…it names what changes on a per-turn engine: the sandbox, the missing '
+                + 'system-prompt channel, and the absent dollar figure',
+                /SANDBOX chosen up front/.test(addBlock)
+                && /has no such channel/.test(addBlock)
+                && /TOKENS\s*'?\s*\+?\s*'?and no dollar figure/.test(addBlock.replace(/\s+/g, ' ')));
+            ok('…and answers with the engine and whether it reports a price at all',
+                /engine: task\.engine \?\? 'claude'/.test(addBlock)
+                && /reportsCost: engineOf\(task\.engine\)\.reportsCost/.test(addBlock));
+
+            const listBlock = src.slice(src.indexOf("op: 'tasks.list'"), src.indexOf("op: 'tasks.add'"));
+            ok('‼️ tasks.list says a costUSD of 0 may mean "no price", not "cheap"',
+                /is not a cheap\s*'?\s*\+?\s*'?run/.test(listBlock.replace(/\s+/g, ' '))
+                && /reportsCost/.test(listBlock));
+
+            const misBlock = src.slice(src.indexOf("op: 'missions.start'"), src.indexOf("op: 'missions.status'"));
+            ok('missions.start takes an engine for its DELEGATIONS', /engine\? \(which engine the DELEGATIONS/.test(misBlock));
+            ok('…per team member as well', /\{agent, role\?, model\?, engine\?\}/.test(misBlock));
+            ok('‼️ …and says out loud that the PLANNER stays on Claude Code, with why',
+                /THE PLANNER ALWAYS RUNS ON CLAUDE CODE/.test(misBlock)
+                && /--disallowedTools/.test(misBlock));
+            ok('‼️ …and offers the ceiling that still binds when the engine states no price',
+                /maxTokens\?/.test(misBlock) && /can never be reached by/.test(misBlock.replace(/\s+/g, ' ')));
+            ok('…and missions.status reports the tokens beside the dollars',
+                /tokens: r\.totalTokens \?\? 0/.test(src));
+        }
+
         const intBlock = src.slice(src.indexOf("op: 'sessions.interrupt'"), src.indexOf("op: 'sessions.interrupt'") + 1600);
         ok('sessions.interrupt sends the Esc key with no newline',
             /sendText\(INTERRUPT_KEY, false\)/.test(intBlock));

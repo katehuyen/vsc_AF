@@ -1527,6 +1527,60 @@ belge bağlantısı yalnız `https`. Köprüde `engines.status` (okur) ve
 
 Farm Settings'teki **Engines** bölümü bu sayfanın özetidir; derinlik burada.
 
+### Birini seçmek — motor ekseni (3.102.0) {#engine-axis}
+
+Hangi motorların çalıştığını bilmek işin yarısıydı. Öteki yarısı **onunla bir şey
+başlatabilmek**, ve 3.102.0'a kadar eklentideki her düğme tek kelime etmeden
+`claude` başlatıyordu.
+
+**Nerede seçilir.** Console bestecisinde ajan kutusunun yanında bir motor kutusu
+var; sol paneldeki ▶ bunu ilk sorusu olarak sorar (*Runs on*), tam **Start
+Session…** başlatıcısı da öyle; New-task formunda bir **Engine** satırı var — ve
+zamanlamalarla tetikleyiciler bunu miras alır, çünkü onlar henüz olmamış
+görevlerdir; bir misyon delegasyonları için bir motor alır, üye kendi motorunu
+yazarak onu ezebilir. En çok kullandığını `agentFarm.launchDefaults.engine`
+içinde bir kez ayarla, aksi söylenene kadar her yerde cevap odur. **İkisi
+arasında seçim yapmak zorunda değilsin:** aynı pencerede bir Claude oturumu ile
+bir Codex oturumu yan yana koşar, ve her satır hangisinin hangisi olduğunu yazar.
+
+**Burada koşamayan motor listede durur ve reddedilir.** Gizlemek "bu sürümde
+Codex yok" ile "Codex'in giriş yapmamış"ı aynı görünüşe indirirdi; satır durur,
+seçilemez, ve yanında yapılacak tek şey yazar. Ret cümlesi tek yerde yazılıdır —
+panel, quick pick, görev ve köprü aynı şeyi söyler.
+
+**‼️ İki motor aynı şeyin iki yazılışı değildir, ve yüzeyler bunu söyler.**
+Claude Code tek uzun ömürlü süreçtir: tur sırasında yazdığın mesaj o turu
+YÖNLENDİRİR, model/efor/izin canlı kontroldür. `codex exec` ise **tur başına bir
+süreçtir** — tur sırasında yazılan mesaj tur bitene kadar BEKLETİLİR, seçiciler
+*bir sonraki* turun bayraklarıdır, ve izin modu **önden seçilen bir KUM HAVUZUNA**
+dönüşür, çünkü bu motorun soracak kimsesi yoktur ("Default" burada read-only
+demektir). Çalışan bir oturum kartında motorunun rozetini taşır, bestecinin
+altındaki satır da neyin değiştiğini açıkça yazar.
+
+**Proje brief'i farklı yoldan gider.** Claude onu komut satırında ek bir sistem
+promptu olarak alır. Codex'in böyle bir kanalı yoktur — prompt, `AGENTS.md`,
+config, başka bir şey yok — bu yüzden Console'da brief **ilk promptun** içine,
+çitlenmiş olarak ve bir kez biner. O motordaki bir *terminal* oturumuna ise hiç
+anlatılmaz ve bu söylenir: senin kendi terminaline senin adına yazmak bu
+eklentinin işi değildir.
+
+**‼️ Abonelikli motor fiyat söylemez, ve $0.00 daha küçük bir sayı değil YANLIŞ
+bir sayıdır.** Codex bir planla koşar ve tur başına ücret değil token bildirir;
+onunla ilgili her rakam token cinsindendir ve yanında para olmamasının sebebini
+yazar: çalışan tur, oturum satırı, kart hover'ı, turu kapatan satır ve köprü
+(`tasks.list` / `tasks.add` üzerinde `reportsCost`). Tahmin de yapılmaz — bizim
+fiyat kartımız Anthropic'in, onu bir ChatGPT planının tokenlerine uygulamak iki
+kez yanlış olurdu.
+
+**Ve böyle bir motorda maliyet tavanı hiçbir anlam taşımaz** — misyonlar bu
+yüzden ikinci bir para birimi kazandı. Bir misyonda dişi olan tek sınır
+`maxCostUSD`'dir; abonelikli bir delege onu hiç kıpırdatmaz, dolayısıyla böyle
+bir ekip asla ulaşılamayacak 5 dolarlık bir tavana karşı bütün plan penceresini
+yakabilirdi. `maxTokens` (varsayılan 2 000 000, `0` = yok) onunla birlikte
+denetlenir, hangisi önce biterse koşu orada durur, ve **planlayıcıya brief'inde
+token bütçesi de söylenir** — yalnızca "$5.00 left" gören bir lead hiç harcama
+yapılmamış gibi plan yapardı.
+
 ## Medya Üretim Hattı
 
 1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.

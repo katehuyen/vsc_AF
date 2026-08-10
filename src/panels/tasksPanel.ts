@@ -59,7 +59,11 @@ export interface TasksDeps {
      * first time they edited it.
      */
     modelAliases(): string[];
-    launchDefaults(): { model?: string; effort?: string; permissionMode?: string };
+    launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    /** X-18 — which engines this machine can run, for the form's engine row.
+     *  Optional so a caller written before engines existed still type-checks;
+     *  absent means the form offers no engine box and every task is claude's. */
+    engines?(): { id: string; label: string; ready: boolean; next: string; billing: string }[];
     cliProfiles(): { name: string; headless?: string }[];
     /** Projects a task can be filed under, and the window's current one. */
     projects(): { id: string; name: string; icon?: string }[];
@@ -398,6 +402,12 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
             models: modelChoices(deps.modelAliases()),
             efforts: EFFORT_CHOICES,
             permissions: PERMISSION_CHOICES,
+            // ‼️ X-18 — the engine axis reaches unattended work too, and this is
+            // where it matters MOST: nobody is sitting in front of a task, so an
+            // engine that cannot run produces an output file full of a shell
+            // error discovered hours later. The row carries `ready` and `next`
+            // so the form can refuse it the same way every other surface does.
+            engines: deps.engines ? deps.engines() : [],
             defaults: deps.launchDefaults(),
             // Only offered when the user actually has profiles: a picker whose
             // only entry is "claude" is a question with one answer.
@@ -587,7 +597,7 @@ export function stepFromDraft(
 function taskSeed(t: FarmTask): Record<string, unknown> {
     return {
         agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
-        model: t.model ?? '', effort: t.effort ?? '',
+        engine: t.engine ?? '', model: t.model ?? '', effort: t.effort ?? '',
         permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0
@@ -758,7 +768,7 @@ export class TasksPanel {
             if (!s) { send({ mode2: 'new' }); return; }
             send({
                 mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
-                mode: s.mode, model: s.model ?? '', effort: s.effort ?? '',
+                mode: s.mode, engine: s.engine ?? '', model: s.model ?? '', effort: s.effort ?? '',
                 permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
                 cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
                 every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
@@ -781,7 +791,7 @@ export class TasksPanel {
                 agent: a.kind === 'task' ? a.agentName : ((this.deps.getAgents()[0]?.name) ?? ''),
                 prompt: a.kind === 'workflow' ? '' : a.prompt,
                 mode: a.kind === 'workflow' ? 'headless' : a.mode,
-                model: dims.model ?? '', effort: dims.effort ?? '',
+                engine: dims.engine ?? '', model: dims.model ?? '', effort: dims.effort ?? '',
                 permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
                 cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
                 debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
@@ -844,6 +854,7 @@ export class TasksPanel {
             return p;
         };
         const dims = (): RunDimensions => ({
+            ...(str('engine') ? { engine: str('engine') } : {}),
             ...(str('model') ? { model: str('model') } : {}),
             ...(str('effort') ? { effort: str('effort') } : {}),
             ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
@@ -1246,6 +1257,7 @@ export class TasksPanel {
                         autoStart: t.start === true,
                         projectId: projectId || undefined,
                         model: str('model') || undefined,
+                        engine: str('engine') || undefined,
                         effort: str('effort') || undefined,
                         permissionMode: str('permissionMode') || undefined,
                         cli: str('cli') || undefined,
@@ -1262,6 +1274,7 @@ export class TasksPanel {
                 }
                 const task = m.addTask(agent, title, prompt, mode, {
                     projectId: projectId || undefined,
+                    ...(str('engine') ? { engine: str('engine') } : {}),
                     ...(str('model') ? { model: str('model') } : {}),
                     ...(str('effort') ? { effort: str('effort') } : {}),
                     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),

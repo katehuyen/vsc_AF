@@ -44,7 +44,7 @@ const base = read('src/panels/base.ts');
         return i < 0 ? '' : ext.slice(i, i + 2200);
     };
     ok('agentfarm.startSession asks where it should run',
-        /\? \{ surface: arg\.surface, projectId: '' \}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
+        /\? \{ surface: arg\.surface, projectId: '', engine: [^}]+\}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
     ok('agentfarm.continueSession asks where it should run',
         /arg\?\.surface\s*\n?\s*\?\? \(await pickRunSurface\(/.test(body('continueSession')));
     // the launcher asks inside itself instead: WHERE is one of its rows
@@ -64,7 +64,7 @@ const base = read('src/panels/base.ts');
 // WHAT it belongs to are dimensions of the same launch and travel together.
 {
     ok('the surface picker can carry the project too',
-        /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean \} = \{\}/.test(ext));
+        /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean; engine\?: boolean \} = \{\}/.test(ext));
     ok('…drawn by one shared row, so it says what the Console\'s chip says',
         /const launchProjectRow = \(\s*\n?\s*projectId: string, fromStatusBar = false\s*\n?\s*\)/.test(ext)
         && /'◧ No project'/.test(ext)
@@ -110,18 +110,18 @@ const base = read('src/panels/base.ts');
     ok('‼️ one-click Start asks for the project as well as the place',
         /pickRunSurface\(`New session for \$\{agent\.name\}`, \{ project: true \}\)/.test(startBody));
     ok('…and the answer really reaches the launch',
-        /startClaudeSession\(agent, \{\}, undefined, undefined, chosen\.projectId\)/.test(startBody));
+        /startClaudeSession\(agent, \{ engine: chosen\.engine as EngineId \},\s*\n\s*undefined, undefined, chosen\.projectId\)/.test(startBody));
     // ▶ → In the Console opens the COMPOSER: the project can only be chosen
     // before the first prompt, and spawning on the spot skipped that moment.
     ok('…and the Console path opens the composer with the agent pinned',
-        /ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true, projectId: chosen\.projectId\s*\n\s*\}\);/.test(startBody));
+        /ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true, projectId: chosen\.projectId,/.test(startBody));
     ok('the launcher shows it as one of its rows', /launchProjectRow\(project, projectSeeded\),/.test(ext));
     // In the launcher every line is a control, so the project row does not have
     // to argue that it is one — no escape row there, but the same seeding.
     ok('…seeded the same way, so the two start paths cannot disagree',
         /let project = seedLaunchProject\(\);/.test(ext));
     ok('…and its Where sub-picker does NOT repeat the question',
-        /const v = await pickRunSurface\(`Session for \$\{agent\.name\}`\);/.test(ext));
+        /const v = await pickRunSurface\(`Session for \$\{agent\.name\}`, \{ engine: false \}\);/.test(ext));
 
     // A RESUME must not be asked: its project was decided when it started and
     // stampSession refuses to overwrite that, so the answer would be discarded.
@@ -193,12 +193,68 @@ const base = read('src/panels/base.ts');
 // ---------- an agent can do it too (bridge) ----------
 {
     const i = ext.indexOf("op: 'sessions.start'");
-    const op = ext.slice(i, i + 3000);
+    // the slice has to reach past the `describe`, which grew when the engine
+    // axis arrived — a window that stops inside the prose tests nothing
+    const op = ext.slice(i, ext.indexOf("op: 'sessions.rename'", i));
     ok('sessions.start documents the surface argument', /surface\? \(terminal/.test(op));
     ok('…validates it instead of guessing', /surface must be "terminal" or "console"/.test(op));
     ok('…defaults to the terminal, as it always did', /optStr\(args, 'surface'\) \|\| 'terminal'/.test(op));
     ok('…and really starts a hosted session for console', /startConsoleSession\(agent, o[,)]/.test(op));
-    ok('…reporting back where it went', /surface \};/.test(op));
+    ok('…reporting back where it went', /surface, \.\.\.shape \}/.test(op));
+}
+
+// ---------- X-18: WHICH ENGINE is a dimension of the same launch ----------
+//
+// ‼️ THE SAME MISTAKE THE SURFACE MADE, ONE LAYER DOWN. A second engine existed
+// and could only be reached from the bridge: every button that starts a session
+// went to `claude` without a word, exactly as every button used to go to a
+// terminal without a word. So the engine is offered on the SAME pickers, in the
+// same shape — one row naming the current answer, the list one step in — and an
+// engine this machine cannot run is refused with the one thing to do about it
+// rather than started and left to die on its first turn.
+{
+    ok('there is one shared engine picker', /const pickEngine = async/.test(ext));
+    ok('…listing what this machine can run, from the one matrix',
+        /engineOptions\(engineMatrix\(\)\)\.map/.test(ext));
+    ok('‼️ …and an engine that cannot run STAYS in the list rather than vanishing',
+        /if \(pick\.ready\) \{ return pick\.id; \}/.test(ext)
+        && /hiding it makes "this build has no|stays IN the list/i.test(ext));
+    ok('…offering the page that fixes it, then coming back',
+        /'Open Engines'/.test(ext) && /EnginesPanel\.show\(enginesPanelDeps\)/.test(ext));
+
+    ok('the surface picker carries the engine as its first question',
+        /label: 'Runs on', kind: vscode\.QuickPickItemKind\.Separator \}, engineRow\]/.test(ext)
+        || /\{ label: 'Runs on', kind: vscode\.QuickPickItemKind\.Separator \},\s*\n\s*engineRow,/.test(ext));
+    ok('…and returns it with the rest of the answer',
+        /interface RunChoice \{ surface: RunSurface; projectId: string; engine: string \}/.test(ext)
+        && /return \{ surface: pick\.surface, projectId, engine \};/.test(ext));
+    ok('…opening on the DEFAULT rather than on the last one-off',
+        /let engine = \(launchDefaults\(\)\.engine \|\| 'claude'\);/.test(ext));
+    ok('the full launcher has an Engine row of its own',
+        /label: '\$\(server-process\) Engine'/.test(ext) && /act: 'engine'/.test(ext));
+    ok('…and builds the command line for THAT engine, not always claude\'s',
+        /const command = buildLaunchCommand\(spec\.exe, merged\);/.test(ext));
+    ok('…and can save it as the default for every session',
+        /engine: spec\.id === 'claude' \? '' : spec\.id,/.test(ext));
+
+    // ‼️ The refusal is not the picker's job alone — a webview, a keybinding and
+    // the bridge all reach the same two functions, so it lives THERE.
+    ok('a terminal launch refuses an engine this machine cannot run',
+        /const refused = engineRefusal\(engineMatrix\(\), spec\.id\);/.test(ext));
+    ok('…and so does a hosted one',
+        /const refused = engineRefusal\(engineMatrix\(\), merged\.engine\);/.test(ext));
+    ok('‼️ …and a terminal on an engine with no system-prompt channel SAYS the project was not sent',
+        /has no system-prompt channel, so this terminal session was NOT told about the project/.test(ext));
+    ok('‼️ a RESUME is pinned to the engine its transcript belongs to',
+        /engine: 'claude',[\s\S]{0,80}and the project it is TOLD about is its OWN/.test(ext));
+
+    const startOp = ext.slice(ext.indexOf("op: 'sessions.start'"),
+        ext.indexOf("op: 'sessions.rename'"));
+    ok('sessions.start takes the engine too', /engine\? \(claude — the default — or codex/.test(startOp));
+    ok('…refusing one that cannot run, in the RESPONSE',
+        /const engineRefused = engineRefusal\(engineMatrix\(\), merged\.engine\);/.test(startOp));
+    ok('…and stating what that engine changes about a turn',
+        /turnShape: spec\.shape,/.test(startOp) && /reportsCost: spec\.reportsCost/.test(startOp));
 }
 
 // ---------- and it is written down where users look ----------

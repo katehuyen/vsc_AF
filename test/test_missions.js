@@ -459,6 +459,67 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         fs.rmSync(dir, { recursive: true, force: true });
     }
 
+    // ---------- X-19: the ceiling that binds when the engine states no price --
+    //
+    // ‼️ THE HOLE THIS CLOSES. `maxCostUSD` is the only limit in a mission with
+    // real teeth — rounds and tasks are coarse, minutes only bite on something
+    // slow. A delegate running on a subscription engine reports NO price at all
+    // (the adaptor emits no `total_cost_usd` rather than a zero), so
+    // `totalCostUSD` never moves for it: a team of Codex delegates could burn a
+    // whole plan window against a $5 ceiling it can never reach. That is not a
+    // cap, it is the appearance of one.
+    {
+        const s = spec({ limits: { ...spec().limits, maxTokens: 100000 } });
+        const run = { ...newRun(), totalCostUSD: 0, totalTokens: 0 };
+        const rem0 = M.remainingBudget(s, run, 2000);
+        ok('a fresh run has its whole token ceiling', rem0.tokens === 100000);
+        ok('…and nothing stops it', M.guardReason(rem0) === null);
+
+        // A wave of plan-billed delegates: tokens moved, dollars did not.
+        const spent = { ...run, totalCostUSD: 0, totalTokens: 100000 };
+        const rem1 = M.remainingBudget(s, spent, 2000);
+        ok('‼️ tokens spent with no dollars spent still exhausts the budget',
+            rem1.costUSD === 5 && rem1.tokens === 0
+            && M.guardReason(rem1) === 'the token budget is spent');
+
+        // …and a mission written before this existed behaves exactly as it did.
+        const old = spec();                       // no maxTokens field at all
+        const remOld = M.remainingBudget(old, { ...run, totalTokens: 9e9 }, 2000);
+        ok('‼️ a spec with no token ceiling is never stopped by one',
+            remOld.tokens === Infinity && M.guardReason(remOld) === null);
+        ok('…and an explicit 0 means the same thing, deliberately',
+            M.remainingBudget(spec({ limits: { ...spec().limits, maxTokens: 0 } }),
+                { ...run, totalTokens: 9e9 }, 2000).tokens === Infinity);
+
+        ok('the default limits carry a real token backstop',
+            M.DEFAULT_MISSION_LIMITS.maxTokens === 2000000);
+
+        // ‼️ …AND THE PLANNER IS TOLD. A lead that only ever sees "$5.00 left"
+        // on a plan-billed team plans as if nothing had been spent.
+        const brief = M.buildBriefing(s, [{ name: 'coder' }], rem1);
+        ok('the briefing states the token budget when there is one',
+            /0k tokens/.test(brief));
+        ok('…and says nothing about tokens when there is no ceiling',
+            !/tokens/.test(M.buildBriefing(old, [{ name: 'coder' }], remOld)));
+    }
+
+    // ---------- X-18: a delegation's engine ----------
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'missions.ts'), 'utf8');
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('a team member can name its own engine', /engine\?: string;/.test(src));
+        ok('‼️ …and the PLANNER deliberately cannot, with the reason written down',
+            /THE PLANNER IS NOT ON THIS AXIS, AND THAT IS A DECISION/.test(src)
+            && /--disallowedTools/.test(src));
+        ok('the delegation really carries it: member, then mission, then claude',
+            /const wanted = \(member\?\.engine \|\| spec\.engine \|\| ''\)\.trim\(\);/.test(ext));
+        ok('…and the run counts tokens as well as dollars, both halves',
+            /run\.totalTokens = \(run\.totalTokens \?\? 0\) \+ \(pr\.tokens \?\? 0\);/.test(src)
+            && /round\.steps\.reduce\(\(a, s\) => a \+ \(s\.tokens \?\? 0\), 0\)/.test(src));
+        ok('…and a mission on an engine this machine cannot run is refused at CREATION',
+            /const refused = engineRefusal\(engineMatrix\(\), missionEngine\);/.test(ext));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

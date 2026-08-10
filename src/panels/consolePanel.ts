@@ -11,6 +11,8 @@ import {
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
+import { EngineId, engineNote, engineOf, ENGINES } from '../core/consoleEngine';
+import { EngineOption, engineRefusal } from '../core/engines';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
@@ -70,7 +72,19 @@ export interface ConsoleDeps {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     modelAliases(): string[];
-    launchDefaults(): { model?: string; effort?: string; permissionMode?: string };
+    /**
+     * ‼️ WHICH ENGINES THIS MACHINE CAN ACTUALLY START (X-18).
+     *
+     * A dep rather than a constant, and read on every payload rather than once:
+     * installing the CLI or signing in happens in a terminal, WHILE this panel
+     * is open, and a picker that had cached "not installed" for the session
+     * would go on refusing an engine the user has just made ready. It walks PATH
+     * and reads three small files, and this page rebuilds its snapshot several
+     * times a second while a turn runs — so the panel holds the answer for a few
+     * seconds (see `engineList`) rather than doing that walk per streamed line.
+     */
+    engines(): EngineOption[];
+    launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /**
      * Which sessions a live process already owns (the CLI's own registry).
      *
@@ -202,6 +216,40 @@ export class ConsolePanel {
     private composerProject = '';
 
     /**
+     * The engine the NEXT session will be started on, and the answer cache.
+     *
+     * The choice is per-composer for the same reason the project is: it is about
+     * the session being started, not about the window. It opens on
+     * `launchDefaults().engine` (empty = claude), so "always Codex" is settable
+     * once in Farm Settings instead of picked every time.
+     *
+     * ‼️ THE CACHE IS NOT AN OPTIMISATION LOOKING FOR A PROBLEM. `data()` runs on
+     * every event of every hosted session — several times a second while a turn
+     * streams — and the engine matrix walks every PATH entry looking for three
+     * commands. Held for 5s: long enough that a streaming turn does not walk
+     * PATH a hundred times, short enough that an install you did in a terminal
+     * is offered before you have finished reading the toast.
+     */
+    private composerEngine?: string;
+    private engineCache?: { at: number; list: EngineOption[] };
+    private static readonly ENGINE_TTL_MS = 5000;
+
+    private engineList(): EngineOption[] {
+        const now = Date.now();
+        if (!this.engineCache || now - this.engineCache.at > ConsolePanel.ENGINE_TTL_MS) {
+            this.engineCache = { at: now, list: this.deps.engines() };
+        }
+        return this.engineCache.list;
+    }
+
+    /** The composer's engine, defaulting to the launch default and then to
+     *  `claude` — resolved in one place so the payload, the refusal and the
+     *  spawn can never disagree about which engine was chosen. */
+    private chosenEngine(): string {
+        return (this.composerEngine ?? this.deps.launchDefaults().engine ?? '').trim() || 'claude';
+    }
+
+    /**
      * The agent this composer is FIXED to, when it was opened from that agent.
      * `presetAgent` seeds the picker once; this replaces the picker with the
      * name, because a composer reached from an agent's row is about that agent
@@ -212,9 +260,13 @@ export class ConsolePanel {
 
     static show(deps: ConsoleDeps, opts?: {
         sessionId?: string; agentId?: string; pinAgent?: boolean; projectId?: string;
+        /** the engine a start picker already settled — the composer opens on it
+         *  instead of asking the same question a second time */
+        engine?: string;
     }): void {
         const apply = (c: ConsolePanel): void => {
             if (opts?.sessionId) { c.selected = opts.sessionId; }
+            if (opts?.engine) { c.composerEngine = opts.engine; }
             if (opts?.agentId) {
                 // "talk to THIS agent": composer mode, nothing spawned yet
                 c.presetAgent = opts.agentId;
@@ -285,6 +337,23 @@ export class ConsolePanel {
             sessions: hosted.map(s => ({
                 id: s.id, agentId: s.agentId, agentName: s.agentName,
                 sessionId: s.sessionId ?? '', cwd: s.cwd,
+                // ‼️ WHICH ENGINE IS ANSWERING — on the row, not one click away.
+                // Two sessions of the same agent can be running on two different
+                // engines at the same moment, and everything the reader is about
+                // to do differs between them: whether a message typed now steers
+                // or is held, whether the pickers apply to this turn or the next,
+                // whether the figure they are looking at is a price or a token
+                // count. A badge is the cheapest place that difference can live.
+                engine: s.engine ?? 'claude',
+                engineLabel: engineOf(s.engine).label,
+                // …and what that engine CHANGES, derived where the transport is
+                // defined so a card cannot claim a shape the host does not have.
+                turnShape: engineOf(s.engine).shape,
+                steerable: engineOf(s.engine).liveControls,
+                // ‼️ X-19: does a finished turn come with a price at all. False
+                // means the strip shows tokens and says why there is no dollar —
+                // never a zero, which reads as "that turn was free".
+                reportsCost: engineOf(s.engine).reportsCost,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: (s.sessionId
@@ -322,7 +391,12 @@ export class ConsolePanel {
                 turnThinking: s.turnThinking ?? 0,
                 // …priced at the RUNNING turn's own model: a switch applies from
                 // the next turn, so `model` can already be the next one's.
-                turnCost: s.turnUsage
+                // ‼️ …and NOT ESTIMATED AT ALL on an engine that states no price
+                // (X-19). Our rate card is Anthropic's; running it over a
+                // ChatGPT plan's tokens would produce a number that is wrong
+                // twice over — wrong rates, and a price where the billing model
+                // has none. The tokens are exact and are what the strip shows.
+                turnCost: s.turnUsage && engineOf(s.engine).reportsCost
                     ? this.deps.estimateCost(s.turnModel || s.model || '', s.turnUsage) : 0,
                 // …and what it is thinking WITH — the CLI's own answer for this
                 // turn (get_settings.applied), never the pickers: those are what
@@ -372,7 +446,24 @@ export class ConsolePanel {
             permissions: PERMISSION_CHOICES,
             livePermissions: PERMISSION_MODES_LIVE,
             grants: PERMISSION_GRANTS,
-            defaults: { model: d.model ?? '', effort: d.effort ?? '', permissionMode: d.permissionMode ?? '' },
+            // ‼️ THE ENGINE AXIS (X-18). Every row carries whether it can run
+            // here and, when it cannot, the ONE thing to do about it — the
+            // picker offers it disabled with that sentence attached rather than
+            // hiding it, because an engine that is simply absent from the list
+            // is indistinguishable from an engine this build does not have.
+            engines: this.engineList().map(e => ({
+                ...e,
+                shape: ENGINES[e.id].shape,
+                steerable: ENGINES[e.id].liveControls,
+                reportsCost: ENGINES[e.id].reportsCost,
+                // one line: what changes about talking to it
+                note: engineNote(e.id)
+            })),
+            engine: this.chosenEngine(),
+            defaults: {
+                engine: d.engine ?? '', model: d.model ?? '',
+                effort: d.effort ?? '', permissionMode: d.permissionMode ?? ''
+            },
             // The page-wide drop zone, and a way to turn it off. It is on by
             // default; the switch exists because a drag-and-drop that misbehaves
             // on a particular machine must be something the user can END, not
@@ -559,6 +650,13 @@ export class ConsolePanel {
                 this.composerProject = str('id');
                 this.refresh();
                 break;
+            // Which engine the next session opens on. It is only ever a choice
+            // about the session being started — a running one cannot change
+            // engine, and the composer does not draw the box for it.
+            case 'setEngine':
+                this.composerEngine = str('id');
+                this.refresh();
+                break;
             // "this composer is no longer about that agent" — the way out of a
             // pin, so a fixed agent is never a trap (see pinnedAgent).
             case 'unpinAgent':
@@ -572,8 +670,21 @@ export class ConsolePanel {
                     return;
                 }
                 const d = this.deps.launchDefaults();
+                // ‼️ THE ENGINE IS CHECKED HERE, NOT TRUSTED FROM THE PAGE. The
+                // picker already disables what cannot run, but the page is a
+                // webview: the refusal has to live on this side of the wall, and
+                // it is the same sentence every other entry point uses
+                // (engineRefusal). Starting on an absent CLI produces a session
+                // that dies on its first turn with a shell error.
+                const engine = (str('engine') || this.chosenEngine()).trim().toLowerCase();
+                const refused = engineRefusal(this.engineList(), engine);
+                if (refused) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+                    return;
+                }
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    engine: engine as EngineId,
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
@@ -587,6 +698,12 @@ export class ConsolePanel {
                 });
                 // the next new session starts its own two answers from scratch
                 this.composerProject = '';
+                // ‼️ …but NOT the engine. A project is about one piece of work
+                // and the next session is usually different work; an engine is
+                // about which machine you are working on today, and re-picking
+                // it after every start is the kind of friction that makes a
+                // second engine unused. It stays until it is changed, or until
+                // the window goes away and the default takes over again.
                 this.pinnedAgent = undefined;
                 this.refresh();
                 break;

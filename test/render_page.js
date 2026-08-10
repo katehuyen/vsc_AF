@@ -148,6 +148,26 @@ function themeCss(name) {
     return ':root {\n' + Object.keys(t).map(k => `    --vscode-${k}: ${t[k]};`).join('\n') + '\n}';
 }
 
+/**
+ * Put a page's slot content back inside its shell.
+ *
+ * Only an EMPTY element is filled — `<div id="x"></div>` — which is exactly what
+ * a slot is in the markup a page ships. Anything the shell already wrote stays
+ * as it is, so this can never overwrite real content, and an id the shell does
+ * not contain is simply skipped.
+ */
+function inlineSlots(app, els) {
+    let out = app;
+    for (const id of Object.keys(els)) {
+        if (id === 'app') { continue; }
+        const inner = els[id] && els[id].innerHTML;
+        if (!inner || !String(inner).trim()) { continue; }
+        const re = new RegExp(`(<(\\w+)[^>]*\\bid="${id}"[^>]*>)(</\\2>)`);
+        if (re.test(out)) { out = out.replace(re, (_m, open, _tag, close) => open + inner + close); }
+    }
+    return out;
+}
+
 function listFixtures() {
     if (!fs.existsSync(FIXTURES)) { return []; }
     return fs.readdirSync(FIXTURES).filter(f => f.endsWith('.js')).map(f => f.replace(/\.js$/, ''));
@@ -193,10 +213,18 @@ function main() {
         // "does this markup exist anywhere" and wrong for a picture: an element
         // the page filled a second time drew the whole page twice, one under the
         // other, and a reviewer would have been comparing a rendering artefact.
-        // Pages that render into slots instead (the Console) have an empty #app,
-        // and for those the concatenation is still the only way to see anything.
+        // Pages that render into slots instead have an empty #app, and for those
+        // the concatenation is still the only way to see anything.
+        //
+        // ‼️ …AND ONE PAGE DOES BOTH, WHICH IS THE CASE THAT DREW NOTHING. The
+        // Console writes a SHELL into #app and then fills a dozen empty slots
+        // inside it (the session list, the conversation, the working strip, the
+        // line under the box). Taking #app alone photographed the shell with
+        // every slot empty — a picture of a page that has not loaded — and taking
+        // the concatenation photographed the slots OUTSIDE the layout that gives
+        // them their width. So the slots are put back where they belong first.
         const app = r.els.app && r.els.app.innerHTML;
-        const body = app && app.trim() ? app : r.html();
+        const body = app && app.trim() ? inlineSlots(app, r.els) : r.html();
         return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page">${body}</div>`;
     }).join('\n');
 

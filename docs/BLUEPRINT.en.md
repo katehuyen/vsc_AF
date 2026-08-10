@@ -1486,6 +1486,60 @@ engine that is not installed).
 The **Engines** section in Farm Settings is the summary of this page; the depth
 is here.
 
+### Choosing one — the engine axis (3.102.0) {#engine-axis}
+
+Knowing which engines work was half the job. The other half is being able to
+**start something on one**, and until 3.102.0 every button in the extension went
+to `claude` without a word.
+
+**Where you choose it.** The Console composer has an engine box beside the agent;
+▶ on a sidebar row asks it as its first question (*Runs on*), as does the full
+**Start Session…** launcher; the New-task form has an **Engine** row, which
+schedules and triggers inherit because they are tasks that have not happened yet;
+a mission takes one for its delegations, and a team member may override it. Set
+the one you use most in `agentFarm.launchDefaults.engine` and it is the answer
+everywhere until you say otherwise. **You never have to choose between them:** a
+Claude session and a Codex session run side by side in the same window, and every
+row says which is which.
+
+**An engine that cannot run here is offered and refused.** It stays in the list —
+hiding it would make "this build has no Codex" and "your Codex is not signed in"
+look identical — but it cannot be chosen, and the row carries the one thing to do
+about it. The refusal is one sentence written in one place, so a panel, a quick
+pick, a task and the bridge all say the same thing.
+
+**‼️ The two engines are not two spellings of the same thing, and the surfaces
+say so.** Claude Code is one long-lived process: a message typed mid-turn steers
+that turn, and model, effort and permissions are live controls. `codex exec` is
+**one process per turn** — a message typed mid-turn is HELD until the turn ends,
+the pickers are the *next* turn's flags, and the permission mode becomes a
+**sandbox chosen up front**, because this engine has nobody to ask ("Default"
+therefore means read-only there). A running session wears its engine as a badge
+on its card and the line under the composer spells out what that changes.
+
+**The project brief travels differently.** Claude takes it as an extra system
+prompt on the command line. Codex has no such channel — prompt, `AGENTS.md`,
+config, nothing else — so in the Console the brief rides inside the **first
+prompt**, fenced, once. A *terminal* session on that engine is not told at all
+and says so: typing into your own terminal on your behalf is not this
+extension's job.
+
+**‼️ A subscription engine states no price, and $0.00 is not a smaller number —
+it is a wrong one.** Codex runs against a plan and reports tokens, never a
+per-turn cost, so every figure about it is in tokens and says why there is no
+money beside it: the running turn, the session line, the card hover, the line
+that closes a turn, and the bridge (`reportsCost` on `tasks.list` / `tasks.add`).
+Nothing is estimated for it either — our rate card is Anthropic's, and running it
+over a ChatGPT plan's tokens would be wrong twice over.
+
+**And a cost ceiling means nothing on such an engine**, which is why missions
+grew a second currency. `maxCostUSD` is the only mission limit with real teeth;
+a plan-billed delegate never moves it, so a team of them could burn a whole plan
+window against a $5 ceiling it can never reach. `maxTokens` (default 2 000 000,
+`0` = none) is checked alongside it, whichever runs out first stops the run, and
+the planner is told the token budget in its briefing — a lead that only ever saw
+"$5.00 left" would plan as if nothing had been spent.
+
 ## Media Production Pipeline
 
 ### 🎬 Studio — the pipeline on one page (3.30.0) {#studio}

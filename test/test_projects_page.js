@@ -104,8 +104,23 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
     // ‼️ ONE read, used for both halves. Reading activeProjectId() again for the
     // stamp could land the other side of a change and file a session under a
     // project it was never told about.
+    // ‼️ Scoped to the function instead of counted in characters. The rule is
+    // "ONE read of the project, used for both halves"; a fixed-width window
+    // around it fails every time an unrelated line lands in between (it did,
+    // when the engine axis arrived), which teaches the next person to widen the
+    // number rather than to check the rule.
+    const startAt = extTs.indexOf('const startClaudeSession = (');
+    const startClaude = extTs.slice(startAt,
+        extTs.indexOf('// Claude only announces its session id via hook events', startAt));
     ok('…and what a terminal session is TOLD and what it is FILED under come from one read',
-        /const projectId = project !== undefined \? project : activeProjectId\(\);[\s\S]{0,600}projectContextFileFor\(projectId \|\| undefined\)[\s\S]{0,400}sessionId, projectId\);/.test(extTs));
+        /const projectId = project !== undefined \? project : activeProjectId\(\);/.test(startClaude)
+        && /projectContextFileFor\(projectId \|\| undefined\)/.test(startClaude)
+        && /sessionId, projectId\);/.test(startClaude)
+        // …and only ONE read of the window: the context file and the stamp both
+        // come off `projectId`, so a second `activeProjectId()` CALL here would
+        // be the bug this rule exists to prevent. (The prose above it names the
+        // function, hence `activeProjectId();` with the semicolon.)
+        && (startClaude.match(/activeProjectId\(\);/g) || []).length === 1);
     ok('…and stamps it the moment the live monitor binds an id to that launch',
         /if \(hit\.projectId\) \{ stampSessionProject\(s\.sessionId, hit\.projectId\); \}/.test(extTs));
 

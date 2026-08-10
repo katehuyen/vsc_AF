@@ -127,7 +127,9 @@ export function optStr(args: Record<string, unknown>, key: string): string {
  */
 export function bridgeRunDimensions(args: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const k of ['model', 'effort', 'permissionMode', 'cli', 'workDir']) {
+    // `engine` rides here too (X-18): a schedule and a trigger are tasks that
+    // have not happened yet, and every dimension a task has is one they have.
+    for (const k of ['engine', 'model', 'effort', 'permissionMode', 'cli', 'workDir']) {
         const v = optStr(args, k);
         if (v) { out[k] = v; }
     }

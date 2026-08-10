@@ -292,6 +292,51 @@ const by = (list, id) => list.find(e => e.id === id);
         ok('the panel has a command and Settings is the summary that opens it',
             /agentfarm\.openEngines/.test(ext2) && /openEngines: \(\) => \{ EnginesPanel\.show/.test(ext2));
 
+        // ---------- X-18: the axis every start surface shares ----------
+        //
+        // ‼️ ONE REFUSAL, WORDED ONCE. Five entry points can start a session
+        // (the Console composer, the ▶ picker, the full launcher, a task, the
+        // bridge) and each of them checking readiness in its own words is five
+        // chances to word it wrong. `engineOptions` narrows the heavy answer;
+        // `engineRefusal` is the one sentence.
+        {
+            const { engineOptions, engineRefusal } =
+                require(path.join(__dirname, '..', 'out', 'core', 'engines.js'));
+            const ready = readEngines(probe({
+                path: ['claude', 'codex'],
+                files: {
+                    '.claude/.credentials.json': JSON.stringify({ claudeAiOauth: { expiresAt: 1 } }),
+                    '.codex/auth.json': JSON.stringify({
+                        auth_mode: 'chatgpt', tokens: { access_token: 'x' }
+                    })
+                }
+            }));
+            const opts = engineOptions(ready);
+            ok('every engine becomes exactly one picker row', opts.length === ready.length);
+            ok('…carrying the three things a picker needs and nothing heavier',
+                opts.every(o => typeof o.label === 'string' && typeof o.ready === 'boolean'
+                    && typeof o.next === 'string' && typeof o.billing === 'string'));
+            ok('…and HOW it is paid for, which is the line under its name',
+                by(opts, 'codex').auth === 'subscription');
+
+            ok('an engine that can run is not refused', !engineRefusal(opts, 'codex'));
+            ok('‼️ …and an empty engine is Claude, so nothing written before this '
+                + 'axis existed starts being refused',
+                !engineRefusal(opts, '') && !engineRefusal(opts, undefined));
+            ok('…a name this build does not know is refused WITH the real list',
+                /nonsense/.test(engineRefusal(opts, 'nonsense') || '')
+                && /claude/.test(engineRefusal(opts, 'nonsense') || ''));
+
+            // ‼️ The refusal is not "not configured" — that is the phrase this
+            // whole item exists to delete. It carries the row's own `next`.
+            const half = engineOptions(readEngines(probe({ path: ['claude'] })));
+            const why = engineRefusal(half, 'codex') || '';
+            ok('‼️ an engine that cannot run is refused with the ONE thing to do about it',
+                /cannot run on this machine/.test(why) && /npm install -g @openai\/codex/.test(why));
+            ok('…named by its label, not by its id — the picker showed the label',
+                /^Codex /.test(why));
+        }
+
         console.log(`${pass} passed, ${fail} failed`);
         process.exit(fail ? 1 : 0);
     })();

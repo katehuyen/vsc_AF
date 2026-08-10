@@ -443,6 +443,27 @@
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
         .pchip.none { opacity:.45; background:none; color:inherit; }
         .pchip-hint { opacity:.6; font-style:italic; }
+        /* ‼️ WHICH ENGINE — a badge, and only when it is not the default (X-18).
+           It borrows the project badge's shape on purpose: the two answer the
+           same kind of question about a row ("what is this session, really")
+           and a second visual language for it would be noise. The colour is the
+           editor's own "different" colour rather than a status colour: an engine
+           is not a warning. */
+        /* ‼️ flex:none IS THE WHOLE FIX, AND IT WAS FOUND BY LOOKING. Inside the
+           name span — which truncates, as a name should — the badge on the
+           BUSIEST card read "C…": the one row where knowing the engine matters
+           most was the one row that could not say it. It is a sibling of the
+           name now, and it never shrinks; the name gives up the space instead. */
+        .ebadge { flex:none; font-size:9px; padding:0 5px; border-radius:7px; cursor:help;
+            border:1px solid var(--vscode-charts-purple,#b180d7);
+            color:var(--vscode-charts-purple,#b180d7); white-space:nowrap; }
+        .srow .h .n { flex:1 1 auto; min-width:0; }
+        /* the line under the controls: what this engine changes about talking */
+        .enote { font-size:10px; opacity:.75; margin-top:6px; line-height:1.45; }
+        .enote b { opacity:1; }
+        .enote .bad { display:block; margin-top:2px; color:var(--vscode-editorWarning-foreground,#cca700); }
+        /* "no price" is a FACT, not a missing value — quiet, never alarming */
+        .noprice { opacity:.6; font-style:italic; }
         /* the same fact, on a session row: which project it was started under */
         .pbadge { font-size:9px; opacity:.75; padding:0 4px; border-radius:7px;
             border:1px solid var(--vscode-widget-border,#4443); }
@@ -589,6 +610,31 @@
      */
     const spend = (cost, tokens, wTokens) =>
         `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTokW(tokens, wTokens)} tokens)` : ''}`;
+
+    /**
+     * ‼️ X-19 — AN ENGINE THAT STATES NO PRICE IS NOT AN ENGINE THAT COST ZERO.
+     *
+     * Codex runs against a ChatGPT plan: it counts tokens and never reports a
+     * dollar figure for a turn, and the adaptor deliberately emits no
+     * `total_cost_usd` rather than a zero (codexproto.ts). So every line that
+     * would have printed `$0.0000` here goes through this instead — the tokens,
+     * which are the real measure on a plan, and the reason there is no money
+     * beside them. A $0.00 on a session that has just spent forty thousand
+     * tokens is not a smaller number, it is a WRONG one: it reads as "that was
+     * free" and it is the single most misleading thing this page could show.
+     *
+     * `reportsCost` comes off the session's own engine (consoleEngine.ts), so a
+     * window holding one Claude session and one Codex session prints money on
+     * the first row and tokens on the second, correctly, at the same time.
+     */
+    const NO_PRICE_TIP = 'This engine runs on a plan: it counts tokens and never states a per-turn price, '
+        + 'so there is no dollar figure to show. A $0.00 here would read as "free", which is why nothing is invented.';
+
+    function engineSpend(s, cost, tokens, wTokens) {
+        if (!s || s.reportsCost !== false) { return spend(cost, tokens, wTokens); }
+        const tok = tokens ? `${C.fmtTokW(tokens, wTokens)} tokens` : 'no tokens yet';
+        return `<span title="${C.esc(NO_PRICE_TIP)}">${tok} <span class="noprice">· on a plan, no price</span></span>`;
+    }
     /**
      * On a CARD there is room for one figure, and it is the tokens.
      *
@@ -602,9 +648,13 @@
     const tokBadge = (tokens, wTokens) => (tokens ? `${C.fmtTokW(tokens, wTokens)} tok` : '');
     // The card has room for one line of hover, so the weighted figure is spelled
     // out there rather than left as a glyph — see charts.js WEIGHTED_TIP.
-    const tokTip = (tokens, cost, wTokens) => (tokens ? `${C.fmtTok(tokens)} raw tokens` : 'nothing spent yet')
-        + (wTokens ? ` · ⚖ ${C.fmtTok(Math.round(wTokens))} against the 5h limit` : '')
-        + (cost ? ` · ${C.fmtUSD(cost)} spent` : '');
+    // ‼️ It takes the SESSION, not three numbers, because whether the money half
+    // of this line may be written at all is a fact about the session's engine.
+    const tokTip = (s, cost) => ((s && s.tokens) ? `${C.fmtTok(s.tokens)} raw tokens` : 'nothing spent yet')
+        + ((s && s.wTokens) ? ` · ⚖ ${C.fmtTok(Math.round(s.wTokens))} against the 5h limit` : '')
+        + (s && s.reportsCost === false
+            ? ` · ${s.engineLabel} runs on a plan — no per-turn price`
+            : (cost ? ` · ${C.fmtUSD(cost)} spent` : ''));
 
     /**
      * ‼️ WHAT THE SESSION HAS SPENT — WHILE IT IS SPENDING IT.
@@ -885,7 +935,15 @@
         if (m.ms) { bits.push(m.ms >= 60000 ? `${Math.round(m.ms / 6000) / 10}m` : `${Math.round(m.ms / 100) / 10}s`); }
         // the same shape the live strip used while this turn was running, so the
         // estimate and the CLI's own figure land in the same place
-        if (m.cost || m.tokens) { bits.push(spend(m.cost, m.tokens)); }
+        // ‼️ …and on a plan-billed engine that shape is the tokens alone. The
+        // row is plain text (it is escaped below), so this branch says the words
+        // rather than reaching for the styled version.
+        if (m.cost || m.tokens) {
+            const cur = sel();
+            bits.push(cur && cur.reportsCost === false
+                ? `${C.fmtTok(m.tokens)} tokens · on a plan, no price`
+                : spend(m.cost, m.tokens));
+        }
         if (!bits.length) { return ''; }
         return `<div class="msg res"><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
     }
@@ -1118,7 +1176,8 @@
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost, s.wTokens))}">${tokBadge(s.tokens, s.wTokens)}</span>
+                    ${engineBadge(s)}
+                    <span class="m" title="${C.esc(tokTip(s, sessionSpend(s).cost))}">${tokBadge(s.tokens, s.wTokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1295,7 +1354,7 @@
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost, r.wTokens))}">${tokBadge(r.tokens, r.wTokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r, r.cost))}">${tokBadge(r.tokens, r.wTokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // How many of how many — a list that silently ends at fifteen is why
         // the filter had to exist in the first place.
@@ -1446,7 +1505,7 @@
         const word = t.outcome === 'interrupted' ? 'last turn interrupted'
             : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
         const money = t.cost || t.tokens
-            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens, t.wTokens)}</span>`
+            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${engineSpend(s, t.cost, t.tokens, t.wTokens)}</span>`
             : '';
         return stripHtml(
             `<span class="dspin">${glyph}</span> <b>${word}</b>`,
@@ -1483,8 +1542,12 @@
         // ‼️ It says "this turn" out loud. The line under the box says "this
         // session" and the two are three centimetres apart; unlabelled, the
         // smaller number reads as a second opinion about the same thing.
+        // ‼️ …and on an engine that states no price there is nothing to estimate
+        // and no "~" to print: the tokens are exact, the money does not exist.
         const cost = s.turnTokens || s.turnCost
-            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens)} this turn</span>`
+            ? (s.reportsCost === false
+                ? ` · <span title="${C.esc(NO_PRICE_TIP)}">${C.fmtTokW(s.turnTokens, s.turnWTokens)} tokens this turn</span>`
+                : ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens)} this turn</span>`)
             : '';
         // ‼️ "⎋ Interrupt stops it" used to close this line and is gone on
         // purpose: it is a permanent instruction about a button that is on
@@ -1624,16 +1687,18 @@
         // (The turn that is running has its own line above the box — the two
         // used to say "ctx" at each other and nothing else.)
         const sp = sessionSpend(s);
-        const spTip = sp.est
-            ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
-            : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
+        const spTip = s.reportsCost === false
+            ? NO_PRICE_TIP
+            : sp.est
+                ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
+                : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
         // ‼️ THE LEGEND HANGS ON THE SESSION ID. The step chips are one glyph
         // each and there is no room on this strip for a key, so the one label
         // that is always on screen and never moves carries it: hover the id and
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+            : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
@@ -1910,6 +1975,60 @@
             </span>`;
     }
 
+    /**
+     * ‼️ THE ENGINE PICKER — AND WHY AN ENGINE THAT CANNOT RUN IS STILL IN IT.
+     *
+     * Hiding it would be the easy version and the wrong one: an engine missing
+     * from the list is indistinguishable from an engine this build does not
+     * have, so the user goes looking for a setting that does not exist. It is
+     * offered `disabled`, with its own row saying WHY and the one thing to do —
+     * `EngineStatus.next`, the same sentence the Engines page prints and the
+     * same one the bridge refuses with.
+     */
+    function engineOptionsHtml(cur) {
+        return (DATA.engines || []).map(e => {
+            const mark = e.ready ? '' : ' — ' + (e.auth === 'none' ? 'not signed in' : 'not installed');
+            return `<option value="${C.esc(e.id)}"${e.id === cur ? ' selected' : ''}${e.ready ? '' : ' disabled'}
+                    title="${C.esc(e.next)}">${C.esc(e.label)}${C.esc(mark)}</option>`;
+        }).join('');
+    }
+
+    /** The engine currently chosen for a NEW session, as the page knows it. */
+    const engineNow = () => (DATA.engine || 'claude');
+    const engineRow = id => (DATA.engines || []).find(e => e.id === id);
+
+    /**
+     * The one line under the composer's controls that says what this engine
+     * CHANGES — drawn only when it is not the default, because "Claude Code
+     * behaves like Claude Code" is not information.
+     *
+     * It is the difference a person would otherwise discover by losing a
+     * message: on a per-turn engine what you type mid-turn is held, the pickers
+     * are the next turn's flags, and the permission mode is a sandbox picked up
+     * front. That is too much to learn from a tooltip on a dropdown.
+     */
+    function engineNoteHtml(id) {
+        const e = engineRow(id);
+        if (!e || e.id === 'claude') { return ''; }
+        return `<div class="enote"><b>${C.esc(e.label)}</b> ${C.esc(e.note || '')}
+            ${e.ready ? '' : `<span class="bad">${C.esc(e.next)}</span>`}</div>`;
+    }
+
+    /**
+     * The badge a card / a running composer wears. Claude wears none: it is the
+     * default and a badge on every row is a badge nobody reads. A second engine
+     * is the exception, so it is the thing that gets marked.
+     */
+    function engineBadge(s) {
+        if (!s || !s.engine || s.engine === 'claude') { return ''; }
+        const tip = `This session runs on ${s.engineLabel}`
+            + (s.turnShape === 'perTurn'
+                ? ' — one process per TURN: a message typed while it is working is held until the turn ends, and the model/effort/permission boxes apply to the NEXT turn.'
+                : '.')
+            + (s.reportsCost ? '' : ' It runs on a plan, so it counts tokens and states no price.');
+        return `<span class="ebadge" title="${C.esc(tip)}">${C.esc(s.engineLabel)}</span>`;
+    }
+
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
             `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id)}</option>`).join('');
@@ -1934,18 +2053,35 @@
         // it just skipped the questions. Effort used to be printed here as dead
         // text next to a live model picker, which said the panel could not
         // change it. It can.
+        // ‼️ THE SAME THREE WORDS MEAN TWO THINGS, SO THEY ARE LABELLED TWICE.
+        // On Claude these boxes are control requests the CLI takes mid-turn; on
+        // a per-turn engine there is no channel to ask on and they are simply
+        // the flags of the NEXT spawn. A tooltip that promised "applied live" on
+        // an engine that cannot do it would be the panel lying about the one
+        // thing the reader is deciding.
+        const live = !s || s.steerable !== false;
+        const modelTip = live
+            ? 'Switches the model mid-conversation — the same thing /model does in a terminal. It applies from the next turn.'
+            : 'This engine runs one process per turn, so there is nothing to switch mid-conversation: this is the model the NEXT turn will be spawned with.';
+        const effortTip = live
+            ? 'How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.'
+            : 'How hard it thinks per turn — passed to the NEXT turn as model_reasoning_effort. There is no running process to ask.';
+        const permTip = live
+            ? 'What it may do without asking — applied live. Fewer rows than the start picker on purpose: a running session can only be moved to modes the CLI accepts mid-conversation, and it says so out loud when it refuses one.'
+            : 'What the NEXT turn may do. ‼️ This engine cannot stop and ask, so the mode becomes a SANDBOX chosen up front: "Default" means read-only here — the only honest thing an engine with nobody to ask can do — and acceptEdits means it may write inside the folder without asking.';
         const controls = s
             ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
                     ${C.esc(s.agentName)}
                 </span>
-                <label class="permlbl" title="Switches the model mid-conversation — the same thing /model does in a terminal. It applies from the next turn.">model
+                ${engineBadge(s)}
+                <label class="permlbl" title="${C.esc(modelTip)}">model
                     <select id="c-model-live">${opts(DATA.models, s.model)}</select>
                 </label>
-                <label class="permlbl" title="How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.">effort
+                <label class="permlbl" title="${C.esc(effortTip)}">effort
                     <select id="c-effort-live">${opts(DATA.efforts, s.effort)}</select>
                 </label>
-                <label class="permlbl" title="What it may do without asking — applied live. Fewer rows than the start picker on purpose: a running session can only be moved to modes the CLI accepts mid-conversation, and it says so out loud when it refuses one.">permissions
-                    <select id="c-perm">${opts(DATA.livePermissions || DATA.permissions, s.permissionMode)}</select>
+                <label class="permlbl" title="${C.esc(permTip)}">permissions
+                    <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
                 </label>
                 ${window.AFFilter.multi({
                     // allLabel is what follows "show: " — repeating the word
@@ -1970,6 +2106,7 @@
                     <option value="">Choose an agent…</option>
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
                 </select>`}
+                <select id="c-engine" title="Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.">${engineOptionsHtml(engineNow())}</select>
                 <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
                 <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
                 <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
@@ -2009,6 +2146,7 @@
                             ${window.AFTextTools.html('c')}
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
+                        <div id="c-enote"></div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
                     </div>
                 </div>
@@ -2148,6 +2286,11 @@
         // a second answer to "what am I working on", and the two would disagree
         // within a minute.
         byId('c-proj', 'change', e => vscode.postMessage({ type: 'setProject', id: e.target.value }));
+        // The engine of the NEXT session. It goes back to the extension rather
+        // than into `st` because the refusal lives there (a webview's disabled
+        // attribute is a courtesy, not a guard) and because the choice has to
+        // survive a repaint that rebuilds this whole row.
+        byId('c-engine', 'change', e => vscode.postMessage({ type: 'setEngine', id: e.target.value }));
         // giving the pin back: the picker returns, and st keeps whatever agent
         // was pinned as its starting selection
         byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));
@@ -2575,6 +2718,11 @@
                     type: 'queueTake', id: DATA.selected, index: Number(b.dataset.qdrop)
                 })));
         }
+        // What the engine changes — under the controls, for the engine that is
+        // actually in play: the running session's, or the one the composer is
+        // about to start on.
+        slot('c-enote', engineNoteHtml(s ? s.engine : engineNow()));
+
         // deliberately NOT a slot: it repaints itself on a timer while the turn
         // runs, so its html is never what `written` last saw
         paintWorking();
@@ -2960,6 +3108,7 @@
             }
             vscode.postMessage({
                 type: 'start', agentId: st.agentId, text: value,
+                engine: engineNow(),
                 model: st.model, effort: st.effort, permissionMode: st.permissionMode,
                 attach: files
             });

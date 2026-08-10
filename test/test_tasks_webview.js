@@ -1107,5 +1107,50 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     ok('an empty run list says so', html().includes('Nothing has run yet'));
 }
 
+// ---------- X-18: an unattended run states its ENGINE too ----------
+//
+// ‼️ AND THIS IS THE SURFACE WHERE GETTING IT WRONG IS QUIETEST. Nobody is
+// sitting in front of a task: an engine that is not installed does not fail
+// visibly, it writes "command not found" into an archived file somebody opens
+// hours later. So the form refuses it up front, the runner refuses it again
+// before the spawn, and the archive says which engine produced what it holds.
+{
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+    const tasks = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.js').replace('.js', '.ts'), 'utf8');
+
+    ok('the form has an engine row', /<select id="nt-engine">/.test(page));
+    ok('…drawn only when there is more than one engine to choose between',
+        /if \(list\.length < 2\) \{ return ''; \}/.test(page));
+    ok('‼️ …offering one that cannot run as disabled, with the reason on the row',
+        /\$\{e\.ready \? '' : ' disabled'\}/.test(page) && /cannot run here/.test(page));
+    ok('…and it says the two things that differ on a per-turn engine',
+        /becomes a SANDBOX chosen up front/.test(page) && /counts tokens instead/.test(page));
+    ok('the value is read, carried and re-seeded like every other dimension',
+        /v\('engine', 'engine'\)/.test(page)
+        && /engine: t\.engine \?\? '',/.test(panel)
+        && /\.\.\.\(str\('engine'\) \? \{ engine: str\('engine'\) \} : \{\}\)/.test(panel));
+
+    ok('‼️ the runner refuses an engine this machine cannot run, before the spawn',
+        /engineRefusal\?: \(engine: string \| undefined\) => string \| undefined;/.test(tasks)
+        && /const refused = this\.opts\.engineRefusal\?\.\(task\.engine\);/.test(tasks));
+    ok('…and only when the task names one — a CLI profile is a different mechanism',
+        /if \(task\.engine && !task\.cli\)/.test(tasks));
+    ok('a per-turn engine gets its own command, not claude\'s flags',
+        /codexRunArgs\(\{/.test(tasks) && /codexTuiArgs\(\{/.test(tasks));
+    ok('‼️ …with the prompt on stdin, which is what lets it carry the project brief',
+        /stdio: \[perTurn \? 'pipe' : 'ignore', 'pipe', 'pipe'\]/.test(tasks)
+        && /codexContextPrefix\(this\.readContext\(ctxFile\)\)/.test(tasks));
+    ok('…and agentFarm.taskExtraArgs, the model policy and --output-format json '
+        + 'are NOT passed to a binary that has never heard of them',
+        /if \(!profile && !perTurn\)/.test(tasks)
+        && /task\.outputContract === 'json' && !perTurn/.test(tasks));
+    ok('the archive says which engine produced it, and what the sandbox was',
+        /- Engine: \$\{engine\.label\}/.test(tasks)
+        && /- Sandbox: \$\{codexSandboxFor\(task\.permissionMode\)\}/.test(tasks));
+    ok('‼️ …and that the json contract was not applied, where a reader will find it',
+        /json was NOT applied/.test(tasks));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
