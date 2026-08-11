@@ -417,13 +417,6 @@
                 <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
                 <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)"><span class="nt-trashic">🗑</span> Delete</button>
             </span>
-            <span class="nt-grp nt-bulk">
-                <select id="nt-bulkproj" title="File the selected notices (or everything shown) under a project — the empty option takes the stamp off. The same mark decides which project's Work tab and timeline they appear on.">
-                    <option value="" selected>File under…</option>
-                    <option value="__clear__">— take out of any project</option>
-                    ${(DATA.projects || []).map(p => `<option value="${esc(p.id)}">${esc((p.icon ? p.icon + ' ' : '') + p.name)}</option>`).join('')}
-                </select>
-            </span>
             <span class="nt-grp">
                 <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept"><span class="nt-cleardot">●</span> Clear read</button>
             </span>
@@ -434,9 +427,50 @@
             </span>
             <span class="nt-grp">
                 <button class="secondary" data-hact="needs" title="Open the Needs You page">🙋 Needs You</button>
+                ${fileUnderHtml()}
                 <button data-hact="export">⬇ Export MD</button>
                 <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${undo ? 'Restore the ' + undo + ' notice(s) just deleted' : 'Nothing to undo'}">↶ Undo</button>
             </span>`;
+    }
+
+    /**
+     * ‼️ WHAT "File under…" IS, SAID ONCE AND PROPERLY (X-28).
+     *
+     * It is the bulk half of the project stamp. A notice carries a `projectId`
+     * (Faz 5), and that one field is what puts it on a project's Work tab, in
+     * its timeline and behind its filters — a notice with no stamp belongs to
+     * nothing and is only ever found on this page. Every notice can be filed
+     * one at a time from its own row; this box files EVERY TICKED one at once,
+     * or everything currently shown when nothing is ticked, which is the same
+     * "selected, else shown" contract the ✓ Read and 🗑 Delete buttons beside
+     * it already use. `— take out of any project` is the same gesture in
+     * reverse, and it is the only way to unfile in bulk.
+     *
+     * ‼️ AND IT IS A FIXED WIDTH, WHICH IS NOT A TIDY-UP. A `<select>` sizes
+     * itself to its WIDEST OPTION, so this control grew with the length of the
+     * user's longest project name — one long name and a picker sitting among
+     * buttons was three buttons wide. It is capped at two buttons, drawn at the
+     * buttons' own 12px, and what no longer fits is in the hover panel rather
+     * than in the layout.
+     */
+    function fileUnderHtml() {
+        const projects = DATA.projects || [];
+        const trigger = `<select id="nt-bulkproj" class="nt-fileunder">
+                <option value="" selected>File under…</option>
+                <option value="__clear__">— take out of any project</option>
+                ${projects.map(p => `<option value="${esc(p.id)}">${esc((p.icon ? p.icon + ' ' : '') + p.name)}</option>`).join('')}
+            </select>`;
+        return window.AFTip.wrap(trigger,
+            `File under · ${projects.length} project${projects.length === 1 ? '' : 's'}`,
+            [
+                'Stamps the ticked notices with a project — or everything shown, when nothing is ticked.',
+                'The stamp is what puts a notice on that project\'s Work tab, in its timeline and behind its filters.',
+                '"— take out of any project" is the same move in reverse: it lifts the stamp off.',
+                '',
+                projects.length
+                    ? 'Projects: ' + projects.map(p => (p.icon ? p.icon + ' ' : '') + p.name).join(' · ')
+                    : 'No projects declared yet — make one on the ◧ Projects page.'
+            ].join('\n'));
     }
 
     const STYLE = `<style>
@@ -461,6 +495,18 @@
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }
         .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
+        /* ‼️ X-28 — A SELECT AMONG BUTTONS IS SIZED BY ITS WIDEST OPTION, WHICH
+           IS THE USER'S LONGEST PROJECT NAME. So it grew past three buttons for
+           a control that does one thing, and it grew AGAIN every time a project
+           with a longer name was declared. Capped at two buttons and drawn at
+           the buttons' own 12px; what does not fit is in the rich hover beside
+           it (fileUnderHtml), never in the row's width.
+
+           169px is not a round number: it is the MEASURED width of the two
+           buttons it now sits between plus the gap they already have
+           (🙋 Needs You 86 + 6 + ⬇ Export MD 77 — test/measure_page.js). */
+        .nt-fileunder { width:169px; max-width:169px; font-size:12px; padding:4px 6px;
+            text-overflow:ellipsis; }
         /* Forces the action-button row to start fresh under the search/filter
            controls row, instead of fighting them for space on one flex line —
            that fight is what was stranding "all…Delete" up with the filters

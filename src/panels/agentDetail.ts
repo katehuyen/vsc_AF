@@ -78,6 +78,13 @@ export interface DutyCompose {
 
 function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSION_TABLE_N): Record<string, unknown> {
     const sessions = deps.index.forAgent(agent.id).sort((a, b) => b.mtime - a.mtime);
+    // ‼️ TWO LISTS ON PURPOSE (X-27). Everything measured below — cost, daily
+    // buckets, model split, tool counts — is defined against Claude's own
+    // transcript and stays on `sessions`. The TABLE is this agent's log and
+    // must hold every engine it was run with, or an agent you mostly drive
+    // through Codex looks like an agent that has barely worked.
+    const tableSessions = deps.index.forAgentWithExternal(agent.id)
+        .sort((a, b) => b.mtime - a.mtime);
     const projectByAgent = deps.agentProjects?.() ?? {};
     const daily: Record<string, { cost: number; tokens: number; wTokens: number; msgs: number }> = {};
     const tools: Record<string, number> = {};
@@ -210,7 +217,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         // same advanced table as the dashboard (same row shape / component):
         // union of the true top-N per sortable criterion, sorted client-side;
         // N follows the webview's Show box (0 = all sessions ship)
-        sessions: sessionRowPool(sessions,
+        sessions: sessionRowPool(tableSessions,
             s => deps.index.isSessionActive(s), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name)),
@@ -447,7 +454,7 @@ export class AgentDetailPanel {
                 // Only this agent's own session files are readable from here —
                 // the webview must not be able to point us at arbitrary paths.
                 const file = typeof msg.file === 'string' ? msg.file : '';
-                if (!file || !this.deps.index.forAgent(this.agentId).some(s => s.file === file)) { break; }
+                if (!file || !this.deps.index.forAgentWithExternal(this.agentId).some(s => s.file === file)) { break; }
                 let turns: unknown = [];
                 try {
                     // reuse the session viewer's proven transcript parse; we only

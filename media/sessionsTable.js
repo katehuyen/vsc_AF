@@ -53,14 +53,28 @@
 
     // agents: null = every agent (no filter — one joining the fleet is included
     // by itself); an array = exactly that subset, [] = none. See afFilters.js.
+    //
+    // ‼️ `engines` IS THE SAME SHAPE FOR THE SAME REASON (X-27). A build that
+    // learns about a fifth engine must list its sessions without anybody
+    // re-ticking a box, so "no filter" is null and never "all four ids as of
+    // today". It combines with every other filter here — the whole point of
+    // being one more key on this object rather than a mode: "only Codex" and
+    // "only Codex sessions of the developer agent with errors" are the same
+    // gesture, in the same panel, with the same Clear.
     const FDEF = () => ({
-        text: '', agents: null, projects: null, origin: 'user', activeOnly: false, errorsOnly: false,
+        text: '', agents: null, engines: null, projects: null, origin: 'user',
+        activeOnly: false, errorsOnly: false,
         mainOnly: false, pinnedOnly: false, from: '', to: '', ranges: {}
     });
     // Sessions with no project land in one honest bucket rather than silently
     // disappearing from a project filter.
     const UNASSIGNED = 'Unassigned';
     const projectOf = r => r.project || UNASSIGNED;
+    // Which engine ran the row, said the way the badge says it. A row with no
+    // `engine` is a Claude transcript — the field is an ABSENCE there, which is
+    // exactly the trap the badge component exists to close, so it is resolved
+    // once here and never re-guessed by a filter or a picker.
+    const engineLabel = r => window.AFEngine.label(r.engine || 'claude');
 
     /**
      * ‼️ HOW WIDE A COLUMN IS, DECIDED HERE — NOT BY WHATEVER HAPPENED TO BE IN
@@ -101,7 +115,13 @@
         // 5.170, −75%); and ENGINE is new, at what a badge actually needs.
         // The rest are untouched, and the whole set is re-normalised over
         // whichever columns a page asks for, so nothing else moves either.
-        agent: 13.572, engine: 6.200, project: 5.170, title: 28.610, when: 5.056,
+        //
+        // ‼️ U-39 — the +50% above overshot: an agent name is one short word
+        // and the column was holding whitespace next to a Title that had to
+        // ellipsis. Agent gives back a quarter (13.572 → 10.179) and every
+        // point of it goes to Title (28.610 → 32.003), so the row is exactly
+        // as wide as it was and only the boundary between those two moved.
+        agent: 10.179, engine: 6.200, project: 5.170, title: 32.003, when: 5.056,
         duration: 5.522, turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387,
         tokens: 8.962, ctx: 5.241, cost: 3.906
     };
@@ -287,7 +307,8 @@
         // always-visible switch in the chip row, so counting it would park a
         // permanent "(1)" on the Filters chip and say nothing new.
         function activeFilterCount() {
-            let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.projects ? 1 : 0)
+            let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.engines ? 1 : 0)
+                + (filters.projects ? 1 : 0)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
                 + (filters.pinnedOnly ? 1 : 0)
                 + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
@@ -308,6 +329,10 @@
                 if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
                     + (r.tags || []).join(' '))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
+                // The picker lists LABELS ("Antigravity"), because that is what
+                // the badge in the column says and a filter that disagrees with
+                // the cell beside it is unreadable.
+                if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
                 if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
@@ -333,11 +358,29 @@
         }
 
         const AGENT_MS = 'sess-agents-' + opts.stateKey;
+        const ENGINE_MS = 'sess-engines-' + opts.stateKey;
         const PROJECT_MS = 'sess-projects-' + opts.stateKey;
         function agentNames() {
             const agents = [];
             rows.forEach(r => { if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); } });
             return agents.sort();
+        }
+        // Engines the table ACTUALLY holds, in the badge's own words. Built off
+        // the rows rather than off a fixed list of four: an id this build has
+        // never heard of still gets a badge (afEngine.js), so it must still get
+        // a line in the picker it would otherwise be unfilterable behind.
+        // Claude first — it is the default and the longest lane — then the rest
+        // alphabetically, which is the order the badges were introduced in and
+        // the order a reader scans.
+        function engineNames() {
+            const out = [];
+            rows.forEach(r => {
+                const l = engineLabel(r);
+                if (l && out.indexOf(l) < 0) { out.push(l); }
+            });
+            const claude = window.AFEngine.label('claude');
+            return out.sort((a, b) =>
+                a === claude ? -1 : b === claude ? 1 : a.localeCompare(b));
         }
         // Named projects first, Unassigned last — it is a leftover, not a project.
         function projectNames() {
@@ -349,6 +392,7 @@
         function filterPanelHtml() {
             if (!filtersOpen) { return ''; }
             const agents = agentNames();
+            const engines = engineNames();
             const flag = (cls, label, on, tip) =>
                 `<button class="chip ${cls}${on ? ' on' : ''}" title="${tip}">${label}</button>`;
             const ranges = FRANGES.map(k => {
@@ -369,6 +413,10 @@
                     ${hasAgentCol && agents.length > 1 ? window.AFFilter.multi({
                         id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
                         title: 'Which agents to list — tick any combination'
+                    }) : ''}
+                    ${engines.length > 1 ? window.AFFilter.multi({
+                        id: ENGINE_MS, label: 'Engines', options: engines, selected: filters.engines,
+                        title: 'Which CLI ran the session — combines with every other filter here'
                     }) : ''}
                     ${projectNames().length > 1 ? window.AFFilter.multi({
                         id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
@@ -976,6 +1024,10 @@
                 window.AFFilter.wireMulti({
                     root, id: AGENT_MS,
                     onChange: sel => { filters.agents = sel; apply(); }
+                });
+                window.AFFilter.wireMulti({
+                    root, id: ENGINE_MS,
+                    onChange: sel => { filters.engines = sel; apply(); }
                 });
                 window.AFFilter.wireMulti({
                     root, id: PROJECT_MS,

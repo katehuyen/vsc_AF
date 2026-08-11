@@ -901,11 +901,25 @@
      * belongs in the hover with the rest of the row's figures.
      */
     const who = (agentName, sessionId) => C.esc(agentName || 'session');
-    /** …and the identity line's hover, which now carries it. Figures only,
-     *  `Label: value` — the card's own tooltip says what the row IS. */
-    const whoTip = (agentName, sessionId) => window.AFTip.lines([
+    /**
+     * …and the identity line's hover, which now carries it. Figures only,
+     * `Label: value` — the card's own tooltip says what the row IS.
+     *
+     * ‼️ AN ABSENT ID SAYS WHY IT IS ABSENT (X-27). "The Antigravity session's
+     * id only reached the card after the third turn" was reported as a card
+     * bug and was not one: on a per-turn engine the id is the CLI's own
+     * conversation id, which does not exist until a turn has actually RUN —
+     * and the first turns had been dying before they started (X-26), so every
+     * one of them came back with an empty conversation id. A hover that simply
+     * omits the line leaves a reader to guess between "not yet" and "lost",
+     * and those need different actions, so it is said instead of dropped.
+     */
+    const whoTip = (agentName, sessionId, shape) => window.AFTip.lines([
         'Agent: ' + (agentName || 'session'),
-        sessionId ? 'Session: ' + sessionId : ''
+        sessionId ? 'Session: ' + sessionId
+            : shape === 'perTurn'
+                ? 'Session: not yet — this engine names the conversation on its first completed turn'
+                : 'Session: not yet — the CLI names it as it starts'
     ]);
 
     /**
@@ -1238,7 +1252,7 @@
                  })}
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
-                    <span class="n" title="${C.esc(whoTip(s.agentName, s.sessionId))}"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
+                    <span class="n" title="${C.esc(whoTip(s.agentName, s.sessionId, s.turnShape))}"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
                     ${engineBadge(s)}
                     <span class="m" title="${C.esc(tokTip(s, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
                 </div>

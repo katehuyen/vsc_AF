@@ -257,14 +257,33 @@
             .cmpctl input[type=date] { padding:1px 4px; }
             .cmpctl input[type=number] { width:52px; padding:1px 4px; }
             /* U-27 — the engine strip on the plan card. Deliberately quieter than
-           the page's own tabs: this is a filter on one card, not navigation. */
-        .pu-tabs { display:flex; gap:4px; margin:8px 0 2px; flex-wrap:wrap; }
-        .pu-tab { font-size:10px; padding:1px 7px; border-radius:9px; cursor:pointer;
-            background:transparent; color:var(--vscode-foreground); opacity:.6;
-            border:1px solid var(--vscode-widget-border,#4444); }
-        .pu-tab:hover { opacity:.9; }
-        .pu-tab.on { opacity:1; border-color:var(--vscode-focusBorder,#007fd4); }
-        .pu-tf { opacity:.7; margin-left:2px; }
+           the page's own tabs: this is a filter on one card, not navigation.
+
+           ‼️ U-40 — AND IT IS ONE ROW, WHICH IS A RULE AND NOT A HOPE. It used
+           to wrap, so the fourth engine dropped to a line of its own the
+           moment a handle carried anything besides a name — one tab above, one
+           below, which reads as a layout fault rather than as a strip that ran
+           out of room. Handles are now names only, they share the width
+           equally, and a name too long for its share ellipsises instead of
+           pushing its neighbours off the line. The engine's own colour comes
+           from the shared palette (--af-engc, AFEngine.cls). */
+        .pu-tabs { display:flex; gap:4px; margin:8px 0 2px; flex-wrap:nowrap; }
+        .pu-tab { flex:1 1 0; min-width:0; font-size:10px; padding:2px 6px; cursor:pointer;
+            background:transparent; color:var(--vscode-foreground); opacity:.65;
+            border:1px solid transparent; border-bottom:2px solid var(--vscode-widget-border,#4444);
+            border-radius:4px 4px 0 0; text-align:center;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pu-tab:hover { opacity:.95; border-bottom-color:var(--af-engc); }
+        /* the open one is the engine's colour, said twice — the underline it is
+           standing on and the text itself, so it survives a theme that flattens
+           one of the two */
+        .pu-tab.on { opacity:1; font-weight:600; color:var(--af-engc);
+            border-bottom-color:var(--af-engc);
+            background:color-mix(in srgb, var(--af-engc) 12%, transparent); }
+        /* the engines you are NOT looking at, in one line under the bars */
+        .pu-others { display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; }
+        .pu-o { white-space:nowrap; }
+        .pu-o b { color:var(--af-engc); font-weight:600; }
     </style>`;
         if (cmpRows) {
             // windowed mode: figures the host computed for [from, to]
@@ -346,6 +365,15 @@
         return `Resets ${when} · in ${h > 0 ? h + 'h ' : ''}${m}m`;
     }
 
+    /** An engine's headline figure, or the honest word for why there is none —
+     *  never a 0% for an engine nobody can measure (core/engineUsage.ts). */
+    function puFigure(e) {
+        return e.state === 'ok' && (e.bars || []).length
+            ? Math.max.apply(null, e.bars.map(b => b.percent)) + '%'
+            : e.state === 'no-plan' ? 'per-token'
+                : e.state === 'not-published' ? 'not published' : 'not read yet';
+    }
+
     /**
      * ‼️ U-27 — THE CARD HAS AN ENGINE AXIS, AND IT IS THE STATUS BAR'S AXIS.
      *
@@ -354,25 +382,58 @@
      * showing different engines, which is the whole failure mode of putting
      * the same choice in two places.
      *
-     * Each tab carries its own figure, so the answer to "which one should I
-     * be worried about" is on the strip rather than behind four clicks.
+     * ‼️ …AND U-40 — A TAB HANDLE IS A NAME. Nothing else. These handles were
+     * carrying the engine's percentage AND, for an engine that has no
+     * percentage, a two-word explanation of why (`Gemini per-token`,
+     * `Antigravity n/a`) — inside the one element on the card with the least
+     * room, which is a card 340px wide. So four handles could not fit on a line
+     * and the fourth dropped underneath the other three, which is what made the
+     * strip read as broken rather than as full. A figure belongs where the card
+     * has a column for it and an explanation belongs in the body, which has the
+     * whole width; both are still here, one hover and one line away.
+     *
+     * The colour is the engine's OWN, out of the one palette every surface
+     * reads (`AFEngine.cls` → `--af-engc`), so a tab and the badge on a session
+     * row of the same engine cannot disagree — and the strip answers "which
+     * engine am I looking at" before anything is read.
      */
     function planTabs() {
         const list = DATA.planUsageEngines || [];
         if (list.length < 2) { return ''; }
         const cur = puEngineId();
-        return `<div class="pu-tabs">` + list.map(e => {
+        return `<div class="pu-tabs" role="tablist">` + list.map(e => {
             const on = e.id === cur;
-            // ‼️ a figure, or the honest word for why there is none — never a
-            // 0% for an engine nobody can measure (see core/engineUsage.ts)
-            const fig = e.state === 'ok' && (e.bars || []).length
-                ? Math.max.apply(null, e.bars.map(b => b.percent)) + '%'
-                : e.state === 'no-plan' ? 'per-token'
-                    : e.state === 'not-published' ? 'n/a' : '—';
-            return `<button class="pu-tab${on ? ' on' : ''}" data-puengine="${C.esc(e.id)}"
-                title="${C.esc(e.label + ' — ' + (e.note || ''))}">
-                ${C.esc(e.label.split(' ')[0])} <span class="pu-tf">${C.esc(fig)}</span></button>`;
+            // The figure leaves the handle and lands here — `Label: value`,
+            // which is what a native tooltip is for (docs/CONVENTIONS.md).
+            const tip = [
+                e.label + ': ' + puFigure(e),
+                (e.bars || []).map(b => b.title + ': ' + b.percent + '%').join('\n'),
+                e.plan ? 'Plan: ' + e.plan : ''
+            ].filter(Boolean).join('\n');
+            return `<button class="pu-tab ${window.AFEngine.cls(e.id)}${on ? ' on' : ''}"
+                role="tab" aria-selected="${on}" data-puengine="${C.esc(e.id)}"
+                title="${C.esc(tip)}">${C.esc(e.label.split(' ')[0])}</button>`;
         }).join('') + `</div>`;
+    }
+
+    /**
+     * The other engines, in one line under the card (U-40).
+     *
+     * The status-bar hover got this right and the card did not: seeing every
+     * engine's figure at once, without switching, is the reason to look at all —
+     * "which one should I be worried about" is a question about the set. It sits
+     * BELOW the bars rather than in the tab handles, because down here there is
+     * a card's width to say it in.
+     */
+    function planOthers() {
+        const list = DATA.planUsageEngines || [];
+        if (list.length < 2) { return ''; }
+        const cur = puEngineId();
+        const rest = list.filter(e => e.id !== cur);
+        if (!rest.length) { return ''; }
+        return `<div class="sub muted pu-others">` + rest.map(e =>
+            `<span class="pu-o ${window.AFEngine.cls(e.id)}" title="${C.esc(e.label + ': ' + puFigure(e))}"
+                >${C.esc(e.label.split(' ')[0])} <b>${C.esc(puFigure(e))}</b></span>`).join('') + `</div>`;
     }
 
     const puEngineId = () => (DATA.planUsageEngine || 'claude');
@@ -429,7 +490,7 @@
             title="${C.esc(window.AFCtx.hint('What the subscription window has left'))}">
             <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>
             ${planTabs()}
-            ${body}${foot}
+            ${body}${foot}${planOthers()}
         </div>`;
     }
 
@@ -762,10 +823,26 @@
         // here: the host writes the setting the status bar reads, and pushes the
         // answer back — which is what keeps the two surfaces on one choice
         // instead of two that drift (U-27).
+        //
+        // ‼️ …BUT THE TAB MOVES NOW, NOT WHEN THE DISK ANSWERS (U-40). The
+        // reported symptom was "you press it and nothing happens, sometimes it
+        // changes, sometimes the tabs stop responding", and the round trip is
+        // the whole of it: the host writes a GLOBAL setting (a disk write) and
+        // only then pushes the new engine back — while this page repaints on
+        // every index update, which on a working fleet is constant. So a click
+        // could be followed by a repaint carrying the OLD engine, putting the
+        // tab back before the answer arrived. Flipping locally first is the same
+        // contract the pin star already uses on this page: the page shows the
+        // state it asked for, the host's answer confirms it, and a refusal
+        // (an id this build does not know) corrects it on the next push.
         document.querySelectorAll('[data-puengine]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({
-                type: 'setUsageEngine', id: b.dataset.puengine
-            })));
+            b.addEventListener('click', () => {
+                const want = b.dataset.puengine;
+                if (!want || want === puEngineId()) { return; }
+                DATA.planUsageEngine = want;
+                render();
+                vscode.postMessage({ type: 'setUsageEngine', id: want });
+            }));
 
         // ---- Agent comparison controls ----
         const wireCmp = (id, ev, fn) => {

@@ -350,7 +350,13 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
     }
 
     const projectByAgent = deps.agentProjects?.() ?? {};
-    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
+    // ‼️ THE TABLE IS THE LOG, AND THE LOG IS EVERY ENGINE (X-27). Everything
+    // measured above runs on `sessions` — claude-only, deliberately, because
+    // cost/model/cache figures are defined against that transcript format. The
+    // table underneath is not a measurement: it is "which conversations
+    // happened", and it was answering that question with a quarter of them.
+    const sessionRows = sessionRowPool(deps.index.allWithExternal(),
+        s => deps.index.isSessionActive(s, now), tableN,
         s => (s.agentName ? projectByAgent[s.agentName] : undefined),
         name => deps.projectStyle?.(name));
 
@@ -605,7 +611,10 @@ export class DashboardPanel {
                 // Only files the index actually lists are readable from here —
                 // the webview must not be able to point us at arbitrary paths.
                 const file = typeof msg.file === 'string' ? msg.file : '';
-                if (!file || !this.deps.index.all().some(s => s.file === file)) { break; }
+                // X-27: the table now lists every engine, so the guard has to
+                // recognise every engine's file too — otherwise expanding a
+                // Codex row silently returns nothing and reads as a hang.
+                if (!file || !this.deps.index.allWithExternal().some(s => s.file === file)) { break; }
                 let turns: unknown = [];
                 try {
                     // reuse the session viewer's proven transcript parse; we only

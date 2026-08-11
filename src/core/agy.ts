@@ -112,6 +112,43 @@ export function agyModelCarriesEffort(model: string | undefined): boolean {
     return AGY_EFFORTS.some(e => m.endsWith(`-${e}`));
 }
 
+/**
+ * ‼️ MEASUREMENT 3 HAS A MIRROR, AND IT IS THE ONE THAT COST A DAY (X-26).
+ *
+ * "`--effort` conflicts with an effort-bearing model name" was measured and
+ * acted on. What was never measured is what happens the OTHER way round, and it
+ * is not "the engine picks for you" — it is a refusal. Measured 2026-08-11,
+ * agy 1.1.11, on this machine:
+ *
+ *   agy --model gemini-3.5-flash --print "say ok"
+ *   → {"status":"ERROR","error":"invalid model selection (--model
+ *      \"gemini-3.5-flash\" --effort \"\"): --model gemini-3.5-flash requires
+ *      --effort (available: low, medium, high)"}
+ *
+ * Which is exactly the user's report: Gemini 3.5 Flash with the effort box left
+ * on Default died before answering, every time, while the same model at `low`
+ * ran. The catalog splits `gemini-3.5-flash-low|medium|high` back into base ×
+ * effort so the two boxes are real (models.ts) — and the base half of that split
+ * is NOT a selectable id on its own. Only the rows the CLI prints WITHOUT an
+ * effort suffix (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`) can be sent
+ * bare.
+ *
+ * So a model that HAS efforts has no "no flag" state to fall back to, and
+ * "Default" in front of it is a box with no referent — the thing
+ * docs/CONVENTIONS.md already forbids. This function is the single place that
+ * decides what Default resolves to, so the picker's label and the command line
+ * cannot disagree: the middle setting where the model has one, otherwise the
+ * cheaper end, which is the choice to make on somebody's behalf.
+ */
+export function agyDefaultEffort(efforts: readonly string[] | undefined): string {
+    const have = (efforts ?? []).map(e => String(e).trim().toLowerCase()).filter(Boolean);
+    if (!have.length) { return ''; }
+    for (const want of ['medium', 'low', 'high']) {
+        if (have.includes(want)) { return want; }
+    }
+    return have[0];
+}
+
 /** The model/effort pair, resolved to flags the CLI will actually accept. */
 export function agyModelArgs(model: string | undefined, effort: string | undefined): string[] {
     const m = String(model ?? '').trim();

@@ -48,7 +48,11 @@ function buildData(
     deps: SessionsPageDeps, tableN: number, scope?: SessionsPageScope
 ): Record<string, unknown> {
     const now = Date.now();
-    const all = deps.index.all();
+    // ‼️ EVERY ENGINE (X-27). This page is the log of conversations, not a
+    // measurement, and `index.all()` is claude-only by design — so the page
+    // whose entire subject is "which sessions have I had" was showing one CLI's
+    // and saying nothing about the rest. See SessionIndex.allWithExternal.
+    const all = deps.index.allWithExternal();
     const projectByAgent = deps.agentProjects?.() ?? {};
     const sessions = scope?.agentName
         ? all.filter(s => s.agentName === scope.agentName)
@@ -142,7 +146,7 @@ export class SessionsPanel {
                 // the index actually knows are readable from here — the webview
                 // must not be able to point the host at an arbitrary path.
                 const file = typeof msg.file === 'string' ? msg.file : '';
-                if (!file || !this.deps.index.all().some(s => s.file === file)) { break; }
+                if (!file || !this.deps.index.allWithExternal().some(s => s.file === file)) { break; }
                 let turns: unknown = [];
                 try {
                     turns = buildViewerData(file, {

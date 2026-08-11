@@ -267,6 +267,31 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
             reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
                 type: 'result', subtype: 'error_max_turns', is_error: true, total_cost_usd: 0
             }, NOW + 900).lastTurn.outcome === 'failed');
+        // ‼️ X-26 — AND IT PRINTS THE ENGINE'S OWN WORDS WHEN IT SAID ANY.
+        // This line used to hardcode "turn interrupted" and drop `error` on the
+        // floor, so a turn that died on a refusal reached the reader as three
+        // words naming a cause that had not happened — measured, verbatim:
+        //   invalid model selection (--model "gemini-3.5-flash" --effort ""):
+        //   --model gemini-3.5-flash requires --effort (available: low, …)
+        // The fix for that trap is elsewhere (core/agy.ts, core/models.ts); what
+        // is pinned here is that a refusal can never be silent again, whichever
+        // engine refuses and for whatever reason nobody has met yet.
+        const refused = reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
+            type: 'result', subtype: 'error_during_execution', is_error: true,
+            error: 'invalid model selection (--model "gemini-3.5-flash" --effort "")',
+            result: 'invalid model selection (--model "gemini-3.5-flash" --effort "")'
+        }, NOW + 7400);
+        const said = refused.messages[refused.messages.length - 1];
+        ok('‼️ a refusal reaches the reader in the engine\'s own words',
+            /requires|invalid model selection/.test(said.text) && said.isError === true);
+        ok('…and the outcome is still the one the subtype states',
+            refused.lastTurn.outcome === 'interrupted');
+        // The fixed words stay as the FALLBACK — for the engines and the cases
+        // that genuinely say nothing, a bare row would be worse.
+        ok('an engine that says nothing still gets the honest fallback',
+            reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
+                type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0
+            }, NOW + 900).messages.slice(-1)[0].text === 'turn interrupted');
         // your next prompt is what retires it — the strip is about the PREVIOUS
         // turn only while the ball is yours
         ok('the next prompt clears the finished turn',

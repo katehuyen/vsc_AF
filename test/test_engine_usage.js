@@ -13,7 +13,7 @@ const path = require('path');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { readCodexLimits, readCodexUsage, readEngineUsage, usageSummary, windowTitle } =
+const { engineBarText, readCodexLimits, readCodexUsage, readEngineUsage, usageSummary, windowTitle } =
     require(path.join(__dirname, '..', 'out', 'core', 'engineUsage.js'));
 
 const NULL_LINE = JSON.stringify({
@@ -113,6 +113,63 @@ const probe = (files, tails) => ({
         usageSummary(by.agy) === 'not published'
         && usageSummary(by.gemini) === 'no plan — per-token'
         && /week 7%/.test(usageSummary(by.codex)));
+}
+
+// ---------- U-40: the STRIP, which is not a sentence ----------
+{
+    // ‼️ THE LINE THE USER READ OFF THEIR OWN STATUS BAR, VERBATIM:
+    //   "sessions 100% (54m) / week (all models) 20% (6d 8h)"
+    // — an engine name, two window HEADINGS, two percentages and two countdowns,
+    // on the one surface in the editor where every character is taken from
+    // something else on the same row. The shape below is the one Claude's
+    // indicator had before four engines existed, and it is now what every
+    // engine gets: time left, how much is gone, then each further window as a
+    // short name and a percentage. The subject is in the hover, which is also
+    // where the engine is chosen.
+    const left = () => '2h 43m';
+    const claude = {
+        id: 'claude', label: 'Claude Code', state: 'ok', plan: 'max', fetchedAt: 1, note: '',
+        bars: [
+            { id: 'five_hour', title: 'Current session', percent: 78, resetsAt: 9 },
+            { id: 'seven_day', title: 'Current week (all models)', percent: 21, resetsAt: 9 }
+        ]
+    };
+    ok('‼️ the old format is back, exactly',
+        engineBarText(claude, left) === '$(dashboard) 2h 43m - 78% / wk 21%');
+    ok('‼️ …and it does NOT name the engine — the hover does',
+        !/Claude/.test(engineBarText(claude, left)));
+    ok('‼️ …nor repeat a window heading nobody has room for',
+        !/all models/.test(engineBarText(claude, left)) && !/session/.test(engineBarText(claude, left)));
+
+    // Every other engine is adapted to the same shape rather than given one of
+    // its own — Codex's windows are stated in minutes and named by us.
+    const codex = {
+        id: 'codex', label: 'Codex', state: 'ok', plan: 'plus', fetchedAt: 1, note: '',
+        bars: [
+            { id: 'codex_primary', title: windowTitle(300), percent: 33, resetsAt: 9 },
+            { id: 'codex_secondary', title: windowTitle(10080), percent: 8, resetsAt: 9 }
+        ]
+    };
+    ok('a second engine reads the same way, not a second way',
+        engineBarText(codex, left) === '$(dashboard) 2h 43m - 33% / wk 8%');
+    // A window whose reset the record did not state says its own name rather
+    // than an invented span — never a blank where a countdown would be.
+    ok('a window with no stated reset falls back to its name, never to a guess',
+        engineBarText({ ...codex, bars: [{ ...codex.bars[0], resetsAt: 0 }] }, left)
+            === '$(dashboard) 5h 33%');
+    ok('a day window is not called a week',
+        engineBarText({ ...codex, bars: [codex.bars[0], { ...codex.bars[1], title: windowTitle(1440) }] }, left)
+            === '$(dashboard) 2h 43m - 33% / day 8%');
+
+    // ‼️ MINIMISED, NOT OMITTED, and never a percentage nobody measured.
+    const flat = (state) => engineBarText(
+        { id: 'agy', label: 'Antigravity', state, bars: [], plan: '', fetchedAt: 0, note: 'x' }, left);
+    ok('‼️ an engine with no readable quota is two or three words, not a sentence',
+        flat('not-published') === '$(dashboard) no quota published'
+        && flat('no-plan') === '$(dashboard) per-token'
+        && flat('unknown') === '$(dashboard) usage ?');
+    ok('nothing at all hides the item rather than printing a placeholder',
+        engineBarText(undefined, left) === undefined);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

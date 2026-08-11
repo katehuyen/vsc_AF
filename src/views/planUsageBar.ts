@@ -218,51 +218,78 @@ export class PlanUsageBar implements vscode.Disposable {
         return out;
     }
 
+    /**
+     * ‼️ ONE PANEL, THE SAME SHAPE FOR EVERY ENGINE (U-40).
+     *
+     * This used to be two bodies with an early return between them: Claude got
+     * a heading, its bars, the plan, when it was checked, which beat is running
+     * and a Check-now link — and every other engine got a heading, its bars and
+     * a paragraph, with no beat line, no footer, and a `isTrusted: true` that
+     * quietly allowed every command in the editor instead of the two this panel
+     * uses. So the hover changed shape depending on which engine was selected,
+     * which is the whole of "it looks unfinished": the reader learns where to
+     * look and then the layout moves under them.
+     *
+     * Now there is one body. What differs between engines is the CONTENT of the
+     * source line — Claude reads an endpoint on a beat and can be re-read on
+     * demand, Codex reads its own rollout file, Antigravity publishes nothing —
+     * and that difference is stated in one sentence where the reader is already
+     * looking, rather than by giving them a different panel.
+     */
     private tooltip(snap: PlanUsageSnapshot | undefined): vscode.MarkdownString {
         const shown = this.shown();
-        // The heading names WHOSE limits these are — the whole point of U-27.
+        const isClaude = !shown || shown.id === 'claude';
+        // The heading names WHOSE limits these are — the whole point of U-27,
+        // and the reason nothing on the strip itself has to repeat it (U-40).
         const lines = [`**${shown ? shown.label : 'Claude Code'} — plan usage**`, ''];
-        // An engine that is not Claude answers from its own record, so the
-        // Claude-shaped body below (endpoint state, backoff, beat) does not
-        // apply to it and is replaced by what that engine actually knows.
-        if (shown && shown.id !== 'claude') {
-            if (shown.state === 'ok' && shown.bars.length) {
-                for (const b of shown.bars) {
-                    lines.push(`- ${b.title}: **${b.percent}%**`
-                        + (b.resetsAt ? ` — resets ${untilText(b.resetsAt)}` : ''));
-                }
-                if (shown.plan) { lines.push('', `Plan: ${shown.plan}`); }
-                if (shown.fetchedAt) { lines.push(`As of ${new Date(shown.fetchedAt).toLocaleString()}`); }
+
+        // ---- the figures ----
+        if (isClaude) {
+            if (!snap) {
+                lines.push('_Not checked yet._');
+            } else if (snap.state !== 'ok') {
+                lines.push(snap.note ?? 'The usage endpoint could not be read.');
             } else {
-                lines.push(`_${usageSummary(shown)}_`);
+                // every bar the endpoint reports, not just the two on the strip
+                for (const b of snap.bars) {
+                    const until = untilText(b.resetsAt);
+                    lines.push(`- ${b.title}: **${b.percent}%**${until ? ` — resets ${until}` : ''}`);
+                }
+                if (snap.plan) { lines.push('', `Plan: ${snap.plan}`); }
+                lines.push(`_Checked ${afClockUtc(snap.fetchedAt)}_`);
             }
-            lines.push('', shown.note);
-            const md = new vscode.MarkdownString([...lines, ...this.engineLines()].join('\n'));
-            md.isTrusted = true;
-            md.supportHtml = false;
-            return md;
-        }
-        if (!snap) {
-            lines.push('_Not checked yet._');
-        } else if (snap.state !== 'ok') {
-            lines.push(snap.note ?? 'The usage endpoint could not be read.');
+        } else if (shown.state === 'ok' && shown.bars.length) {
+            for (const b of shown.bars) {
+                lines.push(`- ${b.title}: **${b.percent}%**`
+                    + (b.resetsAt ? ` — resets ${untilText(b.resetsAt)}` : ''));
+            }
+            if (shown.plan) { lines.push('', `Plan: ${shown.plan}`); }
+            // Every clock in this repo goes through AFTime — a second date
+            // format in the one panel that shows four engines side by side is
+            // exactly the inconsistency this rule exists for.
+            if (shown.fetchedAt) { lines.push(`_Read ${afClockUtc(shown.fetchedAt)}_`); }
         } else {
-            // every bar the endpoint reports, not just the two on the bar
-            for (const b of snap.bars) {
-                const until = untilText(b.resetsAt);
-                lines.push(`${b.title}: **${b.percent}%**${until ? ` — resets ${until}` : ''}`);
-                lines.push('');
-            }
-            if (snap.plan) { lines.push(`Plan: ${snap.plan}`, ''); }
-            lines.push(`_Checked ${afClockUtc(snap.fetchedAt)}_`, '');
+            lines.push(`_${usageSummary(shown)}_`);
         }
-        lines.push(this.beatLine(), '');
-        lines.push('[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_');
+
+        // ---- where the figures come from, and how often ----
+        lines.push('');
+        lines.push(isClaude ? this.beatLine() : `_${shown.note}_`);
+
+        // ---- what you can do from here ----
+        lines.push('');
+        lines.push(isClaude
+            ? '[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_'
+            : '_click the bar for the Dashboard card_');
+
         const md = new vscode.MarkdownString([...lines, ...this.engineLines()].join('\n'));
         // ‼️ BOTH commands, or the engine rows render as dead text. A trusted
         // MarkdownString with an allow-list silently drops every link that is
         // not on it — which is exactly the failure that looks like a CSS bug.
+        // The allow-list is the whole point: `isTrusted: true` hands a hover
+        // panel every command in the editor to run.
         md.isTrusted = { enabledCommands: ['agentfarm.planUsageRefresh', 'agentfarm.setUsageEngine'] };
+        md.supportHtml = false;
         return md;
     }
 

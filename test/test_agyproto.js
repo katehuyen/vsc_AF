@@ -336,17 +336,34 @@ function runAll(lines) {
     // 'medium' effort (available: low, high)" — and this parser derives exactly
     // that from the list alone, which is what makes the split a measurement
     // rather than a guess.
+    // The efforts a model really offers are everything after the leading
+    // default row, which is a resolved value rather than a choice of its own.
+    const offered = m => cat.efforts[m].slice(1).map(e => e.id).join(',');
     ok('‼️ …each with the effort vocabulary the CLI itself reports',
-        cat.efforts['gemini-3.1-pro'].map(e => e.id).join(',') === ',high,low'
-        && cat.efforts['gemini-3.6-flash'].map(e => e.id).join(',') === ',high,medium,low');
+        offered('gemini-3.1-pro') === 'high,low'
+        && offered('gemini-3.6-flash') === 'high,medium,low');
+    // ‼️ X-26 — AND THE FIRST ROW IS NOT AN EMPTY ONE. A base this parser
+    // derived is not selectable on its own: measured, `--model gemini-3.6-flash`
+    // with no effort comes back *requires --effort (available: low, medium,
+    // high)* and the turn dies before it starts. So "Default" here has to NAME
+    // the effort it sends, or the box is offering a command line the CLI
+    // refuses — which is exactly how the bug reached a user.
+    ok('‼️ a model that requires an effort has no empty default',
+        cat.efforts['gemini-3.6-flash'][0].id === 'medium'
+        && /Default → medium/.test(cat.efforts['gemini-3.6-flash'][0].label)
+        // no middle setting on pro: low, high — so Default is the cheaper end
+        && cat.efforts['gemini-3.1-pro'][0].id === 'low'
+        && cat.efforts['gemini-3.6-flash'].every(e => e.id !== ''));
     // ‼️ `-thinking` is not an effort and `(Thinking)` is not one either;
     // requiring BOTH halves to agree is what keeps a model from being lost.
     ok('‼️ a suffix that is not an effort is left alone',
         ids.includes('claude-opus-4-6-thinking') && cat.efforts['claude-opus-4-6-thinking'].length === 1);
+    // …and the mirror still holds: a model with NO efforts takes no flag, so
+    // its single row is genuinely empty and must stay that way.
     ok('…and a model with no effort offers an empty box, not the generic list',
         cat.efforts['claude-sonnet-4-6'].map(e => e.id).join(',') === '');
     ok('a model with exactly one effort still states it',
-        cat.efforts['gpt-oss-120b'].map(e => e.id).join(',') === ',medium');
+        offered('gpt-oss-120b') === 'medium' && cat.efforts['gpt-oss-120b'][0].id === 'medium');
     ok('an unreadable catalog is undefined rather than an empty picker',
         M.readAgyCatalog('') === undefined && M.readAgyCatalog('no tabs here') === undefined);
 }

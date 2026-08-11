@@ -51,17 +51,31 @@
     }
 
     /**
+     * ‼️ THE CLASS THAT CARRIES THE COLOUR, FOR ANYTHING THAT IS NOT A BADGE.
+     *
+     * The plan card's engine tabs (U-40) want the same hue the badge wears, on
+     * a border and a fill rather than on text — and the moment a second surface
+     * needed it, the four values were about to be copied into that page's own
+     * stylesheet, which is the exact failure the header above describes. So the
+     * palette publishes `--af-engc` (common.css) and this returns the class
+     * that resolves it. An id this build has never heard of resolves to the
+     * neutral colour rather than to no colour at all.
+     */
+    function cls(engine) {
+        const k = id(engine);
+        return 'af-engc ' + (KNOWN.indexOf(k) >= 0 ? k : 'other');
+    }
+
+    /**
      * The badge. `title` is a native tooltip and therefore FIGURES ONLY — the
      * caller passes `Label: value` lines, never a sentence (CONVENTIONS → the
      * definition is on the heading, once).
      */
     function badge(engine, title) {
-        const k = id(engine);
-        const cls = KNOWN.indexOf(k) >= 0 ? k : 'other';
-        return '<span class="af-eng ' + cls + '"'
+        return '<span class="af-eng ' + cls(engine) + '"'
             + (title ? ' title="' + esc(title) + '"' : '')
             + '>' + esc(label(engine)) + '</span>';
     }
 
-    window.AFEngine = { id: id, label: label, badge: badge, known: KNOWN };
+    window.AFEngine = { id: id, label: label, badge: badge, cls: cls, known: KNOWN };
 })();

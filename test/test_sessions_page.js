@@ -81,8 +81,14 @@ const data = (extra) => Object.assign({
     ok('the page answers the Show box host-side, so the top-N is genuine',
         /case 'setTableN'/.test(src) && /this\.tableN = n/.test(src));
     // ‼️ The webview must not be able to point the host at an arbitrary path.
+    // ‼️ X-27 — the same guard, over the list the page actually SHOWS. The page
+    // lists every engine now, so a guard over the claude-only list would refuse
+    // to expand a Codex row and read as a hang; it still refuses a path the
+    // index has never seen, which is the whole point of it.
     ok('…and only files the index knows are readable through sessionTurns',
-        /this\.deps\.index\.all\(\)\.some\(s => s\.file === file\)/.test(src));
+        /this\.deps\.index\.allWithExternal\(\)\.some\(s => s\.file === file\)/.test(src));
+    ok('‼️ …and the page itself is fed every engine, not only Claude',
+        /deps\.index\.allWithExternal\(\)/.test(src));
     ok('the pin passes the state it wants, never a toggle',
         /wantPinned: msg\.pinned === true/.test(src));
     ok('the page default is 200 rows', /SESSIONS_PAGE_TABLE_N = 200/.test(src));

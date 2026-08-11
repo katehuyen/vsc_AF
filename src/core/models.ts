@@ -42,6 +42,7 @@
  * testable without a home directory.
  */
 
+import { agyDefaultEffort } from './agy';
 import { EngineId, EngineProbe } from './engines';
 import { EFFORT_CHOICES, LaunchChoice } from './launch';
 
@@ -340,8 +341,22 @@ export function readAgyCatalog(text: string | undefined): {
                 : `${base} · one setting, no effort to choose`
         });
         if (row.efforts.length) {
+            // ‼️ THERE IS NO "no --effort flag" HERE, AND SAYING THERE WAS IS THE
+            // BUG (X-26). A base this splitter derived is not a selectable id on
+            // its own: measured, `--model gemini-3.5-flash` with no effort comes
+            // back "requires --effort (available: low, medium, high)" and the
+            // turn dies before it starts. So the first row is not "Default" with
+            // nothing behind it — it NAMES the effort it will send, which is the
+            // repo's own rule for a default-shaped box (docs/CONVENTIONS.md →
+            // "Default never stands alone"). `agyDefaultEffort` decides it, so
+            // the words here and the command line cannot drift apart.
+            const fallback = agyDefaultEffort(row.efforts);
             efforts[base] = [
-                { id: '', label: 'Default', detail: 'no --effort flag — the engine\'s own choice for this model' },
+                {
+                    id: fallback, label: `Default → ${fallback}`,
+                    detail: `this model cannot run without an effort — the CLI refuses `
+                        + `--model ${base} on its own, so Default sends --effort ${fallback}`
+                },
                 ...row.efforts.map(e => ({
                     id: e, label: e,
                     detail: `passed as --effort — this model offers ${row.efforts.join(', ')}`

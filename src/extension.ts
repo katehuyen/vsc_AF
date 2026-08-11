@@ -3795,17 +3795,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint.',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero.',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
-                return index.all()
+                // ‼️ X-27 — the same widening the tables got. `index.all()` is
+                // claude-only by design (it feeds the analytics), so an agent
+                // asking "what have I been running" was told about one CLI out
+                // of four and nothing said so.
+                const wantEngines = optStr(args, 'engine').toLowerCase()
+                    .split(',').map(s => s.trim()).filter(Boolean);
+                return index.allWithExternal()
                     .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
+                    .filter(s => !wantEngines.length || wantEngines.includes(s.source ?? 'claude'))
                     .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                     .slice(0, limit)
                     .map(s => ({
                         id: s.sessionId,
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
+                        // ‼️ Never an absence. A claude transcript has no
+                        // `source`, which is exactly why the tables could not
+                        // say "Claude" out loud until it was named here.
+                        engine: s.source ?? 'claude',
                         origin: sessionOrigin(s),
                         // WHICH mechanism, not just "a program" — the same fact
                         // the origin column now decides on (see sessionOrigin).
@@ -10355,11 +10366,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return [];
     };
 
-    /** Every session that resolves to one project, newest first. */
-    const sessionsOfProject = (id: string, limit = 0): SessionInfo[] => {
+    /**
+     * Every session that resolves to one project, newest first.
+     *
+     * ‼️ `withExternal` IS OFF BY DEFAULT AND THAT IS THE SAFE SIDE (X-27).
+     * Every caller here that MEASURES a project — its cost, its analysis, its
+     * feed — is defined against Claude's transcript and reads honest zeroes on
+     * a foreign one, so widening the default would quietly halve a project's
+     * cost per session. Only the surfaces that LIST conversations pass it.
+     */
+    const sessionsOfProject = (
+        id: string, limit = 0, opts: { withExternal?: boolean } = {}
+    ): SessionInfo[] => {
         const projects = projectStore.all();
         const links = projectStore.links();
-        const hits = index.all()
+        const hits = (opts.withExternal ? index.allWithExternal() : index.all())
             .filter(s => resolveSessionProject(
                 { sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd },
                 projects, links).projectId === id)
@@ -12323,7 +12344,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 case 'sessions':
                     return {
-                        rows: sessionRowPool(sessionsOfProject(id),
+                        // X-27: the Sessions tab is a LOG, so it carries every
+                        // engine. The Cost and Analysis tabs beside it keep the
+                        // claude-only list on purpose — see sessionsOfProject.
+                        rows: sessionRowPool(sessionsOfProject(id, 0, { withExternal: true }),
                             s => index.isSessionActive(s), tableN,
                             () => projectStore.get(id)?.name, projectStyleOf),
                         tableN

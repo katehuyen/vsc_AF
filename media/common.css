@@ -424,17 +424,32 @@ span.af-tipw { display: inline; }
    Claude wears one TOO. The old rule was "the default wears nothing", which
    made a Claude row and a row from a surface that never learned about engines
    look exactly the same. */
+/* ‼️ THE PALETTE IS A VARIABLE, NOT A `color` RULE (U-40). The badge was the
+   only thing that needed an engine's colour until the plan card grew a tab per
+   engine — and a tab is not text, it wants the same hue on a border, a fill and
+   an underline. Declaring `color` here would have meant a SECOND copy of the
+   four values on that card, which is precisely the "a colour invented per page
+   is a colour that disagrees per page" this component exists to prevent. So the
+   hue is published as `--af-engc` on anything carrying `af-engc <id>`
+   (`AFEngine.cls`), and the badge is simply its first reader. */
+.af-engc.claude { --af-engc: var(--vscode-charts-orange, #d18616); }
+.af-engc.codex { --af-engc: var(--vscode-charts-purple, #b180d7); }
+.af-engc.gemini { --af-engc: var(--vscode-charts-blue, #3794ff); }
+.af-engc.other { --af-engc: var(--vscode-descriptionForeground, #9d9d9d); }
 .af-eng {
     flex: none; display: inline-block; font-size: 9px; line-height: 15px;
     padding: 0 5px; border-radius: 7px; white-space: nowrap;
     border: 1px solid currentColor; opacity: .9;
+    color: var(--af-engc, var(--vscode-descriptionForeground, #9d9d9d));
 }
-.af-eng.claude { color: var(--vscode-charts-orange, #d18616); }
-.af-eng.codex { color: var(--vscode-charts-purple, #b180d7); }
-.af-eng.gemini { color: var(--vscode-charts-blue, #3794ff); }
-.af-eng.agy { color: var(--vscode-charts-green, #89d185); }
-/* an engine id this build does not know: still drawn, still readable */
-.af-eng.other { color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* ‼️ Antigravity is NOT green (U-49). Green is this extension's own signal —
+   the live dot, an OK engine card, an assistant message, an active agent — so
+   an `agy` badge in green read as "this row is fine" on every surface at once.
+   Blue was the other candidate and is the worse one: Antigravity and Gemini are
+   both Google, so a shared hue would blur exactly the two engines a session list
+   most needs to tell apart. Red is the remaining chart hue, it is the furthest
+   thing from green, and it is legible against orange and purple at 9px. */
+.af-engc.agy { --af-engc: var(--vscode-charts-red, #f14c4c); }
 
 /* WHICH PROJECT (media/afProject.js) — the same mark on every surface.
 
@@ -443,7 +458,16 @@ span.af-tipw { display: inline; }
    front of every name carries no information and eats the narrowest column's
    first 12px. This lived in sessionsTable.js's injected CSS until four models
    grew a project (Faz 5) and a second surface needed it. */
-.af-proj { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+   ‼️ `max-width` IS THE WHOLE MARK, NOT A TIDY-UP (U-39). An inline-flex box
+   is sized by its content, and the sessions table is `table-layout: fixed`
+   with `overflow: visible` cells — so a project whose name did not fit its
+   declared column did not ellipsis, it drew straight over the Title beside it
+   and the two texts sat on top of each other. Capping the MARK (not the name)
+   is what hands the shrink to `.af-pname`, whose `overflow: hidden` already
+   gives it a zero automatic minimum. Every surface that draws the mark inside
+   a width it does not control depends on this line. */
+.af-proj { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    max-width: 100%; vertical-align: bottom; }
 .af-pdot {
     flex: none; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     vertical-align: middle;

@@ -995,10 +995,24 @@ export function reduceEvent(
         const spent = state.turnTokensAt !== undefined
             ? Math.max(0, state.tokens - state.turnTokensAt)
             : undefined;
+        // ‼️ THE ENGINE'S OWN WORDS, WHEN IT SAID ANY (X-26). This line used to
+        // print a fixed "turn interrupted" and drop `error` on the floor — so a
+        // turn that died on *invalid model selection (--model
+        // "gemini-3.5-flash" --effort ""): requires --effort (available: low,
+        // medium, high)* reached the reader as three words that name a cause
+        // that did not happen. "Interrupted" says a person or a signal stopped
+        // it; this was a refusal, with the fix written out in full inside the
+        // message being discarded. `agyproto.ts` was already careful to carry it
+        // ("a tidied message throws exactly that away") and this is where it was
+        // being tidied. The fixed words stay as the FALLBACK, for the engines
+        // and the cases that genuinely say nothing.
+        const said = [o.error, o.result]
+            .map(v => (typeof v === 'string' ? v.trim() : ''))
+            .find(v => v.length > 0) ?? '';
         const next = push({
             role: 'result',
             text: isError
-                ? (sub === 'error_during_execution' ? 'turn interrupted' : `turn failed (${sub})`)
+                ? (said || (sub === 'error_during_execution' ? 'turn interrupted' : `turn failed (${sub})`))
                 : '',
             isError,
             cost,

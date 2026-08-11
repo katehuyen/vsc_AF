@@ -956,6 +956,33 @@ export class SessionIndex implements vscode.Disposable {
         return this.externalList;
     }
 
+    /**
+     * ‼️ WHAT A SESSIONS **TABLE** IS FOR, AS OPPOSED TO AN ANALYTIC (X-27).
+     *
+     * The side list above is right for everything that MEASURES: cost, plan
+     * window, cache health, model totals, recall, duty compliance — all of it
+     * is defined against Claude's transcript format and would either read zero
+     * or read wrong on a foreign one. What it is not right for is the LOG. A
+     * table headed "Sessions" that silently holds one CLI's conversations is
+     * not a filtered table, it is a table that lies about its own subject:
+     * every row you had with Codex, Gemini or Antigravity was unreachable from
+     * the Sessions page, the Dashboard, an agent's page and a project's page at
+     * once, and nothing on any of them said so.
+     *
+     * So the split stays exactly where it was and this is the one call the
+     * ROW-BUILDING surfaces make. Do not reach for it from an analytic; the
+     * figures a foreign session carries are honestly zero, and averaging them
+     * in is how a farm's cost per session halves overnight for no reason.
+     */
+    allWithExternal(): SessionInfo[] {
+        return [...this.sessions.values(), ...this.externalList];
+    }
+
+    /** The same widening for one agent — an agent's own page is a log too. */
+    forAgentWithExternal(agentId: string): SessionInfo[] {
+        return this.allWithExternal().filter(s => s.agentId === agentId);
+    }
+
     externalForAgent(agentId: string): SessionInfo[] {
         return this.externalList.filter(s => s.agentId === agentId);
     }

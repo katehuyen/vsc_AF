@@ -843,14 +843,24 @@ const mkRow = (i, extra) => Object.assign({
     // 1314px table — 38.15% — and a quarter off that is the 28.610 DECLARED for
     // it, which is the number this pins. What that comes out as on screen now
     // depends on who else is in the row, and that is the point of normalising.
+    // …and U-39 gave a quarter of Agent BACK to it, so the declared figure is
+    // that 28.610 plus what Agent handed over (13.572 − 10.179 = 3.393).
     ok('‼️ Title still declares a quarter less than the layout it replaced',
-        /title: 28\.610/.test(TABLE_SRC));
+        /title: 32\.003/.test(TABLE_SRC)
+        && Math.abs(32.003 - (28.610 + 3.393)) < 0.001);
 
     // ‼️ U-26 — and the three changes the user asked for, checked as RATIOS
     // against that same measured baseline rather than as pixels, because the
     // shares are re-normalised for every column set.
+    //
+    // ‼️ U-39 — the +50% overshot and is now +50% less a quarter. Checked as
+    // the ratio to what U-26 declared, because that is the change that was
+    // asked for: a quarter off Agent, all of it to Title, row width untouched.
     ok('‼️ Agent is half again as wide as it was (it could not hold a name)',
-        Math.abs(13.572 / 9.048 - 1.5) < 0.001 && /agent: 13\.572/.test(TABLE_SRC));
+        Math.abs(13.572 / 9.048 - 1.5) < 0.001
+        && Math.abs(10.179 / 13.572 - 0.75) < 0.001 && /agent: 10\.179/.test(TABLE_SRC));
+    ok('‼️ …and what Agent gave up, Title took — the row is exactly as wide',
+        Math.abs((10.179 + 32.003) - (13.572 + 28.610)) < 0.001);
     ok('‼️ Project keeps a quarter of what it was taking',
         Math.abs(5.170 / 20.679 - 0.25) < 0.001 && /project: 5\.170/.test(TABLE_SRC));
     ok('‼️ …and Engine is a column now, in every embedding of the table',
@@ -861,7 +871,7 @@ const mkRow = (i, extra) => Object.assign({
     // back to everyone in proportion — which is the rule this file already
     // states, applied rather than re-argued.
     ok('…so every other column is fractionally wider, none of them re-designed',
-        share(dash, 'title', DASH) > 28.61 && share(dash, 'when', DASH) > 5.056);
+        share(dash, 'title', DASH) > 32.003 && share(dash, 'when', DASH) > 5.056);
 
     // A glyph column is px, not a share: a share would make the checkbox column
     // grow with the monitor.
@@ -899,6 +909,63 @@ const mkRow = (i, extra) => Object.assign({
     const deps = ext.slice(ext.indexOf('const detailDeps = {'), ext.indexOf('const detailDeps = {') + 900);
     ok('…off the same project axis the other two pages use',
         /agentProjects: \(\) => agentProjectNames\(/.test(deps) && /projectStyle: /.test(deps));
+}
+
+// ---------- part 10b: X-27 — the engine axis is a FILTER, not just a column ----------
+{
+    posted = []; state = {};
+    const cols = ['agent', 'engine', 'title', 'cost'];
+    const rows = [
+        mkRow(1, { engine: '' }),             // a Claude transcript: the field is an ABSENCE
+        mkRow(2, { engine: 'codex' }),
+        mkRow(3, { engine: 'agy' }),
+        mkRow(4, { engine: 'codex' })
+    ];
+    const mk = (key, filters) => {
+        state = { afSess: { [key]: { filtersOpen: true, filters: Object.assign({ origin: '' }, filters) } } };
+        const t = sandbox.window.AFSessionsTable.create({
+            vscode: vscodeStub, C, containerId: key, columns: cols, stateKey: key
+        });
+        t.setRows(rows, 10);
+        return containers[key].innerHTML;
+    };
+
+    const all = mk('eng-all', {});
+    ok('every engine reaches the table when nothing is filtered',
+        /title1/.test(all) && /title2/.test(all) && /title3/.test(all));
+    // ‼️ The picker lists LABELS, because that is what the badge in the column
+    // beside it says — a filter that disagrees with its own cell is unreadable.
+    ok('‼️ the Engines picker is offered, in the badge\'s own words',
+        /Engines/.test(all) && /Antigravity/.test(all) && /Claude/.test(all));
+
+    const codex = mk('eng-codex', { engines: ['Codex'] });
+    ok('‼️ one engine chosen lists only that engine',
+        /title2/.test(codex) && /title4/.test(codex)
+        && !/title1/.test(codex) && !/title3/.test(codex));
+
+    // ‼️ THE ABSENCE IS THE TRAP. A Claude row carries no `engine` at all, so a
+    // filter that tested the raw field would drop exactly the default engine.
+    const claude = mk('eng-claude', { engines: ['Claude'] });
+    ok('‼️ …and "Claude" finds the rows whose engine field is empty',
+        /title1/.test(claude) && !/title2/.test(claude));
+
+    const both = mk('eng-both', { engines: ['Claude', 'Antigravity'] });
+    ok('two engines is a set, not a mode', /title1/.test(both) && /title3/.test(both) && !/title2/.test(both));
+
+    // It combines with every other filter here — the whole reason it is one more
+    // key on the filter object rather than a mode of its own.
+    const combined = mk('eng-comb', { engines: ['Codex'], text: 'title4' });
+    ok('‼️ …and it combines with the other filters rather than replacing them',
+        /title4/.test(combined) && !/title2/.test(combined));
+
+    // A single-engine farm is not asked a question with one answer.
+    state = {};
+    const one = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'eng-one', columns: cols, stateKey: 'eng-one'
+    });
+    one.setRows([mkRow(1, { engine: '' }), mkRow(2, { engine: '' })], 10);
+    ok('a farm running one engine is not offered a picker over it',
+        !/Engines/.test(containers['eng-one'].innerHTML));
 }
 
 // ---------- part 11: the host side of a bulk action ----------

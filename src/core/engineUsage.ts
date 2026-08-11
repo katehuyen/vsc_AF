@@ -240,31 +240,76 @@ export function usageSummary(u: EngineUsage): string {
 }
 
 /**
+ * A window's name, cut to what fits in a status bar (U-40).
+ *
+ * `Current week (all models)` is a heading — right on a card that has a line to
+ * itself, and four times too long on a strip that is sharing a row with the
+ * file path, the branch, the line number and every other extension's item.
+ * Here the window is a suffix on a percentage, so it gets the shortest form
+ * that is still unambiguous: `wk`, `2wk`, `day`, `3d`, `5h`. The parenthesised
+ * qualifier goes; which models a limit covers is a card's job, not a strip's.
+ */
+function shortWindow(title: string): string {
+    const t = title.replace(/^Current\s+/i, '').replace(/\s*\([^()]*\)\s*$/, '').trim();
+    let m = /^(\d+)?\s*weeks?$/i.exec(t);
+    if (m) { return `${m[1] && m[1] !== '1' ? m[1] : ''}wk`; }
+    m = /^(\d+)?\s*days?$/i.exec(t);
+    if (m) { return m[1] && m[1] !== '1' ? `${m[1]}d` : 'day'; }
+    m = /^(\d+)\s*h(?:\s*window)?$/i.exec(t);
+    if (m) { return `${m[1]}h`; }
+    // 'session', or a window shape nobody has measured: printed as it stands,
+    // never invented into a span that was not stated.
+    return t.split(/\s+/)[0].toLowerCase();
+}
+
+/**
  * The status bar's own text for ONE engine.
  *
- * ‼️ IT NAMES THE ENGINE, ALWAYS. The figure that was there before said
- * `3h 49m - 86% / wk 41%` and meant Claude, on a machine with four engines
- * installed — a number whose subject the reader has to guess is a number the
- * reader will attribute to whatever they were last working in. The badge
- * costs five characters and removes the whole class of mistake.
+ * ‼️ IT IS A STRIP, NOT A SENTENCE — AND THE SUBJECT IS IN THE HOVER (U-40).
+ * This function once produced `$(dashboard) Codex sessions 100% (54m) / week
+ * (all models) 20% (6d 8h)`: an engine name, two window headings, two
+ * percentages and two countdowns, on the one surface in the editor where every
+ * character is taken from something else on the same row. The engine name was
+ * added to stop a figure being mis-attributed, and the reasoning was sound about
+ * a real problem and wrong about where to solve it — the hover already names the
+ * engine, draws every other engine's figures beside it, and is where the engine
+ * is CHOSEN. Nothing on the strip needed to repeat it.
+ *
+ * So the shape is the one Claude's own indicator had before four engines existed
+ * and it is now what EVERY engine gets:
+ *
+ *     $(dashboard) 2h 43m - 78% / wk 21%
+ *
+ * — time left in the first window, then how much of it is gone, then each
+ * further window as a short name and a percentage. A window with no stated
+ * reset says its own name instead of an invented span, and an engine with no
+ * readable figures is cut to two or three words rather than a sentence.
  *
  * Returns undefined when there is nothing to show at all, which is what makes
  * the item hide itself rather than print a placeholder.
  */
 export function engineBarText(u: EngineUsage | undefined, remaining: (at: number) => string): string | undefined {
     if (!u) { return undefined; }
-    const tag = u.id === 'claude' ? '' : ` ${u.label.split(' ')[0]}`;
     if (u.state !== 'ok' || !u.bars.length) {
-        // A row with no figure still says WHOSE row it is: switching to
-        // Antigravity and seeing a blank bar would look like a broken read.
-        return `$(dashboard)${tag} ${usageSummary(u)}`;
+        // ‼️ MINIMISED, NOT OMITTED. "not published" is three words and says
+        // the read is not broken; the hover carries the paragraph.
+        const why = u.state === 'no-plan' ? 'per-token'
+            : u.state === 'not-published' ? 'no quota published'
+                : 'usage ?';
+        return `$(dashboard) ${why}`;
     }
-    const parts = u.bars.map(b => {
-        const left = b.resetsAt ? remaining(b.resetsAt) : '';
-        const name = b.title.replace(/^Current /, '');
-        return left ? `${name} ${b.percent}% (${left})` : `${name} ${b.percent}%`;
+    const parts = u.bars.map((b, i) => {
+        const name = shortWindow(b.title);
+        if (i === 0) {
+            // The first field is the TIME LEFT, not a label: a fixed window name
+            // in front of the leading percentage is a constant, and the one
+            // number a reader wants about time is how long until it comes back.
+            const left = b.resetsAt ? remaining(b.resetsAt) : '';
+            return left ? `${left} - ${b.percent}%` : `${name} ${b.percent}%`;
+        }
+        return `${name} ${b.percent}%`;
     });
-    return `$(dashboard)${tag} ${parts.join(' / ')}`;
+    return `$(dashboard) ${parts.join(' / ')}`;
 }
 
 /** The peak percentage across an engine's windows — what decides the warning
