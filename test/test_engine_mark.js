@@ -17,6 +17,12 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
 const CSS = media('common.css');
 
+// A stray comment terminator can make the browser discard the rule that
+// follows it even though a source-text regex still finds that rule. U-39 did
+// exactly that: the assertion below saw max-width, Chromium did not.
+ok('CSS comments are balanced before any rule is trusted',
+    (CSS.match(/\/\*/g) || []).length === (CSS.match(/\*\//g) || []).length);
+
 const sandbox = { window: {} };
 vm.createContext(sandbox);
 vm.runInContext(media('afEngine.js'), sandbox);

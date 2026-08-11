@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.110.0 — Four engines become one readable surface, and a failed turn says why (2026-08-11)
+
+**‼️ THE SESSIONS TABLE WAS STILL A CLAUDE TABLE WITH A GENERAL NAME.** Codex, Gemini and Antigravity conversations now reach the Dashboard, the Sessions page, agent pages and project pages alongside Claude, while the analytic totals stay Claude-only where foreign transcripts do not carry comparable figures. The shared table gained an **Engines** multi-filter derived from the rows it actually holds; an empty engine id correctly means Claude. Every engine uses the same badge component, and Antigravity is red rather than the green Agent Farm reserves for healthy/live state.
+
+**Long project names stop at the Project column.** The project mark now takes at most the width of its cell and hands the shrink to its name, so it ellipsises instead of drawing across Title. Agent gives a quarter of its width back to Title without changing the row's total width. A browser-rendered fixture now keeps four engines and deliberately overlong Turkish project text on this layout, dark and light; it exposed and fixed a stray CSS comment terminator that source-string tests could not see.
+
+**‼️ ANTIGRAVITY'S “DEFAULT” EFFORT NOW NAMES AND SENDS A REAL VALUE.** Models whose catalog rows are split into `low` / `medium` / `high` cannot run as a bare base model: the CLI refuses `--model gemini-3.5-flash` without `--effort`. Their first choice is now `Default → medium` when medium exists, otherwise the cheapest available level, and the exact value goes on the command line. A failed engine turn also keeps the engine's own error sentence instead of being flattened into “turn interrupted”; a missing session id explains whether the engine has not named the conversation yet. Verified against a live Gemini 3.5 Flash turn.
+
+**Plan usage is one compact engine axis everywhere.** The status bar is a strip again (`time left - % / wk %`) with the selected engine and every other engine's figures in its hover. The Dashboard card keeps all four tabs on one line, colours the active engine from the shared palette, switches immediately, and shows the other engines' headline figures below the bars without inventing `0%` for a quota that is not published. The hover has one shape across engines.
+
+**“File under…” now explains the bulk operation it performs.** It stamps the ticked notices — or all visible notices when none are ticked — with the project that places them on that project's Work tab, timeline and filters; the reverse option removes the stamp. The picker sits between Needs You and Export MD, uses the surrounding controls' type size, stays at a measured 169 px instead of growing with the longest project name, and carries the full project list and explanation in its rich hover.
+
 ## 3.109.0 — Faz 7: a project has parts, a shape, a letter, and somewhere to go (2026-08-11)
 
 The last phase of the project axis, and all four of its pieces answer the same question in different tenses: **what happens to a project that is not one flat thing in one flat list.**

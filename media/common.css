@@ -458,7 +458,7 @@ span.af-tipw { display: inline; }
    front of every name carries no information and eats the narrowest column's
    first 12px. This lived in sessionsTable.js's injected CSS until four models
    grew a project (Faz 5) and a second surface needed it. */
-   ‼️ `max-width` IS THE WHOLE MARK, NOT A TIDY-UP (U-39). An inline-flex box
+/* ‼️ `max-width` IS THE WHOLE MARK, NOT A TIDY-UP (U-39). An inline-flex box
    is sized by its content, and the sessions table is `table-layout: fixed`
    with `overflow: visible` cells — so a project whose name did not fit its
    declared column did not ellipsis, it drew straight over the Title beside it
