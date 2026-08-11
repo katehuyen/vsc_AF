@@ -677,6 +677,28 @@
         const em = ntEngineModels(engine);
         return (em && em.note) || 'from your own agentFarm.modelAliases list.';
     }
+    /**
+     * ‼️ X-30 — CHANGING THE MODEL CHANGES WHAT AN EFFORT MEANS.
+     *
+     * Reading the effort list per model was only half of it: the Effort box is
+     * REDRAWN with the new model's levels, but the composer still held the old
+     * word, so the box showed `low` and the task was queued with `medium`. The
+     * CLI answers that with `invalid model selection (--model "gemini-3.1-pro"
+     * --effort "medium"): gemini-3.1-pro has no "medium" effort` — a prompt that
+     * dies before it starts, in a run nobody is sitting in front of.
+     *
+     * Mirrors `narrowLaunch` in core/models.ts, which is what the host applies
+     * to the same pair. The model's own default is preferred over nothing: a
+     * model that REQUIRES an effort has no "no flag" state to fall back to
+     * (core/agy.ts, measurement 3's mirror).
+     */
+    function ntNarrowEffort(engine, model, effort) {
+        const rows = ntEfforts(engine, model);
+        if (rows.some(e => e.id === (effort || ''))) { return effort || ''; }
+        const em = ntEngineModels(engine);
+        const def = (em && em.defaultEffort && em.defaultEffort[String(model || '')]) || '';
+        return rows.some(e => e.id === def) ? def : '';
+    }
 
     /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
     function pickSel(id, label, list, value, title) {
@@ -1665,8 +1687,19 @@
             // Model box may offer while the model decides the Effort box's
             // levels. A field that only appears after a reload is a field
             // nobody finds.
-            ['every', 'ttype', 'act', 'guardKind', 'model'].forEach(id =>
+            ['every', 'ttype', 'act', 'guardKind'].forEach(id =>
                 byId('nt-' + id, 'change', () => { readComposer(); render(); }));
+            // ‼️ X-30 — the model redraws the Effort box AND settles what is in
+            // it. Redrawing alone left the old word in the composer while the
+            // box showed the new model's first level, and the run went out with
+            // the word (see ntNarrowEffort).
+            byId('nt-model', 'change', () => {
+                readComposer();
+                if (composer) {
+                    composer.effort = ntNarrowEffort(composer.engine, composer.model, composer.effort);
+                }
+                render();
+            });
             byId('nt-engine', 'change', () => {
                 readComposer();
                 // A model belongs to one engine: `sonnet` carried over to Codex
@@ -1674,6 +1707,12 @@
                 // than left sitting in a box that now disagrees with the engine.
                 if (composer && !ntModels(composer.engine).some(m => m.id === (composer.model || ''))) {
                     composer.model = ''; composer.effort = '';
+                }
+                // …and even when the model survives the change, its effort
+                // vocabulary may not: the same engine can state different
+                // levels for the same name.
+                if (composer) {
+                    composer.effort = ntNarrowEffort(composer.engine, composer.model, composer.effort);
                 }
                 render();
             });

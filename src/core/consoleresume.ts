@@ -19,7 +19,8 @@ import { compileQuery } from './query';
 /** What the panel asks for. Every field is optional; an empty query is the
  *  default list, unchanged — a filter you did not set never narrows anything. */
 export interface ResumeQuery {
-    /** matched against the session's name, its agent, its labels and its ID */
+    /** matched against the session's name, its agent, its labels, its ID and
+     *  the engine it was had with */
     text?: string;
     /** exactly one agent's sessions; '' = every agent */
     agent?: string;
@@ -52,6 +53,16 @@ export interface ResumeCandidate {
     /** when the session was last touched */
     ts: number;
     origin?: 'user' | 'auto';
+    /**
+     * ‼️ K-17 — WHICH ENGINE THE CONVERSATION WAS HAD WITH. Absent means
+     * Claude, which is what every row written before engines existed means and
+     * what `index.all()` holds by definition; a foreign CLI's transcript
+     * carries its own id here (`codex` · `gemini` · `agy`, or a name this build
+     * has never heard of). It is searchable with the rest of the row, so
+     * `codex` in the box narrows the list to that engine without a second
+     * control — and it is what the panel resumes the session WITH.
+     */
+    source?: string;
 }
 
 /** The list's default length — what it showed before it could be asked anything. */
@@ -123,7 +134,7 @@ export function filterResumable<T extends ResumeCandidate>(
         if (agent && (r.agentName ?? '') !== agent) { return false; }
         if (r.ts < from || r.ts >= to) { return false; }
         if (!text.empty
-            && !text.test(`${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')} ${r.sessionId ?? ''}`)) {
+            && !text.test(`${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')} ${r.sessionId ?? ''} ${r.source || 'claude'}`)) {
             return false;
         }
         return true;

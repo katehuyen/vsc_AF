@@ -606,6 +606,23 @@ export interface NoticesOpsDeps {
      * host's.
      */
     resolveProject?: (key: string) => string | undefined;
+    /**
+     * ‼️ N-1 — THE STAMP THE POSTER DID NOT HAVE TO TYPE.
+     *
+     * A notice is written by an agent that is, nine times out of ten, running
+     * INSIDE a project session — and it landed on the board as "No Project"
+     * anyway, leaving the user to file it by hand, one at a time, for work
+     * they had themselves asked for under that project. An argument nobody
+     * remembers to pass is a field that is empty in practice.
+     *
+     * So the host answers "which project is this agent working in right now"
+     * and the op uses it whenever the caller said nothing. It must answer
+     * UNAMBIGUOUSLY or not at all: an agent in two sessions under two projects
+     * has no single right answer, and inventing one is the silent decision this
+     * whole channel exists to avoid. An explicit `project` always wins, and
+     * `project: "(none)"` is how a poster says "file this nowhere" out loud.
+     */
+    inferProject?: (agentName: string | undefined) => string | undefined;
 }
 
 /** Strip only what a Windows filename cannot hold; keep Turkish letters +
@@ -661,7 +678,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — if you are in a project session, pass it; an unknown name is reported back and the notice posts unfiled rather than being guessed at.',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — an unknown name is reported back and the notice posts unfiled rather than being guessed at. ‼️ OMIT IT AND AGENT FARM FILLS IT IN: if you are running in a session that belongs to a project, that project is stamped for you and the answer says so (projectFrom). Pass project only to file the notice somewhere ELSE, or project="(none)" to say out loud that it belongs nowhere.',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 const agentName = optStr(args, 'agent') || undefined;
@@ -693,11 +710,21 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 const projectKey = optStr(args, 'project');
                 let projectId: string | undefined;
                 let projectError: string | undefined;
-                if (projectKey) {
+                /** Set when the host, not the caller, decided the stamp — the
+                 *  answer says so, because an agent that cannot see what it
+                 *  filed under cannot correct it. */
+                let projectFrom: string | undefined;
+                if (projectKey && projectKey !== NO_PROJECT) {
                     projectId = deps.resolveProject?.(projectKey);
                     if (!projectId) {
                         projectError = `no project matches "${projectKey}" — the notice was posted unfiled; projects.list shows the ids and names.`;
                     }
+                } else if (!projectKey) {
+                    // ‼️ N-1 — nothing said, so the host answers for the poster.
+                    // `(none)` above is deliberately NOT this branch: it is the
+                    // one way to say "unfiled" and mean it.
+                    projectId = deps.inferProject?.(agentName);
+                    if (projectId) { projectFrom = 'the session this agent is running in'; }
                 }
                 const n = deps.store.add({
                     title,
@@ -713,7 +740,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, projectId: n.projectId, projectError, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, projectId: n.projectId, projectFrom, projectError, unread: deps.store.unread() };
             }
         },
         {

@@ -264,8 +264,14 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         const hit = Object.keys(PROJECTS).find(id => PROJECTS[id].toLowerCase() === k.toLowerCase());
         return hit;
     };
+    // N-1: what the HOST knows about where an agent is working right now. The
+    // real one reads hosted sessions, the live monitor and the projects that
+    // declare an agent; here it is a lookup, because what is being pinned is
+    // the OP's rule about when it asks and when it does not.
+    const RUNNING = { 'proje-ajani': 'prj_aaa' };
     registerNoticesOps(reg, {
         store, writeReport, resolveProject,
+        inferProject: (agent) => RUNNING[String(agent || '')],
         onChange: () => changes++, onPost: n => { posted = n; }
     });
 
@@ -374,6 +380,41 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         const pruned = store.pruneProjects(['prj_aaa', 'prj_bbb']);
         ok('‼️ a stamp pointing at a deleted project is pruned — a filter matching nothing for ever is worse than none',
             pruned === 1 && !store.notices.find(n => n.id === byId.result.id).projectId);
+    }
+
+    // ---- N-1: the stamp the poster did not have to type ----
+    //
+    // The board filled up with "No Project" because `project` was an argument
+    // nobody remembered to pass, and filing them fell to the user for work they
+    // had themselves asked for under a project.
+    {
+        const auto = await reg.dispatch('notices.post', {
+            title: 'backlog kalemleri tamamlandı', agent: 'proje-ajani'
+        });
+        ok('‼️ a notice from an agent working in a project is filed under it without being asked',
+            auto.ok && auto.result.projectId === 'prj_aaa');
+        ok('…and the answer SAYS the host decided it, so the poster can correct it',
+            auto.ok && typeof auto.result.projectFrom === 'string');
+
+        const elsewhere = await reg.dispatch('notices.post', {
+            title: 'about the other one', agent: 'proje-ajani', project: 'TalkScribe'
+        });
+        ok('an explicit project still wins over what the host inferred',
+            elsewhere.ok && elsewhere.result.projectId === 'prj_bbb'
+            && elsewhere.result.projectFrom === undefined);
+
+        const none = await reg.dispatch('notices.post', {
+            title: 'about the fleet itself', agent: 'proje-ajani', project: '(none)'
+        });
+        ok('‼️ "(none)" is how a poster says UNFILED out loud, and it is honoured',
+            none.ok && none.result.projectId === undefined && none.result.projectError === undefined);
+
+        const unknown = await reg.dispatch('notices.post', {
+            title: 'from nobody in particular', agent: 'psikolog'
+        });
+        ok('an agent the host cannot place is still posted, unfiled and without complaint',
+            unknown.ok && unknown.result.projectId === undefined
+            && unknown.result.projectError === undefined);
     }
 
     const read = await reg.dispatch('notices.read', { id: post.result.id });

@@ -126,5 +126,28 @@ POOL.push(row({ title: 'nightly duty sweep', agentName: 'manager', ts: NOW - 2 *
     ok('several criteria narrow together', r.rows.filter(x => !x.pinned).length === 4 && r.total === 25);
 }
 
+// ---------- K-17: the list is every engine's, and the box knows it ----------
+//
+// The panel used to build this pool from `index.all()`, which is deliberately
+// the Claude-only half of the index — so a list headed "Resume an existing
+// session" silently held one CLI's conversations and nothing on it said so.
+// The module's own share of that fix is the ENGINE being part of a row: it is
+// what the badge draws and what the text box narrows on.
+{
+    const mixed = [
+        row({ title: 'ZEN yayın hazırlığı', ts: NOW - 3600000 }),
+        row({ title: 'codex ile refactor', source: 'codex', ts: NOW - 7200000 }),
+        row({ title: 'antigravity denemesi', source: 'agy', ts: NOW - 10800000 })
+    ];
+    ok('a foreign session is an ordinary row, not a special case',
+        filterResumable(mixed, {}, NOW).total === 3);
+    const only = filterResumable(mixed, { text: 'codex' }, NOW);
+    ok('‼️ typing an engine name narrows to that engine — no second control needed',
+        only.total === 1 && only.rows[0].title === 'codex ile refactor');
+    const claude = filterResumable(mixed, { text: 'claude' }, NOW);
+    ok('…and a row with no source answers to "claude", because that is what it is',
+        claude.total === 1 && claude.rows[0].title === 'ZEN yayın hazırlığı');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

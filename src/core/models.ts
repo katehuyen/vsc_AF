@@ -489,3 +489,47 @@ export function effortsFor(em: EngineModels | undefined, model: string): LaunchC
     if (!em) { return EFFORT_CHOICES; }
     return em.efforts[String(model ?? '').trim()] ?? em.efforts[''] ?? EFFORT_CHOICES;
 }
+
+/**
+ * ‼️ X-30 — A MODEL AND AN EFFORT ARE ONE ANSWER, NOT TWO.
+ *
+ * Reading the model list per engine (S-20) and the effort list per model was
+ * only half the job: the two boxes are filled at different moments, and the
+ * effort that was valid for the model you had a second ago is still sitting in
+ * the state when you pick a model that has never heard of it. The CLI does not
+ * shrug at that — measured:
+ *
+ *   invalid model selection (--model "gemini-3.1-pro" --effort "medium"):
+ *   gemini-3.1-pro has no "medium" effort (available: low, high)
+ *
+ * which is a prompt that dies before it starts, hours later, in a task nobody
+ * is watching. So every surface that lets one of the pair change asks this
+ * function what the OTHER one becomes, rather than each re-deriving it:
+ *
+ *   · a model this engine does not offer is dropped (S-20's rule, kept here so
+ *     there is one copy of it);
+ *   · an effort the resulting model does not offer becomes the model's own
+ *     default when the catalog states one, and otherwise nothing — "no flag"
+ *     is the only value that is safe on every engine.
+ *
+ * `em` absent (an engine that publishes no catalog) means nothing is known and
+ * therefore nothing is narrowed: inventing a refusal from ignorance would be
+ * worse than the refusal this prevents.
+ */
+export function narrowLaunch(
+    em: EngineModels | undefined,
+    model: string | undefined,
+    effort: string | undefined
+): { model: string; effort: string } {
+    const wantModel = String(model ?? '').trim();
+    const wantEffort = String(effort ?? '').trim();
+    if (!em) { return { model: wantModel, effort: wantEffort }; }
+    const keptModel = em.models.some(m => m.id === wantModel) ? wantModel : '';
+    const rows = effortsFor(em, keptModel);
+    if (rows.some(e => e.id === wantEffort)) { return { model: keptModel, effort: wantEffort }; }
+    const fallback = em.defaultEffort[keptModel] ?? '';
+    return {
+        model: keptModel,
+        effort: rows.some(e => e.id === fallback) ? fallback : ''
+    };
+}

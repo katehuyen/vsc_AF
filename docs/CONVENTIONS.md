@@ -36,6 +36,25 @@ number from its column, not from a sentence next to it. So:
 note (`charts.js` `WEIGHTED_TIP`), which hangs off a `?` and exists only to
 explain. A tooltip whose whole job is to teach is allowed to use words.
 
+### 1b. A CONTROL's hover says what is IN it before it says what it is for
+
+‼️ **The changing half first, then the standing explanation, with a blank line
+between them.** A `<select>` in a dense row shows its chosen value cut
+(`Default → son…`, `acceptEd…`), and a multi-pick button can only ever read
+`show: 3/7` — so the one question a reader has in front of a filtered list
+(*which three?*) could be answered only by OPENING the control, which is the
+gesture for "I am about to change this", performed by somebody who only wanted
+to look. Meanwhile the hover was spending all of itself on a sentence that never
+changes.
+
+- **`AFFilter.multi` does it for every picker in the extension** (`selectionLine`
+  in `media/afFilters.js`): the whole selection by name, then the page's own
+  subject line, then the shared grammar. Nothing a page does has to know.
+- **A hand-rolled `<select>` does it with a two-line helper** — the Console's
+  composer is the worked example (`boxTip` in `media/console.js`).
+- **A box with nothing to name opens on the explanation**, never on a blank
+  first line: an empty line above the text reads as a value that is empty.
+
 ### 2. Anything that is TEXT uses the rich panel, never `title`
 
 A native tooltip repeats what the cell already drew and then stops wherever the
@@ -62,6 +81,17 @@ AFTip.wrap(triggerHtml, head, body)
 Where this already applies, and where a new surface should follow it: session
 Title (title + the whole opening prompt) · Project (what the project IS, folders
 first) · every turn's prompt · backlog items · the Next up strip's codes.
+
+**‼️ A trigger inside a SCROLLING box needs `tip-free`.** The panel grows out of
+its trigger, so an ancestor with `overflow:auto` — the backlog capture's "part
+of" picker, a 340px column — clips a 620px box down to nothing and puts the rest
+where the pointer cannot reach it. `AFTip.wrap(trigger, head, body, 'tip-free',
+'data-aftip-anchor=".the-block"')` takes it out of the flow (`position:fixed`,
+the one thing `overflow` cannot clip) and afTip.js places it against the named
+BLOCK rather than against the row you happened to be on. It also slows both
+edges of the gesture: longer to open, because sweeping a list must not flash a
+paragraph at every row, and a grace period on the way out so the pointer can
+travel into it.
 
 **‼️ It survives a repaint, and that is the component's job, not yours.** These
 pages redraw whole sections on the host's beat, and a browser does not put

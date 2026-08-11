@@ -283,7 +283,17 @@ span.af-tipw { display: inline; }
 }
 /* the same beat the backlog's step menus use: sweeping a pointer down two
    hundred rows must not flash a paragraph at every one. Closing is instant. */
-.af-tipw:hover > .af-tip, .af-tip:hover { visibility: visible; opacity: 1; transition-delay: .25s; }
+.af-tipw:not(.tip-free):hover > .af-tip, .af-tip:hover { visibility: visible; opacity: 1; transition-delay: .25s; }
+/* ‼️ U-43 — OUT OF THE BOX ENTIRELY. A trigger inside a scrolling menu cannot
+   grow a panel: `overflow` clips it, and the pointer cannot reach what is left.
+   `position:fixed` is the one thing an ancestor's overflow does not clip, so
+   the panel leaves the flow and afTip.js places it against the BLOCK the menu
+   belongs to — with a longer delay opening and a grace period closing, both of
+   which are gestures rather than styles and therefore live in the script.
+   `left/top/width` are written there; everything else about the panel is the
+   panel. */
+.af-tipw.tip-free > .af-tip { position: fixed; left: 0; top: 0; z-index: 60; max-height: 52vh; }
+.af-tipw.tip-free.af-open > .af-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
 /* ‼️ The stand-in for a `:hover` a repaint took away — see afTip.js. A live
    table redrawing under a stationary pointer replaces the node you were on, and
    the browser does not put :hover back until you move; without this the panel

@@ -151,7 +151,12 @@
         .srow.sel { border-color:var(--vscode-focusBorder);
             box-shadow:inset 0 0 0 1px var(--vscode-focusBorder); }
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
-        .srow .n { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* ‼️ K-13 — the identity line is two things, and only ONE of them may be
+           cut. The name is the flexible half; the id is a fixed eight characters
+           that mean nothing at all once an ellipsis reaches them. */
+        .srow .n { font-weight:600; font-size:12px; display:flex; align-items:center; gap:5px;
+            overflow:hidden; white-space:nowrap; }
+        .srow .n .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
         /* A meta line too long for 250px wraps at a "·", never inside a figure:
            "ctx" on one line and "132.0k" on the next is not a reading. */
@@ -198,7 +203,10 @@
         .callout .cdot { width:7px; height:7px; border-radius:50%; flex:none;
             background:var(--vscode-charts-green,#4caf50); }
         .callout .cage { margin-left:auto; font-weight:400; opacity:.8; }
-        .srow .sid { font-weight:400; opacity:.6; font-size:10px; }
+        .srow .sid { font-weight:400; opacity:.6; font-size:10px; flex:none; }
+        /* outside the flex identity line (the resume rows) there is no gap to
+           inherit, so the id gets its own breathing space */
+        .srow .m .nm + .sid { margin-left:4px; }
         .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
         .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
@@ -889,18 +897,22 @@
         return rows.slice().sort((a, b) => orderRank(a) - orderRank(b));
     }
 
-    /** `developer (#407c78cb)` — the id is how a row is matched against a tab,
-     *  a terminal or a log line, so it rides with the agent's name. */
     /**
-     * ‼️ U-38 — THE ID CAME OFF THE LINE WHEN THE BADGE WENT ON IT.
+     * `developer (#407c78cb)` — the id is how a row is matched against a tab,
+     * a terminal or a log line, so it rides with the agent's name.
      *
-     * `agent name (#019fe7bc)` plus an engine badge plus a token figure is
-     * three things in a card one column wide, and the id was the one being
-     * cut — `(#019f…` says nothing at all, which is worse than not drawing
-     * it. It is a value you COPY, never one you read at a glance, so it
-     * belongs in the hover with the rest of the row's figures.
+     * ‼️ K-13 — IT IS BACK ON THE LINE, AND THE CARD MAKES ROOM FOR IT. U-38
+     * took it off because `agent name (#019fe7bc)` plus an engine badge plus a
+     * token figure did not fit one column and `(#019f…` says nothing at all.
+     * The answer to that is not to hide the id — the user reads it off the card
+     * to match a session against a tab, a terminal or a log line — it is to
+     * stop the ellipsis: the name shrinks first (`.n` is the flexible half) and
+     * the id never wraps or truncates (`.sid` below). The hover still carries
+     * the whole id, which is the one you copy.
      */
-    const who = (agentName, sessionId) => C.esc(agentName || 'session');
+    const who = (agentName, sessionId) =>
+        `<span class="nm">${C.esc(agentName || 'session')}</span>`
+        + (sessionId ? `<span class="sid">(#${C.esc(String(sessionId).slice(0, 8))})</span>` : '');
     /**
      * …and the identity line's hover, which now carries it. Figures only,
      * `Label: value` — the card's own tooltip says what the row IS.
@@ -1380,8 +1392,8 @@
             `<button class="rchip${cls ? ' ' + cls : ''}${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
         return `<div class="rpanel">
             <div class="rtext">
-                <input type="text" id="c-rq-text" placeholder="name, agent, label or #id…"
-                       title="${C.esc(window.AFQuery.tip("Searched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session."))}">
+                <input type="text" id="c-rq-text" placeholder="name, agent, engine, label or #id…"
+                       title="${C.esc(window.AFQuery.tip("Searched against the session's name, its agent, its labels, its id and the engine it was had with — type codex to see only those, or paste an id from any card or menu to land on that one session."))}">
                 <button class="rx" id="c-rq-xtext" hidden title="Clear what you typed (the rest of the filter stays)">⨯</button>
             </div>
             <div class="rrow">
@@ -1413,6 +1425,29 @@
     }
 
     /**
+     * ‼️ K-17 — WHICH ENGINE THIS CONVERSATION WAS HAD WITH, on every row.
+     *
+     * The list used to be Claude's transcripts only, so no row needed to say
+     * whose it was; now it is every engine's, and an unbadged row would mean
+     * "Claude" or "this list never learned about engines" with nothing to tell
+     * them apart (docs/CONVENTIONS.md → the badge). Claude wears one too.
+     *
+     * The hover is figures, `Label: value`. It answers the question this list
+     * exists for — what clicking the row will start — rather than repeating the
+     * name the row already draws.
+     */
+    function resumeEngineBadge(r) {
+        const e = engineRow(r.engine) || {};
+        return window.AFEngine.badge(r.engine, window.AFTip.lines([
+            'Engine: ' + (e.label || window.AFEngine.label(r.engine)),
+            'Resumes as: ' + (e.label || window.AFEngine.label(r.engine))
+                + (e.ready === false ? ' — cannot run here' : ''),
+            'Session: ' + (r.sessionId || '—'),
+            'Folder: ' + (r.cwd || '—')
+        ]));
+    }
+
+    /**
      * The rows themselves, and one line saying how much of the whole they are.
      *
      * A session a live process already owns cannot be joined — resuming it
@@ -1430,7 +1465,10 @@
                      sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
-                <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
+                <div class="h">
+                    <span class="n"><span class="nm">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</span></span>
+                    ${resumeEngineBadge(r)}
+                </div>
                 <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // How many of how many — a list that silently ends at fifteen is why
@@ -2195,6 +2233,25 @@
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
             `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(o.detail || '')}">${C.esc(o.label || o.id)}</option>`).join('');
+        /**
+         * ‼️ K-16 — A BOX'S HOVER SAYS WHAT IS IN IT, THEN WHAT IT IS FOR.
+         *
+         * This row is eight pickers wide in a panel that is rarely wide, so a
+         * `<select>` shows its chosen value cut ("Default → son…", "acceptEd…")
+         * and the only way to read it was to OPEN the box — a gesture that
+         * means "I am about to change this", performed by somebody who only
+         * wanted to look. The hover was right there and spent all of itself on
+         * a sentence that never changes.
+         *
+         * So: the current value, a blank line, then the same standing
+         * explanation the box has always carried. The order is the point — the
+         * changing half first, because that is the half being asked about.
+         */
+        const boxTip = (list, cur, standard) => {
+            const row = (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
+            const now = row ? String(row.label || row.id || '') : '';
+            return (now ? now + '\n\n' : '') + standard;
+        };
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
             ? (dead ? 'This session has ended — start a new one to keep talking.'
@@ -2237,13 +2294,13 @@
                     ${C.esc(s.agentName)}
                 </span>
                 ${engineBadge(s)}${engineHintHtml(s.engine)}
-                <label class="permlbl" title="${C.esc(modelTip + ' · ' + modelNote(s.engine))}">model
+                <label class="permlbl" title="${C.esc(boxTip(modelsFor(s.engine), s.model, modelTip + ' · ' + modelNote(s.engine)))}">model
                     <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>
-                <label class="permlbl" title="${C.esc(effortTip)}">effort
+                <label class="permlbl" title="${C.esc(boxTip(effortsForModel(s.engine, s.model), s.effort, effortTip))}">effort
                     <select id="c-effort-live">${opts(effortsForModel(s.engine, s.model), s.effort)}</select>
                 </label>
-                <label class="permlbl" title="${C.esc(permTip)}">permissions
+                <label class="permlbl" title="${C.esc(boxTip(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode, permTip))}">permissions
                     <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
                 </label>
                 ${window.AFFilter.multi({
@@ -2265,16 +2322,16 @@
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
-            : `${pinnedAgentHtml() || `<select id="c-agent" title="Which agent — the session opens in its folder">
+            : `${pinnedAgentHtml() || `<select id="c-agent" title="${C.esc(boxTip((DATA.agents || []).map(a => ({ id: a.id, label: a.name })), st.agentId, 'Which agent — the session opens in its folder'))}">
                     <option value="">Choose an agent…</option>
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
                 </select>`}
-                <select id="c-engine" title="Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.">${engineOptionsHtml(engineNow())}</select>
+                <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
-                <select id="c-model" title="Model for the new session (--model). ${C.esc(modelNote(engineNow()))}">${opts(modelsFor(engineNow()), st.model)}</select>
-                <select id="c-effort" title="Reasoning effort (--effort)">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>
-                <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
-                <select id="c-proj" title="Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar's active project is the window's answer, not this session's, and neither writes the other.">
+                <select id="c-model" title="${C.esc(boxTip(modelsFor(engineNow()), st.model, 'Model for the new session (--model). ' + modelNote(engineNow())))}">${opts(modelsFor(engineNow()), st.model)}</select>
+                <select id="c-effort" title="${C.esc(boxTip(effortsForModel(engineNow(), st.model), st.effort, 'Reasoning effort (--effort)'))}">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>
+                <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, 'What it may do without asking (--permission-mode)'))}">${opts(DATA.permissions, st.permissionMode)}</select>
+                <select id="c-proj" title="${C.esc(boxTip([{ id: '', label: '◧ No project' }, ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))], DATA.activeProjectId || '', 'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.'))}">
                     <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
                     ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
                 </select>

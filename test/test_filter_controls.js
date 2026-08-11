@@ -114,6 +114,33 @@ ok('a picker with no presets declares none', ms.presets('p1').length === 0);
 ok('the hint says what a name-click does',
     /Click a NAME to show only that one/.test(AF.multi({ id: 'p5', options: AGENTS })));
 
+// ---- K-16: the hover says WHAT IS TICKED before it says anything else ----
+//
+// The button can only ever read `Agents: 2/3` once more than one thing is on,
+// so the single question a reader has in front of a filtered list — *which
+// two?* — could only be answered by OPENING the menu, a gesture that means "I
+// am about to change this". Every picker in the extension gets this from the
+// component, so no page can word it differently.
+{
+    const tip = h => (/title="([^"]*)"/.exec(h) || [, ''])[1];
+    const two = tip(AF.multi({ id: 'k16a', label: 'Agents', options: AGENTS, selected: ['dev', 'psy'] }));
+    ok('‼️ the whole selection is named, not counted', /^Agents: dev · psy/.test(two));
+    ok('…and the standing explanation still follows it, after a blank line',
+        /Agents: dev · psy\n\n[\s\S]*Click a NAME/.test(two));
+    ok('nothing narrowed reads as the picker\'s own word for "all"',
+        /^Agents: everything/.test(tip(AF.multi({
+            id: 'k16b', label: 'Agents', allLabel: 'everything', options: AGENTS, selected: null
+        }))));
+    ok('an empty selection says none rather than falling back to all',
+        /^Agents: none/.test(tip(AF.multi({
+            id: 'k16c', label: 'Agents', options: AGENTS, selected: []
+        }))));
+    ok('a page\'s own subject line sits between the selection and the grammar',
+        /^Agents: dev\n\nwho ran it\n\n[\s\S]*Click a NAME/.test(tip(AF.multi({
+            id: 'k16d', label: 'Agents', options: AGENTS, selected: ['dev'], title: 'who ran it'
+        }))));
+}
+
 // the button click toggles the menu without touching the selection
 const before = renders;
 ms.open('p1');

@@ -1921,6 +1921,17 @@
                 /* documents · plan · people */
                 .pj-docbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
                     padding:6px 0 10px; border-bottom:1px solid var(--vscode-panel-border); margin-bottom:10px; }
+                /* M-5 — the counts ARE the control, so they keep the type and
+                   weight they had as prose and gain only a hover affordance:
+                   a button that looks like a button here would read as a fifth
+                   action in a bar that already has four. */
+                .pj-bl-cnt { background:none; border:1px solid transparent; color:inherit;
+                    font:inherit; padding:2px 6px; margin-left:-6px; border-radius:5px;
+                    cursor:pointer; display:inline-flex; align-items:baseline; gap:6px; }
+                .pj-bl-cnt:hover { border-color:var(--vscode-widget-border,#4444);
+                    background:var(--vscode-list-hoverBackground); }
+                .pj-bl-cntg { font-size:11px; opacity:.55; }
+                .pj-bl-cnt:hover .pj-bl-cntg { opacity:1; }
                 .pj-bl-archive-age { display:inline-flex; align-items:stretch; gap:3px; }
                 .pj-bl-archive-age input { width:58px; min-width:58px; padding:3px 5px;
                     text-align:right; border-radius:3px 0 0 3px; }
@@ -2200,7 +2211,10 @@
                    column opens off the right of the panel every time. Same fix,
                    same reason, as the Next up strip's chips. */
                 .pj-bl-ppm .af-tipw { display:block; }
-                .pj-bl-ppm .af-tipw > .af-tip { left:0; top:100%; max-width:min(620px,52vw); }
+                /* ‼️ U-43 — the panel is tip-free now, so it is placed in
+                   viewport coordinates by afTip.js and this rule must not
+                   fight it. What stays here is the one thing that IS this
+                   menu's business: the trigger fills its row. */
                 /* The last row of the footer: the box's own four text tools on
                    the left, Add on the right. Add is a BUTTON, not a banner —
                    it used to span the whole width, which said "this is the big
@@ -2658,6 +2672,53 @@
     let blSort = 'file';
     let blDesc = false;
     let blFiltersOpen = false;
+    /**
+     * ‼️ M-5 — A PILE WITH PARTS IN IT HAS TWO HONEST SIZES, AND THE STRIP ONLY
+     * EVER SAID ONE.
+     *
+     * "10 open · 110 done" was written before an item could be PART OF another,
+     * so it counts a whole and its four parts as five things to do. That is the
+     * right answer to "how many lines are outstanding" and the wrong one to
+     * "how much work is left" — five parts of one job are one job — and the
+     * strip never said which question it was answering.
+     *
+     * So it answers both, one press apart, and the press is remembered. `false`
+     * is what the figure has always meant (every line counted) and stays the
+     * opening state: a number that changes the day this shipped, silently, is
+     * how a reader stops trusting the strip.
+     *
+     * ‼️ THE AREA CHIPS FOLLOW IT. `K 0 · S 1 · M 3` is the same count sliced by
+     * area, so leaving those on the other rule would put two contradictory
+     * totals on two adjacent lines.
+     */
+    let blRollUp = false;
+    /** The lines a count is over, under the current rule. A part is dropped
+     *  whole — never re-attributed to its parent's area, which would move a
+     *  U item into a P chip and make the chips add up to something no heading
+     *  in the file contains. */
+    const blCounted = items => blRollUp ? (items || []).filter(i => !i.parent) : (items || []);
+    /** The headline figures — the same four the host computes, over whichever
+     *  set the rule above says. */
+    function blCounts(items, rollUp) {
+        const rows = rollUp === undefined ? blCounted(items)
+            : (rollUp ? (items || []).filter(i => !i.parent) : (items || []));
+        const n = state => rows.filter(i => i.state === state).length;
+        return {
+            open: n('open'), doing: n('doing'), done: n('done'), cancelled: n('cancelled'),
+            unclassified: rows.filter(i => !i.code).length
+        };
+    }
+    /** …and the same figures per area, on the area rows the host sent — only the
+     *  two numbers are recomputed, so the dictionary (code, label, line) stays
+     *  the file's. */
+    function blAreaCounts(items, areas) {
+        const rows = blCounted(items);
+        return (areas || []).map(a => ({
+            ...a,
+            open: rows.filter(i => i.area === a.code && i.state === 'open').length,
+            total: rows.filter(i => i.area === a.code).length
+        }));
+    }
     /** The "how does this work" panel, opened from the ? in the doc bar. */
     let blHelpOpen = false;
 
@@ -2717,9 +2778,19 @@
         },
         {
             id: 'bl-rel', key: 'rel', label: 'family', allLabel: 'any',
-            where: 'panel', width: 210,
-            title: '[parent:: CODE] — what an item is PART OF. Not ⛔: a child is not waiting on its parent.',
+            where: 'panel', width: 230,
+            title: '[parent:: CODE] — what an item is PART OF. Not ⛔: a child is not waiting on its parent. '
+                + '"Wholes only" is the roll-up reading: everything that is nobody\'s part, whether or not it has parts of its own.',
             options: [
+                // ‼️ M-6 — THE ROLL-UP ROW, AND WHY IT IS NOT THE SAME AS "has
+                // parts". "Show me the wholes, not the parts" is the question
+                // people actually ask of a list with families in it, and this
+                // axis could only answer it by ticking TWO boxes ("has parts"
+                // plus "stands on its own") — a subset with no name is a subset
+                // nobody finds. It deliberately overlaps the two rows below it:
+                // the axis is an OR, and an item is allowed to satisfy more
+                // than one of its own true descriptions.
+                { v: 'top', t: 'wholes only — nobody\'s part' },
                 { v: 'child', t: 'part of something' },
                 { v: 'parent', t: 'has parts' },
                 { v: 'alone', t: 'stands on its own' }
@@ -3121,13 +3192,19 @@
                 i.parent ? `Itself part of: ${i.parent}` : '',
                 (i.children || []).length ? `Has parts: ${i.children.join(' ')}` : ''
             ]);
+            // ‼️ U-43 — `tip-free`, ANCHORED TO THE WHOLE PICKER. The panel
+            // used to be drawn inside `.pj-bl-ppm`, which scrolls: a 620px box
+            // squeezed into a 340px column, clipped at the menu's edge, and
+            // gone the moment the pointer left the row to reach for it. It now
+            // leaves the flow and opens against the block, free and full size,
+            // with the delays afTip.js gives every tip-free trigger.
             return window.AFTip.wrap(
                 `<button class="pj-bl-ppi${n === blPP.at ? ' at' : ''}" data-blpp="${C.esc(i.code)}">
                     <span class="pj-bl-ppc">${C.esc(i.code)}</span>
                     <span class="pj-bl-ppt">${C.esc(blShort(i.text, BL_PARENT_LABEL_WIDE))}</span>
                     ${i.effort ? `<span class="pj-bl-ppe">${C.esc(i.effort)}</span>` : ''}
                     ${(i.children || []).length ? `<span class="pj-bl-ppn">⊂ ${(i.children || []).length}</span>` : ''}
-                </button>`, head, body);
+                </button>`, head, body, 'tip-free', 'data-aftip-anchor=".pj-bl-pp"');
         };
         return `<span class="pj-bl-ppm">
             <button class="pj-bl-ppi none${blPP.at === -1 ? ' at' : ''}" data-blpp=""
@@ -3165,13 +3242,62 @@
      */
     function blCapResetHtml(cap) {
         const set = BL_CAP_AXES.filter(a => String(cap[a.k] || '') !== a.empty);
-        if (!set.length) {
+        // ‼️ U-41 — the DRAGGED HEIGHT is one of the things this puts back, so
+        // it is one of the things that decides whether there is anything to put
+        // back. Without it the ↺ sat dimmed and inert on a card whose box had
+        // been pulled to half the screen.
+        const tall = !!String(cap.boxH || '');
+        if (!set.length && !tall) {
             return `<span class="pj-bl-capreset" style="opacity:.2;cursor:default"
-                title="The five boxes and the queue place are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
+                title="The five boxes, the queue place and the box's height are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
         }
-        const now = set.map(a => `${a.label}: ${cap[a.k]}`).join(' · ');
+        const now = set.map(a => `${a.label}: ${cap[a.k]}`)
+            .concat(tall ? [`box height: ${cap.boxH}`] : []).join(' · ');
         return `<span class="pj-bl-capreset" data-act="blCapReset"
-            title="Put the capture boxes back to blank — ${C.esc(now)}. They keep their last value on purpose, so filing a run of items into one area costs one choice; this is the way out when the next item is a different kind of thing. What you have WRITTEN is not touched.">↺</span>`;
+            title="Put the capture card back to how it starts — ${C.esc(now)}. The boxes keep their last value on purpose, so filing a run of items into one area costs one choice, and the box keeps the height you dragged it to; this is the way out when the next item is a different kind of thing. What you have WRITTEN is not touched.">↺</span>`;
+    }
+
+    /**
+     * ‼️ M-5 — THE COUNTS STRIP, AND THE PRESS THAT CHANGES WHAT IT COUNTS.
+     *
+     * The figures are the control: there is nothing beside them to hunt for,
+     * and the one place a reader's pointer already is when they wonder "is
+     * that ten JOBS or ten LINES?" is on the number itself. The glyph says
+     * which reading is on screen — ⊞ every line, ⊟ parts folded into their
+     * wholes — and the hover carries BOTH readings, so the question can be
+     * answered without pressing anything at all.
+     *
+     * A file with no parts in it gets no control: a toggle between two
+     * identical numbers is a button that does nothing, and it would be on
+     * every project that has never used `[parent:: …]`.
+     */
+    function blCountsHtml(all, c) {
+        const parts = (all || []).filter(i => i.parent).length;
+        const line = cc => `<b>${cc.open || 0}</b> open${cc.doing ? ` · <b>${cc.doing}</b> doing` : ''}`
+            + ` · ${cc.done || 0} done${cc.unclassified ? ` · <b>${cc.unclassified}</b> unfiled` : ''}`;
+        if (!parts) {
+            return `<span title="${C.esc(window.AFTip.lines([
+                `Open: ${c.open || 0}`,
+                `Doing: ${c.doing || 0}`,
+                `Done: ${c.done || 0}`,
+                `Cancelled: ${c.cancelled || 0}`,
+                `Unfiled: ${c.unclassified || 0}`,
+                'Parts: none — nothing in this file is [parent:: …] of anything'
+            ]))}">${line(c)}</span>`;
+        }
+        const every = blCounts(all, false);
+        const tops = blCounts(all, true);
+        const tip = window.AFTip.lines([
+            `Counting: ${blRollUp ? 'wholes only' : 'every line'}`,
+            `Open: ${every.open} every line · ${tops.open} wholes only`,
+            `Doing: ${every.doing} · ${tops.doing}`,
+            `Done: ${every.done} · ${tops.done}`,
+            `Parts: ${parts} of ${(all || []).length} items are part of another`,
+            '',
+            'Press to switch. The area chips below count by the same rule, so the two lines can never disagree.'
+        ]);
+        return `<button class="pj-bl-cnt" data-act="blRollUp" title="${C.esc(tip)}">${line(c)}
+            <span class="pj-bl-cntg">${blRollUp ? '⊟' : '⊞'}</span></button>`;
     }
 
     /**
@@ -3188,8 +3314,14 @@
         const d = td().backlog;
         if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog document'); }
         const all = d.items || [];
-        const areas = d.areas || [];
-        const c = d.counts || {};
+        // ‼️ M-5 — the counts and the area chips are worked out HERE, not read
+        // off the host's `d.counts` / `d.areas`, because they answer a question
+        // the host cannot know: whether the reader is counting every line or
+        // only the wholes (see blRollUp). The rule that decides it has to be
+        // the same one for the headline and the chips, or the numbers on one
+        // line contradict the numbers on the next.
+        const areas = blAreaCounts(all, d.areas || []);
+        const c = blCounts(all);
         // The startable queue, addressed the way rows are (code first, line for an
         // uncoded capture) — so an uncoded inbox item in the queue is marked on
         // its row too, which a code-only comparison silently never did.
@@ -3256,8 +3388,7 @@
 
         return `
         <div class="pj-docbar">
-            <span><b>${c.open || 0}</b> open${c.doing ? ` · <b>${c.doing}</b> doing` : ''}
-                · ${c.done || 0} done${c.unclassified ? ` · <b>${c.unclassified}</b> unfiled` : ''}</span>
+            ${blCountsHtml(all, c)}
             <span class="muted small">${C.esc(d.path)}</span>
             ${blHelpHtml(d)}
             <span class="grow"></span>
@@ -3641,7 +3772,12 @@
         if (blFilter.family && family && !family.has(i.code || '')) { return false; }
         if (blFilter.rel) {
             const kids = (i.children || []).length;
+            // ‼️ Every TRUE description of the row, not one label per row: an
+            // item in the middle of a chain is a child AND a parent AND a
+            // whole, and OR-within-the-axis is what makes each of those
+            // questions find it (M-6).
             const mine = [i.parent ? 'child' : '', kids ? 'parent' : '',
+                i.parent ? '' : 'top',
                 (!i.parent && !kids) ? 'alone' : ''].filter(Boolean);
             if (!mine.some(m => blFilter.rel.indexOf(m) >= 0)) { return false; }
         }
@@ -6941,6 +7077,16 @@
                     // by the next render, which this page does constantly.
                     const cap = blCapture();
                     for (const a of BL_CAP_AXES) { cap[a.k] = a.empty; }
+                    // ‼️ U-41 — AND THE HEIGHT THE BOX WAS DRAGGED TO. It is
+                    // kept in the same draft as the five boxes and for the same
+                    // reason (see blCapture `boxH`), so leaving it behind made
+                    // "put this back to how it starts" true of everything on
+                    // the card except the biggest thing on it. Clearing the
+                    // value is enough: the box is redrawn from the draft below,
+                    // and an empty `boxH` means the stylesheet's own min-height.
+                    // ‼️ THE TEXT IS STILL NOT TOUCHED — the height is a shape,
+                    // the words are work.
+                    cap.boxH = '';
                     render();
                     break;
                 }
@@ -6962,6 +7108,10 @@
                 // this one moves nothing but the 🎯 block. No code sent: every
                 // family at once. The row's right-click does one.
                 case 'blGather': vscode.postMessage({ type: 'backlogGather', id }); break;
+                // M-5 — which of the two honest sizes the strip is showing.
+                // Page-side and remembered for as long as the panel lives, the
+                // same way the sort and the filters are.
+                case 'blRollUp': blRollUp = !blRollUp; render(); break;
                 case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
                 case 'blDir': blDesc = !blDesc; render(); break;
                 case 'blClear':

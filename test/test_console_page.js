@@ -239,12 +239,14 @@ const html = allHtml;
 
 // ---------- the row says who, which session, and what it costs ----------
 {
-    // ‼️ U-38 — THE ID MOVED INTO THE HOVER, because the engine badge took the
-    // room it used to have and a cut id (`(#019f…`) says nothing at all. It is
-    // a value you copy, never one you read at a glance.
-    ok('the card carries the agent, and the id is one hover away',
+    // ‼️ K-13 — THE ID IS BACK ON THE LINE. U-38 moved it into the hover
+    // because a cut id (`(#019f…`) says nothing at all; the answer to that is
+    // to stop the cut, not to hide the value — the name truncates and the id
+    // does not (`.n .nm` / `.sid { flex:none }`). The hover keeps the WHOLE id,
+    // which is the one you copy.
+    ok('the card carries the agent AND the short id, with the whole id one hover away',
         /developer/.test(html())
-        && !/<span class="sid">/.test(html())
+        && /<span class="sid">\(#407c78cb\)<\/span>/.test(html())
         && /Session: 407c78cb-/.test(html()));
     // One figure fits a 250px card, and it is the RAW token count: "$0.03"
     // does not say whether that was haiku thinking briefly or opus barely
@@ -836,6 +838,24 @@ const html = allHtml;
     ok('…and offers model, effort and permissions as things you can still change',
         /id="c-model-live"/.test(allHtml()) && /id="c-effort-live"/.test(allHtml())
         && /id="c-perm"/.test(allHtml()));
+
+    // ---- K-16: a box's hover says WHAT IS IN IT, then what it is for ----
+    //
+    // This row is eight pickers wide in a panel that is rarely wide, so a
+    // `<select>` shows its chosen value cut and the only way to READ it was to
+    // OPEN the box — a gesture that means "I am about to change this",
+    // performed by somebody who only wanted to look.
+    const tipOf = re => (re.exec(allHtml()) || [, ''])[1];
+    const permTip = () => tipOf(/title="([^"]*)"[^>]*>permissions/);
+    ok('‼️ the permissions box names its current value before explaining itself',
+        /^default\n\n/.test(permTip()));
+    ok('…and the standing explanation is still there, underneath',
+        /applied live|SANDBOX/.test(permTip()));
+    // ‼️ …and a box whose list this build has nothing for names NOTHING rather
+    // than printing an empty line above the explanation: the hover's first line
+    // is a value, and a blank one would read as a value that is blank.
+    ok('a box with no list to name from opens on the explanation, not on a gap',
+        /^How hard it thinks/.test(tipOf(/title="([^"]*)"[^>]*>effort/)));
 }
 
 // ---------- the card hands its state to the right-click menu ----------
@@ -900,8 +920,15 @@ const html = allHtml;
         const d = data(CONVO.slice());
         d.resumable = [{
             sessionId: 'aaaa1111-0001', title: 'ZEN sürüm notları', agentName: 'developer',
+            engine: 'claude',
             cwd: 'D:/a/dev', pinned: true, ts: Date.now() - 5 * 86400000,
             cost: 0.31, tokens: 812000, contextTokens: 132000
+        }, {
+            // K-17: the list is every engine's now, not Claude's alone.
+            sessionId: 'bbbb2222-0002', title: 'codex ile refactor', agentName: 'developer',
+            engine: 'codex',
+            cwd: 'D:/a/dev', pinned: false, ts: Date.now() - 6 * 86400000,
+            cost: 0, tokens: 0, contextTokens: 0
         }];
         d.resumeAgents = ['developer', 'manager'];
         d.resumeTotal = 1240; d.resumeMax = 200; d.resumeDefaultN = 15; d.resumeFiltered = false;
@@ -947,7 +974,7 @@ const html = allHtml;
     // the count line, and the way out
     posted.length = 0;
     push(withResume({ resumeFiltered: true }));
-    ok('the list says how much of the whole it is showing', /1 of 1240/.test(rlist()));
+    ok('the list says how much of the whole it is showing', /2 of 1240/.test(rlist()));
     // ‼️ Two buttons, two facts. One lit button had to mean both "the panel is
     // open" and "the list is narrowed", so with the panel shut a filtered list
     // looked exactly like the whole list — and the only way out was a link at
@@ -1025,6 +1052,24 @@ const html = allHtml;
     sandbox.document.querySelectorAll('[data-resume]')[0]._fn({});
     ok('…and still resumes when clicked',
         posted.some(m => m.type === 'resume' && m.sessionId === 'aaaa1111-0001'));
+
+    // ---- K-17: every row wears its engine, Claude included ----
+    //
+    // The list held Claude's transcripts only, so no row needed to say whose it
+    // was. Now it holds every engine's, and an unbadged row would mean "Claude"
+    // or "this list never learned about engines" with nothing to tell the two
+    // apart (docs/CONVENTIONS.md → the badge).
+    push(withResume());
+    ok('‼️ a Codex conversation is offered for resuming at all',
+        /codex ile refactor/.test(rlist()));
+    ok('…wearing its own badge, from the shared component',
+        /class="af-eng af-engc codex"/.test(rlist()));
+    ok('‼️ …and Claude wears one too — an unbadged row is unreadable',
+        /class="af-eng af-engc claude"/.test(rlist()));
+    ok('the badge hover says what pressing the row would START',
+        /Resumes as: Codex/.test(rlist()));
+    ok('the query box says the engine is one of the things it searches',
+        /engine/.test(panel()));
 }
 
 // ---------- the composer stays on the window's bottom edge ----------

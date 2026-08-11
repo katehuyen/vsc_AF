@@ -79,6 +79,31 @@
         + 'the checkbox itself still toggles. Select all / Clear are above the list.';
 
     /**
+     * ‼️ K-16 — WHAT IS TICKED, IN FULL, BEFORE ANYTHING ELSE IN THE HOVER.
+     *
+     * The button can only ever say `show: 3/7` once more than one thing is
+     * ticked, so the one question a reader has in front of a filtered list —
+     * *which three?* — could only be answered by OPENING the menu, a gesture
+     * that means "I am about to change this". The hover was sitting there
+     * spending all of itself on a sentence that never changes.
+     *
+     * Every picker in the extension gets this from the component, so no page
+     * has to remember to do it and none of them can word it differently. The
+     * standing explanation still follows, after a blank line — see the ordering
+     * rule in docs/CONVENTIONS.md.
+     */
+    function selectionLine(o, opts, sel) {
+        const label = o.label || 'Filter';
+        if (sel === null || sel === undefined) { return label + ': ' + (o.allLabel || 'all'); }
+        if (!sel.length) { return label + ': none'; }
+        const names = sel.map(v => {
+            const hit = opts.find(x => x.v === v);
+            return hit ? hit.t : v;
+        });
+        return label + ': ' + names.join(' · ');
+    }
+
+    /**
      * o: { id, label, options, selected, title, allLabel, disabled, width,
      *      presets: [{ id, label, title, values: [...] }],
      *      align: 'right' when the picker sits at the right edge of a header }
@@ -117,7 +142,8 @@
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
         return `<span class="afms" data-afms-wrap="${esc(o.id)}">` +
             `<button type="button" class="secondary afms-btn" data-afms="${esc(o.id)}"` +
-            `${o.disabled ? ' disabled' : ''} title="${esc(o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT)}">` +
+            `${o.disabled ? ' disabled' : ''} title="${esc(selectionLine(o, opts, sel) + '\n\n'
+                + (o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT))}">` +
             `${esc(buttonText(o, opts, sel))} ▾</button>` +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
             `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +

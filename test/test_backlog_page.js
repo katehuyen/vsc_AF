@@ -627,13 +627,18 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r.els('blarea').find(e => e.dataset.blarea === '').click();
     ok('a later drag wins', (r.byId('bl-new').style.height || '') === '120px');
 
-    // The ↺ on the heading is about the five AXES. Height is part of the
-    // writing surface, like the words — and its tooltip promises those are not
-    // touched.
+    // ‼️ U-41 — AND THE ↺ PUTS THE HEIGHT BACK TOO. It was left out on the
+    // reasoning that height belongs to the writing surface; the user's reading
+    // is the other one, and it is the better one: the height is a SHAPE the
+    // card keeps between items, exactly like the five boxes beside it, so a
+    // control that says "put this card back to how it starts" and leaves the
+    // biggest thing on it at half the screen is not doing what it says. The
+    // WORDS are still untouched — that is the line this does not cross.
     const reset = r.els('act').find(e => e.dataset.act === 'blCapReset');
     if (reset) { reset.click(); }
-    ok('‼️ the axes reset does not shrink the box — it resets choices, not the surface',
-        (r.byId('bl-new').style.height || '') === '120px');
+    ok('‼️ the reset puts the dragged height back as well as the choices',
+        (r.byId('bl-new').style.height || '') === '');
+    ok('…and the words are still there', r.byId('bl-new').value !== undefined);
 }
 
 // ---------- S-12: say WHERE it goes in the same gesture as writing it ----------
@@ -1190,6 +1195,69 @@ const famData = () => {
         /class="pj-bl-row[^"]*child orphan/.test(r3.html()));
     ok('…while an item that is part of nothing carries neither class',
         !/data-key="P-2"[\s\S]{0,20}child/.test(r.html()));
+
+    // ---- M-6: "show me the wholes" is ONE press, not two ----
+    //
+    // The axis could already say "has parts" and "stands on its own"; the
+    // question people actually ask of a list with families in it is the UNION
+    // of those two, and a subset with no name is a subset nobody finds.
+    const codes = h => codesIn(h).slice().sort().join();
+    const rTop = run(famData());
+    rTop.els('act').find(e => e.dataset.act === 'blFilters').click();
+    rTop.ms.only('bl-rel', ['top']);
+    ok('‼️ "wholes only" hides every part, and keeps everything else',
+        codes(rTop.html()) === 'P-1,P-2');
+    const rKid = run(famData());
+    rKid.els('act').find(e => e.dataset.act === 'blFilters').click();
+    rKid.ms.only('bl-rel', ['child']);
+    ok('…and its mirror shows only the parts',
+        codes(rKid.html()) === 'K-1,K-2');
+    // K-2 is the middle of a chain: a part AND a whole. It has to answer both,
+    // which is what OR-within-the-axis is for — and it must NOT answer "wholes
+    // only", because it is somebody's part.
+    const rMid = run(famData());
+    rMid.els('act').find(e => e.dataset.act === 'blFilters').click();
+    rMid.ms.only('bl-rel', ['parent']);
+    ok('an item in the middle of a chain answers "has parts"',
+        codes(rMid.html()) === 'K-2,P-1');
+    ok('…and does not answer "wholes only"', codes(rTop.html()).indexOf('K-2') < 0);
+}
+
+// ---- M-5: the pile has two honest sizes, and the strip says which ----
+//
+// "10 open · 110 done" was written before an item could be part of another, so
+// it counts a whole and its four parts as five things to do. That is the right
+// answer to "how many lines are outstanding" and the wrong one to "how much
+// work is left" — and the strip never said which question it was answering.
+{
+    const r = run(famData());
+    const counts = () => r.els('act').find(e => e.dataset.act === 'blRollUp');
+    ok('the counts themselves are the control', !!counts());
+    // Five open lines, two of which are PARTS (K-2 of P-1, K-1 of K-2) — so
+    // the same pile is honestly five things and honestly three.
+    ok('it opens on the reading it has always had — every line counted',
+        /<b>5<\/b> open/.test(r.html()));
+    ok('…and the area chips agree with it',
+        /data-blarea="K"[^>]*>\s*K <span class="muted">2</.test(r.html()));
+    ok('‼️ the hover answers BOTH readings, so the question can be settled without pressing',
+        /Open: 5 every line · 3 wholes only/.test(r.html()));
+
+    counts().click();
+    ok('‼️ pressing it drops the parts from the count',
+        /<b>3<\/b> open/.test(r.html()));
+    ok('…and the area chips follow, or two adjacent lines would disagree',
+        /data-blarea="K"[^>]*>\s*K <span class="muted">0</.test(r.html()));
+    ok('the glyph says which reading is on screen', /pj-bl-cntg">⊟</.test(r.html()));
+
+    r.els('act').find(e => e.dataset.act === 'blRollUp').click();
+    ok('…and it is a toggle, remembered until it is pressed again',
+        /<b>5<\/b> open/.test(r.html()) && /pj-bl-cntg">⊞</.test(r.html()));
+
+    // A project that has never used [parent:: …] gets no control: a toggle
+    // between two identical numbers is a button that does nothing.
+    const flat = run(data());
+    ok('a file with no parts in it is not offered the switch',
+        !flat.els('act').some(e => e.dataset.act === 'blRollUp'));
 }
 
 // U-24 — ⚭ Gather families: the QUEUE is rearranged so a family reads as one

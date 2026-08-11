@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const { readCodexCatalog, readClaudeExtras, readEngineModels, effortsFor,
-    modelFamily, modelVariant, mergeModelRows } =
+    modelFamily, modelVariant, mergeModelRows, narrowLaunch } =
     require(path.join(__dirname, '..', 'out', 'core', 'models.js'));
 const { EFFORT_CHOICES } = require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
 
@@ -207,6 +207,48 @@ const CLAUDE_STATE = JSON.stringify({
     ok('‼️ no two Claude rows read the same', new Set(labels).size === labels.length);
     ok('the granted model is still offered', m.claude.models.some(x => x.id === 'claude-fable-5[1m]'));
     ok('…and the note says duplicates were folded', /listed once/.test(m.claude.note));
+}
+
+// ---------- X-30: the pair, narrowed together ----------
+//
+// The reported failure, verbatim from the CLI:
+//   invalid model selection (--model "gemini-3.1-pro" --effort "medium"):
+//   gemini-3.1-pro has no "medium" effort (available: low, high)
+// Reading the effort list per model was already done (above); what was missing
+// is that CHANGING one of the pair has to settle the other, or the box shows
+// the new model's first level while the state still holds the old word.
+{
+    const em = {
+        models: [
+            { id: '', label: 'Default' },
+            { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+            { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' }
+        ],
+        efforts: {
+            'gemini-3.1-pro': [{ id: 'low' }, { id: 'high' }],
+            'gemini-3.5-flash': [{ id: 'low' }, { id: 'medium' }, { id: 'high' }]
+        },
+        defaultEffort: { 'gemini-3.1-pro': 'low' },
+        source: 'catalog', note: ''
+    };
+    ok('‼️ an effort the chosen model has never heard of does not travel',
+        narrowLaunch(em, 'gemini-3.1-pro', 'medium').effort !== 'medium');
+    ok('…it becomes the model\'s OWN default, not nothing, when the catalog states one',
+        narrowLaunch(em, 'gemini-3.1-pro', 'medium').effort === 'low');
+    ok('an effort the model does offer is left exactly as it was',
+        narrowLaunch(em, 'gemini-3.5-flash', 'medium').effort === 'medium');
+    // ‼️ …and the effort is then judged against "no model", which is a real
+    // state and not an error: with the model box on Default the engine picks,
+    // and `effortsFor` falls back to the shared vocabulary rather than
+    // inventing a refusal out of a list it was never given.
+    ok('a model this engine does not offer is dropped',
+        narrowLaunch(em, 'sonnet', 'medium').model === '');
+    ok('…and a model with no stated vocabulary judges the effort by the shared list',
+        narrowLaunch(em, 'sonnet', 'medium').effort === 'medium');
+    ok('‼️ a model with no stated default falls back to no flag rather than to a guess',
+        narrowLaunch({ ...em, defaultEffort: {} }, 'gemini-3.1-pro', 'medium').effort === '');
+    ok('‼️ an engine that publishes no catalog narrows NOTHING — ignorance is not a refusal',
+        narrowLaunch(undefined, 'anything', 'medium').effort === 'medium');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -85,8 +85,12 @@ new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame', 
 
 ok('the component still exports its two shapes',
     typeof windowStub.AFTip.wrap === 'function' && typeof windowStub.AFTip.cell === 'function');
+// ‼️ TWO `pointerover` listeners, and they are two different mechanisms: the
+// repaint bridge below, and the `tip-free` placer (U-43) that takes a panel out
+// of a scrolling menu. Counted rather than ignored so a THIRD one cannot appear
+// unnoticed — this file is the only thing watching what the component binds.
 ok('and it installed the pointer bridge rather than trusting :hover alone',
-    (listeners.pointerover || []).length === 1 && (listeners.pointermove || []).length === 1
+    (listeners.pointerover || []).length === 2 && (listeners.pointermove || []).length === 1
     && (listeners.pointerout || []).length === 1 && observers.length === 1);
 
 // ---- the bug: a repaint under a stationary pointer -------------------------

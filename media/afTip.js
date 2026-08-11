@@ -56,10 +56,15 @@
      * in a layout: wrapping it makes the wrapper the flex/grid child, so a
      * column that was sized by its trigger's own rule silently stops being
      * sized at all. Give the wrapper the class and size that.
+     *
+     * `attrs` is anything else the wrapper needs, ALREADY ESCAPED by the caller
+     * — in practice `data-aftip-anchor` (see `tip-free` below), which names the
+     * block a free panel is measured against.
      */
-    function wrap(trigger, head, body, cls) {
+    function wrap(trigger, head, body, cls, attrs) {
         if (!String(body || '').trim()) { return trigger; }
-        return '<span class="af-tipw' + (cls ? ' ' + esc(cls) : '') + '">'
+        const a = String(attrs || '').trim();
+        return '<span class="af-tipw' + (cls ? ' ' + esc(cls) : '') + '"' + (a ? ' ' + a : '') + '>'
             + trigger + panel(head, body) + '</span>';
     }
 
@@ -164,6 +169,112 @@
             queued = true;
             if (typeof requestAnimationFrame === 'function') { requestAnimationFrame(restore); } else { restore(); }
         }).observe(doc.documentElement || doc, { childList: true, subtree: true });
+    }
+
+    /* ------------------------------------------------------------------
+       ‼️ U-43 — A PANEL INSIDE A SCROLLING MENU IS A PANEL NOBODY CAN READ.
+
+       Every rule above assumes the panel may grow out of its trigger. Put the
+       trigger inside a box that SCROLLS — the capture strip's "part of" picker,
+       a 340px column with `overflow:auto` on it — and three things go wrong at
+       once, and they are the user's own three complaints:
+
+         · the box is clipped to the menu, so a panel meant to be 620px wide is
+           squeezed into the picker and shows almost nothing;
+         · it cannot be reached, because the pointer has to leave the row to get
+           to it and `:hover` is gone the instant it does — the menu's own
+           scrollbar is not part of the tip either;
+         · and it opens at a touch, which on a list you are sweeping down is a
+           paragraph flashing at every row.
+
+       So `tip-free` takes the panel OUT of the flow (`position:fixed`, which is
+       the one thing an ancestor's `overflow` cannot clip), places it against the
+       BLOCK the picker belongs to rather than against the row the pointer
+       happens to be on, and gives both edges of the gesture a delay: longer to
+       open than the CSS default, and a grace period on the way out so the
+       pointer can travel into it.
+
+       Opt in per trigger: `AFTip.wrap(trigger, head, body, 'tip-free')`, plus
+       `data-aftip-anchor="<selector>"` on the wrapper naming the block to
+       measure against (`closest`). Without an anchor the trigger is used, which
+       is the old behaviour minus the clipping.
+       ------------------------------------------------------------------ */
+    /** Long enough that sweeping a list does not flash panels; short enough that
+     *  resting on a row still feels like an answer rather than a wait. */
+    const FREE_OPEN_MS = 420;
+    /** The walk from the row to the panel. Measured against nothing but the
+     *  gesture: below ~250ms the panel closes under a normal hand, and above
+     *  ~500ms a panel you have finished with follows you around. */
+    const FREE_CLOSE_MS = 340;
+
+    if (doc && typeof doc.addEventListener === 'function') {
+        let openW = null, openT = 0, closeT = 0;
+
+        const panelOf = w => (w ? w.querySelector('.af-tip') : null);
+
+        const place = w => {
+            const tip = panelOf(w);
+            if (!tip) { return; }
+            const sel = w.getAttribute && w.getAttribute('data-aftip-anchor');
+            const anchor = (sel && typeof w.closest === 'function' && w.closest(sel)) || w;
+            const a = anchor.getBoundingClientRect();
+            const vw = doc.documentElement.clientWidth || 800;
+            const vh = doc.documentElement.clientHeight || 600;
+            // ‼️ The panel must clear the MENU, not the row: opening beside a
+            // row halfway down a scrolling list would sit on top of the list.
+            let bottom = a.bottom;
+            let node = w.parentElement;
+            while (node && node !== anchor) {
+                const st = typeof getComputedStyle === 'function' ? getComputedStyle(node) : null;
+                if (st && /auto|scroll|hidden/.test(st.overflowY || '')) {
+                    bottom = Math.max(bottom, node.getBoundingClientRect().bottom);
+                }
+                node = node.parentElement;
+            }
+            const width = Math.max(280, Math.min(760, vw - 16, Math.max(a.width, 380)));
+            tip.style.width = width + 'px';
+            tip.style.maxWidth = width + 'px';
+            tip.style.left = Math.max(8, Math.min(a.left, vw - width - 8)) + 'px';
+            // Measured after the width is set — a panel's height is a function
+            // of how wide it was allowed to be.
+            tip.style.top = '0px';
+            const h = tip.offsetHeight || 0;
+            tip.style.top = (bottom + 4 + h <= vh - 8
+                ? bottom + 4
+                : Math.max(8, Math.min(a.top - h - 4, vh - h - 8))) + 'px';
+        };
+
+        const close = () => {
+            if (!openW) { return; }
+            openW.classList.remove('af-open');
+            openW = null;
+        };
+
+        doc.addEventListener('pointerover', function (e) {
+            const t = e.target;
+            const w = t && typeof t.closest === 'function' ? t.closest('.af-tipw.tip-free') : null;
+            // Inside the panel itself: that is the reader arriving, not leaving.
+            if (w && w === openW) { clearTimeout(closeT); return; }
+            clearTimeout(openT);
+            if (!w) {
+                if (openW) { clearTimeout(closeT); closeT = setTimeout(close, FREE_CLOSE_MS); }
+                return;
+            }
+            clearTimeout(closeT);
+            openT = setTimeout(function () {
+                if (!w.isConnected) { return; }
+                close();
+                openW = w;
+                w.classList.add('af-open');
+                place(w);
+            }, FREE_OPEN_MS);
+        }, true);
+
+        // A repaint under a stationary pointer takes the wrapper away; the panel
+        // must go with it rather than hang over the page pointing at nothing.
+        doc.addEventListener('scroll', function () {
+            if (openW) { openW.isConnected ? place(openW) : close(); }
+        }, true);
     }
 
     window.AFTip = { wrap: wrap, cell: cell, lines: lines, sizeNote: sizeNote, esc: esc };

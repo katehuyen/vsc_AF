@@ -13,7 +13,7 @@ import {
 } from '../core/consoleresume';
 import { EngineId, engineNote, engineOf, ENGINES } from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
-import { EngineModels } from '../core/models';
+import { EngineModels, narrowLaunch } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
@@ -596,12 +596,22 @@ export class ConsolePanel {
                 resumeDefaultN: RESUME_DEFAULT_N, resumeFiltered: isResumeFiltered(this.resumeQuery)
             };
         }
-        const pool = this.deps.index.all()
+        // ‼️ K-17 — BOTH HALVES OF THE INDEX. `all()` is deliberately the
+        // Claude-only one (external sessions are kept out of it so Claude's
+        // analytics can never see them — core/sessionSource.ts), so a list
+        // headed "Resume an existing session" that read only there was not a
+        // filtered list: every conversation the user had had with Codex,
+        // Gemini or Antigravity was unreachable from the one panel whose job
+        // is to continue a conversation, and nothing on the panel said so.
+        // This is a LOG surface, which is exactly what `allWithExternal` is
+        // for (see SessionIndex). A row with no `cwd` still drops out — a
+        // session whose folder we never learned cannot be started anywhere.
+        const pool = this.deps.index.allWithExternal()
             .filter(s => !s.isSidechain && !s.machine && s.cwd)
             .map(s => ({
                 s, title: s.title, agentName: s.agentName ?? '', tags: s.tags ?? [],
                 pinned: !!s.pinned, sessionId: s.sessionId,
-                ts: s.lastTs || s.mtime, origin: sessionOrigin(s)
+                ts: s.lastTs || s.mtime, origin: sessionOrigin(s), source: s.source
             }));
         // Every agent that has a session to resume — including agents no longer
         // in the fleet, which is exactly when you go looking for an old session.
@@ -617,9 +627,27 @@ export class ConsolePanel {
         };
     }
 
+    /**
+     * What ONE engine is currently offering — the same object the page reads,
+     * so the host and the picker cannot narrow a pair differently (X-30).
+     * `undefined` when the dep is absent or the id is not one of ours: nothing
+     * is known, so `narrowLaunch` narrows nothing.
+     */
+    private engineModelsFor(engine: string | undefined): EngineModels | undefined {
+        const map = this.deps.engineModels?.();
+        if (!map) { return undefined; }
+        return map[(engine || 'claude') as EngineId];
+    }
+
     private resumeRow(s: SessionInfo): Record<string, unknown> {
         return {
             sessionId: s.sessionId, title: s.title, agentName: s.agentName ?? '',
+            // ‼️ K-17 — every row wears its engine, Claude included. An unbadged
+            // row means "Claude" or it means "this surface never learned about
+            // engines", and those look identical (docs/CONVENTIONS.md → the
+            // badge). `source` is empty for everything in `index.all()`, which
+            // IS Claude by definition, so the page reads the absence as claude.
+            engine: s.source || 'claude',
             cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost,
             // what the session spent — the figure the card leads with, because
             // "$0.03" alone does not say whether that was haiku or opus
@@ -775,8 +803,15 @@ export class ConsolePanel {
             }
             case 'resume': {
                 const sessionId = str('sessionId');
-                const row = this.deps.index.all().find(s => s.sessionId === sessionId);
+                // K-17: the same two halves the list was built from, or a row
+                // the panel offered could not be looked up when it was clicked.
+                const row = this.deps.index.allWithExternal().find(s => s.sessionId === sessionId);
                 if (!row?.cwd) { return; }
+                // …and the engine it was HAD with, which is the engine it comes
+                // back on. Left out, `ConsoleHost.start` defaults to claude and
+                // a Codex conversation would be handed to a CLI that has never
+                // heard of its thread.
+                const engine = (row.source || 'claude') as EngineId;
                 // ‼️ First: is the thing holding it OUR OWN leftover?
                 //
                 // An extension reload leaves the hosted `claude` running with
@@ -825,11 +860,13 @@ export class ConsolePanel {
                     if (choice !== 'New session in the same folder') { return; }
                     const agentForNew = this.deps.getAgents().find(a => a.name === row.agentName);
                     const dn = this.deps.launchDefaults();
+                    const fresh = narrowLaunch(this.engineModelsFor(engine),
+                        str('model') || dn.model, str('effort') || dn.effort);
                     this.selected = host.start({
                         agentId: agentForNew?.id ?? '', agentName: row.agentName ?? 'session',
-                        cwd: row.cwd,
-                        model: str('model') || dn.model,
-                        effort: str('effort') || dn.effort,
+                        cwd: row.cwd, engine,
+                        model: fresh.model,
+                        effort: fresh.effort,
                         permissionMode: str('permissionMode') || dn.permissionMode,
                         // A fresh session, but reached by trying to continue that
                         // one: it is the same work, so it starts under the same
@@ -844,11 +881,17 @@ export class ConsolePanel {
                 }
                 const agent = this.deps.getAgents().find(a => a.name === row.agentName);
                 const d = this.deps.launchDefaults();
+                // ‼️ X-30 / K-17 — the composer's boxes and the fleet defaults
+                // are BOTH written without knowing which engine this row was
+                // recorded with, so they are narrowed to what that engine (and
+                // that model) actually offers before they become flags.
+                const back = narrowLaunch(this.engineModelsFor(engine),
+                    str('model') || d.model, str('effort') || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
-                    cwd: row.cwd, resume: sessionId,
-                    model: str('model') || d.model,
-                    effort: str('effort') || d.effort,
+                    cwd: row.cwd, resume: sessionId, engine,
+                    model: back.model,
+                    effort: back.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
                     // ‼️ …and the project it comes back UNDER is its OWN. Left
                     // out, ConsoleHost.start falls back to the window's active
@@ -1014,13 +1057,29 @@ export class ConsolePanel {
             case 'interrupt':
                 host.interrupt(str('id'));
                 break;
-            case 'setModel':
+            case 'setModel': {
                 // mid-session model switch — the CLI's own `/model`
-                if (!host.setModel(str('id'), str('model'))) {
+                const sid = str('id');
+                if (!host.setModel(sid, str('model'))) {
                     void vscode.window.showWarningMessage(
                         'Agent Farm: that session cannot take a model change right now.');
+                    break;
                 }
+                // ‼️ X-30 — AND THE EFFORT FOLLOWS IT. The two boxes are filled
+                // at different moments, so the effort chosen for the model you
+                // had a second ago is still the session's effort — and on an
+                // engine that states its levels per model that pair is not
+                // "roughly right", it is a refusal before the turn starts
+                // (`gemini-3.1-pro has no "medium" effort`). The page narrows
+                // its own boxes the same way (media/console.js
+                // reconcileComposer); this is the half that a LIVE session,
+                // where the model is switched mid-conversation, never had.
+                const cur = host.get(sid);
+                const want = narrowLaunch(
+                    this.engineModelsFor(cur?.engine), str('model'), cur?.effort);
+                if (cur && want.effort !== (cur.effort ?? '')) { host.setEffort(sid, want.effort); }
                 break;
+            }
             case 'setEffort':
                 // mid-session effort switch — the CLI's own `/effort`
                 if (!host.setEffort(str('id'), str('effort'))) {

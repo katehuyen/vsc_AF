@@ -6653,6 +6653,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fs.writeFileSync(file, a.body.trimEnd() + footer, 'utf8');
         return file;
     };
+    /**
+     * ‼️ N-1 — WHICH PROJECT AN AGENT IS WORKING IN RIGHT NOW.
+     *
+     * The board filled up with "No Project" because the stamp was an argument
+     * nobody remembered to pass, and filing them by hand fell to the user for
+     * work they had themselves asked for under a project. The fact is already
+     * in this window — a hosted session knows the project it was started under
+     * — so the host answers instead of the poster.
+     *
+     * Three sources, in the order of how much they KNOW rather than infer, and
+     * the answer is thrown away unless it is unanimous: an agent running two
+     * sessions under two projects has no single right answer, and picking one
+     * would be a silent decision about the user's own filing.
+     */
+    const projectOfRunningAgent = (agentName: string | undefined): string | undefined => {
+        const want = String(agentName ?? '').trim().toLocaleLowerCase();
+        if (!want) { return undefined; }
+        const found = new Set<string>();
+        const mine = (n: string | undefined) => String(n ?? '').trim().toLocaleLowerCase() === want;
+        // 1. a session THIS window is hosting: it carries the project it was
+        //    started under, which is the exact fact, not a reading of one.
+        for (const s of consoleHost.list()) {
+            if (!mine(s.agentName) || s.status === 'ended' || s.status === 'error') { continue; }
+            if (s.projectId) { found.add(s.projectId); }
+        }
+        // 2. …or one the live monitor can see. Bounded by recency: a notice is
+        //    written by a turn that is running, and a session nothing has been
+        //    heard from for half an hour is not the one posting.
+        if (!found.size) {
+            const cutoff = Date.now() - 30 * 60_000;
+            for (const s of live.sessions()) {
+                if (!mine(s.agentName) || (s.lastEventTs ?? 0) < cutoff) { continue; }
+                const id = sessionOwnProject({
+                    sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd
+                });
+                if (id) { found.add(id); }
+            }
+        }
+        // 3. …or a project that DECLARES this agent — somebody's own rule
+        //    (`match.agents`), which is a decision rather than a guess.
+        if (!found.size) {
+            const declared = projectStore.resolve({ agentName }).projectId;
+            if (declared) { found.add(declared); }
+        }
+        return found.size === 1 ? [...found][0] : undefined;
+    };
+
     registerNoticesOps(bridge, {
         store: noticesStore,
         writeReport,
@@ -6660,6 +6707,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // front of it and should not have to look an id up first. `get` already
         // takes either; what it must never do is guess at a near-miss.
         resolveProject: (key) => projectStore.get(key)?.id,
+        inferProject: projectOfRunningAgent,
         onChange: () => { NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
         onPost: (n) => {
             // Ultra-important (level 4) warns; a question gently pings so it does
@@ -8894,6 +8942,126 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launchProfiles = (): LaunchProfile[] =>
         (cfg().get<LaunchProfile[]>('launchProfiles', []) ?? []).filter(p => p?.name);
 
+    /** The one write path for `agentFarm.launchProfiles`, so save, rename,
+     *  replace and delete cannot disagree about where the list lives or how a
+     *  refusal is reported. */
+    const writeLaunchProfiles = async (next: LaunchProfile[], said: string): Promise<boolean> => {
+        try {
+            await cfg().update('launchProfiles', next, vscode.ConfigurationTarget.Global);
+            void vscode.window.showInformationMessage(`Agent Farm: ${said} (agentFarm.launchProfiles).`);
+            return true;
+        } catch (e) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: could not write agentFarm.launchProfiles — ${String(e)}`);
+            return false;
+        }
+    };
+
+    /**
+     * ‼️ A-11 — A LIST YOU CAN ONLY ADD TO IS NOT A LIST, IT IS A LEAK.
+     *
+     * Launch profiles could be saved and loaded and nothing else: a name typed
+     * wrong stayed wrong for ever, a profile for an engine you stopped using
+     * stayed in the picker, and the only way to change one was to save a second
+     * profile over its name and hope you remembered it exactly. Three gestures
+     * were missing and all three act on a row that ALREADY EXISTS — which is
+     * what a quickpick is for (docs/CONVENTIONS.md, "Making things"): the
+     * launcher itself is the form, and a profile is a launch that was kept.
+     *
+     * So the rows carry their own buttons. `showQuickPick` cannot do that, so
+     * this is `createQuickPick`, which is the same list with the per-row
+     * affordances a management surface needs and no extra box in the way.
+     *
+     * `current` is what the launcher is set to right now, which is what
+     * "replace" stores — the gesture "make this profile mean what I have in
+     * front of me", and the reason a rename alone would not have been enough.
+     *
+     * Returns the profile to LOAD, or undefined — every other outcome is
+     * finished by the time this resolves.
+     */
+    const manageLaunchProfiles = async (current: LaunchProfile): Promise<LaunchProfile | undefined> => {
+        const rename = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Rename this profile' };
+        const replace = {
+            iconPath: new vscode.ThemeIcon('save'),
+            tooltip: 'Replace what it stores with the settings currently in the launcher'
+        };
+        const remove = { iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Delete this profile' };
+        interface Row extends vscode.QuickPickItem { profile: LaunchProfile }
+        for (;;) {
+            const list = launchProfiles();
+            if (!list.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: there are no launch profiles yet — "Save this as a profile…" makes the first one.');
+                return undefined;
+            }
+            const chosen = await new Promise<{ act: string; profile: LaunchProfile } | undefined>(resolve => {
+                const qp = vscode.window.createQuickPick<Row>();
+                qp.title = 'Launch profiles';
+                qp.placeholder = 'Pick one to load it — or use the buttons on a row to rename, replace or delete it';
+                qp.ignoreFocusOut = true;
+                qp.matchOnDescription = true;
+                qp.items = list.map(p => ({
+                    label: p.name, description: describeLaunch(p),
+                    detail: p.prompt ? `first prompt: ${p.prompt}` : undefined,
+                    buttons: [rename, replace, remove], profile: p
+                }));
+                let done = false;
+                const finish = (v?: { act: string; profile: LaunchProfile }) => {
+                    if (done) { return; }
+                    done = true;
+                    resolve(v);
+                    qp.hide();
+                };
+                qp.onDidTriggerItemButton(e => finish({
+                    act: e.button === rename ? 'rename' : e.button === replace ? 'replace' : 'delete',
+                    profile: e.item.profile
+                }));
+                qp.onDidAccept(() => {
+                    const hit = qp.selectedItems[0];
+                    if (hit) { finish({ act: 'load', profile: hit.profile }); }
+                });
+                qp.onDidHide(() => { finish(undefined); qp.dispose(); });
+                qp.show();
+            });
+            if (!chosen) { return undefined; }
+            if (chosen.act === 'load') { return chosen.profile; }
+            if (chosen.act === 'rename') {
+                const name = await vscode.window.showInputBox({
+                    prompt: 'New name for this profile', value: chosen.profile.name, ignoreFocusOut: true
+                });
+                const want = name?.trim();
+                if (!want || want === chosen.profile.name) { continue; }
+                // A rename onto a name that exists REPLACES it, which is the
+                // same rule Save already follows — two profiles with one name
+                // would make the picker unusable.
+                await writeLaunchProfiles(
+                    launchProfiles()
+                        .filter(p => p.name !== want && p.name !== chosen.profile.name)
+                        .concat([{ ...chosen.profile, name: want }]),
+                    `profile "${chosen.profile.name}" is now "${want}"`);
+                continue;
+            }
+            if (chosen.act === 'replace') {
+                await writeLaunchProfiles(
+                    launchProfiles()
+                        .filter(p => p.name !== chosen.profile.name)
+                        .concat([{ ...current, name: chosen.profile.name }]),
+                    `profile "${chosen.profile.name}" now stores ${describeLaunch(current)}`);
+                continue;
+            }
+            // Destructive, so it keeps its modal — the one native surface
+            // docs/CONVENTIONS.md deliberately leaves in place.
+            const go = await vscode.window.showWarningMessage(
+                `Delete the launch profile "${chosen.profile.name}"?`,
+                { modal: true, detail: `It stores ${describeLaunch(chosen.profile)}. Nothing else is affected — no session, no agent, no setting but this list.` },
+                'Delete it');
+            if (go !== 'Delete it') { continue; }
+            await writeLaunchProfiles(
+                launchProfiles().filter(p => p.name !== chosen.profile.name),
+                `profile "${chosen.profile.name}" deleted`);
+        }
+    };
+
     const runLauncher = async (
         agent: AgentInfo, seed: LaunchOptions, surface: RunSurface = 'terminal'
     ): Promise<void> => {
@@ -8978,9 +9146,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 },
                 { label: 'Setup', kind: vscode.QuickPickItemKind.Separator },
                 ...(launchProfiles().length ? [{
-                    label: '$(bookmark) Load a profile…',
+                    // ‼️ A-11 — the row is the whole management surface now, not
+                    // just a way in. It said "Load", which is why the list could
+                    // only ever grow: nothing on it offered the other three
+                    // things a person does to a saved setup.
+                    label: '$(bookmark) Profiles…',
                     description: launchProfiles().map(p => p.name).join(' · '),
-                    detail: 'agentFarm.launchProfiles', act: 'load'
+                    detail: 'load one, or rename · replace · delete it from its own row (agentFarm.launchProfiles)',
+                    act: 'load'
                 } as Row] : []),
                 {
                     label: '$(save) Save this as a profile…', description: '',
@@ -9086,15 +9259,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 continue;
             }
             if (pick.act === 'load') {
-                const p = await vscode.window.showQuickPick(
-                    launchProfiles().map(p => ({
-                        label: p.name, description: describeLaunch(p), profile: p
-                    })), { placeHolder: 'Load which profile?', ignoreFocusOut: true });
-                if (p) {
+                const loaded = await manageLaunchProfiles({
+                    name: '', model: merged.model, effort: merged.effort,
+                    permissionMode: merged.permissionMode, ...(o.prompt ? { prompt: o.prompt } : {})
+                });
+                if (loaded) {
                     o = {
-                        ...o, model: p.profile.model ?? '', effort: p.profile.effort ?? '',
-                        permissionMode: p.profile.permissionMode ?? '',
-                        prompt: p.profile.prompt ?? o.prompt
+                        ...o, model: loaded.model ?? '', effort: loaded.effort ?? '',
+                        permissionMode: loaded.permissionMode ?? '',
+                        prompt: loaded.prompt ?? o.prompt
                     };
                 }
                 continue;
@@ -17292,6 +17465,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!id || !!(all as Record<string, unknown>)[id],
                     `no engine called "${id}" — try claude, codex, gemini or agy`);
                 return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
+            }
+        },
+        {
+            op: 'launch.profiles',
+            describe: 'The saved launch setups (agentFarm.launchProfiles) — a named model + effort + '
+                + 'permission mode (+ an optional first prompt) the session launcher can load in one '
+                + 'press. Read them before offering the user "the usual": a profile is what they have '
+                + 'already decided, so proposing the same combination as if it were new is noise. '
+                + 'Returns [{name, model, effort, permissionMode, prompt?}]. No args.',
+            handler: () => launchProfiles()
+        },
+        {
+            op: 'launch.profile.set',
+            describe: 'Create a launch profile, or REPLACE the one with that name. args: name '
+                + '(required), model?, effort?, permissionMode?, prompt? — each empty means "no flag", '
+                + 'exactly as it does in the launcher. ‼️ Check engines.models first: a model or an '
+                + 'effort the engine does not offer is stored happily here and refused later, by a CLI, '
+                + 'in a session the user is sitting in front of.',
+            handler: async (args) => {
+                const name = argStr(args, 'name').trim();
+                need(!!name, 'a profile needs a name');
+                const next: LaunchProfile[] = [
+                    ...launchProfiles().filter(p => p.name !== name),
+                    {
+                        name,
+                        model: optStr(args, 'model') ?? '',
+                        effort: optStr(args, 'effort') ?? '',
+                        permissionMode: optStr(args, 'permissionMode') ?? '',
+                        ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
+                    }
+                ];
+                need(await writeLaunchProfiles(next, `profile "${name}" saved`),
+                    'agentFarm.launchProfiles could not be written');
+                return { name, profiles: launchProfiles().length };
+            }
+        },
+        {
+            op: 'launch.profile.rename',
+            describe: 'Rename a launch profile, keeping what it stores. args: name (required), to '
+                + '(required). Renaming onto a name that already exists REPLACES it — the launcher '
+                + 'picks by name, so two rows with one name is a list nobody can use.',
+            handler: async (args) => {
+                const name = argStr(args, 'name').trim();
+                const to = argStr(args, 'to').trim();
+                need(!!to, 'the new name cannot be empty');
+                const found = launchProfiles().find(p => p.name === name);
+                need(!!found, `no launch profile called "${name}" — launch.profiles lists them`);
+                need(await writeLaunchProfiles(
+                    launchProfiles().filter(p => p.name !== to && p.name !== name)
+                        .concat([{ ...found!, name: to }]),
+                    `profile "${name}" is now "${to}"`),
+                    'agentFarm.launchProfiles could not be written');
+                return { name: to };
+            }
+        },
+        {
+            op: 'launch.profile.delete',
+            describe: 'Delete a launch profile. args: name (required). Nothing else is affected — no '
+                + 'session, no agent, no other setting. A name that is not there is an error rather '
+                + 'than a quiet success: "deleted" about something that was never found is the answer '
+                + 'that hides a typo.',
+            handler: async (args) => {
+                const name = argStr(args, 'name').trim();
+                need(launchProfiles().some(p => p.name === name),
+                    `no launch profile called "${name}" — launch.profiles lists them`);
+                need(await writeLaunchProfiles(
+                    launchProfiles().filter(p => p.name !== name), `profile "${name}" deleted`),
+                    'agentFarm.launchProfiles could not be written');
+                return { name, profiles: launchProfiles().length };
             }
         },
         {
