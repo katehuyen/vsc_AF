@@ -34,6 +34,8 @@
         { id: 'docs', label: 'Docs', tip: 'The project folder, and any document in it' },
         { id: 'people', label: 'People', tip: 'Who decides, who pays, who does the work, who you ask' },
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
+        { id: 'analysis', label: 'Analysis', tip: 'The same data folded a second time: when the work actually happens, whether the backlog is emptying or filling, how long an item takes from first touch to close, and where the effort lands' },
+        { id: 'code', label: 'Code', tip: 'The declared code roots — what git records there, and what this project\'s own sessions wrote. Two different questions, never summed' },
         { id: 'settings', label: '⚙ Settings', tip: 'Edit the project' }
     ];
     // ‼️ Seeded from the payload, not hard-coded to the first tab. The PANEL
@@ -48,6 +50,15 @@
     /** The embedded sessions table (created lazily — the component wants a
      *  container that exists). */
     let sessTable = null;
+    /**
+     * The backfill screen, opened from the ⊘ Unassigned row.
+     *
+     * ‼️ It is not a TAB, and that is deliberate: every tab on this page is
+     * about ONE project, and "which project does this loose session belong to"
+     * is the one question that is about all of them at once. Null = closed;
+     * an object = open, holding the reader's own selection.
+     */
+    let backfill = null;
 
     const newForm = seed => ({
         name: (seed && seed.suggestName) || '',
@@ -283,7 +294,8 @@
                 <button class="secondary" data-act="rescan" title="${C.esc(DATA.projectsRoot ? 'Walk ' + DATA.projectsRoot + ' and pick up folders renamed in Obsidian' : 'Set agentFarm.projectsRoot first')}" ${DATA.projectsRoot ? '' : 'disabled'}>⟳ Rescan</button>
             </div>
             ${rows || '<p class="muted small">No projects yet. A project is a folder plus a name — everything else hangs off it.</p>'}
-            <div class="pj-unassigned" title="Sessions no project claims">
+            <div class="pj-unassigned ${backfill ? 'on' : ''}" data-act="backfill" role="button" tabindex="0"
+                title="Sessions no project claims. Press to see which ones Agent Farm can propose a project for, and why.">
                 ⊘ Unassigned <span class="muted">${unassigned.sessions} sessions · ${money(unassigned.cost)}</span>
             </div>
         </div>`;
@@ -927,6 +939,322 @@
         </div>`;
     }
 
+    // -----------------------------------------------------------------------
+    // Backfill — which loose session belongs where, and why
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ THE EVIDENCE IS THE ARGUMENT, NOT THE SCORE.
+     *
+     * "84% confident" is a number a reader cannot check, and a list of them is
+     * a list they abandon. "wrote 14 of 14 files under D:\…\vsc_AgentFarm" is a
+     * fact they agree or disagree with in one second — which is the whole
+     * difference between a screen somebody approves in bulk and one they close.
+     * The score exists and it decides the ORDER; it is never the case being
+     * made, and it is not printed as a percentage anywhere.
+     *
+     * ‼️ AND A CONTESTED ROW IS NEVER IN "APPROVE ALL". Two projects within a
+     * hair of each other is a question the engine could not answer; a bulk
+     * gesture that resolved it anyway would file things wrong at two hundred
+     * times the speed. Those rows are drawn, marked, and left to the person who
+     * actually knows — they can still tick one by hand.
+     */
+    function backfillHtml() {
+        const b = td().backfill;
+        if (!b) { return '<p class="muted">Looking at the loose sessions…</p>'; }
+        const rows = b.suggestions || [];
+        const picked = backfill.picked || new Set();
+        const openable = rows.filter(r => !r.contested);
+
+        if (!rows.length) {
+            return `${backfillHead(b, 0, 0)}
+                <p class="muted">Nothing can be proposed. ${b.scanned} loose session(s) were looked at and
+                none of them carries evidence strong enough to name a project: no files written inside a
+                declared code root, no other session already filed from the same folder, no agent whose
+                work lands mostly in one place, and nothing in their titles. That is a real answer — the
+                alternative is a list of guesses, which is the one thing this screen must not be.</p>
+                ${backfillFoot(b)}`;
+        }
+
+        const list = rows.map(r => {
+            const on = picked.has(r.sessionId);
+            const signals = (r.signals || []).map(s =>
+                `<li class="pj-bf-sig s-${C.esc(s.kind)}">${C.esc(s.detail)}</li>`).join('');
+            return `<div class="pj-bf-row ${on ? 'on' : ''} ${r.contested ? 'contested' : ''}">
+                <label class="pj-bf-pick" title="${r.contested
+                    ? 'Contested — left out of "approve all". Tick it yourself if you know which is right.'
+                    : 'Include this one in the approval'}">
+                    <input type="checkbox" data-bf="${C.esc(r.sessionId)}" ${on ? 'checked' : ''}>
+                </label>
+                <div class="pj-bf-body">
+                    <div class="pj-bf-title">
+                        ${window.AFTip.wrap(`<span class="pj-bf-t">${C.esc(r.title || '(untitled session)')}</span>`,
+                `${r.agentName || 'unknown agent'} · ${r.lastTs ? relTime(r.lastTs) : ''}`,
+                [r.title || '', r.cwd || ''].filter(Boolean).join('\n'))}
+                        <span class="muted small">${C.esc([r.agentName, r.cwd ? shortPath(r.cwd) : '',
+                r.cost ? money(r.cost) : '', r.lastTs ? relTime(r.lastTs) : ''].filter(Boolean).join(' · '))}</span>
+                    </div>
+                    <div class="pj-bf-to">→ <b>${C.esc(r.projectName)}</b>${r.contested
+                    ? ` <span class="pj-bf-cont" title="The runner-up is within a hair of the winner. Picking the higher one by a rounding error is exactly the silent misattribution this whole axis exists to stop.">or <b>${C.esc(r.alsoName)}</b> — too close to call</span>`
+                    : ''}</div>
+                    <ul class="pj-bf-sigs">${signals}</ul>
+                </div>
+            </div>`;
+        }).join('');
+
+        const chosen = rows.filter(r => picked.has(r.sessionId));
+        const groups = {};
+        chosen.forEach(r => { groups[r.projectName] = (groups[r.projectName] || 0) + 1; });
+        const plan = Object.keys(groups).sort().map(k => `${groups[k]} → ${k}`).join(' · ');
+
+        return `${backfillHead(b, rows.length, openable.length)}
+        <div class="pj-bf-bar">
+            <button data-bf-act="all" title="Tick every proposal that is NOT contested — the ones the engine could answer on its own">☑ Select all ${openable.length} clear</button>
+            <button class="secondary" data-bf-act="none">☐ Clear</button>
+            <span class="grow"></span>
+            <span class="muted small">${chosen.length ? C.esc(plan) : 'Nothing ticked yet.'}</span>
+            <button data-bf-act="apply" ${chosen.length ? '' : 'disabled'}
+                title="${chosen.length ? 'File the ticked sessions. Every one of them can be taken off again from its own row afterwards.' : 'Tick something first'}">
+                ✓ File ${chosen.length || ''} session${chosen.length === 1 ? '' : 's'}</button>
+        </div>
+        <div class="pj-bf-list">${list}</div>
+        ${backfillFoot(b)}`;
+    }
+
+    function backfillHead(b, shown, clear) {
+        return `<div class="pj-head">
+            <h2>⊘ Backfill <span class="muted small">which loose session belongs where</span></h2>
+            <button class="secondary" data-bf-act="close">✕ Close</button>
+        </div>
+        <div class="pj-stats">
+            <span><b>${b.scanned || 0}</b> loose session(s) looked at</span>
+            <span><b>${shown}</b> proposal(s)${shown ? ` · ${clear} clear, ${shown - clear} contested` : ''}</span>
+            <span><b>${b.noEvidence || 0}</b> with no evidence</span>
+            <span title="Sessions you deliberately took off every project. They are never proposed for — the engine that keeps suggesting what a person has already refused is the one they switch off."><b>${b.refused || 0}</b> you refused</span>
+        </div>`;
+    }
+
+    function backfillFoot() {
+        return `<p class="muted small pj-unfiled">Four signals, in the order they weigh: <b>files</b> — the
+            session wrote inside a project's declared code root, which no path rule can see because those
+            look at where a session STOOD, not at what it touched; <b>folder</b> — other sessions from this
+            exact directory are already filed there by hand, which is your own decision generalised one
+            step; <b>agent</b> — most of that agent's filed work lands there, a tendency and weighted like
+            one; <b>title</b> — the project's name appears in it, which is below the bar on its own because
+            a session ABOUT a project is as likely as one FOR it. Nothing here writes until you press File,
+            and everything filed can be taken off again from the session's own right-click menu.</p>`;
+    }
+
+    // -----------------------------------------------------------------------
+    // Analysis — the same data folded a second time
+    // -----------------------------------------------------------------------
+
+    const DOW_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    /**
+     * ‼️ A BLOCK WITH NO DENOMINATOR WORTH DIVIDING BY IS NOT DRAWN.
+     *
+     * The host returns `rhythm`, `cycle` and `pace` as undefined below their
+     * minimums, and this tab prints the sentence saying so rather than a chart
+     * of six points — a shape read off six points is a shape a reader will
+     * believe. Every "not enough yet" line names WHAT is missing and how much
+     * of it, because "no data" and "eleven more turns" are different answers.
+     */
+    function analysisHtml() {
+        const a = td().analysis;
+        if (!a || !a.state) { return '<p class="muted">Reading the project…</p>'; }
+        if (a.state === 'no-project') { return '<p class="muted">No project.</p>'; }
+        const t = a.totals || {};
+        if (!t.sessions && !t.commits && !t.items) {
+            return `<p class="muted">Nothing has been worked on this project yet — no sessions, no commits
+                in its code roots, no backlog item with a recorded event. This tab folds those three;
+                it cannot fold what is not there.</p>`;
+        }
+
+        const weeks = (a.weeks || []).slice(-16);
+        const paceHtml = a.pace ? `
+            <div class="pj-money pj-money-top">
+                <span><b>${a.pace.recentPerWeek}</b><small>sessions per week · last 4</small></span>
+                <span><b>${a.pace.allPerWeek}</b><small>per week over ${a.pace.weeksCovered} week(s)</small></span>
+                <span><b>${money(a.pace.recentCostPerSession)}</b><small>per session · last 4</small></span>
+                <span><b>${money(a.pace.allCostPerSession)}</b><small>per session, all of it</small></span>
+            </div>
+            <p class="muted small">‼️ Each recent figure is printed beside the figure for the whole
+                project on purpose. "$4.10 per session" says nothing on its own; against the project's
+                own average it is a claim you can check.</p>`
+            : '<p class="muted small">Not enough weeks yet to compare a recent pace against the project\'s own average.</p>';
+
+        // The weekly series carries four things that are read together: how much
+        // ran, what it cost, and whether the backlog was emptying or filling.
+        const weekChart = weeks.length
+            ? C.stackedBars(weeks.map(w => w.week.slice(5)),
+                [{ name: 'sessions', values: weeks.map(w => w.sessions) },
+                { name: 'commits', values: weeks.map(w => w.commits) }],
+                { fmt: v => String(v) })
+            : '';
+        const flowChart = weeks.some(w => w.opened || w.closed)
+            ? C.stackedBars(weeks.map(w => w.week.slice(5)),
+                [{ name: 'first worked', values: weeks.map(w => w.opened) },
+                { name: 'closed', values: weeks.map(w => w.closed) }],
+                { fmt: v => String(v) })
+            : '';
+        // ‼️ A SIGN IS NOT A DIRECTION HERE. "−7" could mean seven fewer items
+        // or seven fewer closures, and the reader has to guess which way the
+        // subtraction ran. The words say it: closing more than you open is a
+        // backlog getting shorter, and that is the sentence people want.
+        const net = weeks.reduce((n, w) => n + w.closed - w.opened, 0);
+        const netWord = net > 0 ? `${net} fewer open` : net < 0 ? `${-net} more open` : 'level';
+
+        // 168 cells, dow*24+hour — the shape charts.js already draws.
+        let heat = null;
+        if (a.rhythm) {
+            heat = new Array(168).fill(0);
+            (a.rhythm.cells || []).forEach(c => { heat[c.dow * 24 + c.hour] = c.turns; });
+        }
+
+        return `
+        ${paceHtml}
+        <div class="pj-cards">
+        <div class="pj-card">
+            <div class="pj-card-h">Pace <span class="muted small">sessions and commits per week, last ${weeks.length}</span></div>
+            ${weekChart ? `<div class="pj-chart">${weekChart}</div>` : '<p class="muted small">No week has anything in it yet.</p>'}
+        </div>
+        <div class="pj-card">
+            <div class="pj-card-h">Backlog flow
+                <span class="muted small">first worked vs closed, per week${weeks.length ? ` · ${C.esc(netWord)} over the period` : ''}</span></div>
+            ${flowChart ? `<div class="pj-chart">${flowChart}</div>` : `<p class="muted small">No backlog item has a recorded event yet. This series is
+                built from the <b>track ledger</b> — when an item was first worked and when it closed —
+                and never from dates in the document, because a file edited in Obsidian would date every
+                item to the last time it was saved.</p>`}
+        </div>
+        </div>
+        <div class="pj-cards">
+            <div class="pj-card">
+                <div class="pj-card-h">Rhythm <span class="muted small">turns by local weekday and hour</span></div>
+                ${a.rhythm ? `${C.heatmap(heat, { unit: 'turns' })}
+                    <p class="muted small">Busiest: <b>${DOW_NAME[a.rhythm.peak.dow]} ${String(a.rhythm.peak.hour).padStart(2, '0')}:00</b>
+                    · <b>${Math.round(a.rhythm.outOfHours * 100)}%</b> of ${a.rhythm.total} turns fall outside
+                    Mon–Fri 09:00–18:00. Counted at the moment each session STARTED — the per-turn clock is
+                    not in this fold, and spreading a session over its span would invent a distribution
+                    nobody measured.</p>`
+                : `<p class="muted small">Not enough turns yet to see a rhythm — ${t.turns || 0} so far, and a
+                    shape read off a handful of them is a shape you would believe.</p>`}
+            </div>
+            <div class="pj-card">
+                <div class="pj-card-h">Cycle time <span class="muted small">first touch → closed, in days</span></div>
+                ${a.cycle ? `<div class="pj-money">
+                        <span><b>${a.cycle.medianDays}</b><small>median · ${a.cycle.n} items</small></span>
+                        <span><b>${a.cycle.p90Days}</b><small>90th percentile</small></span>
+                        <span><b>${a.cycle.fastestDays}</b><small>fastest</small></span>
+                        <span><b>${a.cycle.slowestDays}</b><small>slowest</small></span>
+                    </div>
+                    <p class="muted small">Only items the ledger records BOTH ends of. A <code>touch</code>
+                    is an attempt, not a close — treating the last event of any kind as one would give
+                    every abandoned item a cycle time.</p>`
+                : `<p class="muted small">Not enough closed items yet — ${t.closedItems || 0} of ${t.items || 0}
+                    tracked. A median over two items is one of those two items.</p>`}
+            </div>
+        </div>
+        <div class="pj-cards">
+            <div class="pj-card">
+                <div class="pj-card-h">Where the writing lands <span class="muted small">top files by write calls</span></div>
+                ${(a.files || []).length
+                ? bars(C.hbars(a.files.map(f => ({ name: shortPath(f.key), value: f.n })), { fmt: v => String(v) }))
+                : '<p class="muted small">No session has written a file on this project.</p>'}
+            </div>
+            <div class="pj-card">
+                <div class="pj-card-h">Who does the turns <span class="muted small">by agent</span></div>
+                ${(a.agents || []).length
+                ? bars(C.hbars(a.agents.map(x => ({ name: x.key, value: x.n })), { fmt: v => String(v) }))
+                : '<p class="muted small">No agent has taken a turn here.</p>'}
+            </div>
+        </div>
+        <p class="muted small pj-unfiled">Built from ${t.sessions || 0} session(s) · ${t.turns || 0} turn(s)
+            · ${t.commits || 0} commit(s) · ${t.items || 0} tracked backlog item(s) · ${t.files || 0} distinct
+            file(s). Weeks are LOCAL and start on Monday: a session at 23:40 belongs to that evening, and a
+            Sunday-based week splits every weekend.</p>`;
+    }
+
+    /** A horizontal bar list, kept at the size it was drawn for — see `.pj-bars`. */
+    function bars(svg) { return `<div class="pj-bars">${svg}</div>`; }
+
+    /** The last two segments of a path — a file name alone is ambiguous across
+     *  a repo, and a full path is a bar label nobody can read. */
+    function shortPath(p) {
+        const parts = String(p || '').split(/[\\/]/).filter(Boolean);
+        return parts.slice(-2).join('/') || String(p || '');
+    }
+
+    // -----------------------------------------------------------------------
+    // Code — the declared roots
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ TWO SOURCES, AND THE TAB SAYS WHICH IS WHICH.
+     *
+     * `commits` is the repository's own history — everything anybody typed
+     * there, agent or not. `sessionWrites` is what THIS project's sessions
+     * wrote, out of their transcripts. They answer different questions, and a
+     * total over both would be a third number that means nothing. The same line
+     * `codeedits.ts` draws between a session's diff and a git diff.
+     */
+    function codeHtml() {
+        const c = td().code;
+        if (!c || !c.state) { return '<p class="muted">Reading the project…</p>'; }
+        if (c.state === 'no-project') { return '<p class="muted">No project.</p>'; }
+        if (c.state === 'no-roots') {
+            return `<p class="muted">This project declares no code roots. Add them in <b>⚙ Settings</b> —
+                they are what makes a git commit belong to this project, and what a session working under
+                them is filed by.</p>`;
+        }
+        const t = c.totals || {};
+        const rootCards = (c.roots || []).map(r => {
+            const spark = r.perWeek && r.perWeek.length > 1
+                ? C.sparkline(r.perWeek.map(w => w.n)) : '';
+            // The heading is the folder a person calls it by; the WHOLE path is
+            // text, so it goes in the rich hover rather than being printed
+            // twice on one line (docs/CONVENTIONS.md → Hover).
+            return `<div class="pj-card">
+                <div class="pj-card-h">${window.AFTip.wrap(
+                `<span>${C.esc(shortPath(r.root))}</span>`,
+                r.missing ? 'Code root · not on this machine' : 'Code root',
+                r.root)}</div>
+                ${r.missing
+                    ? '<p class="muted small">⚠ This folder is not on this machine. Nothing is claimed about it — an empty commit list here would read as "quiet repo" rather than "missing folder".</p>'
+                    : `<div class="pj-money">
+                        <span><b>${r.commits}</b><small>commits read</small></span>
+                        <span><b>${r.lastCommitTs ? relTime(r.lastCommitTs) : '—'}</b><small>last commit</small></span>
+                        <span><b>${(r.authors || []).length}</b><small>author(s)</small></span>
+                       </div>
+                       ${spark ? `<div class="pj-spark" title="Commits per week, oldest first">${spark}</div>` : ''}
+                       ${(r.authors || []).length
+                        ? bars(C.hbars(r.authors.map(a => ({ name: a.key, value: a.n })), { fmt: v => String(v) }))
+                        : '<p class="muted small">No commit in the window that was read.</p>'}`}
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="pj-money pj-money-top">
+            <span><b>${t.roots || 0}</b><small>code root(s)${t.missing ? ` · ${t.missing} missing` : ''}</small></span>
+            <span><b>${t.commits || 0}</b><small>commits read</small></span>
+            <span><b>${t.writtenFiles || 0}</b><small>files this project's sessions wrote</small></span>
+            <span><b>${t.writes || 0}</b><small>write calls</small></span>
+        </div>
+        ${rootCards}
+        <div class="pj-card">
+            <div class="pj-card-h">What the sessions wrote <span class="muted small">top files, by write calls in this project's own transcripts</span></div>
+            ${(c.sessionWrites || []).length
+                ? bars(C.hbars(c.sessionWrites.map(f => ({ name: shortPath(f.key), value: f.n })), { fmt: v => String(v) }))
+                : '<p class="muted small">No session on this project has written a file.</p>'}
+        </div>
+        <p class="muted small pj-unfiled">‼️ The two halves of this tab are never summed. A commit count is
+            what <b>git</b> records in that repository — everything anybody typed there. The write list is
+            what <b>this project's sessions</b> did, read out of their own transcripts, including files
+            outside any repo. Adding them would produce a third number that means nothing. Commits are read
+            from a per-repository cache refreshed at most once a minute, so a commit made seconds ago
+            appears on the next paint rather than this one.</p>`;
+    }
+
     /**
      * ‼️ SAY WHAT THE BREAKDOWN CANNOT CLAIM.
      *
@@ -1045,6 +1373,12 @@
                 .pj-tab.tb-people { --tabc:var(--vscode-charts-red,#f14c4c); }
                 .pj-tab.tb-cost { --tabc:color-mix(in srgb,
                     var(--vscode-charts-yellow,#d7ba7d) 55%, var(--vscode-charts-green,#3fb950)); }
+                .pj-tab.tb-work { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-blue,#3794ff) 50%, var(--vscode-charts-purple,#b180d7)); }
+                .pj-tab.tb-analysis { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-purple,#b180d7) 55%, var(--vscode-charts-blue,#3794ff)); }
+                .pj-tab.tb-code { --tabc:color-mix(in srgb,
+                    var(--vscode-charts-green,#3fb950) 55%, var(--vscode-charts-yellow,#d7ba7d)); }
                 .pj-tab.tb-settings { --tabc:var(--vscode-descriptionForeground,#9d9d9d); }
                 /* track — four views over one ledger; see trackHtml()
                    ‼️ THE TRACK'S OWN COLOUR SYSTEM. It rhymes with the backlog
@@ -1369,6 +1703,50 @@
                     background:var(--vscode-textCodeBlock-background,#8881); }
                 .pj-via { font-size:10px; opacity:.7; font-style:italic; }
                 .pj-udot { color:var(--vscode-charts-blue,#3794ff); font-size:9px; vertical-align:2px; }
+                .pj-spark { margin:4px 0 8px; opacity:.85; }
+                /* ‼️ A CHART IS CAPPED. The bar chart returns an SVG with a
+                   viewBox and no height, so it fills whatever it is given — one
+                   chart on the Cost tab is fine, and two of them plus a heatmap
+                   turned Analysis into a page you scroll past rather than read.
+                   The SVG scales inside the box (preserveAspectRatio), so
+                   nothing is cut off; it just stops claiming the whole screen. */
+                .pj-chart { max-height:210px; display:flex; }
+                .pj-chart svg { max-height:210px; width:100%; }
+                /* ‼️ AND A BAR LIST IS CAPPED THE OTHER WAY. The horizontal bars
+                   come back as a 520-wide viewBox whose HEIGHT is the row count,
+                   so a list of two rows has an aspect ratio of 520:48 — stretched
+                   to a full-width card it scaled the labels to headline size and
+                   the "Code" tab printed one author's name larger than the page
+                   title. Capping the width leaves the rows at the size they were
+                   drawn for; the card can be as wide as it likes. */
+                .pj-bars { max-width:560px; }
+                .pj-bars svg { width:100%; }
+                /* backfill — see backfillHtml(). A proposal row is a CASE, so it
+                   is laid out like one: the tick, then what is being claimed,
+                   then the evidence under it. The evidence is not a hover: it is
+                   the thing the reader is here to check. */
+                .pj-unassigned[role="button"] { cursor:pointer; }
+                .pj-unassigned[role="button"]:hover { background:var(--vscode-list-hoverBackground); opacity:1; }
+                .pj-unassigned.on { background:var(--vscode-list-activeSelectionBackground);
+                    color:var(--vscode-list-activeSelectionForeground); opacity:1; }
+                .pj-bf-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+                    margin:0 0 10px; padding-bottom:9px;
+                    border-bottom:1px solid var(--vscode-panel-border); }
+                .pj-bf-list { display:flex; flex-direction:column; gap:4px; }
+                .pj-bf-row { display:flex; gap:8px; padding:6px 8px; border-radius:5px;
+                    border-left:2px solid var(--vscode-charts-green,#3fb950);
+                    background:var(--vscode-editorWidget-background); }
+                .pj-bf-row.contested { border-left-color:var(--vscode-editorWarning-foreground,#cca700); }
+                .pj-bf-row.on { background:color-mix(in srgb, var(--vscode-button-background) 14%, transparent); }
+                .pj-bf-pick { flex:none; padding-top:2px; }
+                .pj-bf-body { flex:1; min-width:0; }
+                .pj-bf-title { display:flex; gap:8px; align-items:baseline; min-width:0; }
+                .pj-bf-t { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .pj-bf-to { font-size:12px; margin:2px 0 1px; }
+                .pj-bf-cont { font-size:11px; color:var(--vscode-editorWarning-foreground,#cca700); }
+                .pj-bf-sigs { margin:2px 0 0; padding-left:16px; }
+                .pj-bf-sig { font-size:11px; opacity:.8; }
+                .pj-bf-sig.s-files { opacity:.95; }
                 .pj-unfiled { margin-top:14px; max-width:70ch; }
                 .grow { flex:1; }
                 /* documents · plan · people */
@@ -1891,8 +2269,9 @@
             <div class="pj-wrap">
                 ${listHtml()}
                 <div class="pj-main">${creating ? createHtml()
-                : (p ? headHtml(p) + tabsHtml() + tabBodyHtml(p)
-                    : '<p class="muted">Pick a project, or create one.</p>')}</div>
+                : backfill ? backfillHtml()
+                    : (p ? headHtml(p) + tabsHtml() + tabBodyHtml(p)
+                        : '<p class="muted">Pick a project, or create one.</p>')}</div>
             </div>`;
         window.AFHeader.wire(vscode);
         flash = null;
@@ -1943,6 +2322,8 @@
             case 'docs': return docsHtml();
             case 'people': return peopleHtml(p);
             case 'cost': return costHtml(p);
+            case 'analysis': return analysisHtml();
+            case 'code': return codeHtml();
             case 'settings': return settingsHtml(p);
             default: return overviewHtml(p);
         }
@@ -5443,6 +5824,51 @@
                 const list = tab === 'timeline' ? (d.feed && d.feed.events) : d.recent;
                 const ev = (list || [])[Number(el.dataset.ev)];
                 if (ev && ev.link) { vscode.postMessage({ type: 'openLink', link: ev.link }); }
+            }));
+
+        // ---- the backfill screen ----
+        // Opening it asks the host for the report; the reader's own selection
+        // lives here and survives a repaint, because the page repaints on every
+        // fleet refresh and losing forty ticked boxes to one is unusable.
+        document.querySelectorAll('[data-act="backfill"]').forEach(el =>
+            el.addEventListener('click', () => {
+                backfill = backfill ? null : { picked: new Set() };
+                vscode.postMessage({ type: 'view', tab: tab, project: selectedId, kinds: [...feedOff], backfill: !!backfill });
+                render();
+            }));
+        document.querySelectorAll('[data-bf]').forEach(el =>
+            el.addEventListener('change', () => {
+                if (!backfill) { return; }
+                const id = el.dataset.bf;
+                if (el.checked) { backfill.picked.add(id); } else { backfill.picked.delete(id); }
+                render();
+            }));
+        document.querySelectorAll('[data-bf-act]').forEach(el =>
+            el.addEventListener('click', () => {
+                if (!backfill) { return; }
+                const a = el.dataset.bfAct;
+                const rows = (td().backfill && td().backfill.suggestions) || [];
+                if (a === 'close') {
+                    backfill = null;
+                    vscode.postMessage({ type: 'view', tab: tab, project: selectedId, kinds: [...feedOff], backfill: false });
+                } else if (a === 'all') {
+                    // ‼️ The CLEAR ones only. "Select all" that also ticked the
+                    // rows the engine could not decide would resolve those
+                    // questions by a gesture that never claimed to.
+                    backfill.picked = new Set(rows.filter(r => !r.contested).map(r => r.sessionId));
+                } else if (a === 'none') {
+                    backfill.picked = new Set();
+                } else if (a === 'apply') {
+                    const ids = [...backfill.picked];
+                    if (!ids.length) { return; }
+                    // ‼️ IDS ONLY — never the project alongside them. The host
+                    // re-derives which project each one belongs to, so a page
+                    // holding a proposal from four repaints ago cannot write a
+                    // project the engine no longer proposes.
+                    vscode.postMessage({ type: 'applyBackfill', ids });
+                    backfill.picked = new Set();
+                }
+                render();
             }));
 
         // ---- the Work tab ----

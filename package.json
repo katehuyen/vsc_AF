@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.107.0",
+  "version": "3.108.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8842,6 +8842,20 @@
           "type": "number",
           "default": 21,
           "description": "Days of silence after which a project still marked active is flagged as quiet. 0 turns the check off. A project list without this becomes a graveyard nobody dares tidy."
+        },
+        "agentFarm.projectDigestDay": {
+          "type": "number",
+          "default": -1,
+          "minimum": -1,
+          "maximum": 6,
+          "description": "Which weekday to post each open project's weekly digest on: 0 Sunday … 6 Saturday. -1 (the default) is off — a digest nobody asked for is one more unread notice. The summary lands on the Notices board with the full report attached as its second leg, stamped with the project so it also appears on that project's Work tab and timeline. Posted once per project per week; the guard is the board itself, so two open windows cannot double-post."
+        },
+        "agentFarm.projectDigestHour": {
+          "type": "number",
+          "default": 9,
+          "minimum": 0,
+          "maximum": 23,
+          "description": "The hour (local) after which the weekly project digest may be posted. It exists so a Monday digest is not written at 00:05 about a week that, in your head, ended eight hours ago."
         },
         "agentFarm.projectContextExtra": {
           "type": "string",

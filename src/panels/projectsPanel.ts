@@ -33,6 +33,14 @@ export interface TabRequest {
     kinds: string[];
     /** Docs tab: which file is open, relative to the project folder. */
     doc: string;
+    /**
+     * The backfill screen is open — which is NOT a tab, and that is why it is
+     * a flag rather than a tab id. Every tab here is about one project; "which
+     * project does this loose session belong to" is the one question that is
+     * about all of them, so it takes over the pane and leaves the tab where it
+     * was, to come back to.
+     */
+    backfill: boolean;
 }
 
 export interface ProjectsPanelDeps {
@@ -180,6 +188,17 @@ export interface ProjectsPanelDeps {
     openQueueItem(itemId: string): void;
     openSchedule(scheduleId: string): void;
     openTrigger(triggerId: string): void;
+
+    // ---- Faz 6: backfilling the sessions nobody filed ----
+    /**
+     * Apply a set of proposals.
+     *
+     * ‼️ IT TAKES SESSION IDS AND NOTHING ELSE. The host re-derives which
+     * project each one belongs to, so a page holding a list from four repaints
+     * ago cannot write a project the engine no longer proposes — and a page is
+     * exactly where a stale list lives.
+     */
+    applyBackfill(sessionIds: string[]): { applied: number; skipped: string[] };
     onChange?(): void;
 }
 
@@ -209,7 +228,8 @@ export interface NewProjectSeed {
 
 /** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
  *  always meant to become a tab here rather than stay the whole page. */
-const TABS = ['overview', 'work', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings'] as const;
+const TABS = ['overview', 'work', 'timeline', 'sessions', 'plan', 'backlog', 'track',
+    'docs', 'people', 'cost', 'analysis', 'code', 'settings'] as const;
 const DEFAULT_TAB = 'overview';
 /** Sessions-table Show box default for this page. */
 const PROJECT_TABLE_N = 25;
@@ -238,6 +258,9 @@ export class ProjectsPanel {
      *  never gets to name a path the host has not already resolved inside the
      *  project folder. */
     private docPath = '';
+    /** The backfill screen is open. Held here, like the tab, because it decides
+     *  which payload the host builds. */
+    private backfill = false;
 
     /**
      * ‼️ ONE-SHOT: "open ON this tab". Not the same thing as `tab`, which is
@@ -342,7 +365,7 @@ export class ProjectsPanel {
         // would be built for a project nobody is looking at.
         const tabData = seed || stale ? {} : this.deps.tabData({
             project: this.tabProject, tab: this.tab, tableN: this.tableN,
-            kinds: this.feedKinds, doc: this.docPath
+            kinds: this.feedKinds, doc: this.docPath, backfill: this.backfill
         });
         const openTab = this.openTab;
         this.openTab = '';
@@ -406,6 +429,7 @@ export class ProjectsPanel {
                 this.tab = (TABS as readonly string[]).includes(wanted) ? wanted : DEFAULT_TAB;
                 this.feedKinds = Array.isArray(msg.kinds)
                     ? msg.kinds.map(k => String(k)).filter(Boolean) : [];
+                this.backfill = msg.backfill === true;
                 this.refresh();
                 break;
             }
@@ -790,6 +814,22 @@ export class ProjectsPanel {
                     case 'schedule': this.deps.openSchedule(rowId); break;
                     case 'trigger': this.deps.openTrigger(rowId); break;
                 }
+                break;
+            }
+            // ‼️ The page sends IDS. It does not get to say which project each
+            // one goes to — see `applyBackfill`.
+            case 'applyBackfill': {
+                if (!Array.isArray(msg.ids) || !msg.ids.length) { break; }
+                const res = this.deps.applyBackfill(msg.ids.map(String));
+                this.done(
+                    res.skipped.length
+                        // Not an error: a session the current report no longer
+                        // proposes for is a session something changed about,
+                        // and saying so is the whole point of re-deriving.
+                        ? `${res.applied} filed. ${res.skipped.length} skipped — Agent Farm no longer proposes a project for them.`
+                        : undefined,
+                    res.skipped.length ? undefined
+                        : `${res.applied} session${res.applied === 1 ? '' : 's'} filed. Any of them can be taken off again from its own row.`);
                 break;
             }
             case 'taskAction': {

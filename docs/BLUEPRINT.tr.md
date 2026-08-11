@@ -850,6 +850,39 @@ Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış
 
 **Köprü:** `projects.work` (aynı beş depo, sadece bitmemişler için `open:true`) · `notices.project` · `queue.project` · `notices.post`, `notices.list`, `queue.add`, `queue.list` ve `missions.start` üzerinde `project`.
 
+### Zekâ — geriye dönük doldurma, ikinci kat, ve sana ulaşan bir rapor (3.108.0)
+
+*(Faz 6.)* Bir projenin yapamadığı dört şey: filodaki sahipsiz oturumlardan hangilerinin kendisine ait olduğunu söylemek; ne olduğunu değil **nasıl çalışıldığını** söylemek; "bu sistem yaşıyor mu" sorusunu cevaplayan tek ekranda görünmek; ve sorulmadan kendisi hakkında konuşmak.
+
+**‼️ GERİYE DÖNÜK DOLDURMA ÖNERİR; ONAYLAYAN İNSANDIR.** Projeler var olmadan önce aylarca çalışmış bir filoda yüzlerce oturum `Unassigned` kovasındadır ve onları tek tek dosyalamak kimsenin yapmadığı bir iştir. `core/projectSuggest.ts` dört sinyal okur ve her birini **bir saniyede kontrol edebileceğin bir OLGU** olarak yazar: *11 dosyanın 11'ini `D:\…\muvu_talkScribe` altına yazdı* · *tam bu klasörden 9 oturum daha buraya dosyalanmış* · *bu ajanın dosyalanmış oturumlarının %88'i bu projede* · *başlığında "agentfarm" geçiyor*. Bir skor var ve SIRAYI o belirler; ama asla yazılmaz, çünkü "%84 eminim" okuyucunun kontrol edemeyeceği bir sayıdır ve böyle bir liste terk edilir.
+
+Dört kural, her biri bunun yanlış gitme biçimlerinden birinin cevabı:
+
+- **Yalnız kararsız olanlar.** Aidiyet sırasının zaten yerleştirdiği bir oturum karara bağlanmıştır — orada öneri, kapanmış bir soruya ikinci görüş demektir. Senin açıkça her projeden **çıkardığın** bir oturum için hiç öneri yapılmaz ve ayrı sayılır ki sayısı bir eksiklik sanılmasın: bir insanın reddettiğini önermeye devam eden motor, kapatılan motordur.
+- **En güçlü sinyal, hiçbir yol kuralının göremediğidir.** Yola göre aidiyet bir oturumun nerede *durduğunu* sorar; `files` neye *dokunduğunu*. Kendi ev klasöründe çalışıp üç dizin ötedeki bir depoyu düzenleyen bir ajan sıradan durumdur ve her kurala görünmezdi.
+- **Klasör kohortu YALNIZCA açık dosyalamaları sayar.** Kuralın yerleştirdiklerini saymak, sinyali onu yerleştiren kuralın yankısı yapardı — kendisiyle hemfikir olup buna kanıt demek. İki proje arasında bölünmüş bir klasör *klasör bölünmüş* der, çoğunlukla çözülmez.
+- **‼️ Çekişmeli satır bildirilir, çözülmez.** Kıl payı yakın iki proje, motorun cevaplayamadığı bir sorudur; ikisini de adıyla yazar ve **"tümünü seç" onu dışarıda bırakır**. Elle işaretleyebilirsin — bilen sensin. Onları da çözen bir toplu hareket, iki yüz kat hızla yanlış dosyalardı.
+
+Uygulama **yalnızca oturum id'leri** gönderir: projeyi host yeniden türetir, yani dört tur önceki listeyi elinde tutan bir sayfa motorun artık önermediği bir projeyi yazamaz. Artık önerilmeyen id'ler sessizce düşmez, `skipped` içinde geri gelir; ve dosyalanan her şey oturumun kendi menüsünden geri alınabilir.
+
+**İkinci kat — Analysis sekmesi.** Timeline *ne oldu*, Cost *para nereye gitti*; bu, verinin ikinci kez katlanmış hâli. Haftalar (oturum, tur, maliyet, commit, ilk çalışılan ve kapanan backlog kalemleri) · işin gerçekten ne zaman yapıldığının **ritmi** (yerel gün ve saat) · bir kalemin ilk dokunuşundan kapanışına **çevrim süresi** · en çok yazılan dosyalar ve turları alan ajanlar · projenin **kendi ortalamasına karşı** verilen güncel tempo.
+
+Üç kural, her biri bir analiz sayfasının yalan söyleme biçimi:
+
+- **‼️ Bölmeye değer paydası olmayan rakam yazılmaz.** Ritim 40 tur, çevrim süresi 5 kapanmış kalem, tempo 2 hafta ister. Altında blok yoktur ve sayfa **neyin** ve **ne kadar** eksik olduğunu söyler — "henüz yeterli tur yok, şu ana kadar 23" bir cevaptır; altı noktadan okunan bir şekil ise okuyucunun inanacağı bir şekildir.
+- **‼️ Eğilim bir kontrole karşı söylenir.** "Oturum başına $4.10" tek başına hiçbir şey demez; projenin kendi ortalamasının yanında kontrol edebileceğin bir iddiadır. Sayfa bunu rakamların yanında yazar.
+- **‼️ Yerel günler, Pazartesi haftaları.** 23:40'taki bir oturum o akşama aittir — `toISOString` onu UTC'nin doğusunda yarına taşır — ve Pazar başlangıçlı hafta her hafta sonunu ikiye böler. Sessiz hafta bir **sıfır satırıdır**, boşluk değil: delikli bir seri yalan çizer.
+
+Backlog tarafı **track defterinden** gelir, belgedeki tarihlerden değil: `[x]` bir kalemin kapalı *olduğunu* söyler, *ne zaman* kapandığını yalnız defter söyler, ve dosyayı okumak her kalemi Obsidian'da en son kaydedildiği ana tarihlerdi. `touch` bir denemedir, kapanış değil — herhangi bir türdeki son olayı kapanış saymak, terk edilmiş her kaleme bir çevrim süresi verirdi.
+
+**Code sekmesi — iki kaynak, asla toplanmaz.** Commit'ler **git'in** beyan edilmiş bir kökte kaydettiğidir: orada kim ne yazdıysa hepsi. `sessionWrites` ise **bu projenin kendi oturumlarının** yazdığıdır, kendi transkriptlerinden, herhangi bir deponun dışındaki dosyalar dâhil. Farklı sorulara cevap verirler ve ikisinin toplamı hiçbir anlamı olmayan üçüncü bir sayı olurdu — `codeedits.ts`'in bir oturumun diff'i ile git diff'i arasına çektiği aynı çizgi. Bu makinede olmayan bir kök **eksik** diye bildirilir, çünkü orada boş bir commit listesi "sessiz depo" diye okunurdu.
+
+**Sağlık Living sayfasına iner.** Proje sayfası eksik klasörler, aşılmış bütçeler ve aktif işaretli ama kimsenin dokunmadığı projeler hakkında hep doğruyu söyledi — proje sayfasında, yani zaten bir şeyden şüphelendiğinde gittiğin yerde. Living ise şüphelenmediğinde baktığın ekrandır ve yalnızca gitmeyi akıl etmen gereken bir yerde duran uyarı, Principle 1'in sessiz kuralıdır. Hepsi için **tek satır**, ki dokuz proje diğer bütün döngüleri sayfadan itmesin — ama **adlarını yazar**: adsız bir sayı, üzerine iş yapamayacağın bir satırdır. **Eksik klasör uyarı değil ölüdür** — plan, backlog ve worklog onun içindedir, yani proje ekseninin bütün yazma tarafı yeniden bağlanana kadar kırıktır. Uyarıları yeniden türetmez; proje sayfasının hesapladıklarını yazar, çünkü iki kez yazılmış bir "klasör var mı" kontrolü bir hafta içinde birbiriyle çelişecek iki cevaptır.
+
+**Sana ulaşan bir haftalık özet.** Varsayılan kapalı (`agentFarm.projectDigestDay`); bir gün seç, her açık projenin haftası **Bildirimler panosuna** — zaten okuduğun yere — gerçek bir özet olarak düşsün, tam rapor ikinci bacak olarak eklenmiş hâlde. Kimsenin açmadığı bir klasöre yazılan rapor, Living'in görünür kılmak için var olduğu başarısızlığın ta kendisidir. Projesiyle damgalanır, yani o projenin Work sekmesinde ve zaman çizelgesinde de görünür. Proje başına haftada bir kez, ve nöbetçi bizim bir zaman damgamız değil **panonun kendisidir** (`sourceKey`): iki açık pencere ikinci kez gönderemez, ve sildiğin bir özet istersen geri gelebilir.
+
+**Köprü:** `projects.suggest` · `projects.suggest.apply` · `projects.analysis` · `projects.code` · `projects.report` (aynı belge, istediğin dönem için; `post:true` ile panoya da düşer).
+
 ### Backlog — projenin bekleyen iş yığını (3.59.0)
 
 **Birbirinden ayrı tutulan üç şey.** **Plan** yol haritasıdır: makro, faz ölçeğinde, on satır, ayda birkaç kez değişir. **İş kuyruğu** küresel kullanıcı→ajan kanalıdır: bir akış — yakalanır, gruplanır, delege edilir, biter. **Backlog** ise projenin *stoğu*: yüzlerce kalem; kodlu, sıralı, filtrelenebilir; "sırada ne var, şimdi hangisini yapayım" sorusunu cevaplar. Üçüncüsünü birincisinin içine koymak akla ilk gelen hamleydi ve iki bakımdan yanlıştı — yüz tane "şunu da düzeltelim" satırı yol haritasını okunmaz yapar, ve brief'in taşıdığı altı açık plan kalemi imla düzeltmeleriyle dolar.

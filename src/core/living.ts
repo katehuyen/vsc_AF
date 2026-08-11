@@ -106,6 +106,13 @@ export interface LivingInput {
     noticeStaleHours?: number;
     /** hours after which a captured queue item counts as stalled */
     queueStaleHours?: number;
+    /**
+     * Projects and what is currently wrong with each — the SAME sentences the
+     * project page prints, computed once by the host. This module does not
+     * re-derive them: a second opinion on "is this folder there" is a second
+     * answer that will disagree within a week.
+     */
+    projects?: { name: string; warnings: string[] }[];
     preconditionDeps?: PreconditionDeps;
 }
 
@@ -361,7 +368,55 @@ function spendSignal(input: LivingInput): LivingSignal[] {
     }];
 }
 
-/** Signal 6 — the user's own checks (vault day files, inbox folders, …). */
+/**
+ * Signal 6 — PROJECTS: an umbrella whose own health has stopped being true.
+ *
+ * ‼️ IT DOES NOT INVENT A SECOND ALARM SYSTEM, AND THAT IS THE WHOLE POINT
+ * (Faz 6). The project page has told the truth about missing folders, blown
+ * budgets and projects marked active that nothing has touched — on the project
+ * page, which is where you go when you already suspect something. This is the
+ * screen you look at when you do not, and a warning that only exists somewhere
+ * you have to think to visit is Principle 1's silent rule.
+ *
+ * ONE row for all of them rather than one per project: a fleet with nine
+ * projects would otherwise push every other loop off the page, and "three
+ * projects need attention" plus their names is the same information at a
+ * tenth of the height. The names are in the detail, so the row still says
+ * WHICH — a count with no names is a row you cannot act on.
+ */
+function projectSignals(input: LivingInput): LivingSignal[] {
+    const rows = input.projects ?? [];
+    if (!rows.length) { return []; }
+    const bad = rows.filter(p => p.warnings.length);
+    if (!bad.length) {
+        return [{
+            id: 'projects', label: 'Projects healthy', state: 'ok',
+            detail: `all ${rows.length} project(s): folder there, inside budget, worked recently`,
+            goto: 'projects', weight: 13
+        }];
+    }
+    // A missing folder is the one that stops a loop dead: the plan, the
+    // backlog and the worklog are in it, so every write side of the project
+    // axis is broken until it is relinked. The others are a project needing
+    // attention, not a mechanism that has stopped.
+    const gone = bad.filter(p => p.warnings.some(w => w.startsWith('folder not found')));
+    const detail = bad.slice(0, 4)
+        .map(p => `${p.name}: ${p.warnings[0]}`)
+        .join(' · ') + (bad.length > 4 ? ` · +${bad.length - 4} more` : '');
+    return [{
+        id: 'projects',
+        label: bad.length === 1 ? '1 project needs attention' : `${bad.length} projects need attention`,
+        state: gone.length ? 'dead' : 'warn',
+        detail,
+        hint: gone.length
+            ? 'A folder that is not there takes the plan, the backlog and the worklog with it — relink it on the project page.'
+            : 'Open the project page: each warning names its own answer.',
+        goto: 'projects',
+        weight: gone.length ? 84 : 48
+    }];
+}
+
+/** Signal 7 — the user's own checks (vault day files, inbox folders, …). */
 function checkSignals(input: LivingInput): LivingSignal[] {
     return input.checks.map((c, i) => {
         const v = evaluatePrecondition(c.when, input.preconditionDeps);
@@ -387,6 +442,7 @@ export function buildLivingReport(input: LivingInput): LivingReport {
         ...automationSignals(input, now),
         ...dutySignals(input),
         ...spendSignal(input),
+        ...projectSignals(input),
         ...checkSignals(input)
     ].sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label));
 

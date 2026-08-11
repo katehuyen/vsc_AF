@@ -160,6 +160,15 @@ import {
     buildProjectCost, buildProjectFeed, FeedCommit, FeedDoc, FeedSession, PROJECT_EVENT_KINDS,
     ProjectCost, ProjectEventKind, ProjectFeed, ProjectFeedOptions, UNFILED_EVENT_KINDS
 } from './core/projectFeed';
+import {
+    approvable, byProject as suggestByProject, SuggestReport, SuggestSession, suggestProjects
+} from './core/projectSuggest';
+import {
+    AnalysisItem, AnalysisSession, buildProjectAnalysis, buildProjectCode, localWeek
+} from './core/projectAnalysis';
+import {
+    buildDigestBody, buildProjectReport, digestName, ProjectReportInput, ReportEvent, ReportItem
+} from './core/projectReport';
 import { buildSnapshot } from './core/websnapshot';
 import {
     describeRecord, InsightHistoryStore, normalizeHistory, pruneHistory,
@@ -2197,9 +2206,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    /**
+     * The weekly project digest (Faz 6).
+     *
+     * ‼️ IT POSTS TO NOTICES, AND THAT IS THE WHOLE MECHANISM. A report written
+     * to a folder nobody opens is the exact failure the Living page exists to
+     * make visible — the loop opens and never closes. So the summary lands on
+     * the board the user already reads, with the full document as its second
+     * leg (`_REF/notices.md`), and it carries the project's own stamp so it
+     * shows up on that project's Work tab and timeline too.
+     *
+     * ‼️ ONCE PER PROJECT PER WEEK, and the guard is the BOARD rather than a
+     * flag of ours: a `sourceKey` the notice carries. A stored "last posted"
+     * timestamp would double-post the day two windows are open, and would post
+     * nothing at all for a week if the user dismissed the notice and wanted it
+     * back. Asking the board what is already on it cannot drift from the board.
+     *
+     * Off by default. A digest nobody asked for is one more unread notice.
+     */
+    const DIGEST_KEY = 'projdigest:';
+    const checkProjectDigest = () => {
+        const day = cfg().get<number>('projectDigestDay', -1);
+        if (day < 0 || day > 6) { return; }
+        const now = new Date();
+        if (now.getDay() !== day) { return; }
+        // After the hour the user asked for, so a Monday digest is not posted at
+        // 00:05 about a week that ended eight hours ago in their head.
+        const hour = cfg().get<number>('projectDigestHour', 9);
+        if (now.getHours() < hour) { return; }
+        const week = localWeek(now.getTime());
+        for (const p of projectStore.all()) {
+            if (CLOSED_PROJECT_STATUSES.includes(p.status)) { continue; }
+            const key = `${DIGEST_KEY}${p.id}:${week}`;
+            if (noticesStore.notices.some(n => n.sourceKey === key)) { continue; }
+            const input = projectReportInput(p.id, Date.now() - 7 * 86400000);
+            if (!input) { continue; }
+            const analysis = projectAnalysisView(p.id);
+            if (analysis.state === 'ok') { input.analysis = analysis; }
+            try {
+                const reportPath = writeReport({
+                    title: `${p.name} — weekly digest`,
+                    name: digestName(p.name, now.getTime()),
+                    body: buildProjectReport(input, `${p.name} — weekly digest`),
+                    agentName: 'agent-farm'
+                });
+                noticesStore.add({
+                    title: `${p.name} — the week`,
+                    type: 'report',
+                    level: 1,
+                    body: buildDigestBody(input),
+                    agentName: 'agent-farm',
+                    reportPath,
+                    sourceKey: key,
+                    projectId: p.id
+                });
+            } catch { /* the report folder is not writable — retried next hour */ }
+        }
+        NoticesPanel.refreshIfOpen();
+        updateNoticesBadge();
+    };
+
     const reportTimer = setInterval(() => {
         checkAutoReport();
         checkPeriodicIntelligence();
+        checkProjectDigest();
     }, 3600_000);
     context.subscriptions.push({ dispose: () => clearInterval(reportTimer) });
 
@@ -4533,6 +4603,117 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     triggers: w.triggers.filter(t => t.enabled),
                     agents: w.agents
                 };
+            }
+        },
+        {
+            // ‼️ The page can propose and apply, so the bridge can — the rule in
+            // `_REF/agentfarm-dev.md`. And the same body runs behind both, so a
+            // button and an agent cannot propose two different backfills.
+            op: 'projects.suggest',
+            describe: 'Which sessions NOBODY has filed belong to which project, with the EVIDENCE for each — files written inside a declared code root, other sessions already filed by hand from the same folder, the agent\'s own habit, the project\'s name in the title. ‼️ It proposes only for sessions no rule already places, and NEVER for one the user explicitly took off every project. A row where two projects are within a hair of each other comes back `contested:true` and is excluded from a bulk apply: picking the higher one by a rounding error is the silent misattribution the project axis exists to stop. Nothing is written — projects.suggest.apply does that. args: project? (only proposals pointing at this one), limit? (default 200), clearOnly? (true drops the contested rows)',
+            handler: (args) => {
+                const limit = Math.max(1, Number(args.limit) || 200);
+                const report = projectSuggestions({
+                    limit, ...(optStr(args, 'project') ? { project: optStr(args, 'project') } : {})
+                });
+                const rows = args.clearOnly === true ? approvable(report) : report.suggestions;
+                return {
+                    scanned: report.scanned,
+                    noEvidence: report.noEvidence,
+                    refused: report.refused,
+                    byProject: suggestByProject(rows),
+                    suggestions: rows.map(s => ({
+                        sessionId: s.sessionId, title: s.title ?? null, agent: s.agentName ?? null,
+                        cwd: s.cwd ?? null, at: s.lastTs ? localStamp(s.lastTs) : null,
+                        project: s.projectName, projectId: s.projectId,
+                        contested: !!s.contested,
+                        alsoProject: s.alsoName ?? null,
+                        // The evidence, in the words a person reads. The score
+                        // decides the ORDER and is deliberately not returned as
+                        // a percentage: a number a caller cannot check is a
+                        // number it should not be arguing from.
+                        because: s.signals.map(x => x.detail)
+                    }))
+                };
+            }
+        },
+        {
+            op: 'projects.suggest.apply',
+            describe: 'File the proposed sessions. args: sessions (string[] of session ids) — OR — project (id or name) + all:true to take every CLEAR proposal pointing at that project. ‼️ It takes session IDS and re-derives the project itself: a caller holding a list from an earlier call cannot write a project the engine no longer proposes. Ids it no longer proposes for come back in `skipped` rather than being silently dropped. Everything filed can be taken off again (projects.assign with an empty value).',
+            handler: (args) => {
+                let ids = Array.isArray(args.sessions)
+                    ? args.sessions.map(x => String(x ?? '').trim()).filter(Boolean) : [];
+                if (!ids.length && args.all === true) {
+                    const key = optStr(args, 'project');
+                    need(key, 'projects.suggest.apply needs "sessions", or "project" with all:true');
+                    ids = approvable(projectSuggestions({ project: key })).map(s => s.sessionId);
+                }
+                need(ids.length, 'nothing to apply — pass "sessions", or "project" with all:true');
+                const res = applySuggestions(ids);
+                return { applied: res.applied, skipped: res.skipped };
+            }
+        },
+        {
+            op: 'projects.analysis',
+            describe: 'The project\'s own data folded a second time: weeks (sessions, turns, cost, commits, backlog items first worked and closed), the RHYTHM of when work actually happens by local weekday and hour, CYCLE TIME from an item\'s first recorded touch to its close, the files most written and the agents taking the turns, and a recent PACE stated against the project\'s own average. ‼️ A block with no denominator worth dividing by is absent rather than wrong: rhythm needs 40 turns, cycle time 5 closed items, pace 2 weeks. The backlog side is read from the TRACK LEDGER and never from dates in the document — a file edited in Obsidian would date every item to the last save. args: project (id or name)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                return { project: (p as Project).name, ...projectAnalysisView((p as Project).id) };
+            }
+        },
+        {
+            op: 'projects.code',
+            describe: 'The project\'s declared code roots: commits read per root (from the per-repository cache, refreshed at most once a minute), their authors and per-week counts, plus the files THIS project\'s own sessions wrote, out of their transcripts. ‼️ The two are never summed. A commit count is what git records in that repository — everything anybody typed there; the write list is what this project\'s agents did, including files outside any repo. A root that is not on this machine is reported as missing rather than as a repo with no commits. args: project (id or name)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                return { project: (p as Project).name, ...projectCodeView((p as Project).id) };
+            }
+        },
+        {
+            op: 'projects.report',
+            describe: 'One project written down, as MARKDOWN — what it is, what happened in the period, what closed, what is open in its plan and backlog, the decisions and deliverables it recorded, how it is being worked (pace against its own average, cycle time, rhythm, most-written files) and the newest worklog lines verbatim. The same document the weekly digest posts, over whatever period you ask for. ‼️ It states its own gaps: "no plan document" and "nothing open" are different answers, so a section that is empty for a reason says the reason. args: project (id or name), days? (default 7; 0 = the whole project), post? (true also posts it to the Notices board as a summary with the full report attached as its second leg — costs nothing but the user\'s attention, so pass it only when you were asked to)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const days = args.days === undefined ? 7 : Math.max(0, Number(args.days) || 0);
+                const sinceTs = days ? Date.now() - days * 86400000 : 0;
+                const input = projectReportInput((p as Project).id, sinceTs);
+                need(input, 'the project could not be read');
+                const full = input as ProjectReportInput;
+                // ‼️ The analysis is over the WHOLE project even when the report
+                // covers a week, and that is the point of it being here: "3.2
+                // sessions a week recently against 5.1 all told" needs the
+                // all-told figure, and a fold restricted to the period could
+                // not produce one.
+                const analysis = projectAnalysisView((p as Project).id);
+                if (analysis.state === 'ok') { full.analysis = analysis; }
+                const markdown = buildProjectReport(full);
+                if (args.post !== true) {
+                    return { project: (p as Project).name, days, markdown };
+                }
+                const reportPath = writeReport({
+                    title: `${(p as Project).name} — project report`,
+                    name: digestName((p as Project).name),
+                    body: markdown,
+                    agentName: optStr(args, 'agent') || 'agent-farm'
+                });
+                const n = noticesStore.add({
+                    title: `${(p as Project).name} — ${days ? `last ${days} day(s)` : 'the whole project'}`,
+                    type: 'report',
+                    level: 2,
+                    body: buildDigestBody(full),
+                    agentName: optStr(args, 'agent') || 'agent-farm',
+                    reportPath,
+                    projectId: (p as Project).id
+                });
+                NoticesPanel.refreshIfOpen();
+                updateNoticesBadge();
+                return { project: (p as Project).name, days, noticeId: n.id, reportPath, markdown };
             }
         },
         {
@@ -7979,6 +8160,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             budgetToday: budgets['*'] || undefined,
             queueStaleHours: cfg().get<number>('queue.maxAgeHours', 24),
             noticeStaleHours: cfg().get<number>('noticeStaleHours', 24),
+            // ‼️ The SAME sentences the project page prints, not a second
+            // opinion computed here — a folder-exists check written twice is
+            // two answers that will disagree within a week. Closed projects are
+            // left out: "archived and quiet for 90 days" is not a warning, it
+            // is what archived means.
+            projects: projectStore.all()
+                .filter(p => !CLOSED_PROJECT_STATUSES.includes(p.status))
+                .map(p => ({ name: p.name, warnings: projectWarnings(p) })),
             preconditionDeps: {
                 queueWorkCount: () => workQueueStore.list({ limit: 0 })
                     .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length
@@ -9918,6 +10107,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * Which loose sessions belong where, with the evidence (Faz 6).
+     *
+     * The engine is pure (`core/projectSuggest.ts`) and is handed EVERY
+     * session, not only the loose ones: two of its four signals are built out
+     * of what is already filed, so a caller passing the leftovers alone would
+     * leave it with nothing to learn from. Nothing is written here — this
+     * proposes, a person approves.
+     */
+    const projectSuggestions = (opts: { limit?: number; project?: string } = {}): SuggestReport => {
+        const rows: SuggestSession[] = index.all().map(s => ({
+            sessionId: s.sessionId,
+            agentId: s.agentId,
+            agentName: s.agentName,
+            cwd: s.cwd,
+            title: s.title,
+            filesEdited: Object.keys(s.filesEdited ?? {}),
+            firstTs: s.firstTs,
+            lastTs: s.lastTs || s.mtime,
+            cost: s.cost
+        }));
+        // Closed projects are not proposed FOR — filing new work into something
+        // marked done is the one suggestion nobody wants — but they stay in the
+        // list the signals are built from, because their history is real.
+        const open = projectStore.all().filter(p => !CLOSED_PROJECT_STATUSES.includes(p.status));
+        const report = suggestProjects(rows, open, projectStore.links(),
+            opts.limit ? { limit: opts.limit } : {});
+        if (!opts.project) { return report; }
+        const p = projectStore.get(opts.project);
+        if (!p) { return { ...report, suggestions: [] }; }
+        return { ...report, suggestions: report.suggestions.filter(s => s.projectId === p.id) };
+    };
+
+    /**
+     * Apply a set of proposals.
+     *
+     * ‼️ IT TAKES SESSION IDS AND RE-DERIVES THE PROJECT — it never takes the
+     * pair. A page holding a proposal from four repaints ago would otherwise
+     * be able to write a project the engine no longer proposes, and the page
+     * is exactly where a stale list lives. Ids the current report does not
+     * carry are reported back, not silently skipped.
+     */
+    const applySuggestions = (sessionIds: string[]): { applied: number; skipped: string[] } => {
+        const report = projectSuggestions();
+        const wanted = new Set(sessionIds.map(x => String(x ?? '').trim()).filter(Boolean));
+        const byId = new Map(report.suggestions.map(s => [s.sessionId, s]));
+        const groups = new Map<string, string[]>();
+        const skipped: string[] = [];
+        for (const id of wanted) {
+            const s = byId.get(id);
+            if (!s) { skipped.push(id); continue; }
+            (groups.get(s.projectId) ?? groups.set(s.projectId, []).get(s.projectId)!).push(id);
+        }
+        let applied = 0;
+        for (const [projectId, ids] of groups) { applied += projectStore.assignSessions(ids, projectId); }
+        if (applied) { projectsChanged(); }
+        return { applied, skipped };
+    };
+
+    /**
      * A project's colour, icon — and the FACTS about it, by name.
      *
      * Every surface that names a project should show the same mark for it, not
@@ -9972,13 +10220,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *               deliberate backfill; the timeline shows no Task chip at all
      *               in that case, which is the honest shape of "none", not a
      *               claim that the project ran none.
-     *   missions  → a run whose STEP TASKS belong here; a mission is not a
-     *               project member in its own right until it gets its own field
+     *   missions  → `spec.projectId` (Faz 5), OR a run whose STEP TASKS belong
+     *               here — the second route still holds for runs started before
+     *               specs carried a project, and for one deliberately started
+     *               with none whose work was filed afterwards
      *   commits   → a commit in a declared code root
+     *   notices   → `notice.projectId`, set by whoever posted or filed it
+     *   queue     → `item.projectId`, likewise
      *
-     * Notices and queue items are absent on purpose. They carry no project
-     * link, and deriving one from who posted it would reintroduce exactly the
-     * "an agent owns one project" mistake the entity model was rebuilt to kill.
+     * ‼️ THE LAST TWO ARE STAMPS AND NEVER DERIVATIONS. Reading who posted a
+     * notice and inferring its project would reintroduce exactly the "an agent
+     * owns one project" mistake the entity model was rebuilt to kill, so an
+     * unstamped notice is absent — the honest answer rather than a plausible
+     * one.
      */
     const feedSessionsOf = (id: string): FeedSession[] =>
         sessionsOfProject(id).map(s => ({
@@ -10172,6 +10426,243 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * The Analysis tab — the project's own data folded a second time (Faz 6).
+     *
+     * ‼️ The backlog side is read from the TRACK LEDGER, not from the backlog
+     * document's dates, and that is the only honest source for a cycle time.
+     * A `Backlog.md` line records what an item IS; the ledger records when it
+     * was first worked and when it closed, because those are events and events
+     * are what the ledger is. Reading a close date off a document that has been
+     * edited in Obsidian would date every item to the last time somebody saved
+     * the file.
+     */
+    const projectAnalysisView = (id: string) => {
+        const p = projectStore.get(id);
+        if (!p) { return { state: 'no-project' as const }; }
+        const sessions: AnalysisSession[] = sessionsOfProject(id).map(s => ({
+            sessionId: s.sessionId,
+            agentName: s.agentName,
+            firstTs: s.firstTs,
+            lastTs: s.lastTs || s.mtime,
+            cost: s.cost,
+            turns: (s.turns ?? []).length,
+            filesEdited: s.filesEdited,
+            models: s.models
+        }));
+        const items: AnalysisItem[] = [];
+        const folder = (p.folder ?? '').trim();
+        if (folder && dirExists(folder)) {
+            const events = readTracks(folder);
+            const byCode = new Map<string, { first: number; closed: number }>();
+            for (const e of events) {
+                if (!e.code) { continue; }
+                const cur = byCode.get(e.code) ?? { first: 0, closed: 0 };
+                cur.first = cur.first ? Math.min(cur.first, e.ts) : e.ts;
+                // ‼️ Only the events that MEAN closed. A `touch` is an attempt,
+                // and treating the last event of any kind as a close would give
+                // every abandoned item a cycle time.
+                if (e.event === 'done' || e.event === 'cancelled') {
+                    cur.closed = Math.max(cur.closed, e.ts);
+                }
+                byCode.set(e.code, cur);
+            }
+            for (const [code, v] of byCode) {
+                items.push({
+                    code, state: v.closed ? 'closed' : 'open',
+                    firstTs: v.first, closedTs: v.closed || undefined
+                });
+            }
+        }
+        return {
+            state: 'ok' as const,
+            ...buildProjectAnalysis({
+                sessions, items,
+                commits: commitsOfProject(p).map(c => ({ ts: c.ts, repo: c.repo }))
+            })
+        };
+    };
+
+    /**
+     * The Code tab — the project's declared code roots (Faz 6).
+     *
+     * ‼️ TWO SOURCES, NEVER SUMMED. Commits are the repository's own history and
+     * include everything a person typed there; `sessionWrites` is what THIS
+     * project's agent sessions wrote, out of their transcripts. They answer
+     * different questions, and a total over both would be a third number that
+     * means nothing — the same line `codeedits.ts` draws between a session's
+     * diff and a git diff.
+     */
+    const projectCodeView = (id: string) => {
+        const p = projectStore.get(id);
+        if (!p) { return { state: 'no-project' as const }; }
+        const repos = (p.repos ?? []).filter(r => !!r?.trim());
+        if (!repos.length) { return { state: 'no-roots' as const }; }
+        warmProjectCommits(repos);
+        return {
+            state: 'ok' as const,
+            ...buildProjectCode({
+                roots: repos.map(root => ({
+                    root,
+                    exists: dirExists(root),
+                    commits: (commitCache.get(root) ?? []).map(c => ({ ts: c.ts, author: c.author }))
+                })),
+                sessions: sessionsOfProject(id).map(s => ({
+                    sessionId: s.sessionId, agentName: s.agentName,
+                    firstTs: s.firstTs, lastTs: s.lastTs || s.mtime,
+                    cost: s.cost, turns: (s.turns ?? []).length, filesEdited: s.filesEdited
+                }))
+            })
+        };
+    };
+
+    /**
+     * Everything one project's report is built out of (Faz 6).
+     *
+     * ‼️ ONE COLLECTOR, TWO CALLERS. `projects.report` (an agent asking) and the
+     * weekly digest (the farm telling) are the same document over a different
+     * period; two collectors would be two summaries of one project that
+     * disagree, which is worse than one nobody reads. The gaps are stated
+     * rather than left as empty sections — "no plan document" and "nothing
+     * open" are different answers and a reader cannot tell them apart from a
+     * blank heading.
+     */
+    const projectReportInput = (id: string, sinceTs: number): ProjectReportInput | undefined => {
+        const p = projectStore.get(id);
+        if (!p) { return undefined; }
+        const now = Date.now();
+        const folder = (p.folder ?? '').trim();
+        const hasFolder = !!folder && dirExists(folder);
+        const roles = hasFolder ? scanRoles(folder) : ({} as ReturnType<typeof scanRoles>);
+
+        const sessions = sessionsOfProject(id);
+        const inPeriod = sessions.filter(s => (s.lastTs || s.mtime) >= sinceTs);
+        const tasks = tasksOfProject(id).filter(t => (t.endedAt ?? t.createdAt) >= sinceTs);
+        const notices = noticesOfProject(id);
+        const queue = queueOfProject(id);
+        const cost = projectCostFor(id);
+
+        // The period's own spend, out of the day series the Cost tab already
+        // builds — never re-summed from the sessions, which would count a
+        // session that STRADDLES the boundary twice differently from the
+        // figure printed next to it.
+        const periodCost = sinceTs
+            ? (cost.days ?? []).filter(d => Date.parse(d.day + 'T00:00:00') >= sinceTs - 86400000)
+                .reduce((a, d) => a + d.cost, 0)
+            : cost.total;
+
+        // Plan and backlog, in the documents' own words.
+        const planItems: ReportItem[] = [];
+        let noPlan = true;
+        if (hasFolder && roles.plan) {
+            noPlan = false;
+            const read = readProjectDoc(folder, relDoc(folder, roles.plan));
+            if (read.ok) {
+                for (const s of planSummary(read.text ?? '').sections) {
+                    for (const i of s.items) { if (!i.done) { planItems.push({ text: i.text }); } }
+                }
+            }
+        }
+        const backlogItems: ReportItem[] = [];
+        const closedItems: ReportItem[] = [];
+        let noBacklog = true;
+        if (hasFolder && roles.backlog) {
+            noBacklog = false;
+            const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+            if (read.ok) {
+                const text = read.text ?? '';
+                for (const i of nextBacklog(text, { limit: 5, maxEffort: 'XL' }).items) {
+                    backlogItems.push({ code: i.code ?? undefined, text: i.text, state: i.state });
+                }
+                // ‼️ WHAT CLOSED IN THE PERIOD COMES FROM THE LEDGER, not from
+                // the document. A `[x]` line says an item IS closed; only the
+                // track ledger says WHEN, and a report that read the file would
+                // list every item ever finished under "this week".
+                const byCode = new Map(parseBacklog(text).items
+                    .filter(x => x.code).map(x => [x.code as string, x]));
+                const seen = new Set<string>();
+                for (const e of readTracks(folder)) {
+                    if (e.ts < sinceTs || !e.code) { continue; }
+                    if (e.event !== 'done' && e.event !== 'cancelled') { continue; }
+                    if (seen.has(e.code)) { continue; }
+                    seen.add(e.code);
+                    const item = byCode.get(e.code);
+                    closedItems.push({
+                        code: e.code,
+                        text: item?.text ?? '(no longer in the backlog)',
+                        state: e.event
+                    });
+                }
+            }
+        }
+
+        // Decisions and deliverables recorded in the period — the document
+        // side of the feed, already dated by the documents themselves.
+        const events: ReportEvent[] = hasFolder
+            ? docFeedOf(p)
+                .filter(d => d.ts >= sinceTs && (d.kind === 'decision' || d.kind === 'deliverable'))
+                .sort((a, b) => b.ts - a.ts)
+                .slice(0, 12)
+                .map(d => ({ ts: d.ts, kind: d.kind, title: d.title, detail: d.detail }))
+            : [];
+
+        // The newest worklog lines, verbatim — the user's own record of what
+        // happened, which no fold of ours replaces.
+        const worklog: string[] = [];
+        if (hasFolder && roles.log) {
+            const read = readProjectDoc(folder, relDoc(folder, roles.log));
+            if (read.ok) {
+                const lines = (read.text ?? '').split(/\r?\n/).filter(l => /^\s*-\s/.test(l));
+                worklog.push(...lines.slice(0, 8));
+            }
+        }
+
+        return {
+            project: {
+                name: p.name, status: p.status,
+                ...(p.kind ? { kind: p.kind } : {}),
+                ...(p.summary ? { summary: p.summary } : {}),
+                ...(p.folder ? { folder: p.folder } : {}),
+                ...(p.repos?.length ? { repos: p.repos } : {}),
+                ...(p.people?.length ? { people: p.people.map(x => ({ name: x.name, role: x.role })) } : {}),
+                ...(p.budgetUSD ? { budgetUSD: p.budgetUSD } : {}),
+                ...(p.budgetTotalUSD ? { budgetTotalUSD: p.budgetTotalUSD } : {}),
+                ...(p.dueAt ? { dueAt: p.dueAt } : {}),
+                warnings: projectWarnings(p)
+            },
+            sinceTs, now,
+            cost: { total: cost.total, today: cost.today, period: Math.round(periodCost * 10000) / 10000 },
+            sessions: {
+                n: inPeriod.length,
+                turns: inPeriod.reduce((a, s) => a + (s.turns ?? []).length, 0),
+                agents: [...new Set(inPeriod.map(s => s.agentName).filter((x): x is string => !!x))].sort()
+            },
+            work: {
+                runningTasks: tasks.filter(t => t.status === 'running').length,
+                queuedTasks: tasks.filter(t => t.status === 'queued').length,
+                doneTasks: tasks.filter(t => t.status === 'done').length,
+                failedTasks: tasks.filter(t => t.status === 'failed').length,
+                liveMissions: missionsOfProject(id).filter(r =>
+                    r.status === 'running' || r.status.startsWith('waiting') || r.status === 'paused').length,
+                openNotices: notices.filter(n => !n.read).length,
+                openQuestions: notices.filter(n => n.type === 'question' && (n.status ?? 'open') === 'open').length,
+                liveQueue: queue.filter(q => q.status !== 'done' && q.status !== 'dropped').length,
+                blockedQueue: queue.filter(q => q.status === 'blocked').length
+            },
+            plan: planItems.slice(0, 8),
+            backlog: backlogItems,
+            closed: closedItems,
+            events,
+            worklog,
+            gaps: {
+                ...(hasFolder ? {} : { noFolder: true }),
+                ...(noPlan ? { noPlan: true } : {}),
+                ...(noBacklog ? { noBacklog: true } : {}),
+                ...((p.repos ?? []).length ? {} : { noRepos: true })
+            }
+        };
+    };
+
+    /**
      * The Work tab — everything this project has in flight or on its books.
      *
      * ‼️ FIVE MODELS, ONE TAB, AND THAT IS THE POINT (Faz 5). Before this, a
@@ -10192,7 +10683,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const runs = missionsOfProject(id);
         return {
             tasks: tasks.map(t => ({
-                id: t.id, title: t.title, agent: t.agentName, status: t.status,
+                id: t.id, title: t.title, agent: t.agentName,
+                // ‼️ THE SAME WORD THE TASKS PAGE USES FOR THE SAME TASK.
+                // `parked` is a DISPLAY status the store does not hold: a
+                // queued task that wanted to start and could not. Sending the
+                // raw status here would have one page calling a task parked
+                // while the other called it queued, about the same row.
+                status: t.status === 'queued' && t.autoStart ? 'parked' : t.status,
                 mode: t.mode, engine: t.engine ?? '', model: t.model ?? '',
                 createdAt: t.createdAt, startedAt: t.startedAt, endedAt: t.endedAt,
                 costUSD: t.costUSD ?? 0, missionId: t.missionId ?? null,
@@ -11192,7 +11689,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * — to draw a form — is how a read-only page becomes the reason the
          * window stutters. The tab says what it needs and gets that.
          */
-        tabData: ({ project: id, tab, tableN, kinds, doc }) => {
+        tabData: ({ project: id, tab, tableN, kinds, doc, backfill }) => {
+            // ‼️ The backfill screen is about EVERY project, so it is answered
+            // before the "is there a selected project" guard — it is the one
+            // view on this page that is usable with nothing selected, which is
+            // exactly the state a farm full of unassigned sessions is in.
+            if (backfill) { return { backfill: projectSuggestions({ limit: 200 }) }; }
             if (!id || !projectStore.get(id)) { return {}; }
             switch (tab) {
                 case 'plan':
@@ -11231,6 +11733,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     };
                 case 'work':
                     return { work: projectWorkView(id) };
+                case 'analysis':
+                    return { analysis: projectAnalysisView(id) };
+                case 'code':
+                    return { code: projectCodeView(id) };
                 case 'cost':
                     return { cost: projectCostFor(id) };
                 case 'overview': {
@@ -11755,6 +12261,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openQueueItem: itemId => showQueuePanel(itemId),
         openSchedule: scheduleId => { TasksPanel.composePlan(tasksDeps, 'schedule', scheduleId); },
         openTrigger: triggerId => { TasksPanel.composePlan(tasksDeps, 'trigger', triggerId); },
+        applyBackfill: ids => applySuggestions(ids),
         onChange: () => { projectsTree.refresh(); paintProjectBar(); }
     });
 

@@ -285,6 +285,46 @@ const sig = (rep, id) => rep.signals.find(s => s.id === id);
     ok('a warning counts as half, not zero', rep2.score > 50 && rep2.score < 100);
 }
 
+// ---------- projects (Faz 6) ----------
+//
+// ‼️ THIS ROW EXISTS BECAUSE THE PROJECT PAGE ALREADY TOLD THE TRUTH. It told
+// it on the project page, which is where you go when you already suspect
+// something; this is the screen you look at when you do not, and a warning that
+// only lives somewhere you have to think to visit is Principle 1's silent rule.
+{
+    const clean = healthy();
+    clean.projects = [{ name: 'A', warnings: [] }, { name: 'B', warnings: [] }];
+    const okRep = buildLivingReport(clean);
+    const okRow = okRep.signals.find(s => s.id === 'projects');
+    ok('all-healthy projects are one quiet ok row', okRow && okRow.state === 'ok'
+        && /all 2 project/.test(okRow.detail));
+
+    const warn = healthy();
+    warn.projects = [
+        { name: 'A', warnings: [] },
+        { name: 'B', warnings: ['over today\'s budget ($14.10 of $10.00)'] },
+        { name: 'C', warnings: ['active but quiet for 30 days'] }
+    ];
+    const warnRow = buildLivingReport(warn).signals.find(s => s.id === 'projects');
+    ok('projects needing attention warn', warnRow && warnRow.state === 'warn');
+    ok('‼️ ONE row for all of them — nine projects would push every other loop off the page',
+        buildLivingReport(warn).signals.filter(s => s.id === 'projects').length === 1);
+    ok('…but it NAMES them, because a count with no names is a row you cannot act on',
+        /B: over today/.test(warnRow.label + warnRow.detail) && /C: active but quiet/.test(warnRow.detail));
+
+    const dead = healthy();
+    dead.projects = [{ name: 'B', warnings: ['folder not found: D:\\gone'] }];
+    const deadRow = buildLivingReport(dead).signals.find(s => s.id === 'projects');
+    ok('‼️ a MISSING FOLDER is dead, not a warning — the plan, the backlog and the worklog are in it, '
+        + 'so every write side of the project axis is broken until it is relinked',
+        deadRow && deadRow.state === 'dead');
+    ok('and the hint says what closes the loop', /relink/i.test(deadRow.hint || ''));
+
+    const none = healthy();
+    ok('a farm with no projects grows no row at all',
+        !buildLivingReport(none).signals.some(s => s.id === 'projects'));
+}
+
 // ---------- the recent tail ----------
 {
     const input = healthy();

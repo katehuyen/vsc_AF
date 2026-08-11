@@ -801,6 +801,39 @@ Two of those steps are not decoration. **Longest root wins** fixes a silent misa
 
 **Bridge:** `projects.work` (the same five stores, with `open:true` for only what is unfinished) · `notices.project` · `queue.project` · `project` on `notices.post`, `notices.list`, `queue.add`, `queue.list` and `missions.start`.
 
+### Intelligence — backfilling, the second fold, and a report that reaches you (3.108.0)
+
+*(Faz 6.)* Four things a project could not do: say which of the farm's loose sessions belong to it, say anything about **how** it is being worked rather than what happened, appear on the one screen that answers "is this system alive", and tell you about itself without being asked.
+
+**‼️ BACKFILLING PROPOSES; A PERSON APPROVES.** A farm running for months before projects existed has hundreds of sessions in `Unassigned`, and filing them one at a time is work nobody does. `core/projectSuggest.ts` reads four signals and states each as a **fact you can check in one second**: *wrote 11 of 11 files under `D:\…\muvu_talkScribe`* · *9 other sessions from this exact folder are filed here* · *88% of that agent's filed sessions are in this project* · *its title mentions "agentfarm"*. There is a score and it decides the ORDER; it is never printed, because "84% confident" is a number a reader cannot check and a list of them is a list they abandon.
+
+Four rules, each the answer to a way this goes wrong:
+
+- **Only the undecided.** A session the membership order already places is settled — a proposal there is a second opinion on a closed question. A session you explicitly took **off** every project is never proposed for at all, and is counted separately so its number is not read as a gap: an engine that keeps suggesting what a person refused is one they switch off.
+- **The strongest signal is the one no path rule can see.** Membership by path asks where a session *stood*; `files` asks what it *touched*. An agent working in its own home folder and editing a repo three directories away is the ordinary case and was invisible to every rule.
+- **The folder cohort counts EXPLICIT filings only.** Counting rule-placed sessions would make the signal an echo of the rule that placed them — agreeing with itself and calling that evidence. A folder split between two projects says *the folder is split* rather than being resolved by majority.
+- **‼️ A contested row is reported, never resolved.** Two projects within a hair of each other is a question the engine could not answer; it names both, and **"select all" excludes it**. You can still tick it by hand — you are the one who knows. A bulk gesture that also settled those would file wrong at two hundred times the speed.
+
+Applying sends **session ids and nothing else**: the host re-derives the project, so a page holding a list from four repaints ago cannot write one the engine no longer proposes. Ids it no longer proposes for come back in `skipped` rather than being silently dropped, and everything filed can be taken off again from the session's own menu.
+
+**The second fold — the Analysis tab.** Timeline is *what happened*, Cost is *where the money went*; this is the data folded again. Weeks (sessions, turns, cost, commits, backlog items first worked and closed) · the **rhythm** of when the work actually happens by local weekday and hour · **cycle time** from an item's first recorded touch to its close · the files most written and the agents taking the turns · a recent **pace** stated against the project's own average.
+
+Three rules, and each is a way an analysis page lies:
+
+- **‼️ A figure with no denominator worth dividing by is not printed.** Rhythm needs 40 turns, cycle time 5 closed items, pace 2 weeks. Below that the block is absent and the page says *what* is short and *how much* — "not enough turns yet, 23 so far" is an answer; a shape read off six points is one a reader will believe.
+- **‼️ A trend is stated against a control.** "$4.10 per session" says nothing; beside the project's own average it is a claim you can check. The page says so where the figures are.
+- **‼️ Local days, Monday weeks.** A session at 23:40 belongs to that evening — `toISOString` moves it to tomorrow east of UTC — and a Sunday-based week splits every weekend. A quiet week is a **zero row**, never a gap: a series with holes in it draws a lie.
+
+The backlog side comes from the **track ledger**, not from dates in the document: a `[x]` says an item *is* closed, only the ledger says *when*, and reading the file would date every item to the last time somebody saved it in Obsidian. A `touch` is an attempt, not a close — treating the last event of any kind as one gives every abandoned item a cycle time.
+
+**The Code tab — two sources, never summed.** Commits are what **git** records in a declared root: everything anybody typed there. `sessionWrites` is what **this project's own sessions** wrote, out of their transcripts, including files outside any repo. They answer different questions and a total over both would be a third number that means nothing — the same line `codeedits.ts` draws between a session's diff and a git diff. A root that is not on this machine is reported **missing**, because an empty commit list there would read as "quiet repo".
+
+**Health reaches the Living page.** The project page has always told the truth about missing folders, blown budgets and projects marked active that nothing has touched — on the project page, which is where you go when you already suspect something. Living is the screen you look at when you do not, and a warning that only exists somewhere you have to think to visit is Principle 1's silent rule. **One row for all of them**, so nine projects cannot push every other loop off the page, but it **names** them: a count with no names is a row you cannot act on. A **missing folder is dead, not a warning** — the plan, the backlog and the worklog are in it, so every write side of the project axis is broken until it is relinked. It does not re-derive the warnings; it prints the ones the project page computed, because a folder-exists check written twice is two answers that will disagree within a week.
+
+**A weekly digest that reaches you.** Off by default (`agentFarm.projectDigestDay`); set a weekday and each open project's week lands on the **Notices board** — the place you already read — as a genuine summary with the full report attached as its second leg. A report written to a folder nobody opens is the exact failure Living exists to make visible. It is stamped with its project, so it also appears on that project's Work tab and timeline. Once per project per week, and the guard is **the board itself** (a `sourceKey`) rather than a timestamp of ours: two open windows cannot double-post, and a digest you deleted can come back if you want it.
+
+**Bridge:** `projects.suggest` · `projects.suggest.apply` · `projects.analysis` · `projects.code` · `projects.report` (the same document over any period, with `post:true` to put it on the board).
+
 ### The backlog — the standing pile of work (3.59.0)
 
 **Three different things, kept apart.** The **plan** is the roadmap: macro, phase-sized, ten lines, changing a few times a month. The **work queue** is the global user→agent channel: a flow, captured → grouped → delegated → gone. The **backlog** is a project's *stock*: hundreds of items, coded, ranked, filtered, answering "what is next and which one now". Putting the third in the first was the obvious move and wrong twice over — a hundred "fix this too" lines make a roadmap unreadable, and the brief's six open plan items would fill up with typo fixes.

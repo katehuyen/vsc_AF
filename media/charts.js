@@ -287,8 +287,15 @@
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${rows}</svg>`;
     }
 
-    /** Weekly heatmap from a 168-length array (dow*24+hour). */
-    function heatmap(heat) {
+    /**
+     * Weekly heatmap from a 168-length array (dow*24+hour).
+     *
+     * `opts.unit` names WHAT is being counted in the cell hovers. It used to be
+     * hard-coded to "msgs", which was true of the one page that had a heatmap
+     * and a quiet lie on the second — a project's rhythm counts turns.
+     */
+    function heatmap(heat, opts) {
+        const unit = (opts && opts.unit) || 'msgs';
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const cell = 16, gap = 2, padL = 34, padT = 16;
         const W = padL + 24 * (cell + gap), H = padT + 7 * (cell + gap) + 4;
@@ -299,7 +306,7 @@
             for (let h = 0; h < 24; h++) {
                 const v = heat[d * 24 + h];
                 const op = v === 0 ? 0.06 : 0.15 + 0.85 * (v / max);
-                cells += `<rect x="${padL + h * (cell + gap)}" y="${padT + d * (cell + gap)}" width="${cell}" height="${cell}" rx="3" fill="var(--vscode-charts-green, #4caf50)" opacity="${op.toFixed(2)}"><title>${days[d]} ${String(h).padStart(2, '0')}:00 — ${v} msgs</title></rect>`;
+                cells += `<rect x="${padL + h * (cell + gap)}" y="${padT + d * (cell + gap)}" width="${cell}" height="${cell}" rx="3" fill="var(--vscode-charts-green, #4caf50)" opacity="${op.toFixed(2)}"><title>${days[d]} ${String(h).padStart(2, '0')}:00 — ${v} ${esc(unit)}</title></rect>`;
             }
         }
         let hours = '';

@@ -58,6 +58,7 @@ const CATEGORY_OF: Record<string, string> = {
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
     projectContextExtra: 'core',
+    projectDigestDay: 'core', projectDigestHour: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
     consoleDropZone: 'display',
