@@ -28,7 +28,10 @@ Module._load = function (request) {
     if (request === 'vscode') { return fakeVscode; }
     return origLoad.apply(this, arguments);
 };
-const { codexSessionsSource, geminiSessionsSource } = require(path.join(ROOT, 'out/core/cliTranscripts.js'));
+const {
+    codexPromptTitle, codexSessionsSource, codexUserText,
+    farmConsoleSessionsSource, geminiSessionsSource, readFarmConsoleTranscript
+} = require(path.join(ROOT, 'out/core/cliTranscripts.js'));
 const { dedupeExternal } = require(path.join(ROOT, 'out/core/sessionSource.js'));
 const { PricingEngine } = require(path.join(ROOT, 'out/core/pricing.js'));
 
@@ -53,6 +56,8 @@ const rollout = [
     { timestamp: '2026-07-10T09:00:05.000Z', type: 'turn_context', payload: { model: 'gpt-5.2-codex' } },
     { timestamp: '2026-07-10T09:00:06.000Z', type: 'event_msg', payload: { type: 'user_message', message: '## My request for Codex: kurgu planını çıkar' } },
     { timestamp: '2026-07-10T09:00:20.000Z', type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{}' } },
+    { timestamp: '2026-07-10T09:00:21.000Z', type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'status' } },
+    { timestamp: '2026-07-10T09:00:40.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'working' } },
     { timestamp: '2026-07-10T09:01:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1200 }, total_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1200 } } } },
     { timestamp: '2026-07-10T09:02:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'devam et' } },
     { timestamp: '2026-07-10T09:03:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 2000, cached_input_tokens: 1500, output_tokens: 300, reasoning_output_tokens: 100, total_tokens: 2400 }, total_token_usage: { input_tokens: 3000, cached_input_tokens: 1750, output_tokens: 425, reasoning_output_tokens: 175, total_tokens: 3600 } } } }
@@ -71,7 +76,9 @@ check('codex: source + version', c.source === 'codex' && c.version === '0.136.0'
 check('codex: agent resolved from cwd', c.agentId === 'k1' && c.agentName === 'kurgucu');
 check('codex: title from first prompt, prefix stripped', c.title === 'kurgu planını çıkar');
 check('codex: userTurns counted', c.userTurns === 2);
-check('codex: tool calls from function_call', c.toolCalls === 1 && c.tools.shell === 1);
+check('codex: assistant messages come from dialogue events, not token counters', c.assistantMsgs === 1);
+check('codex: both function and custom tool calls are counted',
+    c.toolCalls === 2 && c.tools.shell === 1 && c.tools.exec === 1);
 // B3: reasoning tokens are disjoint from output in the rollout and billed as output → 425+175
 check('codex: usage from LAST cumulative token_count (reasoning in output)',
     c.usage.input === 1250 && c.usage.cacheRead === 1750 && c.usage.output === 600);
@@ -80,6 +87,12 @@ const wantCost = (1250 * 1.25 + 600 * 10 + 1750 * 0.125) / 1e6;
 check('codex: cost from pricing rule', Math.abs(c.cost - wantCost) < 1e-9);
 check('codex: firstTs/lastTs from line timestamps', new Date(c.firstTs).toISOString() === '2026-07-10T09:00:00.000Z' && new Date(c.lastTs).toISOString() === '2026-07-10T09:03:00.000Z');
 check('codex: file points at rollout', /rollout-2026/.test(c.file));
+
+const wrapped = '<project-context>machine brief that is not dialogue</project-context>\n\n/goal backlogdaki ilk beş kalemi tamamla';
+check('codex: injected project context is removed from the user dialogue',
+    codexUserText(wrapped) === '/goal backlogdaki ilk beş kalemi tamamla');
+check('codex: a raw /goal prompt names the session by its prose',
+    codexPromptTitle(wrapped) === 'backlogdaki ilk beş kalemi tamamla');
 
 // cache: unchanged scan returns same array
 check('codex: unchanged → cached', codex.scan() === list || codex.scan().length === 1);
@@ -134,6 +147,38 @@ const lowerList = geminiLower.scan();
 check('gemini: drive-case variant still assigns agent',
     lowerList.find(s => s.sessionId === 'g-sess-1').agentId === 'k1');
 
+// ---- Agent Farm-owned Antigravity transcript: dialogue survives VS Code ----
+const farmDir = path.join(tmp, 'external-console-transcripts');
+fs.mkdirSync(farmDir, { recursive: true });
+const now = Date.now();
+const farmSnap = {
+    format: 'agent-farm-console-v1', engine: 'agy', sessionId: 'agy-owned-1',
+    agentId: 'k1', agentName: 'kurgucu', cwd: agentDir,
+    model: 'gemini-3.5-pro', effort: 'high', permissionMode: 'acceptEdits',
+    startedAt: now - 60000, lastTs: now, cost: 0, tokens: 4321,
+    wTokens: 2100, turns: 1, contextTokens: 3010,
+    messages: [
+        { id: 'u1', ts: now - 50000, role: 'user', text: 'Agy konuşmasını sakla' },
+        { id: 'a1', ts: now - 40000, role: 'agent', text: 'Saklıyorum' },
+        { id: 't1', ts: now - 30000, role: 'tool', tool: { name: 'Read', detail: 'D:/x.md' } },
+        { id: 't2', ts: now - 20000, role: 'tool', text: 'body' },
+        { id: 'r1', ts: now, role: 'result', tokens: 4321, cost: 0 }
+    ]
+};
+const farmFile = path.join(farmDir, 'agy-owned-1.json');
+fs.writeFileSync(farmFile, JSON.stringify(farmSnap), 'utf8');
+check('farm transcript: the versioned plain JSON is recognized',
+    readFarmConsoleTranscript(fs.readFileSync(farmFile, 'utf8')).sessionId === 'agy-owned-1');
+const farmSource = farmConsoleSessionsSource(() => farmDir, resolveAgent, 0);
+const farmRows = farmSource.scan();
+check('farm transcript: Antigravity becomes an openable external session',
+    farmRows.length === 1 && farmRows[0].source === 'agy' && farmRows[0].file === farmFile);
+check('farm transcript: title, dialogue counts, tool and exact totals survive',
+    farmRows[0].title === 'Agy konuşmasını sakla'
+    && farmRows[0].userTurns === 1 && farmRows[0].assistantMsgs === 1
+    && farmRows[0].toolCalls === 1 && farmRows[0].usage.input === 4321
+    && farmRows[0].wTokens === 2100);
+
 // B7: transcript without agent must NOT suppress an assigned lane
 const { dedupeExternal: dd } = require(path.join(ROOT, 'out/core/sessionSource.js'));
 const gNoAgent = { ...lowerList.find(s => s.sessionId === 'g-sess-2') }; // unassigned transcript
@@ -146,6 +191,11 @@ const laneOther = { ...lane, sessionId: 'cli:codex:k1:2', firstTs: c.lastTs + 36
 const merged = dedupeExternal([c, lane, laneOther]);
 check('dedupe: overlapping lane dropped, transcript kept', merged.includes(c) && !merged.includes(lane));
 check('dedupe: non-overlapping lane kept', merged.includes(laneOther));
+
+const agyMeta = { ...farmRows[0], file: '', title: 'metadata only' };
+check('dedupe: the readable Farm transcript replaces Antigravity metadata-only row',
+    dedupeExternal([agyMeta, farmRows[0]]).length === 1
+    && dedupeExternal([agyMeta, farmRows[0]])[0].file === farmFile);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 Module._load = origLoad;

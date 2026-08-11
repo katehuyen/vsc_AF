@@ -2155,6 +2155,36 @@
         if (!em || !em.efforts) { return DATA.efforts || []; }
         return em.efforts[String(model || '')] || em.efforts[''] || DATA.efforts || [];
     }
+    /** Keep all three launch boxes inside the vocabulary of the engine/model
+     *  currently in front of them. `preferModelDefault` is used after a model
+     *  is picked by hand; an engine change otherwise preserves an effort when
+     *  the new model genuinely offers the same value. */
+    function reconcileComposer(engineId, preferModelDefault) {
+        const models = modelsFor(engineId);
+        if (!models.some(m => m.id === (st.model || ''))) { st.model = ''; }
+        const efforts = effortsForModel(engineId, st.model);
+        const em = (DATA.engineModels || {})[engineId || 'claude'] || {};
+        const modelDefault = (em.defaultEffort || {})[st.model || ''] || '';
+        if (preferModelDefault || !efforts.some(e => e.id === (st.effort || ''))) {
+            st.effort = efforts.some(e => e.id === modelDefault) ? modelDefault : '';
+        }
+    }
+
+    // Host-side fresh-composer edge (K-15). It is intentionally local to this
+    // webview lifetime: a newly created panel has never inherited an open
+    // composer's state, while a reused one must observe every increasing seed.
+    let appliedComposerSeed = 0;
+    function applyComposerSeed() {
+        const seed = Number(DATA.composerSeed || 0);
+        if (!seed || seed === appliedComposerSeed) { return; }
+        appliedComposerSeed = seed;
+        const d = DATA.defaults || {};
+        st.model = d.model || '';
+        st.effort = d.effort || '';
+        st.permissionMode = d.permissionMode || '';
+        reconcileComposer(engineNow(), false);
+        save();
+    }
     /** The one line a picker's tooltip carries: where this list came from and
      *  how old it is — a list nobody can date is a list nobody can distrust. */
     function modelNote(engineId) {
@@ -2387,8 +2417,13 @@
         } else {
             const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
             pick('c-agent', 'agentId');
-            pick('c-model', 'model');
             pick('c-effort', 'effort');
+            byId('c-model', 'change', e => {
+                st.model = e.target.value;
+                reconcileComposer(engineNow(), true);
+                save();
+                paint();
+            });
         }
         // Mid-session model switch. The picker is NOT set back from `s.model`
         // on a repaint until the CLI has agreed to it (see pendingModel) —
@@ -2430,9 +2465,8 @@
             // the moment the new engine stops offering it. Keeping it quietly is
             // how the box came to disagree with the engine in the first place.
             const next = e.target.value;
-            if (!modelsFor(next).some(m => m.id === (st.model || ''))) {
-                st.model = ''; st.effort = ''; save();
-            }
+            reconcileComposer(next, false);
+            save();
             vscode.postMessage({ type: 'setEngine', id: next });
         });
         // giving the pin back: the picker returns, and st keeps whatever agent
@@ -2775,7 +2809,8 @@
         // picker or a name, which is markup — so a pin that arrived while the
         // composer was already on screen has to rebuild the shell, exactly as a
         // change of session does.
-        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}`;
+        const composerShape = s ? '' : `|${engineNow()}|${st.model || ''}`;
+        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
         if (shellKey !== key) {
             shellKey = key;
             buildShell(s);
@@ -3314,10 +3349,12 @@
             if (DATA.selected !== wasOn) { shownCount = -1; unseen = 0; }
             // opened from an agent row: preselect that agent in the composer
             if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
+            applyComposerSeed();
             paint();
         }
     });
     if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
+    applyComposerSeed();
     // The answer card's ceiling is a share of the WINDOW, so dragging the panel
     // taller or shorter changes whether it is cut — and nothing else on the page
     // would repaint to say so.

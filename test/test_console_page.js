@@ -480,6 +480,27 @@ const html = allHtml;
     const withPreset = data(CONVO.slice());
     withPreset.selected = '';            // composer mode, as the command opens it
     withPreset.presetAgent = 'dev';
+    withPreset.composerSeed = 1;
+    withPreset.engine = 'codex';
+    withPreset.defaults = {
+        engine: 'codex', model: 'gpt-5.6-terra', effort: 'medium', permissionMode: 'acceptEdits'
+    };
+    withPreset.engines = [{ id: 'claude', label: 'Claude', ready: true }, { id: 'codex', label: 'Codex', ready: true }];
+    withPreset.engineModels = {
+        claude: {
+            models: [{ id: '', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }],
+            efforts: { '': [{ id: '', label: 'Default' }, { id: 'high', label: 'high' }] },
+            defaultEffort: {}
+        },
+        codex: {
+            models: [{ id: '', label: 'Default' }, { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra' }],
+            efforts: {
+                '': [{ id: '', label: 'Default' }],
+                'gpt-5.6-terra': [{ id: '', label: 'Default' }, { id: 'medium', label: 'medium' }, { id: 'high', label: 'high' }]
+            },
+            defaultEffort: { 'gpt-5.6-terra': 'medium' }
+        }
+    };
     push(withPreset);
     ok('the agent picker asks as a sentence', allHtml().includes('Choose an agent…'));
     ok('…and the agent handed over is the one selected',
@@ -487,6 +508,32 @@ const html = allHtml;
         && (els['c-agent'] ? els['c-agent'].value === 'dev' : /value="dev" selected/.test(allHtml())));
     ok('…while a session that agent already has running is offered, not hidden',
         /already has a session running here/.test(allHtml()));
+    ok('a fresh agent composer takes the current engine launch settings, not the previous composer state',
+        state.afConsole.model === 'gpt-5.6-terra'
+        && state.afConsole.effort === 'medium'
+        && state.afConsole.permissionMode === 'acceptEdits'
+        && /value="codex" selected/.test(allHtml())
+        && /value="gpt-5\.6-terra" selected/.test(allHtml()));
+
+    // A model change must rebuild the dependent effort box immediately. Terra
+    // defaults to medium here; carrying an unrelated stale value is K-15/S-27.
+    els['c-model'].value = '';
+    els['c-model'].listeners.change({ target: els['c-model'] });
+    ok('changing model immediately reconciles its effort vocabulary',
+        state.afConsole.model === '' && state.afConsole.effort === '');
+
+    // Reusing the same open Console for another Talk to Agent invocation is a
+    // new launch decision. The increasing seed is the host/webview handshake.
+    const again = Object.assign({}, withPreset, {
+        composerSeed: 2, engine: 'claude',
+        defaults: { engine: 'claude', model: 'sonnet', effort: 'high', permissionMode: 'default' }
+    });
+    push(again);
+    ok('a second Talk to Agent invocation reseeds the already-open composer',
+        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
+        && state.afConsole.permissionMode === 'default'
+        && /value="claude" selected/.test(allHtml())
+        && /value="sonnet" selected/.test(allHtml()));
 }
 
 // ---------- whose turn is it ----------

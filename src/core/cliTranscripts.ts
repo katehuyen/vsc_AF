@@ -2,9 +2,10 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PricingEngine, Usage, emptyUsage } from './pricing';
-import { SessionInfo } from './sessions';
+import { conversationTitle, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
 import { truncate } from './util';
+import { ConsoleMessage, ConsoleSessionState } from './consoleproto';
 
 /**
  * E3b — transcript adapters for external CLIs. Formats were taken from the
@@ -148,6 +149,35 @@ interface CodexLine {
 
 const CODEX_PROMPT_PREFIX = '## My request for Codex:';
 
+/**
+ * The words the person actually sent to Codex.
+ *
+ * Agent Farm prepends its project/environment envelopes to the first message
+ * because Codex has no separate system-prompt channel. Those envelopes are
+ * context, not dialogue: using the whole payload made a real `/goal …` session
+ * look unnamed and made the viewer show pages of machinery as if the user had
+ * typed it. Only the reserved harness tags are removed; ordinary XML remains
+ * the user's text.
+ */
+export function codexUserText(value: string): string {
+    let text = String(value ?? '');
+    const envelope = /^\s*<(project-context|environment_context|recommended_plugins)>[\s\S]*?<\/\1>\s*/i;
+    while (envelope.test(text)) { text = text.replace(envelope, ''); }
+    const at = text.indexOf(CODEX_PROMPT_PREFIX);
+    if (at >= 0) { text = text.slice(at + CODEX_PROMPT_PREFIX.length); }
+    return text.trim();
+}
+
+/** The shared session-title judgment, with Codex's raw `/goal prose` spelling
+ * restored to the command-block shape Claude records. */
+export function codexPromptTitle(value: string): string {
+    const text = codexUserText(value);
+    const goal = /^\/goal\s+([\s\S]+)$/i.exec(text);
+    return goal
+        ? conversationTitle(`<command-name>/goal</command-name><command-args>${goal[1]}</command-args>`)
+        : conversationTitle(text);
+}
+
 function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
     pricing: () => PricingEngine): SessionInfo | undefined {
     const raw = readCapped(file);
@@ -179,21 +209,19 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
         } else if (line.type === 'event_msg') {
             if (p.type === 'user_message' && typeof p.message === 'string') {
                 info.userTurns++;
-                const text = p.message.includes(CODEX_PROMPT_PREFIX)
-                    ? p.message.slice(p.message.indexOf(CODEX_PROMPT_PREFIX) + CODEX_PROMPT_PREFIX.length)
-                    : p.message;
-                const clean = text.replace(/\s+/g, ' ').trim();
-                if (clean && !clean.startsWith('<') && info.title === 'codex session') {
-                    info.title = truncate(clean, 80);
-                    info.autoTitle = info.title;
+                const named = codexPromptTitle(p.message);
+                if (named && info.title === 'codex session') {
+                    info.title = named; info.autoTitle = named;
                 }
+            } else if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
+                info.assistantMsgs++;
             } else if (p.type === 'token_count' && p.info) {
                 if (typeof p.info.model === 'string' && p.info.model) { models.add(p.info.model); lastModel = p.info.model; }
                 // token_count totals are CUMULATIVE — the last one is the session total.
                 if (p.info.total_token_usage) { cumulative = p.info.total_token_usage; }
-                info.assistantMsgs++;
             }
-        } else if (line.type === 'response_item' && p.type === 'function_call') {
+        } else if (line.type === 'response_item'
+            && (p.type === 'function_call' || p.type === 'custom_tool_call')) {
             info.toolCalls++;
             const name = typeof p.name === 'string' && p.name ? p.name : 'tool';
             info.tools[name] = (info.tools[name] ?? 0) + 1;
@@ -441,6 +469,110 @@ export function geminiSessionsSource(
         file => parseGeminiFile(file, agentForHash, pricing),
         cacheMs
     );
+}
+
+// ---------------------------------------------------------------------------
+// Agent Farm-owned external Console transcripts
+// ---------------------------------------------------------------------------
+
+/**
+ * Antigravity's historical conversation DB stores protobuf payloads without a
+ * schema the CLI exposes, and the CLI has no export/read subcommand. While a
+ * conversation is hosted here, however, Agent Farm already has its normalized
+ * dialogue and tool rows. Persist that open shape instead of throwing it away
+ * when VS Code closes. This is deliberately a plain versioned JSON document:
+ * it remains inspectable even if the engine's private store changes again.
+ */
+export interface FarmConsoleTranscript {
+    format: 'agent-farm-console-v1';
+    engine: 'agy';
+    sessionId: string;
+    agentId: string;
+    agentName: string;
+    cwd: string;
+    model: string;
+    effort: string;
+    permissionMode: string;
+    startedAt: number;
+    lastTs: number;
+    cost: number;
+    tokens: number;
+    wTokens: number;
+    turns: number;
+    contextTokens: number;
+    messages: ConsoleMessage[];
+}
+
+export function farmConsoleTranscript(state: ConsoleSessionState): FarmConsoleTranscript | undefined {
+    if (state.engine !== 'agy' || !state.sessionId) { return undefined; }
+    return {
+        format: 'agent-farm-console-v1', engine: 'agy', sessionId: state.sessionId,
+        agentId: state.agentId, agentName: state.agentName, cwd: state.cwd,
+        model: state.model ?? '', effort: state.effort ?? '',
+        permissionMode: state.permissionMode, startedAt: state.startedAt,
+        lastTs: state.lastTs || state.startedAt, cost: state.costUSD,
+        tokens: state.tokens, wTokens: state.wTokens, turns: state.turns,
+        contextTokens: state.contextTokens ?? 0, messages: state.messages
+    };
+}
+
+export function readFarmConsoleTranscript(raw: string): FarmConsoleTranscript | undefined {
+    let v: unknown;
+    try { v = JSON.parse(raw); } catch { return undefined; }
+    if (!v || typeof v !== 'object' || Array.isArray(v)) { return undefined; }
+    const o = v as Record<string, unknown>;
+    if (o.format !== 'agent-farm-console-v1' || o.engine !== 'agy'
+        || typeof o.sessionId !== 'string' || !o.sessionId
+        || !Array.isArray(o.messages)) { return undefined; }
+    return o as unknown as FarmConsoleTranscript;
+}
+
+function parseFarmConsoleFile(
+    file: string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string }
+): SessionInfo | undefined {
+    const raw = readCapped(file);
+    if (!raw) { return undefined; }
+    const snap = readFarmConsoleTranscript(raw);
+    if (!snap) { return undefined; }
+    const info = blankInfo(file, snap.sessionId, snap.engine, snap.lastTs || snap.startedAt);
+    info.cwd = snap.cwd;
+    info.firstTs = snap.startedAt;
+    info.lastTs = snap.lastTs;
+    info.mtime = snap.lastTs;
+    info.models = snap.model ? [snap.model] : [];
+    // The Console state carries the exact aggregate but not an input/output
+    // split. Keep the table total exact in the neutral input bucket; the custom
+    // viewer below uses `tokens` directly and does not mislabel the split.
+    info.usage.input = snap.tokens;
+    info.wTokens = snap.wTokens;
+    info.cost = snap.cost;
+    info.userTurns = snap.messages.filter(m => m.role === 'user' && !m.steer).length;
+    info.assistantMsgs = snap.messages.filter(m => m.role === 'agent').length;
+    for (const m of snap.messages) {
+        if (m.role === 'tool' && m.tool) {
+            info.toolCalls++;
+            info.tools[m.tool.name] = (info.tools[m.tool.name] ?? 0) + 1;
+        }
+        if (m.isError || m.role === 'error') { info.errors++; }
+    }
+    const first = snap.messages.find(m => m.role === 'user' && m.text?.trim());
+    const title = first?.text ? conversationTitle(first.text) : '';
+    info.title = info.autoTitle = title || 'Antigravity session';
+    const who = resolveAgent(snap.cwd);
+    info.agentId = (who.agentId ?? snap.agentId) || undefined;
+    info.agentName = (who.agentName ?? snap.agentName) || undefined;
+    return info;
+}
+
+export function farmConsoleSessionsSource(
+    root: () => string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    cacheMs = 1000
+): SessionSource {
+    return scanWithCache(
+        'agent-farm-console', () => { const d = root(); return d ? [d] : []; }, ['.json'],
+        file => parseFarmConsoleFile(file, resolveAgent), cacheMs);
 }
 
 // ---------------------------------------------------------------------------

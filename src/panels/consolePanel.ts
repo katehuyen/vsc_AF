@@ -241,6 +241,14 @@ export class ConsolePanel {
      * is offered before you have finished reading the toast.
      */
     private composerEngine?: string;
+    /**
+     * A new-agent entry point is a new composer, even when the Console panel is
+     * already open. The webview keeps drafts and picker state deliberately, so
+     * it needs one explicit edge telling it when those launch settings must be
+     * reseeded from the current defaults instead of inherited from the agent
+     * that happened to be composed previously.
+     */
+    private composerSeed = 0;
     private engineCache?: { at: number; list: EngineOption[] };
     private static readonly ENGINE_TTL_MS = 5000;
 
@@ -279,6 +287,11 @@ export class ConsolePanel {
             if (opts?.engine) { c.composerEngine = opts.engine; }
             if (opts?.agentId) {
                 // "talk to THIS agent": composer mode, nothing spawned yet
+                // This is also a fresh launch decision. An already-open Console
+                // must not lend it the previous agent's engine/model/effort.
+                const d = c.deps.launchDefaults();
+                c.composerEngine = (opts.engine ?? d.engine ?? '').trim() || 'claude';
+                c.composerSeed++;
                 c.presetAgent = opts.agentId;
                 c.selected = '';
                 c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
@@ -382,6 +395,7 @@ export class ConsolePanel {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
             presetAgent: preset ?? '',
+            composerSeed: this.composerSeed,
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
                 id: s.id, agentId: s.agentId, agentName: s.agentName,

@@ -18,7 +18,10 @@ import { speakText } from './core/briefing';
 import { buildOtlpTraces } from './core/otel';
 import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
-import { agySessionsSource, codexSessionsSource, geminiSessionsSource } from './core/cliTranscripts';
+import {
+    agySessionsSource, codexSessionsSource, farmConsoleSessionsSource,
+    farmConsoleTranscript, geminiSessionsSource
+} from './core/cliTranscripts';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
@@ -217,6 +220,7 @@ import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { transcriptHistory } from './core/consolehistory';
+import { parseCliViewer } from './core/cliViewer';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import { carriedTotals, ConsoleMessage, PERMISSION_MODES_LIVE } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
@@ -1028,6 +1032,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // unknown-models warning). Transcript entries win over overlapping lanes.
     const externalSessionSource = liveEventsSource(
         () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'));
+    const farmExternalTranscriptDir = path.join(
+        context.globalStorageUri.fsPath, 'external-console-transcripts');
+    const farmConsoleSource = farmConsoleSessionsSource(
+        () => farmExternalTranscriptDir, resolveAgentByCwd, 0);
     const codexSource = codexSessionsSource(
         () => expandEnvPath(cfg().get<string>('codexHome', '').trim()) || path.join(os.homedir(), '.codex'),
         resolveAgentByCwd,
@@ -1046,7 +1054,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         resolveAgentByCwd);
     const refreshExternalSessions = () =>
         index.setExternal(buildExternalSessions(
-            [externalSessionSource, codexSource, geminiSource, agySource]));
+            [externalSessionSource, codexSource, geminiSource, agySource, farmConsoleSource]));
     refreshExternalSessions();
     let externalSessTimer: NodeJS.Timeout | undefined;
     context.subscriptions.push(live.onDidUpdate(() => {
@@ -5199,7 +5207,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.next',
-            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. That is the prioritisation, and `sort` overrides it only because asking "what is cheapest" is a different question from "what is next". `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. "Top N" means the first N entries of THAT order, with no silent effort filter: a queued L/XL item keeps its place. `sort` overrides the order only because asking "what is cheapest" is a different question from "what is next"; `maxEffort` narrows by size only when the caller explicitly asks for a ceiling. An item with no effort stated is never excluded by a ceiling because it has not been sized. ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL — no ceiling when omitted), sort? (file|score|priority, default file), includeBlocked?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const res = nextBacklog(text, {
@@ -8825,14 +8833,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (n === 1 ? one : `${n} sessions`);
     const sessionFromArg = (arg?: SessionRef | SessionInfo | string): SessionInfo | undefined => {
         if (!arg) { return undefined; }
+        const sessions = [...index.all(), ...index.external()];
         if (typeof arg === 'string') {
-            return index.all().find(s => s.sessionId === arg || s.file === arg);
+            return sessions.find(s => s.sessionId === arg || s.file === arg);
         }
         const ref: SessionRef & Partial<SessionInfo> =
             'session' in arg && (arg as SessionRef).session ? (arg as SessionRef).session! : arg;
         const found = ref.sessionId
-            ? index.all().find(s => s.sessionId === ref.sessionId)
-            : ref.file ? index.all().find(s => s.file === ref.file) : undefined;
+            ? sessions.find(s => s.sessionId === ref.sessionId)
+            : ref.file ? sessions.find(s => s.file === ref.file) : undefined;
         if (!found) {
             // Not indexed (a brand-new Console session, an external transcript):
             // hand back what the caller knew — the handlers already cope with a
@@ -9173,7 +9182,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
         () => activeProjectId() || undefined,
         projectContextFileFor);
-    context.subscriptions.push({ dispose: () => consoleHost.dispose() });
+    const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
+    const writeExternalConsoleTranscript = (id: string): void => {
+        const s = consoleHost.get(id);
+        if (!s) { return; }
+        const snap = farmConsoleTranscript(s);
+        if (!snap) { return; }
+        try {
+            fs.mkdirSync(farmExternalTranscriptDir, { recursive: true });
+            const safeId = snap.sessionId.replace(/[^a-z0-9._-]/gi, '_');
+            fs.writeFileSync(path.join(farmExternalTranscriptDir, `${safeId}.json`),
+                JSON.stringify(snap), 'utf8');
+            // The transcript is a Sessions row and an openable page as soon as
+            // the first turn lands; waiting for the minute scan would recreate
+            // the "empty Antigravity session" gap this file exists to close.
+            refreshExternalSessions();
+        } catch { /* a transcript mirror must never break the conversation */ }
+    };
+    const scheduleExternalConsoleTranscript = (id: string): void => {
+        const s = consoleHost.get(id);
+        if (!s || s.engine !== 'agy' || !s.sessionId) { return; }
+        const old = externalTranscriptTimers.get(id);
+        if (old) { clearTimeout(old); }
+        if (s.status === 'idle' || s.status === 'ended' || s.status === 'error') {
+            externalTranscriptTimers.delete(id);
+            writeExternalConsoleTranscript(id);
+            return;
+        }
+        externalTranscriptTimers.set(id, setTimeout(() => {
+            externalTranscriptTimers.delete(id);
+            writeExternalConsoleTranscript(id);
+        }, 1000));
+    };
+    context.subscriptions.push({
+        dispose: () => {
+            for (const timer of externalTranscriptTimers.values()) { clearTimeout(timer); }
+            externalTranscriptTimers.clear();
+            for (const s of consoleHost.list()) { writeExternalConsoleTranscript(s.id); }
+            // Snapshot first: dispose() clears the in-memory sessions after
+            // closing their processes, so reversing this order can drop the
+            // final sub-second Agy turn when the VS Code window shuts down.
+            consoleHost.dispose();
+        }
+    });
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session
         // can be filed — see stampSessionProject. A RESUME is not filed: it
@@ -9182,6 +9233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (s?.sessionId && s.projectId && !s.resumed) {
             stampSessionProject(s.sessionId, s.projectId);
         }
+        scheduleExternalConsoleTranscript(id);
         ConsolePanel.refreshIfOpen();
     }));
 
@@ -9414,10 +9466,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * session still resumes, it just opens empty as it used to.
      */
     const consoleHistory = (sessionId: string): ConsoleMessage[] => {
-        const file = index.all().find(s => s.sessionId === sessionId)?.file;
+        const row = [...index.all(), ...index.external()].find(s => s.sessionId === sessionId);
+        const file = row?.file;
         if (!file) { return []; }
         try {
-            return transcriptHistory(fs.readFileSync(file, 'utf8').split('\n'));
+            const raw = fs.readFileSync(file, 'utf8');
+            const external = parseCliViewer(raw, file, pricing);
+            if (!external) { return transcriptHistory(raw.split('\n')); }
+            const kept = external.messages.slice(-150).map((m, i): ConsoleMessage => {
+                if (m.role === 'assistant') {
+                    return { id: `xh${i}`, ts: m.ts, role: 'agent', text: m.text, kind: m.kind };
+                }
+                if (m.role === 'tool') {
+                    return {
+                        id: `xh${i}`, ts: m.ts, role: 'tool', kind: m.kind,
+                        tool: {
+                            name: m.tool || 'tool',
+                            detail: (m.input || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+                        }
+                    };
+                }
+                if (m.role === 'toolResult') {
+                    return { id: `xh${i}`, ts: m.ts, role: 'tool', text: m.text, isError: m.isError };
+                }
+                return {
+                    id: `xh${i}`, ts: m.ts,
+                    role: m.role === 'user' ? 'user' : 'system', text: m.text
+                };
+            });
+            if (!kept.length) { return []; }
+            return [
+                {
+                    id: 'xh-start', ts: kept[0].ts, role: 'system',
+                    text: external.messages.length > kept.length
+                        ? `↑ ${external.messages.length - kept.length} older message(s) are in the transcript — "Open transcript" has the whole session.`
+                        : '↑ the start of this session'
+                },
+                ...kept,
+                {
+                    id: 'xh-end', ts: kept[kept.length - 1].ts, role: 'system',
+                    text: '— read back from the transcript · resumed here —'
+                }
+            ];
         } catch { return []; }
     };
     /**
@@ -13145,7 +13235,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // hands over what it was searching IN, so the transcript opens showing
         // the same kinds of line (see SessionViewerPanel.show).
         vscode.commands.registerCommand('agentfarm.openSession',
-            (arg?: string | SessionRef, focusTs?: number, roles?: string[]) => {
+            (arg?: string | SessionRef, focusTs?: number, roles?: string[], resetView?: boolean) => {
                 let file = typeof arg === 'string' ? arg : arg?.file;
                 if (!file && arg && typeof arg === 'object' && arg.sessionId) {
                     file = sessionFromArg(arg)?.file;
@@ -13158,7 +13248,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (file) {
                     SessionViewerPanel.show(file, viewerDeps,
                         typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined,
-                        Array.isArray(roles) ? roles.filter(r => typeof r === 'string') : undefined);
+                        Array.isArray(roles) ? roles.filter(r => typeof r === 'string') : undefined,
+                        resetView === true);
                 }
             }),
 
@@ -14258,8 +14349,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                     return;
                 }
-                // our own leftover first — see leftoverOwner
-                const left = leftoverOwner(s.sessionId);
+                const engine = (s.source && s.source in ENGINES ? s.source : 'claude') as EngineId;
+                // A long-lived Claude process can own a transcript. Per-turn
+                // engines have no process sitting between turns, so applying
+                // Claude's ownership refusal to their thread ids is false.
+                const left = engine === 'claude' ? leftoverOwner(s.sessionId) : undefined;
                 if (left) {
                     const go = await vscode.window.showWarningMessage(
                         `"${s.title}" is still running from an earlier window of Agent Farm (pid ${left.pid}) — nothing is reading it.`,
@@ -14276,7 +14370,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return;
                     }
                 }
-                const owner = ownerOf(readCliSessions(claudeDir()), s.sessionId);
+                const owner = engine === 'claude'
+                    ? ownerOf(readCliSessions(claudeDir()), s.sessionId) : undefined;
                 if (owner) {
                     const go = await vscode.window.showWarningMessage(
                         `"${s.title}" is open right now in ${describeOwner(owner)}.\n\n` +
@@ -14292,18 +14387,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const already = consoleHost.list().find(h =>
                     h.sessionId === s.sessionId && h.status !== 'ended' && h.status !== 'error');
                 const agent = agents.find(a => a.name === s.agentName);
+                const d = launchDefaults();
+                const defaultEngine = (d.engine || 'claude') as EngineId;
                 const id = already?.id ?? consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
-                    cwd: s.cwd, resume: s.sessionId, ...launchDefaults(),
-                    // ‼️ A RESUME'S ENGINE IS THE SESSION'S, NOT THE DEFAULT —
-                    // and every row this command can reach is a Claude session.
-                    // The index is built from `~/.claude/projects`; a Codex
-                    // conversation lives in the CLI's own thread store and never
-                    // appears here. Letting `launchDefaults().engine` through
-                    // would hand a Claude transcript id to `codex exec resume`,
-                    // which would refuse it — or worse, open a NEW thread while
-                    // the panel showed the old conversation's history.
-                    engine: 'claude',
+                    cwd: s.cwd, resume: s.sessionId,
+                    // A resume belongs to its transcript's engine and model.
+                    // Launch defaults are used only when they were configured
+                    // for that same engine; a Claude alias must never be handed
+                    // to `codex exec resume` (or vice versa).
+                    engine,
+                    model: s.models[s.models.length - 1]
+                        || (defaultEngine === engine ? d.model : undefined),
+                    effort: defaultEngine === engine ? d.effort : undefined,
+                    permissionMode: d.permissionMode,
                     // ‼️ …and the project it is TOLD about is its OWN, never the
                     // window's active one — see sessionOwnProject. The context
                     // does not survive `--resume` (measured), so this is the

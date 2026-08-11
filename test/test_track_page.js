@@ -145,9 +145,9 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     ok('P-13: the closing stamp is itself a transcript button',
         !!closing && closing.dataset.trackturn === 'D:\\t\\b.jsonl');
     if (closing) { closing.click(); }
-    ok('…and it opens the exact closing turn instead of making the reader find the duplicate below',
+    ok('…and it opens that session in Track reading mode',
         r.last() && r.last().type === 'openSession' && r.last().file === 'D:\\t\\b.jsonl'
-        && r.last().ts === T);
+        && r.last().view === 'track' && r.last().ts === undefined);
     ok('the human\'s own note is shown', h.includes('closed by lower-casing both sides'));
     ok('a record with no session says so rather than inventing one',
         h.includes('no session'));
@@ -158,7 +158,7 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
 }
 
 // ---------------------------------------------------------------------------
-// ‼️ a turn button sends the TIMESTAMP, not the turn number
+// X-23: every Track door opens one neutral transcript reading view
 // ---------------------------------------------------------------------------
 {
     const r = run();
@@ -167,17 +167,14 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     turns[0].click();
     const m = r.last();
     ok('it opens a session', m && m.type === 'openSession');
-    ok('…at a timestamp, and the timestamp is a real moment rather than the turn number',
-        m && m.ts > 1e12);
+    ok('…without selecting a turn, and asks for the Track reading view',
+        m && m.ts === undefined && m.view === 'track');
     ok('…and it names the transcript file', m && /\.jsonl$/.test(m.file));
-    // ‼️ THE SESSION ID IS A DOOR TOO (A-5), so it carries the same attribute —
-    // which is why this reads the TURN chips rather than "whatever opens a
-    // session": the id opens at the run's first moment, and the first turn of
-    // that run is that same moment, so comparing those two would only ever be
-    // asking whether a run has more than one turn.
+    // Source timestamps still identify the ledger rows; the click contract
+    // deliberately does not forward them to the viewer.
     const chips = els(r, 'trackturn').filter(e =>
         e.dataset.trackts && (e.className || '').indexOf('pj-trk-turn') >= 0);
-    ok('‼️ each turn carries its OWN moment — one per run would land every click in the same place',
+    ok('each ledger turn still carries its own recorded moment',
         chips.length >= 2 && chips[0].dataset.trackts !== chips[1].dataset.trackts);
 }
 
@@ -192,7 +189,8 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     sid.click();
     const m = r.last();
     ok('…and pressing it opens that session', m && m.type === 'openSession');
-    ok('…at the moment this item was first worked there', m && m.ts > 1e12);
+    ok('…in the same neutral Track reading view',
+        m && m.view === 'track' && m.ts === undefined);
 }
 
 // ---------------------------------------------------------------------------

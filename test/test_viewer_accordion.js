@@ -31,6 +31,7 @@ function makeSandbox(opts) {
     const els = {};
     const seenSelectors = [];
     const copyBtns = {};
+    const scrolls = [];
     let focused = null;
     // ‼️ A LIST: the viewer listens twice — its own host messages, and the
     // right-click relay wired at module scope. Last-one-wins drops one of them.
@@ -108,7 +109,7 @@ function makeSandbox(opts) {
                 ]
             },
             addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } },
-            scrollTo() { }, scrollX: 0, scrollY: 0
+            scrollTo(...args) { scrolls.push(args); }, scrollX: 0, scrollY: 0
         },
         document: {
             getElementById: getEl,
@@ -183,6 +184,7 @@ function makeSandbox(opts) {
         data: () => sandbox.window.__DATA__,
         lastFocused: () => focused,
         savedState: () => state.saved,
+        scrolls: () => scrolls,
         seenSelectors
     };
 }
@@ -262,6 +264,28 @@ function makeSandbox(opts) {
     // role-chip binder must not grab unrelated .chip buttons (turnbox selact / accordion)
     ok('chip binder queries only data-chip/data-preset chips',
         t.seenSelectors.includes('.chip[data-chip],.chip[data-preset]') && !t.seenSelectors.includes('.chip'));
+}
+
+// ---------- X-23: Track reopens even an existing page as a clean reading view ----------
+{
+    const t = makeSandbox({ initialState: { singleOpen: false } });
+    t.click('t-expandall');
+    const filter = t.appHtml().includes('id="filter"');
+    ok('the Track reset test begins from a changed viewer state',
+        filter && count(t.appHtml(), 'turnhdr closed') === 0);
+    t.send({ type: 'resetView' });
+    const html = t.appHtml();
+    ok('Track reset folds every turn and restores one-turn-at-a-time reading',
+        count(html, 'class="turnhdr closed"') === 3
+        && html.includes('class="chip on" id="t-singleopen"'));
+    ok('…restores exactly Dialog',
+        /class="chip on"[^>]*data-chip="user"/.test(html)
+        && /class="chip on"[^>]*data-chip="assistant"/.test(html)
+        && !/class="chip on"[^>]*data-chip="tool"/.test(html));
+    ok('…and returns to the top without selecting or expanding a turn',
+        t.scrolls().some(args => args[0] === 0 && args[1] === 0));
+    ok('the restored single-open mode is persisted',
+        t.savedState() && t.savedState().singleOpen === true);
 }
 
 // ---------- single-open mode ----------

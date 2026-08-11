@@ -803,9 +803,9 @@ export interface NextOptions {
     deep?: boolean;
     /** Nothing below this priority. */
     minPriority?: BacklogPriority;
-    /** ‼️ Nothing ABOVE this size. Default M. "Five you can manage" means five
-     *  that FIT IN THE TURN; without a ceiling an agent picks an XL, leaves it
-     *  half done, and the whole run is wasted. */
+    /** Nothing ABOVE this size. Optional: an unqualified "top five" must mean
+     *  the first five entries in the user's queue, regardless of their size.
+     *  Callers asking for work that fits a smaller turn can state a ceiling. */
     maxEffort?: BacklogEffort;
     /** `file` (default — the user's own order) · `score` · `priority`. */
     sort?: 'file' | 'score' | 'priority';
@@ -878,7 +878,7 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     const live = items.filter(i => isLive(i.state));
     const blocked: NextResult['blocked'] = [];
     const minW = PRIORITY_WEIGHT[opts.minPriority ?? 'lowest'];
-    const maxW = EFFORT_WEIGHT[opts.maxEffort ?? 'M'];
+    const maxW = opts.maxEffort ? EFFORT_WEIGHT[opts.maxEffort] : undefined;
 
     const wantParent = opts.parent ? String(opts.parent).trim().toUpperCase() : '';
     const familyOf = wantParent && opts.deep
@@ -891,10 +891,11 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
             if (familyOf ? !(i.code && familyOf.has(i.code)) : i.parent !== wantParent) { return false; }
         }
         if (PRIORITY_WEIGHT[i.priority] < minW) { return false; }
-        // An item with no effort stated is NOT excluded by the ceiling: it has
-        // not been sized, and refusing to hand out everything unsized would make
-        // the feature useless on a fresh backlog where nothing is sized yet.
-        if (i.effort && EFFORT_WEIGHT[i.effort] > maxW) { return false; }
+        // A ceiling exists only when the caller asked for one. An unqualified
+        // "top N" is positional and may never skip a queued L/XL item. An item
+        // with no effort stated is not excluded by an explicit ceiling: it has
+        // not been sized, so treating it as too large would be invented data.
+        if (maxW !== undefined && i.effort && EFFORT_WEIGHT[i.effort] > maxW) { return false; }
         const waitingOn = i.blockedBy.filter(c => {
             const dep = byCode.get(c);
             return dep ? isLive(dep.state) : false;   // an unknown code blocks nothing

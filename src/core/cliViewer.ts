@@ -1,0 +1,483 @@
+import * as path from 'path';
+import { codexPromptTitle, codexUserText, readFarmConsoleTranscript } from './cliTranscripts';
+import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
+import { conversationTitle } from './sessions';
+import { StepKind, stepKindForTool } from './stepkind';
+
+export interface CliViewMessage {
+    role: 'user' | 'assistant' | 'tool' | 'toolResult' | 'system';
+    ts: number;
+    text?: string;
+    tool?: string;
+    input?: string;
+    isError?: boolean;
+    model?: string;
+    tokens?: number;
+    wTokens?: number;
+    cost?: number;
+    kind?: StepKind;
+    turn?: number;
+    turnStart?: boolean;
+}
+
+export interface CliViewTurn {
+    n: number; label: string; prompt: string; ts: number;
+    tokens: number; wTokens: number; cost: number;
+    apiCalls: number; steps: number; thinking: number; ms: number; endCtx: number;
+    tools: number; errors: number; topTools: { name: string; n: number }[];
+    models: string[]; attrs: Record<string, string>;
+}
+
+export interface ParsedCliViewer {
+    engine: 'codex' | 'gemini' | 'agy';
+    sessionId: string;
+    title: string;
+    cwd: string;
+    permissionMode: string;
+    firstTs: number;
+    lastTs: number;
+    models: string[];
+    usage: Usage;
+    totalTokens: number;
+    totalWTokens: number;
+    cost: number;
+    errors: number;
+    toolCalls: number;
+    context: { tokens: number; ts: number; model: string; limit?: number };
+    turnCount: number;
+    turnTotals: Record<number, TurnAcc>;
+    turns: CliViewTurn[];
+    messages: CliViewMessage[];
+}
+
+interface TurnAcc {
+    tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
+    thinking: number; endTs: number; endCtx: number;
+}
+
+const TOOL_LIMIT = 200_000;
+const TURN_PROMPT_MAX = 8000;
+
+const clipTool = (s: string): string => s.length > TOOL_LIMIT
+    ? s.slice(0, TOOL_LIMIT) + `\n… [tool payload cut here — ${s.length.toLocaleString()} characters total; "Open raw JSONL" has all of it]`
+    : s;
+
+const asText = (value: unknown): string => {
+    if (typeof value === 'string') { return value; }
+    if (Array.isArray(value)) {
+        return value.map(v => {
+            if (typeof v === 'string') { return v; }
+            if (!v || typeof v !== 'object') { return ''; }
+            const o = v as Record<string, unknown>;
+            return typeof o.text === 'string' ? o.text
+                : typeof o.content === 'string' ? o.content : '';
+        }).filter(Boolean).join('\n');
+    }
+    if (value && typeof value === 'object') {
+        try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+    }
+    return value === undefined || value === null ? '' : String(value);
+};
+
+const stamp = (v: unknown): number => {
+    if (typeof v === 'number' && Number.isFinite(v)) { return v; }
+    if (typeof v !== 'string') { return 0; }
+    const n = Date.parse(v.replace(/(\.\d{3})\d+/, '$1'));
+    return Number.isFinite(n) ? n : 0;
+};
+
+const promptLabel = (text: string): string => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    return t.length > 90 ? t.slice(0, 89) + '…' : t;
+};
+
+const blankTurn = (): TurnAcc => ({
+    tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0,
+    thinking: 0, endTs: 0, endCtx: 0
+});
+
+function parseFarmConsole(raw: string): ParsedCliViewer | undefined {
+    const snap = readFarmConsoleTranscript(raw);
+    if (!snap) { return undefined; }
+    const messages: CliViewMessage[] = [];
+    const turns: Record<number, TurnAcc> = {};
+    const prompts: Record<number, string> = {};
+    const started: Record<number, number> = {};
+    const models: Record<number, Set<string>> = {};
+    const attrs: Record<number, Record<string, string>> = {};
+    let turn = 0;
+    for (const m of snap.messages) {
+        if (m.role === 'user') {
+            if (!m.steer || !turn) {
+                turn++;
+                prompts[turn] = m.text ?? '';
+                started[turn] = m.ts;
+                turns[turn] = blankTurn();
+                if (snap.model) { models[turn] = new Set([snap.model]); }
+                if (snap.effort) { attrs[turn] = { effort: snap.effort }; }
+            }
+            messages.push({ role: 'user', ts: m.ts, text: m.text, turn, turnStart: !m.steer });
+            continue;
+        }
+        if (m.role === 'agent') {
+            messages.push({ role: 'assistant', ts: m.ts, text: m.text, model: snap.model || undefined, kind: m.kind, turn: turn || undefined });
+            if (turn) { turns[turn].steps++; }
+            continue;
+        }
+        if (m.role === 'tool' && m.tool) {
+            messages.push({ role: 'tool', ts: m.ts, tool: m.tool.name, input: m.tool.detail, kind: m.kind, turn: turn || undefined });
+            if (turn) { turns[turn].steps++; }
+            continue;
+        }
+        if (m.role === 'tool') {
+            messages.push({ role: 'toolResult', ts: m.ts, text: m.text, isError: m.isError, turn: turn || undefined });
+            continue;
+        }
+        if (m.role === 'result') {
+            if (turn) {
+                turns[turn].tokens += m.tokens ?? 0;
+                turns[turn].cost += m.cost ?? 0;
+                turns[turn].endTs = m.ts;
+            }
+            if (m.isError && m.text) {
+                messages.push({ role: 'system', ts: m.ts, text: m.text, isError: true, turn: turn || undefined });
+            }
+            continue;
+        }
+        if (m.text) {
+            messages.push({
+                role: 'system', ts: m.ts, text: m.text,
+                isError: m.isError || m.role === 'error', turn: turn || undefined
+            });
+        }
+    }
+    if (turn && snap.contextTokens) { turns[turn].endCtx = snap.contextTokens; }
+    const table = finishTurns(messages, turns, prompts, started, models, attrs);
+    const firstUser = snap.messages.find(m => m.role === 'user' && m.text?.trim());
+    return {
+        engine: 'agy', sessionId: snap.sessionId,
+        title: firstUser?.text ? conversationTitle(firstUser.text) : 'Antigravity session',
+        cwd: snap.cwd, permissionMode: snap.permissionMode,
+        firstTs: snap.startedAt, lastTs: snap.lastTs,
+        models: snap.model ? [snap.model] : [], usage: emptyUsage(),
+        totalTokens: snap.tokens, totalWTokens: snap.wTokens, cost: snap.cost,
+        errors: messages.filter(m => m.isError).length,
+        toolCalls: messages.filter(m => m.role === 'tool').length,
+        context: { tokens: snap.contextTokens, ts: snap.lastTs, model: snap.model },
+        turnCount: table.length, turnTotals: turns, turns: table, messages
+    };
+}
+
+function usageDiff(next: Usage, prev: Usage): Usage {
+    return {
+        input: Math.max(0, next.input - prev.input),
+        output: Math.max(0, next.output - prev.output),
+        cacheWrite: Math.max(0, next.cacheWrite - prev.cacheWrite),
+        cacheRead: Math.max(0, next.cacheRead - prev.cacheRead),
+        ...(('cacheWrite1h' in next || 'cacheWrite1h' in prev)
+            ? { cacheWrite1h: Math.max(0, (next.cacheWrite1h ?? 0) - (prev.cacheWrite1h ?? 0)) } : {})
+    };
+}
+
+function codexUsage(value: unknown): Usage {
+    const o = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const n = (k: string): number => typeof o[k] === 'number' && Number.isFinite(o[k])
+        ? Math.max(0, Math.trunc(o[k] as number)) : 0;
+    const cached = n('cached_input_tokens');
+    return {
+        input: Math.max(0, n('input_tokens') - cached),
+        output: n('output_tokens') + n('reasoning_output_tokens'),
+        cacheWrite: 0,
+        cacheRead: cached
+    };
+}
+
+function finishTurns(
+    messages: CliViewMessage[], turns: Record<number, TurnAcc>,
+    prompts: Record<number, string>, started: Record<number, number>,
+    models: Record<number, Set<string>>, attrs: Record<number, Record<string, string>>
+): CliViewTurn[] {
+    const tools: Record<number, Record<string, number>> = {};
+    const errors: Record<number, number> = {};
+    for (const m of messages) {
+        if (!m.turn) { continue; }
+        if (m.role === 'tool') {
+            const bag = tools[m.turn] ?? (tools[m.turn] = {});
+            const name = m.tool || '?';
+            bag[name] = (bag[name] ?? 0) + 1;
+        }
+        if (m.role === 'toolResult' && m.isError) {
+            errors[m.turn] = (errors[m.turn] ?? 0) + 1;
+        }
+    }
+    return Object.keys(prompts).map(Number).sort((a, b) => a - b).map(n => {
+        const acc = turns[n] ?? blankTurn();
+        const ts = started[n] ?? 0;
+        return {
+            n, label: promptLabel(prompts[n] ?? ''),
+            prompt: String(prompts[n] ?? '').trim().slice(0, TURN_PROMPT_MAX), ts,
+            tokens: acc.tokens, wTokens: Math.round(acc.wTokens), cost: acc.cost,
+            apiCalls: acc.apiCalls, steps: acc.steps, thinking: acc.thinking,
+            ms: ts && acc.endTs > ts ? acc.endTs - ts : 0, endCtx: acc.endCtx,
+            tools: Object.values(tools[n] ?? {}).reduce((a, b) => a + b, 0),
+            errors: errors[n] ?? 0,
+            topTools: Object.entries(tools[n] ?? {}).sort((a, b) => b[1] - a[1])
+                .slice(0, 4).map(([name, count]) => ({ name, n: count })),
+            models: [...(models[n] ?? [])], attrs: attrs[n] ?? {}
+        };
+    });
+}
+
+function parseCodex(raw: string, file: string, pricing: PricingEngine): ParsedCliViewer | undefined {
+    const messages: CliViewMessage[] = [];
+    const usage = emptyUsage();
+    const models = new Set<string>();
+    const turns: Record<number, TurnAcc> = {};
+    const prompts: Record<number, string> = {};
+    const started: Record<number, number> = {};
+    const turnModels: Record<number, Set<string>> = {};
+    const turnAttrs: Record<number, Record<string, string>> = {};
+    const calls = new Map<string, string>();
+    const assistantSeen = new Set<string>();
+    let saw = false, sessionId = path.basename(file, '.jsonl'), cwd = '', title = '';
+    let firstTs = 0, lastTs = 0, turn = 0, currentModel = '', currentEffort = '';
+    let previous = emptyUsage(), cost = 0, wTokens = 0, toolCalls = 0, errors = 0;
+    let ctxTokens = 0, ctxTs = 0, ctxLimit = 0;
+
+    const touch = (ts: number) => {
+        if (!ts) { return; }
+        if (!firstTs) { firstTs = ts; }
+        lastTs = Math.max(lastTs, ts);
+        if (turn) { (turns[turn] ?? (turns[turn] = blankTurn())).endTs = lastTs; }
+    };
+    const addAssistant = (text: string, ts: number) => {
+        const clean = text.trim();
+        if (!clean || assistantSeen.has(`${turn}:${clean}`)) { return; }
+        assistantSeen.add(`${turn}:${clean}`);
+        messages.push({ role: 'assistant', ts, text: clean, model: currentModel || undefined, kind: 'say', turn: turn || undefined });
+        if (turn) { (turns[turn] ?? (turns[turn] = blankTurn())).steps++; }
+    };
+    const addTool = (name: string, input: unknown, callId: string, ts: number) => {
+        toolCalls++;
+        if (callId) { calls.set(callId, name); }
+        messages.push({ role: 'tool', ts, tool: name, input: clipTool(asText(input)), kind: stepKindForTool(name), turn: turn || undefined });
+        if (turn) { (turns[turn] ?? (turns[turn] = blankTurn())).steps++; }
+    };
+
+    for (const lineText of raw.split('\n')) {
+        if (!lineText.trim()) { continue; }
+        let line: Record<string, unknown>;
+        try { line = JSON.parse(lineText) as Record<string, unknown>; } catch { continue; }
+        const type = typeof line.type === 'string' ? line.type : '';
+        const p = line.payload && typeof line.payload === 'object'
+            ? line.payload as Record<string, unknown> : undefined;
+        if (!p) { continue; }
+        const ts = stamp(line.timestamp);
+        touch(ts);
+        if (type === 'session_meta') {
+            saw = true;
+            const sid = p.session_id ?? p.id;
+            if (typeof sid === 'string' && sid) { sessionId = sid; }
+            if (typeof p.cwd === 'string') { cwd = p.cwd; }
+            continue;
+        }
+        if (!saw) { continue; }
+        if (type === 'turn_context') {
+            if (typeof p.model === 'string' && p.model) { currentModel = p.model; models.add(currentModel); }
+            if (typeof p.effort === 'string') { currentEffort = p.effort; }
+            if (turn && currentModel) { (turnModels[turn] ?? (turnModels[turn] = new Set())).add(currentModel); }
+            if (turn && currentEffort) { (turnAttrs[turn] ?? (turnAttrs[turn] = {})).effort = currentEffort; }
+            continue;
+        }
+        const sub = typeof p.type === 'string' ? p.type : '';
+        if (type === 'event_msg' && sub === 'user_message' && typeof p.message === 'string') {
+            const text = codexUserText(p.message);
+            if (!text) { continue; }
+            turn++;
+            prompts[turn] = text; started[turn] = ts; turns[turn] = blankTurn();
+            if (currentModel) { (turnModels[turn] ?? (turnModels[turn] = new Set())).add(currentModel); }
+            if (currentEffort) { (turnAttrs[turn] ?? (turnAttrs[turn] = {})).effort = currentEffort; }
+            messages.push({ role: 'user', ts, text, turn, turnStart: true });
+            if (!title) { title = codexPromptTitle(p.message); }
+            continue;
+        }
+        if (type === 'event_msg' && sub === 'agent_message' && typeof p.message === 'string') {
+            addAssistant(p.message, ts); continue;
+        }
+        if (type === 'event_msg' && sub === 'token_count' && p.info && typeof p.info === 'object') {
+            const info = p.info as Record<string, unknown>;
+            const total = codexUsage(info.total_token_usage);
+            const delta = usageDiff(total, previous);
+            previous = total;
+            usage.input = total.input; usage.output = total.output;
+            usage.cacheWrite = total.cacheWrite; usage.cacheRead = total.cacheRead;
+            if (typeof info.model_context_window === 'number') { ctxLimit = info.model_context_window; }
+            const last = info.last_token_usage && typeof info.last_token_usage === 'object'
+                ? info.last_token_usage as Record<string, unknown> : {};
+            if (typeof last.input_tokens === 'number') { ctxTokens = last.input_tokens; ctxTs = ts; }
+            const model = typeof info.model === 'string' && info.model ? info.model : currentModel;
+            if (model) { currentModel = model; models.add(model); }
+            const dt = totalTokens(delta);
+            if (turn && dt > 0) {
+                const acc = turns[turn] ?? (turns[turn] = blankTurn());
+                const dc = model ? pricing.costFor(model, delta, ts) : 0;
+                const dw = model ? weightedTokens(model, delta) : dt;
+                acc.tokens += dt; acc.wTokens += dw; acc.cost += dc; acc.apiCalls++;
+                acc.endCtx = ctxTokens; cost += dc; wTokens += dw;
+            }
+            continue;
+        }
+        if (type === 'response_item' && (sub === 'function_call' || sub === 'custom_tool_call')) {
+            const name = typeof p.name === 'string' && p.name ? p.name : 'tool';
+            const id = typeof p.call_id === 'string' ? p.call_id : '';
+            addTool(name, p.arguments ?? p.input ?? {}, id, ts); continue;
+        }
+        if (type === 'response_item' && (sub === 'function_call_output' || sub === 'custom_tool_call_output')) {
+            const id = typeof p.call_id === 'string' ? p.call_id : '';
+            const text = clipTool(asText(p.output));
+            const isError = /(^|\b)(error|failed|exit code [1-9])\b/i.test(text.slice(0, 500));
+            if (isError) { errors++; }
+            messages.push({ role: 'toolResult', ts, text, tool: calls.get(id), isError, kind: 'result', turn: turn || undefined });
+            continue;
+        }
+        if (type === 'response_item' && sub === 'message' && p.role === 'assistant') {
+            addAssistant(asText(p.content), ts); continue;
+        }
+        if (type === 'response_item' && sub === 'reasoning' && turn) {
+            const acc = turns[turn] ?? (turns[turn] = blankTurn());
+            acc.steps++; acc.thinking++;
+        }
+    }
+    if (!saw) { return undefined; }
+    const table = finishTurns(messages, turns, prompts, started, turnModels, turnAttrs);
+    return {
+        engine: 'codex', sessionId, title, cwd, permissionMode: '', firstTs, lastTs,
+        models: [...models], usage, totalTokens: totalTokens(usage), totalWTokens: Math.round(wTokens),
+        cost, errors, toolCalls,
+        context: { tokens: ctxTokens, ts: ctxTs, model: currentModel, ...(ctxLimit ? { limit: ctxLimit } : {}) },
+        turnCount: table.length, turnTotals: turns, turns: table, messages
+    };
+}
+
+interface GeminiTokens { input: number; output: number; cached: number; thoughts: number; tool: number }
+
+function geminiTokens(value: unknown): GeminiTokens | undefined {
+    if (!value || typeof value !== 'object') { return undefined; }
+    const o = value as Record<string, unknown>;
+    const at = (...keys: string[]) => {
+        for (const k of keys) { if (typeof o[k] === 'number') { return Math.max(0, Math.trunc(o[k] as number)); } }
+        return 0;
+    };
+    return {
+        input: at('input', 'prompt', 'promptTokenCount', 'input_tokens'),
+        output: at('output', 'candidates', 'candidatesTokenCount', 'output_tokens'),
+        cached: at('cached', 'cachedContentTokenCount', 'cache_read_input_tokens'),
+        thoughts: at('thoughts', 'thoughtsTokenCount', 'reasoning_output_tokens'),
+        tool: at('tool', 'toolUsePromptTokenCount')
+    };
+}
+
+function parseGemini(raw: string, file: string, pricing: PricingEngine): ParsedCliViewer | undefined {
+    let root: unknown;
+    try { root = JSON.parse(raw); } catch { root = undefined; }
+    const records: Record<string, unknown>[] = [];
+    let top: Record<string, unknown> = {};
+    if (root && typeof root === 'object' && !Array.isArray(root)) {
+        top = root as Record<string, unknown>;
+        records.push(top);
+        if (Array.isArray(top.messages)) {
+            records.push(...top.messages.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object'));
+        }
+    } else {
+        for (const line of raw.split('\n')) {
+            if (!line.trim()) { continue; }
+            try {
+                const o = JSON.parse(line);
+                if (o && typeof o === 'object') { records.push(o as Record<string, unknown>); }
+            } catch { /* skip */ }
+        }
+    }
+    // Claude JSONL also contains `user`/`assistant` rows. A Gemini transcript
+    // must identify at least one model row in Gemini's own vocabulary; without
+    // that positive marker this parser would steal every Claude file before the
+    // richer native parser below got a chance to read it.
+    if (!records.some(r => String(r.type ?? '') === 'gemini')) {
+        return undefined;
+    }
+    const messages: CliViewMessage[] = [];
+    const usage = emptyUsage();
+    const models = new Set<string>();
+    const turns: Record<number, TurnAcc> = {};
+    const prompts: Record<number, string> = {};
+    const started: Record<number, number> = {};
+    const turnModels: Record<number, Set<string>> = {};
+    const attrs: Record<number, Record<string, string>> = {};
+    let sessionId = String(top.sessionId ?? top.session_id ?? path.basename(file, path.extname(file)));
+    let model = String(top.model ?? ''), turn = 0, firstTs = stamp(top.startTime), lastTs = stamp(top.lastUpdated);
+    let title = '', cost = 0, wTokens = 0, toolCalls = 0, errors = 0;
+    for (const r of records) {
+        if (r.sessionId || r.session_id) { sessionId = String(r.sessionId ?? r.session_id); }
+        if (typeof r.model === 'string' && r.model) { model = r.model; models.add(model); }
+        const ts = stamp(r.timestamp ?? r.created_at ?? r.startTime);
+        if (ts) { if (!firstTs) { firstTs = ts; } lastTs = Math.max(lastTs, ts); }
+        const type = String(r.type ?? r.role ?? '');
+        if (type === 'user') {
+            const text = asText(r.content ?? r.message ?? r.text).trim();
+            if (!text) { continue; }
+            turn++; prompts[turn] = text; started[turn] = ts; turns[turn] = blankTurn();
+            messages.push({ role: 'user', ts, text, turn, turnStart: true });
+            if (!title) { title = conversationTitle(text); }
+            continue;
+        }
+        if (type === 'gemini' || type === 'model' || type === 'assistant') {
+            const used = geminiTokens(r.tokens ?? r.usage);
+            let mt = 0, mw = 0, mc = 0;
+            if (used) {
+                const u: Usage = {
+                    input: Math.max(0, used.input - used.cached) + used.tool,
+                    output: used.output + used.thoughts, cacheWrite: 0, cacheRead: used.cached
+                };
+                addUsage(usage, u); mt = totalTokens(u);
+                if (model) { mc = pricing.costFor(model, u, ts); mw = weightedTokens(model, u); }
+                cost += mc; wTokens += mw;
+                if (turn) {
+                    const a = turns[turn] ?? (turns[turn] = blankTurn());
+                    a.tokens += mt; a.wTokens += mw; a.cost += mc; a.apiCalls++; a.endTs = Math.max(a.endTs, ts);
+                }
+            }
+            if (turn && model) { (turnModels[turn] ?? (turnModels[turn] = new Set())).add(model); }
+            const text = asText(r.content ?? r.message ?? r.text ?? r.response).trim();
+            if (text) {
+                messages.push({ role: 'assistant', ts, text, model: model || undefined,
+                    tokens: mt || undefined, wTokens: Math.round(mw) || undefined,
+                    cost: mc || undefined, kind: 'say', turn: turn || undefined });
+                if (turn) { turns[turn].steps++; }
+            }
+            continue;
+        }
+        if (/tool.*(call|use)/i.test(type)) {
+            const name = String(r.name ?? r.tool ?? 'tool'); toolCalls++;
+            messages.push({ role: 'tool', ts, tool: name, input: clipTool(asText(r.input ?? r.args ?? {})),
+                kind: stepKindForTool(name), turn: turn || undefined });
+            if (turn) { turns[turn].steps++; }
+        } else if (/tool.*(result|response)/i.test(type)) {
+            const text = clipTool(asText(r.output ?? r.result ?? r.content));
+            const isError = r.error === true || /(^|\b)(error|failed)\b/i.test(text.slice(0, 500));
+            if (isError) { errors++; }
+            messages.push({ role: 'toolResult', ts, text, isError, kind: 'result', turn: turn || undefined });
+        }
+    }
+    const table = finishTurns(messages, turns, prompts, started, turnModels, attrs);
+    return {
+        engine: 'gemini', sessionId, title, cwd: '', permissionMode: '', firstTs, lastTs,
+        models: [...models], usage, totalTokens: totalTokens(usage), totalWTokens: Math.round(wTokens),
+        cost, errors, toolCalls, context: { tokens: 0, ts: 0, model },
+        turnCount: table.length, turnTotals: turns, turns: table, messages
+    };
+}
+
+/** Parse a foreign CLI transcript into the Session Viewer vocabulary. Claude
+ * files return undefined and continue through the existing, richer parser. */
+export function parseCliViewer(raw: string, file: string, pricing: PricingEngine): ParsedCliViewer | undefined {
+    return parseFarmConsole(raw) ?? parseCodex(raw, file, pricing) ?? parseGemini(raw, file, pricing);
+}

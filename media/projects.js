@@ -5841,16 +5841,14 @@
         document.querySelectorAll('[data-tab]').forEach(el =>
             el.addEventListener('click', () => { tab = el.dataset.tab; render(); }));
 
-        // ‼️ The thing the Track tab is FOR: a turn number is a door. `ts` is
-        // what the session viewer scrolls to — the turn NUMBER is for the reader,
-        // the timestamp is the address, and sending the number would land every
-        // click at the top of the transcript.
+        // X-23: Track answers "show me this session's dialogue", not "select
+        // this one turn". Every Track door therefore hands over the same clean
+        // reading view: Dialog, all turns folded, no deep focus, page top.
         document.querySelectorAll('[data-trackturn]').forEach(el =>
             el.addEventListener('click', () => {
                 if (!el.dataset.trackturn) { return; }
                 vscode.postMessage({
-                    type: 'openSession', file: el.dataset.trackturn,
-                    ts: Number(el.dataset.trackts) || 0
+                    type: 'openSession', file: el.dataset.trackturn, view: 'track'
                 });
             }));
 

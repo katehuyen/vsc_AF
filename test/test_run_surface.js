@@ -250,7 +250,9 @@ const base = read('src/panels/base.ts');
     ok('‼️ …and a terminal on an engine with no system-prompt channel SAYS the project was not sent',
         /has no system-prompt channel, so this terminal session was NOT told about the project/.test(ext));
     ok('‼️ a RESUME is pinned to the engine its transcript belongs to',
-        /engine: 'claude',[\s\S]{0,80}and the project it is TOLD about is its OWN/.test(ext));
+        /const engine = \(s\.source && s\.source in ENGINES \? s\.source : 'claude'\) as EngineId/.test(ext)
+        && /\n\s*engine,\s*\n\s*model: s\.models/.test(ext)
+        && /projectId: sessionOwnProject\(s\)/.test(ext));
 
     const startOp = ext.slice(ext.indexOf("op: 'sessions.start'"),
         ext.indexOf("op: 'sessions.rename'"));

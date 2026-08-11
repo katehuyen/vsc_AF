@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.112.0 — The user's queue and every engine keep their own identity (2026-08-12)
+
+**“Top five” now means the first five in Queue order — with no hidden size ceiling.** `projects.backlog.next` silently defaulted to `maxEffort: M`, so an L/XL item the user had explicitly placed fifth was skipped for a later small item. Effort is now a filter only when the caller explicitly supplies `maxEffort`; the default result is the exact unblocked order shown by **Queue order (yours)** and **Next up**. The bridge contract and both guide languages state the same rule.
+
+**External-engine session pages now parse the engine that wrote them.** A Codex rollout is no longer fed to the Claude parser or identified by its `rollout-…` filename: its real thread UUID, clean user prompt, dialogue, tool calls/results, model, effort, token use and context reach the Session Viewer. Resume resolves external rows too, restores their visible history, keeps their engine/model, and never sends their thread id to `claude --resume`; Claude-only `/context` capture is not offered on those pages. Antigravity exposes no schema/export route for its historical protobuf store, so conversations made before this release cannot be reconstructed. Agent Farm now preserves every Antigravity conversation it hosts as a versioned plain-JSON transcript, making all future dialogue and tools readable after VS Code closes.
+
+**The Console's engine, model and effort boxes are one dependent control.** Changing engine immediately rebuilds the model list from the per-window catalog cache and reconciles effort; changing model immediately rebuilds that model's effort vocabulary and default. Antigravity's remote catalog is fetched once per VS Code process and reused until restart. Opening **Talk to Agent** is a fresh composer even when the Console is already open: it reseeds engine/model/effort/permissions from the current launch defaults instead of inheriting another unstarted session's stale boxes.
+
+**Track opens a transcript to read it, not at an arbitrary event.** Every session/turn door on Project → Track now opens (or resets an already-open viewer) at the page top with **Dialog**, **Collapse all**, **Single-open**, no selected turn and no focused step. Timeline/Search deep links retain their exact-message behavior; this reset belongs only to Track.
+
+Verified with the complete automated suite plus real Chromium renders of the changed Console, Session Viewer and Project Track surfaces in dark and light themes.
+
 ## 3.111.0 — Six small doors stop wasting space and clicks (2026-08-11)
 
 **The Projects tab row fits more of the project.** `Overview` is now the shorter `Home`, while Settings is the same neutral tab reduced to its `⚙` icon with an accessibility name and its full meaning in the hover. The ids and navigation contract do not change. On the Backlog toolbar, **Tidy file order now comes before Gather families**, matching the order in which the two ideas are read: repair the document first, then group its queue families.

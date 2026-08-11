@@ -184,6 +184,77 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('turns are computed before the maxMessages cut', data.messages.length === 1 && data.turnCount === 2);
     ok('a transcript with no entrypoint opens as your own session', data.origin === 'user');
 
+    // ---- S-28: a Codex rollout is a transcript, not malformed Claude JSONL ----
+    const codexTmp = path.join(require('os').tmpdir(), `af-codex-view-${Date.now()}.jsonl`);
+    fs.writeFileSync(codexTmp, [
+        { timestamp: t1, type: 'session_meta', payload: { session_id: 'codex-thread-1', cwd: 'D:/agents/dev' } },
+        { timestamp: t1, type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'high' } },
+        { timestamp: t1, type: 'event_msg', payload: { type: 'user_message', message: '<project-context>injected brief</project-context>\n\n/goal fix the five queued session bugs' } },
+        { timestamp: t1, type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'c1', input: 'git status' } },
+        { timestamp: t2, type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'c1', output: 'clean' } },
+        { timestamp: t2, type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'all five are fixed' }] } },
+        // The event is the same answer in current Codex rollouts; it must not draw twice.
+        { timestamp: t2, type: 'event_msg', payload: { type: 'agent_message', message: 'all five are fixed' } },
+        { timestamp: t2, type: 'event_msg', payload: { type: 'token_count', info: {
+            model_context_window: 258400,
+            last_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, reasoning_output_tokens: 10 },
+            total_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, reasoning_output_tokens: 10 }
+        } } }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    const codexData = viewer.buildData(codexTmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0.25 }),
+        maxMessages: () => 50, contextLimitFor: () => 0,
+        engineFor: id => id === 'codex-thread-1' ? 'codex' : undefined
+    });
+    fs.unlinkSync(codexTmp);
+    ok('‼️ Codex viewer reads the real thread id and therefore the real engine',
+        codexData.sessionId === 'codex-thread-1' && codexData.engine === 'codex');
+    ok('Codex viewer removes injected context but keeps the actual /goal dialogue',
+        codexData.title === 'fix the five queued session bugs'
+        && codexData.messages[0].text === '/goal fix the five queued session bugs'
+        && !codexData.messages.some(m => String(m.text || '').includes('injected brief')));
+    ok('Codex viewer draws dialogue and tools instead of an empty page',
+        codexData.turnCount === 1
+        && codexData.messages.filter(m => m.role === 'assistant').length === 1
+        && codexData.messages.some(m => m.role === 'tool')
+        && codexData.messages.some(m => m.role === 'toolResult'));
+    ok('Codex viewer carries model, effort, tokens and context from its own protocol',
+        codexData.models.includes('gpt-5.6-sol') && codexData.turns[0].attrs.effort === 'high'
+        && codexData.totalTokens === 130 && codexData.context.limit === 258400);
+
+    // Antigravity's private DB is schema-less protobuf. Console-hosted sessions
+    // are therefore mirrored to Agent Farm's versioned, readable JSON instead.
+    const agyTmp = path.join(require('os').tmpdir(), `af-agy-view-${Date.now()}.json`);
+    fs.writeFileSync(agyTmp, JSON.stringify({
+        format: 'agent-farm-console-v1', engine: 'agy', sessionId: 'agy-conversation-1',
+        agentId: 'dev', agentName: 'developer', cwd: 'D:/agents/dev',
+        model: 'gemini-3.5-pro', effort: 'high', permissionMode: 'acceptEdits',
+        startedAt: Date.parse(t1), lastTs: Date.parse(t2), cost: 0,
+        tokens: 900, wTokens: 700, turns: 1, contextTokens: 640,
+        messages: [
+            { id: 'u1', role: 'user', ts: Date.parse(t1), text: 'Agy diyaloğunu göster' },
+            { id: 'a1', role: 'agent', ts: Date.parse(t2), text: 'İşte diyalog' },
+            { id: 't1', role: 'tool', ts: Date.parse(t2), tool: { name: 'Read', detail: 'D:/x.md' } },
+            { id: 't2', role: 'tool', ts: Date.parse(t2), text: 'content' },
+            { id: 'r1', role: 'result', ts: Date.parse(t2), tokens: 900, cost: 0 }
+        ]
+    }), 'utf8');
+    const agyData = viewer.buildData(agyTmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
+        maxMessages: () => 50, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(agyTmp);
+    ok('Antigravity viewer opens with its real id, engine, model and effort',
+        agyData.sessionId === 'agy-conversation-1' && agyData.engine === 'agy'
+        && agyData.models[0] === 'gemini-3.5-pro'
+        && agyData.turns[0].attrs.effort === 'high');
+    ok('Antigravity viewer shows dialogue, tools and recorded totals instead of an empty page',
+        agyData.messages.some(m => m.role === 'user' && m.text === 'Agy diyaloğunu göster')
+        && agyData.messages.some(m => m.role === 'assistant' && m.text === 'İşte diyalog')
+        && agyData.messages.some(m => m.role === 'tool')
+        && agyData.messages.some(m => m.role === 'toolResult')
+        && agyData.totalTokens === 900 && agyData.context.tokens === 640);
+
     // ---- an isMeta line in ARRAY form must not open a turn (measured: 16 such
     // lines across 353 real transcripts). The string form was already skipped;
     // the array form was not, so the page counted one turn more than the session

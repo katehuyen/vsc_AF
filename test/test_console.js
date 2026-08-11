@@ -714,6 +714,17 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('both ways of resuming into the Console carry it',
         /history: this\.deps\.history\(sessionId\)/.test(panel2)
         && /history: consoleHistory\(s\.sessionId\)/.test(ext2));
+    ok('external sessions are resolved and their real transcript is backfilled too',
+        /\[\.\.\.index\.all\(\), \.\.\.index\.external\(\)\]/.test(ext2)
+        && /parseCliViewer\(raw, file, pricing\)/.test(ext2));
+    ok('a resume uses the transcript engine instead of forcing Claude',
+        /const engine = \(s\.source/.test(ext2)
+        && /engine,\s*\n\s*model: s\.models/.test(ext2)
+        && !/every row this command can reach is a Claude session/.test(ext2));
+    ok('Console-hosted Antigravity dialogue is persisted in a readable transcript',
+        /farmConsoleTranscript\(s\)/.test(ext2)
+        && /external-console-transcripts/.test(ext2)
+        && /scheduleExternalConsoleTranscript\(id\)/.test(ext2));
 }
 
 // ---------- the leak that made closed sessions un-resumable ----------
@@ -781,7 +792,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and the pin is never a trap — it can be handed back',
         /id="c-unpin"/.test(js) && /type: 'unpinAgent'/.test(js));
     ok('…and it rebuilds the shell, because it decides which markup is drawn',
-        /\$\{DATA\.pinnedAgent \|\| ''\}`;/.test(js));
+        /\$\{DATA\.pinnedAgent \|\| ''\}\$\{composerShape\}`;/.test(js));
     ok('…while the project box stays, which is the point of not spawning',
         (() => {
             const c = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));

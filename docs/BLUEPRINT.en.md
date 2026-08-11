@@ -157,7 +157,7 @@ Right-click menu on an agent: **Start Claude Session**, **Start Session…** (mo
 
 Right-click menu on a session row (2.7.0):
 
-- **Resume Session in Terminal** — opens a terminal in that session's folder and runs `claude --resume <session-id>`: you continue **any past session** where you left off (Continue Latest only resumes the most recent one). The ⏵ icon that appears on hover does the same. The **⏵ Resume** button at the top-right of the Session Viewer does the same job too.
+- **Resume Session in Terminal** — for Claude, opens a terminal in that session's folder and runs `claude --resume <session-id>`: you continue **any past session** where you left off (Continue Latest only resumes the most recent one). The ⏵ icon that appears on hover does the same. On an external-engine transcript, **⏵ Resume** uses that engine's measured Console resume path instead; an external thread id is never handed to Claude.
 - **Focus Session Terminal (2.58.0)** — the ⌨/terminal icon on hover (and in the right-click menu) jumps straight to that session's terminal window. The same ⌨ is available on **every** surface a session appears: Dashboard and Agent Detail table rows, Timeline live cards, the Session Viewer's top bar and Needs You items.
 - **Rename Session…** — give the session your own name (to remember it); leave it blank and the automatic title comes back. Names are persistent, the transcript file is untouched.
 - **Pin / Unpin Session (3.24.0)** — puts the session on your shelf: pinned sessions are listed first and are exempt from every row limit. The 📌 button on hover does the same. **Label Session…** adds comma-separated labels and **Interrupt Session** stops the running turn with an Esc — see [Starting and Steering Sessions](#oturum-denetim).
@@ -231,6 +231,7 @@ Turns a session's raw JSONL log into a readable conversation:
 - Every assistant message shows model, tokens and cost. Even the tokens of assistant steps that only make a tool call (no text) aren't lost — they show up on the first tool-call row (2.6.0).
 - **Turn bands (2.6.0, made prominent in 2.8.0):** every user command opens a new turn. A turn start is no longer a thin line but a **full-width colored band**: an accent-colored left edge, a bold `Turn 3/12`, the first sentence of the command, and that turn's tokens/cost. The band is **sticky** — while scrolling fast, the band for the turn you're in stays pinned at the top, so turn transitions aren't missed. The **checkbox** in the band selects whether that turn is included in the MD export; the **↑ ↓ arrows** (2.9.0) jump to the previous/next turn without scrolling — since the band is sticky the arrows are always within reach (the ↑ arrow's "doesn't scroll at all" bug was fixed in 2.11.0).
 - **Turn accordion (2.48.0; opens folded + single-open since 3.20.0):** the turn bands double as fold headers — **a single click on a band** folds that turn down to its band (a ▸/▾ caret shows the state; a folded band also shows its message count) and a second click reopens it. **A transcript now opens fully folded and in Single-open mode:** what you see first is the session's *turn list* — a clickable map of highlighted bands — instead of a wall of text, and opening a turn folds the previous one. The `Turns:` row above the message list has **Expand all / Collapse all** to override that at any time, and **Single-open** toggles the mode (the choice is remembered — an explicit "off" survives). On a live session, turns that arrive while you read come in folded as well, but a turn you opened by hand is never folded behind your back. Everything that jumps to a turn — the breakdown table, the ↑ ↓ arrows, timeline/search/feed click-through — auto-unfolds its target, so nothing is ever out of reach. Folding is display-only: filters, replay and Export MD ignore it.
+- **External transcripts are real transcripts (3.112.0), not Claude-shaped guesses.** A Codex rollout is parsed from its own `session_meta` / `turn_context` / response events: the page uses the real thread UUID rather than the `rollout-…` filename, removes injected project envelopes from the dialogue, deduplicates the two copies of an answer, and shows its tools, usage, model and effort. Antigravity's historical SQLite payload is protobuf with no schema or export command exposed by its CLI, so Agent Farm cannot reconstruct conversations made before this release. For every Antigravity conversation it hosts from now on, it writes the normalized dialogue/tools/totals to a versioned plain-JSON transcript under global storage; that file wins over the metadata-only row and opens on the same viewer. `/context` capture remains Claude-only and external pages say so instead of running `claude --resume` on the wrong id.
 - **Turn start date on hover (3.52.1):** hovering a turn band — or a row in the Turn breakdown table — shows `Turn started · 12 May 2026, 18:32 (3 days ago)`. Every other clock in the viewer is a **time of day** (`14:32`), so a transcript opened months later could not say *which day* the work happened on; the band is where the date belongs, since the turn is the unit this page navigates by. Date and time are formatted in your own locale (separately, so a locale cannot drop a weekday into the middle of the number run), and the elapsed time is spelled out in words — minutes, hours, days, months, years. This **replaced** the band's old "Click to expand this turn" tooltip: the ▸/▾ caret, the fold state and the `Turns:` controls row already say the band is clickable, so the one hover a turn gets is spent on what nothing else on the page shows.
 - **⬇ Export MD (2.8.0; asks what to include since 2.81.1):** clicking it now **asks first** — **Current view** (default: the Show chips, text filter, replay position, turn checkboxes AND the fold accordion are all applied — you export what you see) or **Everything** (the full transcript, ignoring the on-screen state). When you pick *Current view* and some turns are folded, a second question decides whether folded turns are **omitted entirely** (default) or kept as **titles only** (their `## Turn N` header without the body). The top of the file records the session id, duration, totals and which mode/filters were used. The save dialog opens in **the last folder you saved to** (2.9.0; on first use, the session's own folder); the suggested filename carries a **date + time stamp** (`session-abcd1234-2026-07-10_143522.md`, 2.11.0). After saving, the file opens in the editor.
 - **Export selection (2.9.0):** turn selection is done from two places, **in sync** — the checkbox in the turn's band and the `md` column in the Turn breakdown table show the same selection, and changing one updates the other instantly. The **All / None / Invert** buttons in the table make bulk selections; the **only** button on a row selects "just this turn" in one move. The header row and the Export MD button show a `12/37 in export` counter when there's a selection.
@@ -878,7 +879,7 @@ Dragging inside the `⊂` family view is deliberate and is the **by-hand version
 
 **Capture costs nothing.** An item may be one line of plain text with no code, no priority and no size; it lands in the `📥` inbox and is filed later by whoever has the context — a person, or an agent sweeping. `Agent Farm: Add to Backlog` (**Ctrl+Alt+B**) takes a thought from anywhere in VS Code and asks no follow-up question, because a box that asks "which area?" is a form, and the thought that has to wait for a form is never written down.
 
-**‼️ `projects.backlog.next` is the engine behind "do the top five".** Anything waiting on an unfinished `⛔` is held back *and reported*, and the **effort ceiling defaults to M** — "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done and wastes the run. An unsized item is never excluded by that ceiling; a fresh backlog would otherwise answer "nothing to do". `score` (priority ÷ effort) is offered as a view, not imposed.
+**‼️ `projects.backlog.next` is the engine behind "do the top five".** Anything waiting on an unfinished `⛔` is held back *and reported*. "Top five" means the first five entries of the user's queue with no hidden effort ceiling, so an L/XL item keeps the position the user gave it. A caller may explicitly pass `maxEffort` when the request is instead for work that fits a size ceiling; an unsized item is not excluded because its size is unknown. `score` (priority ÷ effort) is offered as a view, not imposed.
 
 **‼️ THERE IS ONE ORDER AND IT HOLDS EVERYTHING.** Areas are headings, so **line order is a segmented order**: every `K` item comes before every `S` item, for ever, because a line cannot cross a heading without re-filing the item — and "do X-5 next" was therefore not a missing button but a missing *order*. So the order lives in the **`## 🎯 Queue` block at the top of the file**: one list, every open item, shuffled like cards, areas interleaved however you want them.
 
@@ -930,7 +931,7 @@ The code was permanent and the transcripts were on disk, but there was **no join
 
 **One trace stays in the file itself.** A closing item's backlog line gets `[closed:: 9c4d1f2a#3]` — not the whole history, only the end point, the one piece of information that does not bloat the line. The reason is durability: somebody reading the file in Obsidian with no extension running should still see where the work ended. The stamp goes on through a separate write that does not rebuild the line, so the checkbox's **one-character** promise is untouched.
 
-**The Track tab: four questions over one ledger.** The thing it does that nothing else can is the join — **a turn number is a door**, press it and that transcript opens at that moment. Around that there are now four views over a single narrowing, so a filter set in one still holds in the next:
+**The Track tab: four questions over one ledger.** The thing it does that nothing else can is the join — **a session/turn reference is a door into that session's dialogue**. Track is for reading how the item was handled, not selecting one arbitrary event, so every such door resets even an already-open viewer to **Dialog · all turns collapsed · Single-open · page top**, with no focused turn. Around that there are now four views over a single narrowing, so a filter set in one still holds in the next:
 
 - **⬢ Items** — one card per code: every session and turn it was worked in, oldest first, with the closing note somebody wrote for it. *How was this solved last time?* Each card also carries the one figure that needs both files open — the size the backlog estimated, the turns it actually took, and the **median for that size in this project** (stated only once there are enough sized items to have a median worth quoting).
 - **≡ Timeline** — every recorded moment, newest first, whichever code it was about. *What happened here lately?* — the backlog's history rather than the folder's.
@@ -1636,18 +1637,28 @@ So the list is no longer written — it is READ (`core/models.ts`):
   granted model appears without an edit.
 - **Gemini** — nothing measured, so nothing claimed: the setting stands and the
   box's `source` says so.
+- **Antigravity** — `agy models` is the engine's only catalog and it is a remote
+  request. It is fetched once into memory for the current VS Code process
+  (warmed after activation, or immediately on the first picker draw), then every
+  picker reuses that answer until the window closes. A new VS Code process asks
+  again. When the background answer changes the list, every open picker is
+  redrawn; no reopen is required.
 
 Each box states **where its list came from and how old it is** (`note`), because
 a list nobody can date is a list nobody can distrust. When a catalog cannot be
 read (Codex installed but never run) the aliases stand in — but **not quietly**:
 the note says what is being shown is not the engine's own answer.
 
-**Changing the engine drops the model.** Carrying `sonnet` over to Codex would
-leave a value in the box its CLI cannot take, so a chosen model — and the effort
-chosen for it — is dropped once the new engine stops offering it. And so agents
-do not pass names blindly either, the bridge carries `engines.models`: models per
-engine, efforts per model, and whether the answer came from the engine or the
-setting.
+**The three boxes are one dependent choice.** Changing the engine rebuilds the
+model box from that engine's cached catalog and immediately reconciles effort;
+changing the model rebuilds effort from that model's own vocabulary and default.
+Carrying `sonnet` over to Codex would leave a value its CLI can only reject, so
+an invalid value is cleared rather than kept invisibly. Opening *Talk to Agent*
+is a fresh composer even when the Console tab already exists: engine, model,
+effort and permission are reseeded from the current launch defaults instead of
+inheriting the previous unstarted composer. Agents do not pass names blindly
+either: `engines.models` carries models per engine, efforts per model, and
+whether the answer came from the engine or the setting.
 
 ## Media Production Pipeline
 

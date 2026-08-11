@@ -7,6 +7,7 @@ import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, t
 import { conversationTitle, sessionOrigin } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
+import { parseCliViewer } from '../core/cliViewer';
 import { revealPath } from '../core/reveal';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
@@ -298,6 +299,37 @@ export function runContextCapture(
 export function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
     let raw = '';
     try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
+
+    // Codex/Gemini write real transcripts too, but not in Claude's schema. The
+    // old path fed those files into the Claude loop below: it found no messages,
+    // used the rollout filename instead of the thread id, and consequently the
+    // engine lookup fell back to Claude. One normalized parser now hands the
+    // shared page the same message/turn vocabulary while preserving each CLI's
+    // own ids, models, efforts and token semantics.
+    const cli = parseCliViewer(raw, file, deps.getPricing());
+    if (cli) {
+        const max = deps.maxMessages();
+        const launchedBy = deps.launchedByFor?.(cli.sessionId);
+        return {
+            ...cli,
+            file,
+            title: deps.titleFor?.(cli.sessionId) || cli.title || '(untitled session)',
+            pinned: deps.pinnedFor?.(cli.sessionId) === true,
+            tags: deps.tagsFor?.(cli.sessionId) ?? [],
+            origin: sessionOrigin({ launchedBy }),
+            launchedBy: launchedBy ?? null,
+            engine: deps.engineFor?.(cli.sessionId) || cli.engine,
+            context: {
+                ...cli.context,
+                limit: cli.context.limit || deps.contextLimitFor(cli.context.model)
+            },
+            contextReport: null,
+            files: [],
+            messageCount: cli.messages.length,
+            truncatedCount: Math.max(0, cli.messages.length - max),
+            messages: cli.messages.slice(-max)
+        };
+    }
 
     const messages: ViewMessage[] = [];
     const usage: Usage = emptyUsage();
@@ -654,11 +686,15 @@ export class SessionViewerPanel {
      * HAVE a scope pass one; a timeline mark or a table row has none and the
      * page keeps its own default (Dialog).
      */
-    static show(file: string, deps: ViewerDeps, focusTs?: number, roles?: string[]): void {
+    static show(
+        file: string, deps: ViewerDeps, focusTs?: number, roles?: string[], resetView = false
+    ): void {
         const existing = SessionViewerPanel.open.get(file);
         if (existing) {
             existing.panel.reveal();
-            if (focusTs) {
+            if (resetView) {
+                void existing.panel.webview.postMessage({ type: 'resetView' });
+            } else if (focusTs) {
                 void existing.panel.webview.postMessage({
                     type: 'focus', ts: focusTs, ...(roles?.length ? { roles } : {})
                 });
@@ -671,7 +707,8 @@ export class SessionViewerPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps, focusTs, roles));
+        SessionViewerPanel.open.set(file,
+            new SessionViewerPanel(panel, file, deps, focusTs, roles, resetView));
     }
 
     /** A session renamed anywhere is renamed here too — tab caption included. */
@@ -686,11 +723,13 @@ export class SessionViewerPanel {
         private file: string,
         private deps: ViewerDeps,
         focusTs?: number,
-        roles?: string[]
+        roles?: string[],
+        resetView = false
     ) {
         const data = this.viewData();
         if (focusTs) { data.focusTs = focusTs; }
         if (roles?.length) { data.focusRoles = roles; }
+        if (resetView) { data.resetView = true; }
         panel.webview.html = htmlShell(
             panel.webview,
             deps.extensionUri,
@@ -813,7 +852,9 @@ export class SessionViewerPanel {
                     sessionId: String(data.sessionId ?? ''),
                     title: String(data.title ?? ''),
                     cwd: String(data.cwd ?? ''),
-                    agentName: data.agentName
+                    agentName: data.agentName,
+                    source: data.engine,
+                    models: data.models
                 });
                 break;
             }
@@ -852,6 +893,14 @@ export class SessionViewerPanel {
                 }
                 break;
             case 'ctxCapture': {
+                const data = this.viewData();
+                if (String(data.engine ?? 'claude') !== 'claude') {
+                    void this.panel.webview.postMessage({
+                        type: 'ctxCapture', status: 'error',
+                        error: 'this engine does not publish Claude /context category reports'
+                    });
+                    break;
+                }
                 if (this.capturing) { break; }
                 if (this.looksLive()) {
                     // A second writer racing the live TUI on one transcript file is
@@ -874,7 +923,19 @@ export class SessionViewerPanel {
                 break;
             }
             case 'resume': {
-                const sessionId = path.basename(this.file, '.jsonl');
+                const data = this.viewData();
+                const sessionId = String(data.sessionId || path.basename(this.file, '.jsonl'));
+                const engine = String(data.engine || 'claude');
+                if (engine !== 'claude') {
+                    // The measured external resume path is the Console transport
+                    // (`codex exec resume`, `agy --conversation`). Never feed an
+                    // external thread id to `claude --resume` from this page.
+                    void vscode.commands.executeCommand('agentfarm.resumeInConsole', {
+                        sessionId, source: engine, title: data.title,
+                        cwd: data.cwd, agentName: data.agentName, models: data.models
+                    });
+                    break;
+                }
                 const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
                     ? msg.cwd : undefined;
                 const name = `claude: ${sessionId.slice(0, 8)}`;

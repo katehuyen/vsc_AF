@@ -476,7 +476,9 @@ export class ProjectsPanel {
             // of bugs for the same four buttons.
             case 'openSession':
                 void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
-                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined,
+                    msg.view === 'track' ? ['user', 'assistant'] : undefined,
+                    msg.view === 'track');
                 break;
             case 'focusTerminal':
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {

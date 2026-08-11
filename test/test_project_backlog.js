@@ -8,9 +8,8 @@
 //     silently repoint every note that ever quoted it.
 //   - closing a box changes EXACTLY ONE CHARACTER, the same promise the plan
 //     makes. Rebuilding the line would pass a naive test and mangle a vault.
-//   - `next` is what "do the top five" runs on, so its exclusions (blocked
-//     items, oversized ones) are the difference between five items an agent
-//     finishes and five it abandons half-done.
+//   - `next` is what "do the top five" runs on, so its queue order and explicit
+//     filters decide whether an agent does the five items the user actually named.
 //   - the backlog is FLAT. A dotted code and an indented line are things a file
 //     on disk may already contain, so they must keep parsing and keep their
 //     number — but neither makes an item the child of anything.
@@ -410,10 +409,14 @@ const FAMILY = [
     ok('‼️ …and an item that cannot be IN the queue comes after it, not among it',
         codes[codes.length - 1] === 'inbox');
 
-    ok('the effort ceiling defaults to M and keeps L/XL out of a turn',
-        B.nextBacklog(VAULT, { limit: 10 }).items.every(i => !i.effort || 'XS,S,M'.includes(i.effort)));
-    ok('an UNSIZED item is not excluded by the ceiling — a fresh backlog is not empty',
-        B.nextBacklog(VAULT, { limit: 10 }).items.some(i => !i.effort));
+    const sized = '## 🎯 Queue\n\n1. P-2\n2. P-1\n\n## P — Work\n- [ ] P-1 small [effort:: S]\n- [ ] P-2 large [effort:: XL]\n';
+    ok('‼️ top N has no hidden effort ceiling — a queued XL item keeps first place',
+        B.nextBacklog(sized, { limit: 2 }).items.map(i => i.code).join() === 'P-2,P-1');
+    ok('an explicit effort ceiling still narrows the answer',
+        B.nextBacklog(VAULT, { limit: 10, maxEffort: 'M' }).items
+            .every(i => !i.effort || 'XS,S,M'.includes(i.effort)));
+    ok('an UNSIZED item is not excluded by an explicit ceiling — a fresh backlog is not empty',
+        B.nextBacklog(VAULT, { limit: 10, maxEffort: 'M' }).items.some(i => !i.effort));
     ok('limit is honoured', B.nextBacklog(VAULT, { limit: 2 }).items.length === 2);
     ok('area filters', B.nextBacklog(VAULT, { limit: 10, area: 'K' }).items
         .every(i => i.area === 'K'));

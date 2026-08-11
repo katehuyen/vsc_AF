@@ -89,6 +89,17 @@
         // new scope too — otherwise the second click answers differently from
         // the first for no reason the reader can see.
         if (ev.data.type === 'focus') { applyScope(ev.data.roles); render({ keepScroll: true }); focusAt(ev.data.ts); return; }
+        if (ev.data.type === 'resetView') {
+            stopTimer(); replay.active = false;
+            filter = '';
+            roleSel = new Set(['user', 'assistant']);
+            singleOpen = true;
+            keepState({ singleOpen: true });
+            collapsed.clear(); foldedOnce.clear(); foldNewTurns();
+            render();
+            window.scrollTo(0, 0);
+            return;
+        }
         if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
         // The receipt for one step's copy button — drawn on the button itself, and
         // only after the host says the clipboard actually took it. No repaint: the
@@ -743,6 +754,9 @@
     // command — no API cost) for a non-live session; for a live session the host
     // answers 'live' and the status line points at the terminal instead.
     function ctxCaptureHtml(label) {
+        if ((DATA.engine || 'claude') !== 'claude') {
+            return `<div class="ctxact muted small">${C.esc(window.AFEngine.label(DATA.engine))} does not publish Claude's <code>/context</code> category report. The Context card above uses the engine's own recorded token count.</div>`;
+        }
         return `<div class="ctxact">
             <button id="ctxcap" data-label="${label}" title="Runs claude --resume <session> -p &quot;/context&quot; — a local command, no API cost">${label}</button>
             <span class="ctxstatus" id="ctxstatus"></span>
@@ -1517,7 +1531,14 @@
     // step, and a listener added there would multiply with them.
     window.AFCtx.listen(ctxDo);
 
+    if (DATA.resetView) {
+        filter = '';
+        roleSel = new Set(['user', 'assistant']);
+        singleOpen = true;
+        keepState({ singleOpen: true });
+    }
     foldNewTurns();
     render();
-    if (DATA.focusTs) { focusAt(DATA.focusTs); }
+    if (DATA.resetView) { window.scrollTo(0, 0); }
+    else if (DATA.focusTs) { focusAt(DATA.focusTs); }
 })();

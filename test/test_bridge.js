@@ -2337,13 +2337,13 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 && listed.result.areas.join() === 'P');
 
             const up = await reg.dispatch('projects.backlog.next', { project: 'Agent Farm', limit: 5 });
-            ok('‼️ projects.backlog.next keeps an XL item out of a turn by default',
-                up.ok && up.result.items.indexOf('P-2') < 0 && up.result.items.indexOf('P-1') >= 0);
+            ok('‼️ projects.backlog.next keeps the user\'s XL item in top N by default',
+                up.ok && up.result.items.indexOf('P-2') >= 0 && up.result.items.indexOf('P-1') >= 0);
 
-            const wide = await reg.dispatch('projects.backlog.next',
-                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
-            ok('…and lets it through when the caller raises the ceiling',
-                wide.ok && wide.result.items.indexOf('P-2') >= 0);
+            const narrow = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'M' });
+            ok('…and filters it only when the caller explicitly asks for a ceiling',
+                narrow.ok && narrow.result.items.indexOf('P-2') < 0);
 
             const capture = await reg.dispatch('projects.backlog.add',
                 { project: 'Agent Farm', text: 'a passing thought' });
@@ -2513,8 +2513,9 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('…and extension.ts wires the Studio ops in', src.includes('registerStudioOps(bridge'));
         const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
             src.indexOf("op: 'projects.backlog.next'") + 2600);
-        ok('‼️ backlog.next\'s contract explains the effort ceiling rather than hiding it',
-            /maxEffort/.test(nextBlock) && /half done/.test(nextBlock));
+        ok('‼️ backlog.next\'s contract defines top N as the user\'s queue with no hidden effort filter',
+            /Top N/.test(nextBlock) && /no silent effort filter/.test(nextBlock)
+            && /no ceiling when omitted/.test(nextBlock));
         const blCheckBlock = src.slice(src.indexOf("op: 'projects.backlog.check'"),
             src.indexOf("op: 'projects.backlog.check'") + 2900);
         ok('‼️ backlog.check\'s contract states the one-character promise',
