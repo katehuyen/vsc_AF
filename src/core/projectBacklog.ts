@@ -1956,6 +1956,21 @@ export const ARCHIVE_TITLE = '## 🗄 Archive';
 
 export interface ArchiveResult extends BacklogEditResult {
     moved: number;
+    /** Closed rows left visible because an age filter was requested but their
+     *  closing time is not recorded anywhere. Unknown is never treated as old. */
+    undated?: number;
+}
+
+export interface ArchiveOptions {
+    cancelled?: boolean;
+    /** Archive only rows closed MORE than this many whole days ago. Omit for
+     *  the original sweep-all behaviour. */
+    olderThanDays?: number;
+    /** Clock seam for tests. */
+    now?: number;
+    /** The host supplies the track-ledger resolver; the pure fallback below
+     *  knows only the Tasks plugin's day-level ✅ metadata. */
+    closedAt?: (item: BacklogItem) => number | null;
 }
 
 /**
@@ -1967,13 +1982,38 @@ export interface ArchiveResult extends BacklogEditResult {
  * archive elsewhere would let `K-8` be reissued the moment somebody moved the
  * old K-8 out — and the two would look identical in a three-month-old note.
  */
-export function archiveBacklogDone(text: string, opts: { cancelled?: boolean } = {}): ArchiveResult {
+export function archiveBacklogDone(text: string, opts: ArchiveOptions = {}): ArchiveResult {
     const src = String(text ?? '');
     const parsed = parseBacklog(src);
-    const wanted = parsed.items.filter(i =>
+    const closed = parsed.items.filter(i =>
         (i.state === 'done' || (opts.cancelled !== false && i.state === 'cancelled'))
         && !(parsed.archiveLine !== undefined && i.line > parsed.archiveLine));
-    if (!wanted.length) { return { ok: true, text: src, moved: 0, note: 'nothing closed to archive' }; }
+    const hasAge = opts.olderThanDays !== undefined;
+    const days = Number(opts.olderThanDays);
+    if (hasAge && (!Number.isInteger(days) || days < 0)) {
+        return { ok: false, text: src, moved: 0, error: 'olderThanDays must be a whole number of days, 0 or greater' };
+    }
+    const fallbackClosedAt = (i: BacklogItem): number | null => {
+        const day = i.doneOn ? Date.parse(`${i.doneOn}T12:00:00`) : NaN;
+        return Number.isFinite(day) ? day : null;
+    };
+    const closedAt = opts.closedAt ?? fallbackClosedAt;
+    const cutoff = hasAge ? Number(opts.now ?? Date.now()) - days * 86_400_000 : 0;
+    const undated = hasAge ? closed.filter(i => !closedAt(i)).length : 0;
+    const wanted = hasAge ? closed.filter(i => {
+        const ts = closedAt(i);
+        return !!ts && ts < cutoff;
+    }) : closed;
+    const undatedNote = undated
+        ? `${undated} closed item${undated === 1 ? '' : 's'} had no closing date and stayed in place`
+        : '';
+    if (!wanted.length) {
+        return {
+            ok: true, text: src, moved: 0, ...(hasAge ? { undated } : {}),
+            note: [hasAge ? 'nothing old enough to archive' : 'nothing closed to archive', undatedNote]
+                .filter(Boolean).join(' — ')
+        };
+    }
 
     const lines = src.split(/\r?\n/);
     const eol = eolOf(src);
@@ -2006,10 +2046,14 @@ export function archiveBacklogDone(text: string, opts: { cancelled?: boolean } =
     const orphaned = parsed.items.filter(i =>
         !!i.parent && archivedCodes.has(i.parent) && isLive(i.state)
         && !archivedCodes.has(i.code ?? ''));
-    const note = orphaned.length
+    const familyNote = orphaned.length
         ? `${orphaned.map(i => i.code ?? `line ${i.line + 1}`).join(', ')} `
         + `${orphaned.length === 1 ? 'is' : 'are'} still open under an item that just moved to the archive`
         + ' — the link still resolves, the children did not move'
         : '';
-    return { ok: true, text: out.join(eol), moved: wanted.length, ...(note ? { note } : {}) };
+    const note = [familyNote, undatedNote].filter(Boolean).join(' · ');
+    return {
+        ok: true, text: out.join(eol), moved: wanted.length,
+        ...(hasAge ? { undated } : {}), ...(note ? { note } : {})
+    };
 }

@@ -739,6 +739,27 @@ const FAMILY = [
         B.archiveBacklogDone(B.archiveBacklogDone(r.text).text).moved === 0);
     const noCancel = B.archiveBacklogDone('## K — C\n- [-] K-1 x\n', { cancelled: false });
     ok('cancelled items can be kept out of the sweep', noCancel.moved === 0);
+
+    const now = Date.parse('2026-08-11T12:00:00Z');
+    const aged = [
+        '## K — C',
+        '- [x] K-1 closed long ago',
+        '- [x] K-2 closed yesterday',
+        '- [x] K-3 closed but date unknown',
+        ''
+    ].join('\n');
+    const times = { 'K-1': now - 30 * 86400000, 'K-2': now - 86400000 };
+    const filtered = B.archiveBacklogDone(aged, {
+        olderThanDays: 7, now, closedAt: i => times[i.code] || null
+    });
+    ok('M-4: an age sweep moves only items older than the requested days',
+        filtered.moved === 1 && /## 🗄 Archive[\s\S]*K-1/.test(filtered.text)
+        && filtered.text.indexOf('K-2') < filtered.text.indexOf('## 🗄 Archive'));
+    ok('‼️ an unknown closing date is left visible, never guessed to be old',
+        filtered.undated === 1 && filtered.text.indexOf('K-3') < filtered.text.indexOf('## 🗄 Archive')
+        && /no closing date/.test(filtered.note));
+    ok('a non-whole age is refused instead of rounded silently',
+        !B.archiveBacklogDone(aged, { olderThanDays: 1.5 }).ok);
 }
 
 // ---------- finding an item without touching it ----------

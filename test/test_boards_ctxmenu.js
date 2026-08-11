@@ -62,6 +62,15 @@ const NOW = Date.now();
     ok('…and carries the address the pick comes back to', !!n1 && 'afPanel' in n1);
     ok('rows say a right-click has more', p.html().includes('right-click for more'));
 
+    const rowDeletes = p.query('[data-row-dismiss]');
+    ok('U-48: every notice row carries the same one-click ✕ as Needs You',
+        rowDeletes.length === 3);
+    p.posted.length = 0;
+    rowDeletes.find(b => b.dataset.rowDismiss === 'n1').click();
+    ok('…and the ✕ deletes only that notice without opening or marking it read',
+        p.last().type === 'dismiss' && p.last().id === 'n1'
+        && !p.posted.some(m => m.type === 'markRead'));
+
     // ‼️ The whole reason this menu exists: triaging a notice must not open it,
     // because opening one marks it read.
     p.posted.length = 0;

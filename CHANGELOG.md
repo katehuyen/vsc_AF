@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.111.0 — Six small doors stop wasting space and clicks (2026-08-11)
+
+**The Projects tab row fits more of the project.** `Overview` is now the shorter `Home`, while Settings is the same neutral tab reduced to its `⚙` icon with an accessibility name and its full meaning in the hover. The ids and navigation contract do not change. On the Backlog toolbar, **Tidy file order now comes before Gather families**, matching the order in which the two ideas are read: repair the document first, then group its queue families.
+
+**A Codex model no longer loses the only word that distinguishes it.** The live Console strip used the shared family/version abbreviation, turning `gpt-5.6-luna`, `gpt-5.6-terra` and `gpt-5.6-sol` into the identical `gpt 5.6`. Codex ids now keep their full readable discriminator (`gpt 5.6 terra · low`); an unfamiliar future suffix is kept too. Claude and Gemini retain their compact family labels.
+
+**Two existing destinations become one-click doors.** Every Notices row now ends with the same subdued `✕` gesture as Needs You; it dismisses that row without opening it or changing its read state. On Project → Track, the `session#turn` closing stamp is now a real button into that exact transcript moment. A legacy stamp with no transcript stays visibly non-clickable instead of pointing nowhere.
+
+**Closed backlog work can age before it disappears.** `Archive all closed` preserves the original sweep, while an adjacent day field + `Archive older` handles 7, 17, 30, 360 or any other whole-day threshold. The age comes from the track ledger's exact close time, then the Tasks plugin's `✅` day. A closed item with no recorded date is deliberately left in place and reported — unknown is never guessed to mean old. The same capability is on `projects.backlog.archive` as `olderThanDays`; invalid and fractional thresholds are refused.
+
+Verified with 8,049 automated assertions and real Chromium renders of Projects/Backlog, Project/Track, Console and Notices in dark and light themes.
+
 ## 3.110.0 — Four engines become one readable surface, and a failed turn says why (2026-08-11)
 
 **‼️ THE SESSIONS TABLE WAS STILL A CLAUDE TABLE WITH A GENERAL NAME.** Codex, Gemini and Antigravity conversations now reach the Dashboard, the Sessions page, agent pages and project pages alongside Claude, while the analytic totals stay Claude-only where foreign transcripts do not carry comparable figures. The shared table gained an **Engines** multi-filter derived from the rows it actually holds; an empty engine id correctly means Claude. Every engine uses the same badge component, and Antigravity is red rather than the green Agent Farm reserves for healthy/live state.

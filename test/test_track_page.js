@@ -140,6 +140,14 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     ok('the turns are drawn as buttons into the transcript',
         h.includes('data-trackturn="D:\\t\\a.jsonl"') || h.includes('data-trackturn='));
     ok('the closing stamp is shown where it was closed', h.includes('bbbb2222#3'));
+    const closing = els(r, 'trackturn').find(e =>
+        (e.className || '').indexOf('pj-trk-stamp') >= 0);
+    ok('P-13: the closing stamp is itself a transcript button',
+        !!closing && closing.dataset.trackturn === 'D:\\t\\b.jsonl');
+    if (closing) { closing.click(); }
+    ok('…and it opens the exact closing turn instead of making the reader find the duplicate below',
+        r.last() && r.last().type === 'openSession' && r.last().file === 'D:\\t\\b.jsonl'
+        && r.last().ts === T);
     ok('the human\'s own note is shown', h.includes('closed by lower-casing both sides'));
     ok('a record with no session says so rather than inventing one',
         h.includes('no session'));

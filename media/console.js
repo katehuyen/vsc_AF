@@ -1548,7 +1548,15 @@
         let label = '';
         if (m) {
             const p = C.parseModel(m);
-            label = p.model ? (p.version ? `${p.model} ${p.version}` : p.model) : (p.raw || m);
+            /** Codex families put the discriminator LAST (`gpt-5.6-luna` /
+             *  `terra` / `sol`). Family + version therefore collapses several
+             *  genuinely different models into the same `gpt 5.6`. Keep the
+             *  complete readable id for Codex — this also survives a future
+             *  suffix we have never heard of — while Claude/Gemini retain the
+             *  compact family label the strip was designed around. */
+            label = p.ai === 'codex'
+                ? String(p.raw || m).replace(/[-_]+/g, ' ')
+                : (p.model ? (p.version ? `${p.model} ${p.version}` : p.model) : (p.raw || m));
         }
         const both = [label, e].filter(Boolean).join(' · ');
         const verb = running ? 'is running on' : 'ran on';

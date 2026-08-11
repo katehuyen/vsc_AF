@@ -5518,17 +5518,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.archive',
-            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. args: project (id or name), cancelled? (default true — also archive cancelled items)',
+            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Omit `olderThanDays` for the original sweep-all operation; pass a whole number (7, 30, 360…) to move only items whose recorded closing time is MORE than that many days old. Closing time comes from the track ledger, then ✅ metadata; an item with no date stays visible rather than being guessed old. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. args: project (id or name), cancelled? (default true — also archive cancelled items), olderThanDays? (integer >= 0)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
+                let undated = 0;
+                const olderThanDays = args.olderThanDays === undefined
+                    ? undefined : Number(args.olderThanDays);
+                need(olderThanDays === undefined || (Number.isInteger(olderThanDays) && olderThanDays >= 0),
+                    'olderThanDays must be a whole number of days, 0 or greater');
+                const closedAt = backlogClosedAt(folder);
                 const out = editProjectDoc(folder, file, src => {
-                    const res = archiveBacklogDone(src, { cancelled: args.cancelled !== false });
+                    const res = archiveBacklogDone(src, {
+                        cancelled: args.cancelled !== false,
+                        ...(olderThanDays === undefined ? {} : { olderThanDays }),
+                        closedAt
+                    });
                     moved = res.moved;
+                    undated = res.undated ?? 0;
                     return res;
                 });
                 projectDocWritten(project.id);
-                return { project: project.name, file: relDoc(folder, out.file), moved, note: out.note ?? null };
+                return {
+                    project: project.name, file: relDoc(folder, out.file), moved,
+                    ...(olderThanDays === undefined ? {} : { olderThanDays, undated }),
+                    note: out.note ?? null
+                };
             }
         },
         {
@@ -12683,10 +12698,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                     return { ...res, ...(code ? { code } : {}) };
                 },
-                backlogArchive: (id: string) => {
+                backlogArchive: (id: string, olderThanDays?: number) => {
                     let moved = 0;
+                    const project = projectStore.get(id);
+                    const folder = (project?.folder ?? '').trim();
+                    const closedAt = folder ? backlogClosedAt(folder) : undefined;
                     const res = edit(id, text => {
-                        const r = archiveBacklogDone(text);
+                        const r = archiveBacklogDone(text, {
+                            ...(olderThanDays === undefined ? {} : { olderThanDays }),
+                            ...(closedAt ? { closedAt } : {})
+                        });
                         moved = r.moved;
                         return r;
                     });

@@ -127,8 +127,9 @@ export interface ProjectsPanelDeps {
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string):
         { error?: string; code?: string };
-    /** Sweep closed items under the archive heading. */
-    backlogArchive(id: string): { error?: string; moved?: number };
+    /** Sweep every closed item, or only the ones older than a stated number of
+     *  days, under the archive heading. */
+    backlogArchive(id: string, olderThanDays?: number): { error?: string; moved?: number; note?: string };
     /** Open the backlog document AT one item's line, in the user's chosen mode.
      *  The host re-resolves the line from the code — see its implementation. */
     backlogOpenItem(id: string, target: { code?: string; line?: number }, mode?: string):
@@ -767,9 +768,12 @@ export class ProjectsPanel {
                 break;
             case 'backlogArchive': {
                 if (!id) { break; }
-                const res = this.deps.backlogArchive(id);
+                const days = typeof msg.olderThanDays === 'number' ? msg.olderThanDays : undefined;
+                const res = this.deps.backlogArchive(id, days);
                 this.done(res.error, res.error ? undefined
-                    : (res.moved ? `${res.moved} closed item${res.moved === 1 ? '' : 's'} archived.` : 'Nothing closed to archive.'));
+                    : (res.moved
+                        ? `${res.moved} closed item${res.moved === 1 ? '' : 's'} archived${days === undefined ? '' : ` (older than ${days} days)`}.${res.note ? ` ${res.note}` : ''}`
+                        : (res.note ?? (days === undefined ? 'Nothing closed to archive.' : `Nothing closed is older than ${days} days.`))));
                 break;
             }
             // ---- the track ----

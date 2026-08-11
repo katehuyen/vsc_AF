@@ -735,6 +735,19 @@ const html = allHtml;
     ok('…and the hover says it is the turn\'s, not the picker\'s',
         /applies from the NEXT turn/.test(working()));
 
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now(),
+        turnModel: 'gpt-5.6-luna', turnEffort: 'medium'
+    }));
+    ok('U-47: a Codex model keeps the suffix that distinguishes it from its siblings',
+        />gpt 5\.6 luna · medium</.test(working()) && !/>gpt 5\.6 · medium</.test(working()));
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now(),
+        turnModel: 'gpt-5.6-future-name', turnEffort: 'high'
+    }));
+    ok('…and an unseen future Codex suffix is kept rather than special-cased away',
+        />gpt 5\.6 future name · high</.test(working()));
+
     // an effort the session never asked for is the CLI's own default, and
     // naming it would be a guess
     push(data(CONVO.slice(), {

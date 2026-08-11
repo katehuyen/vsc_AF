@@ -171,11 +171,19 @@ const baseData = () => ({
     }
     ok('overview opens first — "what is it doing now" before "what did it do"',
         /class="pj-tab tb-overview on" data-tab="overview"/.test(r.html()));
+    ok('U-46: the first tab reads Home while keeping its stable overview id',
+        /data-tab="overview"[\s\S]{0,180}>Home<\/button>/.test(r.html())
+        && !/>Overview<\/button>/.test(r.html()));
+    ok('U-46: Settings is the compact gear-only tab, still named for accessibility',
+        /tb-settings[^>]*data-tab="settings"[\s\S]{0,120}aria-label="Settings"[^>]*>⚙<\/button>/.test(r.html())
+        && !/>⚙ Settings<\/button>/.test(r.html()));
     // U-25: every tab carries its own colour class, so the row that opens nine
     // pages reads as a control rather than as one more line of grey metadata.
     ok('…and each tab is marked with its own hue',
         ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings']
             .every(t => r.html().includes(`class="pj-tab tb-${t}`)));
+    ok('…and the selected gear keeps icon-width padding instead of inheriting a text tab',
+        /\.pj-tab\.tb-settings\.on\s*\{[^}]*padding-left:11px[^}]*padding-right:11px/.test(r.html()));
     ok('the identity strip is above the tabs, so no tab can lose it',
         r.html().indexOf('<h2>') < r.html().indexOf('class="pj-tabs"'));
     ok('…and it carries the summary and the totals',

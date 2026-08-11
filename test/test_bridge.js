@@ -1984,7 +1984,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
         const {
-            addBacklogItem, BACKLOG_CODE, gatherFamilies, moveInQueue, nextBacklog, parseBacklog,
+            addBacklogItem, archiveBacklogDone, BACKLOG_CODE, gatherFamilies, moveInQueue, nextBacklog, parseBacklog,
             placeInQueue, setBacklogFields, setBacklogQueue, setBacklogState, tidyBacklogFile
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
@@ -2302,6 +2302,21 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
+                    op: 'projects.backlog.archive',
+                    describe: 'archive every closed item, or only old ones. args: project, olderThanDays?',
+                    handler: a => {
+                        const days = a.olderThanDays === undefined ? undefined : Number(a.olderThanDays);
+                        need(days === undefined || (Number.isInteger(days) && days >= 0),
+                            'olderThanDays must be a whole number');
+                        const now = Date.parse('2026-08-11T12:00:00Z');
+                        const r = editBacklog(t => archiveBacklogDone(t, {
+                            ...(days === undefined ? {} : { olderThanDays: days, now }),
+                            closedAt: i => i.code === 'P-1' ? now - 10 * 86400000 : null
+                        }));
+                        return { moved: r.moved, olderThanDays: days ?? null, undated: r.undated ?? 0 };
+                    }
+                },
+                {
                     op: 'projects.backlog.check', describe: 'change state. args: project, code?, state?',
                     handler: a => {
                         const target = {
@@ -2396,6 +2411,16 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const noAim = await reg.dispatch('projects.backlog.check', { project: 'Agent Farm' });
             ok('…and a check with nothing to aim at is refused',
                 !noAim.ok && /which item/.test(noAim.error));
+
+            const archived = await reg.dispatch('projects.backlog.archive',
+                { project: 'Agent Farm', olderThanDays: 7 });
+            ok('M-4: projects.backlog.archive dispatches an age threshold and moves only eligible work',
+                archived.ok && archived.result.moved === 1 && archived.result.olderThanDays === 7
+                && /## 🗄 Archive[\s\S]*P-1/.test(readBacklog()));
+            const badAge = await reg.dispatch('projects.backlog.archive',
+                { project: 'Agent Farm', olderThanDays: -1 });
+            ok('…and the bridge refuses an invalid threshold instead of changing the file',
+                !badAge.ok && /whole number/.test(badAge.error));
 
             // ---- the track: a code joined to the turns it was worked in ----
             // Same reasoning as above — the real ops need the project store and
@@ -2494,6 +2519,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.backlog.check'") + 2900);
         ok('‼️ backlog.check\'s contract states the one-character promise',
             /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        const blArchiveBlock = src.slice(src.indexOf("op: 'projects.backlog.archive'"),
+            src.indexOf("op: 'projects.backlog.archive'") + 2600);
+        ok('M-4: the real archive op catalogues and uses the age threshold',
+            /olderThanDays/.test(blArchiveBlock) && /backlogClosedAt/.test(blArchiveBlock));
         ok('…and tells the caller that closing an item is also RECORDED, with a note it can write',
             /track ledger/.test(blCheckBlock) && /note\?/.test(blCheckBlock));
         const trackBlock = src.slice(src.indexOf("op: 'projects.track'"),

@@ -323,6 +323,8 @@
                 ${starsHtml(n)}
                 <span class="nt-pin ${n.pinned ? 'on' : ''}" data-pinrow="${esc(n.id)}" data-pin="${n.pinned ? '0' : '1'}" title="${n.pinned ? 'Unpin' : 'Pin'}">📌</span>
                 <span class="nt-meta muted small">${esc(n.agentName)} · ${esc(timeLabel(n.ts))}${n.read ? '' : ' <span class="nt-udot">●</span>'}</span>
+                <button class="secondary nt-x" data-row-dismiss="${esc(n.id)}"
+                    aria-label="Delete this notice" title="Delete this notice">✕</button>
             </div>
             <div class="nt-body" ${open ? '' : 'hidden'}>${body}</div>
         </div>`;
@@ -532,6 +534,8 @@
         .nt-star { cursor:pointer; opacity:.55; } .nt-star.on { color:var(--vscode-charts-yellow, #e2c08d); opacity:1; }
         .nt-pin { cursor:pointer; opacity:.3; filter:grayscale(1); } .nt-pin:hover { opacity:.7; } .nt-pin.on { opacity:1; filter:none; }
         .nt-meta { margin-left:auto; flex-shrink:0; white-space:nowrap; }
+        .nt-x { flex:0 0 auto; padding:1px 6px; min-width:0; opacity:.55; }
+        .nt-x:hover { opacity:1; color:var(--vscode-editorError-foreground, #e51400); }
         .nt-udot { color:var(--vscode-button-background); }
         .nt-badge { font-size:10px; border-radius:8px; padding:1px 7px; flex-shrink:0; border:1px solid var(--vscode-panel-border); }
         .nt-badge.ok { color:var(--vscode-charts-green, #89d185); }
@@ -745,6 +749,13 @@
 
         document.querySelectorAll('[data-toggle]').forEach(row =>
             row.addEventListener('click', () => toggleNotice(row.dataset.toggle)));
+        document.querySelectorAll('[data-row-dismiss]').forEach(button =>
+            button.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const id = button.dataset.rowDismiss;
+                expanded.delete(id);
+                vscode.postMessage({ type: 'dismiss', id });
+            }));
         document.querySelectorAll('[data-sec]').forEach(h => h.addEventListener('click', ev => {
             ev.stopPropagation(); const k = h.dataset.sec; if (openSec.has(k)) { openSec.delete(k); } else { openSec.add(k); } render();
         }));

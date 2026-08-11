@@ -541,6 +541,23 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r3.els('act').find(e => e.dataset.act === 'blTidy').click();
     ok('🧹 asks the host to put the FILE back in code order',
         r3.posted.some(m => m.type === 'backlogTidy'));
+    ok('U-44: Tidy is immediately before Gather in the toolbar',
+        r3.html().indexOf('data-act="blTidy"') < r3.html().indexOf('data-act="blGather"'));
+}
+
+// ---------- M-4: archive everything, or only work older than N days ----------
+{
+    const r = run(data());
+    const all = r.els('act').find(e => e.dataset.act === 'blArchive');
+    const older = r.els('act').find(e => e.dataset.act === 'blArchiveAge');
+    ok('M-4: the original all-closed operation remains one click', !!all);
+    all.click();
+    ok('…and still sends no age filter',
+        r.posted.some(m => m.type === 'backlogArchive' && m.olderThanDays === undefined));
+    const days = r.byId('bl-archive-days');
+    days.value = '17'; days.fire('input'); older.click();
+    ok('…while the adjacent number sends the exact older-than day threshold',
+        r.posted.some(m => m.type === 'backlogArchive' && m.olderThanDays === 17));
 }
 
 // ---------- ‼️ the capture box keeps what you wrote ----------

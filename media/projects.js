@@ -24,7 +24,7 @@
      * change it.
      */
     const TABS = [
-        { id: 'overview', label: 'Overview', tip: 'What this project is doing right now' },
+        { id: 'overview', label: 'Home', tip: 'What this project is doing right now' },
         { id: 'work', label: 'Work', tip: 'Everything this project has in flight or on its books — tasks, missions, notices, queue items and the automations that fire for it. Start work here too.' },
         { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
@@ -36,7 +36,7 @@
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
         { id: 'analysis', label: 'Analysis', tip: 'The same data folded a second time: when the work actually happens, whether the backlog is emptying or filling, how long an item takes from first touch to close, and where the effort lands' },
         { id: 'code', label: 'Code', tip: 'The declared code roots — what git records there, and what this project\'s own sessions wrote. Two different questions, never summed' },
-        { id: 'settings', label: '⚙ Settings', tip: 'Edit the project' }
+        { id: 'settings', label: '⚙', aria: 'Settings', tip: 'Settings — edit the project' }
     ];
     // ‼️ Seeded from the payload, not hard-coded to the first tab. The PANEL
     // remembers which tab is open (it is what decides which data to build) and
@@ -44,6 +44,11 @@
     // that always started on Overview would show Overview while the host was
     // still building — and sending — the timeline.
     let tab = (DATA.tab && TABS.some(t => t.id === DATA.tab)) ? DATA.tab : 'overview';
+    /** The age typed beside Archive. Kept outside the DOM because every filter
+     *  repaints this page; a half-entered number must survive that repaint just
+     *  like the capture text does. Blank deliberately means the original
+     *  operation: archive every closed item. */
+    let blArchiveDays = '';
     /** Timeline chips the reader switched OFF — an exclusion set, so a kind
      *  that appears for the first time is visible instead of hidden. */
     let feedOff = new Set(['turn']);   // turns are the noisiest source; opt in
@@ -520,7 +525,8 @@
 
     function tabsHtml() {
         return `<div class="pj-tabs">${TABS.map(t =>
-            `<button class="pj-tab tb-${t.id}${t.id === tab ? ' on' : ''}" data-tab="${t.id}" title="${C.esc(t.tip)}">${C.esc(t.label)}</button>`
+            `<button class="pj-tab tb-${t.id}${t.id === tab ? ' on' : ''}" data-tab="${t.id}"
+                ${t.aria ? `aria-label="${C.esc(t.aria)}"` : ''} title="${C.esc(t.tip)}">${C.esc(t.label)}</button>`
         ).join('')}</div>`;
     }
 
@@ -1528,7 +1534,9 @@
                     var(--vscode-charts-purple,#b180d7) 55%, var(--vscode-charts-blue,#3794ff)); }
                 .pj-tab.tb-code { --tabc:color-mix(in srgb,
                     var(--vscode-charts-green,#3fb950) 55%, var(--vscode-charts-yellow,#d7ba7d)); }
-                .pj-tab.tb-settings { --tabc:var(--vscode-descriptionForeground,#9d9d9d); }
+                .pj-tab.tb-settings { --tabc:var(--vscode-descriptionForeground,#9d9d9d);
+                    padding-left:10px; padding-right:10px; }
+                .pj-tab.tb-settings.on { padding-left:11px; padding-right:11px; }
                 /* track — four views over one ledger; see trackHtml()
                    ‼️ THE TRACK'S OWN COLOUR SYSTEM. It rhymes with the backlog
                    without inheriting it, because the two pages answer different
@@ -1630,7 +1638,12 @@
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 button.pj-trk-m { cursor:pointer; }
                 .pj-trk-m.warn { border-color:var(--vscode-editorWarning-foreground,#d29922); }
-                .pj-trk-stamp { font-size:11px; opacity:.7; }
+                .pj-trk-stamp { font:11px var(--vscode-editor-font-family,monospace); opacity:.7;
+                    color:inherit; background:none; border:1px solid transparent; border-radius:3px;
+                    padding:1px 3px; }
+                button.pj-trk-stamp { cursor:pointer; border-color:var(--vscode-widget-border,#4443); }
+                button.pj-trk-stamp:hover { opacity:1; border-color:var(--vscode-focusBorder,#3794ff);
+                    color:var(--vscode-textLink-foreground,#3794ff); }
                 .pj-trk-run { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:4px;
                     padding-left:6px; border-left:2px solid var(--vscode-widget-border,#4443); }
                 .pj-trk-run.loose { border-left-style:dashed; opacity:.85; }
@@ -1908,6 +1921,10 @@
                 /* documents · plan · people */
                 .pj-docbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
                     padding:6px 0 10px; border-bottom:1px solid var(--vscode-panel-border); margin-bottom:10px; }
+                .pj-bl-archive-age { display:inline-flex; align-items:stretch; gap:3px; }
+                .pj-bl-archive-age input { width:58px; min-width:58px; padding:3px 5px;
+                    text-align:right; border-radius:3px 0 0 3px; }
+                .pj-bl-archive-age button { border-radius:0 3px 3px 0; }
                 /* ‼️ THE TAB'S OWN ? — see blHelpHtml. Half-lit and the size of a
                    full stop, because it must be findable without being a second
                    thing to read; and it opens OVER the page, right under itself,
@@ -3247,14 +3264,19 @@
             ${/* ‼️ NEXT TO TIDY BECAUSE THE PAIR IS THE POINT, AND OPPOSITE TO IT
                   BECAUSE THEY TOUCH DIFFERENT THINGS: this one rearranges the
                   QUEUE and moves no line, Tidy rearranges the FILE and moves no
-                  queue entry. Naming them side by side is the cheapest way to
-                  stop the two being confused for each other. */''}
-            <button class="secondary" data-act="blGather"
-                title="Pull every PART up under its whole, so a family reads as one run in the queue instead of being scattered through it. The heads do not move — where a family sits is a decision you made about the WHOLE and it is kept exactly; the parts come to it, keeping the order they already had among themselves, and a part that was queued ahead of its whole comes back down to it. Everything else in the queue stays where it is. This writes the 🎯 block ONLY: no line moves, no code changes, no item is filed anywhere else — that is the button beside it. One family at a time is on a row's own right-click menu (Gather its parts under it).">⚭ Gather families</button>
+                  queue entry. Tidy comes first because it repairs the file;
+                  Gather follows it because it arranges the queue. */''}
             <button class="secondary" data-act="blTidy"
                 title="Put the file back in its own order, in two moves. FIRST, an item filed under somebody else's heading goes back under its own — a P-coded line parked in the ## U section is invisible to anyone scrolling to ## P for it, and this page hides that damage because it groups by the CODE and draws the row in the right place regardless. THEN each area's items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Your order is untouched by both: the queue names codes, and a code does not care which line it is on. A section with prose between its items is left alone and said so, and an area with no heading in the file is never invented.">🧹 Tidy file order</button>
+            <button class="secondary" data-act="blGather"
+                title="Pull every PART up under its whole, so a family reads as one run in the queue instead of being scattered through it. The heads do not move — where a family sits is a decision you made about the WHOLE and it is kept exactly; the parts come to it, keeping the order they already had among themselves, and a part that was queued ahead of its whole comes back down to it. Everything else in the queue stays where it is. This writes the 🎯 block ONLY: no line moves, no code changes, no item is filed anywhere else — that is the button beside it. One family at a time is on a row's own right-click menu (Gather its parts under it).">⚭ Gather families</button>
             <button class="secondary" data-act="blArchive"
-                title="Move closed items under an archive heading at the end of the same file">🗄 Archive closed</button>
+                title="Move every closed item under the archive heading at the end of the same file">🗄 Archive all closed</button>
+            <span class="pj-bl-archive-age" title="Archive only closed items whose recorded closing time is more than this many days old. Items with no closing date stay visible; they are never guessed to be old.">
+                <input id="bl-archive-days" type="number" min="0" step="1" inputmode="numeric"
+                    value="${C.esc(blArchiveDays)}" placeholder="days" aria-label="Days old">
+                <button class="secondary" data-act="blArchiveAge">Archive older</button>
+            </span>
             ${openWithHtml(d.path)}
         </div>
 
@@ -4637,6 +4659,31 @@
     const trkStat = (value, label, title) =>
         `<span class="pj-trk-stat" title="${C.esc(title)}"><b>${C.esc(String(value))}</b> ${C.esc(label)}</span>`;
 
+    /** The closing badge names a session#turn, so it is the most direct door
+     *  into that history. Resolve it against the runs already on this row — no
+     *  second lookup and no guess from a short id. A legacy/outside stamp with
+     *  no matching transcript stays an honest, non-clickable code badge. */
+    function trkStampHtml(row) {
+        if (!row.stamp) { return ''; }
+        const stamp = String(row.stamp);
+        const cut = stamp.lastIndexOf('#');
+        const short = cut > 0 ? stamp.slice(0, cut) : '';
+        const turn = cut > 0 ? Number(stamp.slice(cut + 1)) : 0;
+        const run = (row.sessions || []).find(s => s.short === short);
+        const at = run && (run.turns || []).find(t => Number(t.n) === turn);
+        const title = window.AFTip.lines([
+            `Closed at: ${stamp}`,
+            row.closedTs ? window.AFTime.full(row.closedTs) : '',
+            run && run.file ? 'Click to open that transcript at this turn' : 'No transcript file is available for this stamp',
+            row.stampCarried ? 'Carried from the last session that worked it — the closing click itself was made in the panel, in no session' : ''
+        ]);
+        const body = `${C.esc(stamp)}${row.stampCarried ? '~' : ''}`;
+        return run && run.file
+            ? `<button class="pj-trk-stamp" data-trackturn="${C.esc(run.file)}"
+                data-trackts="${Number((at && at.ts) || run.firstTs) || 0}" title="${C.esc(title)}">${body}</button>`
+            : `<code class="pj-trk-stamp" title="${C.esc(title)}">${body}</code>`;
+    }
+
     // -----------------------------------------------------------------------
 
     function trackHtml() {
@@ -5148,11 +5195,7 @@
                 ${trkFamilyHtml(row)}
                 ${row.backfilled ? `<span class="pj-trk-m" title="${C.esc('Reconstructed: some rows below are marked guess')}">⚕</span>` : ''}
                 ${row.doubtful ? `<span class="pj-trk-doubt" title="${C.esc('Uncertain: the run that carries it says why')}">uncertain</span>` : ''}
-                ${row.stamp ? `<code class="pj-trk-stamp" title="${C.esc(window.AFTip.lines([
-            `Closed at: ${row.stamp}`,
-            row.closedTs ? window.AFTime.full(row.closedTs) : '',
-            row.stampCarried ? 'Carried from the last session that worked it — the closing click itself was made in the panel, in no session' : ''
-        ]))}">${C.esc(row.stamp)}${row.stampCarried ? '~' : ''}</code>` : ''}
+                ${trkStampHtml(row)}
                 <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
                     title="Open the backlog at this item's line">↗</button>
                 <button class="pj-bl-act" data-trkcopy="${C.esc(row.code)}"
@@ -5786,6 +5829,10 @@
     }
 
     function wire() {
+        const archiveDays = document.getElementById('bl-archive-days');
+        if (archiveDays) {
+            archiveDays.addEventListener('input', () => { blArchiveDays = archiveDays.value; });
+        }
         document.querySelectorAll('[data-pick]').forEach(el =>
             el.addEventListener('click', () => {
                 selectedId = el.dataset.pick; people = null; creating = null; render();
@@ -6900,6 +6947,16 @@
                     break;
                 }
                 case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;
+                case 'blArchiveAge': {
+                    const raw = String(blArchiveDays || '').trim();
+                    if (!/^\d+$/.test(raw)) {
+                        flash = { error: 'Enter a whole number of days, then press Archive older.' };
+                        render();
+                        break;
+                    }
+                    vscode.postMessage({ type: 'backlogArchive', id, olderThanDays: Number(raw) });
+                    break;
+                }
                 // Empties the 🎯 block. Nothing is lost: every item falls back
                 // to the place the file already has for it.
                 case 'blTidy': vscode.postMessage({ type: 'backlogTidy', id }); break;
