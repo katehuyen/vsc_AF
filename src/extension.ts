@@ -122,9 +122,23 @@ import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, s
 import { revealPath } from './core/reveal';
 import {
     agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
-    folderNameFor, folderState, PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectPerson,
-    ProjectStatus, resolveSessionProject, rollupProjectSessions, UNASSIGNED, UNASSIGNED_ID
+    folderNameFor, folderState, PartsTotal, partsTotals, PROJECT_KINDS, PROJECT_STATUSES,
+    Project, ProjectPerson, ProjectStatus, resolveSessionProject, rollupProjectSessions,
+    UNASSIGNED, UNASSIGNED_ID
 } from './core/projects';
+import {
+    archiveRootFor, isInside as isInsideArchive, listArchived, moveProjectFolder,
+    planArchive, planRestore
+} from './core/projectArchive';
+import {
+    applyTemplate, coerceTemplates, describeTemplate, findTemplate, ProjectTemplate,
+    removeTemplate, TemplateBacklogItem, TemplateFromOptions, TemplatePlanItem,
+    templateFromProject, upsertTemplate
+} from './core/projectTemplates';
+import {
+    buildHandover, HandoverInput, HandoverItem, HandoverRecord, HandoverUnfinished,
+    HANDOVER_NOTES_ANCHOR, mergeHandoverNotes
+} from './core/projectHandover';
 import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
@@ -1187,6 +1201,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Where new project folders are offered, and what a rescan walks. */
     const projectsRoot = (): string => (cfg().get<string>('projectsRoot', '') || '').trim();
     const projectSkeleton = () => normalizeSkeleton(cfg().get('projectSkeleton', []));
+    /** Where an archived project's folder goes — configured, or derived next to
+     *  the projects root the way the surrounding vault mirrors its own folders. */
+    const projectArchiveRoot = (): string =>
+        archiveRootFor(projectsRoot(), (cfg().get<string>('projectsArchiveRoot', '') || '').trim());
+    /** The saved templates. Read from the setting every time rather than cached:
+     *  the user edits this file by hand, and a list held in memory would keep
+     *  offering a template they just deleted. */
+    const projectTemplates = (): ProjectTemplate[] => coerceTemplates(cfg().get('projectTemplates', []));
+    const saveProjectTemplates = async (list: ProjectTemplate[]): Promise<void> => {
+        await cfg().update('projectTemplates', list, vscode.ConfigurationTarget.Global);
+    };
     /** The window's active project — what sessions started here are filed under. Window-scoped
      *  on purpose: it means "what am I working on right now", which is not a
      *  property of an agent and not a thing to share between windows. */
@@ -1302,7 +1327,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const repos = (p.repos ?? []).filter(r => !!r?.trim());
         const hasFolder = !!folder && dirExists(folder);
         const scan = hasFolder ? scanProjectFolder(folder) : { roles: {}, decisions: [] };
-        const seed = { project: p, roles: scan.roles, repos, decisions: scan.decisions };
+        const parent = p.parentId ? projectStore.get(p.parentId) : undefined;
+        const parts = projectStore.childrenOf(p.id).map(c => c.name);
+        const seed = {
+            project: p, roles: scan.roles, repos, decisions: scan.decisions,
+            ...(parent ? { parent: parent.name } : {}),
+            ...(parts.length ? { parts } : {})
+        };
         // ‼️ TWO briefs, on purpose, and they must not be the same text.
         // The FILE is the full one — it is what the "[cut to fit — the full
         // brief is at …]" line in the injected copy points at, so a file holding
@@ -4316,7 +4347,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.list',
-            describe: 'Every project with its cost rollup and current warnings. A session belongs to exactly ONE project (explicit assignment first, then the longest matching folder root, then the agent rule), so the rows always add up to the fleet total — anything unclaimed is in "Unassigned". args: status? (planned|active|paused|done|archived — filter)',
+            describe: 'Every project with its cost rollup and current warnings. A session belongs to exactly ONE project (explicit assignment first, then the longest matching folder root, then the agent rule), so the rows always add up to the fleet total — anything unclaimed is in "Unassigned". A project that is PART OF another carries parent; one that HAS parts carries them in children and their folded figures in parts — ‼️ stated separately and never added into the parent\'s own row, or the rows would stop summing. args: status? (planned|active|paused|done|archived — filter)',
             handler: (args) => {
                 const status = optStr(args, 'status').trim().toLowerCase();
                 return projectStore.all()
@@ -4326,7 +4357,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.get',
-            describe: 'One project in full: identity, folder and its state, repos, people, budgets, cost rollup, warnings, and which document holds which role (charter/plan/log/people/deliverables — found by frontmatter, never by file name). args: project (id or name)',
+            describe: 'One project in full: identity, folder and its state (including whether it is sitting in the archive), the project it is part of and the parts it has, repos, people, budgets, cost rollup, warnings, and which document holds which role (charter/plan/log/people/deliverables/handover — found by frontmatter, never by file name). args: project (id or name)',
             handler: (args) => {
                 const p = projectStore.get(argStr(args, 'project'));
                 need(p, 'no such project — projects.list shows them');
@@ -4337,40 +4368,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.create',
-            describe: 'Create a project and build its folder. The folder is where everything a human writes about the project lives; pass folder? to say where, otherwise agentFarm.projectsRoot/<name> is used. Nothing existing is ever overwritten. args: name, folder?, kind? (product|customer|internal|research|personal|ops), status?, summary?, repos? (code roots), agents? (rule), budgetUSD?, budgetTotalUSD?, parentId?, tags?, skipFolder? (true = register it without touching disk)',
+            describe: 'Create a project and build its folder. The folder is where everything a human writes about the project lives; pass folder? to say where, otherwise agentFarm.projectsRoot/<name> is used. Nothing existing is ever overwritten. A template? fills the fields it carries and seeds the plan and backlog lines it holds — and ‼️ ANY FIELD YOU PASS EXPLICITLY BEATS THE TEMPLATE, so a form that offers both applies what the person is looking at. args: name, template? (projects.templates lists them), folder?, kind? (product|customer|internal|research|personal|ops), status?, summary?, repos? (code roots), agents? (rule), budgetUSD?, budgetTotalUSD?, parentId? (this project is PART OF that one — one level only), tags?, skipFolder? (true = register it without touching disk)',
             handler: (args) => {
                 const name = argStr(args, 'name').trim();
                 need(name, 'a project needs a name');
                 const explicit = optStr(args, 'folder').trim();
                 const root = projectsRoot();
                 const folder = explicit || (root ? path.join(root, folderNameFor(name)) : '');
-                const res = projectStore.create({
-                    name,
-                    ...(folder ? { folder } : {}),
+
+                const wanted = optStr(args, 'template').trim();
+                const template = wanted ? findTemplate(projectTemplates(), wanted) : undefined;
+                need(!wanted || !!template,
+                    `no template called "${wanted}" — projects.templates shows them`);
+                // the template first, then everything the caller actually typed
+                const fields = applyTemplate(template, {
                     ...(PROJECT_KINDS.includes(optStr(args, 'kind') as never)
                         ? { kind: optStr(args, 'kind') as Project['kind'] } : {}),
                     ...(PROJECT_STATUSES.includes(optStr(args, 'status') as never)
                         ? { status: optStr(args, 'status') as ProjectStatus } : {}),
-                    ...(optStr(args, 'summary') ? { summary: optStr(args, 'summary') } : {}),
+                    ...(args.summary !== undefined ? { summary: optStr(args, 'summary') } : {}),
                     ...(Array.isArray(args.repos) ? { repos: args.repos as string[] } : {}),
                     ...(Array.isArray(args.agents) ? { match: { agents: args.agents as string[] } } : {}),
                     ...(typeof args.budgetUSD === 'number' ? { budgetUSD: args.budgetUSD } : {}),
                     ...(typeof args.budgetTotalUSD === 'number' ? { budgetTotalUSD: args.budgetTotalUSD } : {}),
-                    ...(optStr(args, 'parentId') ? { parentId: optStr(args, 'parentId') } : {}),
                     ...(Array.isArray(args.tags) ? { tags: args.tags as string[] } : {})
+                });
+                const res = projectStore.create({
+                    name,
+                    ...(folder ? { folder } : {}),
+                    ...fields,
+                    ...(optStr(args, 'parentId') ? { parentId: optStr(args, 'parentId') } : {})
                 });
                 need(!res.error, res.error ?? '');
                 const project = res.project as Project;
                 let skeleton: { created: string[]; skipped: string[]; failed: unknown[] } | undefined;
                 if (project.folder && args.skipFolder !== true) {
-                    skeleton = createSkeleton(project.folder, project, projectSkeleton());
+                    skeleton = createSkeleton(project.folder, project,
+                        normalizeSkeleton(template?.skeleton ?? projectSkeleton()));
                 }
+                const seeded = template && args.skipFolder !== true
+                    ? seedFromTemplate(project, template) : undefined;
                 projectsChanged();
                 return {
                     ...projectView(project),
+                    ...(template ? { template: template.name } : {}),
                     folderCreated: skeleton?.created.length ?? 0,
                     folderSkipped: skeleton?.skipped.length ?? 0,
-                    folderFailed: skeleton?.failed ?? []
+                    folderFailed: skeleton?.failed ?? [],
+                    ...(seeded ? { seededPlan: seeded.plan, seededBacklog: seeded.backlog, seedErrors: seeded.errors } : {})
                 };
             }
         },
@@ -4491,7 +4536,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     briefFile: folder && dirExists(folder) ? path.join(folder, BRIEF_REL) : null,
                     brief: buildBrief({
                         project, roles: scan.roles, decisions: scan.decisions,
-                        repos: project.repos ?? []
+                        repos: project.repos ?? [],
+                        ...(project.parentId && projectStore.get(project.parentId)
+                            ? { parent: (projectStore.get(project.parentId) as Project).name } : {}),
+                        ...(projectStore.childrenOf(project.id).length
+                            ? { parts: projectStore.childrenOf(project.id).map(c => c.name) } : {})
                     })
                 };
             }
@@ -4714,6 +4763,153 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 NoticesPanel.refreshIfOpen();
                 updateNoticesBadge();
                 return { project: (p as Project).name, days, noticeId: n.id, reportPath, markdown };
+            }
+        },
+        {
+            op: 'projects.handover',
+            describe: 'The COLD-START LETTER for a project, as markdown — not a report of a period but a starting position: what it is (its charter\'s own words), where every document and code root is, who to ask, where it stands, what is open, ‼️ what somebody already fought and left OPEN (out of the track ledger — the most expensive thing to rediscover), why it is built this way (its decisions), what has shipped, how it is actually worked, and a numbered first five minutes. args: project (id or name), write? (true also writes it into the project folder as an af-role: handover document — ‼️ a MERGE, not an overwrite: everything below the notes marker is the user\'s and is carried across verbatim, and a document that has lost its marker is refused rather than rewritten)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const res = buildProjectHandover((p as Project).id, args.write === true);
+                need(!res.error, res.error ?? '');
+                return {
+                    project: (p as Project).name,
+                    ...(res.file ? { file: res.file } : {}),
+                    markdown: res.markdown
+                };
+            }
+        },
+        {
+            op: 'projects.templates',
+            describe: 'The saved project templates (agentFarm.projectTemplates) with a line each saying what they actually carry. ‼️ The list ships EMPTY on purpose — a template is a claim about how the user works, so it is derived from a project that already proved itself (projects.template.save) rather than guessed at. args: none',
+            handler: () => projectTemplates().map(t => ({
+                name: t.name,
+                description: t.description ?? null,
+                carries: describeTemplate(t),
+                fromProject: t.fromProject ?? null,
+                savedAt: t.savedAt ? localStamp(t.savedAt) : null
+            }))
+        },
+        {
+            op: 'projects.template.save',
+            describe: 'Save a project as a template. Everything is opt-in: pass identity? (kind, summary, tags, colour, icon), repos?, agents?, budgets?, people?, planItems? (true carries the plan\'s OPEN items), backlogItems? (true carries the next queued items) — what you do not tick does not travel. ‼️ An id, a folder and a parent are identity rather than shape and NEVER travel, and status does not either (a template off a finished project would create everything done). Saving over an existing name edits it in place. args: project (id or name), name (the template\'s own name — name it for the SHAPE, not for this project), description?, identity?, repos?, agents?, budgets?, people?, planItems?, backlogItems?, skeleton? (true carries this machine\'s configured folder skeleton)',
+            handler: async (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const project = p as Project;
+                // optStr, not argStr: the refusal an agent reads should say what
+                // a template name IS, not "missing required string arg"
+                const name = optStr(args, 'name').trim();
+                need(name, 'a template needs a name of its own — name it for the SHAPE ("Client project"), not for the project it comes from');
+
+                const opts: TemplateFromOptions = {
+                    ...(args.identity === true ? { identity: true } : {}),
+                    ...(args.repos === true ? { repos: true } : {}),
+                    ...(args.agents === true ? { agents: true } : {}),
+                    ...(args.budgets === true ? { budgets: true } : {}),
+                    ...(args.people === true ? { people: true } : {}),
+                    ...(optStr(args, 'description') ? { description: optStr(args, 'description') } : {}),
+                    ...(args.skeleton === true ? { skeleton: projectSkeleton() } : {})
+                };
+                const folder = (project.folder ?? '').trim();
+                if ((args.planItems === true || args.backlogItems === true) && folder && dirExists(folder)) {
+                    const roles = scanRoles(folder);
+                    if (args.planItems === true && roles.plan) {
+                        const read = readProjectDoc(folder, relDoc(folder, roles.plan));
+                        if (read.ok) {
+                            const items: TemplatePlanItem[] = [];
+                            for (const s of planSummary(read.text ?? '').sections) {
+                                for (const i of s.items) {
+                                    if (!i.done) { items.push({ text: i.text, ...(s.title ? { section: s.title } : {}) }); }
+                                }
+                            }
+                            if (items.length) { opts.plan = items; }
+                        }
+                    }
+                    if (args.backlogItems === true && roles.backlog) {
+                        const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+                        if (read.ok) {
+                            const items: TemplateBacklogItem[] = nextBacklog(read.text ?? '',
+                                { limit: 20, maxEffort: 'XL' }).items.map(i => ({
+                                    text: i.text,
+                                    ...(i.area ? { area: i.area } : {}),
+                                    ...(i.effort ? { effort: i.effort } : {}),
+                                    ...(i.kinds?.length ? { kinds: i.kinds } : {})
+                                }));
+                            if (items.length) { opts.backlog = items; }
+                        }
+                    }
+                }
+                const made = templateFromProject(project, name, opts);
+                need(!made.error, made.error ?? '');
+                const t = made.template as ProjectTemplate;
+                await saveProjectTemplates(upsertTemplate(projectTemplates(), t));
+                return { name: t.name, carries: describeTemplate(t), fromProject: project.name };
+            }
+        },
+        {
+            op: 'projects.template.delete',
+            describe: 'Forget a saved project template. No project is affected — a template is a starting shape, not a link. args: name',
+            handler: async (args) => {
+                const name = argStr(args, 'name').trim();
+                const before = projectTemplates();
+                need(!!findTemplate(before, name), `no template called "${name}" — projects.templates shows them`);
+                await saveProjectTemplates(removeTemplate(before, name));
+                return { name, remaining: projectTemplates().length };
+            }
+        },
+        {
+            op: 'projects.archive',
+            describe: 'MOVE a project\'s folder to its archive counterpart, or bring it back (restore: true). ‼️ This touches the user\'s own files, so: it is never a side effect of a status change, it refuses to land on anything that already exists, the folder keeps its name (vault links point at it), and the registry follows the move so nothing points at a folder that is not there. Where it goes: agentFarm.projectsArchiveRoot, or derived next to the projects root as <parent>/99_ARCHIVE/<root>_ARCHIVE. Call it once with no apply to see both paths, then again with apply: true. args: project (id or name), restore? (move it back out), apply? (true actually moves; anything else only describes the move)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const project = p as Project;
+                const restore = args.restore === true;
+                const root = projectArchiveRoot();
+                const plan = restore
+                    ? planRestore(project.folder ?? '', projectsRoot(), root)
+                    : planArchive(project.folder ?? '', root);
+                if (args.apply !== true) {
+                    return {
+                        project: project.name, action: restore ? 'restore' : 'archive',
+                        from: plan.from, to: plan.to,
+                        ...(plan.error ? { error: plan.error } : {}),
+                        moved: false,
+                        note: plan.error ? 'nothing was moved' : 'pass apply: true to actually move it'
+                    };
+                }
+                const res = archiveProjectFolder(project.id, restore);
+                need(res.ok, res.error ?? 'the folder could not be moved');
+                return {
+                    project: project.name, action: restore ? 'restore' : 'archive',
+                    from: res.from, to: res.to, moved: true,
+                    ...(res.warning ? { warning: res.warning } : {})
+                };
+            }
+        },
+        {
+            op: 'projects.archived',
+            describe: 'What is sitting in the archive root, read from the FOLDER rather than from the registry — a project deleted from the registry still has its folder, and that folder is exactly what somebody goes looking for two years later. Each row says whether this machine still knows the project. args: none',
+            handler: () => {
+                const root = projectArchiveRoot();
+                const known = projectStore.all();
+                return {
+                    root: root || null,
+                    folders: listArchived(root).map(f => {
+                        const project = known.find(p =>
+                            (p.folder ?? '').toLowerCase() === f.path.toLowerCase());
+                        return {
+                            name: f.name, path: f.path, modified: localStamp(f.mtime),
+                            project: project ? project.name : null,
+                            status: project ? project.status : null
+                        };
+                    })
+                };
             }
         },
         {
@@ -9382,6 +9578,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * Which project a project command is about.
+     *
+     * In order: what the caller passed (a page button, a tree row), then the
+     * window's active project, then a picker. The middle step is the one that
+     * matters — a command run from the palette while the status bar already says
+     * what you are working on must not ask you to say it again. Unlike
+     * `chooseActiveProject` this never WRITES the active project: reading a
+     * project's handover is not a statement about what you are working on.
+     */
+    const resolveProjectArg = async (
+        arg: { id?: string; row?: { project?: { id?: string } } } | undefined, placeHolder: string
+    ): Promise<string> => {
+        // a page button sends {id}; a sidebar row sends the tree node itself,
+        // and a command that only understood one of the two would be dead in
+        // whichever surface was written second
+        const given = arg?.id ?? arg?.row?.project?.id ?? '';
+        if (given && projectStore.get(given)) { return given; }
+        const active = activeProjectId();
+        if (!given && active && projectStore.get(active)) { return active; }
+        const all = projectStore.all();
+        if (!all.length) {
+            void vscode.window.showInformationMessage(
+                'Agent Farm: there is no project yet. Make one on the Projects page.');
+            return '';
+        }
+        const pick = await vscode.window.showQuickPick(
+            all.map(p => ({
+                label: `${p.icon ? p.icon + ' ' : ''}${p.name}`,
+                description: p.summary ?? p.status,
+                id: p.id
+            })),
+            { placeHolder, ignoreFocusOut: true });
+        return pick?.id ?? '';
+    };
+
+    /**
      * ‼️ WHICH PROJECT **THIS** SESSION IS FILED UNDER — a per-launch answer,
      * and it OPENS ON THE WINDOW'S ACTIVE PROJECT when there is one.
      *
@@ -10045,19 +10277,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return out;
     };
+    /**
+     * Each parent's parts, folded — the one implementation of that sum.
+     *
+     * ‼️ IT IS HANDED BACK SEPARATELY AND IS NEVER ADDED INTO THE PARENT'S OWN
+     * FIGURES. Sessions are disjoint so the addition would be legal, and it
+     * would still make every project row stop summing to the fleet total.
+     */
+    const projectParts = (): Record<string, PartsTotal> => {
+        const projects = projectStore.all();
+        const roll = projectRollup();
+        return partsTotals(projects, projects.map(p => {
+            const r = roll.find(x => x.name === p.name);
+            return {
+                id: p.id, name: p.name, sessions: r?.sessions ?? 0, cost: r?.cost ?? 0,
+                tokens: r?.tokens ?? 0, todayCost: r?.todayCost ?? 0, agents: [],
+                lastTs: r?.lastTs ?? 0
+            };
+        }));
+    };
     /** One project, as every bridge op reports it. */
     const projectView = (p: Project) => {
         const roll = projectRollup().find(r => r.name === p.name);
+        const parent = p.parentId ? projectStore.get(p.parentId) : undefined;
+        const children = projectStore.childrenOf(p.id);
+        const parts = projectParts()[p.id];
         return {
             id: p.id, name: p.name, status: p.status, kind: p.kind ?? null,
             folder: p.folder ?? null, folderState: projectFolderState(p),
             repos: p.repos ?? [], parentId: p.parentId ?? null,
+            parent: parent ? { id: parent.id, name: parent.name, status: parent.status } : null,
+            children: children.map(c => {
+                const cr = projectRollup().find(x => x.name === c.name);
+                return {
+                    id: c.id, name: c.name, status: c.status,
+                    sessions: cr?.sessions ?? 0, cost: cr?.cost ?? 0, lastTs: cr?.lastTs ?? 0
+                };
+            }),
+            // stated as its own figure, with the count that makes it readable
+            parts: parts ?? null,
             summary: p.summary ?? null, tags: p.tags ?? [],
             people: p.people ?? [], agentRules: p.match?.agents ?? [],
             budgetUSD: p.budgetUSD ?? null, budgetTotalUSD: p.budgetTotalUSD ?? null,
             sessions: roll?.sessions ?? 0, cost: roll?.cost ?? 0,
             todayCost: roll?.todayCost ?? 0, tokens: roll?.tokens ?? 0,
             lastTs: roll?.lastTs ?? 0,
+            archived: !!p.folder && !!projectArchiveRoot() && isInsideArchive(p.folder, projectArchiveRoot()),
             warnings: projectWarnings(p)
         };
     };
@@ -10659,6 +10924,312 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(noBacklog ? { noBacklog: true } : {}),
                 ...((p.repos ?? []).length ? {} : { noRepos: true })
             }
+        };
+    };
+
+    // ---------- Faz 7: the handover, the templates, the archive ----------
+
+    /**
+     * Everything the cold-start letter is built from.
+     *
+     * It reuses nothing from `projectReportInput` on purpose — a report is a
+     * PERIOD and a handover is a STARTING POSITION, so they ask the folder
+     * different questions (the report wants what closed this week; this wants
+     * what was started and abandoned, and where every file is).
+     */
+    const projectHandoverInput = (id: string): HandoverInput | undefined => {
+        const p = projectStore.get(id);
+        if (!p) { return undefined; }
+        const now = Date.now();
+        const folder = (p.folder ?? '').trim();
+        const hasFolder = !!folder && dirExists(folder);
+        const scan = hasFolder ? scanProjectFolder(folder) : undefined;
+        const roles = scan?.roles ?? ({} as ReturnType<typeof scanRoles>);
+
+        const sessions = sessionsOfProject(id);
+        const cost = projectCostFor(id);
+        const tasks = tasksOfProject(id);
+        const notices = noticesOfProject(id);
+        const queue = queueOfProject(id);
+
+        // ---- the plan and the backlog, in the documents' own words ----
+        const plan: HandoverItem[] = [];
+        let noPlan = true;
+        if (hasFolder && roles.plan) {
+            noPlan = false;
+            const read = readProjectDoc(folder, relDoc(folder, roles.plan));
+            if (read.ok) {
+                for (const s of planSummary(read.text ?? '').sections) {
+                    for (const i of s.items) { if (!i.done) { plan.push({ text: i.text }); } }
+                }
+            }
+        }
+        const backlog: HandoverItem[] = [];
+        const blocked: HandoverItem[] = [];
+        const unfinished: HandoverUnfinished[] = [];
+        let noBacklog = true;
+        if (hasFolder && roles.backlog) {
+            noBacklog = false;
+            const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+            if (read.ok) {
+                const text = read.text ?? '';
+                for (const i of nextBacklog(text, { limit: 6, maxEffort: 'XL' }).items) {
+                    backlog.push({ code: i.code ?? undefined, text: i.text });
+                }
+                const parsed = parseBacklog(text);
+                const byCode = new Map(parsed.items.filter(x => x.code).map(x => [x.code as string, x]));
+                for (const i of parsed.items) {
+                    if (i.state === 'done' || i.state === 'cancelled') { continue; }
+                    const wait = (i.blockedBy ?? []).find(c => {
+                        const other = byCode.get(c);
+                        return !other || (other.state !== 'done' && other.state !== 'cancelled');
+                    });
+                    if (wait) { blocked.push({ code: i.code ?? undefined, text: i.text, blockedBy: wait }); }
+                }
+                // ‼️ ALREADY FOUGHT AND STILL OPEN — the single most expensive
+                // thing to rediscover, and the ONLY place it is written down is
+                // the track ledger. An item with turns against it and no closing
+                // event is somebody's abandoned afternoon.
+                const records = readTracks(folder);
+                for (const code of trackedCodes(records)) {
+                    const item = byCode.get(code);
+                    if (!item || item.state === 'done' || item.state === 'cancelled') { continue; }
+                    const sum = summarizeCode(code, records);
+                    if (sum.closed || !sum.turns) { continue; }
+                    const last = [...records].filter(r => r.code === code && r.note)
+                        .sort((a, b) => b.ts - a.ts)[0];
+                    unfinished.push({
+                        code, text: item.text, sessions: sum.runs.length, lastTs: sum.lastTs,
+                        ...(last?.note ? { note: last.note } : {})
+                    });
+                }
+                unfinished.sort((a, b) => b.lastTs - a.lastTs);
+            }
+        }
+
+        // ---- the charter's own answer to "what is this" ----
+        let charter: string | undefined;
+        if (hasFolder && roles.charter) {
+            const read = readProjectDoc(folder, relDoc(folder, roles.charter));
+            if (read.ok) {
+                // the prose only: the frontmatter is machinery and the H1 is the
+                // project's name, which the letter already carries
+                const body = (read.text ?? '')
+                    .replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+                    .replace(/^#\s+.*$/m, '')
+                    .replace(/<!--[\s\S]*?-->/g, '')
+                    .trim();
+                if (body) { charter = body.length > 1800 ? body.slice(0, 1800) + '…' : body; }
+            }
+        }
+
+        const feed = hasFolder ? docFeedOf(p) : [];
+        const decisions: HandoverRecord[] = feed
+            .filter(d => d.kind === 'decision')
+            .sort((a, b) => b.ts - a.ts).slice(0, 12)
+            .map(d => ({ ts: d.ts, title: d.title, ...(d.detail ? { detail: d.detail } : {}) }));
+        const deliverables: HandoverRecord[] = feed
+            .filter(d => d.kind === 'deliverable')
+            .sort((a, b) => b.ts - a.ts).slice(0, 10)
+            .map(d => ({ ts: d.ts, title: d.title, ...(d.detail ? { detail: d.detail } : {}) }));
+
+        const worklog: string[] = [];
+        if (hasFolder && roles.log) {
+            const read = readProjectDoc(folder, relDoc(folder, roles.log));
+            if (read.ok) {
+                worklog.push(...(read.text ?? '').split(/\r?\n/).filter(l => /^\s*-\s/.test(l)).slice(0, 6));
+            }
+        }
+
+        const parent = p.parentId ? projectStore.get(p.parentId) : undefined;
+        const children = projectStore.childrenOf(p.id);
+        const input: HandoverInput = {
+            now,
+            project: {
+                name: p.name, status: p.status,
+                ...(p.kind ? { kind: p.kind } : {}),
+                ...(p.summary ? { summary: p.summary } : {}),
+                ...(p.folder ? { folder: p.folder } : {}),
+                ...(p.folder && !hasFolder ? { folderMissing: true } : {}),
+                ...((p.repos ?? []).length
+                    ? {
+                        repos: (p.repos ?? []).map(r => ({
+                            path: r, ...(dirExists(r) ? {} : { missing: true })
+                        }))
+                    } : {}),
+                ...(p.people?.length
+                    ? {
+                        people: p.people.map(x => ({
+                            name: x.name, role: x.role, ...(x.contact ? { contact: x.contact } : {})
+                        }))
+                    } : {}),
+                ...(p.tags?.length ? { tags: p.tags } : {}),
+                ...(p.startedAt ? { startedAt: p.startedAt } : {}),
+                ...(p.dueAt ? { dueAt: p.dueAt } : {}),
+                ...(p.budgetUSD ? { budgetUSD: p.budgetUSD } : {}),
+                ...(p.budgetTotalUSD ? { budgetTotalUSD: p.budgetTotalUSD } : {}),
+                warnings: projectWarnings(p)
+            },
+            ...(parent ? { parent: { name: parent.name, status: parent.status } } : {}),
+            ...(children.length
+                ? { children: children.map(c => ({ name: c.name, status: c.status })) } : {}),
+            docs: Object.entries(roles)
+                .filter(([, file]) => !!file)
+                .map(([role, file]) => ({ role, path: relDoc(folder, file as string) })),
+            ...(charter ? { charter } : {}),
+            plan: plan.slice(0, 10),
+            backlog,
+            blocked: blocked.slice(0, 6),
+            decisions,
+            deliverables,
+            unfinished: unfinished.slice(0, 6),
+            work: {
+                runningTasks: tasks.filter(t => t.status === 'running').length,
+                queuedTasks: tasks.filter(t => t.status === 'queued').length,
+                liveMissions: missionsOfProject(id).filter(r =>
+                    r.status === 'running' || r.status.startsWith('waiting') || r.status === 'paused').length,
+                openQuestions: notices.filter(n =>
+                    n.type === 'question' && (n.status ?? 'open') === 'open').length,
+                blockedQueue: queue.filter(q => q.status === 'blocked').length
+            },
+            sessions: {
+                n: sessions.length,
+                turns: sessions.reduce((a, s) => a + (s.turns ?? []).length, 0),
+                agents: [...new Set(sessions.map(s => s.agentName).filter((x): x is string => !!x))].sort(),
+                ...(sessions.length
+                    ? {
+                        firstTs: Math.min(...sessions.map(s => s.firstTs || s.mtime || 0).filter(Boolean)),
+                        lastTs: Math.max(...sessions.map(s => s.lastTs || s.mtime || 0))
+                    } : {})
+            },
+            cost: { total: cost.total, today: cost.today },
+            worklog,
+            gaps: {
+                ...(hasFolder ? {} : { noFolder: true }),
+                ...(noPlan ? { noPlan: true } : {}),
+                ...(noBacklog ? { noBacklog: true } : {}),
+                ...(hasFolder && roles.charter ? {} : { noCharter: true })
+            }
+        };
+        const analysis = projectAnalysisView(id);
+        if (analysis.state === 'ok') { input.analysis = analysis; }
+        return input;
+    };
+
+    /**
+     * Build the handover and, when asked, put it in the project's folder.
+     *
+     * ‼️ WRITING IS A MERGE, NOT AN OVERWRITE. Everything below the notes marker
+     * is the user's and is carried across verbatim; a document that has LOST its
+     * marker is not written at all and says so. That is the whole reason this
+     * feature can be run twice.
+     */
+    const buildProjectHandover = (
+        id: string, write: boolean
+    ): { markdown?: string; file?: string; error?: string } => {
+        const p = projectStore.get(id);
+        if (!p) { return { error: 'no such project' }; }
+        const input = projectHandoverInput(id);
+        if (!input) { return { error: 'the project could not be read' }; }
+        if (!write) { return { markdown: buildHandover(input) }; }
+
+        const folder = (p.folder ?? '').trim();
+        if (!folder || !dirExists(folder)) {
+            return { error: 'this project has no folder on this machine, so there is nowhere to put it' };
+        }
+        const held = scanRoles(folder).handover;
+        const rel = held ? relDoc(folder, held) : 'Handover.md';
+        const existing = held ? readProjectDoc(folder, rel) : undefined;
+        const merged = mergeHandoverNotes(existing?.ok ? existing.text : undefined, input);
+        if (merged.error) { return { error: merged.error }; }
+        const body = `---\naf-role: handover\n---\n\n${merged.text ?? ''}`;
+        const res = writeProjectDoc(folder, rel, body, existing?.ok ? existing.mtimeMs : undefined);
+        if (!res.ok) { return { error: res.error ?? 'the handover could not be written' }; }
+        return { markdown: merged.text, file: path.join(folder, rel) };
+    };
+
+    /**
+     * A template's plan and backlog lines, written into the new project's own
+     * documents.
+     *
+     * Seeding happens AFTER the skeleton, through the same `addPlanItem` /
+     * `addBacklogItem` the panel and the bridge use — so a seeded item is an
+     * ordinary item, in the user's own file, with a code issued by the same
+     * counter. A template that wrote its own markdown would produce lines the
+     * rest of the system cannot edit.
+     */
+    const seedFromTemplate = (
+        project: Project, t: ProjectTemplate
+    ): { plan: number; backlog: number; errors: string[] } => {
+        const out = { plan: 0, backlog: 0, errors: [] as string[] };
+        const folder = (project.folder ?? '').trim();
+        if (!folder || !dirExists(folder)) { return out; }
+
+        if (t.plan?.length) {
+            const doc = ensureRoleDoc(folder, project, 'plan', projectSkeleton());
+            if (doc.file) {
+                const rel = relDoc(folder, doc.file);
+                for (const item of t.plan) {
+                    const read = readProjectDoc(folder, rel);
+                    if (!read.ok) { out.errors.push(read.error ?? 'the plan could not be read'); break; }
+                    const edit = addPlanItem(read.text ?? '', item.text,
+                        item.section ? { section: item.section } : {});
+                    if (!edit.ok) { out.errors.push(edit.error ?? 'plan item refused'); continue; }
+                    const w = writeProjectDoc(folder, rel, edit.text ?? '', read.mtimeMs);
+                    if (w.ok) { out.plan++; } else { out.errors.push(w.error ?? 'the plan could not be written'); }
+                }
+            }
+        }
+        if (t.backlog?.length) {
+            const doc = ensureRoleDoc(folder, project, 'backlog', projectSkeleton());
+            if (doc.file) {
+                const rel = relDoc(folder, doc.file);
+                for (const item of t.backlog) {
+                    const read = readProjectDoc(folder, rel);
+                    if (!read.ok) { out.errors.push(read.error ?? 'the backlog could not be read'); break; }
+                    const edit = addBacklogItem(read.text ?? '', {
+                        text: item.text,
+                        ...(item.area ? { area: item.area } : {}),
+                        ...(item.priority ? { priority: item.priority as BacklogPriority } : {}),
+                        ...(item.effort ? { effort: item.effort as BacklogEffort } : {}),
+                        ...(item.kinds?.length ? { kinds: item.kinds } : {})
+                    });
+                    if (!edit.ok) { out.errors.push(edit.error ?? 'backlog item refused'); continue; }
+                    const w = writeProjectDoc(folder, rel, edit.text ?? '', read.mtimeMs);
+                    if (w.ok) { out.backlog++; } else { out.errors.push(w.error ?? 'the backlog could not be written'); }
+                }
+            }
+        }
+        return out;
+    };
+
+    /**
+     * Move a project's folder into the archive, or back out of it.
+     *
+     * ‼️ THE STATUS AND THE FOLDER ARE TWO DIFFERENT DECISIONS. This does not
+     * change the status and setting the status does not call this: "I am done
+     * with this" and "move a year of my notes" are different sentences, and only
+     * one of them is undone by clicking again. What it DOES do is keep the
+     * registry pointing at where the folder actually is — the one thing that
+     * must not be left to the caller.
+     */
+    const archiveProjectFolder = (
+        id: string, restore: boolean
+    ): { ok: boolean; from?: string; to?: string; error?: string; warning?: string } => {
+        const p = projectStore.get(id);
+        if (!p) { return { ok: false, error: 'no such project' }; }
+        const root = projectArchiveRoot();
+        const plan = restore
+            ? planRestore(p.folder ?? '', projectsRoot(), root)
+            : planArchive(p.folder ?? '', root);
+        if (plan.error) { return { ok: false, from: plan.from, to: plan.to, error: plan.error }; }
+        const res = moveProjectFolder(plan);
+        if (!res.ok) { return { ok: false, from: plan.from, to: plan.to, error: res.error }; }
+        projectStore.update(p.id, { folder: res.path });
+        projectsChanged();
+        return {
+            ok: true, from: plan.from, to: res.path,
+            ...(res.error ? { warning: res.error } : {})
         };
     };
 
@@ -11635,29 +12206,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const createProject = (input: {
         name: string; folder?: string; kind?: string; status?: string; summary?: string;
-        repos?: string[]; sessionIds?: string[];
-    }): { id?: string; error?: string; warning?: string } => {
+        repos?: string[]; sessionIds?: string[]; template?: string; parentId?: string;
+    }): { id?: string; error?: string; warning?: string; note?: string } => {
         const name = String(input.name ?? '').trim();
         const folder = String(input.folder ?? '').trim();
-        const res = projectStore.create({
-            name,
-            ...(folder ? { folder } : {}),
+        const template = input.template ? findTemplate(projectTemplates(), input.template) : undefined;
+        if (input.template && !template) {
+            return { error: `there is no template called "${input.template}" any more` };
+        }
+        // ‼️ the template first, then everything the form actually states — the
+        // field somebody is looking at must not silently revert to a preset
+        const fields = applyTemplate(template, {
             ...(input.kind ? { kind: input.kind as never } : {}),
             ...(input.status ? { status: input.status as never } : {}),
             ...(input.summary?.trim() ? { summary: input.summary.trim() } : {}),
             ...(input.repos?.length ? { repos: input.repos } : {})
         });
+        const res = projectStore.create({
+            name,
+            ...(folder ? { folder } : {}),
+            ...fields,
+            ...(input.parentId ? { parentId: input.parentId } : {})
+        });
         if (res.error || !res.project) { return { error: res.error ?? 'could not create the project' }; }
         let warning: string | undefined;
         if (folder) {
-            const built = createSkeleton(folder, res.project, projectSkeleton());
+            const built = createSkeleton(folder, res.project,
+                normalizeSkeleton(template?.skeleton ?? projectSkeleton()));
             if (built.failed.length) {
                 warning = `"${name}" was created, but part of its folder could not be: ${built.failed[0].error}`;
             }
         }
+        const seeded = template && folder ? seedFromTemplate(res.project, template) : undefined;
         if (input.sessionIds?.length) { projectStore.assignSessions(input.sessionIds, res.project.id); }
         projectsChanged();
-        return { id: res.project.id, warning };
+        const note = seeded && (seeded.plan || seeded.backlog)
+            ? `Project created from "${template?.name}" — ${seeded.plan} plan item(s) and `
+            + `${seeded.backlog} backlog item(s) seeded.`
+            : undefined;
+        return {
+            id: res.project.id,
+            warning: warning ?? (seeded?.errors.length ? seeded.errors[0] : undefined),
+            ...(note ? { note } : {})
+        };
     };
 
     /** Where a new project's folder would go, if the user does not say otherwise. */
@@ -11676,6 +12267,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             activeId: activeProjectId(),
             activeName: activeProject()?.name ?? '',
             projectsRoot: projectsRoot(),
+            archiveRoot: projectArchiveRoot(),
+            // the saved shapes, with the one line that says what each one
+            // actually does — built by the same function the quick pick uses
+            templates: projectTemplates().map(t => ({
+                name: t.name, description: t.description ?? '', carries: describeTemplate(t)
+            })),
             unassigned: unassignedTotals(),
             // Named so the page can say WHY a filter chip is missing instead of
             // just not having one — see UNFILED_EVENT_KINDS.
@@ -12262,6 +12859,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openSchedule: scheduleId => { TasksPanel.composePlan(tasksDeps, 'schedule', scheduleId); },
         openTrigger: triggerId => { TasksPanel.composePlan(tasksDeps, 'trigger', triggerId); },
         applyBackfill: ids => applySuggestions(ids),
+        // ---- Faz 7 ----
+        // All three go through the COMMANDS, which own the confirmation wording
+        // and the modal that prints both paths. A second copy of "are you sure"
+        // in a webview is the copy that eventually forgets to ask.
+        handover: async (id) => {
+            const res = buildProjectHandover(id, true);
+            if (res.file) {
+                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(res.file));
+                await vscode.window.showTextDocument(doc, { preview: false });
+            }
+            return { ...(res.error ? { error: res.error } : {}), ...(res.file ? { file: res.file } : {}) };
+        },
+        archive: async (id, restore) => {
+            await vscode.commands.executeCommand('agentfarm.archiveProject', { id, restore });
+        },
+        saveTemplate: async (id) => {
+            await vscode.commands.executeCommand('agentfarm.saveProjectTemplate', { id });
+        },
         onChange: () => { projectsTree.refresh(); paintProjectBar(); }
     });
 
@@ -13154,6 +13769,143 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!id) { return; }   // backed out, or went to make a new project
             }
             ProjectsPanel.show(projectsPanelDeps(), id, undefined, 'backlog');
+        }),
+
+        /**
+         * The handover, built and opened.
+         *
+         * It WRITES by default rather than showing a preview: a cold-start
+         * letter that lives in a scratch buffer is not a handover, it is a
+         * paragraph somebody read once. The merge rule protects the half that
+         * is the user's, so writing twice is safe — which is the only reason
+         * this can be the default.
+         */
+        vscode.commands.registerCommand('agentfarm.projectHandover', async (arg?: { id?: string }) => {
+            const id = await resolveProjectArg(arg, 'Whose handover?');
+            if (!id) { return; }
+            const res = buildProjectHandover(id, true);
+            if (res.error || !res.file) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'the handover could not be written'}`);
+                return;
+            }
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(res.file));
+            await vscode.window.showTextDocument(doc, { preview: false });
+            void vscode.window.showInformationMessage(
+                'Agent Farm: handover written. Everything below the notes marker is yours and '
+                + 'survives every rebuild — that is the half worth writing.');
+        }),
+
+        /**
+         * Archive (or restore) a project's FOLDER.
+         *
+         * ‼️ MODAL, AND IT PRINTS BOTH PATHS. This moves a year of somebody's
+         * notes; a toast with an Undo button is not enough, because the person
+         * who needs to stop it is the one who did not read the toast. The status
+         * is a separate question and is offered afterwards rather than applied.
+         */
+        vscode.commands.registerCommand('agentfarm.archiveProject',
+            async (arg?: { id?: string; restore?: boolean }) => {
+                const id = await resolveProjectArg(arg, 'Which project\'s folder?');
+                if (!id) { return; }
+                const p = projectStore.get(id);
+                if (!p) { return; }
+                const restore = arg?.restore === true;
+                const root = projectArchiveRoot();
+                const plan = restore
+                    ? planRestore(p.folder ?? '', projectsRoot(), root)
+                    : planArchive(p.folder ?? '', root);
+                if (plan.error) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${plan.error}`);
+                    return;
+                }
+                const verb = restore ? 'Restore' : 'Archive';
+                const answer = await vscode.window.showWarningMessage(
+                    `${verb} "${p.name}" — move its folder?`,
+                    {
+                        modal: true,
+                        detail: `From:\n${plan.from}\n\nTo:\n${plan.to}\n\n`
+                            + 'The folder keeps its name, nothing is merged into anything that is '
+                            + 'already there, and the project record follows the move. '
+                            + `${restore ? 'Archive' : 'Restore'} puts it back.`
+                    },
+                    verb);
+                if (answer !== verb) { return; }
+                const res = archiveProjectFolder(id, restore);
+                if (!res.ok) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'the folder could not be moved'}`);
+                    return;
+                }
+                if (res.warning) { void vscode.window.showWarningMessage(`Agent Farm: ${res.warning}`); }
+                // the status is the OTHER decision, so it is offered, not applied
+                const next = restore ? 'active' : 'archived';
+                const also = p.status === next ? undefined : await vscode.window.showInformationMessage(
+                    `Agent Farm: the folder is now at ${res.to}.`,
+                    `Also mark it ${next}`);
+                if (also) {
+                    projectStore.setStatus(id, next as ProjectStatus);
+                    projectsChanged();
+                }
+            }),
+
+        /**
+         * Save a project as a template — the only door into the template list,
+         * and the reason none are shipped.
+         *
+         * The multi-select is the whole design: what the user does not tick does
+         * not travel, so a template can never surprise somebody two projects
+         * later with a budget or a person they did not choose to carry.
+         */
+        vscode.commands.registerCommand('agentfarm.saveProjectTemplate', async (arg?: { id?: string }) => {
+            const id = await resolveProjectArg(arg, 'Save which project as a template?');
+            if (!id) { return; }
+            const p = projectStore.get(id);
+            if (!p) { return; }
+            const name = await vscode.window.showInputBox({
+                title: `Save "${p.name}" as a template`,
+                prompt: 'Name it for the SHAPE, not for this project — "Client project", not "TalkScribe"',
+                ignoreFocusOut: true,
+                validateInput: (v) => v.trim() ? undefined : 'a template needs a name'
+            });
+            if (!name?.trim()) { return; }
+
+            interface Part extends vscode.QuickPickItem { key: string }
+            const folder = (p.folder ?? '').trim();
+            const roles = folder && dirExists(folder) ? scanRoles(folder) : {};
+            const choices: Part[] = [
+                { key: 'identity', label: 'Kind, summary, tags, colour and icon', picked: true },
+                { key: 'repos', label: `Code roots (${(p.repos ?? []).length})` },
+                { key: 'agents', label: `Agent rule (${(p.match?.agents ?? []).length})` },
+                { key: 'budgets', label: 'Budgets', description: p.budgetUSD || p.budgetTotalUSD ? '' : 'none set' },
+                { key: 'people', label: `People (${(p.people ?? []).length})` },
+                { key: 'planItems', label: 'The plan\'s open items', description: roles.plan ? '' : 'no plan document' },
+                { key: 'backlogItems', label: 'The queued backlog items', description: roles.backlog ? '' : 'no backlog document' },
+                { key: 'skeleton', label: 'This machine\'s folder skeleton' }
+            ];
+            const picked = await vscode.window.showQuickPick(choices, {
+                title: `What travels into "${name.trim()}"?`,
+                placeHolder: 'What you do not tick does not travel — an id, a folder and a parent never do',
+                canPickMany: true, ignoreFocusOut: true
+            });
+            if (!picked) { return; }
+            const on = new Set(picked.map(x => x.key));
+            // ‼️ through the BRIDGE, not past it: the op is the one place that
+            // knows how to read the plan and the backlog into a template, and a
+            // second implementation here would be the copy that drifts
+            const res = await bridge.dispatch('projects.template.save', {
+                project: id, name: name.trim(),
+                identity: on.has('identity'), repos: on.has('repos'), agents: on.has('agents'),
+                budgets: on.has('budgets'), people: on.has('people'),
+                planItems: on.has('planItems'), backlogItems: on.has('backlogItems'),
+                skeleton: on.has('skeleton')
+            });
+            if (!res.ok) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'the template could not be saved'}`);
+                return;
+            }
+            const saved = res.result as { name: string; carries: string };
+            void vscode.window.showInformationMessage(
+                `Agent Farm: template "${saved.name}" saved — ${saved.carries}. `
+                + 'It is offered on the Projects page when you make a new project.');
         }),
 
         vscode.commands.registerCommand('agentfarm.setActiveProject', async (arg?: { id?: string }) => {

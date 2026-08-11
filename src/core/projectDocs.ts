@@ -36,11 +36,21 @@ import { slugify } from './util';
 // roles
 // ---------------------------------------------------------------------------
 
-/** What a document IS, independent of what it is called. */
+/**
+ * What a document IS, independent of what it is called.
+ *
+ * `handover` is not in the skeleton on purpose: it is BUILT from the project's
+ * own record when somebody asks for it, and shipping an empty one with every
+ * new project would put a file in the folder that says nothing and gets
+ * deleted. It is a role all the same, so once it exists the Docs tab knows what
+ * it is and a rename cannot hide it.
+ */
 export type ProjectDocRole =
-    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'backloglog' | 'brief';
+    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'backloglog'
+    | 'brief' | 'handover';
 export const PROJECT_DOC_ROLES: ProjectDocRole[] =
-    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'backloglog', 'brief'];
+    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'backloglog',
+        'brief', 'handover'];
 
 /** Where new log entries go. The user can move this line to change that — the
  *  mechanism is a marker, not a hard-coded position. */
@@ -1248,6 +1258,11 @@ export interface BriefInput {
     roles?: RoleMap;
     /** absolute code roots, already detokenised */
     repos?: string[];
+    /** The project this one is PART OF, and the parts it has. Names only: a
+     *  brief is read by an agent that will act on THIS project, and the parts
+     *  are context ("do not file that work here"), not a second registry. */
+    parent?: string;
+    parts?: string[];
     /** The project's decision records, newest first — from the SAME folder walk
      *  that produced `roles` (`scanProjectFolder`), so building a brief stays
      *  one pass over the directory even though it answers three questions. */
@@ -1421,6 +1436,15 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
     if (p.startedAt) { facts.push(`- Started: ${day(p.startedAt)}`); }
     if (p.dueAt) { facts.push(`- Due: ${day(p.dueAt)}`); }
     if (p.tags?.length) { facts.push(`- Tags: ${p.tags.join(', ')}`); }
+    // ‼️ A PART HAS TO KNOW IT IS ONE. An agent working inside ZEN that does not
+    // know TalkScribe exists files its worklog line, its decision and its
+    // backlog item in the wrong document — and the two folders are siblings, so
+    // nothing about the path says which.
+    if (o.parent) { facts.push(`- Part of: ${o.parent}`); }
+    if (o.parts?.length) {
+        facts.push(`- Parts: ${o.parts.join(' · ')} — each has its own folder and backlog; `
+            + 'work that belongs to one of them is written there, not here');
+    }
     out.push(...facts);
 
     const allPeople = (p.people ?? []).filter(x => x.name?.trim());

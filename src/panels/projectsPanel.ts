@@ -66,11 +66,13 @@ export interface ProjectsPanelDeps {
     /** Rename, optionally moving the folder with it. Returns an error/warning. */
     rename(id: string, name: string, renameFolder: boolean): string | undefined;
     remove(id: string): void;
-    /** Create one from the page's own form. */
+    /** Create one from the page's own form. A `template` fills what it carries
+     *  and seeds the plan and backlog lines it holds; anything the form states
+     *  explicitly beats it. `parentId` makes the new project a PART of another. */
     create(input: {
         name: string; folder?: string; kind?: string; status?: string; summary?: string;
-        repos?: string[]; sessionIds?: string[];
-    }): { id?: string; error?: string; warning?: string };
+        repos?: string[]; sessionIds?: string[]; template?: string; parentId?: string;
+    }): { id?: string; error?: string; warning?: string; note?: string };
     /** Where this name's folder would go by default (empty = no projects root set). */
     suggestFolder(name: string): string;
     /** Open the OS folder picker for the form. Undefined = the user cancelled. */
@@ -199,6 +201,16 @@ export interface ProjectsPanelDeps {
      * exactly where a stale list lives.
      */
     applyBackfill(sessionIds: string[]): { applied: number; skipped: string[] };
+
+    // ---- Faz 7: the letter, the shape, and the counterpart ----
+    /** Build the handover into the project's folder and open it. The write is a
+     *  MERGE — the human half of the document survives every rebuild. */
+    handover(id: string): Promise<{ error?: string; file?: string }>;
+    /** Move the project's folder to its archive counterpart, or back. The host
+     *  asks for confirmation with both paths before anything moves. */
+    archive(id: string, restore: boolean): Promise<void>;
+    /** Save this project as a template — the host asks what travels. */
+    saveTemplate(id: string): Promise<void>;
     onChange?(): void;
 }
 
@@ -495,10 +507,13 @@ export class ProjectsPanel {
                     status: typeof form.status === 'string' && form.status ? form.status : undefined,
                     summary: typeof form.summary === 'string' ? form.summary : undefined,
                     repos: Array.isArray(form.repos) ? form.repos.map(String) : undefined,
-                    sessionIds: Array.isArray(form.sessionIds) ? form.sessionIds.map(String) : undefined
+                    sessionIds: Array.isArray(form.sessionIds) ? form.sessionIds.map(String) : undefined,
+                    template: typeof form.template === 'string' && form.template ? form.template : undefined,
+                    parentId: typeof form.parentId === 'string' && form.parentId ? form.parentId : undefined
                 });
                 if (res.id) { this.focusId = res.id; }
-                this.done(res.error ?? res.warning, res.id && !res.error && !res.warning ? 'Project created.' : undefined);
+                this.done(res.error ?? res.warning,
+                    res.id && !res.error && !res.warning ? (res.note ?? 'Project created.') : undefined);
                 break;
             }
             case 'suggestFolder':
@@ -562,6 +577,27 @@ export class ProjectsPanel {
                 break;
             case 'rescan':
                 await this.deps.rescan();
+                this.done();
+                break;
+
+            // ---- Faz 7 ----
+            case 'handover': {
+                if (!id) { break; }
+                const res = await this.deps.handover(id);
+                this.done(res.error, res.file
+                    ? 'Handover written and opened. Everything below the notes marker is yours '
+                    + 'and survives every rebuild.'
+                    : undefined);
+                break;
+            }
+            case 'archive':
+                // the host confirms with both paths — the page never asks a
+                // question about somebody's files in a webview dialog
+                if (id) { await this.deps.archive(id, msg.restore === true); }
+                this.done();
+                break;
+            case 'saveTemplate':
+                if (id) { await this.deps.saveTemplate(id); }
                 this.done();
                 break;
 

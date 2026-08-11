@@ -68,7 +68,9 @@
         status: 'active',
         summary: '',
         repos: (seed && seed.repos) || [],
-        sessionIds: (seed && seed.sessionIds) || []
+        sessionIds: (seed && seed.sessionIds) || [],
+        template: (seed && seed.template) || '',
+        parentId: (seed && seed.parentId) || ''
     });
 
     window.addEventListener('message', ev => {
@@ -268,24 +270,51 @@
     const dateMs = v => (v ? new Date(v + 'T00:00:00').getTime() : '');
     const sel = () => DATA.projects.find(p => p.id === selectedId);
 
+    /**
+     * One row in the left list.
+     *
+     * ‼️ A PART IS INDENTED AND CARRIES ITS OWN STATUS DOT — it is not a
+     * decoration of its parent. Under the parent is the only place it appears,
+     * so a finished part under an active parent has to say "done" on its own
+     * row or the group heading above it would be a lie about it.
+     */
+    function listRow(p, isPart) {
+        return `
+            <div class="pj-item ${isPart ? 'pj-item-part ' : ''}${p.id === selectedId ? 'on' : ''}" data-pick="${C.esc(p.id)}"
+                ${window.AFCtx.row('afProjectRow', {
+            project: p.id, name: p.name || '', folder: p.folder || '',
+            afActive: p.id === DATA.activeId
+        })}
+                title="${C.esc(p.name)}${isPart ? ' — part of ' + C.esc((p.parent && p.parent.name) || '') : ''} — ${window.AFCtx.HINT}">
+                <span class="pj-dot" style="${p.color ? `background:${C.esc(p.color)}` : ''}"></span>
+                <span class="pj-name">${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</span>
+                ${isPart && p.status !== 'active' ? `<span class="muted small pj-partstate">${C.esc((STATUS_META[p.status] || {}).label || p.status)}</span>` : ''}
+                ${p.id === DATA.activeId ? '<span class="pj-badge" title="Active project — sessions started in this window are filed under it">◧</span>' : ''}
+                ${p.warnings.length ? `<span class="pj-warn" title="${C.esc(p.warnings.join(' · '))}">⚠️</span>` : ''}
+                <span class="muted small">${p.sessions}</span>
+            </div>`;
+    }
+
     function listHtml() {
+        // ‼️ Parts are listed under their parent and NOWHERE ELSE, so no project
+        // is in the list twice — and an orphan (a parent this list does not hold)
+        // comes back as a top-level row rather than disappearing.
+        const has = id => DATA.projects.some(x => x.id === id);
+        const partsOf = id => DATA.projects.filter(x => x.parentId === id && x.id !== id);
         const rows = GROUPS.map(g => {
-            const items = DATA.projects.filter(p => g.statuses.indexOf(p.status) >= 0);
+            const items = DATA.projects.filter(p =>
+                g.statuses.indexOf(p.status) >= 0 && (!p.parentId || !has(p.parentId)));
             if (!items.length) { return ''; }
-            return `<div class="pj-group">${C.esc(g.label)} <span class="muted">${items.length}</span></div>` +
-                items.map(p => `
-                    <div class="pj-item ${p.id === selectedId ? 'on' : ''}" data-pick="${C.esc(p.id)}"
-                        ${window.AFCtx.row('afProjectRow', {
-                            project: p.id, name: p.name || '', folder: p.folder || '',
-                            afActive: p.id === DATA.activeId
-                        })}
-                        title="${C.esc(p.name)} — ${window.AFCtx.HINT}">
-                        <span class="pj-dot" style="${p.color ? `background:${C.esc(p.color)}` : ''}"></span>
-                        <span class="pj-name">${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</span>
-                        ${p.id === DATA.activeId ? '<span class="pj-badge" title="Active project — sessions started in this window are filed under it">◧</span>' : ''}
-                        ${p.warnings.length ? `<span class="pj-warn" title="${C.esc(p.warnings.join(' · '))}">⚠️</span>` : ''}
-                        <span class="muted small">${p.sessions}</span>
-                    </div>`).join('');
+            // ‼️ THE COUNT IS BY STATUS, NOT BY ROWS. A part is drawn under its
+            // parent whatever its own status is, so a finished part inside an
+            // active parent's block would make "Active 3" a claim about it that
+            // its own row denies. It is drawn there and counted by its status —
+            // which is written on the row, so nothing is hidden either.
+            const n = items.length + items.reduce((a, p) =>
+                a + partsOf(p.id).filter(c => g.statuses.indexOf(c.status) >= 0).length, 0);
+            return `<div class="pj-group">${C.esc(g.label)} <span class="muted">${n}</span></div>` +
+                items.map(p => listRow(p, false)
+                    + partsOf(p.id).map(c => listRow(c, true)).join('')).join('');
         }).join('');
         const unassigned = DATA.unassigned || { sessions: 0, cost: 0 };
         return `<div class="pj-list">
@@ -299,6 +328,46 @@
                 ⊘ Unassigned <span class="muted">${unassigned.sessions} sessions · ${money(unassigned.cost)}</span>
             </div>
         </div>`;
+    }
+
+    /** The projects a new one — or this one — could be PART OF. Only the ones
+     *  that are not parts themselves: the model is a project and its components,
+     *  not a tree nobody prunes. */
+    function parentOptions(current, exceptId) {
+        return [{ id: '', name: '—' }]
+            .concat((DATA.projects || [])
+                .filter(x => x.id !== exceptId && !x.parentId)
+                .map(x => ({ id: x.id, name: x.name })))
+            .map(x => `<option value="${C.esc(x.id)}"${(current || '') === x.id ? ' selected' : ''}>${C.esc(x.name)}</option>`)
+            .join('');
+    }
+
+    /**
+     * The template row on the create form.
+     *
+     * ‼️ WITH NO TEMPLATES IT IS NOT A DISABLED DROPDOWN — it is one line
+     * saying where templates come from. An empty control reads as a broken
+     * feature; a sentence reads as a door. Nothing is shipped in the list on
+     * purpose: a template is a claim about how you work.
+     */
+    function templateRowHtml(c) {
+        const list = DATA.templates || [];
+        if (!list.length) {
+            return `<div class="pj-wide muted small">No templates yet — <b>Save as template</b> on any
+                project's ⚙ Settings tab makes one out of a project that already proved itself, and
+                asks what should travel.</div>`;
+        }
+        const chosen = list.filter(t => t.name === c.template)[0];
+        const opts = [`<option value="">— start from nothing —</option>`].concat(
+            list.map(t => `<option value="${C.esc(t.name)}"${c.template === t.name ? ' selected' : ''}>${C.esc(t.name)}</option>`)
+        ).join('');
+        return `<label class="pj-wide">Template
+                <select id="n-template">${opts}</select>
+                <span class="muted small">${chosen
+                ? C.esc('carries ' + chosen.carries + (chosen.description ? ' — ' + chosen.description : '')
+                    + '. Anything you type below wins over it.')
+                : 'a saved shape: fields, and the plan and backlog lines it holds'}</span>
+            </label>`;
     }
 
     /** The create form — the whole of it, on the page. A project starts as a
@@ -329,8 +398,10 @@
                     <button class="secondary" data-act="nBrowse">Browse…</button>
                 </div>
             </label>
+            ${templateRowHtml(c)}
             <label>Status<select id="n-status">${statusOpts}</select></label>
             <label>Kind<select id="n-kind">${kindOpts}</select></label>
+            <label>Part of <span class="muted small">one level</span><select id="n-parent">${parentOptions(c.parentId || '')}</select></label>
             <label class="pj-wide">Summary<input id="n-summary" value="${C.esc(c.summary)}" placeholder="one line"></label>
             <label class="pj-wide">Code roots <span class="muted small">one per line — sessions working under them fall to this project</span>
                 <textarea id="n-repos" rows="2">${C.esc(c.repos.join('\n'))}</textarea>
@@ -421,17 +492,31 @@
                 ? '<button class="secondary" data-act="clearActive" title="Stop filing new sessions under this project">◧ Active — clear</button>'
                 : '<button class="secondary" data-act="setActive" title="Sessions you start in this window get filed under this project">◧ Make active</button>'}
                 ${p.folderState === 'ok' ? '<button class="secondary" data-act="revealFolder">📁 Folder</button>' : ''}
+                ${p.folderState === 'ok'
+                ? `<button class="secondary" data-act="handover" title="${C.esc(HANDOVER_TIP)}">✉ Handover</button>` : ''}
             </div>
         </div>
         ${p.summary ? `<p class="muted small pj-summary">${C.esc(p.summary)}</p>` : ''}
+        ${p.parent ? `<p class="muted small pj-partof">Part of
+            <b class="pj-link" data-pick="${C.esc(p.parent.id)}" role="button" tabindex="0">${C.esc(p.parent.name)}</b>
+            <span class="muted">(${C.esc(p.parent.status)})</span></p>` : ''}
         ${warningsHtml(p)}
         <div class="pj-stats">
             <span><b>${p.sessions}</b> sessions</span>
             <span><b>${money(p.cost)}</b> total</span>
             <span><b>${money(p.todayCost)}</b> today</span>
+            ${p.parts ? `<span title="${C.esc(PARTS_TIP)}"><b>+${money(p.parts.cost)}</b> in ${p.parts.n} part${p.parts.n === 1 ? '' : 's'}</span>` : ''}
             <span>${p.lastTs ? 'last ' + new Date(p.lastTs).toLocaleDateString() : 'no activity yet'}</span>
         </div>`;
     }
+
+    const HANDOVER_TIP = 'Write the cold-start letter into this project\'s folder: what it is, '
+        + 'where every document and repo lives, who to ask, what is open, what somebody already '
+        + 'fought and left open, why it is built this way, and a first five minutes. Safe to run '
+        + 'again — everything below the notes marker is yours and survives.';
+    const PARTS_TIP = 'What this project\'s sub-projects add up to. It is stated separately and '
+        + 'is NOT inside the figures to its left: a session belongs to exactly one project, and '
+        + 'the rows have to keep adding up to the fleet total.';
 
     function tabsHtml() {
         return `<div class="pj-tabs">${TABS.map(t =>
@@ -493,8 +578,40 @@
 
         <div class="btnrow pj-actions">
             <button data-act="save">Save</button>
+            <button class="secondary" data-act="saveTemplate" title="${C.esc(TEMPLATE_TIP)}">⎘ Save as template…</button>
+            ${archiveButtonHtml(p)}
             <button class="secondary" data-act="delete">Remove project…</button>
-        </div>`;
+        </div>
+        <p class="muted small">${archiveNoteHtml(p)}</p>`;
+    }
+
+    const TEMPLATE_TIP = 'Save this project\'s SHAPE so the next one starts from it. You pick what '
+        + 'travels — fields, people, the folder skeleton, the plan and backlog lines. An id, a '
+        + 'folder and a parent never do, and neither does the status.';
+
+    /**
+     * Archive, or bring it back.
+     *
+     * ‼️ THE BUTTON MOVES A FOLDER AND THE LABEL SAYS SO. It is not the status
+     * control next to it: setting a project to "archived" changes a word, this
+     * moves a year of documents. The host confirms with both paths spelled out
+     * before anything happens, and the inverse is one press.
+     */
+    function archiveButtonHtml(p) {
+        if (!p.folder) { return ''; }
+        return p.archived
+            ? `<button class="secondary" data-act="restore" title="Move the folder back out of the archive, next to the live projects">⤴ Restore folder…</button>`
+            : `<button class="secondary" data-act="archive" title="MOVE this project's documents folder to its archive counterpart. Its name is kept, nothing is merged, the project record follows it, and Restore is the exact inverse.">⤵ Archive folder…</button>`;
+    }
+
+    function archiveNoteHtml(p) {
+        if (!p.folder) { return 'This project has no folder, so there is nothing to archive.'; }
+        if (p.archived) { return 'This project\'s folder is in the archive. Restore puts it back.'; }
+        return DATA.archiveRoot
+            ? 'Archiving MOVES the folder to ' + C.esc(DATA.archiveRoot)
+            + ' — a separate decision from the status above, confirmed with both paths first.'
+            : 'No archive root: set agentFarm.projectsArchiveRoot, or a projects root so one can be '
+            + 'derived next to it.';
     }
 
     // -----------------------------------------------------------------------
@@ -603,9 +720,36 @@
                 </div>
             </div>
         </div>
+        ${partsHtml(p)}
         <div class="pj-card">
             <div class="pj-card-h">Latest <span class="muted small">the newest of everything — the Timeline tab has the rest</span></div>
             ${recent.length ? recent.map(eventRow).join('') : '<p class="muted small">Nothing has happened on this project yet.</p>'}
+        </div>`;
+    }
+
+    /**
+     * The parts — a project's sub-projects, each with its own figures.
+     *
+     * ‼️ EVERY ROW IS A PROJECT OF ITS OWN AND SAYS SO. The temptation is to
+     * show a total; the card shows the parts INDIVIDUALLY and puts the sum in
+     * the header where it is plainly a second number. A part is opened by
+     * pressing it, exactly like a row in the left list — it has its own page,
+     * its own backlog and its own sessions, and a card that only summarised
+     * would hide that.
+     */
+    function partsHtml(p) {
+        const kids = p.children || [];
+        if (!kids.length) { return ''; }
+        const parts = p.parts || { n: kids.length, sessions: 0, cost: 0 };
+        return `<div class="pj-card">
+            <div class="pj-card-h">Parts
+                <span class="muted small" title="${C.esc(PARTS_TIP)}">${parts.n} sub-project${parts.n === 1 ? '' : 's'} · ${parts.sessions} sessions · ${money(parts.cost)} — counted on their own rows, not in this project's</span>
+            </div>
+            ${kids.map(c => `<div class="pj-next pj-part clickable" data-pick="${C.esc(c.id)}" role="button" tabindex="0"
+                    title="Open ${C.esc(c.name)} — it has its own page, plan and backlog">
+                    <span class="pj-ev-t">${C.esc(c.name)}</span>
+                    <span class="muted small">${C.esc(c.status)} · ${c.sessions} sessions · ${money(c.cost)}${c.lastTs ? ' · last ' + C.esc(relTime(c.lastTs)) : ' · nothing yet'}</span>
+                </div>`).join('')}
         </div>`;
     }
 
@@ -1288,6 +1432,11 @@
                 .pj-item { display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:5px; cursor:pointer; }
                 .pj-item:hover { background:var(--vscode-list-hoverBackground); }
                 .pj-item.on { background:var(--vscode-list-activeSelectionBackground); color:var(--vscode-list-activeSelectionForeground); }
+                /* a part: indented, with a rule joining it to its parent so the
+                   nesting survives a list of forty rows */
+                .pj-item-part { margin-left:12px; padding-left:10px;
+                    border-left:1px solid var(--vscode-widget-border,#4443); }
+                .pj-partstate { flex-shrink:0; }
                 .pj-dot { width:8px; height:8px; border-radius:50%; background:var(--vscode-panel-border); flex-shrink:0; }
                 .pj-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .pj-badge { opacity:.9; }
@@ -1656,6 +1805,13 @@
                     position:relative; }
                 .pj-card-h { font-size:11px; text-transform:uppercase; opacity:.6; margin-bottom:8px; }
                 .pj-now, .pj-next { display:flex; flex-direction:column; gap:1px; padding:4px 0; }
+                /* a part is a project of its own — it reads and behaves as a row
+                   you press, not as a figure in somebody else's card */
+                .pj-part { padding:4px 6px; border-radius:4px; border-left:2px solid var(--vscode-widget-border,#4443); }
+                .pj-part.clickable { cursor:pointer; }
+                .pj-part:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-partof { margin:4px 0 0; }
+                .pj-link { cursor:pointer; text-decoration:underline dotted; }
                 .pj-dotlive { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px;
                     background:var(--vscode-charts-green,#3fb950); }
                 .pj-money { display:flex; gap:22px; flex-wrap:wrap; }
@@ -5934,6 +6090,15 @@
                 const el = document.getElementById(id);
                 if (el) { el.addEventListener('change', () => { creating[id.slice(2)] = el.value; }); }
             });
+            const parent = document.getElementById('n-parent');
+            if (parent) { parent.addEventListener('change', () => { creating.parentId = parent.value; }); }
+            // ‼️ picking a template REPAINTS: the line under the control says
+            // what that template carries, and a description that still
+            // describes the previous choice is worse than none
+            const template = document.getElementById('n-template');
+            if (template) {
+                template.addEventListener('change', () => { creating.template = template.value; render(); });
+            }
             const repos = document.getElementById('n-repos');
             if (repos) {
                 repos.addEventListener('input', () => {
@@ -6654,7 +6819,8 @@
                             name: creating.name.trim(), folder: creating.folder.trim(),
                             kind: creating.kind, status: creating.status,
                             summary: creating.summary, repos: creating.repos,
-                            sessionIds: creating.sessionIds
+                            sessionIds: creating.sessionIds,
+                            template: creating.template, parentId: creating.parentId
                         }
                     });
                     break;
@@ -6810,6 +6976,12 @@
                 case 'clearFolder': vscode.postMessage({ type: 'save', id, patch: { folder: '' } }); break;
                 case 'recreateFolder': vscode.postMessage({ type: 'recreateFolder', id }); break;
                 case 'revealFolder': vscode.postMessage({ type: 'revealFolder', id }); break;
+                case 'handover': vscode.postMessage({ type: 'handover', id }); break;
+                case 'saveTemplate': vscode.postMessage({ type: 'saveTemplate', id }); break;
+                // the confirmation lives in the host, with both paths in it —
+                // a webview cannot show a modal that blocks a file move
+                case 'archive': vscode.postMessage({ type: 'archive', id, restore: false }); break;
+                case 'restore': vscode.postMessage({ type: 'archive', id, restore: true }); break;
                 case 'setActive': vscode.postMessage({ type: 'setActive', id }); break;
                 case 'clearActive': vscode.postMessage({ type: 'setActive', id: '' }); break;
                 case 'openSessions': vscode.postMessage({ type: 'openSessions', id }); break;

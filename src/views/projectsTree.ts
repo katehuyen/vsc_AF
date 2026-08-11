@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { CLOSED_STATUSES, Project, ProjectStatus } from '../core/projects';
+import { CLOSED_STATUSES, PartsTotal, partsTotals, Project, ProjectStatus } from '../core/projects';
 import { SessionInfo } from '../core/sessions';
 import { relTime } from '../core/util';
 
@@ -20,6 +20,13 @@ import { relTime } from '../core/util';
  * that starts out embarrassing. A rule that fails quietly is not a rule: if
  * hundreds of sessions belong to no project, the fix is for that to be visible
  * until somebody deals with it, not for the tree to look tidy.
+ *
+ * ‼️ A SUB-PROJECT APPEARS IN EXACTLY ONE PLACE — under its parent, whatever
+ * its own status is. The alternative (a part that also sits in "Finished"
+ * because it is done) makes the same project appear twice in one tree, and a
+ * reader counting rows would be wrong. A part whose parent is not in the list —
+ * filtered out, or deleted in another window — comes back as a top-level row
+ * instead of vanishing (`projectTree`'s orphan rule).
  */
 
 export interface ProjectRow {
@@ -64,9 +71,30 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<ProjectNode
 
     refresh(): void { this.emitter.fire(); }
 
+    /** The rows that head the tree: everything except the parts, which are shown
+     *  under their own parent. A part whose parent is not here is one of them. */
+    private rootRows(rows: ProjectRow[]): ProjectRow[] {
+        const present = new Set(rows.map(r => r.project.id));
+        return rows.filter(r => !r.project.parentId || !present.has(r.project.parentId));
+    }
+
+    private partsOf(rows: ProjectRow[], id: string): ProjectRow[] {
+        return rows.filter(r => r.project.parentId === id && r.project.id !== id);
+    }
+
+    /** Each parent's parts, folded by the one implementation of that sum
+     *  (`core/projects.partsTotals`) — the page prints the same figure and the
+     *  two must not be able to drift. */
+    private parts(rows: ProjectRow[]): Record<string, PartsTotal> {
+        return partsTotals(rows.map(r => r.project), rows.map(r => ({
+            id: r.project.id, name: r.project.name, sessions: r.sessions,
+            cost: r.cost, tokens: 0, todayCost: r.todayCost, agents: [], lastTs: r.lastTs
+        })));
+    }
+
     getChildren(node?: ProjectNode): ProjectNode[] {
         if (!node) {
-            const rows = this.deps.rows();
+            const rows = this.rootRows(this.deps.rows());
             const open = rows.filter(r => !CLOSED_STATUSES.includes(r.project.status) && r.project.status !== 'paused' && r.project.status !== 'planned');
             const out: ProjectNode[] = [{ kind: 'active' }];
             out.push(...open.map(row => ({ kind: 'project', row } as ProjectNode)));
@@ -81,12 +109,17 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<ProjectNode
             return out;
         }
         if (node.kind === 'group') {
-            return this.deps.rows()
+            return this.rootRows(this.deps.rows())
                 .filter(r => node.statuses.includes(r.project.status))
                 .map(row => ({ kind: 'project', row }));
         }
         if (node.kind === 'project') {
-            const kids: ProjectNode[] = [{ kind: 'sessions-root', row: node.row }];
+            // the parts come FIRST: they are other projects, and burying them
+            // under this project's own sessions reads as if they were part of
+            // its transcript list rather than work of their own
+            const kids: ProjectNode[] = this.partsOf(this.deps.rows(), node.row.project.id)
+                .map(row => ({ kind: 'project', row } as ProjectNode));
+            kids.push({ kind: 'sessions-root', row: node.row });
             if (node.row.project.folder) { kids.push({ kind: 'docs', row: node.row }); }
             return kids;
         }
@@ -129,17 +162,34 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<ProjectNode
 
         if (node.kind === 'project') {
             const p = node.row.project;
+            const rows = this.deps.rows();
+            const parts = this.parts(rows)[p.id];
+            const isPart = !!p.parentId && rows.some(r => r.project.id === p.parentId);
             const item = new vscode.TreeItem(`${p.icon ? p.icon + ' ' : ''}${p.name}`, C.Collapsed);
             const bits = [`${node.row.sessions} sessions`, money(node.row.cost)];
             if (node.row.todayCost > 0) { bits.push(`${money(node.row.todayCost)} today`); }
+            // ‼️ the parts' figures ride ALONGSIDE, never inside: the parent's own
+            // number has to keep adding up against every other surface
+            if (parts) { bits.push(`+${money(parts.cost)} in ${parts.n}`); }
+            // a part is placed by its PARENT, so its own status is not implied by
+            // where it sits — an archived part under an active parent looks alive
+            if (isPart && p.status !== 'active') { bits.push(p.status); }
             if (node.row.lastTs) { bits.push(relTime(node.row.lastTs)); }
             item.description = (node.row.warnings.length ? '⚠️ ' : '') + bits.join(' · ');
             item.iconPath = new vscode.ThemeIcon(
-                p.id === this.deps.activeId() ? 'circle-filled' : 'project');
+                p.id === this.deps.activeId() ? 'circle-filled' : (isPart ? 'symbol-namespace' : 'project'));
             const md = new vscode.MarkdownString();
             md.appendMarkdown(`**${p.name}** — ${p.status}\n\n`);
             if (p.summary) { md.appendMarkdown(`${p.summary}\n\n`); }
             md.appendMarkdown(`${node.row.sessions} sessions · ${money(node.row.cost)} total\n\n`);
+            if (parts) {
+                md.appendMarkdown(`Its ${parts.n} part(s) add ${parts.sessions} sessions and `
+                    + `${money(parts.cost)} — counted on their own rows, never in this one.\n\n`);
+            }
+            if (isPart) {
+                const parent = rows.find(r => r.project.id === p.parentId);
+                if (parent) { md.appendMarkdown(`Part of **${parent.project.name}**\n\n`); }
+            }
             if (p.folder) { md.appendMarkdown(`\`${p.folder}\`\n\n`); }
             for (const w of node.row.warnings) { md.appendMarkdown(`- ⚠️ ${w}\n`); }
             item.tooltip = md;

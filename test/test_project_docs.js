@@ -33,7 +33,13 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
 // ---------- vocabulary ----------
 {
     ok('roles complete',
-        PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,backloglog,brief');
+        PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,backloglog,brief,handover');
+    // ‼️ the handover is a ROLE but not a skeleton entry: it is built from the
+    // project's own record when somebody asks, and shipping an empty one with
+    // every new project puts a file in the folder that says nothing
+    ok('‼️ handover is a role with no skeleton entry — it is generated, not seeded',
+        PROJECT_DOC_ROLES.indexOf('handover') >= 0
+        && !DEFAULT_SKELETON.some(e => e.role === 'handover'));
     ok('the backlog and its log are both in the skeleton, side by side',
         DEFAULT_SKELETON.some(e => e.role === 'backlog')
         && DEFAULT_SKELETON.some(e => e.role === 'backloglog'));

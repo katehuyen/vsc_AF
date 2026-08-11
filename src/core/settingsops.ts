@@ -57,6 +57,7 @@ const CATEGORY_OF: Record<string, string> = {
     modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', projects: 'core',
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
+    projectsArchiveRoot: 'core', projectTemplates: 'core',
     projectContextExtra: 'core',
     projectDigestDay: 'core', projectDigestHour: 'core',
     // display & labels

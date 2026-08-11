@@ -135,5 +135,67 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         /sessions started here are filed under it/.test(treeTs));
 }
 
+// ---------- Faz 7: parts, templates, the handover and the archive ----------
+{
+    // sub-projects: one place in the list, and a sum that is never merged in
+    ok('the list nests a part under its parent and nowhere else',
+        /function listRow\(p, isPart\)/.test(pageJs)
+        && /!p\.parentId \|\| !has\(p\.parentId\)/.test(pageJs));
+    ok('‼️ an orphan (a parent this list does not hold) is a top-level row, not a hidden one',
+        /const has = id => DATA\.projects\.some/.test(pageJs));
+    ok('a part carries its own status, because its group heading is its parent\'s',
+        /pj-partstate/.test(pageJs));
+    ok('…and the group count is by STATUS rather than by rows',
+        /g\.statuses\.indexOf\(c\.status\) >= 0/.test(pageJs));
+    ok('the parts card lists each part as a project you can open',
+        /function partsHtml\(p\)/.test(pageJs) && /data-pick="\$\{C\.esc\(c\.id\)\}"/.test(pageJs));
+    ok('‼️ the rolled-up figure says out loud that it is NOT inside the row next to it',
+        /counted on their own rows, not in this project's/i.test(pageJs)
+        && /const PARTS_TIP/.test(pageJs));
+    ok('a part\'s page says what it is part of, and the parent is one press away',
+        /pj-partof/.test(pageJs) && /Part of/.test(pageJs));
+    ok('the same sum has ONE implementation, shared by the page and the sidebar',
+        /partsTotals/.test(treeTs) && /const projectParts = \(\)/.test(extTs));
+    ok('‼️ the sidebar nests parts too, and never lists one twice',
+        /private rootRows\(/.test(treeTs) && /private partsOf\(/.test(treeTs));
+    ok('…and a brief tells an agent inside a part that it IS one',
+        /Part of: \$\{o\.parent\}/.test(read('src', 'core', 'projectDocs.ts')));
+
+    // templates
+    ok('the create form offers a template', /id="n-template"/.test(pageJs));
+    ok('‼️ with none saved it is a SENTENCE, not an empty dropdown',
+        /No templates yet — <b>Save as template<\/b>/.test(pageJs));
+    ok('choosing one repaints, so the line under it describes THAT template',
+        /creating\.template = template\.value; render\(\)/.test(pageJs));
+    ok('the form carries the template and the parent to the host',
+        /template: creating\.template, parentId: creating\.parentId/.test(pageJs));
+    ok('‼️ what the person typed beats what the template carries',
+        /applyTemplate\(template, \{/.test(extTs)
+        && /THE EXPLICIT ARGUMENT ALWAYS WINS/.test(read('src', 'core', 'projectTemplates.ts')));
+    ok('saving one is a multi-select — what is not ticked does not travel',
+        /What travels into/.test(extTs) && /canPickMany: true/.test(extTs));
+
+    // the handover
+    ok('the handover has a button where a project is being read',
+        /data-act="handover"/.test(pageJs) && /const HANDOVER_TIP/.test(pageJs));
+    ok('…the panel forwards it and the host writes and opens the document',
+        /case 'handover'/.test(panelTs) && /handover\(id: string\)/.test(panelTs)
+        && /const buildProjectHandover = \(/.test(extTs));
+    ok('‼️ writing it is a MERGE — that is why the button can write rather than preview',
+        /mergeHandoverNotes/.test(extTs));
+
+    // the archive
+    ok('the archive button says it MOVES a folder, and names where to',
+        /data-act="archive"/.test(pageJs) && /Archiving MOVES the folder to/.test(pageJs));
+    ok('…restore is the inverse, offered on a project already in the archive',
+        /data-act="restore"/.test(pageJs) && /function archiveButtonHtml\(p\)/.test(pageJs));
+    ok('‼️ the confirmation is a MODAL in the host with both paths in it',
+        /modal: true,[\s\S]{0,200}From:\\n\$\{plan\.from\}\\n\\nTo:\\n\$\{plan\.to\}/.test(extTs));
+    ok('‼️ the status is a SEPARATE decision — moving the folder does not set it',
+        /the status is the OTHER decision, so it is offered, not applied/.test(extTs));
+    ok('…and the registry follows the folder, so nothing points at what is not there',
+        /projectStore\.update\(p\.id, \{ folder: res\.path \}\)/.test(extTs));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

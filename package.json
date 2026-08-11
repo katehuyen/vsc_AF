@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.108.0",
+  "version": "3.109.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -497,6 +497,24 @@
         "title": "Rescan Project Folders (pick up renames made in Obsidian)",
         "category": "Agent Farm",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "agentfarm.projectHandover",
+        "title": "Write Project Handover (the letter to whoever picks this up in three months)",
+        "category": "Agent Farm",
+        "icon": "$(mail)"
+      },
+      {
+        "command": "agentfarm.archiveProject",
+        "title": "Archive Project Folder… (move it to its archive counterpart)",
+        "category": "Agent Farm",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "agentfarm.saveProjectTemplate",
+        "title": "Save Project as Template… (you pick what travels)",
+        "category": "Agent Farm",
+        "icon": "$(save-as)"
       },
       {
         "command": "agentfarm.openPortfolio",
@@ -3432,6 +3450,21 @@
           "command": "agentfarm.setActiveProject",
           "when": "view == agentfarm.projects && viewItem == afProject",
           "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.projectHandover",
+          "when": "view == agentfarm.projects && viewItem == afProject",
+          "group": "2_write@1"
+        },
+        {
+          "command": "agentfarm.saveProjectTemplate",
+          "when": "view == agentfarm.projects && viewItem == afProject",
+          "group": "2_write@2"
+        },
+        {
+          "command": "agentfarm.archiveProject",
+          "when": "view == agentfarm.projects && viewItem == afProject",
+          "group": "3_move@1"
         },
         {
           "command": "agentfarm.fixInsight",
@@ -8834,6 +8867,32 @@
               "template": {
                 "type": "string",
                 "description": "initial content; the placeholders above expand"
+              }
+            }
+          }
+        },
+        "agentFarm.projectsArchiveRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Where an archived project's FOLDER is moved to. Empty derives it next to the projects root, the way a vault already mirrors its own folders: <parent>/99_ARCHIVE/<root name>_ARCHIVE. Archiving is never automatic and never happens as a side effect of setting a project's status — it is its own confirmed action, it shows both paths first, it refuses to land on anything that already exists, and Restore is the exact inverse."
+        },
+        "agentFarm.projectTemplates": {
+          "type": "array",
+          "default": [],
+          "description": "Project templates — \"another one like that\". The list starts EMPTY on purpose: a template is a claim about how you work, so the way in is Save as Template on a project that already proved itself (⚙ Settings on its page), which asks what should travel. Each entry is {name, description?, kind?, status?, summary?, tags?, repos?, agents?, budgetUSD?, budgetTotalUSD?, color?, icon?, people?, plan?, backlog?, skeleton?}; plan and backlog items may be plain strings. A template never carries an id, a folder or a parent — those are identity, not shape.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "how it is picked, and its identity in this list"
+              },
+              "description": {
+                "type": "string",
+                "description": "one line, shown next to the name in the picker"
               }
             }
           }

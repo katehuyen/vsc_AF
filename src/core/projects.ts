@@ -558,6 +558,81 @@ export function rollupProjectSessions(
 }
 
 // ---------------------------------------------------------------------------
+// sub-projects — one level, and the arithmetic that keeps it honest
+// ---------------------------------------------------------------------------
+
+/** A project with its parts. One level deep by model (`Project.parentId`), so
+ *  this is a list of pairs and not a recursive structure nobody prunes. */
+export interface ProjectTreeNode {
+    project: Project;
+    /** direct children, in declaration order */
+    children: Project[];
+}
+
+/**
+ * The registry, arranged as parents and their parts.
+ *
+ * ‼️ AN ORPHAN IS A ROOT, NOT A DISAPPEARANCE. A child whose parent is filtered
+ * out of `projects` — by a status filter, or because the parent was deleted in
+ * another window before this list was built — comes back as a top-level row.
+ * The alternative is a project that exists in the registry and appears on no
+ * screen, which is the failure nobody reports because nobody sees it.
+ */
+export function projectTree(projects: Project[]): ProjectTreeNode[] {
+    const present = new Set(projects.map(p => p.id));
+    const roots = projects.filter(p => !p.parentId || !present.has(p.parentId));
+    return roots.map(project => ({
+        project,
+        children: project.parentId ? [] : projects.filter(c => c.parentId === project.id)
+    }));
+}
+
+/** One parent's parts, folded. */
+export interface PartsTotal {
+    /** how many sub-projects contributed — the figure is meaningless without it */
+    n: number;
+    sessions: number;
+    cost: number;
+    todayCost: number;
+    lastTs: number;
+}
+
+/**
+ * Each parent's parts, summed — and deliberately handed back SEPARATELY.
+ *
+ * ‼️ THE PARENT'S OWN ROW IS NEVER TOUCHED. Sessions are disjoint (one belongs
+ * to exactly one project), so adding a parent to its parts is arithmetically
+ * legal — and it is still wrong to do it in place: the rows would stop summing
+ * to the fleet total, and a reader comparing "TalkScribe $12" against the
+ * Sessions table would find twelve dollars nobody can locate. So a surface that
+ * wants the rolled-up figure prints it as its own thing, labelled with `n`
+ * ("$12 · +$40 in 2 parts"), and the column that has to add up still does.
+ */
+export function partsTotals(
+    projects: Project[], rollups: ProjectRollup[]
+): Record<string, PartsTotal> {
+    const byId = new Map(rollups.map(r => [r.id, r]));
+    const out: Record<string, PartsTotal> = {};
+    for (const child of projects) {
+        const parentId = child.parentId;
+        if (!parentId || !projects.some(p => p.id === parentId)) { continue; }
+        const roll = byId.get(child.id);
+        const acc = out[parentId] ?? (out[parentId] =
+            { n: 0, sessions: 0, cost: 0, todayCost: 0, lastTs: 0 });
+        acc.n++;
+        acc.sessions += roll?.sessions ?? 0;
+        acc.cost += roll?.cost ?? 0;
+        acc.todayCost += roll?.todayCost ?? 0;
+        acc.lastTs = Math.max(acc.lastTs, roll?.lastTs ?? 0);
+    }
+    for (const acc of Object.values(out)) {
+        acc.cost = Math.round(acc.cost * 10000) / 10000;
+        acc.todayCost = Math.round(acc.todayCost * 10000) / 10000;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // folder state · rename · migration
 // ---------------------------------------------------------------------------
 

@@ -2837,13 +2837,169 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             (await reg.dispatch('living.check.remove', { label: 'never' })).ok === false);
     }
 
+    // ---------- Faz 7: templates, the handover, the archive ----------
+    // The same handler shapes extension.ts registers, over the same pure
+    // functions. What is being measured is the DISPATCH contract — what an
+    // agent gets back, and what it is refused — not the arranging, which its
+    // own suites cover.
+    {
+        const {
+            coerceTemplates, describeTemplate, findTemplate, removeTemplate,
+            templateFromProject, upsertTemplate
+        } = require(path.join(__dirname, '..', 'out', 'core', 'projectTemplates.js'));
+        const { archiveRootFor, planArchive, moveProjectFolder } =
+            require(path.join(__dirname, '..', 'out', 'core', 'projectArchive.js'));
+        const { buildHandover, mergeHandoverNotes, HANDOVER_NOTES_ANCHOR } =
+            require(path.join(__dirname, '..', 'out', 'core', 'projectHandover.js'));
+
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-faz7-'));
+        const live = path.join(root, '10_PROJECTS');
+        const folder = path.join(live, 'Thing');
+        fs.mkdirSync(folder, { recursive: true });
+        fs.writeFileSync(path.join(folder, 'Charter.md'), '---\naf-role: charter\n---\n\n# Thing\n', 'utf8');
+        const project = {
+            id: 'prj_faz70001', name: 'Thing', status: 'active', kind: 'product',
+            folder, repos: [root], createdAt: 1, updatedAt: 1
+        };
+        let stored = [];                      // stands in for the setting
+        let current = { ...project };
+
+        const reg = new BridgeRegistry();
+        reg.register([
+            {
+                op: 'projects.templates', describe: 'the saved shapes. args: none',
+                handler: () => coerceTemplates(stored).map(t => ({ name: t.name, carries: describeTemplate(t) }))
+            },
+            {
+                op: 'projects.template.save',
+                describe: 'save a project as a template. args: project, name, identity?, repos?',
+                handler: a => {
+                    // optStr, not argStr: the refusal should say what a template
+                    // name IS, not "missing required string arg"
+                    const name = optStr(a, 'name').trim();
+                    need(name, 'a template needs a name of its own — name it for the SHAPE');
+                    const made = templateFromProject(current, name, {
+                        identity: a.identity === true, repos: a.repos === true
+                    });
+                    need(!made.error, made.error || '');
+                    stored = upsertTemplate(coerceTemplates(stored), made.template);
+                    return { name: made.template.name, carries: describeTemplate(made.template) };
+                }
+            },
+            {
+                op: 'projects.template.delete', describe: 'forget one. args: name',
+                handler: a => {
+                    const name = argStr(a, 'name').trim();
+                    const before = coerceTemplates(stored);
+                    need(!!findTemplate(before, name), `no template called "${name}"`);
+                    stored = removeTemplate(before, name);
+                    return { name, remaining: stored.length };
+                }
+            },
+            {
+                op: 'projects.archive',
+                describe: 'move the folder to its counterpart. args: project, apply?',
+                handler: a => {
+                    const arch = archiveRootFor(live);
+                    const plan = planArchive(current.folder, arch);
+                    if (a.apply !== true) {
+                        return {
+                            from: plan.from, to: plan.to, moved: false,
+                            ...(plan.error ? { error: plan.error } : {})
+                        };
+                    }
+                    const res = moveProjectFolder(plan);
+                    need(res.ok, res.error || 'could not move');
+                    current = { ...current, folder: res.path };
+                    return { from: plan.from, to: res.path, moved: true };
+                }
+            },
+            {
+                op: 'projects.handover', describe: 'the cold-start letter. args: project, write?',
+                handler: a => {
+                    const input = { project: { name: current.name, status: current.status }, now: 1786000000000 };
+                    if (a.write !== true) { return { markdown: buildHandover(input) }; }
+                    const file = path.join(current.folder, 'Handover.md');
+                    const prev = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+                    const merged = mergeHandoverNotes(prev, input);
+                    need(!merged.error, merged.error || '');
+                    fs.writeFileSync(file, merged.text, 'utf8');
+                    return { file, markdown: merged.text };
+                }
+            }
+        ]);
+
+        ok('projects.templates starts empty — nothing is shipped',
+            (await reg.dispatch('projects.templates', {})).result.length === 0);
+        ok('a template needs a name of its own, and the refusal says so',
+            /needs a name/.test((await reg.dispatch('projects.template.save',
+                { project: 'Thing', name: '  ' })).error));
+
+        const saved = await reg.dispatch('projects.template.save',
+            { project: 'Thing', name: 'Product', identity: true, repos: true });
+        ok('projects.template.save answers with what the template actually carries',
+            saved.ok && saved.result.name === 'Product' && /product/.test(saved.result.carries));
+        ok('…and it is then in the list',
+            (await reg.dispatch('projects.templates', {})).result.length === 1);
+        ok('saving the same name again edits it rather than adding a second',
+            (await reg.dispatch('projects.template.save', { project: 'Thing', name: 'Product' })).ok
+            && (await reg.dispatch('projects.templates', {})).result.length === 1);
+        ok('deleting a template nobody has is refused by name',
+            /no template called/.test((await reg.dispatch('projects.template.delete', { name: 'Nope' })).error));
+        ok('projects.template.delete takes it out',
+            (await reg.dispatch('projects.template.delete', { name: 'Product' })).result.remaining === 0);
+
+        // ‼️ the two-step: a destructive move describes itself before it happens
+        const dry = await reg.dispatch('projects.archive', { project: 'Thing' });
+        ok('‼️ projects.archive without apply MOVES NOTHING and prints both paths',
+            dry.ok && dry.result.moved === false && fs.existsSync(folder)
+            && dry.result.to === path.join(root, '99_ARCHIVE', '10_PROJECTS_ARCHIVE', 'Thing'));
+        const applied = await reg.dispatch('projects.archive', { project: 'Thing', apply: true });
+        ok('…and with apply it really moves, reporting where the folder is now',
+            applied.ok && applied.result.moved === true && !fs.existsSync(folder)
+            && fs.existsSync(path.join(applied.result.to, 'Charter.md')));
+
+        const letter = await reg.dispatch('projects.handover', { project: 'Thing' });
+        ok('projects.handover hands back markdown without writing anything',
+            letter.ok && /^# Thing — handover/.test(letter.result.markdown)
+            && !fs.existsSync(path.join(current.folder, 'Handover.md')));
+        const written = await reg.dispatch('projects.handover', { project: 'Thing', write: true });
+        ok('…and with write it lands in the project folder',
+            written.ok && fs.existsSync(written.result.file));
+
+        fs.writeFileSync(written.result.file,
+            fs.readFileSync(written.result.file, 'utf8').replace(
+                '- _the trap: what breaks if you do the obvious thing_', '- MY OWN TRAP NOTE'), 'utf8');
+        const again = await reg.dispatch('projects.handover', { project: 'Thing', write: true });
+        ok('‼️ writing it a SECOND time keeps the human half — that is why write can be the default',
+            again.ok && fs.readFileSync(written.result.file, 'utf8').includes('MY OWN TRAP NOTE'));
+
+        fs.writeFileSync(written.result.file, '# Handover\n\nI deleted the marker.\n', 'utf8');
+        const refused = await reg.dispatch('projects.handover', { project: 'Thing', write: true });
+        ok('‼️ …and a document with no marker is REFUSED rather than overwritten',
+            !refused.ok && /marker/.test(refused.error)
+            && fs.readFileSync(written.result.file, 'utf8').includes('I deleted the marker'));
+        ok('the anchor the whole rule hangs on is one constant',
+            HANDOVER_NOTES_ANCHOR === '<!-- af:handover-notes -->');
+
+        try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+
     // ---------- the real catalogue carries the new ops ----------
     {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        for (const op of ['memory.list', 'memory.add', 'living.check.add', 'living.check.remove']) {
+        for (const op of [
+            'memory.list', 'memory.add', 'living.check.add', 'living.check.remove',
+            // Faz 7 — every user-triggerable function reaches the bridge in the
+            // same commit (_REF/agentfarm-dev.md), and this is what proves it
+            'projects.handover', 'projects.templates', 'projects.template.save',
+            'projects.template.delete', 'projects.archive', 'projects.archived'
+        ]) {
             ok(`${op} is registered in the extension's own catalogue`,
                 src.includes(`op: '${op}'`));
         }
+        ok('‼️ projects.create takes a template — the page picker and an agent use one path',
+            /projects\.create[\s\S]{0,4000}?findTemplate\(projectTemplates\(\)/.test(src));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

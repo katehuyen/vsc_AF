@@ -13,7 +13,8 @@ const {
     projectById, projectByName, findProject,
     coerceStatus, coercePerson, coerceProject, coerceProjects, coerceLinks,
     matchRoots, resolveSessionProject, setSessionProject, pruneLinks,
-    rollupProjectSessions, folderState, renameProject
+    rollupProjectSessions, folderState, renameProject,
+    projectTree, partsTotals
 } = require(path.join(__dirname, '..', 'out', 'core', 'projects.js'));
 
 // ---------- an agent's project ----------
@@ -500,6 +501,53 @@ const P = (id, extra) => Object.assign(
         && /agentfarm\.backlogAdd/.test(barBlock));
     ok('…including the one-click clear a quick-pick used to cost',
         /barCmd\('agentfarm\.setActiveProject', \[\{ id: '' \}\]\)/.test(barBlock));
+}
+
+// ---------- Faz 7: sub-projects, and the arithmetic that must stay honest ----------
+{
+    const now = Date.now();
+    const P = (id, name, parentId) => ({
+        id, name, status: 'active', createdAt: now, updatedAt: now,
+        ...(parentId ? { parentId } : {})
+    });
+    const talk = P('prj_talk', 'TalkScribe');
+    const zen = P('prj_zen', 'ZEN', 'prj_talk');
+    const zep = P('prj_zep', 'ZEP', 'prj_talk');
+    const solo = P('prj_solo', 'Agent Farm');
+    const list = [talk, zen, zep, solo];
+
+    const tree = projectTree(list);
+    ok('a parent and an unrelated project are the roots',
+        tree.length === 2 && tree[0].project.id === 'prj_talk' && tree[1].project.id === 'prj_solo');
+    ok('…and the parts hang off the parent, in declaration order',
+        tree[0].children.map(c => c.id).join(',') === 'prj_zen,prj_zep');
+    ok('a project with no parts has an empty list, not undefined',
+        Array.isArray(tree[1].children) && tree[1].children.length === 0);
+
+    // ‼️ the case that makes a project disappear from every screen
+    const filtered = projectTree([zen, zep, solo]);
+    ok('‼️ an orphan (parent filtered out) comes back as a ROOT, not as nothing',
+        filtered.length === 3 && filtered.some(n => n.project.id === 'prj_zen'));
+
+    const rolls = [
+        { id: 'prj_talk', name: 'TalkScribe', sessions: 2, cost: 1, tokens: 0, todayCost: 0.5, agents: [], lastTs: 100 },
+        { id: 'prj_zen', name: 'ZEN', sessions: 5, cost: 10, tokens: 0, todayCost: 2, agents: [], lastTs: 900 },
+        { id: 'prj_zep', name: 'ZEP', sessions: 3, cost: 4, tokens: 0, todayCost: 1, agents: [], lastTs: 400 },
+        { id: 'prj_solo', name: 'Agent Farm', sessions: 1, cost: 7, tokens: 0, todayCost: 0, agents: [], lastTs: 50 }
+    ];
+    const parts = partsTotals(list, rolls);
+    ok('the parent gets its parts folded, with the count that makes it readable',
+        parts['prj_talk'] && parts['prj_talk'].n === 2
+        && parts['prj_talk'].sessions === 8 && parts['prj_talk'].cost === 14
+        && parts['prj_talk'].todayCost === 3);
+    ok('…and the newest of the parts is the one reported',
+        parts['prj_talk'].lastTs === 900);
+    ok('a project with no parts gets no entry at all', !parts['prj_solo'] && !parts['prj_zen']);
+    ok('‼️ the parent\'s OWN row is untouched — the rows still add up to the fleet total',
+        rolls[0].cost === 1 && rolls[0].sessions === 2
+        && rolls.reduce((a, r) => a + r.cost, 0) === 22);
+    ok('a part whose parent is not in the list is not folded into a missing row',
+        Object.keys(partsTotals([zen], rolls)).length === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
