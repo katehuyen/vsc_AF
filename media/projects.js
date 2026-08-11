@@ -25,6 +25,7 @@
      */
     const TABS = [
         { id: 'overview', label: 'Overview', tip: 'What this project is doing right now' },
+        { id: 'work', label: 'Work', tip: 'Everything this project has in flight or on its books — tasks, missions, notices, queue items and the automations that fire for it. Start work here too.' },
         { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
         { id: 'plan', label: 'Plan', tip: 'The plan document\'s own checkboxes — ticking one here changes that one character in the file' },
@@ -494,7 +495,12 @@
 
     const relTime = ts => {
         if (!ts) { return ''; }
-        const s = Math.round((Date.now() - ts) / 1000);
+        // ‼️ NEVER A NEGATIVE AGE. A timestamp a few seconds ahead of this
+        // clock is normal — a transcript written by another machine, a session
+        // stamped mid-second, a laptop whose time drifted — and "-27304s ago"
+        // is the page telling the reader it is broken over something that is
+        // not even wrong.
+        const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
         if (s < 60) { return s + 's ago'; }
         const m = Math.round(s / 60);
         if (m < 60) { return m + 'm ago'; }
@@ -589,6 +595,213 @@
             <div class="pj-card-h">Latest <span class="muted small">the newest of everything — the Timeline tab has the rest</span></div>
             ${recent.length ? recent.map(eventRow).join('') : '<p class="muted small">Nothing has happened on this project yet.</p>'}
         </div>`;
+    }
+
+    // -----------------------------------------------------------------------
+    // Work — what this project has in flight, and where new work starts
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ FIVE MODELS ON ONE TAB, AND EVERY ROW IS FILED BY ITS OWN STAMP.
+     *
+     * A project could say what had HAPPENED (Timeline) and what it COST, but
+     * the work itself lived on five other pages, each filtered by hand — so the
+     * question "what is this project actually doing" had no answer on the
+     * project's own page. Nothing here is derived from an agent's name or a
+     * folder: a task, a mission, a notice, a queue item and an automation each
+     * carry a project of their own, and only that speaks. The price is that
+     * unstamped work is absent, which is why the tab says so at the bottom
+     * rather than looking empty for a reason nobody can see.
+     *
+     * The groups are ordered by how much they need you: what is running, what
+     * is waiting on you, what is queued, what is on the books, what fires by
+     * itself. Each is a card that disappears when it has nothing — an empty
+     * card per model is five paragraphs of "nothing here" above the one group
+     * that does have something.
+     */
+    function workHtml(p) {
+        const w = td().work;
+        if (!w) { return '<p class="muted">Reading the project…</p>'; }
+
+        const tasks = w.tasks || [];
+        const running = tasks.filter(t => t.status === 'running');
+        const queued = tasks.filter(t => t.status === 'queued' || t.status === 'parked');
+        const finished = tasks.filter(t =>
+            t.status !== 'running' && t.status !== 'queued' && t.status !== 'parked');
+        const liveMissions = (w.missions || []).filter(m =>
+            m.status === 'running' || m.status.indexOf('waiting') === 0 || m.status === 'paused');
+        const doneMissions = (w.missions || []).filter(m => liveMissions.indexOf(m) < 0);
+        const openNotices = (w.notices || []).filter(n =>
+            !n.read || (n.type === 'question' && (n.status || 'open') === 'open'));
+        const restNotices = (w.notices || []).filter(n => openNotices.indexOf(n) < 0);
+        const liveQueue = (w.queue || []).filter(q => q.status !== 'done' && q.status !== 'dropped');
+        const doneQueue = (w.queue || []).filter(q => q.status === 'done' || q.status === 'dropped');
+        // ‼️ An empty tab has to say WHY it is empty and what to do about it.
+        // Five absent cards and a paragraph about stamping reads as a page that
+        // failed to load — which is the first thing a new project shows you.
+        const nothingStamped = !tasks.length && !(w.missions || []).length
+            && !(w.notices || []).length && !(w.queue || []).length
+            && !(w.schedules || []).length && !(w.triggers || []).length;
+
+        return `
+        ${workStartHtml(p)}
+        ${workCard('Running now', running.length + liveMissions.length,
+            running.map(taskRow).join('') + liveMissions.map(missionRow).join(''),
+            'A task the runner has started, or a mission still planning')}
+        ${workCard('Needs you', openNotices.length + liveQueue.filter(q => q.status === 'blocked').length,
+            openNotices.map(noticeRow).join('')
+            + liveQueue.filter(q => q.status === 'blocked').map(queueRow).join(''),
+            'Unread notices, unanswered questions, and queue items an agent has handed back')}
+        ${workCard('Queued', queued.length,
+            queued.map(taskRow).join(''),
+            'Made, not started — the reason each one is waiting is on its row')}
+        ${workCard('On the books', liveQueue.filter(q => q.status !== 'blocked').length,
+            liveQueue.filter(q => q.status !== 'blocked').map(queueRow).join(''),
+            'Work-queue items filed under this project that are not terminal yet')}
+        ${workCard('Fires by itself', (w.schedules || []).length + (w.triggers || []).length,
+            (w.schedules || []).map(scheduleRow).join('') + (w.triggers || []).map(triggerRow).join(''),
+            'Schedules and triggers that DECLARE this project — nobody is at a window when these fire, so the project is stated on the automation itself')}
+        ${workCard('Settled', finished.length + doneMissions.length + doneQueue.length + restNotices.length,
+            finished.slice(0, 25).map(taskRow).join('')
+            + doneMissions.slice(0, 15).map(missionRow).join('')
+            + doneQueue.slice(0, 25).map(queueRow).join('')
+            + restNotices.slice(0, 25).map(noticeRow).join(''),
+            'Nothing in here needs you: runs that finished, queue items that were handled, notices you have read. Capped — the Timeline tab has the rest')}
+        ${nothingStamped ? `<p class="muted">Nothing has been filed under this project yet. Press
+            <b>▶ Start a session here</b> — everything started from this tab carries the project.
+            Work made elsewhere is brought in with the project picker on its own row, on the
+            <b>🔔 Notices</b> and <b>📥 Queue</b> pages.</p>` : ''}
+        <p class="muted small pj-unfiled">Every row here is filed by a stamp somebody set: a task and a
+            mission carry the project they were started under, a notice and a queue item carry the one
+            they were filed with, and an automation DECLARES one because nobody is looking at a window
+            when it fires. Nothing is guessed from an agent's name or a folder — so work nobody stamped
+            is not here, and the way to bring it in is the project picker on its own row.</p>`;
+    }
+
+    /** A group of work rows. Absent when it is empty: five cards each saying
+     *  "nothing here" is five paragraphs above the one group that has something. */
+    function workCard(title, n, rows, tip) {
+        if (!n) { return ''; }
+        return `<div class="pj-card">
+            <div class="pj-card-h">${C.esc(title)} <span class="muted small" title="${C.esc(tip)}">${n}</span></div>
+            ${rows}
+        </div>`;
+    }
+
+    /**
+     * Start work here — the button the whole session protocol was built for.
+     *
+     * ‼️ It makes this project ACTIVE before it starts anything, because the
+     * active project is what a spawn reads to build the context file (Faz 2).
+     * The row says so rather than doing it silently: a button that quietly
+     * changes what the status bar says is a button people learn to distrust.
+     */
+    function workStartHtml(p) {
+        const isActive = DATA.activeId === p.id;
+        return `<div class="pj-worktop">
+            <button data-work="session-console" title="Open the Console composer on this project. It becomes the window's active project first — that is what puts the project's brief into the agent's system prompt at spawn.">▶ Start a session here</button>
+            <button class="secondary" data-work="session-terminal" title="Same, in a terminal instead of the hosted Console.">⌨ …in a terminal</button>
+            <button class="secondary" data-work="task" title="Open the New-task form with this project already filled in">⚙ New task</button>
+            <button class="secondary" data-work="schedule" title="A schedule that states this project — its runs are filed here, and it appears under &quot;Fires by itself&quot;">⏰ New schedule</button>
+            <button class="secondary" data-work="trigger" title="A trigger that states this project — same rule as a schedule">⚡ New trigger</button>
+            <span class="grow"></span>
+            <span class="muted small">${isActive
+                ? '◧ This is the window\'s active project — new work started here is filed under it.'
+                : 'Starting here makes it the window\'s active project.'}</span>
+        </div>`;
+    }
+
+    /** One work row. The whole row opens the thing; the buttons on the right are
+     *  the actions that do NOT mean "open". */
+    function workRow(what, id, glyph, glyphTip, main, meta, tone, actions) {
+        return `<div class="pj-wrow ${tone ? 'tone-' + tone : ''}" data-work-open="${C.esc(what)}" data-work-id="${C.esc(id)}"
+            title="Click to open it">
+            <span class="pj-ev-g" title="${C.esc(glyphTip)}">${glyph}</span>
+            <span class="pj-ev-t">${main}</span>
+            <span class="pj-wmeta muted small">${meta}</span>
+            ${actions ? `<span class="pj-wact">${actions}</span>` : ''}
+        </div>`;
+    }
+
+    const TASK_TONE = {
+        done: 'ok', failed: 'bad', cancelled: 'bad', running: 'warn', parked: 'warn'
+    };
+
+    function taskRow(t) {
+        const bits = [t.agent, t.status, t.engine ? t.engine : '', t.model ? t.model : '',
+            t.costUSD ? money(t.costUSD) : '', relTime(t.endedAt || t.startedAt || t.createdAt)]
+            .filter(Boolean).join(' · ');
+        // ‼️ Why it is not moving, in the gate's own words. A row that says
+        // "queued" and nothing else sends the reader to another page to find
+        // out the fleet is simply busy.
+        const held = t.held ? ` <span class="pj-held" title="Why this has not started">held: ${C.esc(t.held)}</span>` : '';
+        const acts = t.status === 'running' || t.status === 'queued' || t.status === 'parked'
+            ? `<button class="mini secondary" data-task-act="cancel" data-task="${C.esc(t.id)}" title="Cancel this run">✕</button>`
+            : `<button class="mini secondary" data-task-act="retry" data-task="${C.esc(t.id)}" title="Run it again, exactly as it ran">↻</button>`;
+        return workRow('task', t.id, '⚙', 'Task',
+            C.esc(t.title) + held, C.esc(bits), TASK_TONE[t.status], acts);
+    }
+
+    function missionRow(m) {
+        const bits = [m.lead ? 'lead ' + m.lead : '', m.team && m.team.length ? '+' + m.team.length : '',
+            m.status, m.verdict && m.verdict !== 'success' ? m.verdict : '',
+            'R' + m.rounds, m.costUSD ? money(m.costUSD) : '',
+            m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
+            relTime(m.endedAt || m.startedAt)].filter(Boolean).join(' · ');
+        // A mission STARTED in this project and one whose delegations merely
+        // landed here are different facts, and the row is the only place that
+        // can say which — otherwise a reader wonders why it is listed at all.
+        const via = m.via === 'delegated'
+            ? ' <span class="pj-via" title="This mission states no project; it is here because its delegated tasks were filed under this one">via its tasks</span>' : '';
+        const tone = m.status === 'done' ? 'ok'
+            : (m.status === 'failed' || m.status === 'cancelled') ? 'bad'
+                : (m.status === 'running' || m.status.indexOf('waiting') === 0) ? 'warn' : '';
+        return workRow('mission', m.id, '🎯', 'Mission',
+            C.esc(m.title) + via, C.esc(bits), tone, '');
+    }
+
+    function noticeRow(n) {
+        const bits = [n.agent, n.type, n.level > 1 ? 'L' + n.level : '',
+            n.type === 'question' ? (n.status || 'open') : '', relTime(n.ts)]
+            .filter(Boolean).join(' · ');
+        const tone = n.type === 'warning' || n.level >= 4 ? 'bad'
+            : (n.type === 'question' && (n.status || 'open') === 'open') ? 'warn'
+                : n.type === 'result' ? 'ok' : '';
+        const unread = n.read ? '' : ' <span class="pj-udot" title="Unread">●</span>';
+        return workRow('notice', n.id, '🔔', 'Notice',
+            C.esc(n.title) + unread, C.esc(bits), tone, '');
+    }
+
+    function queueRow(q) {
+        const bits = [q.author === 'user' ? 'you' : q.author, q.status,
+            q.urgency && q.urgency !== 'normal' ? q.urgency : '',
+            q.target ? '→ ' + q.target : '', relTime(q.handledAt || q.ts)]
+            .filter(Boolean).join(' · ');
+        const tone = q.status === 'done' ? 'ok'
+            : q.status === 'dropped' ? 'bad' : q.status === 'blocked' ? 'warn' : '';
+        return workRow('queue', q.id, '📥', 'Work-queue item',
+            C.esc(q.text.length > 110 ? q.text.slice(0, 109) + '…' : q.text), C.esc(bits), tone, '');
+    }
+
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    function scheduleRow(s) {
+        const at = String(s.hour).padStart(2, '0') + ':' + String(s.minute).padStart(2, '0');
+        const when = s.kind === 'weekly' && s.dow !== null ? DOW[s.dow] + ' ' + at
+            : s.kind === 'once' && s.onceAt ? window.AFTime.full(s.onceAt)
+                : s.kind + ' ' + at;
+        const bits = [s.agent, when, s.enabled ? '' : 'off',
+            s.fireIf ? 'has a brake' : ''].filter(Boolean).join(' · ');
+        return workRow('schedule', s.id, '⏰', 'Schedule',
+            C.esc(s.title), C.esc(bits), s.enabled ? '' : 'bad', '');
+    }
+
+    function triggerRow(t) {
+        const bits = [t.type, t.watchPath || t.hookEvent || '', t.enabled ? '' : 'off',
+            t.fireCount ? t.fireCount + ' fired' : '', t.skipCount ? t.skipCount + ' skipped' : '',
+            t.lastFiredAt ? relTime(t.lastFiredAt) : ''].filter(Boolean).join(' · ');
+        return workRow('trigger', t.id, '⚡', 'Trigger',
+            C.esc(t.title), C.esc(bits), t.enabled ? '' : 'bad', '');
     }
 
     /**
@@ -1135,6 +1348,27 @@
                 .pj-ev-d, .pj-ev-a, .pj-ev-c, .pj-ev-w { opacity:.6; font-size:11px;
                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .pj-ev-c, .pj-ev-w { text-align:right; }
+                /* Work rows. Three columns rather than the feed's six: a work
+                   row's subject is one object with one meta line, and giving it
+                   the timeline's cost/when columns would leave four of them
+                   empty on every mission and every trigger. */
+                .pj-worktop { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+                    margin:0 0 12px; padding-bottom:10px;
+                    border-bottom:1px solid var(--vscode-panel-border); }
+                .pj-wrow { display:grid; grid-template-columns:18px minmax(0,1.7fr) minmax(0,1.3fr) auto;
+                    gap:8px; align-items:baseline; padding:3px 6px; border-radius:4px; font-size:12px;
+                    border-left:2px solid transparent; cursor:pointer; }
+                .pj-wrow:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-wrow.tone-ok { border-left-color:var(--vscode-charts-green,#3fb950); }
+                .pj-wrow.tone-bad { border-left-color:var(--vscode-editorError-foreground,#f14c4c); }
+                .pj-wrow.tone-warn { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-wmeta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; }
+                .pj-wact { display:inline-flex; gap:4px; }
+                .pj-wact .mini { padding:0 6px; font-size:11px; line-height:17px; }
+                .pj-held { font-size:10px; opacity:.75; padding:0 5px; border-radius:8px;
+                    background:var(--vscode-textCodeBlock-background,#8881); }
+                .pj-via { font-size:10px; opacity:.7; font-style:italic; }
+                .pj-udot { color:var(--vscode-charts-blue,#3794ff); font-size:9px; vertical-align:2px; }
                 .pj-unfiled { margin-top:14px; max-width:70ch; }
                 .grow { flex:1; }
                 /* documents · plan · people */
@@ -1700,6 +1934,7 @@
      */
     function tabBodyHtml(p) {
         switch (tab) {
+            case 'work': return workHtml(p);
             case 'timeline': return timelineHtml();
             case 'sessions': return sessionsHtml();
             case 'plan': return planHtml();
@@ -5208,6 +5443,40 @@
                 const list = tab === 'timeline' ? (d.feed && d.feed.events) : d.recent;
                 const ev = (list || [])[Number(el.dataset.ev)];
                 if (ev && ev.link) { vscode.postMessage({ type: 'openLink', link: ev.link }); }
+            }));
+
+        // ---- the Work tab ----
+        // Starting work, and the four "make one" doors. Every one hands off to
+        // the form or panel that already owns the object; this tab never builds
+        // one itself, which is the only way a task made here can be identical
+        // to one made on the Tasks page.
+        document.querySelectorAll('[data-work]').forEach(el =>
+            el.addEventListener('click', () => {
+                const p = sel();
+                if (!p) { return; }
+                const a = el.dataset.work;
+                if (a === 'session-console') { vscode.postMessage({ type: 'startSession', id: p.id, how: 'console' }); }
+                else if (a === 'session-terminal') { vscode.postMessage({ type: 'startSession', id: p.id, how: 'terminal' }); }
+                else if (a === 'task') { vscode.postMessage({ type: 'newTask', id: p.id }); }
+                else if (a === 'schedule') { vscode.postMessage({ type: 'newSchedule', id: p.id }); }
+                else if (a === 'trigger') { vscode.postMessage({ type: 'newTrigger', id: p.id }); }
+            }));
+
+        // The whole row opens the thing it is about — a 4-pixel target inside a
+        // row the reader is already pointing at is a target they have to aim
+        // for. The action buttons stop the click before it gets here.
+        document.querySelectorAll('[data-work-open]').forEach(el =>
+            el.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'openWorkRow', what: el.dataset.workOpen, rowId: el.dataset.workId
+                });
+            }));
+        document.querySelectorAll('[data-task-act]').forEach(el =>
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                vscode.postMessage({
+                    type: 'taskAction', action: el.dataset.taskAct, taskId: el.dataset.task
+                });
             }));
 
         // The create form keeps its own state so a repaint never loses a

@@ -16,14 +16,19 @@
  * to whom. A second membership rule living in here would disagree with it
  * within a week, and both answers would look plausible.
  *
- * **What can honestly be filed to a project today, and what cannot.** Sessions
- * resolve through the membership order; tasks carry a `projectId`; commits
- * belong to a declared code root; decisions, deliverables and completed plan
- * items come out of the project's OWN folder, so their membership is not a
- * guess at all. Notices and queue items still carry no project link and are
- * absent — an agent may work on several projects, so deriving a notice's project
- * from who posted it would be exactly the misattribution the entity model was
- * rebuilt to kill.
+ * **How each source knows which project it belongs to.** Sessions resolve
+ * through the membership order; tasks, missions, notices and queue items carry
+ * a `projectId` of their own; commits belong to a declared code root; decisions,
+ * deliverables and completed plan items come out of the project's OWN folder,
+ * so their membership is not a guess at all.
+ *
+ * ‼️ THE STAMP IS THE ONLY THING THAT SPEAKS FOR A NOTICE OR A QUEUE ITEM.
+ * Faz 5 gave them a `projectId` — set by whoever posts, changeable and
+ * removable from the row. What it did NOT do is derive one, and that is the
+ * point: an agent works on several projects, so reading the poster's name and
+ * guessing would be exactly the misattribution the entity model was rebuilt to
+ * kill. An unstamped notice is absent from every project's feed, and that is
+ * the honest answer rather than a plausible one.
  *
  * ‼️ A DOCUMENT EVENT NEEDS A REAL DATE OR IT DOES NOT APPEAR.
  * A decision states `af-date`; a deliverable row states its Date column; a plan
@@ -48,8 +53,8 @@ export type ProjectEventKind =
     | 'mission'      // a mission run, or one of its rounds
     | 'commit'       // a git commit in one of the project's code roots
     | 'files'        // what a session wrote, aggregated — never one row per file
-    | 'notice'       // ⧗ not filed to projects yet
-    | 'queue'        // ⧗ not filed to projects yet
+    | 'notice'       // a notice somebody filed under this project
+    | 'queue'        // a work-queue item filed under this project
     | 'decision'     // a decision record in the project folder
     | 'deliverable'  // a row in the project's deliverables table
     | 'plan';        // a plan item the document records as completed
@@ -61,11 +66,16 @@ export const PROJECT_EVENT_KINDS: ProjectEventKind[] =
 /**
  * Sources that exist but cannot yet say which project they belong to.
  *
- * Exported because the PAGE has to say so. A filter row with a "Notices" chip
- * that can never light up is a promise the product does not keep; naming the
- * gap costs one line and is the difference between "empty" and "broken".
+ * Exported because the PAGE has to say so: a filter chip that can never light
+ * up is a promise the product does not keep, and naming the gap is the
+ * difference between "empty" and "broken".
+ *
+ * ‼️ EMPTY SINCE FAZ 5, AND THE LIST STAYS. Notices and queue items were the
+ * two entries; both carry a `projectId` now. It is kept rather than deleted
+ * because the honesty mechanism is the thing worth keeping — the next source
+ * that arrives half-wired goes in here instead of quietly drawing a dead chip.
  */
-export const UNFILED_EVENT_KINDS: ProjectEventKind[] = ['notice', 'queue'];
+export const UNFILED_EVENT_KINDS: ProjectEventKind[] = [];
 
 /** What clicking a row opens. Kept as data rather than a command string so the
  *  page and the bridge can each do the right thing with it. */
@@ -74,7 +84,9 @@ export type ProjectLink =
     | { to: 'task'; id: string }
     | { to: 'mission'; id: string }
     | { to: 'file'; path: string }
-    | { to: 'commit'; repo: string; hash: string };
+    | { to: 'commit'; repo: string; hash: string }
+    | { to: 'notice'; id: string }
+    | { to: 'queue'; id: string };
 
 export interface ProjectEvent {
     ts: number;
@@ -176,12 +188,49 @@ export interface FeedDoc {
     path?: string;
 }
 
+/**
+ * A notice filed under this project (Faz 5).
+ *
+ * ‼️ ONE ROW, AT THE MOMENT IT WAS POSTED. A notice's later life — read,
+ * starred, answered — belongs on the notices board, not in a project's history:
+ * four rows for one message is four times the noise for no extra fact. The
+ * exception is an ANSWERED question, which is a second thing that happened, at
+ * a different time, and the reason the whole question channel exists.
+ */
+export interface FeedNotice {
+    id: string;
+    ts: number;
+    title: string;
+    type: string;
+    level?: number;
+    agentName?: string;
+    /** question lifecycle — an answer is its own event */
+    status?: string;
+    answeredAt?: number;
+}
+
+/** A work-queue item filed under this project (Faz 5). One row, stamped at the
+ *  latest thing that happened to it — the same rule a task follows. */
+export interface FeedQueueItem {
+    id: string;
+    ts: number;
+    text: string;
+    status: string;
+    urgency?: string;
+    author?: string;
+    target?: string;
+    handledAt?: number;
+    delegatedAt?: number;
+}
+
 export interface ProjectFeedInput {
     sessions?: FeedSession[];
     tasks?: FeedTask[];
     missions?: FeedMission[];
     commits?: FeedCommit[];
     docs?: FeedDoc[];
+    notices?: FeedNotice[];
+    queue?: FeedQueueItem[];
 }
 
 export interface ProjectFeedOptions {
@@ -348,6 +397,64 @@ function missionEvents(m: FeedMission): ProjectEvent[] {
     return out;
 }
 
+/** The four notice types that mean something went wrong or is waiting get a
+ *  tone; the rest are neutral. A routine update coloured green reads as good
+ *  news it never claimed to be. */
+function noticeTone(n: FeedNotice): ProjectEvent['tone'] {
+    if (n.type === 'warning' || (n.level ?? 1) >= 4) { return 'bad'; }
+    if (n.type === 'question' && (n.status ?? 'open') === 'open') { return 'warn'; }
+    if (n.type === 'result') { return 'ok'; }
+    return undefined;
+}
+
+function noticeEvents(n: FeedNotice): ProjectEvent[] {
+    const out: ProjectEvent[] = [{
+        ts: n.ts,
+        kind: 'notice',
+        title: short(n.title),
+        detail: [n.type, n.level && n.level > 1 ? `L${n.level}` : ''].filter(Boolean).join(' · '),
+        agent: n.agentName,
+        tone: noticeTone(n),
+        link: { to: 'notice', id: n.id }
+    }];
+    // An answer is a second event at a second time — the user acting, which is
+    // the whole reason the question channel exists. Only when it really has a
+    // date: a stored `answered` with no `answeredAt` would land on the ask.
+    if (n.status === 'answered' && (n.answeredAt ?? 0) > 0) {
+        out.push({
+            ts: n.answeredAt as number,
+            kind: 'notice',
+            title: `answered: ${short(n.title, 70)}`,
+            detail: 'question · answered',
+            tone: 'ok',
+            link: { to: 'notice', id: n.id }
+        });
+    }
+    return out;
+}
+
+function queueTone(status: string): ProjectEvent['tone'] {
+    if (status === 'done') { return 'ok'; }
+    if (status === 'dropped') { return 'bad'; }
+    if (status === 'blocked') { return 'warn'; }
+    return undefined;
+}
+
+function queueEvent(q: FeedQueueItem): ProjectEvent {
+    const ts = q.handledAt ?? q.delegatedAt ?? q.ts;
+    const waited = q.handledAt && q.handledAt > q.ts ? `took ${humanSpan(q.handledAt - q.ts)}` : '';
+    return {
+        ts,
+        kind: 'queue',
+        title: short(q.text),
+        detail: [q.status, q.urgency && q.urgency !== 'normal' ? q.urgency : '',
+            q.target ? `→ ${q.target}` : '', waited].filter(Boolean).join(' · '),
+        agent: q.author && q.author !== 'user' ? q.author : undefined,
+        tone: queueTone(q.status),
+        link: { to: 'queue', id: q.id }
+    };
+}
+
 function commitEvent(c: FeedCommit): ProjectEvent {
     return {
         ts: c.ts,
@@ -379,6 +486,8 @@ export function buildProjectFeed(
     for (const t of input.tasks ?? []) { all.push(taskEvent(t)); }
     for (const m of input.missions ?? []) { all.push(...missionEvents(m)); }
     for (const c of input.commits ?? []) { all.push(commitEvent(c)); }
+    for (const n of input.notices ?? []) { all.push(...noticeEvents(n)); }
+    for (const q of input.queue ?? []) { all.push(queueEvent(q)); }
     for (const d of input.docs ?? []) {
         // A document event with no real date is dropped, not placed. Sorting it
         // to 1970 or to "now" both put it somewhere it did not happen, and the

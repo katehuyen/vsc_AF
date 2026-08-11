@@ -50,6 +50,14 @@ export class MissionsPanel {
         MissionsPanel.current?.refresh();
     }
 
+    /** Open the page ON one run — what "Open" means from a project's Work tab
+     *  or a timeline row. `show` paints first; the focus rides in on the next
+     *  tick, because a freshly created panel's script has not run yet. */
+    static focusRun(deps: MissionsDeps, runId: string): void {
+        MissionsPanel.show(deps);
+        void MissionsPanel.current?.panel.webview.postMessage({ type: 'focus-run', id: runId });
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: MissionsDeps, newForm?: boolean) {
         this.panel.webview.html = htmlShell(
             this.panel.webview,

@@ -652,6 +652,21 @@ export class TasksPanel {
         TasksPanel.current?.refresh();
     }
 
+    /**
+     * Open the page ON one run — what "Open" means from a project's Work tab or
+     * a timeline row.
+     *
+     * ‼️ The page has to EXIST before the message can land, which is why this
+     * is not a `show` argument: a freshly created panel's script has not run
+     * yet, so a message posted in the same tick is dropped. `show` paints, and
+     * the page asks for nothing; the focus rides in on the next tick, which is
+     * the same trick `compose` uses.
+     */
+    static focusTask(deps: TasksDeps, taskId: string): void {
+        TasksPanel.show(deps, 'run');
+        void TasksPanel.current?.panel.webview.postMessage({ type: 'focus-task', id: taskId });
+    }
+
     /** Open the page on the Run tab with the New-task form up. This is what the
      *  sidebar's + does now — the one route in, so a task made from the tree and
      *  a task made from the page are the same task with the same fields. */

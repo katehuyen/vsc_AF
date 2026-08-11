@@ -11,13 +11,16 @@
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Type / level / agent / status are multi-pick: null = all (no filter),
     // an array = exactly that subset, [] = none. See media/afFilters.js.
-    const DEF = { fMode: 'all', fType: null, fLevel: null, fAgent: null, fStatus: null, sortKey: 'newest', query: '', singleMode: false };
+    const DEF = { fMode: 'all', fType: null, fLevel: null, fAgent: null, fStatus: null, fProject: null, sortKey: 'newest', query: '', singleMode: false };
     const pick = v => (Array.isArray(v) ? v : null);
     let fMode = st.fMode || DEF.fMode;
     let fType = pick(st.fType);
     let fLevel = pick(st.fLevel);
     let fAgent = pick(st.fAgent);
     let fStatus = pick(st.fStatus);   // open | answered | declined (questions)
+    // Which projects to list. Picked by ID rather than by name so a rename does
+    // not silently empty the filter — the picker prints the name.
+    let fProject = pick(st.fProject);
     let sortKey = st.sortKey || DEF.sortKey;
     let query = st.query || DEF.query;
     let singleMode = st.singleMode !== undefined ? !!st.singleMode : DEF.singleMode;
@@ -55,7 +58,12 @@
         ['type', 'Type'], ['agent', 'Agent']
     ];
 
-    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, fStatus, sortKey, query, singleMode }); } }
+    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, fStatus, fProject, sortKey, query, singleMode }); } }
+    /** The project a notice is filed under, out of the list the host shipped.
+     *  Undefined for an unfiled one AND for a stamp whose project is gone —
+     *  both draw the same "—", because both mean "this row names no project
+     *  you can open". */
+    function projOf(n) { return window.AFProject.find(DATA.projects, n.projectId); }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function tmeta(t) { return TYPES[t] || TYPES.update; }
     function lvl(n) { return n.level >= 1 && n.level <= 4 ? n.level : 1; }
@@ -150,6 +158,10 @@
             inSet(fLevel, lvl(n)) &&
             inSet(fAgent, n.agentName) &&
             (!fStatus || (n.type === 'question' && fStatus.indexOf(n.status || 'open') >= 0)) &&
+            // An unfiled notice answers to the explicit "(none)" bucket, so a
+            // project filter never makes rows disappear without a name for
+            // where they went.
+            inSet(fProject, n.projectId || window.AFProject.NONE) &&
             matchesQuery(n));
         const by = {
             newest: (a, b) => b.ts - a.ts, oldest: (a, b) => a.ts - b.ts,
@@ -285,7 +297,7 @@
             body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
-                ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}
+                ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}${projectPicker(n)}
                 <div class="btnrow nt-actions">
                     <button data-act="handoffNotice" data-id="${esc(n.id)}" title="Open the responsible agent and type this message into its terminal (not sent)">🔗 Hand to agent</button>
                     ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Turn this message into a queue item">📥 Add to queue</button>` : ''}
@@ -307,11 +319,47 @@
                 ${n.reportPath ? '<span class="nt-badge rep" title="Full report attached — click to open inside">📄</span>' : ''}
                 ${statusBadge(n)}${n.edited ? '<span class="nt-badge muted">✎</span>' : ''}
                 ${tags ? `<span class="nt-tags">${tags}</span>` : ''}
+                ${projectChip(n)}
                 ${starsHtml(n)}
                 <span class="nt-pin ${n.pinned ? 'on' : ''}" data-pinrow="${esc(n.id)}" data-pin="${n.pinned ? '0' : '1'}" title="${n.pinned ? 'Unpin' : 'Pin'}">📌</span>
                 <span class="nt-meta muted small">${esc(n.agentName)} · ${esc(timeLabel(n.ts))}${n.read ? '' : ' <span class="nt-udot">●</span>'}</span>
             </div>
             <div class="nt-body" ${open ? '' : 'hidden'}>${body}</div>
+        </div>`;
+    }
+
+    /**
+     * The project mark on a row — the shared one (media/afProject.js), so a
+     * notice's project looks exactly like the same project on the sessions
+     * table, the queue and the sidebar.
+     *
+     * Drawn only when the notice HAS one: an em dash in front of every unfiled
+     * row would take the width the title needs and say nothing. Filing happens
+     * in the open body, where there is room for a picker with names in it.
+     * Clicking the mark opens that project — the row already knows which.
+     */
+    function projectChip(n) {
+        const p = projOf(n);
+        if (!p) { return ''; }
+        const t = window.AFProject.tip(p);
+        return window.AFTip.wrap(
+            `<span class="nt-proj" data-openproj="${esc(p.id)}" role="button" tabindex="0">`
+            + window.AFProject.badge(p) + '</span>', t.head, t.body);
+    }
+
+    /** The "file it under…" picker, in the open body. A select rather than a
+     *  chip row because the list is as long as the user's project list, and the
+     *  empty option is what takes a stamp back OFF. */
+    function projectPicker(n) {
+        const cur = n.projectId || '';
+        return `<div class="nt-projrow">
+            <label class="muted small" for="nt-pj-${esc(n.id)}">Project</label>
+            <select class="nt-pjsel" id="nt-pj-${esc(n.id)}" data-id="${esc(n.id)}"
+                title="Which project this message is about. It shows on that project's Work tab and timeline; the empty option takes the stamp off again.">
+                ${window.AFProject.options(DATA.projects, cur, { anyLabel: '— none' })}
+            </select>
+            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
+            ${cur && !projOf(n) ? '<span class="muted small" title="The project this was filed under no longer exists — pick another, or clear it">⚠ project gone</span>' : ''}
         </div>`;
     }
 
@@ -332,7 +380,15 @@
                 options: (DATA.agents || []).slice() },
             { id: 'nt-status', label: 'Status', get: () => fStatus, set: v => { fStatus = v; },
                 title: 'Question status — tick any combination',
-                options: [{ v: 'open', t: '❓ Waiting' }, { v: 'answered', t: '✓ Answered' }, { v: 'declined', t: '✕ Declined' }] }
+                options: [{ v: 'open', t: '❓ Waiting' }, { v: 'answered', t: '✓ Answered' }, { v: 'declined', t: '✕ Declined' }] },
+            // ‼️ "No project" is an OPTION, not the absence of one. Without it a
+            // project filter would make the unfiled notices vanish with nothing
+            // on screen saying they exist — which is exactly the group somebody
+            // filtering by project is about to want to file.
+            { id: 'nt-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
+                title: 'Which project\'s notices to list — manage them on the ◧ Projects page',
+                options: [{ v: window.AFProject.NONE, t: '— No project' }].concat(
+                    (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) }
         ];
     }
 
@@ -360,6 +416,13 @@
                 <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
                 <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
                 <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)"><span class="nt-trashic">🗑</span> Delete</button>
+            </span>
+            <span class="nt-grp nt-bulk">
+                <select id="nt-bulkproj" title="File the selected notices (or everything shown) under a project — the empty option takes the stamp off. The same mark decides which project's Work tab and timeline they appear on.">
+                    <option value="" selected>File under…</option>
+                    <option value="__clear__">— take out of any project</option>
+                    ${(DATA.projects || []).map(p => `<option value="${esc(p.id)}">${esc((p.icon ? p.icon + ' ' : '') + p.name)}</option>`).join('')}
+                </select>
             </span>
             <span class="nt-grp">
                 <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept"><span class="nt-cleardot">●</span> Clear read</button>
@@ -469,6 +532,13 @@
         .nt-spawned { margin:6px 0; padding:6px 8px; border-left:3px solid var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); border-radius:4px; }
         .nt-spawned ul { margin:4px 0; padding-left:18px; }
         .nt-openitem { color:var(--vscode-textLink-foreground); cursor:pointer; }
+        /* The project mark rides between the tags and the stars — right of what
+           the notice IS, left of what the user did to it. Clickable, so it gets
+           the pointer every other openable mark on this page has. */
+        .nt-proj { flex-shrink:0; font-size:11px; opacity:.85; cursor:pointer; }
+        .nt-proj:hover { opacity:1; text-decoration:underline; }
+        .nt-projrow { display:flex; gap:6px; align-items:center; margin:6px 0 2px; }
+        .nt-projrow select { padding:2px 6px; max-width:260px; }
     </style>`;
 
     function render() {
@@ -553,7 +623,23 @@
         }));
         bind('nt-sort', 'change', e => { sortKey = e.target.value; saveState(); render(); });
         bind('nt-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
-        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });
+        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; fProject = DEF.fProject; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });
+
+        // Filing. The picker in an open notice writes one row; the toolbar's
+        // box writes the selection (or everything shown), which is the gesture
+        // that makes a backlog of unfiled notices tractable at all.
+        document.querySelectorAll('.nt-pjsel').forEach(sel => sel.addEventListener('change', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'setProject', id: sel.dataset.id, project: sel.value });
+        }));
+        document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
+        }));
+        document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'openProject', project: el.dataset.project });
+        }));
 
         // bulk actions run on the SELECTED ids, or — if nothing is checked — on
         // everything currently shown (the active filter).
@@ -575,6 +661,20 @@
             else if (a === 'bulkUnread') { const ids = bulkTargets(); if (ids.length) { vscode.postMessage({ type: 'markReadMany', ids, read: false }); } }
             else if (a === 'bulkDelete') { const ids = bulkTargets(); if (ids.length) { ids.forEach(id => expanded.delete(id)); selected.clear(); vscode.postMessage({ type: 'dismissMany', ids }); } }
         }));
+
+        // The toolbar's filing box follows the same rule as every other bulk
+        // action here: the selection, or — with nothing ticked — everything the
+        // current filter shows. `__clear__` is a real choice ("take it out"),
+        // which the empty option cannot be: that one is the box's own label.
+        bind('nt-bulkproj', 'change', e => {
+            const v = e.target.value;
+            e.target.value = '';
+            if (!v) { return; }
+            const ids = bulkTargets();
+            if (ids.length) {
+                vscode.postMessage({ type: 'setProject', ids, project: v === '__clear__' ? '' : v });
+            }
+        });
 
         // select-all reflects/controls the shown rows (classic tri-state header box)
         const selAll = document.getElementById('nt-selall');

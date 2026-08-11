@@ -103,6 +103,15 @@ export interface WorkItem {
     /** Snapshot of the source notice title — origin stays legible if the notice
      *  is deleted (the default on convert). */
     sourceNoticeTitle?: string;
+    /**
+     * Which project this item is work FOR (Faz 5).
+     *
+     * ‼️ STAMPED, NEVER DERIVED. The queue is friction-free capture, so most
+     * items arrive with nothing but a sentence; the window's active project is
+     * stamped when a PERSON drops one, and nothing is guessed from the words.
+     * Cleared and changed from the row — see WorkQueueStore.setProject.
+     */
+    projectId?: string;
     // --- user bookkeeping ---
     pinned?: boolean;
     archived?: boolean;
@@ -119,6 +128,8 @@ export interface WorkItemInput {
     dependsOn?: string[] | string;
     sourceNoticeId?: string;
     sourceNoticeTitle?: string;
+    /** Which project this is work for — see WorkItem.projectId. */
+    projectId?: string;
 }
 
 export interface WorkItemFilter {
@@ -131,8 +142,15 @@ export interface WorkItemFilter {
     groupId?: string;
     tag?: string;
     sourceNoticeId?: string;
+    /** A project id — or `NO_PROJECT` for the ones nobody filed. Absent = no
+     *  project filter at all, which is not the same question. */
+    projectId?: string;
     limit?: number;
 }
+
+/** The filter value that asks for items carrying NO project. A real id can
+ *  never collide with it: ids are `prj_…`. */
+export const NO_PROJECT = '(none)';
 
 /** What a stamp writes onto an item when the manager handles it. */
 export interface StampInput {
@@ -219,6 +237,8 @@ export function makeWorkItem(input: WorkItemInput, now = Date.now()): WorkItem {
         const srcTitle = String(input.sourceNoticeTitle ?? '').trim();
         if (srcTitle) { item.sourceNoticeTitle = srcTitle.slice(0, 200); }
     }
+    const projectId = String(input.projectId ?? '').trim();
+    if (projectId) { item.projectId = projectId.slice(0, 60); }
     return item;
 }
 
@@ -233,6 +253,7 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
     const target = (f.target ?? '').toLowerCase();
     const urgency = (f.urgency ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
+    const project = (f.projectId ?? '').trim();
     let out = sortItems(list).filter(n =>
         (!status || n.status === status) &&
         (!f.active || !isTerminal(n)) &&
@@ -241,6 +262,7 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
         (!urgency || n.urgency === urgency) &&
         (!f.groupId || n.groupId === f.groupId) &&
         (!f.sourceNoticeId || n.sourceNoticeId === f.sourceNoticeId) &&
+        (!project || (project === NO_PROJECT ? !n.projectId : n.projectId === project)) &&
         (!tag || (n.tags ?? []).some(t => t.toLowerCase() === tag)));
     if (f.limit && f.limit > 0) { out = out.slice(0, Math.floor(f.limit)); }
     return out;
@@ -453,6 +475,38 @@ export class WorkQueueStore {
 
     get(id: string): WorkItem | undefined { return this.find(id); }
 
+    /**
+     * File items under a project, or take them out of one.
+     *
+     * ‼️ REVERSIBLE, AND THAT IS THE POINT OF STAMPING AT ALL. The window
+     * stamps whatever project it was showing when a person dropped the item —
+     * right most of the time and wrong the rest; a mark you cannot take off is
+     * a mark nobody trusts. An empty `projectId` clears it.
+     */
+    setProject(ids: string[], projectId: string): number {
+        const set = new Set(ids);
+        const pid = String(projectId ?? '').trim();
+        let c = 0;
+        for (const n of this.items) {
+            if (!set.has(n.id)) { continue; }
+            if (pid) { if (n.projectId === pid) { continue; } n.projectId = pid; }
+            else { if (!n.projectId) { continue; } delete n.projectId; }
+            c++;
+        }
+        if (c) { this.save(); } return c;
+    }
+
+    /** Drop stamps pointing at projects that no longer exist — called after a
+     *  project is removed, so the queue never filters on a ghost. */
+    pruneProjects(aliveIds: Iterable<string>): number {
+        const alive = new Set(aliveIds);
+        let c = 0;
+        for (const n of this.items) {
+            if (n.projectId && !alive.has(n.projectId)) { delete n.projectId; c++; }
+        }
+        if (c) { this.save(); } return c;
+    }
+
     /** Free-form field edits (text / target / urgency / tags / dependsOn). */
     edit(id: string, patch: { text?: string; target?: string; urgency?: string; tags?: string[] | string; dependsOn?: string[] | string }): boolean {
         const n = this.find(id); if (!n) { return false; }
@@ -610,6 +664,14 @@ export interface QueueOpsDeps {
     onPost?: (item: WorkItem) => void;
     /** Batching thresholds, read live from settings by the host. */
     thresholds?: () => { groupSize: number; maxAgeHours: number };
+    /**
+     * A project id or name → the id, or undefined if there is no such project.
+     *
+     * ‼️ An unknown key is REPORTED, never guessed: the item is captured
+     * unfiled rather than under a project somebody nearly named. Injected
+     * because the registry is the host's.
+     */
+    resolveProject?: (key: string) => string | undefined;
 }
 
 /** Read a string-array arg, tolerating a single string. */
@@ -620,30 +682,77 @@ function argIds(args: Record<string, unknown>, key: string): string[] {
     return [];
 }
 
+/**
+ * A caller's `project` argument → what the filter wants.
+ *
+ * `(none)` is passed through verbatim (it is a question, not a project), a name
+ * is resolved to an id, and a key nothing matches falls back to itself so the
+ * list comes back EMPTY rather than unfiltered — a filter that silently stops
+ * filtering hands back the whole queue and looks like an answer.
+ */
+function projectFilter(key: string | undefined, deps: QueueOpsDeps): string | undefined {
+    const k = String(key ?? '').trim();
+    if (!k) { return undefined; }
+    if (k === NO_PROJECT) { return NO_PROJECT; }
+    return deps.resolveProject?.(k) ?? k;
+}
+
 export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): void {
     const changed = () => { try { deps.onChange?.(); } catch { /* UI best-effort */ } };
     const store = deps.store;
     bridge.register([
         {
             op: 'queue.add',
-            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint), author? (defaults to the agent name for agent-queued items; "user" for user captures). The manager scans, groups and batch-delegates these.',
+            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint), author? (defaults to the agent name for agent-queued items; "user" for user captures), project? (id or name — files the item under a project so it shows on that project\'s Work tab; an unknown name is reported back and the item is captured unfiled rather than guessed at). The manager scans, groups and batch-delegates these.',
             handler: (args) => {
+                const projectKey = optStr(args, 'project');
+                let projectId: string | undefined;
+                let projectError: string | undefined;
+                if (projectKey) {
+                    projectId = deps.resolveProject?.(projectKey);
+                    if (!projectId) {
+                        projectError = `no project matches "${projectKey}" — the item was captured unfiled; projects.list shows the ids and names.`;
+                    }
+                }
                 const item = store.add({
                     text: argStr(args, 'text'),
                     author: optStr(args, 'author') || undefined,
                     target: optStr(args, 'target') || undefined,
                     urgency: optStr(args, 'urgency') || undefined,
                     tags: (args.tags as string[] | string | undefined),
-                    dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined
+                    dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined,
+                    projectId
                 });
                 try { deps.onPost?.(item); } catch { /* best-effort */ }
                 changed();
-                return { id: item.id, ts: item.ts, status: item.status, active: store.active() };
+                return {
+                    id: item.id, ts: item.ts, status: item.status,
+                    projectId: item.projectId ?? null, projectError, active: store.active()
+                };
+            }
+        },
+        {
+            op: 'queue.project',
+            describe: 'File work items under a project, or take them out of one. args: id (or ids: string[]), project (id or name; empty string or omitted CLEARS the stamp). Reversible on purpose — the window stamps what it was showing when a person dropped the item, which is right most of the time and wrong the rest.',
+            handler: (args) => {
+                const ids = argIds(args, 'ids');
+                const one = optStr(args, 'id');
+                const all = ids.length ? ids : (one ? [one] : []);
+                need(all.length > 0, 'queue.project needs "id" or a non-empty "ids"');
+                const key = optStr(args, 'project');
+                let projectId = '';
+                if (key) {
+                    projectId = deps.resolveProject?.(key) ?? '';
+                    need(!!projectId, `no project matches "${key}" — projects.list shows the ids and names.`);
+                }
+                const n = store.setProject(all, projectId);
+                changed();
+                return { changed: n, projectId: projectId || null };
             }
         },
         {
             op: 'queue.list',
-            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, urgency?, groupId?, tag?, sourceNoticeId?, limit? (default 50). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
+            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
             handler: (args) => store.list({
                 status: optStr(args, 'status') || undefined,
                 active: args.active === true ? true : undefined,
@@ -653,6 +762,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                 groupId: optStr(args, 'groupId') || undefined,
                 tag: optStr(args, 'tag') || undefined,
                 sourceNoticeId: optStr(args, 'sourceNoticeId') || undefined,
+                projectId: projectFilter(optStr(args, 'project'), deps),
                 limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50
             })
         },

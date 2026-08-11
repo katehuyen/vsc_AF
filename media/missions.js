@@ -1194,6 +1194,15 @@
             if (editing) { pendingData = { ...DATA, ...m.data }; return; }
             DATA = { ...DATA, ...m.data };
             render();
+        } else if (m.type === 'focus-run' && m.id) {
+            // ‼️ "OPEN THIS MISSION" HAS TO LAND ON THE MISSION. A project's
+            // Work tab and a timeline row both say Open about one run; opening
+            // the page at the top of a list and leaving the reader to find it
+            // is the same as not having the button.
+            openRuns.add(m.id);
+            render();
+            const el = document.querySelector('[data-run="' + m.id + '"]');
+            if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
         } else if (m.type === 'formError') {
             readForm();
             formErr = m.error;

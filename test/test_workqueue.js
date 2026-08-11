@@ -283,10 +283,21 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         /_cevap$/.test(reportFileStem({ title: 'cevap', name: '', agentName: 'developer', date: FIXED })));
 
     const reg = new BridgeRegistry();
-    registerQueueOps(reg, { store, notices, writeAnswer, onChange: () => changes++, onPost: n => { posted = n; } });
+    // The registry the host injects: a name or an id resolves, anything else
+    // comes back undefined so "no project matches" is a real answer.
+    const PROJECTS = { prj_aaa: 'Agent Farm', prj_bbb: 'TalkScribe' };
+    const resolveProject = (key) => {
+        const k = String(key || '').trim();
+        if (PROJECTS[k]) { return k; }
+        return Object.keys(PROJECTS).find(id => PROJECTS[id].toLowerCase() === k.toLowerCase());
+    };
+    registerQueueOps(reg, {
+        store, notices, writeAnswer, resolveProject,
+        onChange: () => changes++, onPost: n => { posted = n; }
+    });
 
     const cat = reg.catalog().map(c => c.op);
-    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.groups', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice', 'queue.answer'].every(op => cat.includes(op)));
+    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.groups', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice', 'queue.answer', 'queue.project'].every(op => cat.includes(op)));
 
     const add = await reg.dispatch('queue.add', { text: 'pad does not open on the second screen', target: 'repoA', urgency: 'soon', author: 'user' });
     ok('add returns id/status/active', add.ok && add.result.status === 'captured' && add.result.active === 1);
@@ -405,6 +416,47 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         ], { now: NOW });
         ok('terminal items are ignored entirely', doneOnly.actionable === false
             && doneOnly.starving.length === 0 && doneOnly.ungrouped === 0);
+    }
+
+    // ---- Faz 5: which project an item is work FOR ----
+    {
+        const byName = await reg.dispatch('queue.add', { text: 'filed by name', project: 'Agent Farm' });
+        ok('a project NAME files the item', byName.ok && byName.result.projectId === 'prj_aaa');
+        const byId = await reg.dispatch('queue.add', { text: 'filed by id', project: 'prj_bbb' });
+        ok('…and so does its id', byId.ok && byId.result.projectId === 'prj_bbb');
+        const bad = await reg.dispatch('queue.add', { text: 'nearly named it', project: 'Agent Farmm' });
+        ok('‼️ an unknown project is REPORTED, and the item is captured unfiled rather than guessed at',
+            bad.ok && !bad.result.projectId && /no project matches/i.test(bad.result.projectError || ''));
+        ok('…and the capture itself survives — losing the note too would break the queue\'s one promise',
+            store.items.some(n => n.text === 'nearly named it'));
+
+        const mine = await reg.dispatch('queue.list', { project: 'Agent Farm' });
+        ok('list filters by project', mine.ok && mine.result.length === 1
+            && mine.result[0].text === 'filed by name');
+        const none = await reg.dispatch('queue.list', { project: '(none)' });
+        ok('"(none)" finds the unfiled ones', none.ok && none.result.length > 0
+            && none.result.every(n => !n.projectId));
+        const ghost = await reg.dispatch('queue.list', { project: 'no such thing' });
+        ok('‼️ an unmatched project filter returns NOTHING rather than the whole queue',
+            ghost.ok && ghost.result.length === 0);
+
+        const moved = await reg.dispatch('queue.project', { id: byName.result.id, project: 'TalkScribe' });
+        ok('a stamp can be changed', moved.ok && store.get(byName.result.id).projectId === 'prj_bbb');
+        const cleared = await reg.dispatch('queue.project', { id: byName.result.id });
+        ok('‼️ …and taken off entirely — a mark you cannot remove is a mark nobody trusts',
+            cleared.ok && !store.get(byName.result.id).projectId);
+        const bulk = await reg.dispatch('queue.project', {
+            ids: [byId.result.id, bad.result.id], project: 'prj_aaa'
+        });
+        ok('and it works in bulk', bulk.ok && bulk.result.changed === 2);
+        const refuse = await reg.dispatch('queue.project', { id: byId.result.id, project: 'ghost' });
+        ok('setting an unknown project is refused, not silently ignored',
+            !refuse.ok && /no project matches/i.test(refuse.error));
+
+        store.setProject([byId.result.id], 'prj_gone');
+        ok('‼️ a stamp pointing at a deleted project is pruned',
+            store.pruneProjects(['prj_aaa', 'prj_bbb']) === 1
+            && !store.get(byId.result.id).projectId);
     }
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}

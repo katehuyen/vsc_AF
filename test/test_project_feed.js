@@ -144,11 +144,43 @@ const session = {
 {
     ok('the unfiled kinds are a subset of the vocabulary',
         UNFILED_EVENT_KINDS.every(k => PROJECT_EVENT_KINDS.includes(k)));
-    ok('‼️ notices and queue items are named as not-yet-filed rather than faked',
-        UNFILED_EVENT_KINDS.includes('notice') && UNFILED_EVENT_KINDS.includes('queue'));
-    ok('‼️ decisions, deliverables and plan items are NO LONGER unfiled — they come out of the project\'s own documents',
+    // Faz 5 emptied it: notices and queue items carry a projectId of their own
+    // now, and every other kind already did. The LIST stays because the honesty
+    // mechanism is what is worth keeping — the next half-wired source goes in
+    // here rather than quietly drawing a chip that can never light up.
+    ok('‼️ nothing is unfiled any more — every kind can say which project it belongs to',
+        UNFILED_EVENT_KINDS.length === 0);
+    ok('‼️ notices and queue items are filed by their own stamp, not named as a gap',
+        !UNFILED_EVENT_KINDS.includes('notice') && !UNFILED_EVENT_KINDS.includes('queue'));
+    ok('‼️ decisions, deliverables and plan items come out of the project\'s own documents',
         !UNFILED_EVENT_KINDS.includes('decision') && !UNFILED_EVENT_KINDS.includes('deliverable')
         && !UNFILED_EVENT_KINDS.includes('plan'));
+
+    // ---------- the two new sources ----------
+    const feed = buildProjectFeed({
+        notices: [
+            { id: 'n1', ts: T, title: 'shipped 3.107.0', type: 'update', level: 1, agentName: 'developer' },
+            { id: 'n2', ts: T - DAY, title: 'which folder?', type: 'question', status: 'answered', answeredAt: T - DAY / 2 }
+        ],
+        queue: [
+            { id: 'q1', ts: T - 2 * DAY, text: 'fix the badge', status: 'done', handledAt: T - DAY, author: 'user' },
+            { id: 'q2', ts: T - 3 * DAY, text: 'blocked on you', status: 'blocked', author: 'user' }
+        ]
+    });
+    ok('a notice reaches the feed as its own kind',
+        feed.events.filter(e => e.kind === 'notice').length === 3);
+    ok('‼️ an ANSWERED question is a second event at the moment it was answered — the user acting is not the same fact as the agent asking',
+        feed.events.some(e => e.kind === 'notice' && e.ts === T - DAY / 2 && e.title.startsWith('answered:')));
+    ok('a queue item is stamped at the latest thing that happened to it',
+        feed.events.some(e => e.kind === 'queue' && e.ts === T - DAY && e.tone === 'ok'));
+    ok('a blocked item reads as needing you', feed.events.some(e =>
+        e.kind === 'queue' && e.tone === 'warn' && e.title === 'blocked on you'));
+    ok('both rows link back to the board they live on', feed.events
+        .filter(e => e.kind === 'notice' || e.kind === 'queue')
+        .every(e => e.link && (e.link.to === 'notice' || e.link.to === 'queue')));
+    ok('an unanswered question carries no phantom second row', buildProjectFeed({
+        notices: [{ id: 'n3', ts: T, title: 'still waiting', type: 'question', status: 'answered' }]
+    }).events.length === 1);
 
     const withDocs = buildProjectFeed({
         docs: [

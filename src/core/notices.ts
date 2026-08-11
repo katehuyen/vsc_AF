@@ -91,6 +91,16 @@ export interface Notice {
      *  agent's own message): the identity of the thing being reported, so the
      *  same condition ending can take the notice back (see dismissBySource). */
     sourceKey?: string;
+    /**
+     * Which project this notice is about (Faz 5).
+     *
+     * ‼️ STAMPED, NEVER DERIVED. An agent works on several projects, so reading
+     * the poster's name and guessing would be exactly the misattribution the
+     * project entity was rebuilt to kill. It is set by whoever posts — the
+     * window's active project for a farm-posted one, an explicit `project` arg
+     * for an agent's — and the user can change or clear it on the row.
+     */
+    projectId?: string;
 }
 
 export interface NoticeSnapshot {
@@ -124,6 +134,8 @@ export interface NoticeInput {
     reportPath?: string;
     /** Identity of the live condition this notice reports (host-posted only). */
     sourceKey?: string;
+    /** Which project this is about — see Notice.projectId. */
+    projectId?: string;
 }
 
 export interface NoticeFilter {
@@ -136,8 +148,15 @@ export interface NoticeFilter {
     handled?: boolean;
     minStars?: number;
     tag?: string;
+    /** A project id — or `NO_PROJECT` for "the ones nobody filed". Absent = no
+     *  project filter at all, which is not the same question. */
+    projectId?: string;
     limit?: number;
 }
+
+/** The filter value that asks for rows carrying NO project. A real id can
+ *  never collide with it: ids are `prj_…`. */
+export const NO_PROJECT = '(none)';
 
 const MAX_NOTICES = 400;
 const TITLE_MAX = 200;
@@ -213,6 +232,8 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     if (reportPath) { n.reportPath = reportPath.slice(0, 500); }
     const sourceKey = String(input.sourceKey ?? '').trim();
     if (sourceKey) { n.sourceKey = sourceKey.slice(0, 200); }
+    const projectId = String(input.projectId ?? '').trim();
+    if (projectId) { n.projectId = projectId.slice(0, 60); }
     if (type === 'question') { n.status = 'open'; }
     return n;
 }
@@ -227,6 +248,7 @@ export function filterNotices(list: Notice[], f: NoticeFilter): Notice[] {
     const agent = (f.agent ?? '').toLowerCase();
     const status = (f.status ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
+    const project = (f.projectId ?? '').trim();
     let out = sortNotices(list).filter(n =>
         (!type || n.type === type) &&
         (!f.level || n.level === f.level) &&
@@ -236,6 +258,7 @@ export function filterNotices(list: Notice[], f: NoticeFilter): Notice[] {
         (!status || (n.status ?? 'open') === status) &&
         (f.handled === undefined || !!n.handled === f.handled) &&
         (!f.minStars || (n.stars ?? 0) >= f.minStars) &&
+        (!project || (project === NO_PROJECT ? !n.projectId : n.projectId === project)) &&
         (!tag || (n.tags ?? []).some(t => t.toLowerCase() === tag)));
     if (f.limit && f.limit > 0) { out = out.slice(0, Math.floor(f.limit)); }
     return out;
@@ -333,6 +356,38 @@ export class NoticesStore {
     pin(id: string, pinned: boolean): boolean {
         const n = this.find(id); if (!n) { return false; }
         n.pinned = pinned; this.save(); return true;
+    }
+
+    /**
+     * File notices under a project — or take them out of one.
+     *
+     * ‼️ REVERSIBLE, AND THAT IS THE POINT OF STAMPING AT ALL. The window
+     * stamps whatever project it was showing, which is right most of the time
+     * and wrong the rest; a mark you cannot take off is a mark nobody trusts.
+     * An empty `projectId` clears it. Bulk because the row is a checkbox row.
+     */
+    setProject(ids: string[], projectId: string): number {
+        const set = new Set(ids);
+        const pid = String(projectId ?? '').trim();
+        let c = 0;
+        for (const n of this.notices) {
+            if (!set.has(n.id)) { continue; }
+            if (pid) { if (n.projectId === pid) { continue; } n.projectId = pid; }
+            else { if (!n.projectId) { continue; } delete n.projectId; }
+            c++;
+        }
+        if (c) { this.save(); } return c;
+    }
+
+    /** Drop stamps pointing at projects that no longer exist — called after a
+     *  project is removed, so the board never filters on a ghost. */
+    pruneProjects(aliveIds: Iterable<string>): number {
+        const alive = new Set(aliveIds);
+        let c = 0;
+        for (const n of this.notices) {
+            if (n.projectId && !alive.has(n.projectId)) { delete n.projectId; c++; }
+        }
+        if (c) { this.save(); } return c;
     }
 
     setStars(id: string, stars: number): boolean {
@@ -542,6 +597,15 @@ export interface NoticesOpsDeps {
      *  absolute path. Injected by the host so this module stays vscode-free and
      *  unit-testable. */
     writeReport?: (a: { title: string; name?: string; body: string; agentName?: string }) => string;
+    /**
+     * A project id or name → the id, or undefined if there is no such project.
+     *
+     * ‼️ The caller may say either, and NEITHER is guessed at: an unknown key
+     * comes back undefined and the notice posts unfiled rather than under a
+     * project somebody nearly named. Injected because the registry is the
+     * host's.
+     */
+    resolveProject?: (key: string) => string | undefined;
 }
 
 /** Strip only what a Windows filename cannot hold; keep Turkish letters +
@@ -577,12 +641,27 @@ export function reportFileStem(a: { title: string; name?: string; agentName?: st
     return agent ? `${datePart}_${agent}_${topic}` : `${datePart}_${topic}`;
 }
 
+/**
+ * A caller's `project` argument → what the filter wants.
+ *
+ * `(none)` is passed through verbatim (it is a question, not a project), a name
+ * is resolved to an id, and a key nothing matches falls back to itself so the
+ * list comes back EMPTY rather than unfiltered — a filter that silently stops
+ * filtering hands back the whole board and looks like an answer.
+ */
+function projectFilter(key: string | undefined, deps: NoticesOpsDeps): string | undefined {
+    const k = String(key ?? '').trim();
+    if (!k) { return undefined; }
+    if (k === NO_PROJECT) { return NO_PROJECT; }
+    return deps.resolveProject?.(k) ?? k;
+}
+
 export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps): void {
     const changed = () => { try { deps.onChange?.(); } catch { /* UI best-effort */ } };
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn.',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — if you are in a project session, pass it; an unknown name is reported back and the notice posts unfiled rather than being guessed at.',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 const agentName = optStr(args, 'agent') || undefined;
@@ -607,6 +686,19 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                         reportError = 'report file could not be written: ' + String((e as Error)?.message ?? e).slice(0, 200);
                     }
                 }
+                // ‼️ A PROJECT NOBODY KNOWS IS SAID SO, NOT SWALLOWED. Filing
+                // under nothing is the honest answer to a misspelt name; doing
+                // it silently is how an agent believes for a month that its
+                // reports are reaching a project page they never touched.
+                const projectKey = optStr(args, 'project');
+                let projectId: string | undefined;
+                let projectError: string | undefined;
+                if (projectKey) {
+                    projectId = deps.resolveProject?.(projectKey);
+                    if (!projectId) {
+                        projectError = `no project matches "${projectKey}" — the notice was posted unfiled; projects.list shows the ids and names.`;
+                    }
+                }
                 const n = deps.store.add({
                     title,
                     type: optStr(args, 'type') || undefined,
@@ -616,16 +708,17 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                     agentName,
                     tags: (args.tags as string[] | string | undefined),
                     dueAt: typeof args.dueAt === 'number' ? args.dueAt : undefined,
-                    reportPath
+                    reportPath,
+                    projectId
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, projectId: n.projectId, projectError, unread: deps.store.unread() };
             }
         },
         {
             op: 'notices.list',
-            describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
+            describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
             handler: (args) => deps.store.list({
                 type: optStr(args, 'type'),
                 level: typeof args.level === 'number' ? args.level : undefined,
@@ -636,8 +729,28 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 handled: typeof args.handled === 'boolean' ? args.handled : undefined,
                 minStars: typeof args.minStars === 'number' ? args.minStars : undefined,
                 tag: optStr(args, 'tag'),
+                projectId: projectFilter(optStr(args, 'project'), deps),
                 limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 30
             })
+        },
+        {
+            op: 'notices.project',
+            describe: 'File notices under a project, or take them out of one. args: id (or ids: string[]), project (id or name; empty string or omitted CLEARS the stamp). Reversible on purpose — the window stamps what it was showing, which is right most of the time and wrong the rest.',
+            handler: (args) => {
+                const ids = Array.isArray(args.ids)
+                    ? args.ids.map(x => String(x ?? '').trim()).filter(Boolean)
+                    : [argStr(args, 'id')];
+                need(ids.length > 0, 'notices.project needs "id" or a non-empty "ids"');
+                const key = optStr(args, 'project');
+                let projectId = '';
+                if (key) {
+                    projectId = deps.resolveProject?.(key) ?? '';
+                    need(!!projectId, `no project matches "${key}" — projects.list shows the ids and names.`);
+                }
+                const changedCount = deps.store.setProject(ids, projectId);
+                changed();
+                return { changed: changedCount, projectId: projectId || null };
+            }
         },
         {
             op: 'notices.read',

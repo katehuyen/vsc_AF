@@ -287,6 +287,11 @@ export function htmlShell(
     // every surface. Ships everywhere for the reason U-26 was filed: a badge
     // invented per page is a badge that disagrees per page.
     const engine = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afEngine.js'));
+    // Which project a thing belongs to, drawn the same way and in the project's
+    // own colour on every surface — the same reason as the engine badge above.
+    // Four models carry a project now (Faz 5), so a mark invented per page is a
+    // mark that disagrees per page.
+    const project = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProject.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -330,6 +335,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
+<script nonce="${nonce}" src="${project}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

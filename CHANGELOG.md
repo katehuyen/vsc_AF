@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.107.0 — Faz 5: a project runs work now, and every piece of it carries a stamp (2026-08-11)
+
+**‼️ THE QUESTION A PROJECT PAGE EXISTS TO ANSWER HAD NO ANSWER ON IT.** A project could say what had *happened* (Timeline) and what it had *cost*. The work itself lived on five other pages, each filtered by hand — so *what is this project actually doing* was a question you answered by opening five tabs and remembering which filter you had set on each.
+
+**Four models, one field.** Tasks already carried a `projectId`; **missions, notices and work-queue items** carry one now, and a mission's project reaches **every delegation its planner makes** — a wave fires whenever the planner decides to, which may be an hour after anybody looked at a window, so reading the window there would have shown the mission and none of the work it caused.
+
+**Nothing is derived, and that is the design rather than a shortcut.** The stamp is set by whoever makes the thing: the window's active project when a **person** made it, an explicit `project` argument when an agent did, a **declaration on the automation** when nobody was at a window at all. Inferring a notice's project from who posted it would file half of them wrong — an agent works on several projects — so unstamped work is simply absent from a project, and every surface says so instead of looking empty. An unknown project name is **reported back** (`projectError`) rather than swallowed: a misspelt name used to be indistinguishable from no project, which is how an agent could believe for a month that its reports were reaching a page they had never touched.
+
+**A mark you cannot take off is a mark nobody trusts** — which is the only reason automatic stamping is safe. The queue's capture box **shows** what it is about to file under and lets you change it before Add; every notice and every queue item has a project picker on its own row whose empty option clears the stamp; both boards do it in bulk over the selection or over everything the filter shows. Deleting a project prunes the stamps that pointed at it (a task's is left alone — it is a record of what a finished run *ran with*, not an assignment).
+
+**Both boards gained a project filter, and "No project" is a real option.** Filtering by project must never make the unfiled rows vanish with nothing on screen saying they exist — they are exactly the ones you are about to want to file. A filter naming a project nothing matches returns **nothing**, not everything: a filter that silently stops filtering hands back the whole board and looks like an answer.
+
+**The Work tab** groups all five by how much they need you — *Running now* · *Needs you* · *Queued* · *On the books* · *Fires by itself* · *Settled* — and an empty group is **not drawn**, because five cards each saying "nothing here" is five paragraphs above the one that has something. A tab with nothing at all says why and what to do. Rows carry what their own page would say: a queued task shows the **gate's own words** for why it has not started; a mission says whether it was *started in* this project or is here because its *delegations* were; a schedule shows when it fires and whether it has a brake.
+
+**And work starts here.** *Start a session here* makes the project active **first** — that is what puts its brief into the agent's system prompt at spawn — then opens the Console composer, or a terminal. Beside it: a new task, schedule or trigger, each opening the **same form** every other route opens with the project filled in. The tab writes to none of the five stores itself; it forwards to whatever already owns them.
+
+**Two things this fixed on the way.** "Open" on a task or mission row passed an id to a command that takes no arguments, so a timeline row opened a list of two hundred and left you to find the one you had just clicked — both panels take a focus now. And the project page's relative clock printed `-27304s ago` for a timestamp a few seconds ahead of this machine's, which is normal and is the page calling itself broken.
+
+**One more component, for the reason `afEngine.js` exists:** `media/afProject.js`, so the project mark (its own colour, its icon, its hover) is drawn the same way on the sessions table, the notices board, the queue and anywhere the next surface needs it — the dot used to live in `sessionsTable.js`'s own stylesheet, which is how a second page would have invented a second one.
+
+**On the bridge:** `projects.work` (the same five stores, `open:true` for only what is unfinished) · `notices.project` · `queue.project` · and `project` on `notices.post`, `notices.list`, `queue.add`, `queue.list` and `missions.start`.
+
 ## 3.106.0 — A chunk boundary is not a character boundary, and two more the new engines exposed (2026-08-11)
 
 **‼️ U-36 — `hazır<?><?>m.` WAS NOT THE ENGINE. IT WAS THIS READER.** Talking to Antigravity in Turkish produced replacement characters in the middle of words, and the diagnosis relayed from the agent itself was right: the text is cut at a transport boundary. The cut was here. `child.stdout.on('data', d => String(d))` decodes **each chunk on its own**, and a chunk ends wherever the pipe happened to flush — which on a Turkish reply lands inside a two-byte `ü` / `ı` / `ş` often enough to see. Each half decodes to U+FFFD. The engine sent correct UTF-8; the reader sliced it.

@@ -1940,6 +1940,19 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
+        // ‼️ "OPEN THIS TASK" HAS TO LAND ON THE TASK. A project's Work tab and
+        // a timeline row both say Open about one run; opening the page at the
+        // top of a list of two hundred and leaving the reader to find it is the
+        // same as not having the button. The row is expanded (that is what
+        // "open" means here) and scrolled to.
+        if (ev.data.type === 'focus-task' && ev.data.id) {
+            tab = 'run';
+            expanded.add('run:' + ev.data.id);
+            persist();
+            render();
+            const el = document.querySelector('[data-expand="run:' + ev.data.id + '"]');
+            if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
+        }
         // ---- the New-task form, driven from the host ----
         // `task-compose` is the ONE door: the sidebar's +, the walkthrough and a
         // row's "like this one" all arrive here, so there is a single form with

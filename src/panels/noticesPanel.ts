@@ -13,10 +13,37 @@ import { buildNoticesMarkdown, Notice, noticeMarkdown, NoticesStore } from '../c
  * of the farm UI.
  */
 
+/**
+ * A project as a page needs it: the identity, plus what its hover says.
+ *
+ * ‼️ NOT the whole `Project`. Four surfaces carry a project now, and shipping
+ * the entity to each of them on every refresh is how a read-only board starts
+ * costing the window frames. The shape is shared with the Queue page and drawn
+ * by `media/afProject.js`.
+ */
+export interface ProjectRef {
+    id: string;
+    name: string;
+    color?: string;
+    icon?: string;
+    status?: string;
+    kind?: string;
+    summary?: string;
+    folder?: string;
+    repos?: string[];
+    tags?: string[];
+}
+
 export interface NoticesDeps {
     extensionUri: vscode.Uri;
     store: NoticesStore;
     agentNames: () => string[];
+    /** Open projects, for the row picker and the filter. */
+    projects: () => ProjectRef[];
+    /** The window's active project — what a notice filed from here defaults to. */
+    activeProjectId: () => string;
+    /** Open a project's page, from a notice's project mark. */
+    openProject?: (id: string) => void;
     /** Called after any mutation so the host can refresh the status-bar badge. */
     onChange?: () => void;
     /** Export-MD remembers the last save folder (shared farm-wide). */
@@ -47,6 +74,8 @@ function buildData(deps: NoticesDeps, focusNotice?: string): Record<string, unkn
         unread: deps.store.unread(),
         openQuestions: deps.store.openQuestions(),
         agents: deps.agentNames(),
+        projects: deps.projects(),
+        activeProjectId: deps.activeProjectId(),
         docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
         focusId: focusNotice ?? null
     };
@@ -130,6 +159,24 @@ export class NoticesPanel {
                 break;
             case 'setStars':
                 if (typeof msg.id === 'string' && typeof msg.stars === 'number') { s.setStars(msg.id, msg.stars); this.mutated(); }
+                break;
+            // File notices under a project, or take them out of one. Bulk
+            // because the board already has a checkbox column; an empty
+            // `project` clears the stamp, which is the whole reason stamping
+            // automatically is safe at all.
+            case 'setProject': {
+                const ids = Array.isArray(msg.ids)
+                    ? msg.ids.map(String).filter(Boolean)
+                    : (typeof msg.id === 'string' && msg.id ? [msg.id] : []);
+                if (!ids.length) { break; }
+                s.setProject(ids, typeof msg.project === 'string' ? msg.project : '');
+                this.mutated();
+                break;
+            }
+            case 'openProject':
+                if (typeof msg.project === 'string' && msg.project) {
+                    try { this.deps.openProject?.(msg.project); } catch { /* best-effort */ }
+                }
                 break;
             case 'answer':
                 // Answering a question IS leaving a new task → the answer

@@ -11,9 +11,12 @@
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Target / author are multi-pick: null = all (no filter), an array = exactly
     // that subset, [] = none. See media/afFilters.js.
-    const DEF = { fTarget: null, fAuthor: null, query: '', showDropped: false, agentLaneOpen: false };
+    const DEF = { fTarget: null, fAuthor: null, fProject: null, query: '', showDropped: false, agentLaneOpen: false };
     let fTarget = Array.isArray(st.fTarget) ? st.fTarget : null;
     let fAuthor = Array.isArray(st.fAuthor) ? st.fAuthor : null;
+    // Which projects to list. Picked by ID rather than by name so a rename does
+    // not silently empty the filter — the picker prints the name.
+    let fProject = Array.isArray(st.fProject) ? st.fProject : null;
     let query = st.query || DEF.query;
     let showDropped = st.showDropped !== undefined ? !!st.showDropped : DEF.showDropped;
     // The SECONDARY "Agent-tracked" category is collapsible and starts folded so
@@ -26,7 +29,12 @@
     const answerDrafts = {};        // id -> reply text
     let docMenu = null;             // open "open with" split menu key: "<kind>:<id>"
     let addOpen = false;
-    let addDraft = { text: '', target: '', urgency: 'normal' };
+    // ‼️ The capture box opens on the window's ACTIVE project, because that is
+    // what a person at this box is working on — the same rule a task follows
+    // (core/tasks.ts addTask). It is a visible, changeable box and not a silent
+    // stamp: the whole reason automatic filing is safe is that both the box and
+    // the row can take it off again.
+    let addDraft = { text: '', target: '', urgency: 'normal', project: DATA.activeProjectId || '' };
     let refocusSearch = false;
     let focusItem = DATA.focusItem || null;   // cross-link highlight (one shot)
 
@@ -108,7 +116,42 @@
     function passesFilters(n) {
         return (!fTarget || fTarget.indexOf(n.target || '') >= 0) &&
             (!fAuthor || fAuthor.indexOf(n.author) >= 0) &&
+            // An unfiled item answers to the explicit "(none)" bucket, so a
+            // project filter never makes rows disappear without a name for
+            // where they went.
+            (!fProject || fProject.indexOf(n.projectId || window.AFProject.NONE) >= 0) &&
             matchesQuery(n);
+    }
+
+    /** The project an item is filed under, out of the list the host shipped.
+     *  Undefined for an unfiled one AND for a stamp whose project is gone. */
+    function projOf(n) { return window.AFProject.find(DATA.projects, n.projectId); }
+
+    /** The project mark on a row — the shared one (media/afProject.js), so an
+     *  item's project looks exactly like the same project everywhere else.
+     *  Drawn only when there IS one; filing happens in the open body. */
+    function projectChip(n) {
+        const p = projOf(n);
+        if (!p) { return ''; }
+        const t = window.AFProject.tip(p);
+        return window.AFTip.wrap(
+            '<span class="q-proj" data-openproj="' + esc(p.id) + '" role="button" tabindex="0">'
+            + window.AFProject.badge(p) + '</span>', t.head, t.body);
+    }
+
+    /** The "file it under…" picker, in the open body. The empty option is what
+     *  takes a stamp back OFF, which is what makes stamping safe. */
+    function projectPicker(n) {
+        const cur = n.projectId || '';
+        return `<div class="q-projrow">
+            <label class="muted small" for="q-pj-${esc(n.id)}">Project</label>
+            <select class="q-pjsel" id="q-pj-${esc(n.id)}" data-id="${esc(n.id)}"
+                title="Which project this item is work for. It shows on that project's Work tab and timeline; the empty option takes the stamp off again.">
+                ${window.AFProject.options(DATA.projects, cur, { anyLabel: '— none' })}
+            </select>
+            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
+            ${cur && !projOf(n) ? '<span class="muted small" title="The project this was filed under no longer exists — pick another, or clear it">⚠ project gone</span>' : ''}
+        </div>`;
     }
 
     function urgencyBadge(n) {
@@ -212,7 +255,7 @@
             body = `${sourceLink(n)}
                 <div class="q-fulltext">${mdToHtml(n.text)}</div>
                 ${n.target ? `<div class="muted small">target: <strong>${esc(n.target)}</strong></div>` : ''}
-                ${delegationLink(n)}${outcomeBlock(n)}
+                ${delegationLink(n)}${outcomeBlock(n)}${projectPicker(n)}
                 <div class="btnrow q-actions">
                     ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="Answer this — records your reply and sends it back into the pipeline">💬 Answer</button>` : ''}
                     <button data-act="handoff" data-id="${esc(n.id)}" title="Open the responsible agent and type this into its terminal (not sent)">🔗 Hand to agent</button>
@@ -240,6 +283,7 @@
                 ${liveChip(n)}
                 ${urgencyBadge(n)}
                 ${n.target ? `<span class="q-target">${esc(n.target)}</span>` : ''}
+                ${projectChip(n)}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
                 ${n.sourceNoticeId ? '<span class="q-badge src" title="Spawned from a notice">🔔</span>' : ''}
                 <span class="q-meta muted small">${esc(timeLabel(n.ts))}</span>
@@ -303,6 +347,7 @@
             <div class="q-erow">
                 <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="Target (optional): a repo or agent"><datalist id="q-targets">${dl}</datalist></span>
                 <span><select id="q-add-urg">${urgOpts}</select></span>
+                <span><select id="q-add-project" title="Which project this is work for. It opens on the window's active project because that is what you are working on; change it here, or take it off later from the item's own row.">${window.AFProject.options(DATA.projects, addDraft.project, { anyLabel: '— no project' })}</select></span>
             </div>
             <div class="btnrow"><button data-add="save">Add</button><button class="secondary" data-add="cancel">Cancel</button>
               <span class="muted small">An item can't be deleted until it's handled.</span></div>
@@ -317,7 +362,15 @@
                 options: (DATA.targets || []).slice() },
             { id: 'q-author', label: 'Authors', get: () => fAuthor, set: v => { fAuthor = v; },
                 title: 'Who wrote the item — tick any combination',
-                options: [{ v: 'user', t: '🧑 mine' }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) }
+                options: [{ v: 'user', t: '🧑 mine' }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) },
+            // ‼️ "No project" is an OPTION, not the absence of one — without it
+            // a project filter makes the unfiled items vanish with nothing on
+            // screen saying they exist, and those are exactly the ones somebody
+            // filtering by project is about to want to file.
+            { id: 'q-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
+                title: 'Which project\'s items to list — manage them on the ◧ Projects page',
+                options: [{ v: window.AFProject.NONE, t: '— No project' }].concat(
+                    (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) }
         ];
     }
 
@@ -417,6 +470,13 @@
         .q-docopt:hover { background:var(--vscode-list-hoverBackground); }
         .q-docopt.cur { font-weight:700; }
         .q-docopt.cfg { border-top:1px solid var(--vscode-panel-border); opacity:.9; }
+        /* The project mark rides after the target — both answer "where does
+           this belong", so they read as one group. Clickable, so it gets the
+           pointer every openable mark on this page has. */
+        .q-proj { flex-shrink:0; font-size:11px; opacity:.85; cursor:pointer; }
+        .q-proj:hover { opacity:1; text-decoration:underline; }
+        .q-projrow { display:flex; gap:6px; align-items:center; margin:6px 0 2px; }
+        .q-projrow select { padding:2px 6px; max-width:260px; }
     </style>`;
 
     function visible() { return (DATA.items || []).filter(passesFilters); }
@@ -490,6 +550,14 @@
         editing.add(id); expanded.add(id); render();
     }
 
+    /** A cleared capture box. It comes back on the ACTIVE project rather than
+     *  on nothing: the next thing typed here is almost always for the same
+     *  project as the last, and re-picking it every time is the friction this
+     *  box exists to avoid. */
+    function freshDraft() {
+        return { text: '', target: '', urgency: 'normal', project: DATA.activeProjectId || '' };
+    }
+
     /** Open the reply box on a blocked item. */
     function startAnswer(id) {
         answerDrafts[id] = answerDrafts[id] || '';
@@ -504,25 +572,50 @@
             onChange: sel => { p.set(sel); saveState(); render(); }
         }));
         bind('q-showdropped', 'change', e => { showDropped = e.target.checked; saveState(); render(); });
-        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fAuthor = DEF.fAuthor; query = DEF.query; saveState(); render(); });
+        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fAuthor = DEF.fAuthor; fProject = DEF.fProject; query = DEF.query; saveState(); render(); });
 
         // add form
         document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
             const a = b.dataset.add;
             if (a === 'open') { addOpen = true; render(); }
-            else if (a === 'cancel') { addOpen = false; addDraft = { text: '', target: '', urgency: 'normal' }; render(); }
+            else if (a === 'cancel') { addOpen = false; addDraft = freshDraft(); render(); }
             else if (a === 'save') {
                 const text = (document.getElementById('q-add-text') || {}).value || '';
                 const target = (document.getElementById('q-add-target') || {}).value || '';
                 const urgency = (document.getElementById('q-add-urg') || {}).value || 'normal';
-                if (text.trim()) { vscode.postMessage({ type: 'add', text: text.trim(), target: target.trim(), urgency }); addOpen = false; addDraft = { text: '', target: '', urgency: 'normal' }; }
+                // ‼️ Sent even when it is empty, and that matters: `undefined`
+                // would let the host fall back to the active project, so
+                // "no project" chosen in the box has to arrive as the empty
+                // string it is.
+                const project = (document.getElementById('q-add-project') || {}).value || '';
+                if (text.trim()) {
+                    vscode.postMessage({ type: 'add', text: text.trim(), target: target.trim(), urgency, project });
+                    addOpen = false; addDraft = freshDraft();
+                }
             }
         }));
-        ['q-add-text', 'q-add-target', 'q-add-urg'].forEach(id => {
+        ['q-add-text', 'q-add-target', 'q-add-urg', 'q-add-project'].forEach(id => {
             const el = document.getElementById(id); if (!el) { return; }
-            const key = id === 'q-add-text' ? 'text' : id === 'q-add-target' ? 'target' : 'urgency';
+            const key = id === 'q-add-text' ? 'text'
+                : id === 'q-add-target' ? 'target'
+                    : id === 'q-add-project' ? 'project' : 'urgency';
             el.addEventListener('input', () => { addDraft[key] = el.value; });
+            el.addEventListener('change', () => { addDraft[key] = el.value; });
         });
+
+        // Filing, from the row's own picker and from the mark on the row.
+        document.querySelectorAll('.q-pjsel').forEach(sel => sel.addEventListener('change', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'setProject', id: sel.dataset.id, project: sel.value });
+        }));
+        document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
+        }));
+        document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'openProject', project: el.dataset.project });
+        }));
 
         // row expand
         document.querySelectorAll('[data-toggle]').forEach(row => row.addEventListener('click', () => {
@@ -666,7 +759,7 @@
         // urgency, and it shows the queue you are adding to.
         if (ev.data.type === 'q-compose') {
             addOpen = true;
-            addDraft = { text: String(ev.data.text || ''), target: '', urgency: 'normal' };
+            addDraft = Object.assign(freshDraft(), { text: String(ev.data.text || '') });
             render();
             const box = document.getElementById('q-add-text');
             if (box) { box.focus(); }

@@ -152,6 +152,34 @@ export interface ProjectsPanelDeps {
     newProjectDoc(id: string, folder: string, name: string): { error?: string; path?: string };
     /** Replace the project's people. Returns an error message, or undefined. */
     savePeople(id: string, people: unknown[]): string | undefined;
+
+    // ---- Faz 5: the work, started and steered from the project it is for ----
+    /**
+     * Start a session INSIDE this project — the button the whole session
+     * protocol was built for.
+     *
+     * ‼️ It makes the project active first, and that is not a side effect: the
+     * active project is what a spawn reads to build the context file (Faz 2),
+     * so a "start here" that did not set it would open a session that had never
+     * heard of the project whose page the button is on.
+     */
+    startSession(id: string, how: 'console' | 'terminal'): Promise<void>;
+    /** Open the task form, seeded with this project — so a task made from here
+     *  carries it without the maker having to remember. */
+    newTask(id: string): void;
+    /** Open a schedule / trigger form already scoped to this project. */
+    newSchedule(id: string): void;
+    newTrigger(id: string): void;
+    /** Row actions that belong to the other pages' models — forwarded to the
+     *  commands those pages use, never reimplemented here. */
+    openTask(taskId: string): void;
+    retryTask(taskId: string): void;
+    cancelTask(taskId: string): void;
+    openMission(runId: string): void;
+    openNotice(noticeId: string): void;
+    openQueueItem(itemId: string): void;
+    openSchedule(scheduleId: string): void;
+    openTrigger(triggerId: string): void;
     onChange?(): void;
 }
 
@@ -181,7 +209,7 @@ export interface NewProjectSeed {
 
 /** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
  *  always meant to become a tab here rather than stay the whole page. */
-const TABS = ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings'] as const;
+const TABS = ['overview', 'work', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings'] as const;
 const DEFAULT_TAB = 'overview';
 /** Sessions-table Show box default for this page. */
 const PROJECT_TABLE_N = 25;
@@ -730,6 +758,48 @@ export class ProjectsPanel {
                     this.done(error, error ? undefined : 'People saved.');
                 }
                 break;
+
+            // ---- the Work tab. Every one of these hands off to the command or
+            // panel that already owns the model; the tab is a view over five
+            // stores and must never become a sixth way of writing to them.
+            case 'startSession':
+                if (id) {
+                    await this.deps.startSession(id, msg.how === 'terminal' ? 'terminal' : 'console');
+                    this.refresh();
+                }
+                break;
+            case 'newTask':
+                if (id) { this.deps.newTask(id); }
+                break;
+            case 'newSchedule':
+                if (id) { this.deps.newSchedule(id); }
+                break;
+            case 'newTrigger':
+                if (id) { this.deps.newTrigger(id); }
+                break;
+            // A read, so no `done()`: a repaint would move the list under a
+            // reader already on their way to another page.
+            case 'openWorkRow': {
+                const rowId = String(msg.rowId ?? '');
+                if (!rowId) { break; }
+                switch (String(msg.what ?? '')) {
+                    case 'task': this.deps.openTask(rowId); break;
+                    case 'mission': this.deps.openMission(rowId); break;
+                    case 'notice': this.deps.openNotice(rowId); break;
+                    case 'queue': this.deps.openQueueItem(rowId); break;
+                    case 'schedule': this.deps.openSchedule(rowId); break;
+                    case 'trigger': this.deps.openTrigger(rowId); break;
+                }
+                break;
+            }
+            case 'taskAction': {
+                const taskId = String(msg.taskId ?? '');
+                if (!taskId) { break; }
+                if (msg.action === 'retry') { this.deps.retryTask(taskId); }
+                else if (msg.action === 'cancel') { this.deps.cancelTask(taskId); }
+                this.done();
+                break;
+            }
         }
     }
 

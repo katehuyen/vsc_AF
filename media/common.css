@@ -435,3 +435,18 @@ span.af-tipw { display: inline; }
 .af-eng.agy { color: var(--vscode-charts-green, #89d185); }
 /* an engine id this build does not know: still drawn, still readable */
 .af-eng.other { color: var(--vscode-descriptionForeground, #9d9d9d); }
+
+/* WHICH PROJECT (media/afProject.js) — the same mark on every surface.
+
+   The dot is the project's OWN colour, the one the sidebar and the status bar
+   use, so it is drawn only when the project HAS one: a grey fallback dot in
+   front of every name carries no information and eats the narrowest column's
+   first 12px. This lived in sessionsTable.js's injected CSS until four models
+   grew a project (Faz 5) and a second surface needed it. */
+.af-proj { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.af-pdot {
+    flex: none; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    vertical-align: middle;
+}
+.af-picon { flex: none; }
+.af-pname { overflow: hidden; text-overflow: ellipsis; }

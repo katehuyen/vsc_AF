@@ -254,11 +254,25 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         fs.writeFileSync(file, a.body, 'utf8');
         return file;
     };
-    registerNoticesOps(reg, { store, writeReport, onChange: () => changes++, onPost: n => { posted = n; } });
+    // The registry the host injects. Both a name and an id resolve; anything
+    // else comes back undefined, which is what makes "no project matches" a
+    // real answer instead of a silent filing under nothing.
+    const PROJECTS = { prj_aaa: 'Agent Farm', prj_bbb: 'TalkScribe' };
+    const resolveProject = (key) => {
+        const k = String(key || '').trim();
+        if (PROJECTS[k]) { return k; }
+        const hit = Object.keys(PROJECTS).find(id => PROJECTS[id].toLowerCase() === k.toLowerCase());
+        return hit;
+    };
+    registerNoticesOps(reg, {
+        store, writeReport, resolveProject,
+        onChange: () => changes++, onPost: n => { posted = n; }
+    });
 
     const cat = reg.catalog().map(c => c.op);
-    ok('all five notices ops catalogued',
-        ['notices.post', 'notices.list', 'notices.read', 'notices.resolve', 'notices.dismiss'].every(op => cat.includes(op)));
+    ok('all six notices ops catalogued',
+        ['notices.post', 'notices.list', 'notices.read', 'notices.resolve', 'notices.dismiss',
+            'notices.project'].every(op => cat.includes(op)));
 
     const post = await reg.dispatch('notices.post', {
         title: 'AI digest', type: 'update', level: 2, tags: ['ai-daily'],
@@ -309,6 +323,58 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('resolve marks handled', res.ok && store.notices.find(n => n.id === q.result.id).handled === true);
     const resBad = await reg.dispatch('notices.resolve', { id: 'nope' });
     ok('resolve unknown id errors', !resBad.ok && /not found/i.test(resBad.error));
+
+    // ---- Faz 5: which project a notice is about ----
+    {
+        const byName = await reg.dispatch('notices.post', { title: 'filed by name', project: 'Agent Farm' });
+        ok('a project NAME files the notice', byName.ok && byName.result.projectId === 'prj_aaa');
+        const byId = await reg.dispatch('notices.post', { title: 'filed by id', project: 'prj_bbb' });
+        ok('…and so does its id', byId.ok && byId.result.projectId === 'prj_bbb');
+
+        // ‼️ The one that matters. A misspelt project used to be indistinguishable
+        // from no project at all, so an agent could believe for a month that its
+        // reports were reaching a page they had never touched.
+        const bad = await reg.dispatch('notices.post', { title: 'nearly named it', project: 'Agent Farmm' });
+        ok('‼️ an unknown project is REPORTED, and the notice posts unfiled rather than guessed at',
+            bad.ok && !bad.result.projectId && /no project matches/i.test(bad.result.projectError || ''));
+        ok('…and the notice itself still exists — losing the message too would help nobody',
+            store.notices.some(n => n.title === 'nearly named it'));
+
+        const mine = await reg.dispatch('notices.list', { project: 'Agent Farm' });
+        ok('list filters by project', mine.ok && mine.result.length === 1
+            && mine.result[0].title === 'filed by name');
+        const none = await reg.dispatch('notices.list', { project: '(none)' });
+        ok('"(none)" is a real question, and it finds the unfiled ones',
+            none.ok && none.result.length > 0 && none.result.every(n => !n.projectId));
+        // ‼️ A filter that silently stops filtering hands back the whole board
+        // and looks like an answer.
+        const ghost = await reg.dispatch('notices.list', { project: 'no such thing' });
+        ok('‼️ an unmatched project filter returns NOTHING rather than everything',
+            ghost.ok && ghost.result.length === 0);
+
+        const moved = await reg.dispatch('notices.project', {
+            id: byName.result.id, project: 'TalkScribe'
+        });
+        ok('a stamp can be changed', moved.ok && moved.result.projectId === 'prj_bbb'
+            && store.notices.find(n => n.id === byName.result.id).projectId === 'prj_bbb');
+        const cleared = await reg.dispatch('notices.project', { id: byName.result.id });
+        ok('‼️ …and taken off entirely — a mark you cannot remove is a mark nobody trusts',
+            cleared.ok && cleared.result.projectId === null
+            && !store.notices.find(n => n.id === byName.result.id).projectId);
+        const bulk = await reg.dispatch('notices.project', {
+            ids: [byId.result.id, bad.result.id], project: 'prj_aaa'
+        });
+        ok('and it works in bulk', bulk.ok && bulk.result.changed === 2);
+        const refuse = await reg.dispatch('notices.project', { id: byId.result.id, project: 'ghost' });
+        ok('setting an unknown project is refused, not silently ignored',
+            !refuse.ok && /no project matches/i.test(refuse.error));
+
+        // A project the user deleted leaves stamps behind, and they are invisible.
+        store.setProject([byId.result.id], 'prj_gone');
+        const pruned = store.pruneProjects(['prj_aaa', 'prj_bbb']);
+        ok('‼️ a stamp pointing at a deleted project is pruned — a filter matching nothing for ever is worse than none',
+            pruned === 1 && !store.notices.find(n => n.id === byId.result.id).projectId);
+    }
 
     const read = await reg.dispatch('notices.read', { id: post.result.id });
     ok('read marks read', read.ok);

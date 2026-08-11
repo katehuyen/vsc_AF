@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { WorkItem, WorkQueueStore } from '../core/workqueue';
+import { ProjectRef } from './noticesPanel';
 
 /**
  * Work Queue page — the user→agent async work queue (see core/workqueue.ts),
@@ -16,6 +17,12 @@ export interface QueueDeps {
     /** Known routing targets (products / agent names) for the filter + add form. */
     targets: () => string[];
     agentNames: () => string[];
+    /** Open projects, for the capture box, the row picker and the filter. */
+    projects: () => ProjectRef[];
+    /** The window's active project — what a capture made here is stamped with. */
+    activeProjectId: () => string;
+    /** Open a project's page, from an item's project mark. */
+    openProject?: (id: string) => void;
     onChange?: () => void;
     /** Cross-link back to Notices, focused on the source notice. */
     openNotice?: (noticeId: string) => void;
@@ -63,6 +70,8 @@ function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown>
         active: deps.store.active(),
         targets: deps.targets(),
         agents: deps.agentNames(),
+        projects: deps.projects(),
+        activeProjectId: deps.activeProjectId(),
         live: buildLiveMap(deps, items),
         docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
         focusItem: focusItem ?? null
@@ -138,13 +147,37 @@ export class QueuePanel {
         switch (msg.type) {
             case 'add':
                 if (typeof msg.text === 'string' && msg.text.trim()) {
+                    // ‼️ THE WINDOW SPEAKS HERE, AND ONLY HERE. A person is at
+                    // the capture box in a window that says which project they
+                    // are working on, so the active project is the honest
+                    // default — the same rule tasks follow (see addTask). The
+                    // box shows it and lets them change it before pressing Add,
+                    // and the row can take it off afterwards.
+                    const picked = typeof msg.project === 'string' ? msg.project : undefined;
                     s.add({
                         text: msg.text,
                         author: 'user',
                         target: typeof msg.target === 'string' ? msg.target : undefined,
-                        urgency: typeof msg.urgency === 'string' ? msg.urgency : undefined
+                        urgency: typeof msg.urgency === 'string' ? msg.urgency : undefined,
+                        projectId: picked !== undefined ? picked : this.deps.activeProjectId()
                     });
                     this.mutated();
+                }
+                break;
+            // File items under a project, or take them out of one. Bulk, and an
+            // empty `project` clears the stamp.
+            case 'setProject': {
+                const ids = Array.isArray(msg.ids)
+                    ? msg.ids.map(String).filter(Boolean)
+                    : (typeof msg.id === 'string' && msg.id ? [msg.id] : []);
+                if (!ids.length) { break; }
+                s.setProject(ids, typeof msg.project === 'string' ? msg.project : '');
+                this.mutated();
+                break;
+            }
+            case 'openProject':
+                if (typeof msg.project === 'string' && msg.project) {
+                    try { this.deps.openProject?.(msg.project); } catch { /* best-effort */ }
                 }
                 break;
             case 'edit':

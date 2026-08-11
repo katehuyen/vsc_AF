@@ -107,6 +107,17 @@ export interface MissionSpec {
     engine?: string;
     limits: MissionLimits;
     approvalMode: MissionApprovalMode;
+    /**
+     * Which project this mission is work FOR (Faz 5).
+     *
+     * ‼️ On the SPEC, not the run: a mission's project is decided when somebody
+     * starts it and does not change halfway through, and the run is the history
+     * of one spec. Every delegation the planner makes inherits it, so a
+     * mission's tasks land on the same project page as the mission itself —
+     * without that, the Work tab would show the mission and none of the work it
+     * caused, which is the misattribution the entity model exists to stop.
+     */
+    projectId?: string;
     createdAt: number;
 }
 

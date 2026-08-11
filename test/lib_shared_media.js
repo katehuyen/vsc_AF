@@ -22,7 +22,10 @@ const path = require('path');
 const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afTextTools.js', 'afTip.js', 'afForm.js', 'afQuery.js', 'afTime.js',
     // afEngine.js was the tenth — which engine ran a thing, drawn one way (U-26)
-    'afEngine.js'];
+    'afEngine.js',
+    // afProject.js was the eleventh — which project a thing belongs to, drawn
+    // one way, once four models grew a projectId (Faz 5)
+    'afProject.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

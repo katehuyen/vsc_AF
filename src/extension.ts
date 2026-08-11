@@ -1188,6 +1188,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * The projects a PAGE needs — identity plus what its hover says, nothing
+     * more (see `ProjectRef`). Four models carry a project now, so the notices
+     * board, the queue and anything else that grows one all take this shape and
+     * draw it with `media/afProject.js`.
+     *
+     * Closed projects are dropped from the PICKER but a row already stamped
+     * with one still resolves, because `lookup` is given the whole list: an
+     * archived project's history does not stop being that project's history.
+     */
+    const projectRefs = (opts?: { all?: boolean }): {
+        id: string; name: string; color?: string; icon?: string; status?: string;
+        kind?: string; summary?: string; folder?: string; repos?: string[]; tags?: string[];
+    }[] => projectStore.all()
+        .filter(p => opts?.all || !CLOSED_PROJECT_STATUSES.includes(p.status))
+        .map(p => ({
+            id: p.id, name: p.name,
+            ...(p.color ? { color: p.color } : {}),
+            ...(p.icon ? { icon: p.icon } : {}),
+            status: p.status,
+            ...(p.kind ? { kind: p.kind } : {}),
+            ...(p.summary ? { summary: p.summary } : {}),
+            ...(p.folder ? { folder: p.folder } : {}),
+            ...(p.repos?.length ? { repos: p.repos } : {}),
+            ...(p.tags?.length ? { tags: p.tags } : {})
+        }));
+
+    /**
      * THE ACTIVE PROJECT'S STAMP — the write the status bar has always promised.
      *
      * `af.activeProject` used to be read by the tree, the page and the bar, and
@@ -2415,7 +2442,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         step.note = 'agent not found';
                         continue;
                     }
-                    const task = taskManager.addTask(agent, `[Mission] ${step.title}`, step.prompt, 'headless');
+                    // ‼️ THE MISSION'S PROJECT, NOT THE WINDOW'S. A wave fires
+                    // whenever the planner decides to, which may be an hour
+                    // after anybody looked at this window — the same reason a
+                    // schedule states its own origin project (see addTask).
+                    // Passing the key explicitly is also how `undefined` means
+                    // "no project" rather than "ask the window".
+                    const task = taskManager.addTask(
+                        agent, `[Mission] ${step.title}`, step.prompt, 'headless',
+                        { projectId: spec.projectId });
                     task.missionId = run.id;
                     const member = spec.team.find(m => m.agentId === step.agentId)
                         ?? spec.team.find(m => m.agentName === step.agentName);
@@ -2708,6 +2743,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 5, 24 * 60),
             maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, 6)
         };
+        // ‼️ WHICH PROJECT THIS MISSION IS FOR — settled HERE, once, before the
+        // planner has spent a turn. `project` may be an id, a name, or the
+        // literal `''` a caller passes to mean "deliberately none"; only when
+        // the key is absent does the window get to speak, and then only because
+        // a person just pressed Start in it. A name nothing matches is refused
+        // rather than dropped: a mission whose whole output quietly lands
+        // nowhere is the failure that takes a week to notice.
+        let projectId: string | undefined;
+        if (input.project !== undefined) {
+            const key = String(input.project ?? '').trim();
+            if (key) {
+                const p = projectStore.get(key);
+                if (!p) { return `No project matches "${key}" — the Projects page lists them.`; }
+                projectId = p.id;
+            }
+        } else {
+            projectId = activeProjectId() || undefined;
+        }
         startMission({
             id: newMissionId(),
             title: String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60),
@@ -2717,6 +2770,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             team,
             workdir: workdir || undefined,
             plannerModel: plannerModel || undefined,
+            projectId,
             // The mission-wide engine for DELEGATIONS; a member may override it.
             // The planner stays on Claude Code by design — see MissionSpec.engine.
             engine: missionEngine in ENGINES && missionEngine !== 'claude' ? missionEngine : undefined,
@@ -3170,7 +3224,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
                 + 'maxTokens? (‼️ THE CEILING THAT STILL BINDS WHEN THE ENGINE STATES NO PRICE — a delegate on '
                 + 'a subscription engine reports tokens and no dollars, so maxCostUSD can never be reached by '
-                + 'it; default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?',
+                + 'it; default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?, '
+                + 'project? (id or name — the mission AND every delegation it makes are filed under it, so the '
+                + 'project\'s Work tab shows the whole run; pass "" for deliberately none. Omit it and the '
+                + 'window\'s active project is used, which is only right when a person just started this)',
             handler: (args) => {
                 const lead = findAgent(argStr(args, 'lead'));
                 const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
@@ -4401,7 +4458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.timeline',
-            describe: `One project's whole history as a single chronological list, newest first — sessions, the turns inside them, what each session wrote (aggregated), tasks, mission runs and their rounds, git commits in the project's code roots, and what its own documents record: decision records, deliverable rows and plan items the plan file marks completed. Every row carries a link to what it is about. \`counts\` reports every kind BEFORE the filter, so you can see what turning one on would add. ‼️ A document event needs a REAL date to appear — a decision states af-date, a deliverable states its Date column, a plan item carries the ✅ date Obsidian's Tasks plugin wrote; anything undated is left out rather than stamped with the file's save time. NOT here at all, and not faked from an agent name: notices and queue items carry no project link — \`unfiled\` names them. args: project (id or name), kinds? (comma list or array of ${PROJECT_EVENT_KINDS.join('|')}; default all), sinceDays? (default 0 = everything), limit? (default 100), all? (true ignores limit)`,
+            describe: `One project's whole history as a single chronological list, newest first — sessions, the turns inside them, what each session wrote (aggregated), tasks, mission runs and their rounds, git commits in the project's code roots, and what its own documents record: decision records, deliverable rows and plan items the plan file marks completed. Every row carries a link to what it is about. \`counts\` reports every kind BEFORE the filter, so you can see what turning one on would add. ‼️ A document event needs a REAL date to appear — a decision states af-date, a deliverable states its Date column, a plan item carries the ✅ date Obsidian's Tasks plugin wrote; anything undated is left out rather than stamped with the file's save time. Notices and queue items appear when somebody FILED them under the project (notices.project / queue.project, or the picker on the row); nothing is ever guessed from an agent's name, so unstamped ones are absent. \`unfiled\` names any source that still cannot say which project it belongs to — empty today. args: project (id or name), kinds? (comma list or array of ${PROJECT_EVENT_KINDS.join('|')}; default all), sinceDays? (default 0 = everything), limit? (default 100), all? (true ignores limit)`,
             handler: (args) => {
                 const key = argStr(args, 'project');
                 const p = projectStore.get(key);
@@ -4447,6 +4504,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     budgetUSD: project.budgetUSD ?? null,
                     budgetTotalUSD: project.budgetTotalUSD ?? null,
                     ...projectCostFor(project.id)
+                };
+            }
+        },
+        {
+            // ‼️ The page has a Work tab, so the bridge has one — the rule in
+            // `_REF/agentfarm-dev.md`: a function a person can reach from a
+            // panel is a function an agent can be told to use, in the same
+            // commit, over the same data.
+            op: 'projects.work',
+            describe: 'What one project has IN FLIGHT and on its books — the same five stores the page\'s Work tab draws: tasks, mission runs, notices, work-queue items, and the schedules and triggers that DECLARE this project. ‼️ Every row is filed by a stamp somebody set (a task and a mission carry the project they were started under, a notice and a queue item the one they were filed with, an automation states its own because nobody is at a window when it fires). Nothing is derived from an agent name or a folder, so unstamped work is absent — notices.project / queue.project bring it in. Missions arrive two ways and each row says which: `via:"stamped"` was started in this project, `via:"delegated"` is here because its tasks were filed here. args: project (id or name), open? (true = only what is not finished yet)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const w = projectWorkView((p as Project).id);
+                if (args.open !== true) { return { project: (p as Project).name, ...w }; }
+                const live = (s: string) => s === 'running' || s === 'queued' || s === 'parked';
+                return {
+                    project: (p as Project).name,
+                    tasks: w.tasks.filter(t => live(t.status)),
+                    missions: w.missions.filter(m =>
+                        m.status === 'running' || m.status.startsWith('waiting') || m.status === 'paused'),
+                    notices: w.notices.filter(n =>
+                        !n.read || (n.type === 'question' && (n.status || 'open') === 'open')),
+                    queue: w.queue.filter(q => q.status !== 'done' && q.status !== 'dropped'),
+                    schedules: w.schedules.filter(s => s.enabled),
+                    triggers: w.triggers.filter(t => t.enabled),
+                    agents: w.agents
                 };
             }
         },
@@ -6160,6 +6245,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerNoticesOps(bridge, {
         store: noticesStore,
         writeReport,
+        // id OR name, because an agent writing a bridge call has the name in
+        // front of it and should not have to look an id up first. `get` already
+        // takes either; what it must never do is guess at a near-miss.
+        resolveProject: (key) => projectStore.get(key)?.id,
         onChange: () => { NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
         onPost: (n) => {
             // Ultra-important (level 4) warns; a question gently pings so it does
@@ -6209,6 +6298,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             dismiss: (id) => noticesStore.dismiss(id)
         },
         writeAnswer,
+        resolveProject: (key) => projectStore.get(key)?.id,
         thresholds: () => ({
             groupSize: cfg().get<number>('queue.groupSize', 3),
             maxAgeHours: cfg().get<number>('queue.maxAgeHours', 24)
@@ -6316,6 +6406,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: workQueueStore,
         targets: queueTargets,
         agentNames: () => agents.map(a => a.name),
+        // ‼️ The whole list, closed ones included. A picker wants the open
+        // projects; a ROW that is already stamped with a finished one still has
+        // to draw its name, and dropping it would print an item's project as
+        // "—" the day the project was archived.
+        projects: () => projectRefs({ all: true }),
+        activeProjectId,
+        openProject: (id) => ProjectsPanel.show(projectsPanelDeps(), id),
         onChange: () => { updateNoticesBadge(); NoticesPanel.refreshIfOpen(); },
         openNotice: (noticeId) => showNoticesPanel(noticeId),
         handoff: (item) => { void handoffToAgent(item.text, item.target); },
@@ -6338,6 +6435,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         store: noticesStore,
         agentNames: () => agents.map(a => a.name),
+        projects: () => projectRefs({ all: true }),
+        activeProjectId,
+        openProject: (id) => ProjectsPanel.show(projectsPanelDeps(), id),
         onChange: () => { updateNoticesBadge(); QueuePanel.refreshIfOpen(); },
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
@@ -9901,12 +10001,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const tasksOfProject = (id: string): FarmTask[] =>
         taskManager.tasks.filter(t => t.projectId === id);
 
-    /** The runs whose delegated steps landed on this project. */
+    /**
+     * The runs that belong to this project.
+     *
+     * Two ways in, and both are needed. A mission STARTED under a project says
+     * so on its spec (Faz 5) — the direct answer, and the only one a mission
+     * that has not delegated anything yet can give. A mission whose delegations
+     * landed here is the older answer, and it still holds: a run started before
+     * specs carried a project, or one deliberately started with none whose work
+     * was filed afterwards, is this project's history either way.
+     */
     const missionsOfProject = (id: string) => {
         const missionIds = new Set(
             tasksOfProject(id).map(t => t.missionId).filter((x): x is string => !!x));
-        return missionStore.runs.filter(r => missionIds.has(r.id));
+        return missionStore.runs.filter(r =>
+            missionIds.has(r.id) || missionStore.spec(r.specId)?.projectId === id);
     };
+
+    /** Notices and queue items somebody filed under this project — the stamp is
+     *  the whole answer (see projectFeed.ts); nothing here derives one. */
+    const noticesOfProject = (id: string) =>
+        noticesStore.notices.filter(n => n.projectId === id);
+    const queueOfProject = (id: string) =>
+        workQueueStore.items.filter(q => q.projectId === id);
 
     /**
      * Commits in the project's code roots.
@@ -10041,8 +10158,99 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     n: x.n, at: x.at, thought: x.thought, action: x.action
                 }))
             })),
-            commits: commitsOfProject(p)
+            commits: commitsOfProject(p),
+            notices: noticesOfProject(id).map(n => ({
+                id: n.id, ts: n.ts, title: n.title, type: n.type, level: n.level,
+                agentName: n.agentName, status: n.status, answeredAt: n.answeredAt
+            })),
+            queue: queueOfProject(id).map(q => ({
+                id: q.id, ts: q.ts, text: q.text, status: q.status, urgency: q.urgency,
+                author: q.author, target: q.target,
+                handledAt: q.handledAt, delegatedAt: q.delegatedAt
+            }))
         }, opts);
+    };
+
+    /**
+     * The Work tab — everything this project has in flight or on its books.
+     *
+     * ‼️ FIVE MODELS, ONE TAB, AND THAT IS THE POINT (Faz 5). Before this, a
+     * project could show what had HAPPENED (the timeline) and what it COST, but
+     * the work itself lived on five other pages, each filtered by hand. The
+     * question "what is this project actually doing" had no answer on the
+     * project's own page.
+     *
+     * Every row here is filed by its own stamp — a task's `projectId`, a
+     * mission spec's, a notice's, a queue item's, a schedule's or a trigger's.
+     * Nothing is derived, so nothing appears under a project it does not
+     * belong to; the price is that unstamped work is absent, which is the
+     * honest half of the trade and why the tab says so.
+     */
+    const projectWorkView = (id: string) => {
+        const tasks = tasksOfProject(id);
+        const liveTaskIds = new Set(taskManager.tasks.filter(t => t.status === 'running').map(t => t.id));
+        const runs = missionsOfProject(id);
+        return {
+            tasks: tasks.map(t => ({
+                id: t.id, title: t.title, agent: t.agentName, status: t.status,
+                mode: t.mode, engine: t.engine ?? '', model: t.model ?? '',
+                createdAt: t.createdAt, startedAt: t.startedAt, endedAt: t.endedAt,
+                costUSD: t.costUSD ?? 0, missionId: t.missionId ?? null,
+                live: liveTaskIds.has(t.id),
+                // Why a queued task is not moving — the automation gate's own
+                // words, the same ones the Overview's "Next up" prints. A row
+                // that says "queued" and nothing else sends the reader to
+                // another page to find out the fleet is simply busy.
+                held: t.deferredReason ?? ''
+            })),
+            missions: runs.map(r => {
+                const sp = missionStore.spec(r.specId);
+                return {
+                    id: r.id, title: sp?.title ?? r.id, status: r.status,
+                    lead: sp?.leadAgentName ?? '', team: (sp?.team ?? []).map(m => m.agentName),
+                    startedAt: r.startedAt, endedAt: r.endedAt,
+                    costUSD: r.totalCostUSD, tokens: r.totalTokens ?? 0,
+                    rounds: r.rounds.length,
+                    verdict: r.result?.verdict ?? '',
+                    // Which way it got here — a mission STARTED in this project
+                    // versus one whose delegations landed here are different
+                    // facts, and the row is the only place that can say so.
+                    via: sp?.projectId === id ? 'stamped' : 'delegated'
+                };
+            }),
+            notices: noticesOfProject(id).map(n => ({
+                id: n.id, ts: n.ts, title: n.title, type: n.type, level: n.level,
+                agent: n.agentName, read: !!n.read,
+                status: n.status ?? '', handled: !!n.handled
+            })),
+            queue: queueOfProject(id).map(q => ({
+                id: q.id, ts: q.ts, text: q.text, status: q.status, urgency: q.urgency,
+                author: q.author, target: q.target ?? '',
+                handledAt: q.handledAt ?? 0, stamp: q.stamp ?? ''
+            })),
+            // ‼️ Automations are the one group here that is DECLARED rather than
+            // stamped by a window (RunDimensions.projectId): nobody is looking
+            // at a window at 03:00, so a schedule's project is a decision the
+            // user made about that schedule. Listing them here is what makes
+            // that decision visible from the project it was made for.
+            schedules: taskManager.schedules
+                .filter(s => s.projectId === id)
+                .map(s => ({
+                    id: s.id, title: s.title, agent: s.agentName, kind: s.kind,
+                    hour: s.hour, minute: s.minute, dow: s.dow ?? null,
+                    onceAt: s.onceAt ?? 0, enabled: s.enabled,
+                    fireIf: s.fireIf ? true : false
+                })),
+            triggers: taskManager.triggers
+                .filter(t => t.action.kind !== 'workflow' && t.action.projectId === id)
+                .map(t => ({
+                    id: t.id, title: t.title, type: t.type, enabled: t.enabled,
+                    watchPath: t.watchPath ?? '', hookEvent: t.hookEvent ?? '',
+                    fireCount: t.fireCount ?? 0, skipCount: t.skipCount ?? 0,
+                    lastFiredAt: t.lastFiredAt ?? 0
+                })),
+            agents: agents.map(a => a.name)
+        };
     };
 
     /**
@@ -10194,6 +10402,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /** After any change to the registry: repaint everything that shows it. */
     const projectsChanged = (): void => {
+        // ‼️ A DELETED PROJECT LEAVES STAMPS BEHIND, AND THEY ARE INVISIBLE.
+        // `projectStore.remove` prunes its own session links, and these two are
+        // the same kind of thing: an ASSIGNMENT somebody made, which stops
+        // meaning anything the moment the project does not exist. A notice
+        // pointing at a deleted project is a row whose filter matches nothing
+        // and whose mark draws a warning for ever.
+        //
+        // A TASK IS DELIBERATELY NOT PRUNED. Its `projectId` is not an
+        // assignment but a record of what it RAN with — the project context
+        // file it was launched with, in a run that is over. Dropping the
+        // assignment is tidying; rewriting the history of a run is not.
+        // Cheap: two in-memory walks, writing only when something changed.
+        const alive = projectStore.all().map(p => p.id);
+        const dropped = noticesStore.pruneProjects(alive) + workQueueStore.pruneProjects(alive);
+        if (dropped) { NoticesPanel.refreshIfOpen(); QueuePanel.refreshIfOpen(); }
         projectsTree.refresh();
         paintProjectBar();
         ProjectsPanel.refreshIfOpen();
@@ -11006,6 +11229,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             () => projectStore.get(id)?.name, projectStyleOf),
                         tableN
                     };
+                case 'work':
+                    return { work: projectWorkView(id) };
                 case 'cost':
                     return { cost: projectCostFor(id) };
                 case 'overview': {
@@ -11043,11 +11268,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.commands.executeCommand('agentfarm.openSession',
                         link.file, typeof link.ts === 'number' ? link.ts : undefined);
                     break;
+                // ‼️ ON the row, not merely on the page. These two used to pass
+                // the id to a command that takes no arguments, so a timeline
+                // row opened a list of two hundred and left the reader to find
+                // the one they had just clicked.
                 case 'task':
-                    void vscode.commands.executeCommand('agentfarm.openTasks', link.id);
+                    TasksPanel.focusTask(tasksDeps, String(link.id));
                     break;
                 case 'mission':
-                    void vscode.commands.executeCommand('agentfarm.openMissions', link.id);
+                    MissionsPanel.focusRun(missionsPanelDeps, String(link.id));
                     break;
                 case 'file':
                     void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(String(link.path)));
@@ -11058,6 +11287,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.env.clipboard.writeText(String(link.hash));
                     void vscode.window.showInformationMessage(
                         `Agent Farm: commit ${String(link.hash).slice(0, 8)} copied — open it in your git tool.`);
+                    break;
+                // The two boards, focused on the row that was clicked — the same
+                // cross-link the notices page and the queue already use on each
+                // other, so a project row lands exactly where a person would.
+                case 'notice':
+                    showNoticesPanel(String(link.id));
+                    break;
+                case 'queue':
+                    showQueuePanel(String(link.id));
                     break;
             }
         },
@@ -11435,6 +11673,88 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 .filter((x): x is ProjectPerson => !!x);
             return projectStore.update(id, { people: rows }).error;
         },
+
+        // ---- Faz 5: the work, started and steered from the project it is for.
+        // Every one of these forwards to the command or panel that already owns
+        // the model. The Work tab is a VIEW over five stores and must not become
+        // a sixth way of writing to them.
+        startSession: async (id, how) => {
+            const p = projectStore.get(id);
+            if (!p) { return; }
+            // ‼️ ACTIVE FIRST, AND NOT AS A COURTESY. The active project is what
+            // a spawn reads to build the context file (Faz 2), and it is what a
+            // session started here will be stamped with. A "start in this
+            // project" that skipped it would open a session that had never
+            // heard of the project whose page the button is on.
+            await context.workspaceState.update('af.activeProject', id);
+            paintProjectBar();
+            projectsTree.refresh();
+            // Which agent. A project that names its own agents answers this
+            // itself; otherwise it is a pick over rows that already exist,
+            // which is what a quickpick is for (docs/CONVENTIONS.md).
+            const named = (p.match?.agents ?? [])
+                .map(a => agents.find(x => x.name === a || x.id === a))
+                .filter((a): a is AgentInfo => !!a);
+            let agent = named.length === 1 ? named[0] : undefined;
+            if (!agent) {
+                const choices = (named.length ? named : agents);
+                if (!choices.length) {
+                    void vscode.window.showWarningMessage('Agent Farm: no agents to start a session with.');
+                    return;
+                }
+                if (choices.length === 1) { agent = choices[0]; }
+                else {
+                    const pick = await vscode.window.showQuickPick(
+                        choices.map(a => ({ label: a.name, description: a.dir, agentId: a.id })),
+                        { placeHolder: `Start a session in "${p.name}" as…`, ignoreFocusOut: true });
+                    if (!pick) { return; }
+                    agent = agents.find(a => a.id === pick.agentId);
+                }
+            }
+            if (!agent) { return; }
+            if (how === 'console') {
+                // The Console opens its COMPOSER rather than spawning — the same
+                // rule `agentfarm.startSession` follows: the project can only be
+                // chosen before the first prompt, because the context rides in
+                // on the system prompt at spawn.
+                ConsolePanel.show(consoleDeps, {
+                    agentId: agent.id, pinAgent: true, projectId: id,
+                    engine: launchDefaults().engine || 'claude'
+                });
+            } else {
+                startClaudeSession(agent, { engine: (launchDefaults().engine || 'claude') as EngineId },
+                    undefined, undefined, id);
+            }
+        },
+        newTask: id => {
+            const p = projectStore.get(id);
+            // The task form's own project box, prefilled — the same form the
+            // toolbar + and a row's Edit open, so a task made from a project
+            // page cannot differ from one made anywhere else.
+            TasksPanel.compose(tasksDeps, p ? { project: p.id } : undefined);
+        },
+        newSchedule: id => {
+            const p = projectStore.get(id);
+            TasksPanel.composePlanSeed(tasksDeps, 'schedule', p ? { project: p.id } : {});
+        },
+        newTrigger: id => {
+            const p = projectStore.get(id);
+            TasksPanel.composePlanSeed(tasksDeps, 'trigger', p ? { project: p.id } : {});
+        },
+        openTask: taskId => { TasksPanel.focusTask(tasksDeps, taskId); },
+        retryTask: taskId => {
+            const t = taskManager.tasks.find(x => x.id === taskId);
+            if (t) { taskManager.retryTask(t); }
+        },
+        cancelTask: taskId => {
+            const t = taskManager.tasks.find(x => x.id === taskId);
+            if (t) { taskManager.cancelTask(t); }
+        },
+        openMission: runId => { MissionsPanel.focusRun(missionsPanelDeps, runId); },
+        openNotice: noticeId => showNoticesPanel(noticeId),
+        openQueueItem: itemId => showQueuePanel(itemId),
+        openSchedule: scheduleId => { TasksPanel.composePlan(tasksDeps, 'schedule', scheduleId); },
+        openTrigger: triggerId => { TasksPanel.composePlan(tasksDeps, 'trigger', triggerId); },
         onChange: () => { projectsTree.refresh(); paintProjectBar(); }
     });
 

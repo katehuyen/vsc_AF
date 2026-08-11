@@ -144,9 +144,10 @@
         .af-frange input[type=date] { padding:1px 4px; }
         .af-ftext { width:180px; padding:2px 6px; }
         .af-count { width:52px; padding:1px 4px; }
-        /* the project's own colour, the same mark the sidebar and its page use */
-        .af-pdot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px;
-            background:var(--vscode-panel-border); vertical-align:middle; }
+        /* The project dot lives in common.css now — the mark is shared with the
+           notices board, the queue and every other surface that carries one
+           (media/afProject.js). It used to be declared here, which is how a
+           second page would have invented a second one. */
         .foldcell { width:22px; }
         /* Selection: one narrow always-present column. Always present rather
            than a mode you switch on — a checkbox that appears only after you
@@ -677,12 +678,14 @@
             // information and taking the narrowest column's first 12px.
             project: r => {
                 const b = TIPBOX.project(r);
+                // The shared mark (media/afProject.js) — same dot, same icon,
+                // same colour as the notices board, the queue and the project
+                // page. `name` is what this table carries; the component takes
+                // the same shape a project row has.
                 const inner = r.project
-                    ? '<span class="cellline">'
-                    + (r.projectColor
-                        ? `<span class="af-pdot" style="background:${C.esc(r.projectColor)}"></span>` : '')
-                    + (r.projectIcon ? `<span>${C.esc(r.projectIcon)}</span>` : '')
-                    + `<span class="ctext">${C.esc(r.project)}</span></span>`
+                    ? window.AFProject.badge({
+                        name: r.project, color: r.projectColor, icon: r.projectIcon
+                    })
                     : '—';
                 return window.AFTip.cell(r.project ? '' : 'muted', '', inner, b.head, b.body);
             },
