@@ -1,5 +1,44 @@
 # X-35 — MULTI MOTOR ADAPTASYONU · kalanlar notu
 
+
+Halledilenler
+
+`4b393e9` ve `e50cfe1` commit’lerinde:
+
+- Portfolio’nun son etkinlik ve oturum sayıları bütün motorlara açılmış.
+- OTLP aktarımı bütün motorları içeriyor; `gen_ai.system` motoru belirtiyor.
+- Görev–oturum maliyet eşleştirmesi aynı motorla sınırlandırılmış.
+- Tasks koşularına motor sütunu/filtresi eklenmiş; fiyat vermeyen motorlarda `$0.00` yerine token gösteriliyor.
+- Console geçmişi Codex/Gemini transkriptlerini okuyabiliyor; okunamayan Antigravity geçmişi nedenini açıklıyor.
+- Open/Copy Transcript işlemleri motorun gerçek transkript durumunu bildiriyor.
+- `includeUnmatchedProjects` bütün motorlara uygulanmış.
+- Dashboard oturum sayıları bütün motorları kapsıyor.
+- Filo raporu, sağlık maliyet uyarıları ve Meaning araması Claude-only kapsamı kısmen açıklıyor.
+- Toolbox ve bazı ayar metinleri Claude Code’a özgü olduklarını belirtiyor.
+- Tasks ve Dashboard karanlık/açık görselleri incelenmiş.
+- Son tam test: **137 dosya · 8277 geçti · 0 başarısız**.
+
+İncelemeyle zaten doğru olduğu doğrulananlar:
+
+- Living sayfasında oturum/motor bağımlılığı yok.
+- Search Text/Regex bütün motorları tarıyor; rozet ve motor filtresi var.
+- Plan kullanımı motor başına ele alınıyor.
+- Canlı kulvar–transkript çakışmasında zengin transkriptin kazanması testli.
+- Codex kümülatif kullanım, reasoning/output ve context-window düzeltmeleri mevcut.
+
+Kesin kalan kod açıkları — HENÜZ DOKUNULMAYANLAR:
+
+- Sol ağaçtaki `Sessions` başlık sayacı Claude-only; açılan liste bütün motorları içeriyor: [trees.ts](D:/zone/dev/git/miropharm/vsc_AgentFarm/src/views/trees.ts:155).
+- Turns tablosu yabancı motorları gösteriyor; fakat ayrıntı açma ve Markdown aktarımı hâlâ `index.all()` ile Claude-only doğruluyor: [turnsPanel.ts](D:/zone/dev/git/miropharm/vsc_AgentFarm/src/panels/turnsPanel.ts:116).
+- Cost Anomaly Report, Claude-only veriyle “fleet/all sessions” dili kullanıyor ve kapsam notu taşımıyor: [extension.ts](D:/zone/dev/git/miropharm/vsc_AgentFarm/src/extension.ts:16944).
+- Bazı per-agent sağlık/kalite/MCP/skill/nöbet bulguları Claude-only ölçümleri kapsamını belirtmeden sunuyor: [health.ts](D:/zone/dev/git/miropharm/vsc_AgentFarm/src/core/health.ts:317).
+- Portfolio’nun son etkinlik tarihi düzeltilmiş; canlılık fallback’i hâlâ Claude-only `isAgentActive` kullanıyor: [portfolioPanel.ts](D:/zone/dev/git/miropharm/vsc_AgentFarm/src/panels/portfolioPanel.ts:150).
+- Harici oturumların sol ağaç davranışı, diğer oturum yüzeylerindeki motor-farkındalıklı devam/görüntüleme akışıyla hâlâ tam eşleşmiyor.
+
+
+
+
+
 > Kaynak denetimi: `38de7845-c46d-4f3b-bef7-aac0119a249b` → devir notu →
 > `a9b5b11a-a4bb-4a04-b9bc-e33217ac5e33` oturumu → `4b393e9` + `e50cfe1`.
 > Son güncelleme: 2026-08-12. X-35 kapanmadı; aşağıdaki kod açıkları duruyor.
