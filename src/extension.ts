@@ -82,7 +82,7 @@ import {
     FIX_COMMANDS, insightKey, pickAutoDelegates
 } from './core/insightops';
 import { removeMcpServer, setServerDisabled } from './core/mcp';
-import { queryMatches } from './core/query';
+import { compileQuery, queryMatches } from './core/query';
 import { moveSkillScope, removeSkill } from './core/skills';
 import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes,
@@ -18296,14 +18296,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`source` says where the path came from: "setting" (the user picked it), "built-in" '
                 + '(nothing picked, the default path exists) or "none" — with "none" read `error`. '
                 + 'Reads the file on every call, so a block added a moment ago is here. '
-                + 'args: q? (only snippets whose label, group or text contains this)',
+                + 'args: q? (matched against the label, group and text, in the extension\'s own '
+                + 'query grammar — a b, OR, -a, "phrase", refact*; the same one the Console picker uses)',
             handler: (args) => {
                 const snap = readPromptSnippets();
-                const q = (optStr(args, 'q') ?? '').toLowerCase();
-                const items = q
-                    ? snap.items.filter(i =>
-                        `${i.label} ${i.group} ${i.text}`.toLowerCase().includes(q))
-                    : snap.items;
+                // ‼️ X-37 — the same grammar the picker's own filter box uses
+                // (media/afQuery.js). It read `includes()` here, so the two
+                // doors onto one list answered differently.
+                const q = compileQuery(optStr(args, 'q') ?? '');
+                const items = q.empty
+                    ? snap.items
+                    : snap.items.filter(i => q.test(`${i.label} ${i.group} ${i.text}`));
                 return {
                     file: snap.file || null,
                     source: snap.source,

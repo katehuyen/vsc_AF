@@ -320,10 +320,10 @@
     // the reader that nobody looked at it. An example is the part of a
     // grammar people actually read; it is not a place to be careless.
     //
-    // SYNTAX_ROWS is the same knowledge with its columns intact, so a page can
-    // draw a real help CARD (symbol · meaning · example) instead of squeezing
-    // a grammar into a one-line hover. The flat SYNTAX below is built from it:
-    // two texts saying different things is the failure this file exists against.
+    // SYNTAX_ROWS is the knowledge with its columns intact, so a page can draw a
+    // real help CARD (symbol · meaning · example) instead of squeezing a grammar
+    // into a one-line hover. The flat SYNTAX below is BUILT from it — two texts
+    // saying different things is the failure this file exists against.
     const SYNTAX_ROWS = [
         { sym: 'a b', what: 'both terms must appear; their order does not matter', example: 'parser error' },
         { sym: 'OR', what: 'either side may appear (OR must be uppercase)', example: 'codex OR gemini' },
@@ -334,14 +334,27 @@
         { sym: '"a* b*"', what: 'combine a phrase with unfinished words', example: '"refact* the pars*"' }
     ];
 
-    const SYNTAX = [
-        'Write more than one word when every word must be present. Their order does not matter.',
-        'Use uppercase OR when either choice is acceptable. Put choices in (parentheses) before adding another required word.',
-        'Put - before a word to exclude records containing it.',
-        'Put a phrase in "quotes" when the words must stay together.',
-        'Use * for an unfinished beginning or ending: refact* finds refactor and refactoring.',
-        'A plain word matches inside a longer word. Turn on Whole words when it must stand on its own.'
-    ].join('\n');
+    /** The one thing a row cannot say in a `sym` column, and the thing people
+     *  are surprised by: a bare word is a SUBSTRING. Stated in a form every box
+     *  can act on — a hover on a plain filter must not point at a Whole word
+     *  toggle that only the Search page has. */
+    const BARE_WORD_NOTE = 'A plain word also matches inside a longer word; '
+        + 'put it in "quotes" when it has to stand on its own.';
+
+    /**
+     * ‼️ THE HOVER IS BUILT FROM THE CARD'S OWN ROWS, NOT WRITTEN BESIDE THEM.
+     *
+     * This used to be a second hand-written list that claimed in a comment to be
+     * derived from SYNTAX_ROWS and was not — so the Search page's Syntax card
+     * grew a rule (`"a* b*"`) that twenty hovers never learned, and the hovers
+     * kept telling every box in the extension to turn on a Whole word toggle
+     * that exists on exactly one page. Deriving it is the only version of "say
+     * it once" that a future edit cannot undo by accident.
+     */
+    const SYNTAX = SYNTAX_ROWS
+        .map(r => r.sym + '  —  ' + r.what + '  ·  ' + r.example)
+        .concat([BARE_WORD_NOTE])
+        .join('\n');
 
     /** What the whole-word mode changes, in one line, for the box that is in it. */
     const WHOLE_WORD_ON = 'Whole word is ON: a bare word must match a whole word '
@@ -358,5 +371,5 @@
             + (o.wholeWord ? WHOLE_WORD_ON + '\n\n' : '') + SYNTAX;
     }
 
-    return { compile, matches, tip, SYNTAX, SYNTAX_ROWS, WHOLE_WORD_ON, WORD };
+    return { compile, matches, tip, SYNTAX, SYNTAX_ROWS, WHOLE_WORD_ON, BARE_WORD_NOTE, WORD };
 });

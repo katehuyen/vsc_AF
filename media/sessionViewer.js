@@ -195,14 +195,23 @@
         return ROLE_CHIPS.some(c => roleSel.has(c.id) && c.match(m));
     }
 
-    function matchesText(m) {
-        if (!filter) { return true; }
-        const hay = ((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || '')).toLowerCase();
-        return hay.includes(filter);
+    /**
+     * ‼️ X-37 — THE SAME GRAMMAR AS EVERY OTHER BOX. This one had stayed on
+     * `hay.includes(lowercased)`, which is the one question a transcript filter
+     * is worst at answering: you cannot ask for two words that are not next to
+     * each other, you cannot exclude, and on the longest lists in the extension
+     * that is exactly what you want. Compiled once per pass, never per row
+     * (media/afQuery.js), and the box is given the RAW value — the grammar
+     * decides its own case handling.
+     */
+    function matchesText(m, q) {
+        if (q.empty) { return true; }
+        return q.test((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || ''));
     }
 
     function visibleMsgs() {
-        return DATA.messages.filter(m => matchesRole(m) && matchesText(m));
+        const q = window.AFQuery.compile(filter);
+        return DATA.messages.filter(m => matchesRole(m) && matchesText(m, q));
     }
 
     function turnInfo(n) {
@@ -332,7 +341,8 @@
         // Comparing the two distances is the whole fix. `visible ⊆ all`, so
         // they are equal exactly when something already on screen is just as
         // close — and then nothing has to be hidden or unhidden to get there.
-        const shown = m => matchesRole(m) && matchesText(m);
+        const shownQ = window.AFQuery.compile(filter);
+        const shown = m => matchesRole(m) && matchesText(m, shownQ);
         let target = null, bestDist = Infinity;
         let visTarget = null, visDist = Infinity;
         (DATA.messages || []).forEach(m => {
@@ -1205,7 +1215,8 @@
                 <span class="muted small" id="rp-pos">${Math.min(replay.pos + 1, replay.msgs.length)}/${replay.msgs.length}</span>
             </div>` : `
             <div class="searchbar" style="margin:14px 0 6px; position:relative">
-                <input id="filter" type="text" placeholder="Filter messages… (text, tool name)" value="${C.esc(filter)}" style="padding-right:28px">
+                <input id="filter" type="text" placeholder="Filter messages… (text, tool name)" value="${C.esc(filter)}" style="padding-right:28px"
+                    title="${C.esc(window.AFQuery.tip("Searched against each message's text, the tool it called and that tool's input."))}">
                 <button id="filterclear" class="clearbtn" title="Clear filter" style="display:${filter ? '' : 'none'}">✕</button>
             </div>`}
             ${chipRowHtml()}
@@ -1431,7 +1442,9 @@
             const input = document.getElementById('filter');
             const clear = document.getElementById('filterclear');
             const applyFilter = () => {
-                filter = input.value.toLowerCase();
+                // RAW, never pre-lowercased: the grammar decides its own case
+                // handling and a lowercased string only breaks what it offers.
+                filter = input.value;
                 clear.style.display = filter ? '' : 'none';
                 const msgs = document.getElementById('msgs');
                 msgs.innerHTML = listHtml(visibleMsgs()) || '<p class="muted">No messages match.</p>';

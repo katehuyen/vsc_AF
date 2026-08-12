@@ -137,7 +137,12 @@ ok('regex mode is untouched and still its own thing',
 
 // ------------------------------------------------------------ it is written down
 {
-    ok('the grammar explains itself in one place', /uppercase OR/.test(Q.SYNTAX));
+    // ‼️ X-37 — the flat text is DERIVED from the rows now, so this asks whether
+    // the rows are in it rather than whether somebody kept two texts in step.
+    // The full sweep (every box, both sides) is test_query_boxes.js.
+    ok('the grammar explains itself in one place',
+        /OR must be uppercase/.test(Q.SYNTAX)
+        && Q.SYNTAX_ROWS.every(r => Q.SYNTAX.includes(r.example)));
     ok('…and a box can put its own subject in front of it',
         Q.tip('Search the backlog.').startsWith('Search the backlog.')
         && Q.tip('x').includes(Q.SYNTAX));

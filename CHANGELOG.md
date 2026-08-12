@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.121.3 — One search engine, and every box says so (2026-08-13)
+
+**X-37.** The Search page was rebuilt with a real grammar under it and a Syntax card beside it, and the question afterwards was the obvious one: *are the other boxes the same?* Two were not, and neither of them looked wrong.
+
+**The Session Viewer's message filter and the Task Analytics table searches were still substring matches** — `hay.toLowerCase().includes(typed)` — on two of the longest lists in the extension. That box could not ask for two words that are not next to each other, could not exclude anything, and could not take a phrase; on a transcript of six hundred messages that is the whole point of having one. Both now compile through `media/afQuery.js`, once per pass rather than once per row, and both are given the RAW box value, because the grammar decides its own case handling. `prompts.list` on the bridge was matching with `includes()` as well, so the two doors onto one list answered differently; it now uses the same grammar as the picker's own filter.
+
+**The hover text is built from the Syntax card's own rows now.** `SYNTAX` was a second hand-written list whose comment claimed to be derived from `SYNTAX_ROWS` and was not — so the card grew `"a* b*"` (a phrase whose words may each be partial) and no hover in the extension ever learned it, while every hover went on telling readers to turn on a **Whole word** toggle that exists on one page out of eleven. The flat text is now generated from the rows, in the card's own three columns, and it closes with what a bare word actually does in a form any box can act on: *put it in "quotes" when it has to stand on its own.*
+
+**And it is swept rather than remembered.** `test_query_boxes.js` fails on any `media/` file that decides a match with a lowercased substring, and on any page that compiles a query without offering the grammar on its box — with one declared exception, the Search page, which draws the grammar in full one press below the box and therefore does not also whisper it.
+
 ## 3.121.2 — A hover never opens towards the edge it is already on (2026-08-13)
 
 **K-18.** The `?` under the Console's composer sits a few pixels off the BOTTOM of the window, and its panel hung *downwards* out of it — so the thing it exists to explain was almost entirely off screen. Same mistake, other axis, as a 760px panel opening rightwards off a trigger already three quarters of the way across a row.

@@ -236,8 +236,20 @@ rows.filter(r => q.test(r.title + ' ' + r.agent));
   The test is ownership: a filter box in a table row keeps its hover, because
   there is nowhere else for the grammar to live. A page that draws the grammar
   in full does not also whisper it.
+- ‼️ **The hover text is BUILT from the Syntax card's own rows** — `SYNTAX` is
+  derived from `SYNTAX_ROWS`, not written beside it. It used to be a second
+  hand-written list whose comment claimed otherwise, and it drifted exactly as
+  you would expect: the card grew a rule (`"a* b*"`) that twenty hovers never
+  learned, while every hover went on telling boxes to press a **Whole word**
+  toggle that exists on one page out of eleven. If you add a rule, add a row.
 - The grammar itself is documented for users in `docs/BLUEPRINT.{en,tr}.md`; the
   file is the spec, `test/test_query.js` is the guard.
+- ‼️ **And it is swept, not remembered** — `test/test_query_boxes.js` fails on
+  any `media/` file that decides a match with `toLowerCase().includes(…)`, and on
+  any page that compiles a query without offering the grammar on its box. Both
+  checks were written because two boxes had been left behind for months (the
+  Session Viewer's transcript filter and the Task Analytics tables), and nothing
+  on either page looked wrong.
 
 ### A multi-pick dropdown has TWO gestures
 

@@ -42,11 +42,15 @@
     }
     function tableTools(id, allRows, cols, title) {
         const s = tstateFor(id);
-        const q = s.q.trim().toLowerCase();
+        // ‼️ X-37 — the same grammar as every other box in the extension, and
+        // compiled ONCE outside the row loop (media/afQuery.js). This table used
+        // to ask `hay.indexOf(lowercased)`, so on a scorecard of forty agents
+        // you could not ask for two things at once or exclude one.
+        const q = window.AFQuery.compile(s.q);
         let rows = allRows.filter(r => {
-            if (q) {
-                const hay = cols.map(c => String(c.get(r) == null ? '' : c.get(r))).join(' ').toLowerCase();
-                if (hay.indexOf(q) < 0) { return false; }
+            if (!q.empty) {
+                const hay = cols.map(c => String(c.get(r) == null ? '' : c.get(r))).join(' ');
+                if (!q.test(hay)) { return false; }
             }
             for (const c of cols) {
                 // null = no filter; otherwise the cell must be in the picked set
@@ -70,7 +74,7 @@
             id: p.id, label: p.label, options: p.options, selected: s.filters[p.key],
             title: 'Filter by ' + p.label + ' — tick any combination'
         })).join('');
-        const active = q || s.sort || Object.values(s.filters).some(Boolean);
+        const active = !q.empty || s.sort || Object.values(s.filters).some(Boolean);
         // ‼️ THE TABLE, NOT ITS ROWS. These rows are aggregates — a task family,
         // an agent scorecard — and carry no id anything else could act on; a row
         // menu would have to invent one. What the table itself can do is real,
@@ -78,7 +82,8 @@
         const bar = `<div class="tbl-tools"
             ${window.AFCtx.row('afAnalyticsTable', { tableId: id, tableTitle: title })}
             title="${C.esc(window.AFCtx.hint(title))}">
-            <input type="search" data-tq="${id}" value="${C.esc(s.q)}" placeholder="⌕ search">
+            <input type="search" data-tq="${id}" value="${C.esc(s.q)}" placeholder="⌕ search"
+                title="${C.esc(window.AFQuery.tip('Searched against every column of this table, whether or not the column is one you can filter by.'))}">
             ${selects}
             <button class="mini secondary" data-treset="${id}" ${active ? '' : 'disabled'} title="Clear search, filters and sort">↺ reset</button>
             <button class="mini secondary" data-texport="${id}" title="Export the visible rows as a Markdown table">⬇ MD</button>
