@@ -858,6 +858,24 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1,U-1,U-2,U-3'
         && r.ms.label('bl-states') === 'state: every state');
 
+    // ‼️ U-51 — THE TWO SUBSETS THIS AXIS HAS A WORD FOR. The four states are
+    // really two questions: what is still work, and what is finished with.
+    // Either one cost a Clear plus two ticks, on the axis this tab is filtered
+    // by more than any other. The mechanism is the component's (`presets`, the
+    // same one the Console's Dialog uses); only this list knows the words.
+    ok('the state axis declares Active and Passive',
+        r.ms.presets('bl-states').join() === 'active,passive');
+    r.ms.preset('bl-states', 'passive');
+    ok('‼️ Passive is the last two, in one click',
+        r.ms.ticked('bl-states').join() === 'done,cancelled'
+        && codesIn(r.html()).join() === 'U-1,U-2,U-3');
+    r.ms.preset('bl-states', 'active');
+    ok('…and Active is the first two',
+        r.ms.ticked('bl-states').join() === 'open,doing'
+        && codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
+    ok('…each saying what it means, because a word is not self-evident',
+        /data-afms-preset="passive" aria-label="Finished with/.test(r.html()));
+
     // Being unfiled is not a STATE — it is whether the item has a code — so it
     // is its own axis rather than a seventh option pretending to be one.
     const r2 = run(data());

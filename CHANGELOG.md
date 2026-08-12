@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.122.2 — Active and Passive, one click each, on the backlog's state picker (2026-08-13)
+
+**U-51.** The four states are really two questions — what is still work, and what is finished with — and either one cost a **Clear** plus two ticks, on the axis this tab is filtered by more than any other. `Active` (open · doing) and `Passive` (done · cancelled) now sit between **Select all** and **Clear**, exactly where the Console's `show` box puts `Dialog`.
+
+Nothing new was invented for it: `presets` has been part of `AFFilter.multi` since the Console needed one, and the component deliberately does not know what any of the words mean — a named subset is the picker's own data. What was missing was the backlog passing them through.
+
 ## 3.122.1 — The bar above a project document breaks in one place, and the column of names stops taking the width (2026-08-13)
 
 **A-13.** Six buttons in one right-aligned run above the backlog did not fit, so whichever ones happened to overflow dropped to a second line — a different set at every panel width, with no way to tell what belonged with what. There are two groups now, with the flexible gap between them: **the doors ONTO the file sit beside the file's own name**, and the things that REWRITE it (Tidy · Gather · Archive all closed · Archive older) keep the right-hand end they had. Each run is a flex box of its own, so it is placed whole and only splits internally once it truly cannot fit — which means the bar breaks in one predictable place instead of shedding a button. The same shape is applied to all four of these bars, including Track's, which had the same six-in-a-row problem.

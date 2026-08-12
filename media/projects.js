@@ -2775,6 +2775,14 @@
             options: [
                 { v: 'open', t: 'open' }, { v: 'doing', t: 'doing' },
                 { v: 'done', t: 'done' }, { v: 'cancelled', t: 'cancelled' }
+            ],
+            // ‼️ U-51 — THE TWO SUBSETS THIS AXIS HAS A WORD FOR. The four
+            // states are really two questions: what is still work, and what is
+            // finished with. Either one cost a Clear plus two ticks, every time,
+            // on the axis this tab is filtered by more than any other.
+            presets: [
+                { id: 'active', label: 'Active', values: ['open', 'doing'], title: 'Still work — open and doing.' },
+                { id: 'passive', label: 'Passive', values: ['done', 'cancelled'], title: 'Finished with — done and cancelled.' }
             ]
         },
         {
@@ -2863,7 +2871,10 @@
     const blPicksIn = where => BL_PICKS.filter(p => p.where === where);
     const blPickHtml = where => blPicksIn(where).map(p => window.AFFilter.multi({
         id: p.id, label: p.label, allLabel: p.allLabel, options: p.options,
-        selected: blFilter[p.key], title: p.title, width: p.width
+        selected: blFilter[p.key], title: p.title, width: p.width,
+        // U-51 — a named subset is per-picker data; the component knows the
+        // mechanism and only this list knows what "Active" means.
+        presets: p.presets
     })).join('');
     /**
      * How many characters of an item are drawn before it is cut off.
