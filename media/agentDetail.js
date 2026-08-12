@@ -8,6 +8,33 @@
     // refreshes don't wipe half-typed rates. DATA still updates silently.
     let suspendRender = false;
 
+    /**
+     * ‼️ WHICH ENGINES THIS AGENT IS ACTUALLY DRIVEN WITH (X-35).
+     *
+     * The Sessions card counted only the sessions the money above it was
+     * measured from — Claude's — so an agent the user mostly runs through Codex
+     * read as an agent that had barely worked, next to a table full of rows, with
+     * nothing on the page to explain the gap. The card now counts every session
+     * and this line says how they split, in the shared badge's own words. When
+     * every session is Claude's it says nothing at all: a split with one side is
+     * not a split.
+     */
+    function engineSplit(t) {
+        const by = t.byEngine || {};
+        const ids = Object.keys(by);
+        if (ids.length < 2) { return ''; }
+        const order = window.AFEngine.known;
+        const rank = id => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
+        const parts = ids.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+            .map(id => `${window.AFEngine.badge(id)} ${by[id]}`).join(' ');
+        // …and which of them the money is measured from, because that is the
+        // question the split immediately raises.
+        const unmeasured = (t.allSessions || 0) - (t.measuredSessions || 0);
+        return parts + (unmeasured > 0
+            ? ` <span class="muted" title="Cost, tokens, the model split and the daily chart on this page are measured off Claude's own transcript format and cannot be computed for another engine — those ${unmeasured} sessions are listed in the table below but are not in the figures above.">· ${unmeasured} not in the figures</span>`
+            : '');
+    }
+
     // The two places a session can live. One vocabulary for all three start
     // buttons, and the same words the host's own picker uses (pickRunSurface),
     // so the answer reads the same whichever surface asked.
@@ -433,7 +460,7 @@
             <div class="row" ${window.AFCtx.agent(a)}
                 title="${C.esc(window.AFCtx.AGENT_HINT)}">
                 <div class="card"><div class="label">Total cost</div><div class="kpi">${C.fmtUSD(t.cost)}</div><div class="sub">avg ${C.fmtUSD(t.avgCostPerSession)} / session</div></div>
-                <div class="card"><div class="label">Sessions</div><div class="kpi">${t.sessions}</div></div>
+                <div class="card"><div class="label">Sessions</div><div class="kpi">${t.allSessions !== undefined ? t.allSessions : t.sessions}</div><div class="sub">${engineSplit(t)}</div></div>
                 <div class="card"><div class="label">Tool calls</div><div class="kpi">${t.toolCalls}</div><div class="sub">${t.errors} errors</div></div>
                 <div class="card"><div class="label">Memory</div><div class="kpi">${a.memoryFiles.length}</div><div class="sub">files</div></div>
             </div>

@@ -201,7 +201,29 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
             sessions: sessions.length,
             toolCalls: totalToolCalls,
             errors: totalErrors,
-            avgCostPerSession: sessions.length ? totalCost / sessions.length : 0
+            avgCostPerSession: sessions.length ? totalCost / sessions.length : 0,
+            /**
+             * ‼️ WHICH ENGINES THIS AGENT IS ACTUALLY DRIVEN WITH (X-35).
+             *
+             * `sessions` above is the claude-only list and every figure beside it
+             * is measured off Claude's transcript — correctly, that is the
+             * documented split. What was missing is the SENTENCE that makes those
+             * figures readable: an agent the user mostly runs through Codex showed
+             * a near-zero cost and a handful of sessions next to a table full of
+             * rows, and nothing on the page explained the gap. Counted off the
+             * table's own list so the two can never disagree.
+             */
+            byEngine: (() => {
+                const out: Record<string, number> = {};
+                for (const s of tableSessions) {
+                    const id = s.source ?? 'claude';
+                    out[id] = (out[id] ?? 0) + 1;
+                }
+                return out;
+            })(),
+            /** …and how many of the rows the money above does NOT cover. */
+            measuredSessions: sessions.length,
+            allSessions: tableSessions.length
         },
         daily,
         tools,
