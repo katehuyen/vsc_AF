@@ -2406,37 +2406,42 @@ The consumption side of agent packs: `agentFarm.packGalleryRepos` = git URLs or 
 
 ### Working With Other Engines — End to End
 
-The two sections above (Antigravity Compatibility, Multi-CLI Runner below) are each correct but scattered — this is the **"how do I actually use this"** answer, in one place. Three different scenarios, three different mechanisms:
+There are two deliberately different paths. **Claude Code · Codex · Gemini · Antigravity are first-class engines**; `agentFarm.cliProfiles` is the escape hatch for an arbitrary command Agent Farm does not understand. Do not add the four built-in engines to `cliProfiles`: choose them from the **Engine** box in Console, Start Session…, New Task, schedules/triggers, missions and teams. The first-class route carries the engine's real model and effort vocabulary, resume rules, transcript adapter and token accounting. A generic profile gets an archived stdout/stderr file and exit status — no invented transcript, price or live semantics.
 
-**A. Codex — actually runs FROM Agent Farm (because it's a real CLI).**
-1. Once: right-click the agent → **Sync Agent with Antigravity + Codex…** — writes `AGENTS.md` into the agent folder (generated from `CLAUDE.md`; the file Codex reads).
-2. Add to `agentFarm.cliProfiles`: `[{"name": "codex", "headless": "codex exec \"{prompt}\"", "interactive": "codex"}]`.
-3. Right-click the agent → **Start Session With… (choose CLI)** → pick **codex** → a terminal opens in the same agent folder running `codex`. Codex's own rule merges every `AGENTS.md` from the git root down to the cwd — the identity you synced kicks in automatically, no extra step.
-4. Works as a headless task too: the **Add Task** wizard offers a CLI choice; picking "codex" runs the prompt through `codex exec` and archives the output.
-5. Optionally wire `~/.codex/config.toml` with `notify = ["node", "<path to cliHook.js>"]` to stream live events (Stop, tool calls) onto the same timeline (see "Hook bridge" below).
-6. **The limit:** transcript analysis, live tool/error tracking, cost and quality scoring stay Claude-specific — codex only gets open/closed lifecycle + output archive + exit code (though "External session history" below is a codex-specific exception that adds REAL transcript history + cost on top).
+**Set up and run a first-class engine.**
 
-**B. Antigravity — an entirely different thing; Agent Farm never opens it.**
-Antigravity is a standalone desktop **application**, like VS Code (Google's own editor) — not a CLI launched in a terminal, and no command in Agent Farm opens it or could. Agent Farm's only role is preparing the files so that when Antigravity opens the agent folder, it finds the right identity. Usage: run **Sync Agent with Antigravity + Codex…** (`.agents/AGENTS.md` + active duties → `.agents/workflows/` slash commands), then **you** open the agent folder as a project in the Antigravity application yourself. From that point Agent Farm has no control at all — the sync only answered, in advance, "who is this agent and what are its rules" for when Antigravity opens it.
+1. Open **Engines** and install/sign in to the CLI there; **⚡ Test** spends one read-only turn and records the engine's own verdict.
+2. Run **Sync Agent with Antigravity + Codex…** once for the agent. Codex reads `AGENTS.md`; Antigravity reads `.agents/AGENTS.md` and its generated workflows. The same sync keeps the shared constitution parallel.
+3. Pick the engine where the work starts. `agentFarm.launchDefaults.engine` makes one the fleet default; an agent can remember its own model/effort default per engine.
+4. Resume from **Console** when the engine's terminal CLI has no safe resume form. Codex and Gemini are per-turn engines; Claude is a persistent process; Antigravity is driven through its `agy` CLI when Agent Farm hosts it. The panel explains the difference instead of translating one engine's flags into another's.
 
-**C. A completely different / your own CLI (aider, opencode, your own script, anything) — the generic mechanism.**
-`cliProfiles` isn't Claude/Codex/Gemini-specific: any CLI with a `{prompt}`/`{args}` template can be added:
+The Antigravity desktop application is still a separate editor. The sync prepares its workspace files; the first-class `agy` integration is the CLI path Agent Farm can host. These are complementary, not two names for the same launch.
+
+### Coverage and honest boundaries (3.119.0)
+
+The session index intentionally has two halves. `all()` / `forAgent()` are the **Claude-shaped measurement set**; `allWithExternal()` / `forAgentWithExternal()` are the **complete log**. A record surface must list every engine. An analytic stays on the format it can actually measure and says what it excludes. Mixing the two would either hide conversations or average honest zeroes into figures that then look real.
+
+| Surface / fact | Coverage |
+| --- | --- |
+| Sessions tables, agent session log, Console resume/history, Text/Regex search, Live Timeline, Portfolio activity, dashboard session counts, task-run history and OTLP export | Every engine; rows carry an engine badge. OTLP writes `gen_ai.system`. |
+| Turns | Claude and Codex have real per-turn rows; the table identifies the engine. |
+| Meaning search | Claude Code transcript index only; the mode and index status say how many other-engine sessions are outside it. |
+| Cost/cache/context health, quality, skill/MCP/memory use and duty compliance | Claude Code transcript analytics. Fleet reports and cost warnings state the exclusion instead of folding foreign sessions into a false average. |
+| Plan limits | Per engine: Claude's OAuth endpoint, Codex's recorded rate-limit block, and an explicit “not published / no plan” answer where nothing measurable exists. Missing never means 0%. |
+
+The same rule reaches the awkward edges: rename survives rescans on every engine; Resume opens the recorded engine rather than handing a Codex id to Claude; “Open transcript” and “Copy transcript path” explain permanently unreadable Antigravity protobuf storage; `includeUnmatchedProjects` governs every engine; overlapping live-lane and transcript records deduplicate with the richer transcript winning.
+
+Codex usage is treated as the cumulative counter it is: each turn publishes the delta from the previous total, `reasoning_output_tokens` is already inside output, and the context gauge uses the window recorded by that rollout. Task runs are matched only to a session on the same engine. Claude can show API-equivalent dollars; a plan-billed engine shows the tokens it actually reported and never a misleading `$0.00`.
+
+### Generic CLI profiles
+
+For a CLI Agent Farm does not know — aider, opencode, an internal script — add a template:
+
 ```json
 {"name": "aider", "headless": "aider --message \"{prompt}\"", "interactive": "aider"}
 ```
-This profile shows up in **Start Session With…** exactly the same way, with the same terminal-launch + Add Task flow — no different from Codex. The one real limit: real transcript history + cost is, today, only wired for Codex and Gemini via dedicated adapters; a completely unknown CLI has none, so you only get open/closed lifecycle tracking (live events too, if you wire the hook bridge). Real transcript history for a bespoke CLI would mean writing your own `SessionSource` adapter (see the E3b architecture below) — not built today, but the mechanism is open to it.
 
-### Multi-CLI Runner
-
-The task runner is no longer locked to claude: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\"", "interactive": "gemini"}]` → the Add Task wizard lets you pick a CLI. **The expectation is clearly bounded:** non-claude runners get an output archive + exit-code status; transcript analysis, live hooks, cost and quality layers are Claude-specific. With Antigravity sync (1.3.0) the same agent identity works on both sides.
-
-**Open a season with a different model (2.29.0 — Wave E1):** right-click an agent → **Start Session With… (choose CLI)** or the same from the command palette: it lets you pick a CLI (Claude Code default + gemini/codex/… from `cliProfiles`) and opens a terminal session in the agent folder with that profile's `interactive` command. **The Claude path is preserved exactly** — this is a separate sibling command, it doesn't touch the existing Start Claude Session. The CLI you last used per agent is remembered and floats to the top of the list (it also obeys the `externalTerminal` setting). Note: for an interactive session write the profile's `interactive` field as a plain launcher (like `"gemini"`).
-
-**External sessions' lifecycle is tracked (2.30.0 — Wave E2a):** a non-claude session opened with Start Session With… now shows in the Live Timeline — an `idle` row drops into the lane when the terminal opens, and it becomes `ended` when the terminal closes. The session id is namespaced with `cli:<cliId>:...` (no collision with claude UUIDs), and the card shows a CLI badge + an "external CLI — lifecycle only" label. **Honest limit:** since the CLI emits no hooks, intermediate states (working/tool/cost) aren't tracked — only open/closed; in `externalTerminal` mode, with no terminal object, the lifecycle isn't tracked at all. After a reload the row reattaches to the restored terminal whose name matches; if the terminal didn't come back, the row is honestly closed.
-
-**Hook bridge — rich events from an external CLI (2.31.0 — Wave E2b):** the Start Session With… terminal carries the `AGENT_FARM_SESSION` / `AGENT_FARM_CWD` / `AGENT_FARM_EVENT_PORT` / `AGENT_FARM_HOOK` environment variables; the `cliHook.js` bridge script that ships with the extension reads these variables and POSTs the event to the live listener. Bind it to the CLI's notify/hook mechanism or a wrapper: **for codex**, `notify = ["node", "<path to cliHook.js>"]` in `~/.codex/config.toml` is enough — codex passes the payload JSON as the LAST ARGUMENT and the bridge auto-detects it (2.36.0; known types are mapped: `agent-turn-complete`→Stop). Manual use: `node "%AGENT_FARM_HOOK%" --event Stop`, `--event PreToolUse --tool Bash`, `--event UserPromptSubmit --prompt "..."`; for tools that provide JSON on stdin, `--json`. For a ready command: **Copy CLI Hook Bridge Command**. The bridge is fail-soft: it always exits 0 and never blocks the CLI; with no session env, a folder's events are gathered in a stable `cli:external:<folder>` lane. No env is given to Claude terminals — the claude path didn't change. **Honest limit:** which CLI can emit which event depends on the CLI (the wiring is on the user's side).
-
-**External session history (2.32.0 — Wave E3a):** external CLI sessions show in the Sessions tree and in the agent's Sessions section (a terminal icon + a CLI badge + prompt/tool counts; click → Live Timeline; since there's no transcript there are no viewer/rename/delete/resume menus) and an honest single-line summary appears in the dashboard. The data is derived from the live event store (`cli:` lanes, ~31 days) — a foreign log format is NOT GUESSED; token/cost is honestly ignored (not even said to be 0, doesn't enter totals). Architecture: the `SessionSource` interface normalizes foreign sessions into `SessionInfo` but keeps them in a **side list** in the index — `all()`/`forAgent()` stay claude-only, so claude-specific analytics (context health, cache efficiency, skill/MCP/memory usage, reports, search, OTLP) structurally never see a foreign session. **Codex & Gemini transcript adapters (2.34.0 — Wave E3b):** Codex CLI rollout transcripts (`~/.codex/sessions/**/rollout-*.jsonl` + archived ones; customizable with `agentFarm.codexHome`) and Gemini CLI chat files (`~/.gemini/tmp/<hash>/chats/`; `agentFarm.geminiDir`) are scanned and enter the external session history with REAL token usage. Agent matching: from the `cwd` field in the transcript for codex, and by comparing the `sha256(project root)` hash in the folder name against the agent folders' hash for gemini. **Cost honesty:** each model's usage passes through the `agentFarm.pricing` rules — if you add a rule (e.g. `"gpt-5"`, `"gemini-2\\.5-pro"`) the real dollar value shows; without a rule, $0 + an unknown-model warning. Clicking a session opens the raw transcript. The formats were taken from upstream source code (openai/codex protocol + gemini-cli, July 2026) and are fail-soft — an unrecognized file/line is silently skipped, and if a format drifts nothing breaks, that session just doesn't show; a transcript that overlaps a live-event lane is deduplicated (the transcript wins).
+The profile is a command runner, not a fifth engine. It receives `{prompt}` / `{args}`, archives output and reports the exit code. If the CLI offers hooks, `cliHook.js` can mirror the lifecycle into Live Timeline; real session history requires a dedicated `SessionSource` adapter. Agent Farm never guesses a foreign log format.
 
 ### Voice Briefing
 

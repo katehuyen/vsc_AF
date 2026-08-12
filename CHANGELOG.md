@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.119.0 — Multi-engine work is documented honestly (2026-08-12)
+
+**The guide now describes the product that exists.** Claude Code, Codex, Gemini and Antigravity are first-class engines selected from the Engine box; `agentFarm.cliProfiles` is the deliberately smaller escape hatch for an arbitrary command Agent Farm does not understand. The old instructions that told readers to add Codex as a profile — and that Agent Farm could never host Antigravity — were left behind by the architecture and have been replaced in both English and Turkish.
+
+**The coverage boundary is explicit.** Record surfaces use the complete multi-engine log; Claude-shaped analytics stay on the data they can genuinely measure and state what they exclude. The guide now includes the practical setup flow, a surface-by-surface coverage table, per-engine resume/transcript/plan-limit behaviour, Codex's cumulative token accounting, same-engine task attribution and the reason a plan-billed engine shows tokens instead of a fictional `$0.00`.
+
+**X-35 remains open, with a precise handoff.** The updated remaining-work note records what sessions `38de7845-c46d-4f3b-bef7-aac0119a249b` and `a9b5b11a-a4bb-4a04-b9bc-e33217ac5e33` actually completed and isolates the six code gaps still requiring a later coding pass. This release changes documentation and delivery metadata only; no source, media or test code was changed.
+
 ## 3.118.0 — The Search panel stops moving (2026-08-12)
 
 **The query box is one line, and the caret stays in it.** It was a two-line textarea that could be dragged over the buttons below it; it is now a fixed-height single-line field, which is what a query is. More importantly, the live search no longer evicts the cursor: the page rebuilds its whole card on every change, so the answer arriving used to throw the caret out of the box and the next letter went nowhere. The focused control is now noted before each repaint and given back after it — with its caret position — and a chip pressed from the keyboard comes back under the keyboard. `Enter` runs the search.

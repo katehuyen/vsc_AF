@@ -2447,37 +2447,42 @@ Ajan paketlerinin tüketim tarafı: `agentFarm.packGalleryRepos` = git URL'leri 
 
 ### Diğer Motorlarla Çalışma — Uçtan Uca
 
-Yukarıdaki iki bölüm (Antigravity Uyumluluğu, aşağıdaki Çoklu-CLI Yürütücü) ayrı ayrı doğru ama parça parça — burada **"tam olarak nasıl kullanılır"** sorusunun kendisi. Üç farklı senaryo, üç farklı mekanizma:
+Artık iki ayrı ve bilinçli yol var. **Claude Code · Codex · Gemini · Antigravity birinci sınıf motorlardır**; `agentFarm.cliProfiles`, Agent Farm'ın tanımadığı keyfi bir komut için kaçış kapısıdır. Dört yerleşik motoru `cliProfiles` içine ekleme: Console, Start Session…, New Task, zamanlama/tetikleyici, misyon ve ekiplerdeki **Engine** kutusundan seç. Birinci sınıf yol motorun gerçek model/efor sözlüğünü, devam kurallarını, transkript adaptörünü ve token muhasebesini taşır. Jenerik profil yalnız stdout/stderr arşivi ile çıkış durumunu alır — uydurma transkript, fiyat ya da canlı semantik yoktur.
 
-**A. Codex — Agent Farm içinden gerçekten çalıştırılır (gerçek bir CLI olduğu için).**
-1. Bir kere: ajana sağ tık → **Sync Agent with Antigravity + Codex…** — ajan klasörüne `AGENTS.md` yazar (`CLAUDE.md`'den üretilir; Codex'in okuduğu dosya budur).
-2. `agentFarm.cliProfiles` ayarına ekle: `[{"name": "codex", "headless": "codex exec \"{prompt}\"", "interactive": "codex"}]`.
-3. Ajana sağ tık → **Start Session With… (choose CLI)** → **codex** seç → aynı ajan klasöründe bir terminal açılır, içinde `codex` çalışır. Codex kendi kuralı gereği git kökünden cwd'ye kadar her klasördeki `AGENTS.md`'yi birleştirip okur — senkronladığın kimlik ekstra bir şey yapmadan otomatik devreye girer.
-4. Headless görev olarak da çalışır: **Add Task** sihirbazında CLI seçimi çıkar; "codex" seçilirse prompt `codex exec` ile koşar, çıktı arşivlenir.
-5. İstersen `~/.codex/config.toml`'a `notify = ["node", "<cliHook.js yolu>"]` ekleyerek canlı olayları (Stop, araç çağrısı) da aynı zaman çizelgesine akıtabilirsin (aşağıdaki "Hook köprüsü").
-6. **Sınır:** transcript analizi, anlık araç/hata takibi, maliyet ve kalite skorlaması Claude'a özgü kalır — codex yalnızca açık/kapalı yaşam döngüsü + çıktı arşivi + çıkış kodu alır (ayrıca aşağıdaki "Harici oturum geçmişi" ile GERÇEK transcript + maliyet de görünür — bu codex için özel olarak yazılmış bir istisnadır).
+**Birinci sınıf motoru kur ve çalıştır.**
 
-**B. Antigravity — bambaşka bir şey; Agent Farm bunu ASLA açmaz.**
-Antigravity, VS Code gibi ayrı bir masaüstü **uygulama** (Google'ın kendi editörü) — terminalde başlatılan bir CLI değil, Agent Farm içinden hiçbir komutla açılmaz ve açılamaz. Agent Farm'ın rolü tek şey: ajan klasörünü Antigravity açtığında doğru kimliği bulsun diye dosyaları hazırlamak. Kullanımı: **Sync Agent with Antigravity + Codex…** çalıştır (`.agents/AGENTS.md` + nöbet görevleri → `.agents/workflows/` slash-komutları), sonra ajan klasörünü **sen** Antigravity uygulamasında proje olarak açarsın. O andan sonra Agent Farm'ın hiçbir kontrolü yoktur — senkron yalnızca "Antigravity açtığında bu ajan kim, kuralları ne" sorusunu baştan cevaplamıştır.
+1. **Engines** sayfasını aç; CLI'ı oradan kur/giriş yap. **⚡ Test** salt-okunur tek tur harcar ve motorun kendi hükmünü kaydeder.
+2. Ajan için bir kez **Sync Agent with Antigravity + Codex…** çalıştır. Codex `AGENTS.md`'yi; Antigravity `.agents/AGENTS.md` ile üretilen workflow'ları okur. Aynı senkron ortak anayasayı da paralel tutar.
+3. İşin başladığı yüzeyde motoru seç. `agentFarm.launchDefaults.engine` filo varsayılanını belirler; bir ajan motor başına kendi model/efor varsayılanını hatırlayabilir.
+4. Motorun terminal CLI'ında güvenli bir devam biçimi yoksa **Console** üzerinden devam et. Codex ve Gemini tur başına süreçtir; Claude kalıcı süreçtir; Agent Farm Antigravity'yi barındırdığında `agy` CLI'ını sürer. Panel bir motorun bayraklarını ötekine çevirmeye kalkmak yerine farkı açıklar.
 
-**C. Tamamen farklı / kendi CLI'ın (aider, opencode, kendi scriptin, ne olursa) — jenerik mekanizma.**
-`cliProfiles` Claude/Codex/Gemini'ye özel değil: `{prompt}`/`{args}` şablonlu **herhangi bir** CLI eklenebilir:
+Antigravity masaüstü uygulaması hâlâ ayrı bir editördür. Senkron onun workspace dosyalarını hazırlar; birinci sınıf `agy` entegrasyonu ise Agent Farm'ın barındırabildiği CLI yoludur. Birbirlerinin yerine geçen iki ad değil, birbirini tamamlayan iki yoldur.
+
+### Kapsam ve dürüst sınırlar (3.119.0)
+
+Oturum indeksinin bilinçli olarak iki yarısı vardır. `all()` / `forAgent()` **Claude biçimindeki ölçüm kümesidir**; `allWithExternal()` / `forAgentWithExternal()` ise **eksiksiz kayıttır**. Kayıt yüzeyi her motoru listeler. Analitik yalnız gerçekten ölçebildiği biçimde kalır ve dışarıda bıraktığını söyler. İkisini karıştırmak ya konuşmaları gizler ya da dürüst sıfırları gerçek görünen ortalamalara katar.
+
+| Yüzey / olgu | Kapsam |
+| --- | --- |
+| Sessions tabloları, ajan oturum günlüğü, Console devam/geçmiş, Text/Regex arama, Live Timeline, Portfolio etkinliği, Dashboard oturum sayıları, görev koşu geçmişi ve OTLP dışa aktarımı | Bütün motorlar; satırlar motor rozeti taşır. OTLP `gen_ai.system` yazar. |
+| Turns | Claude ve Codex gerçek tur satırlarına sahiptir; tablo motoru açıkça belirtir. |
+| Meaning araması | Yalnız Claude Code transkript indeksi; kip ve indeks durumu dışarıda kalan diğer-motor oturum sayısını söyler. |
+| Maliyet/cache/context sağlığı, kalite, skill/MCP/hafıza kullanımı ve nöbet uyumu | Claude Code transkript analitiği. Filo raporları ve maliyet uyarıları yabancı oturumları sahte ortalamaya katmak yerine dışlamayı açıkça söyler. |
+| Plan limitleri | Motor başına: Claude OAuth endpoint'i, Codex'in kayıtlı rate-limit bloğu ve ölçülebilir veri yoksa açık “yayınlanmıyor / plan yok” cevabı. Eksik hiçbir zaman %0 demek değildir. |
+
+Aynı kural köşelere de ulaştı: rename her motorda yeniden taramadan sonra korunur; Resume bir Codex kimliğini Claude'a vermek yerine kayıtlı motoru açar; “Open transcript” ve “Copy transcript path” kalıcı olarak okunamayan Antigravity protobuf deposunu açıklar; `includeUnmatchedProjects` anahtarı her motoru yönetir; çakışan canlı kulvar ve transkript kayıtlarında zengin transkript kazanır.
+
+Codex kullanımı kümülatif sayaç olarak ele alınır: her tur önceki toplamdan farkı yayımlar, `reasoning_output_tokens` zaten output'un içindedir ve context göstergesi rollout'un kaydettiği pencereyi kullanır. Görev koşusu yalnız kendi motorundaki oturumla eşleşir. Claude API karşılığı dolar gösterebilir; planla faturalı motor gerçekten bildirdiği token'ı gösterir ve yanıltıcı `$0.00` yazmaz.
+
+### Jenerik CLI profilleri
+
+Agent Farm'ın tanımadığı bir CLI — aider, opencode, şirket içi script — için şablon ekle:
+
 ```json
 {"name": "aider", "headless": "aider --message \"{prompt}\"", "interactive": "aider"}
 ```
-Bu profil de aynen **Start Session With…** listesinde çıkar, aynı terminal-açma + Add Task akışı çalışır — Codex'ten hiçbir farkı yoktur. Tek gerçek kısıt: derin gözlem (gerçek transcript geçmişi + maliyet) bugün yalnız Codex ve Gemini için ayrıca yazılmış birer adaptörle var; tamamen bilinmeyen bir CLI için böyle bir adaptör yok, o yüzden yalnızca "açık/kapalı" yaşam döngüsünü görürsün (hook köprüsünü bağlarsan canlı olaylar da eklenir). Derin gözlem istiyorsan bir sonraki adım kendi `SessionSource` adaptörünü yazmaktır (bkz. E3b'nin mimarisi aşağıda) — bugün hazır değil, ama mekanizma buna açık.
 
-### Çoklu-CLI Yürütücü
-
-Görev yürütücü artık claude'a kilitli değil: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\"", "interactive": "gemini"}]` → Add Task sihirbazı CLI seçtirir. **Beklenti sınırı net:** claude-dışı yürütücüler çıktı arşivi + çıkış kodu durumu alır; transcript analizi, canlı hook'lar, maliyet ve kalite katmanları Claude'a özgüdür. Antigravity senkronu (1.3.0) ile aynı ajan kimliği iki tarafta da çalışır.
-
-**Farklı bir modelle sezon aç (2.29.0 — Dalga E1):** Ajanda sağ tık → **Start Session With… (choose CLI)** ya da komut paletinden aynısı: bir CLI seçtirir (Claude Code varsayılan + `cliProfiles`'taki gemini/codex/…) ve o profilin `interactive` komutuyla ajan klasöründe bir terminal oturumu açar. **Claude yolu birebir korunur** — bu ayrı bir kardeş komuttur, mevcut Start Claude Session'a dokunmaz. Ajan başına son kullandığın CLI hatırlanır ve listede üste gelir (`externalTerminal` ayarına da uyar). Not: interaktif oturum için profilin `interactive` alanını sade launcher yaz (`"gemini"` gibi).
-
-**Harici oturumların yaşam döngüsü izlenir (2.30.0 — Dalga E2a):** Start Session With… ile açılan claude-dışı oturum artık Live Timeline'da görünür — terminal açılınca kulvara `idle` satır düşer, terminal kapanınca `ended` olur. Oturum kimliği `cli:<cliId>:...` ile namespace'lenir (claude UUID'leriyle çakışmaz), kartta CLI rozeti + "external CLI — lifecycle only" ibaresi görünür. **Dürüst sınır:** CLI hook yaymadığı için ara durumlar (çalışıyor/araç/maliyet) izlenmez — yalnız açık/kapalı; `externalTerminal` modunda terminal nesnesi olmadığından yaşam döngüsü hiç izlenmez. Reload sonrası satır, adı eşleşen geri yüklenen terminale yeniden bağlanır; terminal geri gelmediyse satır dürüstçe kapatılır.
-
-**Hook köprüsü — harici CLI'dan zengin olay (2.31.0 — Dalga E2b):** Start Session With… terminali `AGENT_FARM_SESSION` / `AGENT_FARM_CWD` / `AGENT_FARM_EVENT_PORT` / `AGENT_FARM_HOOK` ortam değişkenlerini taşır; eklentiyle gelen `cliHook.js` köprü script'i bu değişkenleri okuyup olayı canlı dinleyiciye POST'lar. CLI'ın notify/hook mekanizmasına ya da bir wrapper'a bağla: **codex için** `~/.codex/config.toml` içine `notify = ["node", "<cliHook.js yolu>"]` yeter — codex payload JSON'unu SON ARGÜMAN olarak verir ve köprü bunu otomatik algılar (2.36.0; bilinen türler eşlenir: `agent-turn-complete`→Stop). Elle kullanım: `node "%AGENT_FARM_HOOK%" --event Stop`, `--event PreToolUse --tool Bash`, `--event UserPromptSubmit --prompt "..."`; stdin'den JSON veren araçlar için `--json`. Hazır komut için: **Copy CLI Hook Bridge Command**. Köprü fail-soft'tur: daima 0 ile çıkar, CLI'ı asla bloklamaz; session env'i yoksa aynı klasörün olayları kararlı `cli:external:<klasör>` kulvarında toplanır. Claude terminallerine env verilmez — claude yolu değişmedi. **Dürüst sınır:** hangi CLI'ın hangi olayı yayabildiği CLI'a bağlıdır (kablolama kullanıcı tarafında).
-
-**Harici oturum geçmişi (2.32.0 — Dalga E3a):** Harici CLI oturumları Sessions ağacında ve ajanın Sessions bölümünde görünür (terminal ikonu + CLI rozeti + prompt/araç sayıları; tık → Live Timeline; transcript olmadığından viewer/rename/delete/resume menüleri yok) ve dashboard'da dürüst tek satır özet çıkar. Veri, canlı olay deposundan (`cli:` kulvarları, ~31 gün) türetilir — yabancı log formatı TAHMİN EDİLMEZ; token/maliyet dürüstçe yok sayılır (0 bile denmez, toplamlara girmez). Mimari: `SessionSource` arayüzü yabancı oturumları `SessionInfo`'ya normalize eder ama index'te **yan listede** tutulur — `all()`/`forAgent()` claude-only kalır, yani claude'a özgü analitikler (context health, cache verimi, skill/MCP/memory kullanımı, raporlar, arama, OTLP) yapısal olarak yabancı oturum görmez. **Codex & Gemini transcript adaptörleri (2.34.0 — Dalga E3b):** Codex CLI rollout transcript'leri (`~/.codex/sessions/**/rollout-*.jsonl` + arşivlenenler; `agentFarm.codexHome` ile özelleştirilebilir) ve Gemini CLI sohbet dosyaları (`~/.gemini/tmp/<hash>/chats/`; `agentFarm.geminiDir`) taranır, GERÇEK token kullanımıyla harici oturum geçmişine girer. Ajan eşleşmesi: codex'te transcript'teki `cwd` alanından, gemini'de klasör adındaki `sha256(projeKökü)` hash'i ajan klasörlerinin hash'iyle karşılaştırılarak. **Maliyet dürüstlüğü:** her modelin kullanımı `agentFarm.pricing` kurallarından geçer — kural eklersen (ör. `"gpt-5"`, `"gemini-2\\.5-pro"`) gerçek dolar değeri görünür; kural yoksa $0 + bilinmeyen-model uyarısı. Oturuma tıklamak ham transcript'i açar. Formatlar upstream kaynak kodundan (openai/codex protocol + gemini-cli, Temmuz 2026) alındı ve fail-soft — tanınmayan dosya/satır sessizce atlanır, format kayarsa hiçbir şey bozulmaz sadece o oturum görünmez; canlı-olay kulvarıyla çakışan transcript tekilleştirilir (transcript kazanır).
+Profil bir komut yürütücüdür, beşinci motor değildir. `{prompt}` / `{args}` alır, çıktıyı arşivler ve çıkış kodunu bildirir. CLI hook sunuyorsa `cliHook.js` yaşam döngüsünü Live Timeline'a aynalayabilir; gerçek oturum geçmişi için özel bir `SessionSource` adaptörü gerekir. Agent Farm yabancı log biçimini asla tahmin etmez.
 
 ### Sesli Brifing
 
