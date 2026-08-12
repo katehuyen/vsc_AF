@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
-import { CodexState, newCodexState, translateCodex } from './codexproto';
+import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
@@ -450,7 +450,21 @@ export class ConsoleHost {
             // the first `thread.started` (Codex) / `init` (Antigravity).
             ...(engine.id === 'agy'
                 ? { agy: { ...newAgyState(), ...(init.resume ? { conversationId: init.resume } : {}) } }
-                : { codex: { ...newCodexState(), ...(init.resume ? { threadId: init.resume } : {}) } }),
+                : {
+                    codex: {
+                        ...newCodexState(),
+                        ...(init.resume ? { threadId: init.resume } : {}),
+                        // ‼️ …AND WHAT THE THREAD HAS ALREADY SPENT, or the first
+                        // turn after a resume is charged with the whole
+                        // conversation — see codexTurnUsage / codexTotalsFromUsage.
+                        ...(init.resume
+                            ? (() => {
+                                const spent = codexTotalsFromUsage(init.carried?.usage);
+                                return spent ? { spent } : {};
+                            })()
+                            : {})
+                    }
+                }),
             // ‼️ Read HERE, at spawn, exactly like the Claude path writes the
             // file here — and only for a session that is starting. A resume is
             // continuing a thread that was already told, and telling it again

@@ -163,7 +163,7 @@ const mkRow = (i, extra) => Object.assign({
     // 8 round trips, a token split and the two tools it mostly reached for
     t.setRows([mkRow(1, {
         firstTs: NOW - 20 * 60000, ts: NOW, durationMin: 20, turns: 4,
-        toolCalls: 12, errors: 3, tokens: 400, wTokens: 900, ctx: 90000, cost: 8,
+        toolCalls: 12, errors: 3, tokens: 400, wTokens: 900, ctx: 90000, ctxWindow: 200000, cost: 8,
         apiCalls: 8, files: 2, branch: 'master', permissionMode: 'acceptEdits',
         version: '2.0.31', entrypoint: 'cli', models: ['claude-opus-5'],
         usage: { input: 100, output: 100, cacheRead: 160, cacheWrite: 40 },
@@ -202,7 +202,7 @@ const mkRow = (i, extra) => Object.assign({
     ok('Errors says what share of the tool calls they are',
         html().includes('Share of tool calls: 25%'));
     ok('Ctx opens up instead of showing one number',
-        html().includes('Context now: 90000t') && html().includes('Of a 200k window: 45%')
+        html().includes('Context now: 90000t') && html().includes('Of its 200000t window: 45%')
         && html().includes('Share of the total:'));
     ok('Cost derives a rate from every denominator it has',
         html().includes('Per turn: $2') && html().includes('Per API call: $1')
@@ -246,6 +246,20 @@ const mkRow = (i, extra) => Object.assign({
     ok('a selection says the menu acts on all of them — once, on its own bar',
         sel.includes('1 session selected — right-click to act on all of them')
         && (sel.match(/1 session selected/g) || []).length <= 2);
+
+    // ---- X-35: the ctx window is the ROW's own, not Claude's ----------------
+    // ‼️ That line read "Of a 200k window" on every row of a table that shows
+    // four engines. A measured Codex thread runs against 258 400, so the
+    // percentage was wrong by a third while looking authoritative — and the two
+    // engines whose window nobody has measured were being given Claude's.
+    t.setRows([mkRow(1, { ctx: 93625, ctxWindow: 258400, engine: 'codex' })], 10);
+    ok('‼️ the ctx percentage is measured against the ENGINE\'s window',
+        html().includes('Of its 258400t window: 36%'));
+    // …and an engine that states none gets no fraction rather than a wrong one.
+    t.setRows([mkRow(1, { ctx: 5000, ctxWindow: 0, engine: 'gemini' })], 10);
+    ok('…and an engine that states none says so instead of borrowing Claude\'s',
+        html().includes('Window: this engine does not state one')
+        && !/window: \d/.test(html()));
 }
 
 // ---------- S-17: the text columns hover into the RICH PANEL ----------

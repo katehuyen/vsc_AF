@@ -322,7 +322,12 @@ export function weightedTokens(model: string, u: Usage): number {
  *  the raw context size without a percent instead of guessing a ceiling. */
 const CONTEXT_WINDOWS: { re: RegExp; tokens: number }[] = [
     { re: /fable|mythos/i, tokens: 1_000_000 },
-    { re: /opus-4-[678]/i, tokens: 1_000_000 },
+    // ‼️ `opus-5` BELONGS HERE AND WAS MISSING (X-35). The table stopped at
+    // `opus-4-8`, so the user's own everyday model matched nothing and returned
+    // 0 — the ctx percentage vanished on the sessions this farm is mostly made
+    // of, which reads as "we cannot measure this" on the one engine we measure
+    // best. A window is a published model capability, not a guess.
+    { re: /opus-5|opus-4-[678]/i, tokens: 1_000_000 },
     { re: /sonnet-4-6|sonnet-5/i, tokens: 1_000_000 },
     { re: /opus-4|sonnet-4|haiku-4|claude-3/i, tokens: 200_000 }
 ];

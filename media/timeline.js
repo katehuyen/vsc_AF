@@ -162,6 +162,47 @@
      *  tab or a log line, so it is shown, not hidden. */
     const shortId = id => '#' + String(id || '').slice(0, 8);
 
+    // ---- X-35: the engine axis on this page --------------------------------
+    // ‼️ A PAGE THAT SHOWS FOUR ENGINES NEEDS TO BE ABLE TO SHOW ONE. The
+    // sessions tables learned to filter by engine in X-27; this one, where a
+    // person actually watches the farm work, could not — so "what is Codex
+    // doing right now" meant reading every card. Only engines that are actually
+    // on the page are offered: a segment for something with nothing behind it is
+    // a control that does nothing.
+    let engineSel = 'all';
+
+    const engineOf = s => window.AFEngine.id(s && s.source);
+
+    /**
+     * Which engine an EVENT belongs to.
+     *
+     * Three answers in order, because a lane outlives its card by design: the
+     * engine the event recorded (every event this build writes carries one), the
+     * `cli:<engine>:` namespace when Agent Farm minted the id, and finally the
+     * still-tracked session. `undefined` means nobody said — never a guess.
+     */
+    function engineOfEvent(e) {
+        if (e.engine) { return window.AFEngine.id(e.engine); }
+        const id = String(e.sessionId || '');
+        if (id.indexOf('cli:') === 0) { return window.AFEngine.id(id.split(':')[1]); }
+        const live = LIVE_BY_ID.get(e.sessionId);
+        return live ? engineOf(live) : undefined;
+    }
+
+    /** The engines with something on this page right now, in palette order. */
+    function enginesPresent() {
+        const seen = [];
+        for (const s of (DATA.sessions || [])) {
+            const e = engineOf(s);
+            if (seen.indexOf(e) < 0) { seen.push(e); }
+        }
+        const order = window.AFEngine.known;
+        return seen.sort((a, b) => {
+            const ia = order.indexOf(a), ib = order.indexOf(b);
+            return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib);
+        });
+    }
+
     /**
      * Is this session over without having said so?
      *
@@ -175,6 +216,40 @@
     function isGone(s) {
         return !!DATA.ownersKnown && !s.source && !s.owner &&
             Date.now() - (s.startedAt || 0) > 60000;
+    }
+
+    /**
+     * ‼️ WHICH ENGINE, DRAWN THE WAY EVERY OTHER SURFACE DRAWS IT (X-35).
+     *
+     * This page printed the raw `source` string in the generic grey badge, and
+     * only for a non-Claude session — so a Claude card wore nothing, which is
+     * indistinguishable from a page that never learned about engines, and the
+     * three that did wear something all wore the same colour. The shared
+     * component gives every engine a badge and every engine one fixed colour
+     * (media/afEngine.js); the hover is figures, per CONVENTIONS.
+     */
+    function engineBadge(s) {
+        const eng = window.AFEngine.id(s.source);
+        return window.AFEngine.badge(eng, [
+            'Engine: ' + window.AFEngine.label(eng),
+            'Events: ' + (hasHooks(s) ? 'full (hook stream)' : 'lifecycle only'),
+            'Session: ' + shortId(s.sessionId)
+        ].join('\n'));
+    }
+
+    /**
+     * Does this session report the whole hook stream, or only its lifecycle?
+     *
+     * ‼️ NOT THE SAME QUESTION AS "IS IT CLAUDE" ANY MORE. A conversation Agent
+     * Farm HOSTS is mirrored into the monitor by the extension itself — prompts,
+     * tool spans, end of turn — whatever engine it runs on, so a hosted Codex
+     * card carries the same detail a Claude one does. What is lifecycle-only is
+     * a foreign CLI running in a plain terminal, where all we see is the window
+     * opening and closing. The card said "external CLI — lifecycle only" for
+     * both, which is now wrong for half of them.
+     */
+    function hasHooks(s) {
+        return !s.source || s.prompts > 0 || s.toolCalls > 0;
     }
 
     /** The figures a session card and a lane tooltip both want, in one place. */
@@ -240,8 +315,10 @@
         };
 
         // Live sessions always get a row, stretched to "now" so concurrent ones
-        // can never share a track even while quiet.
-        for (const ls of DATA.sessions) {
+        // can never share a track even while quiet. Follows the engine
+        // selection: a filtered page must not keep drawing the rows it hid.
+        for (const ls of (engineSel === 'all'
+            ? DATA.sessions : DATA.sessions.filter(x => engineOf(x) === engineSel))) {
             const s = sessOf(ls.sessionId, ls.agentName, ls.startedAt || now);
             s.last = now;
             s.live = true;
@@ -392,11 +469,23 @@
             // src/core/ctxmenu.ts, so one right-click on the name offers the
             // session's actions AND everything the agent can be asked to do.
             // Nothing was taken away: the session half is exactly what it was.
+            // ‼️ …AND WHICH ENGINE THE ROW RAN ON (X-35). A gutter that says only
+            // "developer #1 / developer #2" is at its least readable in exactly
+            // the case the split exists for: one agent running two engines at
+            // once. There is no room for a badge here, so the row wears the
+            // engine's own colour as a dot — the same hue the card's badge
+            // carries, out of the same palette (`--af-engc`, common.css), so the
+            // two cannot disagree. Drawn for every engine including Claude: a row
+            // with no mark is indistinguishable from a page that never learned.
+            const laneEng = window.AFEngine.id(LIVE_BY_ID.get(primary.id)
+                && LIVE_BY_ID.get(primary.id).source);
             out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ` +
                 laneCtx(primary.id, lane.agent, 'afTimelineAgent') +
                 ` style="cursor:${lane.file ? 'pointer' : 'default'}">` +
-                `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>` +
-                `<title>${C.esc(tip)}</title></g>`;
+                `<circle class="${C.esc(window.AFEngine.cls(laneEng))}" cx="7.5" cy="${y + 10}" r="3.5"` +
+                ` fill="var(--af-engc, currentColor)" opacity="0.95"/>` +
+                `<text x="16" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 13 ? name.slice(0, 12) + '…' : name)}</text>` +
+                `<title>${C.esc('Engine: ' + window.AFEngine.label(laneEng) + '\n\n' + tip)}</title></g>`;
             const ty = y + 23;
             const rows = lane.rowsOfAgent || 1;
             const shared = rows > 1
@@ -559,8 +648,16 @@
             listenerHtml = `<span class="badge err">listener error</span>`;
         }
 
+        // ‼️ An engine that has left the page must not keep everything hidden —
+        // the selection falls back rather than emptying the page silently.
+        const present = enginesPresent();
+        if (engineSel !== 'all' && present.indexOf(engineSel) < 0) { engineSel = 'all'; }
+        const shownSessions = engineSel === 'all'
+            ? DATA.sessions
+            : DATA.sessions.filter(s => engineOf(s) === engineSel);
+
         const goneCount = DATA.sessions.filter(isGone).length;
-        const sessionCards = DATA.sessions.map(s => {
+        const sessionCards = shownSessions.map(s => {
             const meta = STATUS_META[s.status] || STATUS_META.idle;
             const gone = isGone(s);
             const st = statLines(s);
@@ -579,11 +676,11 @@
                      sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''
                  })}>
                 <div class="spread">
-                    <h3 style="margin:0"><span${open}>${C.esc(s.label || s.agentName)}</span> <span class="sid" title="Session id — the same one the Console rows, the terminal and the log lines carry">(${C.esc(shortId(s.sessionId))})</span>${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
+                    <h3 style="margin:0"><span${open}>${C.esc(s.label || s.agentName)}</span> <span class="sid" title="Session id — the same one the Console rows, the terminal and the log lines carry">(${C.esc(shortId(s.sessionId))})</span> ${engineBadge(s)}</h3>
                     <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
                 </div>
                 ${s.title ? `<div class="sub" style="margin-top:3px"><span${open}>${C.esc(s.title)}</span></div>` : ''}
-                <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>
+                <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
                 ${st.money ? `<div class="sub" style="margin-top:6px" title="From this session's transcript: what it has spent, the tokens that bought, what its context window is holding now, and the model of its last reply">${st.money}</div>` : ''}
                 <div class="sub" style="margin-top:${st.money ? '2' : '6'}px">${st.work}</div>
                 <div class="sub" style="margin-top:2px">${st.time}</div>
@@ -592,7 +689,7 @@
                 ${turnChips(s)}
                 <div class="btnrow">
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
-                    ${!s.source && !gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — types Esc into its terminal, which stops the running turn and leaves the session open">⎋ Interrupt</button>` : ''}
+                    ${!gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — stops the running turn and leaves the session open. A conversation the Console hosts is stopped through the Console; one running in a terminal gets Esc typed into it.">⎋ Interrupt</button>` : ''}
                     ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
                     ${s.owner && !s.source ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="End this session for real — its claude process (pid ${s.owner.pid}) is stopped and the session leaves this page. Asks first.">⏻ End session</button>` : ''}
                     <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="Take this session off the Live Timeline whole — this card AND its swim-lane row, in every range. The session itself is not touched: its transcript stays on disk, and it comes back here if it reports another event.">✕ Clear</button>
@@ -601,8 +698,16 @@
         }).join('');
 
         const density = isDensity();
-        const events = DATA.events || [];
-        const hasAny = density ? !!(HISTORY && HISTORY.density && HISTORY.density.totalEvents) : events.length > 0;
+        const allEvents = DATA.events || [];
+        // ‼️ The lanes follow the engine selection too, or "show me Codex" would
+        // filter the cards and leave every other engine's swim lane above them.
+        // An event nobody attributed is kept only in the unfiltered view — it is
+        // honestly unknown, and filing it under Claude is the very assumption
+        // this whole item is about.
+        const events = engineSel === 'all'
+            ? allEvents
+            : allEvents.filter(e => engineOfEvent(e) === engineSel);
+        const hasAny = density ? !!(HISTORY && HISTORY.density && HISTORY.density.totalEvents) : allEvents.length > 0;
 
         let lanesHtml;
         if (density) {
@@ -622,7 +727,7 @@
         const emptyHint = hasAny ? '' : `
             <div class="card" style="margin-top:12px">
                 <h3>No live events yet</h3>
-                <p class="muted">The timeline is fed by Claude Code hooks. Install them once, then <strong>restart</strong> any running claude sessions (hooks are snapshotted at startup).</p>
+                <p class="muted">Claude Code sessions reach this page through its hooks — install them once, then <strong>restart</strong> any running claude sessions (hooks are snapshotted at startup). Conversations held in Agent Farm's own Console appear here on any engine without them.</p>
                 <div class="btnrow">
                     <button id="install">Install Live Hooks</button>
                     <button class="secondary" data-guide="canli-gozlem">? How this works</button>
@@ -642,11 +747,27 @@
             ${window.AFHeader.html({
                 page: 'timeline',
                 title: 'Live Timeline',
-                sub: `${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)`,
+                // ‼️ NOT "fed by Claude Code hooks" any more (X-35): a hosted
+                // conversation on a per-turn engine has no hooks and never will,
+                // and Agent Farm mirrors its lifecycle in itself. Saying only
+                // "hooks" told the user their other three engines could not
+                // appear here — which is exactly what they concluded.
+                sub: `${listenerHtml} · fed by Claude Code hooks, plus every conversation the Console hosts, on any engine · detail ≤24h live, 3d+ from persisted history (kept 31 days)`,
                 controls: `<span class="seg">${[15, 30, 60, 120, 180, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
                     const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
                     return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
-                }).join('')}</span>`,
+                }).join('')}</span>`
+                    // ‼️ Offered only when there is more than one engine on the
+                    // page — a filter with a single option is furniture.
+                    + (present.length > 1 ? ` <span class="seg">${
+                        [['all', 'All engines']].concat(present.map(e => [e, window.AFEngine.label(e)]))
+                            .map(([id, label]) => {
+                                const n = id === 'all' ? DATA.sessions.length
+                                    : DATA.sessions.filter(s => engineOf(s) === id).length;
+                                return `<button data-eng="${C.esc(id)}" class="${id === engineSel ? 'sel' : ''}"`
+                                    + ` title="${C.esc('Engine: ' + label + '\nSessions: ' + n)}">${C.esc(label)} ${n}</button>`;
+                            }).join('')
+                    }</span>` : ''),
                 // Only offered when there is something to clean: a session whose
                 // process the OS no longer knows about.
                 actions: goneCount
@@ -659,8 +780,8 @@
             ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows — every row carries the toggles, and since the setting is one per agent they move together. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
-            <h2>Live sessions (${DATA.sessions.length})</h2>
-            <div class="grid">${sessionCards || '<p class="muted">No sessions tracked yet.</p>'}</div>
+            <h2>Live sessions (${shownSessions.length}${engineSel === 'all' ? '' : ' of ' + DATA.sessions.length})</h2>
+            <div class="grid">${sessionCards || `<p class="muted">${engineSel === 'all' ? 'No sessions tracked yet.' : 'No ' + window.AFEngine.label(engineSel) + ' session is being tracked right now.'}</p>`}</div>
             <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Right-click a session card <b>or its swim-lane row</b> for its actions (rename, open, terminal, interrupt, end, clear). Clear takes a session off this page whole — card and row — without touching the session. Stuck detection and permission alerts are configurable in settings.</p>
         `;
 
@@ -675,6 +796,8 @@
         });
         document.querySelectorAll('[data-win]').forEach(b =>
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
+        document.querySelectorAll('[data-eng]').forEach(b =>
+            b.addEventListener('click', () => { engineSel = b.dataset.eng || 'all'; render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.guide })));
         document.querySelectorAll('[data-stopsess]').forEach(b =>

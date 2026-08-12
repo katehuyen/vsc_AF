@@ -9489,6 +9489,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             consoleHost.dispose();
         }
     });
+    /**
+     * ‼️ THE LIVE TIMELINE'S BLIND SPOT, AND WHY IT WAS ENGINE-SHAPED (X-35).
+     *
+     * The Live Timeline is drawn from ONE source: the hook stream. Claude Code
+     * fires those hooks itself, so a Claude conversation — terminal or Console —
+     * arrives on the page for free. Codex and Antigravity have no hook bridge
+     * and never will: they are per-turn engines, there is no process between
+     * turns to install a hook into. So a Console conversation on either of them
+     * ran, spent tokens, called tools and finished with **nothing on the page**
+     * — while the same page confidently drew every Claude session beside it.
+     * That is the "Live Timeline has never been touched" the user reported, and
+     * no amount of widening the transcript join fixes it: there was no lane.
+     *
+     * Agent Farm is the host, so Agent Farm knows the lifecycle first-hand and
+     * mirrors it into the monitor as the hook events it already understands.
+     * Three rules keep the mirror honest:
+     *
+     *   · **Claude is never mirrored.** Its CLI fires the real hooks; a mirror
+     *     beside them would draw every Claude session twice.
+     *   · **Nothing is invented.** One prompt event per user message, one tool
+     *     span per tool row, `Stop` when the turn really ends, `SessionEnd` when
+     *     the session does. Cost and tokens are NOT mirrored — the transcript
+     *     join is where those come from, on this page as on every other.
+     *   · **The engine is stated** (`HookPayload.engine`), because a hosted
+     *     thread id is minted by the engine and cannot be parsed for one.
+     */
+    const liveMirror = new Map<string, { status: string; msgs: number; openTool?: string }>();
+    const mirrorConsoleToLive = (id: string): void => {
+        const s = consoleHost.get(id);
+        if (!s) { return; }
+        const engine = (s.engine ?? 'claude').trim().toLowerCase();
+        // Claude fires its own hooks — mirroring it would double every card.
+        if (!engine || engine === 'claude') { return; }
+        // Until the engine names the thread there is no id to key a lane on.
+        const sid = s.sessionId;
+        if (!sid) { return; }
+        const base = { session_id: sid, cwd: s.cwd, engine };
+        let seen = liveMirror.get(id);
+        if (!seen) {
+            seen = { status: '', msgs: 0 };
+            liveMirror.set(id, seen);
+            live.handle({ ...base, hook_event_name: 'SessionStart', source: 'startup' });
+        }
+        const closeTool = (): void => {
+            if (!seen!.openTool) { return; }
+            live.handle({ ...base, hook_event_name: 'PostToolUse', tool_name: seen!.openTool });
+            seen!.openTool = undefined;
+        };
+        for (const m of s.messages.slice(seen.msgs)) {
+            if (m.role === 'user' && !m.steer) {
+                closeTool();
+                live.handle({ ...base, hook_event_name: 'UserPromptSubmit', prompt: m.text ?? '' });
+            } else if (m.role === 'tool' && m.tool) {
+                // One span per call: the previous one is closed by the arrival of
+                // the next row, which is the only end-of-tool signal a hosted
+                // conversation has. A span left open is closed by Stop / End.
+                closeTool();
+                seen.openTool = m.tool.name;
+                live.handle({
+                    ...base, hook_event_name: 'PreToolUse',
+                    tool_name: m.tool.name, tool_input: { description: m.tool.detail }
+                });
+            } else if (m.role === 'error' || m.isError) {
+                closeTool();
+            }
+        }
+        seen.msgs = s.messages.length;
+        if (s.status !== seen.status) {
+            if (s.status === 'ended' || s.status === 'error') {
+                closeTool();
+                live.handle({
+                    ...base, hook_event_name: 'SessionEnd',
+                    reason: s.status === 'error' ? 'the engine reported an error' : 'session closed'
+                });
+                liveMirror.delete(id);
+            } else if (s.status === 'idle' && (seen.status === 'working' || seen.status === 'starting')) {
+                closeTool();
+                live.handle({ ...base, hook_event_name: 'Stop' });
+            }
+            seen.status = s.status;
+        }
+    };
+
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session
         // can be filed — see stampSessionProject. A RESUME is not filed: it
@@ -9498,6 +9581,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             stampSessionProject(s.sessionId, s.projectId);
         }
         scheduleExternalConsoleTranscript(id);
+        mirrorConsoleToLive(id);
         ConsolePanel.refreshIfOpen();
     }));
 
@@ -13309,7 +13393,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (!agentName) {
             agentName = live.sessions().find(s => s.sessionId === sessionId)?.agentName
-                ?? index.all().find(s => s.sessionId === sessionId)?.agentName;
+                // ‼️ Both lists (X-35): a foreign session has a name too, and
+                // looking in the claude-only list left the message reading
+                // "Esc sent to 019ff577" for every Codex conversation.
+                ?? index.allWithExternal().find(s => s.sessionId === sessionId)?.agentName;
+        }
+        /**
+         * ‼️ A HOSTED SESSION IS NOT INTERRUPTED WITH A KEYSTROKE (X-35).
+         *
+         * Everything below types Esc into a TERMINAL, which is the only thing
+         * you can do to a CLI somebody is watching. A conversation Agent Farm
+         * hosts has no terminal at all — and on a per-turn engine there is no
+         * long-lived process to send a key to either. The Console owns the child
+         * and already knows how to stop it per engine, so ask it: this is what
+         * makes the ⎋ button on a Codex or Antigravity card do the thing it
+         * says, instead of hunting for a terminal that was never opened.
+         */
+        const hosted = sessionId
+            ? consoleHost.list().find(s => s.sessionId === sessionId)
+            : undefined;
+        if (hosted) {
+            const who = agentName ?? hosted.agentName ?? sessionId?.slice(0, 8) ?? 'the session';
+            if (consoleHost.interrupt(hosted.id)) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${who}'s running turn was stopped in the Console — the conversation stays open.`);
+            } else {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${who} has nothing running to interrupt.`);
+            }
+            return;
         }
         const openTerms = vscode.window.terminals;
         const records: TermRecord[] = termBindings.map(b => ({

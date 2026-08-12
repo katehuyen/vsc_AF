@@ -3,7 +3,7 @@ import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
-import { PricingEngine, totalTokens } from '../core/pricing';
+import { PricingEngine, contextWindowFor, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
 import { ProjectCostRow as ProjectRollup } from '../core/projects';
@@ -102,6 +102,28 @@ export function sessionRowPool(
      */
     projectStyle?: (name: string) => { icon?: string; color?: string; detail?: string } | undefined
 ): unknown[] {
+    /**
+     * ‼️ THE DENOMINATOR UNDER THE CTX CELL, PER ENGINE (X-35).
+     *
+     * The cell's hover printed "Of a 200k window" for every row on the page.
+     * That is Claude's window written into a table that had just learned to
+     * show four engines: a measured Codex thread runs against 258 400, so the
+     * percentage was wrong by a third while looking authoritative — and the
+     * two engines whose window nobody has measured were being given Claude's.
+     *
+     * Three answers, in order, and the third one is a real answer: the window
+     * the ENGINE ITSELF stated on the session (Codex does, every turn), the
+     * model table for the ones we know (Claude), and ZERO for "nobody said" —
+     * on which the hover prints the token count and no fraction rather than a
+     * confident figure with the wrong ceiling underneath it.
+     */
+    const forced = vscode.workspace.getConfiguration('agentFarm').get<number>('contextWindowTokens', 0);
+    const windowOf = (s: SessionInfo): number => {
+        if (forced > 0) { return forced; }
+        if (s.ctxWindow && s.ctxWindow > 0) { return s.ctxWindow; }
+        const model = s.models?.length ? s.models[s.models.length - 1] : '';
+        return contextWindowFor(model);
+    };
     const rows = sessions.map(s => ({
         file: s.file,
         agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
@@ -131,6 +153,9 @@ export function sessionRowPool(
         wTokens: Math.round(s.wTokens),
         // "Ctx now" — approximate context after the session's last reply
         ctx: s.lastCtxTokens ?? 0,
+        // …and what it is a fraction OF, on this engine — see windowOf. 0 means
+        // nobody stated one, and the hover says so instead of assuming Claude's.
+        ctxWindow: windowOf(s),
         cost: s.cost,
         sidechain: s.isSidechain,
         // 🧑 your own dialog vs 🤖 an automation run — the table's default scope

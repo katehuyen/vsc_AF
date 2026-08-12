@@ -34,7 +34,15 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
     // The hook stream knows what a session DOES; the transcript knows what it
     // cost. Joining them here is what lets a card carry the same figures as the
     // Console's own rows instead of an event count.
-    const rows = new Map(deps.index.all().map(r => [r.sessionId, r]));
+    //
+    // ‼️ AND THE JOIN READS BOTH LISTS (X-35). `index.all()` is deliberately
+    // claude-only — the side list exists so analytics never average a foreign
+    // session in — but a live CARD is a log row, not an analytic, and this page
+    // is the one place a person watches work happen. Joined against the narrow
+    // list, every Codex, Gemini and Antigravity card on the timeline carried no
+    // title, no cost, no tokens, no ctx and no model: five empty cells beside a
+    // session that was plainly running. Same call the Sessions tables make.
+    const rows = new Map(deps.index.allWithExternal().map(r => [r.sessionId, r]));
     const owners = deps.liveOwners();
     const ownersKnown = deps.ownersKnown();
     return {
@@ -141,6 +149,14 @@ export class TimelinePanel {
         };
         this.deps.live.onDidUpdate(throttledRefresh, null, this.disposables);
         this.deps.tasks.onDidChange(throttledRefresh, null, this.disposables);
+        // ‼️ AND THE INDEX, BECAUSE HALF OF WHAT A CARD SAYS COMES FROM IT
+        // (X-35). The hook stream drove the only refresh, so a rename — the one
+        // thing this page offers a button for — showed nothing until some
+        // unrelated event happened to arrive, and on an engine that emits no
+        // hook events it showed nothing at all. Title, cost, tokens, ctx and
+        // model are all read off the transcript row below; the page follows the
+        // index for the same reason every other page does.
+        this.deps.index.onDidUpdate(throttledRefresh, null, this.disposables);
     }
 
     refresh(): void {

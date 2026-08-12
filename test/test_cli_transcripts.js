@@ -58,9 +58,18 @@ const rollout = [
     { timestamp: '2026-07-10T09:00:20.000Z', type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{}' } },
     { timestamp: '2026-07-10T09:00:21.000Z', type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'status' } },
     { timestamp: '2026-07-10T09:00:40.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'working' } },
-    { timestamp: '2026-07-10T09:01:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1200 }, total_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1200 } } } },
+    // ‼️ `total_tokens` IS `input + output`, AND THE REASONING IS INSIDE THE
+    // OUTPUT — measured twice on this machine's own rollouts (X-35):
+    //   input 20 766 + output    822 = total     21 588  (reasoning    211)
+    //   input 32 705 304 + output 95 054 = total 32 800 358  (reasoning 31 839)
+    // This fixture used to say 1000 + 125 + 75 = 1200, encoding the opposite
+    // belief, and the parser it was checking added the reasoning on top — so
+    // every Codex row in every table over-reported its output, and the money
+    // derived from it, by the size of the model's private thinking. The numbers
+    // below satisfy the measured identity.
+    { timestamp: '2026-07-10T09:01:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1125 }, total_token_usage: { input_tokens: 1000, cached_input_tokens: 250, output_tokens: 125, reasoning_output_tokens: 75, total_tokens: 1125 } } } },
     { timestamp: '2026-07-10T09:02:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'devam et' } },
-    { timestamp: '2026-07-10T09:03:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 2000, cached_input_tokens: 1500, output_tokens: 300, reasoning_output_tokens: 100, total_tokens: 2400 }, total_token_usage: { input_tokens: 3000, cached_input_tokens: 1750, output_tokens: 425, reasoning_output_tokens: 175, total_tokens: 3600 } } } }
+    { timestamp: '2026-07-10T09:03:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 2000, cached_input_tokens: 1500, output_tokens: 300, reasoning_output_tokens: 100, total_tokens: 2300 }, total_token_usage: { input_tokens: 3000, cached_input_tokens: 1750, output_tokens: 425, reasoning_output_tokens: 175, total_tokens: 3425 }, model_context_window: 272000 } } }
 ].map(x => JSON.stringify(x)).join('\n') + '\n';
 fs.writeFileSync(path.join(day, 'rollout-2026-07-10T09-00-00-abc.jsonl'), rollout, 'utf8');
 // noise: empty probe session → skipped
@@ -79,12 +88,21 @@ check('codex: userTurns counted', c.userTurns === 2);
 check('codex: assistant messages come from dialogue events, not token counters', c.assistantMsgs === 1);
 check('codex: both function and custom tool calls are counted',
     c.toolCalls === 2 && c.tools.shell === 1 && c.tools.exec === 1);
-// B3: reasoning tokens are disjoint from output in the rollout and billed as output → 425+175
-check('codex: usage from LAST cumulative token_count (reasoning in output)',
-    c.usage.input === 1250 && c.usage.cacheRead === 1750 && c.usage.output === 600);
+// ‼️ The session TOTAL is the last cumulative block, and the reasoning is NOT
+// added to the output — it is already in it (see the fixture note above).
+check('codex: usage from LAST cumulative token_count (reasoning already in output)',
+    c.usage.input === 1250 && c.usage.cacheRead === 1750 && c.usage.output === 425);
 check('codex: model collected', c.models.includes('gpt-5.2-codex'));
-const wantCost = (1250 * 1.25 + 600 * 10 + 1750 * 0.125) / 1e6;
+const wantCost = (1250 * 1.25 + 425 * 10 + 1750 * 0.125) / 1e6;
 check('codex: cost from pricing rule', Math.abs(c.cost - wantCost) < 1e-9);
+// ‼️ X-35: ctx is what the LAST REQUEST held, never the thread's lifetime spend.
+// The rollout states both on the same line and only one of them is a window;
+// running `contextAfter` on the cumulative figure is what made a real session
+// claim 38M of context against a 258k window.
+check('‼️ codex: ctx is the last request\'s window, not the session total',
+    c.lastCtxTokens === 2300 && c.lastCtxTokens < c.usage.input + c.usage.cacheRead);
+check('codex: the engine\'s own context window is carried on the row',
+    c.ctxWindow === 272000);
 check('codex: firstTs/lastTs from line timestamps', new Date(c.firstTs).toISOString() === '2026-07-10T09:00:00.000Z' && new Date(c.lastTs).toISOString() === '2026-07-10T09:03:00.000Z');
 check('codex: file points at rollout', /rollout-2026/.test(c.file));
 

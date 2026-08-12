@@ -644,7 +644,15 @@
             ],
             ctx: r => [
                 line('Context now', r.ctx ? `${C.fmtTok(r.ctx)} tokens` : '—'),
-                line('Of a 200k window', r.ctx ? `${pct(r.ctx, 200000)}%` : ''),
+                // ‼️ THE WINDOW IS THE ENGINE'S, NOT CLAUDE'S (X-35). This line
+                // read "Of a 200k window" on every row of a table that shows
+                // four engines — a measured Codex thread runs against 258 400.
+                // The host resolves the ceiling per row (see windowOf); zero
+                // means nobody stated one, and then there is no fraction to
+                // print rather than a wrong one.
+                line(r.ctxWindow ? `Of its ${C.fmtTok(r.ctxWindow)} window` : 'Window',
+                    r.ctx && r.ctxWindow ? `${pct(r.ctx, r.ctxWindow)}%`
+                        : r.ctx ? 'this engine does not state one' : ''),
                 line('Session raw total', C.fmtTok(r.tokens || 0)),
                 line('Share of the total', r.ctx && r.tokens ? `${pct(r.ctx, r.tokens)}%` : ''),
                 line('Per turn', per(r.tokens, r.turns, n => C.fmtTok(Math.round(n)))),

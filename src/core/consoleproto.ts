@@ -1287,6 +1287,18 @@ export interface CarriedTotals {
     wTokens?: number;
     turns?: number;
     contextTokens?: number;
+    /**
+     * ‼️ THE TOTAL, SPLIT — needed by an engine that reports CUMULATIVELY.
+     *
+     * `tokens` is one number and is enough for the composer's line. Codex's
+     * `turn.completed` states the thread's running total rather than the turn's,
+     * so the adaptor subtracts the previous total to get a turn (codexproto.ts →
+     * `codexTurnUsage`) — and on a RESUME there is no previous total in memory.
+     * Without a baseline the first turn back reports the whole conversation's
+     * spend as one turn: the exact reading this split exists to prevent, one
+     * window reload later.
+     */
+    usage?: Usage;
 }
 
 /** The carried totals of a transcript, off the index row the resume list uses. */
@@ -1299,7 +1311,8 @@ export function carriedTotals(s: {
         tokens: u ? u.input + u.output + u.cacheWrite + u.cacheRead : 0,
         wTokens: s.wTokens ?? 0,
         turns: s.userTurns ?? 0,
-        contextTokens: s.lastCtxTokens ?? 0
+        contextTokens: s.lastCtxTokens ?? 0,
+        ...(u ? { usage: { ...u } } : {})
     };
 }
 

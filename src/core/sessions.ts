@@ -163,6 +163,18 @@ export interface SessionInfo {
     dutiesReadTs?: number;
     /** Approximate context size after the last assistant reply (prompt + cache + output of the latest request). */
     lastCtxTokens?: number;
+    /**
+     * ‼️ THE WINDOW THAT FIGURE IS A FRACTION OF — the ENGINE'S own, not Claude's.
+     *
+     * A ctx cell drawn as a percentage needs a denominator, and every surface
+     * was using the Claude default because that was the only engine that had a
+     * row. Codex states its window on every `token_count` line
+     * (`model_context_window`, measured 258 400 on this machine's plan) and a
+     * percentage computed against 200k instead would be wrong by a third while
+     * looking authoritative. Absent means "this source does not say" — the
+     * surfaces fall back to the configured default and say which they used.
+     */
+    ctxWindow?: number;
     /** How the CLI was entered, verbatim from the transcript: 'cli' (interactive
      *  terminal), 'sdk-cli' (`claude -p` / SDK), 'claude-desktop', … Feeds
      *  `sessionOrigin`; absent on external-CLI sessions that have no transcript. */
@@ -803,11 +815,22 @@ export class SessionIndex implements vscode.Disposable {
         info.title = this.titleOverrides.get(info.sessionId) ?? info.cliName ?? info.autoTitle;
     }
 
-    /** Replace the user-set session names and re-apply them to everything indexed. */
+    /**
+     * Replace the user-set session names and re-apply them to everything indexed.
+     *
+     * ‼️ INCLUDING THE EXTERNAL LIST, WHICH IS THE BUG THIS LINE EXISTS FOR
+     * (X-35). Renaming a Codex, Gemini or Antigravity session wrote the override
+     * to global state and then re-applied it to the claude map only — so the
+     * name was accepted, stored, survived a reload, and was never shown
+     * anywhere. A rename that has no visible effect reads as a broken menu
+     * item, and every other setter here (`setCliNames`, `setMarks`,
+     * `setLaunchers`) had already learned to walk both lists.
+     */
     setTitleOverrides(map: Record<string, string>): void {
         this.titleOverrides = new Map(
             Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
         for (const s of this.sessions.values()) { this.applyTitle(s); }
+        for (const s of this.externalList) { this.applyTitle(s); }
         this.onDidUpdateEmitter.fire();
     }
 
@@ -948,7 +971,12 @@ export class SessionIndex implements vscode.Disposable {
         if (sig === this.externalSig) { return; }
         this.externalSig = sig;
         this.externalList = sessions;
-        for (const s of this.externalList) { this.applyMark(s); }
+        // ‼️ The title BEFORE the marks, and both on every rescan (X-35). A
+        // source re-parses its transcript whenever the file changes and hands
+        // back a freshly derived title, so a rename applied once would be
+        // silently undone the next time the user said anything in that session —
+        // the same rename bug as `setTitleOverrides`, one scan later.
+        for (const s of this.externalList) { this.applyTitle(s); this.applyMark(s); }
         this.onDidUpdateEmitter.fire();
     }
 

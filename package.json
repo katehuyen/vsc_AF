@@ -8212,7 +8212,7 @@
         "agentFarm.contextWindowTokens": {
           "type": "number",
           "default": 0,
-          "description": "Context-window ceiling for the session viewer's 'Context now' gauge. 0 = auto-detect from the session's model (unknown models show the raw token count without a percent); set a value to force a fixed ceiling."
+          "description": "Context-window ceiling for every 'Context now' figure — the session viewer's gauge and the Ctx column's hover. 0 = ask the session: the window the engine itself stated (Codex reports one per turn), else the model's known window. A session whose window nobody states shows the raw token count without a percent rather than a percentage of Claude's. Set a value to force one ceiling everywhere."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

@@ -65,6 +65,12 @@ export interface CodexState {
     open: Record<string, { name: string; detail: string }>;
     /** True once `turn.started` has been seen and not yet closed. */
     running: boolean;
+    /**
+     * ‼️ THE THREAD'S RUNNING TOTAL AS OF THE LAST `turn.completed` — kept
+     * because the figure on the wire is cumulative and everything downstream
+     * expects a turn's own usage. See `codexTurnUsage`.
+     */
+    spent?: CodexTotals;
 }
 
 export const newCodexState = (): CodexState => ({ turn: 0, open: {}, running: false });
@@ -173,6 +179,114 @@ export function codexUsage(u: Item | undefined): Record<string, number> {
     };
 }
 
+/** The four numbers `turn.completed` carries, before anything is done to them. */
+export interface CodexTotals {
+    input: number;
+    cached: number;
+    cacheWrite: number;
+    output: number;
+    reasoning: number;
+}
+
+const totalsOf = (u: Item | undefined): CodexTotals => ({
+    input: num(u?.input_tokens),
+    cached: num(u?.cached_input_tokens),
+    cacheWrite: num(u?.cache_write_input_tokens),
+    output: num(u?.output_tokens),
+    reasoning: num(u?.reasoning_output_tokens)
+});
+
+/**
+ * ‼️ THE BASELINE A RESUMED THREAD NEEDS, out of what its transcript already
+ * spent.
+ *
+ * Between two turns of a Codex conversation there is no process and, after a
+ * window reload, no adaptor state either — so the running total the next
+ * `turn.completed` states has nothing to be subtracted from, and the first turn
+ * back would be charged with the whole conversation. The index has read that
+ * conversation's rollout and knows the four figures; this puts them back in the
+ * shape the engine reports them in (`input_tokens` INCLUDES the cached share,
+ * which is the one asymmetry between the two vocabularies).
+ *
+ * `reasoning` cannot be recovered from a billing split and is left at zero: it
+ * is a display figure carried alongside the buckets, never one of them, so the
+ * first turn back reports its own thinking rather than an invented delta.
+ */
+export function codexTotalsFromUsage(u: {
+    input: number; output: number; cacheWrite: number; cacheRead: number;
+} | undefined): CodexTotals | undefined {
+    if (!u) { return undefined; }
+    const total = u.input + u.output + u.cacheWrite + u.cacheRead;
+    if (total <= 0) { return undefined; }
+    return {
+        input: u.input + u.cacheRead,
+        cached: u.cacheRead,
+        cacheWrite: u.cacheWrite,
+        output: u.output,
+        reasoning: 0
+    };
+}
+
+/**
+ * ‼️ `turn.completed.usage` IS THE THREAD'S RUNNING TOTAL, NOT THE TURN'S.
+ *
+ * MEASURED 2026-08-12, codex-cli 0.147.0, two real turns of one thread on this
+ * machine:
+ *
+ *   turn 1 → input 12 378  cached  4 480  output 17
+ *   turn 2 → input 24 774  cached 16 640  output 23
+ *
+ * The second line is not a second turn that happened to cost twice as much. It
+ * is turn 1 + turn 2, and the rollout on disk says so in as many words: its
+ * `token_count` event carries `total_token_usage` beside `last_token_usage`,
+ * and after a long session the total reads 32.8M against a window of 258k.
+ *
+ * Handed to the reducer unchanged that one field breaks three things at once,
+ * because the reducer's contract — Claude's contract — is that a usage block
+ * describes ONE request:
+ *
+ *   · the session's token count compounds (every turn re-adds the whole
+ *     history), so it grows with the square of the conversation;
+ *   · the cost compounds with it, on an engine that states no price and is
+ *     therefore priced from token counts alone;
+ *   · and `contextAfter` reports a LIFETIME TOTAL as the size of the context
+ *     window — which is how a session that never exceeded 258k came to show
+ *     38M of context at the end of it.
+ *
+ * So the delta is taken here, once, against the previous total. The turn's own
+ * request input IS the window occupancy at that turn, which is exactly what
+ * `contextAfter` means on Claude — the two engines end up saying the same
+ * thing with the same arithmetic instead of one of them lying quietly.
+ *
+ * A total that goes DOWN (a compaction, a CLI that revised its bookkeeping) is
+ * clamped at zero rather than reported as negative usage: unsigned is the
+ * honest direction, and a negative would subtract from a session's spend.
+ */
+export function codexTurnUsage(
+    prev: CodexTotals | undefined, u: Item | undefined
+): { usage: Record<string, number>; total: CodexTotals } {
+    const total = totalsOf(u);
+    const base = prev ?? { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 };
+    const step = (now: number, was: number) => Math.max(0, now - was);
+    const turn: CodexTotals = {
+        input: step(total.input, base.input),
+        cached: step(total.cached, base.cached),
+        cacheWrite: step(total.cacheWrite, base.cacheWrite),
+        output: step(total.output, base.output),
+        reasoning: step(total.reasoning, base.reasoning)
+    };
+    return {
+        usage: codexUsage({
+            input_tokens: turn.input,
+            cached_input_tokens: turn.cached,
+            cache_write_input_tokens: turn.cacheWrite,
+            output_tokens: turn.output,
+            reasoning_output_tokens: turn.reasoning
+        }),
+        total
+    };
+}
+
 /** How many of the turn's output tokens went on private reasoning. Reported
  *  separately because it is the one figure Claude's stream does not carry and
  *  the only honest answer to "what did the thinking cost" on this engine. */
@@ -221,7 +335,9 @@ export function translateCodex(
     }
 
     if (type === 'turn.completed') {
-        const usage = codexUsage(o.usage as Item | undefined);
+        // ‼️ THE DELTA, NOT THE FIGURE ON THE WIRE — see codexTurnUsage. The
+        // running total is carried on the state so the next turn can subtract.
+        const { usage, total } = codexTurnUsage(state.spent, o.usage as Item | undefined);
         // ‼️ The usage rides on an assistant message with no blocks, because
         // that is where the reducer counts (see the header). It draws no row —
         // an empty content array produces none — it only carries the numbers.
@@ -231,7 +347,7 @@ export function translateCodex(
             // ‼️ NO `total_cost_usd`. Codex runs on a plan and states no price;
             // a zero here would read as "this turn was free".
         });
-        return { state: { ...state, running: false, open: {} }, events };
+        return { state: { ...state, running: false, open: {}, spent: total }, events };
     }
 
     if (type === 'turn.failed' || type === 'error') {

@@ -126,6 +126,7 @@ function scanWithCache(
 interface CodexTokenTotals {
     input_tokens?: number;
     cached_input_tokens?: number;
+    cache_write_input_tokens?: number;
     output_tokens?: number;
     reasoning_output_tokens?: number;
     total_tokens?: number;
@@ -141,13 +142,51 @@ interface CodexLine {
         model?: string;
         // event_msg
         type?: string; message?: string;
-        info?: { model?: string; total_token_usage?: CodexTokenTotals };
+        info?: {
+            model?: string;
+            total_token_usage?: CodexTokenTotals;
+            /**
+             * ‼️ THE OTHER HALF OF THE ANSWER, AND THE ONE NOBODY READ. Beside
+             * the running total the same line carries the LAST request's usage —
+             * which is what the context window actually held — and the size of
+             * that window. Ignoring both left every Codex row with an empty ctx
+             * cell in a column that is filled for Claude, which reads as "this
+             * session used no context" rather than "we never looked".
+             */
+            last_token_usage?: CodexTokenTotals;
+            model_context_window?: number;
+        };
         // response_item function_call
         name?: string;
     };
 }
 
 const CODEX_PROMPT_PREFIX = '## My request for Codex:';
+
+/**
+ * One Codex token block in the four fields the rest of the extension bills in.
+ *
+ * ‼️ `reasoning_output_tokens` IS PART OF `output_tokens`, NOT A FIFTH BUCKET —
+ * and this file used to add the two together. Measured on this machine's own
+ * rollouts, twice, and the rollout states the identity itself:
+ *
+ *   input 20 766 + output   822 = total  21 588   (reasoning   211)
+ *   input 32 705 304 + output 95 054 = total 32 800 358  (reasoning 31 839)
+ *
+ * `total_tokens` is `input + output` in both, so adding the reasoning charged
+ * the private thinking twice — on every Codex row, in every table, in the token
+ * column and again in the money derived from it.
+ */
+function codexTotalsToUsage(t: CodexTokenTotals): Usage {
+    const input = t.input_tokens ?? 0;
+    const cached = Math.min(t.cached_input_tokens ?? 0, input);
+    return {
+        input: Math.max(0, input - cached),
+        output: t.output_tokens ?? 0,
+        cacheWrite: t.cache_write_input_tokens ?? 0,
+        cacheRead: cached
+    };
+}
 
 /**
  * The words the person actually sent to Codex.
@@ -184,6 +223,11 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     if (!raw) { return undefined; }
     const info = blankInfo(file, path.basename(file, '.jsonl'), 'codex', fs.statSync(file).mtimeMs);
     let cumulative: CodexTokenTotals | undefined;
+    // ‼️ What the window HELD at the end, as opposed to what the thread SPENT
+    // over its life. Both are on the same line and only one of them is a
+    // context figure — see `last_token_usage`.
+    let lastRequest: CodexTokenTotals | undefined;
+    let ctxWindow = 0;
     let lastModel = '';
     let firstTs = 0, lastTs = 0;
     const models = new Set<string>();
@@ -219,6 +263,10 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
                 if (typeof p.info.model === 'string' && p.info.model) { models.add(p.info.model); lastModel = p.info.model; }
                 // token_count totals are CUMULATIVE — the last one is the session total.
                 if (p.info.total_token_usage) { cumulative = p.info.total_token_usage; }
+                if (p.info.last_token_usage) { lastRequest = p.info.last_token_usage; }
+                if (typeof p.info.model_context_window === 'number' && p.info.model_context_window > 0) {
+                    ctxWindow = p.info.model_context_window;
+                }
             }
         } else if (line.type === 'response_item'
             && (p.type === 'function_call' || p.type === 'custom_tool_call')) {
@@ -233,17 +281,20 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     if (firstTs) { info.firstTs = firstTs; }
     if (lastTs) { info.lastTs = lastTs; }
     if (cumulative) {
-        const cached = cumulative.cached_input_tokens ?? 0;
-        const input = cumulative.input_tokens ?? 0;
-        info.usage = {
-            input: Math.max(0, input - cached),
-            // reasoning tokens are DISJOINT from output_tokens in the rollout
-            // (total = input + output + reasoning) and are billed as output.
-            output: (cumulative.output_tokens ?? 0) + (cumulative.reasoning_output_tokens ?? 0),
-            cacheWrite: 0,
-            cacheRead: cached
-        };
+        info.usage = codexTotalsToUsage(cumulative);
     }
+    // ‼️ THE CTX CELL, FROM THE FIGURE THAT IS ACTUALLY A WINDOW. `contextAfter`
+    // on the LAST request means the same thing here as it does on a Claude
+    // transcript: prompt + cache + output of the latest round trip. Run on the
+    // cumulative total instead it would print the thread's lifetime spend as
+    // the size of the window — 32.8M against a 258k window on a measured
+    // session, which is the reading the user reported.
+    if (lastRequest) {
+        const u = codexTotalsToUsage(lastRequest);
+        const ctx = u.input + u.cacheRead + u.cacheWrite + u.output;
+        if (ctx > 0) { info.lastCtxTokens = ctx; }
+    }
+    if (ctxWindow > 0) { info.ctxWindow = ctxWindow; }
     info.models = [...models];
     // Multi-model rollouts are rare; attribute the session's usage to the last
     // active model. No matching pricing rule → $0 + unknown-models warning.
@@ -547,6 +598,11 @@ function parseFarmConsoleFile(
     info.usage.input = snap.tokens;
     info.wTokens = snap.wTokens;
     info.cost = snap.cost;
+    // ‼️ The snapshot has carried this since it was invented and no row read it,
+    // so an Antigravity conversation Agent Farm hosted ITSELF still showed an
+    // empty ctx cell (X-35). The Console measured the window while the
+    // conversation was open; there is no reason for the table to know less.
+    if (snap.contextTokens > 0) { info.lastCtxTokens = snap.contextTokens; }
     info.userTurns = snap.messages.filter(m => m.role === 'user' && !m.steer).length;
     info.assistantMsgs = snap.messages.filter(m => m.role === 'agent').length;
     for (const m of snap.messages) {

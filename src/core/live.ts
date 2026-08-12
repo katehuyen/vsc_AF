@@ -68,6 +68,18 @@ export interface LiveEvent {
      * never filled in with a guess.
      */
     af?: string;
+    /**
+     * ‼️ WHICH ENGINE, WHEN THE ID CANNOT SAY (X-35).
+     *
+     * `cliSourceOf` reads the engine out of a `cli:<engine>:…` id, which works
+     * for a session opened in a TERMINAL because Agent Farm minted that id. A
+     * session hosted in the Console is named by the ENGINE — Codex hands back a
+     * plain UUID thread id, Antigravity a conversation id — so the namespace
+     * trick has nothing to read, and every hosted Codex and Antigravity lane on
+     * this page was drawn as though it were Claude. Written on the event so a
+     * window reload restores it (`rebuildSessions` has only the store to read).
+     */
+    engine?: string;
 }
 
 export type ListenerState = 'listening' | 'disabled' | 'port-in-use' | 'error';
@@ -85,6 +97,13 @@ interface HookPayload {
     trigger?: string;
     source?: string;
     reason?: string;
+    /**
+     * ‼️ NOT `source` — see LiveEvent.engine. Claude's own hook payloads carry
+     * `source` with a completely different meaning (`startup` / `resume` /
+     * `clear`), so the engine gets a field of its own that only Agent Farm's own
+     * mirrors ever set. A real hook from a real CLI never fills it in.
+     */
+    engine?: string;
 }
 
 export interface LiveConfig {
@@ -291,7 +310,11 @@ export class LiveMonitor implements vscode.Disposable {
                     transcriptPath: e.transcriptPath,
                     agentId: e.agentId,
                     agentName: e.agentName,
-                    source: cliSourceOf(e.sessionId),
+                    // Same order as `session()`: the id, then what the event
+                    // recorded — see LiveEvent.engine. Without the second half a
+                    // reload turned every hosted Codex lane back into a Claude
+                    // one, because only the store survives the reload.
+                    source: cliSourceOf(e.sessionId) ?? (e.engine?.trim() || undefined),
                     status: 'idle',
                     startedAt: e.ts,
                     lastEventTs: e.ts,
@@ -306,6 +329,7 @@ export class LiveMonitor implements vscode.Disposable {
             }
             s.lastEventTs = e.ts;
             if (e.transcriptPath) { s.transcriptPath = e.transcriptPath; }
+            if (!s.source && e.engine?.trim()) { s.source = e.engine.trim(); }
             // Read back out of the store rather than assumed to be this build:
             // after a reload the session's earlier events may well have been
             // watched by the version that was installed before the update.
@@ -562,7 +586,9 @@ export class LiveMonitor implements vscode.Disposable {
                 cwd: payload.cwd,
                 agentId,
                 agentName,
-                source: cliSourceOf(id),
+                // The id first (a `cli:` lane names its own engine), then what
+                // the caller stated — see HookPayload.engine.
+                source: cliSourceOf(id) ?? (payload.engine?.trim() || undefined),
                 status: 'idle',
                 startedAt: Date.now(),
                 lastEventTs: Date.now(),
@@ -582,6 +608,10 @@ export class LiveMonitor implements vscode.Disposable {
             s.agentName = agentName;
         }
         if (payload.transcript_path) { s.transcriptPath = payload.transcript_path; }
+        // A hosted session learns its engine on the SAME event that names it, so
+        // a session revived from the store before the mirror spoke gets its
+        // badge as soon as one arrives rather than staying unlabelled for life.
+        if (!s.source && payload.engine?.trim()) { s.source = payload.engine.trim(); }
         return s;
     }
 
@@ -603,7 +633,9 @@ export class LiveMonitor implements vscode.Disposable {
             tool,
             detail,
             transcriptPath: s.transcriptPath,
-            ...(af ? { af } : {})
+            ...(af ? { af } : {}),
+            // …and which engine watched it, so a reload restores the badge.
+            ...(s.source ? { engine: s.source } : {})
         };
         this.eventLog.push(event);
         this.capMemory();
