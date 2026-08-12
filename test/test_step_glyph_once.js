@@ -78,7 +78,9 @@ for (const [file, src] of [
     ['turns.js', media('turns.js')],
     ['search.js', media('search.js')]
 ]) {
-    ok(`${file} still offers 🔧 Tool calls as a filter`, /🔧 Tool calls/.test(src));
+    ok(`${file} still offers 🔧 Tool calls as a filter`, file === 'search.js'
+        ? /icon: '🔧', label: 'Tool calls'/.test(src)
+        : /🔧 Tool calls/.test(src));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

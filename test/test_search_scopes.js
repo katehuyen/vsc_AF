@@ -14,6 +14,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const S = require(path.join(__dirname, '..', 'out', 'core', 'search.js'));
+const SEM = require(path.join(__dirname, '..', 'out', 'core', 'semantic.js'));
 const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
 const fixture = require(path.join(__dirname, 'fixtures', 'search.js'));
 
@@ -83,6 +84,50 @@ const TS = (m) => Date.parse(T(m));
     ok('whole word narrows the engine too',
         S.searchTranscripts(sessions, 'phas', { maxPerFile: 10 }).hits.length === 2
         && S.searchTranscripts(sessions, 'phas', { wholeWord: true, maxPerFile: 10 }).hits.length === 0);
+}
+
+// ---------- accounting: a preview cap never becomes a silent match cap ----------
+{
+    const f = tfile('many.jsonl', Array.from({ length: 9 }, (_, i) => ({
+        type: 'user', timestamp: T(i + 1), message: { content: `needle occurrence ${i + 1}` }
+    })));
+    const r = S.searchTranscripts([{ file: f, agentName: 'dev', title: 'many', mtime: TS(10) }],
+        'needle', { maxPerFile: 3 });
+    ok('the engine counts every match after the per-session preview cap',
+        r.matchesFound === 9 && r.matchesShown === 3 && r.omittedMatches === 6);
+    ok('the session carries its honest found/shown accounting',
+        r.sessionsMatched === 1 && r.sessionMatches[0].found === 9 && r.sessionMatches[0].shown === 3);
+    ok('a capped preview is explicitly partial', r.truncated === true);
+}
+
+// ---------- parser: one user record is one turn; literal < text is searchable ----------
+{
+    const f = tfile('blocks.jsonl', [
+        { type: 'user', timestamp: T(1), message: { content: [
+            { type: 'text', text: 'first block narwhal' }, { type: 'text', text: 'second block narwhal' }
+        ] } },
+        { type: 'assistant', timestamp: T(2), message: { content: [{ type: 'text', text: 'answer narwhal' }] } },
+        { type: 'user', timestamp: T(3), message: { content: '<literal comparison narwhal' } }
+    ]);
+    const r = S.searchTranscripts([{ file: f, agentName: 'dev', title: 'blocks', mtime: TS(3) }],
+        'narwhal', { maxPerFile: 10 });
+    ok('several text blocks in one user record do not invent extra turns',
+        r.hits.slice(0, 3).every(h => h.turn === 1));
+    ok('ordinary text beginning with < is not discarded as system harness',
+        r.hits.length === 4 && r.hits[3].turn === 2);
+}
+
+// ---------- semantic ranking is scoped before top-k ----------
+{
+    const file = path.join(tmpdir, 'semantic.json');
+    const idx = new SEM.SemanticIndex(file);
+    const chunk = (id, text) => ({ sessionFile: `${id}.jsonl`, sessionId: id, agentName: id,
+        title: id, ts: 1, text });
+    idx.addSession('a', 1, [chunk('a', 'alpha')], [[1, 0]]);
+    idx.addSession('b', 1, [chunk('b', 'beta')], [[0.8, 0.2]]);
+    const scoped = idx.search([1, 0], 1, new Set(['b']));
+    ok('semantic scope is applied before top-k ranking, not after it',
+        scoped.length === 1 && scoped[0].chunk.sessionId === 'b');
 }
 
 // ---------- X-25: a subagent's OWN transcript is a delegation lane ----------
@@ -240,10 +285,11 @@ const go = r => r.els.go.fire('click');
     const html = r.html();
     ok('all six kinds are offered, delegation among them',
         ['user', 'assistant', 'delegator', 'handler', 'tool', 'toolResult']
-            .every(id => html.includes(`data-chip="${id}"`)));
-    ok('Dialog is the default and is lit', /class="chip on" data-preset="dialog"/.test(html));
+            .every(id => html.includes(`data-role="${id}"`)));
+    ok('Conversation is the default and visibly selected',
+        /data-preset="dialog" class="preset on"[\s\S]*aria-pressed="true"/.test(html));
     ok('…and the two extra sources are chips now, not checkboxes',
-        html.includes('data-src="mem"') && html.includes('data-src="events"')
+        html.includes('data-source="memory"') && html.includes('data-source="events"')
         && !html.includes('id="srcmem"'));
     ok('‼️ the row no longer repeats itself in words at its end',
         !html.includes('→ the conversation'));
@@ -253,16 +299,16 @@ const go = r => r.els.go.fire('click');
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
 
     // ‼️ THE FIX U-42 ASKED FOR: two kinds at once, by the obvious gesture.
-    r.query('[data-chip="tool"]')[0].fire('click');
+    r.query('[data-role="tool"]')[0].fire('click');
     ok('‼️ a plain click ADDS a kind — two are searchable at once',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","tool","user"]');
-    r.query('[data-chip="tool"]')[0].fire('click');
+    r.query('[data-role="tool"]')[0].fire('click');
     ok('…and clicking it again takes it away',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
-    r.query('[data-chip="user"]')[0].fire('click', { ctrlKey: true });
+    r.query('[data-role="user"]')[0].fire('click', { ctrlKey: true });
     ok('…Ctrl/⌘-click still means ONLY that one',
         JSON.stringify(lastSearch(r).roles) === '["user"]');
-    r.query('[data-chip="user"]')[0].fire('click');
+    r.query('[data-role="user"]')[0].fire('click');
     ok('…and the scope can never empty into "matches nothing"',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
     r.query('[data-preset="delegation"]')[0].fire('click');
@@ -270,15 +316,16 @@ const go = r => r.els.go.fire('click');
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["delegator","handler"]');
     r.query('[data-preset="all"]')[0].fire('click');
     ok('…and Everything is all six', lastSearch(r).roles.length === 6);
-    r.query('[data-src="events"]')[0].fire('click');
+    r.query('[data-source="events"]')[0].fire('click');
     ok('a source chip toggles the source', lastSearch(r).events === false && lastSearch(r).memory === true);
 }
 
 // ---------- X-24: the session axis ----------
 {
     const r = page();
-    ok('the filter panel is folded until it is asked for', !r.html().includes('id="f-session"'));
-    r.els['f-toggle'].fire('click');
+    ok('primary session filters are visible without opening a filter chip',
+        r.html().includes('id="f-session"') && r.html().includes('data-afms="f-projects"'));
+    r.els['more-toggle'].fire('click');
     const html = r.html();
     ok('‼️ every axis a session HAS is offered, not just a date',
         ['f-session', 'f-from', 'f-to', 'f-sort'].every(id => html.includes(`id="${id}"`))
@@ -300,28 +347,56 @@ const go = r => r.els.go.fire('click');
     ok('…and the flags', lastSearch(r).filters.errorsOnly === true);
     ok('‼️ X-34 — the id you already know is a filter of its own',
         lastSearch(r).filters.session === '4d361981');
-    ok('the Filters chip counts what is narrowing', /⚙ Filters \(4\)/.test(r.html()));
+    ok('the workspace counts active session filters', /<b>4 active\.<\/b>/.test(r.html()));
 }
 
 // ---------- the query modes ----------
 {
     const r = page();
-    ok('whole word is offered beside regex and match case',
-        r.html().includes('id="whole"') && r.html().includes('whole word'));
-    const w = r.query('#whole')[0];
-    w.checked = true;
-    w.fire('change');
+    ok('text, regex and meaning are distinct modes beside the text options',
+        ['data-mode="text"', 'data-mode="regex"', 'data-mode="meaning"', 'data-query-option="whole"']
+            .every(x => r.html().includes(x)));
+    const w = r.query('[data-query-option="whole"]')[0];
+    w.fire('click');
+    go(r);
     ok('…and it reaches the engine', lastSearch(r).wholeWord === true);
-    ok('the box says what the mode is doing while it is on',
-        r.html().includes('Whole word is ON'));
+    ok('the option remains visibly selected after repaint',
+        r.html().includes('data-query-option="whole"') && r.html().includes('aria-pressed="true"'));
     ok('the grammar has a card of its own, not only a tooltip',
         !r.html().includes('For example'));
-    r.els.qhelp.fire('click');
+    r.els['guide-toggle'].fire('click');
     const h = r.html();
     ok('…and it opens with the symbol, the meaning and an example',
-        h.includes('For example') && h.includes('codex OR gemini') && h.includes('refact*'));
+        h.includes('<th>Example</th>') && h.includes('codex OR gemini') && h.includes('refact*'));
     ok('‼️ …in the language of the interface', !/[çğıöşüÇĞİÖŞÜ]/.test(
-        h.slice(h.indexOf('helpcard'), h.indexOf('helpcard') + 2500)));
+        h.slice(h.indexOf('class="guide"'), h.indexOf('class="guide"') + 2500)));
+}
+
+// ---------- the workspace tells the truth about meaning search ----------
+{
+    const r = page();
+    r.query('[data-mode="meaning"]')[0].fire('click');
+    const html = r.html();
+    ok('meaning mode states its indexed-conversation boundary on the page',
+        html.includes('Meaning search has a narrower source')
+        && html.includes('message dates below are unavailable'));
+    ok('content kinds are visibly unavailable instead of being silently ignored',
+        html.includes('class="workspace-section unavailable"') && html.includes('aria-disabled="true"'));
+    go(r);
+    ok('meaning reaches the host as its own mode and drops unsupported message dates',
+        lastSearch(r).semantic === true && lastSearch(r).tsFrom === 0 && lastSearch(r).tsTo === 0);
+}
+
+// ---------- explanatory hover and selection state ----------
+{
+    const r = page();
+    const html = r.html();
+    const qTag = (/<input id="q"[^>]*>/.exec(html) || [''])[0];
+    ok('the query explanation is a rich AFTip, never a native title',
+        html.includes('class="af-tipw query-tip"') && html.includes('class="af-tipb"')
+        && !/\btitle=/.test(qTag));
+    ok('selected content carries fill class, check mark and aria state together',
+        /class="choice on"[\s\S]*aria-pressed="true"[\s\S]*choice-mark[^>]*>✓/.test(html));
 }
 
 // ---------- results: engines, delegation, the id banner ----------
@@ -332,18 +407,18 @@ const go = r => r.els.go.fire('click');
     const out = r.els.out.innerHTML;
     ok('every engine is badged in the results, not just the default one',
         ['Claude', 'Codex', 'Gemini', 'Antigravity'].every(e => out.includes(`>${e}<`)));
-    ok('a delegation hit says WHO delegated', out.includes('delegator (manager)'));
-    ok('a handler hit is named as one', out.includes('>handler<'));
-    ok('the summary says which kinds were searched, and how many were not',
-        /searched in 🧑 User · 🤖 Agent \(4 other kinds not searched\)/.test(out));
+    ok('a delegation hit is named as a handover', out.includes('>handover<'));
+    ok('a handler hit is named as a sub-agent reply', out.includes('>sub-agent<'));
+    ok('the summary separates found matches from shown previews',
+        out.includes('11</b><span>matches found') && out.includes('8</b><span>previews shown'));
     ok('memory and event sections still stand apart',
-        out.includes('Memory notes') && out.includes('Live events'));
+        out.includes('Memory notes') && out.includes('Orphaned events'));
 
     // ‼️ X-34 — the banner is ABOVE the hits, and it opens the session
     ok('the id resolves to a session, drawn above everything',
-        out.includes('id="idhit"') && out.includes('Session #4d361981'));
+        out.includes('id="id-card"') && out.includes('#4d361981'));
     r.posted.length = 0;
-    r.els.idhit.fire('click');
+    r.els['id-card'].fire('click');
     ok('…and one click opens it',
         r.last().type === 'openSession' && r.last().file === 'D:/s/a.jsonl');
 

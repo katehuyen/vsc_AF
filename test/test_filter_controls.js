@@ -25,7 +25,8 @@ const runTimers = () => { const t = timers; timers = []; t.forEach(fn => fn()); 
 
 const ms = createAfmsDom(() => rendered);
 const sandbox = {
-    window: {},
+    window: { AFTip: { wrap: (trigger, head, body, cls) =>
+        `<span class="af-tipw ${cls || ''}">${trigger}<span class="af-tiph">${head}</span><span class="af-tipb">${body}</span></span>` } },
     document: {
         querySelector: (s) => ms.querySelector(s),
         querySelectorAll: () => [],
@@ -122,7 +123,11 @@ ok('the hint says what a name-click does',
 // am about to change this". Every picker in the extension gets this from the
 // component, so no page can word it differently.
 {
-    const tip = h => (/title="([^"]*)"/.exec(h) || [, ''])[1];
+    const tip = h => {
+        const head = (/<span class="af-tiph">([\s\S]*?)<\/span>/.exec(h) || [, ''])[1];
+        const body = (/<span class="af-tipb">([\s\S]*?)<\/span>/.exec(h) || [, ''])[1];
+        return head + '\n\n' + body;
+    };
     const two = tip(AF.multi({ id: 'k16a', label: 'Agents', options: AGENTS, selected: ['dev', 'psy'] }));
     ok('‼️ the whole selection is named, not counted', /^Agents: dev · psy/.test(two));
     ok('…and the standing explanation still follows it, after a blank line',

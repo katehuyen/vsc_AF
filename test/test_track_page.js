@@ -653,7 +653,7 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
 
         // every rich panel on this page is anchored to its row or card
         const loose = [...h.matchAll(/class="af-tipw([^"]*)"/g)]
-            .filter(m => !/\btip-block\b/.test(m[1]));
+            .filter(m => !/\btip-block\b|\btip-free\b/.test(m[1]));
         ok(`${view}: every rich hover is measured against its block`, loose.length === 0);
 
         // ‼️ ON A ROW a native tooltip is for FIGURES and nothing else. The

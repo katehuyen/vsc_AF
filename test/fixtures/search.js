@@ -23,7 +23,14 @@ const hit = (o) => Object.assign({
 }, o);
 
 const RESULT = {
-    filesScanned: 42, truncated: false,
+    filesScanned: 42, truncated: false, matchesFound: 11, matchesShown: 8,
+    sessionsMatched: 4, omittedMatches: 3, parseFailures: 0,
+    sessionMatches: [
+        { file: 'D:/s/a.jsonl', found: 6, shown: 3 },
+        { file: 'D:/s/b.jsonl', found: 1, shown: 1 },
+        { file: 'D:/s/c.jsonl', found: 1, shown: 1 },
+        { file: 'D:/s/d.jsonl', found: 1, shown: 1 }
+    ],
     hits: [
         hit({ turn: 1, turnLabel: 'search fonksiyonu gelişmedi, baştan ele al' }),
         hit({
@@ -113,11 +120,11 @@ const variants = () => [
     // toggle the panel straight back shut.
     {
         id: 'filters', label: 'Search — the filter panel open', data: data(),
-        act: (r) => { r.els['f-toggle'].click(); results(r); }
+        act: (r) => { r.els['more-toggle'].click(); results(r); }
     },
     {
         id: 'help', label: 'Search — the query help card', data: data(),
-        act: (r) => { r.els['qhelp'].click(); }
+        act: (r) => { r.els['guide-toggle'].click(); }
     }
 ];
 

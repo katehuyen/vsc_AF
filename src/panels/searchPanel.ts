@@ -15,11 +15,10 @@ export interface SearchDeps {
     /** S5: persisted live-event store path, for the events source. */
     liveEventsFile(): string;
     /** D4 semantic layer — undefined when embeddings are off. */
-    semanticSearch(query: string, agentName?: string): Promise<SearchResult>;
+    semanticSearch(query: string, sessionIds?: string[]): Promise<SearchResult>;
     semanticStatus(): { provider: string; sessions: number; chunks: number };
-    /** X-24: project name per agent name — the same axis the Sessions tables
-     *  group by, so "which project was this said on" means one thing. */
-    agentProjects?(): Record<string, string>;
+    /** Project name resolved for this individual session. */
+    projectOf?(session: SessionInfo): string;
     /** X-35: how to read a transcript this engine's scanner cannot (cliViewer). */
     parseForeign?: ParseForeign;
 }
@@ -131,7 +130,9 @@ export function scopeSessions(
 }
 
 /** The shape the engine scans, out of the index's own rows. */
-export function searchableSessions(list: SessionInfo[]): SearchableSession[] {
+export function searchableSessions(
+    list: SessionInfo[], projectOf?: (s: SessionInfo) => string
+): SearchableSession[] {
     return list.map(s => ({
         file: s.file,
         agentName: s.agentName,
@@ -139,7 +140,8 @@ export function searchableSessions(list: SessionInfo[]): SearchableSession[] {
         mtime: s.mtime,
         sessionId: s.sessionId,
         engine: engineOf(s),
-        isSidechain: s.isSidechain
+        isSidechain: s.isSidechain,
+        ...(projectOf ? { project: projectOf(s) } : {})
     }));
 }
 
@@ -194,8 +196,7 @@ export class SearchPanel {
     }
 
     private projectOf(s: SessionInfo): string {
-        const map = this.deps.agentProjects?.() ?? {};
-        return (s.agentName ? map[s.agentName] : '') || UNASSIGNED;
+        return this.deps.projectOf?.(s) || UNASSIGNED;
     }
 
     private facets(): SearchFacets {
@@ -265,14 +266,25 @@ export class SearchPanel {
                     : undefined;
                 let result: SearchResult;
                 if (msg.semantic) {
-                    // the semantic layer filters by a single agent; a multi-agent
-                    // pick is applied to its hits afterwards
-                    result = await this.deps.semanticSearch(query,
-                        agentNames && agentNames.length === 1 ? agentNames[0] : undefined);
-                    if (agentNames && agentNames.length !== 1) {
-                        const set = new Set(agentNames);
-                        result.hits = result.hits.filter(h => set.has(h.agentName));
-                    }
+                    const filters: SessionFilters = {
+                        ...f,
+                        agents: agentNames === undefined ? f.agents : agentNames
+                    };
+                    let scoped = scopeSessions(this.pool(), filters, s => this.projectOf(s));
+                    if (file) { scoped = scoped.filter(s => s.file === file); }
+                    // Restrict the vector pool before top-k ranking. Filtering
+                    // twenty global hits afterwards silently loses valid hits.
+                    result = await this.deps.semanticSearch(query, scoped.map(s => s.sessionId));
+                    const byId = new Map(scoped.map(s => [s.sessionId, s]));
+                    result.hits = result.hits.map(h => {
+                        const s = h.sessionId ? byId.get(h.sessionId) : undefined;
+                        return s ? {
+                            ...h,
+                            engine: engineOf(s),
+                            sessionTs: s.lastTs || s.mtime,
+                            project: this.projectOf(s)
+                        } : h;
+                    });
                 } else {
                     // The agent picker is one of the filters; it arrives on its
                     // own key for compatibility with every surface that presets
@@ -282,7 +294,7 @@ export class SearchPanel {
                         agents: agentNames === undefined ? f.agents : agentNames
                     };
                     const scoped = scopeSessions(this.pool(), filters, s => this.projectOf(s));
-                    const sessions = searchableSessions(scoped);
+                    const sessions = searchableSessions(scoped, s => this.projectOf(s));
                     // The date window is the MESSAGE's own time (core/search.ts
                     // tsFrom/tsTo), not the session's mtime: "what was said on
                     // Tuesday" and "sessions last written to on Tuesday" are
@@ -301,8 +313,8 @@ export class SearchPanel {
                         tsTo: ms(msg.tsTo),
                         files: file ? [file] : undefined,
                         // a single session can take many more hits than a fleet scan
-                        maxHits: file ? 400 : 150,
-                        maxPerFile: file ? 400 : 3,
+                        maxHits: file ? 400 : 250,
+                        maxPerFile: file ? 400 : 12,
                         parseForeign: this.deps.parseForeign
                     };
                     result = searchTranscripts(sessions, query, opts);
@@ -316,6 +328,11 @@ export class SearchPanel {
                     }
                     if (!file && msg.events !== false) {
                         result.hits.push(...searchLiveEvents(this.deps.liveEventsFile(), query, srcOpts));
+                    }
+                    const extras = result.hits.length - result.matchesShown;
+                    if (extras > 0) {
+                        result.matchesFound += extras;
+                        result.matchesShown += extras;
                     }
                 }
                 void this.panel.webview.postMessage({

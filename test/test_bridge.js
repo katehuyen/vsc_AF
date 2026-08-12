@@ -1592,7 +1592,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 .every(a => new RegExp(a).test(block)));
         ok('…and they narrow the SCAN through the panel\'s own function',
             /scopeSessions\(index\.allWithExternal\(\)/.test(block)
-            && /searchableSessions\(scoped\)/.test(block));
+            && /searchableSessions\(scoped, sessionProjectName\)/.test(block)
+            && /}, sessionProjectName\)/.test(block));
         ok('‼️ X-35 — and the other three engines are read, not skipped',
             /parseForeign: \(raw: string, f: string\) => parseCliViewer\(/.test(block));
         ok('…the delegation kinds are documented where an agent will read them',

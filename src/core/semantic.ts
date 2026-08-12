@@ -109,6 +109,11 @@ export class SemanticIndex {
         return { sessions: Object.keys(this.sessions).length, chunks: this.chunks.length };
     }
 
+    indexedCount(allowedSessionIds?: Set<string>): number {
+        const ids = Object.keys(this.sessions);
+        return allowedSessionIds ? ids.filter(id => allowedSessionIds.has(id)).length : ids.length;
+    }
+
     /** Which of these sessions still need (re)indexing? */
     pending(sessions: { sessionId: string; mtime: number }[]): { sessionId: string; mtime: number }[] {
         return sessions.filter(s => (this.sessions[s.sessionId] ?? 0) < s.mtime);
@@ -132,9 +137,9 @@ export class SemanticIndex {
         }
     }
 
-    search(queryVec: number[], k = 20): SemHit[] {
+    search(queryVec: number[], k = 20, allowedSessionIds?: Set<string>): SemHit[] {
         const q = new Float32Array(queryVec);
-        const scored = this.chunks.map(c => ({
+        const scored = this.chunks.filter(c => !allowedSessionIds || allowedSessionIds.has(c.sessionId)).map(c => ({
             chunk: {
                 sessionFile: c.sessionFile, sessionId: c.sessionId, agentName: c.agentName,
                 title: c.title, ts: c.ts, text: c.text

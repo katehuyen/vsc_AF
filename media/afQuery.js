@@ -325,22 +325,22 @@
     // a grammar into a one-line hover. The flat SYNTAX below is built from it:
     // two texts saying different things is the failure this file exists against.
     const SYNTAX_ROWS = [
-        { sym: 'a b', what: 'both words, in any order', example: 'parser error' },
-        { sym: 'OR', what: 'either one (| works too)', example: 'codex OR gemini' },
-        { sym: '-a', what: 'without it (NOT a works too)', example: 'parser -test' },
-        { sym: '( )', what: 'group what belongs together', example: '(codex OR gemini) install' },
-        { sym: '"…"', what: 'that exact phrase, whole words', example: '"session id"' },
-        { sym: '*', what: 'any run of characters', example: 'refact*' },
-        { sym: '"a* b*"', what: 'a phrase whose words may be partial', example: '"refact* the pars*"' }
+        { sym: 'a b', what: 'both terms must appear; their order does not matter', example: 'parser error' },
+        { sym: 'OR', what: 'either side may appear (OR must be uppercase)', example: 'codex OR gemini' },
+        { sym: '-a', what: 'exclude records containing this term', example: 'parser -test' },
+        { sym: '( )', what: 'keep a combined choice together', example: '(codex OR gemini) install' },
+        { sym: '"…"', what: 'find these words together, as a whole phrase', example: '"session id"' },
+        { sym: '*', what: 'accept any continuation inside this term', example: 'refact*' },
+        { sym: '"a* b*"', what: 'combine a phrase with unfinished words', example: '"refact* the pars*"' }
     ];
 
     const SYNTAX = [
-        'two words = both  ·  OR = either  ·  -word = without it  ·  ( ) group',
-        '"in quotes" = that phrase, whole words: "log" is not found in "dialogue"',
-        '* = any run of characters — refact* finds refactor, refactoring',
-        '…and together: "refact* the pars*" finds both',
-        '"refactor the parser" and "refactored the parsing".',
-        'A bare word is a plain substring; tick "whole word" to anchor bare words too.'
+        'Write more than one word when every word must be present. Their order does not matter.',
+        'Use uppercase OR when either choice is acceptable. Put choices in (parentheses) before adding another required word.',
+        'Put - before a word to exclude records containing it.',
+        'Put a phrase in "quotes" when the words must stay together.',
+        'Use * for an unfinished beginning or ending: refact* finds refactor and refactoring.',
+        'A plain word matches inside a longer word. Turn on Whole words when it must stand on its own.'
     ].join('\n');
 
     /** What the whole-word mode changes, in one line, for the box that is in it. */

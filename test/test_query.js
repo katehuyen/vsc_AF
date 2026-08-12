@@ -137,7 +137,7 @@ ok('regex mode is untouched and still its own thing',
 
 // ------------------------------------------------------------ it is written down
 {
-    ok('the grammar explains itself in one place', /OR = either/.test(Q.SYNTAX));
+    ok('the grammar explains itself in one place', /uppercase OR/.test(Q.SYNTAX));
     ok('…and a box can put its own subject in front of it',
         Q.tip('Search the backlog.').startsWith('Search the backlog.')
         && Q.tip('x').includes(Q.SYNTAX));

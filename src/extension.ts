@@ -1290,6 +1290,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentName: s.agentName, cwd: s.cwd
     }).projectId ?? '';
 
+    const sessionProjectName = (
+        s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }
+    ): string => {
+        const id = sessionOwnProject(s);
+        return id ? (projectStore.get(id)?.name ?? 'Unassigned') : 'Unassigned';
+    };
+
     const stamped = new Set<string>();
     const stampSessionProject = (sessionId: string, projectId: string): void => {
         if (!sessionId || !projectId || stamped.has(sessionId)) { return; }
@@ -2104,40 +2111,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         provider: embeddingsCfg().provider,
         ...semIndex.stats()
     });
-    const semanticSearch = async (query: string, agentName?: string): Promise<SearchResult> => {
+    const semanticSearch = async (query: string, sessionIds?: string[]): Promise<SearchResult> => {
+        const failed = (error: string): SearchResult => ({
+            hits: [], filesScanned: 0, truncated: false, error,
+            matchesFound: 0, matchesShown: 0, sessionsMatched: 0,
+            omittedMatches: 0, sessionMatches: [], parseFailures: 0
+        });
         const ecfg = embeddingsCfg();
         if (ecfg.provider === 'off') {
             return {
                 hits: [], filesScanned: 0, truncated: false,
+                matchesFound: 0, matchesShown: 0, sessionsMatched: 0,
+                omittedMatches: 0, sessionMatches: [], parseFailures: 0,
                 error: 'Semantic mode is off — set agentFarm.embeddingsProvider (gemini, or an OpenAI-compatible endpoint such as local Ollama).'
             };
         }
         // Keep the index warm: quietly absorb up to 20 new sessions per query.
         const upd = await updateSemanticIndex(20);
         if (upd.error && !semIndex.stats().chunks) {
-            return { hits: [], filesScanned: 0, truncated: false, error: 'Indexing failed: ' + upd.error };
+            return failed('Indexing failed: ' + upd.error);
         }
         const q = await embedTexts([query], ecfg);
         if (q.error || !q.vectors) {
-            return { hits: [], filesScanned: 0, truncated: false, error: 'Query embedding failed: ' + (q.error ?? '?') };
+            return failed('Query embedding failed: ' + (q.error ?? '?'));
         }
-        const hits = semIndex.search(q.vectors[0], 40)
-            .filter(h => !agentName || h.chunk.agentName === agentName)
-            .filter(h => h.score > 0.15)
-            .slice(0, 20)
+        const allowed = sessionIds ? new Set(sessionIds) : undefined;
+        const ranked = semIndex.search(q.vectors[0], Number.MAX_SAFE_INTEGER, allowed)
+            .filter(h => h.score > 0.15);
+        const hits = ranked.slice(0, 20)
             .map(h => ({
                 file: h.chunk.sessionFile,
                 agentName: h.chunk.agentName,
                 title: h.chunk.title,
                 ts: h.chunk.ts,
+                sessionTs: h.chunk.ts,
+                sessionId: h.chunk.sessionId,
                 role: 'assistant' as const,
                 before: '',
                 match: '',
                 after: h.chunk.text.slice(0, 280) + (h.chunk.text.length > 280 ? '…' : ''),
                 score: h.score
             }));
-        const stats = semIndex.stats();
-        const result: SearchResult = { hits, filesScanned: stats.sessions, truncated: false };
+        const result: SearchResult = {
+            hits, filesScanned: semIndex.indexedCount(allowed), truncated: ranked.length > hits.length,
+            matchesFound: ranked.length, matchesShown: hits.length,
+            sessionsMatched: new Set(ranked.map(h => h.chunk.sessionId)).size,
+            omittedMatches: Math.max(0, ranked.length - hits.length),
+            sessionMatches: [], parseFailures: 0
+        };
         if (upd.remaining > 0) {
             result.error = undefined;
             if (!hits.length) {
@@ -3771,7 +3792,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     tsTo: when(args.to, true),
                     files: file ? [file] : undefined,
                     maxHits: limit,
-                    maxPerFile: file ? 400 : 3,
+                    maxPerFile: file ? 400 : 12,
                     // X-35: the other three engines' transcripts, read with the
                     // very parser the Session Viewer reads them with
                     parseForeign: (raw: string, f: string) => parseCliViewer(raw, f, pricing)
@@ -3780,8 +3801,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // not a second copy of the rules: an agent told "only Codex
                 // sessions with errors" must get the set the person who types it
                 // into the panel gets.
-                const projectNames = agentProjectNames(
-                    agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all());
                 const scoped = scopeSessions(index.allWithExternal(), {
                     agents: strs(args.agents),
                     engines: strs(args.engines),
@@ -3792,8 +3811,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     pinnedOnly: args.pinnedOnly === true,
                     errorsOnly: args.errorsOnly === true,
                     session: optStr(args, 'sessionId')
-                }, s => (s.agentName ? projectNames[s.agentName] : '') || 'Unassigned');
-                const result = searchTranscripts(searchableSessions(scoped), query, opts);
+                }, sessionProjectName);
+                const result = searchTranscripts(searchableSessions(scoped, sessionProjectName), query, opts);
                 // Scoped to one session, the two extra sources are noise: that
                 // session's text is already covered in full by the scan above.
                 // They have no engine, project or lane of their own, so only the
@@ -3808,9 +3827,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     result.hits.push(...searchLiveEvents(
                         path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'), query, srcOpts));
                 }
+                const extras = result.hits.length - result.matchesShown;
+                if (extras > 0) {
+                    result.matchesFound += extras;
+                    result.matchesShown += extras;
+                }
                 need(!result.error, result.error ?? 'the query could not be read');
                 return {
                     scanned: result.filesScanned,
+                    matchesFound: result.matchesFound,
+                    matchesShown: result.matchesShown,
+                    sessionsMatched: result.sessionsMatched,
+                    omittedMatches: result.omittedMatches,
+                    parseFailures: result.parseFailures,
                     // said out loud: a capped or timed-out scan is a PARTIAL
                     // answer, and an agent that does not know that will report
                     // "nothing was ever said about X" from an unfinished read.
@@ -16242,10 +16271,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getMemoryFiles: () => agents.flatMap(a =>
                         a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
                     liveEventsFile: () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
-                    // X-24: the same project axis the Dashboard, the Sessions
-                    // page and an agent's page group by — one map, one answer.
-                    agentProjects: () => agentProjectNames(
-                        agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
+                    // Resolve each session through the project store; one agent
+                    // may have sessions in several projects.
+                    projectOf: sessionProjectName,
                     // X-35: the OTHER engines' transcripts, read with the very
                     // parser the Session Viewer reads them with.
                     parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),

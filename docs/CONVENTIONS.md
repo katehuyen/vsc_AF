@@ -49,7 +49,9 @@ changes.
 
 - **`AFFilter.multi` does it for every picker in the extension** (`selectionLine`
   in `media/afFilters.js`): the whole selection by name, then the page's own
-  subject line, then the shared grammar. Nothing a page does has to know.
+  subject line, then the shared interaction guidance. Its button is wrapped in
+  a scrollable `AFTip` with `tip-free`; a page never falls back to a native
+  `title` for the explanation. Nothing a page does has to know.
 - **A hand-rolled `<select>` does it with a two-line helper** — the Console's
   composer is the worked example (`boxTip` in `media/console.js`).
 - **A box with nothing to name opens on the explanation**, never on a blank
@@ -104,6 +106,12 @@ does has to know about this, and no page should re-invent it.
 ---
 
 ## Looking at it
+
+**A selected control must remain selected after the pointer leaves it.** Hover
+is an action hint, never selection state. Toggle cards and segmented modes use
+all four signals together: persistent fill, focus-colour border, a check mark,
+and `aria-pressed="true"`. Do not rely on colour alone; a theme may collapse the
+difference between two backgrounds.
 
 **‼️ A VISUAL CHANGE IS NOT DONE UNTIL SOMEBODY HAS SEEN IT.** Nothing between
 writing a CSS rule and shipping a VSIX draws these pages: the page script runs

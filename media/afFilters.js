@@ -134,17 +134,23 @@
         const items = opts.map(x =>
             `<span class="afms-item">` +
             `<input type="checkbox" data-afms-opt="${esc(x.v)}"${on(x.v) ? ' checked' : ''}` +
-            ` title="Tick or untick just this one">` +
+            ` aria-label="Toggle ${esc(x.t)}">` +
             `<span class="afms-name" data-afms-only="${esc(x.v)}"` +
-            ` title="Show only ${esc(x.t)}">${esc(x.t)}</span></span>`).join('');
+            ` role="button" tabindex="0" aria-label="Show only ${esc(x.t)}">${esc(x.t)}</span></span>`).join('');
         const presetHtml = presets.map(p =>
-            ` · <a data-afms-preset="${esc(p.id)}" title="${esc(p.title || '')}">${esc(p.label || p.id)}</a>`).join('');
+            ` · <a data-afms-preset="${esc(p.id)}" aria-label="${esc(p.title || p.label || p.id)}">${esc(p.label || p.id)}</a>`).join('');
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
+        const explanation = o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT;
+        const filtered = sel !== null && sel !== undefined;
+        const button = `<button type="button" class="secondary afms-btn${filtered ? ' is-filtered' : ''}" data-afms="${esc(o.id)}"` +
+            `${o.disabled ? ' disabled' : ''} aria-label="${esc(selectionLine(o, opts, sel))}">` +
+            `${esc(buttonText(o, opts, sel))} ▾</button>`;
+        const trigger = window.AFTip && typeof window.AFTip.wrap === 'function'
+            ? window.AFTip.wrap(button, selectionLine(o, opts, sel), explanation,
+                `tip-free${o.align === 'right' ? ' tip-right' : ''}`)
+            : button;
         return `<span class="afms" data-afms-wrap="${esc(o.id)}">` +
-            `<button type="button" class="secondary afms-btn" data-afms="${esc(o.id)}"` +
-            `${o.disabled ? ' disabled' : ''} title="${esc(selectionLine(o, opts, sel) + '\n\n'
-                + (o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT))}">` +
-            `${esc(buttonText(o, opts, sel))} ▾</button>` +
+            trigger +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
             `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +
             `${items || '<span class="muted small">nothing to filter by</span>'}` +
@@ -229,11 +235,15 @@
         // elements now (see multi()).
         Array.prototype.forEach.call(menu.querySelectorAll('[data-afms-only]'), el => {
             if (!el.addEventListener) { return; }
-            el.addEventListener('click', ev => {
+            const only = ev => {
                 stop(ev);
-                const only = el.dataset.afmsOnly;
-                boxes().forEach(b => { b.checked = b.dataset.afmsOpt === only; });
-                emit(read(), only);
+                const value = el.dataset.afmsOnly;
+                boxes().forEach(b => { b.checked = b.dataset.afmsOpt === value; });
+                emit(read(), value);
+            };
+            el.addEventListener('click', only);
+            el.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter' || ev.key === ' ') { if (ev.preventDefault) { ev.preventDefault(); } only(ev); }
             });
         });
         // reopen where the user left off — the re-render that a tick causes

@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.115.0 — Search is now one coherent workspace (2026-08-12)
+
+**Search was rebuilt as a three-part workspace.** The old query row and patchwork of tiny badges are gone. **Ask** separates Text, Regex and Meaning; **Choose content** gives Conversation, Delegation, Tool trail and Everything plus six full message-kind cards; **Narrow sessions** keeps Agent, Engine, Project, Model and Session visible, with the less common axes one level below. A selected control stays selected after the pointer leaves: fill, focus border, check mark and `aria-pressed` agree in dark and light themes.
+
+**The explanations finally use the rich tooltip the rest of the product already proved.** The query box and every multi-picker use the shared wide, scrollable `AFTip`; native `title` no longer carries their paragraphs. The query explanation was rewritten in plain language and the complete grammar remains available as a proper table under **Query guide**.
+
+**A preview cap can no longer pretend to be the answer.** Transcript search now counts all matching messages after the per-session preview limit, and returns **matches found · previews shown · sessions matched · sessions scanned · omitted matches · parse failures**. The default fleet preview is 12 per session / 250 total; every session card states `shown of found`, and timeout, unreadable transcript and omitted-preview coverage are explicit.
+
+**The session scope now uses the session's real project.** Project filtering previously mapped agent name to one default project, which is false as soon as one agent works in more than one project. Search and `search.transcripts` now resolve each session through explicit membership, code root and agent default in the same order as the rest of Agent Farm.
+
+**Meaning search now honours the filters it shows.** Allowed session IDs are applied to the vector pool before top-k ranking; filtering twenty global hits afterwards can no longer throw away the valid answer. The workspace also states the mode's actual boundary — indexed main-session conversation passages, not tools, memory, events, message dates or engines absent from the index — and disables unsupported content controls rather than silently ignoring them.
+
+**Repeated exact searches no longer re-parse the fleet.** Claude and foreign transcripts share a bounded revision cache keyed by mtime, size, engine and lane. One user record with several text blocks remains one turn; normal text beginning with `<` is searchable; known harness envelopes alone are excluded. The bridge returns the same coverage counters as the page.
+
+Verified with 8,183 automated assertions and inspected Chromium renders of the complete Search workspace in dark and light themes.
+
 ## 3.114.0 — Search is a search: six kinds, every engine, and the id you already have (2026-08-12)
 
 **Search now reads all four engines.** The scan was written against Claude's JSONL and quietly stayed there, so a fleet that had been running on Codex, Gemini and Antigravity for weeks was searchable on one CLI out of four and nothing on the page said so. Foreign transcripts are now read with the very parser the Session Viewer reads them with (`core/cliViewer`), each result row carries its **engine badge**, and a repeated search re-parses nothing — a foreign file is parsed once per change, not once per keystroke. (X-24, X-35)
