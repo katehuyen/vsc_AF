@@ -287,7 +287,7 @@ const go = r => r.els.go.fire('click');
         ['user', 'assistant', 'delegator', 'handler', 'tool', 'toolResult']
             .every(id => html.includes(`data-role="${id}"`)));
     ok('Conversation is the default and visibly selected',
-        /data-preset="dialog" class="preset on"[\s\S]*aria-pressed="true"/.test(html));
+        /class="chip on"[\s\S]*data-preset="dialog"[\s\S]*aria-pressed="true"/.test(html));
     ok('…and the two extra sources are chips now, not checkboxes',
         html.includes('data-source="memory"') && html.includes('data-source="events"')
         && !html.includes('id="srcmem"'));
@@ -323,8 +323,12 @@ const go = r => r.els.go.fire('click');
 // ---------- X-24: the session axis ----------
 {
     const r = page();
-    ok('primary session filters are visible without opening a filter chip',
-        r.html().includes('id="f-session"') && r.html().includes('data-afms="f-projects"'));
+    ok('the compact panel keeps the agent picker visible and detailed filters folded',
+        r.html().includes('data-afms="search-agents"')
+        && !r.html().includes('id="f-session"') && !r.html().includes('data-afms="f-projects"'));
+    ok('the search surface is a compact panel, not a numbered wizard',
+        !r.html().includes('1 · Ask') && !r.html().includes('2 · Choose content')
+        && !r.html().includes('3 · Narrow sessions'));
     r.els['more-toggle'].fire('click');
     const html = r.html();
     ok('‼️ every axis a session HAS is offered, not just a date',
@@ -347,7 +351,7 @@ const go = r => r.els.go.fire('click');
     ok('…and the flags', lastSearch(r).filters.errorsOnly === true);
     ok('‼️ X-34 — the id you already know is a filter of its own',
         lastSearch(r).filters.session === '4d361981');
-    ok('the workspace counts active session filters', /<b>4 active\.<\/b>/.test(r.html()));
+    ok('the filter badge counts active session filters', r.html().includes('⚙ Filters (4)'));
 }
 
 // ---------- the query modes ----------
@@ -378,10 +382,10 @@ const go = r => r.els.go.fire('click');
     r.query('[data-mode="meaning"]')[0].fire('click');
     const html = r.html();
     ok('meaning mode states its indexed-conversation boundary on the page',
-        html.includes('Meaning search has a narrower source')
-        && html.includes('message dates below are unavailable'));
+        html.includes('<b>Meaning:</b> indexed main-session conversation only')
+        && html.includes('message dates do not apply'));
     ok('content kinds are visibly unavailable instead of being silently ignored',
-        html.includes('class="workspace-section unavailable"') && html.includes('aria-disabled="true"'));
+        html.includes('class="chiprow scope-row unavailable"') && html.includes('aria-disabled="true"'));
     go(r);
     ok('meaning reaches the host as its own mode and drops unsupported message dates',
         lastSearch(r).semantic === true && lastSearch(r).tsFrom === 0 && lastSearch(r).tsTo === 0);
@@ -396,7 +400,7 @@ const go = r => r.els.go.fire('click');
         html.includes('class="af-tipw query-tip"') && html.includes('class="af-tipb"')
         && !/\btitle=/.test(qTag));
     ok('selected content carries fill class, check mark and aria state together',
-        /class="choice on"[\s\S]*aria-pressed="true"[\s\S]*choice-mark[^>]*>✓/.test(html));
+        /class="chip on"[\s\S]*data-role="user"[\s\S]*aria-pressed="true"[^>]*>[\s\S]*chip-check[^>]*>✓/.test(html));
 }
 
 // ---------- results: engines, delegation, the id banner ----------
@@ -410,7 +414,7 @@ const go = r => r.els.go.fire('click');
     ok('a delegation hit is named as a handover', out.includes('>handover<'));
     ok('a handler hit is named as a sub-agent reply', out.includes('>sub-agent<'));
     ok('the summary separates found matches from shown previews',
-        out.includes('11</b><span>matches found') && out.includes('8</b><span>previews shown'));
+        out.includes('<b>11</b>matches') && out.includes('<b>8</b>previews'));
     ok('memory and event sections still stand apart',
         out.includes('Memory notes') && out.includes('Orphaned events'));
 

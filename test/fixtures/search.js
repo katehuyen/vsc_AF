@@ -113,7 +113,7 @@ const results = (r) => {
 };
 
 const variants = () => [
-    { id: 'results', label: 'Search — results (four engines, delegation, memory, events)', data: data(), act: results },
+    { id: 'results', label: 'Search — compact results (four engines, delegation, memory, events)', data: data(), act: results },
     // ‼️ The press comes FIRST. The page rebuilds its whole card on every
     // control change, and the shim hands the page the same element object each
     // time — so a second press would run the handlers of both renders and

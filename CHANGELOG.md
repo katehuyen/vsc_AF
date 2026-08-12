@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.116.0 — Search is compact again (2026-08-12)
+
+**The search page is a search page, not a three-step wizard.** The numbered Ask / Choose content / Narrow sessions cards and the six oversized content tiles are gone. Query + Search, query mode, content scope and the agent picker now fit into one compact control panel; the first result begins immediately below it.
+
+**The badges were not the problem.** Conversation, Delegation, Tool trail, Everything, all six message kinds, Memory and Events are compact badges again. Their behaviour remains repaired: plain click adds/removes, Ctrl/⌘-click keeps only one, and a selected badge holds its check mark, fill, focus border and `aria-pressed` state after the pointer leaves. The full explanation stays in the wide, scrollable `AFTip` rather than consuming page height.
+
+**Detailed session filters fold away as one unit.** Agent remains in the main row. Engine, Project, Model, Session id/title/path, Started by, Lane, Pinned, Errors, date and sort open together under `⚙ Filters (n)` and collapse back to that one badge. The four coverage figures are one thin result strip instead of four cards. At the 1180 px visual fixture the closed control panel measures 115 px and the first result starts at y=219.
+
+Verified with 8,184 automated assertions and inspected Chromium renders of the compact and expanded Search panel in dark and light themes.
+
 ## 3.115.0 — Search is now one coherent workspace (2026-08-12)
 
 **Search was rebuilt as a three-part workspace.** The old query row and patchwork of tiny badges are gone. **Ask** separates Text, Regex and Meaning; **Choose content** gives Conversation, Delegation, Tool trail and Everything plus six full message-kind cards; **Narrow sessions** keeps Agent, Engine, Project, Model and Session visible, with the less common axes one level below. A selected control stays selected after the pointer leaves: fill, focus border, check mark and `aria-pressed` agree in dark and light themes.

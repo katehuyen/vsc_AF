@@ -1,14 +1,16 @@
-# Agent Farm — Arama çalışma alanı
+# Agent Farm — Arama motoru ve kompakt kontrol paneli
 
-Bu belge arama sisteminin geçerli sözleşmesidir. Arama; bir sorgu kutusu ve yanına
-eklenmiş rozetlerden oluşmaz. Üç kararı sırasıyla alan bir çalışma alanıdır:
+Bu belge arama sisteminin geçerli sözleşmesidir. Arama sayfası bir sihirbaz değildir;
+sorgu ile sonuç arasına ayrı aşamalar ve büyük seçim kartları koymaz. Tek kompakt
+kontrol panelinde üç karar aynı anda okunur:
 
 1. Sorgu nasıl anlaşılacak?
 2. Bir kaydın hangi içeriği aranacak?
 3. Hangi oturumlar taranacak?
 
-Sonuç yüzeyi, bu üç kararın ürettiği cevabın kapsamını ve eksik bırakılan önizlemeleri
-açıkça gösterir.
+Bu yoğunluk rozetlerin varlık sebebidir: az dikey alanda çoklu seçim ve zengin kapsam.
+Ayrıntılı oturum filtreleri gerektiğinde açılır, sonra yeniden kapanır. Sonuç yüzeyi
+panelin hemen altında cevabın kapsamını ve eksik bırakılan önizlemeleri açıkça gösterir.
 
 ## 1. Değişmezler
 
@@ -122,16 +124,13 @@ notes` ve transcript'i kalmamış `Orphaned events` olarak ayrı seçilir.
 
 ## 5. Oturum kapsamı
 
-Ana eksenler daima görünürdür:
+`Agent` seçici ana kontrol panelinde görünür. Geri kalan bütün oturum eksenleri tek
+`⚙ Filters (n)` rozetiyle açılıp kapanan ayrıntı panelindedir:
 
-- Agent
 - Engine
 - Project
 - Model
 - Session id, title or path
-
-İkincil eksenler `More session filters` altında bulunur:
-
 - Started by: insan / otomasyon
 - Lane: ana / alt ajan
 - Pinned only
@@ -186,14 +185,23 @@ dosyası, ID'si, motoru, gerçek projesi, mesaj zamanı ve turn bilgisiyle açı
 
 ## 8. Arayüz sözleşmesi
 
-Arama sayfası üç numaralı karttan oluşur:
+Arama sayfasının üstünde tek kompakt panel bulunur:
 
-1. **Ask** — büyük sorgu alanı, Text/Regex/Meaning, kip seçenekleri ve birincil Search.
-2. **Choose content** — preset'ler, altı rol kartı, ek kaynaklar.
-3. **Narrow sessions** — ana filtreler sürekli görünür, seyrek filtreler ikinci katmanda.
+1. İlk ince satır sorgu kutusu ve birincil `Search` düğmesidir.
+2. İkinci satır Text/Regex/Meaning, Match case, Whole word, Syntax, açılış kapsamı ve
+   Agent seçicisidir.
+3. Üçüncü satır hazır içerik kümeleri, altı rol rozeti, Memory/Events ve `⚙ Filters`
+   rozetidir.
 
-Sonuç özeti dört ayrı rakam gösterir: bulunan, gösterilen, eşleşen oturum, taranan
-oturum. Eksik önizleme, zaman aşımı ve parse hatası sarı kapsam notunda yazılır.
+Bu numaralar arayüzde çizilmez; yalnız yerleşim sözleşmesini tarif eder. Hazır kümeler
+ve roller kart değildir, açılıp kapanan kompakt rozetlerdir. Seçili rozet onay işareti,
+dolgu, odak çerçevesi ve `aria-pressed` taşır. Uzun açıklama rozetin içinde yer kaplamaz;
+zengin, kaydırılabilir `AFTip` içindedir.
+
+Sonuç özeti dört büyük kutu değil tek ince satırdır: bulunan, gösterilen, eşleşen
+oturum, taranan oturum. Eksik önizleme, zaman aşımı ve parse hatası sarı kapsam
+notunda yazılır. 1180 px render fixture'ında kapalı panel 115 px yüksekliğindedir ve
+ilk sonuç yüzeyi sayfanın 219. pikselinde başlar.
 Her oturum ayrı karttır; motor rozeti, ajan, başlık, proje, etkinlik zamanı ve o
 oturumdaki found/shown sayısı tek başlıkta bulunur.
 

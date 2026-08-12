@@ -1,4 +1,4 @@
-// Agent Farm — a deliberate search workspace, not a toolbar with patches.
+// Agent Farm — compact fleet search: rich scope without hiding the answer.
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
@@ -67,15 +67,15 @@
         return `${Math.round(h / 24)}d ago`;
     };
     const activeFilterCount = () => [
-        agentSel, flt.engines, flt.projects, flt.models, flt.origin, flt.lane,
-        flt.pinnedOnly, flt.errorsOnly, flt.session, flt.from, flt.to
+        flt.engines, flt.projects, flt.models, flt.origin, flt.lane,
+        flt.pinnedOnly, flt.errorsOnly, flt.session, flt.from, flt.to,
+        flt.sort !== 'newest'
     ].filter(Boolean).length;
 
-    function choice(attrs, icon, label, detail, on, disabled) {
-        return `<button type="button" class="choice${on ? ' on' : ''}${disabled ? ' disabled' : ''}"
+    function badge(attrs, label, on, disabled) {
+        return `<button type="button" class="chip${on ? ' on' : ''}${disabled ? ' disabled' : ''}"
             ${attrs} aria-pressed="${on ? 'true' : 'false'}"${disabled ? ' disabled' : ''}>
-            <span class="choice-mark" aria-hidden="true">${on ? '✓' : ''}</span>
-            <span class="choice-icon">${icon}</span><span><b>${C.esc(label)}</b><small>${C.esc(detail)}</small></span>
+            ${on ? '<span class="chip-check" aria-hidden="true">✓</span>' : ''}${label}
         </button>`;
     }
 
@@ -98,40 +98,9 @@
             ['regex', 'Regex', 'A regular expression, with a ten-second safety budget'],
             ['meaning', 'Meaning', 'Conceptually similar indexed conversation passages']
         ];
-        return `<div class="modebar" role="group" aria-label="Search method">${modes.map(x =>
-            tip(`<button type="button" data-mode="${x[0]}" class="mode${mode === x[0] ? ' on' : ''}"
-                aria-pressed="${mode === x[0]}">${mode === x[0] ? '<span>✓</span>' : ''}${x[1]}</button>`, x[1], x[2])
-        ).join('')}</div>`;
-    }
-
-    function queryHtml() {
-        const exact = mode !== 'meaning';
-        const queryTip = mode === 'text'
-            ? window.AFQuery.tip('Searches only the content and sessions selected below.', { wholeWord: wholeOn })
-            : mode === 'regex'
-                ? 'This is passed to JavaScript RegExp. Query-language operators do not apply. Unsafe patterns are stopped after ten seconds.'
-                : 'Finds similar passages in the semantic index. This covers indexed main-session conversation only; tool traffic, memory, events, message dates and non-indexed engines are not searched.';
-        return `<section class="search-compose">
-            <div class="section-kicker">1 · Ask</div>
-            <div class="compose-head"><div><h2>What are you trying to find?</h2>
-                <p>Choose how the query should be understood, then run it deliberately.</p></div>${modeHtml()}</div>
-            <div class="query-row">
-                ${tip(`<input id="q" type="text" value="${C.esc(queryText)}"
-                    placeholder="${mode === 'meaning' ? 'Describe the idea or discussion…' : 'Words, phrase, path, error or session id…'}"
-                    aria-label="Search query" autofocus>`, 'How this query is read', queryTip, 'query-tip')}
-                <button id="go" class="primary-search">${searching ? 'Searching…' : 'Search'}</button>
-            </div>
-            <div class="query-options">
-                ${choice('data-query-option="case"', 'Aa', 'Match case', 'Agent and agent become different', caseOn, !exact)}
-                ${choice('data-query-option="whole"', '▣', 'Whole words', 'log no longer finds dialogue', wholeOn, mode !== 'text')}
-                <button id="guide-toggle" class="text-action" aria-expanded="${guideOpen}">Query guide ${guideOpen ? '▴' : '▾'}</button>
-                <span class="grow"></span>${scopeHtml()}
-            </div>
-            ${guideOpen ? guideHtml() : ''}
-            ${mode === 'meaning' ? `<div class="mode-notice"><b>Meaning search has a narrower source.</b>
-                It searches indexed main-session conversation passages. Session metadata filters still apply; content kinds, extra sources and message dates below are unavailable in this mode.
-                <span id="sem-status">${semanticStatusHtml()}</span></div>` : ''}
-        </section>`;
+        return `<span class="seg" role="group" aria-label="Search method">${modes.map(x =>
+            tip(badge(`data-mode="${x[0]}"`, x[1], mode === x[0]), x[1], x[2])
+        ).join('')}</span>`;
     }
 
     function guideHtml() {
@@ -141,72 +110,92 @@
             <p><b>Text</b> combines these rules. <b>Regex</b> uses only JavaScript regular-expression syntax. <b>Meaning</b> compares your question with indexed conversation passages.</p></div>`;
     }
 
-    function contentHtml() {
-        const unavailable = mode === 'meaning';
-        return `<section class="workspace-section${unavailable ? ' unavailable' : ''}" aria-disabled="${unavailable}">
-            <div class="section-kicker">2 · Choose content</div>
-            <div class="section-title"><div><h2>Where inside a record?</h2><p>Start with a useful preset or combine exact message kinds.</p></div>
-                <div class="presetbar">${PRESETS.map(p => `<button data-preset="${p.id}" class="preset${sameSet(p.roles) ? ' on' : ''}"
-                    aria-pressed="${sameSet(p.roles)}"${unavailable ? ' disabled' : ''}>${sameSet(p.roles) ? '✓ ' : ''}${p.label}</button>`).join('')}</div></div>
-            <div class="choice-grid roles">${ROLES.map(r => choice(`data-role="${r.id}"`, r.icon, r.label, r.text,
-                roleSel.has(r.id), unavailable)).join('')}</div>
-            <div class="source-row"><span>Additional sources</span>
-                ${choice('data-source="memory"', '📝', 'Memory notes', 'Agent memory files, paragraph by paragraph', sourceMemory, unavailable)}
-                ${choice('data-source="events"', '⌁', 'Orphaned events', 'Events whose transcript no longer exists', sourceEvents, unavailable)}
-            </div>
-        </section>`;
-    }
-
     function picker(id, label, options, selected, title, disabled) {
         return window.AFFilter.multi({ id, label, options, selected, title, disabled });
     }
 
-    function filtersHtml() {
-        const fileScope = !!(preset && preset.file);
+    function filterPanelHtml() {
+        if (!moreOpen) return '';
         const meaning = mode === 'meaning';
-        const agents = facets.agents.length ? facets.agents : (DATA.agents || []);
-        return `<section class="workspace-section">
-            <div class="section-kicker">3 · Narrow sessions</div>
-            <div class="section-title"><div><h2>Which sessions should be searched?</h2>
-                <p>These filters reduce the pool before matching. ${activeFilterCount() ? `<b>${activeFilterCount()} active.</b>` : 'Nothing is narrowed.'}</p></div>
-                <button id="clear-filters" class="text-action"${activeFilterCount() ? '' : ' disabled'}>Reset session filters</button></div>
-            <div class="filter-grid">
-                <label><span>Agent</span>${picker('search-agents', 'Agents', agents,
-                    agentSel ? [...agentSel] : null, 'Only sessions owned by the selected agents.', fileScope)}</label>
-                <label><span>Engine</span>${picker('f-engines', 'Engines', facets.engines.map(e => ({ v: e, t: window.AFEngine.label(e) })),
-                    flt.engines, 'Which CLI wrote the transcript. Meaning search returns only sessions present in its current index.')}</label>
-                <label><span>Project</span>${picker('f-projects', 'Projects', facets.projects, flt.projects,
-                    'The project resolved for each individual session: explicit membership, code root, then agent default.')}</label>
-                <label><span>Model</span>${picker('f-models', 'Models', facets.models, flt.models,
-                    'A session appears under every model it used.')}</label>
-                <label class="session-filter"><span>Session id, title or path</span><input id="f-session" type="text" value="${C.esc(flt.session)}" placeholder="e.g. 6a87fbf8 or a title"></label>
+        return `<div class="fpanel" aria-label="Detailed session filters">
+            <div class="filter-row">
+                ${tip(`<input id="f-session" class="fbox" type="text" value="${C.esc(flt.session)}" placeholder="session id, title or path…">`,
+                    'Session', 'A full id, the eight-character prefix shown by Agent Farm, a transcript path, or part of a session title.')}
+                ${picker('f-engines', 'Engines', facets.engines.map(e => ({ v: e, t: window.AFEngine.label(e) })), flt.engines,
+                    'Which CLI wrote the transcript. Meaning search returns only sessions present in its current index.')}
+                ${picker('f-projects', 'Projects', facets.projects, flt.projects,
+                    'The project resolved for each individual session: explicit membership, code root, then agent default.')}
+                ${picker('f-models', 'Models', facets.models, flt.models, 'A session appears under every model it used.')}
             </div>
-            <button id="more-toggle" class="more-toggle" aria-expanded="${moreOpen}">More session filters ${moreOpen ? '▴' : '▾'}</button>
-            ${moreOpen ? `<div class="more-grid">
-                <fieldset><legend>Started by</legend>
-                    <button data-origin="" class="seg${!flt.origin ? ' on' : ''}">All</button><button data-origin="user" class="seg${flt.origin === 'user' ? ' on' : ''}">You</button><button data-origin="auto" class="seg${flt.origin === 'auto' ? ' on' : ''}">Automation</button>
-                </fieldset>
-                <fieldset><legend>Lane</legend>
-                    <button data-lane="" class="seg${!flt.lane ? ' on' : ''}">All</button><button data-lane="main" class="seg${flt.lane === 'main' ? ' on' : ''}">Main</button><button data-lane="sub" class="seg${flt.lane === 'sub' ? ' on' : ''}">Sub-agent</button>
-                </fieldset>
-                ${choice('data-flag="pinnedOnly"', '★', 'Pinned only', 'Only sessions on your shelf', flt.pinnedOnly)}
-                ${choice('data-flag="errorsOnly"', '⚠', 'Has errors', 'Only sessions with tool errors', flt.errorsOnly)}
-                <label class="date-range${meaning ? ' unavailable' : ''}"><span>Message date</span><input id="f-from" type="date" value="${C.esc(flt.from)}"${meaning ? ' disabled' : ''}><span>to</span><input id="f-to" type="date" value="${C.esc(flt.to)}"${meaning ? ' disabled' : ''}></label>
-                <label><span>Order results</span><select id="f-sort">${SORTS.map(s => `<option value="${s.id}"${flt.sort === s.id ? ' selected' : ''}>${s.label}</option>`).join('')}</select></label>
-            </div>` : ''}
+            <div class="chiprow detail-row">
+                <span class="control-label">Started</span>
+                <span class="seg">${badge('data-origin=""', 'All', !flt.origin)}${badge('data-origin="user"', 'You', flt.origin === 'user')}${badge('data-origin="auto"', 'Automation', flt.origin === 'auto')}</span>
+                <span class="control-label">Lane</span>
+                <span class="seg">${badge('data-lane=""', 'All', !flt.lane)}${badge('data-lane="main"', 'Main', flt.lane === 'main')}${badge('data-lane="sub"', 'Sub-agent', flt.lane === 'sub')}</span>
+                ${tip(badge('data-flag="pinnedOnly"', '★ Pinned', flt.pinnedOnly), 'Pinned only', 'Only sessions on your shelf.')}
+                ${tip(badge('data-flag="errorsOnly"', '⚠ Errors', flt.errorsOnly), 'Has errors', 'Only sessions with at least one tool error.')}
+                <span class="date-range${meaning ? ' unavailable' : ''}"><span>When</span><input id="f-from" type="date" value="${C.esc(flt.from)}"${meaning ? ' disabled' : ''}><span>–</span><input id="f-to" type="date" value="${C.esc(flt.to)}"${meaning ? ' disabled' : ''}></span>
+                <label class="sortbox"><span>Sort</span><select id="f-sort">${SORTS.map(s => `<option value="${s.id}"${flt.sort === s.id ? ' selected' : ''}>${s.label}</option>`).join('')}</select></label>
+                <span class="grow"></span><button id="clear-filters" class="text-action"${activeFilterCount() ? '' : ' disabled'}>Clear details</button>
+            </div>
+        </div>`;
+    }
+
+    function controlsHtml() {
+        const exact = mode !== 'meaning';
+        const unavailable = mode === 'meaning';
+        const fileScope = !!(preset && preset.file);
+        const agents = facets.agents.length ? facets.agents : (DATA.agents || []);
+        const queryTip = mode === 'text'
+            ? window.AFQuery.tip('Searches only the content and sessions selected below.', { wholeWord: wholeOn })
+            : mode === 'regex'
+                ? 'This is passed to JavaScript RegExp. Query-language operators do not apply. Unsafe patterns are stopped after ten seconds.'
+                : 'Finds similar passages in the semantic index. This covers indexed main-session conversation only; tool traffic, memory, events, message dates and non-indexed engines are not searched.';
+        const interaction = 'Click to add or remove a kind. Ctrl-click (⌘ on Mac) keeps only that kind.';
+        return `<section class="search-panel">
+            <div class="query-row">
+                ${tip(`<input id="q" type="text" value="${C.esc(queryText)}"
+                    placeholder="${mode === 'meaning' ? 'Describe the idea or discussion…' : 'Words, phrase, path, error or session id…'}"
+                    aria-label="Search query" autofocus>`, 'How this query is read', queryTip, 'query-tip')}
+                <button id="go" class="primary-search">${searching ? 'Searching…' : 'Search'}</button>
+            </div>
+            <div class="chiprow mode-row">
+                <span class="control-label">Mode</span>${modeHtml()}
+                ${tip(badge('data-query-option="case"', 'Aa Case', caseOn, !exact), 'Match case', 'Agent and agent become different.')}
+                ${tip(badge('data-query-option="whole"', '▣ Whole word', wholeOn, mode !== 'text'), 'Whole words', 'A bare word must match as a whole word: log no longer finds dialogue.')}
+                <button id="guide-toggle" class="text-action" aria-expanded="${guideOpen}">Syntax ${guideOpen ? '▴' : '▾'}</button>
+                <span class="grow"></span>${scopeHtml()}
+                ${picker('search-agents', 'Agents', agents, agentSel ? [...agentSel] : null,
+                    'Which agents own the sessions to search.', fileScope)}
+            </div>
+            <div class="chiprow scope-row${unavailable ? ' unavailable' : ''}" aria-disabled="${unavailable}">
+                <span class="control-label">Search in</span>
+                ${PRESETS.map(p => tip(badge(`data-preset="${p.id}"`, p.label, sameSet(p.roles), unavailable), p.label,
+                    `${p.roles.map(id => ROLES.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}.`)).join('')}
+                <span class="chipsep"></span>
+                ${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}
+                <span class="chipsep"></span>
+                ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
+                ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
+                <span class="grow"></span>
+                ${tip(badge(`id="more-toggle" aria-expanded="${moreOpen}"`, `⚙ Filters${activeFilterCount() ? ` (${activeFilterCount()})` : ''} ${moreOpen ? '▴' : '▾'}`, moreOpen || activeFilterCount() > 0),
+                    'Session filters', 'Open the engine, project, model, origin, lane, status, session-id, date and sort controls.', 'tip-right')}
+            </div>
+            ${unavailable ? `<div class="meaning-line"><b>Meaning:</b> indexed main-session conversation only; content badges, memory/events and message dates do not apply. <span id="sem-status">${semanticStatusHtml()}</span></div>` : ''}
+            ${filterPanelHtml()}
+            ${guideOpen ? guideHtml() : ''}
             ${dirty ? '<div class="dirty-note">The search definition changed. Run Search to refresh the answer.</div>' : ''}
         </section>`;
     }
 
     function styleHtml() {
         return `<style>
-            #app{max-width:1180px;margin:0 auto}.search-compose,.workspace-section{margin-top:12px;padding:18px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px;background:var(--vscode-editorWidget-background,var(--vscode-editor-background));box-shadow:0 1px 0 #0001}
-            .section-kicker{text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:700;color:var(--vscode-textLink-foreground);margin-bottom:6px}.compose-head,.section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.compose-head h2,.section-title h2{font-size:17px;margin:0}.compose-head p,.section-title p{margin:4px 0 0;color:var(--vscode-descriptionForeground);font-size:12px}.modebar,.presetbar{display:flex;gap:2px;padding:3px;border-radius:7px;background:color-mix(in srgb,var(--vscode-foreground) 7%,transparent)}
-            .mode,.preset,.seg{border:1px solid transparent;background:transparent;color:inherit;padding:5px 10px;border-radius:5px;font-size:12px}.mode.on,.preset.on,.seg.on{border-color:var(--vscode-focusBorder);background:color-mix(in srgb,var(--vscode-button-background) 28%,transparent);font-weight:600}.mode span{margin-right:5px}.query-row{display:flex;gap:8px;margin-top:14px}.query-tip{display:block;flex:1}.query-tip>input{box-sizing:border-box;width:100%;font-size:15px;padding:10px 12px}.primary-search{min-width:112px;font-weight:650}.query-options{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}.grow{flex:1}.scope-note{font-size:11px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:11px;border:1px solid var(--vscode-focusBorder);border-radius:14px;padding:3px 5px 3px 10px}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 4px}.text-action,.more-toggle{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:4px;cursor:pointer}.text-action:disabled{opacity:.35;cursor:default}
-            .choice-grid{display:grid;gap:8px;margin-top:12px}.choice-grid.roles{grid-template-columns:repeat(3,minmax(190px,1fr))}.choice{position:relative;display:flex;gap:9px;align-items:center;min-height:52px;text-align:left;color:inherit;background:transparent;border:1px solid var(--vscode-widget-border,#5558);border-radius:8px;padding:8px 10px;opacity:.78}.choice:hover:not(:disabled){background:var(--vscode-list-hoverBackground);opacity:1}.choice.on{opacity:1;border-color:var(--vscode-focusBorder);background:color-mix(in srgb,var(--vscode-button-background) 20%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 45%,transparent)}.choice-mark{position:absolute;right:7px;top:5px;width:16px;height:16px;border-radius:50%;font-size:11px;line-height:16px;text-align:center;background:var(--vscode-button-background);color:var(--vscode-button-foreground)}.choice:not(.on) .choice-mark{border:1px solid var(--vscode-widget-border,#7777);background:transparent}.choice-icon{font-size:17px}.choice small{display:block;margin-top:3px;color:var(--vscode-descriptionForeground);font-size:10px;font-weight:400}.choice.disabled,.unavailable .choice{opacity:.35}.source-row{display:flex;align-items:center;gap:8px;margin-top:10px}.source-row>span{font-size:11px;color:var(--vscode-descriptionForeground);margin-right:4px}.source-row .choice{flex:1;min-height:46px}.unavailable{position:relative;opacity:.52}.mode-notice,.dirty-note{margin-top:10px;padding:9px 11px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 10%,transparent);font-size:12px}.mode-notice #sem-status{display:block;margin-top:5px;color:var(--vscode-descriptionForeground)}
-            .filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:13px}.filter-grid label,.more-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--vscode-descriptionForeground)}.filter-grid .afms,.filter-grid .af-tipw,.filter-grid .afms-btn{display:block;width:100%;box-sizing:border-box}.filter-grid .afms-btn{text-align:left}.session-filter{grid-column:span 4}.more-toggle{margin-top:10px;padding-left:0}.more-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end;padding-top:10px;border-top:1px solid var(--vscode-widget-border,#5555)}.more-grid fieldset{border:0;padding:0;margin:0}.more-grid legend{font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:5px}.date-range{grid-column:span 2;display:flex!important;flex-direction:row!important;align-items:center}.date-range>span:first-child{margin-right:5px}.guide{margin-top:10px;padding:10px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;max-height:320px;overflow:auto}.guide table{font-size:12px;width:100%}.guide p{font-size:11px;color:var(--vscode-descriptionForeground)}
-            .results-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.metric{padding:10px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px}.metric b{display:block;font-size:18px}.metric span{font-size:10px;color:var(--vscode-descriptionForeground)}.partial{padding:9px 11px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 10%,transparent);margin-bottom:10px}.sessgroup{margin-bottom:10px;border:1px solid var(--vscode-widget-border,#5555);border-radius:8px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:9px 11px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:8px 11px 8px 18px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:4px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:7px 11px 2px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:12px 0;padding:9px 11px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:18px 0 7px;font-weight:650}.empty{padding:24px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}
-            @media(max-width:780px){.compose-head,.section-title{display:block}.modebar,.presetbar{margin-top:10px}.choice-grid.roles,.filter-grid,.more-grid{grid-template-columns:1fr 1fr}.session-filter{grid-column:span 2}.results-summary{grid-template-columns:1fr 1fr}}
+            #app{max-width:1180px;margin:0 auto}.search-panel{margin-top:10px;padding:10px 12px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;background:var(--vscode-editorWidget-background,var(--vscode-editor-background))}
+            .query-row{display:flex;gap:7px}.query-tip{display:block;flex:1}.query-tip>input{box-sizing:border-box;width:100%;font-size:14px;padding:7px 9px}.primary-search{min-width:92px;font-weight:650}.chiprow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:7px}.control-label{font-size:10px;color:var(--vscode-descriptionForeground);white-space:nowrap}.grow{flex:1}.chipsep{width:1px;height:18px;margin:0 2px;background:var(--vscode-widget-border,#5555)}
+            .chip{font-size:11px;line-height:17px;padding:1px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.78;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-button-foreground);background:var(--vscode-button-background);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent);font-weight:600}.chip-check{margin-right:3px}.chip.disabled,.unavailable .chip:not(#more-toggle){opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.mode-row .afms-btn{font-size:11px;padding:2px 8px}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}
+            .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.filter-row>.af-tipw:first-child{flex:1;min-width:210px}.fbox{box-sizing:border-box;width:100%;font-size:11px;padding:3px 6px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-row.unavailable>.control-label,.scope-row.unavailable>.chipsep{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:280px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;color:var(--vscode-descriptionForeground)}
+            .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}
+            @media(max-width:780px){.chipsep{display:none}.filter-row>.af-tipw:first-child{min-width:100%;flex-basis:100%}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
         </style>`;
     }
 
@@ -215,7 +204,7 @@
             page: 'search', title: 'Search',
             sub: 'Find the exact conversation, action or session across the fleet.', refresh: false,
             guide: 'transcript-arama'
-        })}${queryHtml()}${contentHtml()}${filtersHtml()}<div id="out"></div>`;
+        })}${controlsHtml()}<div id="out"></div>`;
         window.AFHeader.wire(vscode);
         wire();
         renderResults();
@@ -295,8 +284,10 @@
         wirePicker('f-projects', sel => { flt.projects = sel; });
         wirePicker('f-models', sel => { flt.models = sel; });
         const sf = document.getElementById('f-session');
-        window.AFFilter.live(sf, el => { flt.session = el.value; changed(true); }, 300);
-        window.AFFilter.clearable(sf, el => { flt.session = ''; el.value = ''; changed(true); });
+        if (sf) {
+            window.AFFilter.live(sf, el => { flt.session = el.value; changed(true); }, 300);
+            window.AFFilter.clearable(sf, el => { flt.session = ''; el.value = ''; changed(true); });
+        }
         document.getElementById('more-toggle').addEventListener('click', () => { moreOpen = !moreOpen; changed(false); });
         const clear = document.getElementById('clear-filters');
         if (clear && !clear.disabled) clear.addEventListener('click', () => {
@@ -348,9 +339,9 @@
         const found = Number.isFinite(r.matchesFound) ? r.matchesFound : r.hits.length;
         const shown = Number.isFinite(r.matchesShown) ? r.matchesShown : r.hits.length;
         const matched = Number.isFinite(r.sessionsMatched) ? r.sessionsMatched : new Set(r.hits.filter(h => !h.kind).map(h => h.file)).size;
-        let html = `${idHtml()}<div class="results-summary">
-            <div class="metric"><b>${found}</b><span>matches found</span></div><div class="metric"><b>${shown}</b><span>previews shown</span></div>
-            <div class="metric"><b>${matched}</b><span>sessions matched</span></div><div class="metric"><b>${r.filesScanned}</b><span>sessions scanned</span></div></div>`;
+        let html = `${idHtml()}<div class="resultsbar">
+            <span><b>${found}</b>matches</span><span><b>${shown}</b>previews</span>
+            <span><b>${matched}</b>sessions</span><span><b>${r.filesScanned}</b>scanned</span></div>`;
         if (r.omittedMatches || r.timedOut || r.parseFailures) {
             html += `<div class="partial"><b>Coverage note.</b> ${r.omittedMatches ? `${r.omittedMatches} additional matches are counted but not previewed. ` : ''}${r.timedOut ? 'The time budget ended the scan early. ' : ''}${r.parseFailures ? `${r.parseFailures} transcript(s) could not be read.` : ''}</div>`;
         }
