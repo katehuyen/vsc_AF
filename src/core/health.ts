@@ -23,6 +23,23 @@ export interface Insight {
     guideAnchor: string;
     /** D2: clicking a suggestion insight opens the review flow for this suggestion. */
     suggestionId?: string;
+    /**
+     * ‼️ WHAT THIS FINDING COULD NOT SEE — a FIELD, not a tail on the message.
+     *
+     * The scope sentence started life glued onto `message`, which works on the
+     * two fleet rows it was written for and falls apart the moment every
+     * finding of an agent carries it: the agent page draws its findings as a
+     * table, so the same 250-character paragraph would be repeated down eight
+     * rows, and the sidebar would spend a row's whole width on a sentence
+     * before reaching the finding. Kept apart, each surface can put it where it
+     * belongs — the tree hover, once above a table — and the finding itself
+     * stays the thing you read first.
+     *
+     * Identical for every finding of one agent BY DESIGN: the surfaces above
+     * de-duplicate on the string, so the subject stays neutral rather than
+     * naming each measurement.
+     */
+    scope?: string;
 }
 
 export interface HealthConfig {
@@ -84,6 +101,26 @@ export function buildInsights(
 ): Insight[] {
     const insights: Insight[] = [];
     const now = Date.now();
+
+    /**
+     * ‼️ AN AGENT ROW OWES THE SAME SENTENCE THE FLEET ROW DOES (X-35).
+     *
+     * The scope note was put on the fleet findings "where the claim is widest"
+     * and that reasoning has a hole in it: the fleet row is read by somebody
+     * looking at the farm, while the row that actually gets acted on is the
+     * agent's — "this agent had 9 sessions this week and never read DUTIES.md",
+     * "this MCP server went unused for 30 days". Every one of those counts is
+     * measured off Claude's transcript format, so for an agent that has moved
+     * to Codex the finding is drawn from a fraction of its work and reads as a
+     * statement about all of it. That is not a wider claim than the fleet's; it
+     * is a narrower one that is wrong more often.
+     *
+     * The note appears only when THIS agent actually has foreign sessions, so
+     * a Claude-only farm sees nothing new — an unconditional disclaimer is
+     * noise, and noise is how a real warning stops being read.
+     */
+    const agentScope = (agentId: string): string | undefined =>
+        claudeOnlyScopeNote(index.externalForAgent(agentId), 'This figure') || undefined;
 
     for (const agent of agents) {
         // 1) Fixed context load budget
@@ -324,6 +361,7 @@ export function buildInsights(
                 agentName: agent.name,
                 category: 'error-rate',
                 message: `High tool error rate over last 7 days: ${errors}/${toolCalls} (${Math.round(100 * errors / toolCalls)}%).`,
+                scope: agentScope(agent.id),
                 guideAnchor: 'saglik-hata-orani'
             });
         }
@@ -350,6 +388,10 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'guardrail',
                     message: f.message,
+                    // The lint's "nobody used this permission" half is counted
+                    // off Claude transcripts; the rule-shape half is not. One
+                    // note covers the finding rather than splitting the lint.
+                    scope: agentScope(agent.id),
                     filePath: agent.settingsPath,
                     guideAnchor: 'guardrail-denetcisi'
                 });
@@ -407,6 +449,7 @@ export function buildInsights(
                             agentName: agent.name,
                             category: 'mcp',
                             message: `MCP server "${server.name}" is defined but unused in the last 30 days — consider removing it (it may still cost startup time/context).`,
+                            scope: agentScope(agent.id),
                             filePath: server.source,
                             guideAnchor: 'mcp-yonetimi'
                         });
@@ -441,6 +484,7 @@ export function buildInsights(
                         agentName: agent.name,
                         category: 'skills',
                         message: `Skill "${skill.name}" was not invoked in the last 30 days — its description still rides along in every session; remove or merge it if it earns nothing.`,
+                        scope: agentScope(agent.id),
                         filePath: skill.source,
                         guideAnchor: 'skill-yonetimi'
                     });
@@ -480,6 +524,7 @@ export function buildInsights(
                 agentName: agent.name,
                 category: 'duties',
                 message: `Agent had ${recent.length} session(s) this week but never read DUTIES.md — its ${activeDuties.length} standing duties may be ignored.`,
+                scope: agentScope(agent.id),
                 filePath: agent.claudeMdPath ?? agent.dutiesPath,
                 guideAnchor: 'nobet-gorevleri'
             });
@@ -496,11 +541,10 @@ export function buildInsights(
      * averaging its honest zero into a trend would make the farm look like it
      * halved its spend the week it started using Codex. The defect was the
      * LABEL: an insight signed "fleet" over a figure that silently dropped
-     * three engines. The per-agent rows say the same thing for the same reason,
-     * so the note rides on the fleet rows where the claim is widest.
+     * three engines. The per-agent rows carry `agentScope` above for the same
+     * reason, counted over that agent's own foreign sessions.
      */
-    const excludedNote = claudeOnlyScopeNote(index.external(), 'This figure');
-    const fleetTail = excludedNote ? ` ${excludedNote}` : '';
+    const fleetScope = claudeOnlyScopeNote(index.external(), 'This figure') || undefined;
 
     if (trendFactor > 0) {
         const week = 7 * 24 * 3600 * 1000;
@@ -515,8 +559,8 @@ export function buildInsights(
                     agentId,
                     agentName: label,
                     category: 'trend',
-                    message: `Weekly cost trend: ${fmtUSD(current)} this week vs ${fmtUSD(previous)} last week (${(current / previous).toFixed(1)}x).`
-                        + (agentId ? '' : fleetTail),
+                    message: `Weekly cost trend: ${fmtUSD(current)} this week vs ${fmtUSD(previous)} last week (${(current / previous).toFixed(1)}x).`,
+                    scope: agentId ? agentScope(agentId) : fleetScope,
                     guideAnchor: 'trend-uyarilari'
                 });
             }
@@ -542,8 +586,8 @@ export function buildInsights(
                     agentId,
                     agentName: label,
                     category: 'cost-anomaly',
-                    message: `Cost anomaly: ${fmtUSD(anomaly.todayCost)} today is ${anomaly.factor.toFixed(1)}x the 14-day median (${fmtUSD(anomaly.median)}) — see the Cost Anomaly Report.`
-                        + (agentId ? '' : fleetTail),
+                    message: `Cost anomaly: ${fmtUSD(anomaly.todayCost)} today is ${anomaly.factor.toFixed(1)}x the 14-day median (${fmtUSD(anomaly.median)}) — see the Cost Anomaly Report.`,
+                    scope: agentId ? agentScope(agentId) : fleetScope,
                     guideAnchor: 'maliyet-anomalisi'
                 });
             }
@@ -577,6 +621,7 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'quality',
                     message: `Quality trend declining: ${cur.avg.toFixed(1)}/5 this week vs ${prev.avg.toFixed(1)}/5 last week (${cur.count} samples).`,
+                    scope: agentScope(agent.id),
                     guideAnchor: 'kalite-karnesi'
                 });
                 continue;
@@ -589,6 +634,7 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'quality',
                     message: `Low output quality: ${recent.avg.toFixed(1)}/5 average over ${recent.count} sampled sessions — review the agent's instructions.`,
+                    scope: agentScope(agent.id),
                     guideAnchor: 'kalite-karnesi'
                 });
             }
@@ -627,8 +673,8 @@ export function buildInsights(
                     agentId: agent?.id,
                     agentName: label,
                     category: 'budget',
-                    message: `Daily budget exceeded: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`
-                        + (agent ? '' : fleetTail),
+                    message: `Daily budget exceeded: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    scope: agent ? agentScope(agent.id) : fleetScope,
                     guideAnchor: 'butce-uyarilari'
                 });
             } else if (cost >= 0.8 * limit) {
@@ -637,8 +683,8 @@ export function buildInsights(
                     agentId: agent?.id,
                     agentName: label,
                     category: 'budget',
-                    message: `Approaching daily budget: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`
-                        + (agent ? '' : fleetTail),
+                    message: `Approaching daily budget: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    scope: agent ? agentScope(agent.id) : fleetScope,
                     guideAnchor: 'butce-uyarilari'
                 });
             }

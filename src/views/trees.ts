@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, FileMeta } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
-import { ENGINE_LABELS } from '../core/engines';
+import { engineOf, noTranscriptNote } from '../core/consoleEngine';
+import { ENGINE_LABELS, engineSpread } from '../core/engines';
 import { indexedMemoryNames, memoryLastUsed, memoryUsage, readMemoryFrontmatter } from '../core/memusage';
 import { Insight } from '../core/health';
 import { FIX_COMMANDS, insightKey } from '../core/insightops';
@@ -50,6 +51,10 @@ export type AgentNode =
     | { kind: 'session'; session: SessionInfo };
 
 const MCP_USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
+
+/** How many session rows hang under an agent's Sessions header. The header
+ *  states the cut, so this number is never silently applied. */
+const SESSIONS_CHILD_N = 15;
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
     private emitter = new vscode.EventEmitter<void>();
@@ -152,7 +157,28 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 case 'sessions': {
                     const item = new vscode.TreeItem('Sessions', vscode.TreeItemCollapsibleState.Collapsed);
                     item.iconPath = new vscode.ThemeIcon('history');
-                    item.description = String(this.state.index.forAgent(agent.id).length);
+                    /**
+                     * ‼️ THE HEADER COUNTS WHAT THE LIST SHOWS (X-35).
+                     *
+                     * It read `forAgent()` — Claude-only, and sidechains
+                     * included — while the children below are top-level Claude
+                     * PLUS every foreign engine. So the number on the header and
+                     * the rows under it were answers to two different questions,
+                     * and on an agent that had moved to Codex the header could
+                     * read a figure the list plainly contradicted. Both sides
+                     * now come from one helper, so they cannot drift again; the
+                     * cut is stated rather than hidden, because a bare "42" over
+                     * fifteen rows is its own small lie.
+                     */
+                    const listed = this.sessionsUnder(agent.id);
+                    item.description = listed.length > SESSIONS_CHILD_N
+                        ? `${SESSIONS_CHILD_N} of ${listed.length}`
+                        : String(listed.length);
+                    const spread = engineSpread(listed);
+                    item.tooltip = `Sessions: ${listed.length}` +
+                        (listed.length > SESSIONS_CHILD_N ? ` • listed here: ${SESSIONS_CHILD_N} most recent` : '') +
+                        (spread ? `\nEngines: ${spread}` : '') +
+                        '\nEvery engine this agent ran on is listed — money and token figures elsewhere are Claude-only.';
                     return item;
                 }
                 case 'mcp': {
@@ -398,12 +424,8 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             }
             if (node.section === 'sessions') {
                 // E3: external-CLI sessions interleave by recency, badge'd in the item.
-                return [
-                    ...this.state.index.forAgent(node.agent.id).filter(s => !s.parentSessionId),
-                    ...this.state.index.externalForAgent(node.agent.id)
-                ]
-                    .sort((a, b) => b.mtime - a.mtime)
-                    .slice(0, 15)
+                return this.sessionsUnder(node.agent.id)
+                    .slice(0, SESSIONS_CHILD_N)
                     .map(session => ({ kind: 'session' as const, session }));
             }
         }
@@ -413,6 +435,15 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 .map(session => ({ kind: 'session' as const, session }));
         }
         return [];
+    }
+
+    /** The agent's session rows, newest first — the ONE list the header counts
+     *  and the children are cut from. Every engine, top-level only. */
+    private sessionsUnder(agentId: string): SessionInfo[] {
+        return [
+            ...this.state.index.forAgent(agentId).filter(s => !s.parentSessionId),
+            ...this.state.index.externalForAgent(agentId)
+        ].sort((a, b) => b.mtime - a.mtime);
     }
 
     private todayCost(agentId: string): number {
@@ -436,32 +467,23 @@ function openFileCommand(p: string): vscode.Command {
     };
 }
 
+/**
+ * ‼️ ONE ROW SHAPE FOR EVERY ENGINE (X-35).
+ *
+ * A foreign session used to take a separate branch here: a `session-external`
+ * context value that no menu matches, a click that dumped raw JSONL into an
+ * editor, and the engine printed as its bare id (`codex`). That bypass was
+ * written when nothing else worked — and every one of its reasons has since
+ * gone. The viewer parses Codex, Gemini and Agent Farm's own Antigravity
+ * transcripts (`parseCliViewer`); Resume asks the engine before it opens a
+ * terminal and says so when the answer is no; rename, pin and tag reach the
+ * side list; and a click with nothing to open explains why in that engine's own
+ * terms. Keeping it meant the sidebar was the last surface where a Codex
+ * conversation was second class, so it is gone. Every row is built below, and
+ * the differences that are REAL fall out of the row's own facts: no cwd → not
+ * resumable, no file → the click explains instead of opening.
+ */
 function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean): vscode.TreeItem {
-    // E3: external-CLI sessions bypass the claude viewer and the
-    // rename/delete/resume menus. With a transcript on disk (E3b codex/gemini)
-    // the click opens the raw file; live-event lanes open the Live Timeline.
-    if (s.source) {
-        const item = new vscode.TreeItem(s.title, vscode.TreeItemCollapsibleState.None);
-        item.contextValue = 'session-external';
-        item.iconPath = new vscode.ThemeIcon('terminal');
-        const parts: string[] = [];
-        if (showAgent && s.agentName) { parts.push(s.agentName); }
-        parts.push(s.source);
-        if (s.cost > 0) { parts.push(fmtUSD(s.cost)); }
-        parts.push(relTime(s.mtime));
-        item.description = parts.join(' • ');
-        item.tooltip = `${s.title}\nexternal CLI session (${s.source})` +
-            (s.models.length ? `\n${s.models.join(', ')}` : '') +
-            `\n${s.userTurns} prompts • ${s.toolCalls} tool calls` +
-            (s.file
-                ? `\n${totalTokens(s.usage) ? `~${fmtTokens(totalTokens(s.usage))} tokens • ⚖ ${fmtTokens(Math.round(s.wTokens))} • ` : ''}` +
-                  `cost ${s.cost > 0 ? fmtUSD(s.cost) : '$0 (add an agentFarm.pricing rule for this model)'}`
-                : '\nfrom live events — no transcript, cost not tracked');
-        item.command = s.file
-            ? { command: 'vscode.open', title: 'Open Raw Transcript', arguments: [vscode.Uri.file(s.file)] }
-            : { command: 'agentfarm.openTimeline', title: 'Open Timeline' };
-        return item;
-    }
     // G6: nested subagent transcripts hang under their parent with a cost rollup.
     const children = index.childrenOf(s.sessionId);
     const item = new vscode.TreeItem(s.title, children.length
@@ -508,6 +530,18 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         rollupLine = `\nSubagents: ${roll.count} • tree total ${fmtUSD(s.cost + roll.cost)} (self ${fmtUSD(s.cost)})`;
     }
     item.description = parts.join(' • ');
+    // What this row cost, said in the terms its engine actually reports. An
+    // engine on a plan states no price, and "$0.00" on such a row reads as
+    // "this was free" rather than "nobody is billing per token here".
+    const spec = engineOf(s.source);
+    const tok = totalTokens(s.usage);
+    const moneyLine = s.cost > 0
+        ? `\nCost: ${fmtUSD(s.cost)}${tok ? ` • ~${fmtTokens(tok)} tokens • ⚖ ${fmtTokens(Math.round(s.wTokens))}` : ''}`
+        : tok
+            ? `\n~${fmtTokens(tok)} tokens • ${spec.reportsCost
+                ? 'no cost yet (add an agentFarm.pricing rule for this model)'
+                : `${spec.label} reports no price — it is billed by plan`}`
+            : '';
     item.tooltip = `${s.title}` +
         // a launch name / rename replaces the derived title in the label —
         // keep what the conversation itself suggests visible here
@@ -516,12 +550,20 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         // that answers unconditionally, which is what lets the line above show
         // it only for the exception.
         `\nEngine: ${ENGINE_LABELS[s.source ?? ''] ?? s.source ?? ENGINE_LABELS['']}` +
-        `\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` +
+        (s.models.length ? `\n${s.models.join(', ')}` : '') +
+        `\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` + moneyLine +
+        (s.file ? '' : `\n${noTranscriptNote(s.source)}`) +
         (s.lastCtxTokens ? `\nContext now: ~${fmtTokens(s.lastCtxTokens)} tokens` : '') + rollupLine;
     item.command = {
         command: 'agentfarm.openSession',
         title: 'Open Session',
-        arguments: [s.file]
+        // A REF, not a bare path: a row whose engine keeps no readable
+        // transcript has no path to hand over, and the command needs the
+        // session to name the engine in its refusal.
+        arguments: [{
+            sessionId: s.sessionId, file: s.file, title: s.title,
+            cwd: s.cwd, agentName: s.agentName
+        }]
     };
     return item;
 }
@@ -589,6 +631,10 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
         const broke = rec?.regressedAt ? ' ⚠back' : '';
         item.description = `${ins.agentName} • ${ins.category}${repeat}${broke}`;
         item.tooltip = `${ins.message}` + (hist ? `\n\n${hist}` : '')
+            // What the finding could not see. It belongs in the hover and not
+            // in the label: a row is one line wide, and a sentence this long in
+            // front of the finding would push the finding off the end of it.
+            + (ins.scope ? `\n\nScope: ${ins.scope}` : '')
             + `\n\nActions (hover / right-click): `
             + `${FIX_COMMANDS[ins.category] ? 'Fix · ' : ''}Delegate to Agent · Dismiss`;
         item.contextValue = ins.suggestionId ? 'insight-suggestion'

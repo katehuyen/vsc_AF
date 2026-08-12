@@ -2458,19 +2458,22 @@ Artık iki ayrı ve bilinçli yol var. **Claude Code · Codex · Gemini · Antig
 
 Antigravity masaüstü uygulaması hâlâ ayrı bir editördür. Senkron onun workspace dosyalarını hazırlar; birinci sınıf `agy` entegrasyonu ise Agent Farm'ın barındırabildiği CLI yoludur. Birbirlerinin yerine geçen iki ad değil, birbirini tamamlayan iki yoldur.
 
-### Kapsam ve dürüst sınırlar (3.119.0)
+### Kapsam ve dürüst sınırlar (3.120.0)
 
 Oturum indeksinin bilinçli olarak iki yarısı vardır. `all()` / `forAgent()` **Claude biçimindeki ölçüm kümesidir**; `allWithExternal()` / `forAgentWithExternal()` ise **eksiksiz kayıttır**. Kayıt yüzeyi her motoru listeler. Analitik yalnız gerçekten ölçebildiği biçimde kalır ve dışarıda bıraktığını söyler. İkisini karıştırmak ya konuşmaları gizler ya da dürüst sıfırları gerçek görünen ortalamalara katar.
 
 | Yüzey / olgu | Kapsam |
 | --- | --- |
-| Sessions tabloları, ajan oturum günlüğü, Console devam/geçmiş, Text/Regex arama, Live Timeline, Portfolio etkinliği, Dashboard oturum sayıları, görev koşu geçmişi ve OTLP dışa aktarımı | Bütün motorlar; satırlar motor rozeti taşır. OTLP `gen_ai.system` yazar. |
-| Turns | Claude ve Codex gerçek tur satırlarına sahiptir; tablo motoru açıkça belirtir. |
+| Sessions tabloları, kenar çubuğunun ajan başına oturum listesi ve başlık sayacı, ajan oturum günlüğü, Console devam/geçmiş, Text/Regex arama, Live Timeline, Portfolio etkinliği, Dashboard oturum sayıları, oturum rafı, filo durumu panosunun son oturum listesi, proje oturum listeleri, görev koşu geçmişi ve OTLP dışa aktarımı | Bütün motorlar; satırlar motor rozeti taşır. OTLP `gen_ai.system` yazar. |
+| Turns — tablo, satırın açılan içeriği ve Markdown aktarımı, ayrıca `turns.list` op'u | Claude ve Codex gerçek tur satırlarına sahiptir; tablo motoru açıkça belirtir ve arkasındaki her adım aynı havuzu okur. |
+| “Bu ajan şu anda çalışıyor mu” (kenar çubuğu noktası, Portfolio, Dashboard kartı, durum çubuğu, `agents.list`) | Bütün motorlar. Canlılık bir zaman damgasıdır; her motorun satırı onu dürüstçe taşır. |
 | Meaning araması | Yalnız Claude Code transkript indeksi; kip ve indeks durumu dışarıda kalan diğer-motor oturum sayısını söyler. |
-| Maliyet/cache/context sağlığı, kalite, skill/MCP/hafıza kullanımı ve nöbet uyumu | Claude Code transkript analitiği. Filo raporları ve maliyet uyarıları yabancı oturumları sahte ortalamaya katmak yerine dışlamayı açıkça söyler. |
+| Maliyet/cache/context sağlığı, kalite, skill/MCP/hafıza kullanımı ve nöbet uyumu | Claude Code transkript analitiği. Filo **ve ajan** bulguları, Cost Anomaly Report ve maliyet uyarıları yabancı oturumları sahte ortalamaya katmak yerine dışlamayı açıkça söyler — tek bir ifadeyle, `claudeOnlyScopeNote`'tan, bulgunun `scope` alanında taşınır; böylece her yüzey onu doğru yere koyar (kenar çubuğu hover'da, ajan sayfası tablosunun üstünde bir kez). |
 | Plan limitleri | Motor başına: Claude OAuth endpoint'i, Codex'in kayıtlı rate-limit bloğu ve ölçülebilir veri yoksa açık “yayınlanmıyor / plan yok” cevabı. Eksik hiçbir zaman %0 demek değildir. |
 
 Aynı kural köşelere de ulaştı: rename her motorda yeniden taramadan sonra korunur; Resume bir Codex kimliğini Claude'a vermek yerine kayıtlı motoru açar; “Open transcript” ve “Copy transcript path” kalıcı olarak okunamayan Antigravity protobuf deposunu açıklar; `includeUnmatchedProjects` anahtarı her motoru yönetir; çakışan canlı kulvar ve transkript kayıtlarında zengin transkript kazanır.
+
+**Kenar çubuğunda yabancı satır için ayrı bir yol yoktur.** Her oturum satırını tek bir kurucu çizer: aynı sağ tık menüsü, aynı görüntüleyici ve motorun kendi olgularından doğan retler — çalışma klasörü yoksa devam ettirilemez, okunabilir transkript yoksa tıklama boş bir düzenleyici açmak yerine nedenini o motorun diliyle söyler.
 
 Codex kullanımı kümülatif sayaç olarak ele alınır: her tur önceki toplamdan farkı yayımlar, `reasoning_output_tokens` zaten output'un içindedir ve context göstergesi rollout'un kaydettiği pencereyi kullanır. Görev koşusu yalnız kendi motorundaki oturumla eşleşir. Claude API karşılığı dolar gösterebilir; planla faturalı motor gerçekten bildirdiği token'ı gösterir ve yanıltıcı `$0.00` yazmaz.
 

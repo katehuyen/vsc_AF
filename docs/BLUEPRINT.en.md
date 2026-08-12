@@ -2417,19 +2417,22 @@ There are two deliberately different paths. **Claude Code · Codex · Gemini · 
 
 The Antigravity desktop application is still a separate editor. The sync prepares its workspace files; the first-class `agy` integration is the CLI path Agent Farm can host. These are complementary, not two names for the same launch.
 
-### Coverage and honest boundaries (3.119.0)
+### Coverage and honest boundaries (3.120.0)
 
 The session index intentionally has two halves. `all()` / `forAgent()` are the **Claude-shaped measurement set**; `allWithExternal()` / `forAgentWithExternal()` are the **complete log**. A record surface must list every engine. An analytic stays on the format it can actually measure and says what it excludes. Mixing the two would either hide conversations or average honest zeroes into figures that then look real.
 
 | Surface / fact | Coverage |
 | --- | --- |
-| Sessions tables, agent session log, Console resume/history, Text/Regex search, Live Timeline, Portfolio activity, dashboard session counts, task-run history and OTLP export | Every engine; rows carry an engine badge. OTLP writes `gen_ai.system`. |
-| Turns | Claude and Codex have real per-turn rows; the table identifies the engine. |
+| Sessions tables, the sidebar's per-agent session list and its header count, agent session log, Console resume/history, Text/Regex search, Live Timeline, Portfolio activity, dashboard session counts, the session shelf, the farm-status board's recent list, project session lists, task-run history and OTLP export | Every engine; rows carry an engine badge. OTLP writes `gen_ai.system`. |
+| Turns — the table, a row's folded-open content and the Markdown export, plus the `turns.list` op | Claude and Codex have real per-turn rows; the table identifies the engine and every step behind it reads the same pool. |
+| “Is this agent active right now” (sidebar dot, portfolio, dashboard card, status bar, `agents.list`) | Every engine. Liveness is a timestamp, which every engine's rows carry honestly. |
 | Meaning search | Claude Code transcript index only; the mode and index status say how many other-engine sessions are outside it. |
-| Cost/cache/context health, quality, skill/MCP/memory use and duty compliance | Claude Code transcript analytics. Fleet reports and cost warnings state the exclusion instead of folding foreign sessions into a false average. |
+| Cost/cache/context health, quality, skill/MCP/memory use and duty compliance | Claude Code transcript analytics. Fleet **and per-agent** findings, the Cost Anomaly Report and cost warnings state the exclusion instead of folding foreign sessions into a false average — one wording, from `claudeOnlyScopeNote`, carried as the finding's `scope` field so a surface can place it (the sidebar in the hover, the agent page once above its table). |
 | Plan limits | Per engine: Claude's OAuth endpoint, Codex's recorded rate-limit block, and an explicit “not published / no plan” answer where nothing measurable exists. Missing never means 0%. |
 
 The same rule reaches the awkward edges: rename survives rescans on every engine; Resume opens the recorded engine rather than handing a Codex id to Claude; “Open transcript” and “Copy transcript path” explain permanently unreadable Antigravity protobuf storage; `includeUnmatchedProjects` governs every engine; overlapping live-lane and transcript records deduplicate with the richer transcript winning.
+
+**The sidebar has no separate path for a foreign row.** One builder draws every session row: the same right-click menu, the same viewer, and refusals that come from the engine's own facts — no working folder means not resumable, no readable transcript means the click explains why in that engine's words rather than opening an empty editor.
 
 Codex usage is treated as the cumulative counter it is: each turn publishes the delta from the previous total, `reasoning_output_tokens` is already inside output, and the context gauge uses the window recorded by that rollout. Task runs are matched only to a session on the same engine. Claude can show API-equivalent dollars; a plan-billed engine shows the tokens it actually reported and never a misleading `$0.00`.
 

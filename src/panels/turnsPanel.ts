@@ -113,7 +113,12 @@ export function buildTurnsMarkdown(
 ): string {
     const rowByKey = new Map<string, TurnRow>();
     const now = Date.now();
-    for (const r of buildTurnRows(deps.index.all(), s => deps.index.isSessionActive(s, now))) {
+    // ‼️ THE SAME POOL THE TABLE WAS BUILT FROM (X-35). `buildData` widened to
+    // `allWithExternal`, so a Codex turn reaches the page — and then every
+    // downstream step here still looked it up in the claude-only list, where it
+    // is not. The export silently dropped those rows and the header lookup below
+    // fell through to a bare "turn N". A LOG surface reads the log list, once.
+    for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
     const sc = vscode.workspace.getConfiguration('agentFarm');
@@ -255,10 +260,12 @@ export class TurnsPanel {
                 break;
             case 'turnDetail': {
                 // Fold-open content. Only files the index lists are readable from
-                // here — the webview must not point us at arbitrary paths.
+                // here — the webview must not point us at arbitrary paths. The
+                // pool is the table's own (X-35): gated on the claude-only list,
+                // a Codex row that the page shows simply refused to open.
                 const file = typeof msg.file === 'string' ? msg.file : '';
                 const n = typeof msg.n === 'number' ? Math.floor(msg.n) : 0;
-                if (!file || !(n > 0) || !this.deps.index.all().some(s => s.file === file)) { break; }
+                if (!file || !(n > 0) || !this.deps.index.allWithExternal().some(s => s.file === file)) { break; }
                 let msgs: unknown[] = [];
                 try { msgs = turnMessages(file, n, this.deps); } catch { /* fail-soft: empty panel */ }
                 void this.panel.webview.postMessage({ type: 'turnDetail', file, n, msgs });
@@ -276,7 +283,9 @@ export class TurnsPanel {
      *  turn list, the open (unfolded) keys and the content-Show selection. */
     private async exportMd(msg: { type: string; [k: string]: unknown }): Promise<void> {
         const rawShown = Array.isArray(msg.shown) ? msg.shown : [];
-        const known = new Set(this.deps.index.all().map(s => s.file));
+        // Both lists (X-35) — and never the empty path an engine with no
+        // readable transcript carries, which would wave through a blank `file`.
+        const known = new Set(this.deps.index.allWithExternal().map(s => s.file).filter(Boolean));
         const shown = rawShown
             .map(x => x as { file?: unknown; n?: unknown })
             .filter(x => typeof x.file === 'string' && known.has(x.file) && typeof x.n === 'number' && x.n > 0)
@@ -296,7 +305,7 @@ export class TurnsPanel {
         catch (e) { void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`); return; }
 
         const remembered = this.deps.lastExportDir?.();
-        const firstCwd = this.deps.index.all().find(s => s.file === shown[0].file)?.cwd;
+        const firstCwd = this.deps.index.allWithExternal().find(s => s.file === shown[0].file)?.cwd;
         const dir = remembered && fs.existsSync(remembered) ? remembered
             : firstCwd && fs.existsSync(firstCwd) ? firstCwd
                 : os.homedir();

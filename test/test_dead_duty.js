@@ -36,7 +36,10 @@ const agent = (duties) => ({
 // `external` is what the cost insights ask for when they state their scope
 // (X-35): a "fleet" money figure now says how many sessions on other engines it
 // leaves out. Nothing here has any, so the note is empty and nothing changes.
-const index = { all: () => [], forAgent: () => [], external: () => [], windowUsage: () => ({ tokens: 0 }) };
+const index = {
+    all: () => [], forAgent: () => [], external: () => [], externalForAgent: () => [],
+    windowUsage: () => ({ tokens: 0 })
+};
 const base = { staleMemoryDays: 45, contextBudgetTokens: 999999, permissionLint: false };
 const dutyInsights = (duties, automationTitles) =>
     buildInsights([agent(duties)], index, { ...base, automationTitles })

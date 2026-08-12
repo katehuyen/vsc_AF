@@ -513,6 +513,7 @@
                     </tr>`).join('') : '<tr><td colspan="7" class="muted">No standing duties yet — add the recurring "keep watching X, then do Y" agreements you have with this agent.</td></tr>'}
             </table></div>
             <h2>Health &amp; optimization <a data-guide="saglik-ve-optimizasyon">?</a></h2>
+            ${DATA.insightScope ? `<p class="muted small" style="margin:4px 0">${C.esc(DATA.insightScope)}</p>` : ''}
             <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
             <h2>Memory files</h2>
             <div class="tablewrap"><table>

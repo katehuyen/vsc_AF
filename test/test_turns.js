@@ -150,7 +150,7 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
 // ---------- 5) Export MD (buildTurnsMarkdown): view/everything + folded titles ----------
 {
     // a tiny index stub over the single fixture session
-    const idx = { all: () => [info], isSessionActive: () => false };
+    const idx = { all: () => [info], allWithExternal: () => [info], isSessionActive: () => false };
     const depsStub = {
         extensionUri: {}, index: idx, getPricing: () => pricing
     };
@@ -181,6 +181,21 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     ok('everything exports both turns fully', /turn 2\/2/.test(everything) && /turn 1\/2/.test(everything));
     ok('everything ignores the Show filter (tool call present)', /TOOL CALL/.test(everything));
     ok('everything header states the mode', /Export: everything/.test(everything));
+
+    // ‼️ X-35 — THE EXPORT READS THE POOL THE TABLE WAS BUILT FROM. The page's
+    // rows come from `allWithExternal()`, and every lookup here used to go to
+    // the claude-only `all()`: a Codex turn you could see and tick was silently
+    // dropped out of the Markdown. A stub whose claude list is EMPTY pins it —
+    // if the export ever goes back to `all()`, this is the assertion that fires.
+    const foreignOnly = {
+        extensionUri: {}, getPricing: () => pricing,
+        index: { all: () => [], allWithExternal: () => [info], isSessionActive: () => false }
+    };
+    const foreignMd = buildTurnsMarkdown(foreignOnly, shown, bothKeys, [], { view: false, foldedTitles: false });
+    ok('‼️ a row outside the claude-only list still exports',
+        /turn 2\/2/.test(foreignMd) && /turn 1\/2/.test(foreignMd));
+    ok('…with its real header, not a bare turn number',
+        /fix the login bug please/.test(foreignMd));
 }
 
 // ---------- 6) turns.list bridge op ----------

@@ -418,5 +418,172 @@ function newIndex(includeUnmatched = true) {
         claudeOnlyScopeNote([], 'This figure') === '');
 }
 
+// ---------------------------------------------------------------------------
+// "Is it working right now" is a LOG fact — every engine answers it
+// ---------------------------------------------------------------------------
+{
+    const index = newIndex();
+    const now = Date.now();
+    const busy = external('codex-live', 'codex', 'a codex thread');
+    busy.agentId = 'dev';
+    busy.lastTs = busy.mtime = now - 1000;
+    index.setExternal([busy]);
+
+    // ‼️ THE REPORTED SHAPE OF THE BUG. Last activity came from the widened
+    // list and said "a minute ago"; the dot beside it came from the claude-only
+    // one and said idle. One row, two answers, no way to tell which was lying.
+    ok('‼️ an agent working on Codex right now is ACTIVE',
+        index.isAgentActive('dev', now) === true);
+    ok('…it is in the active-agent set the digest and /status count',
+        index.activeAgentIds(now).has('dev'));
+    ok('…and it is one of the sessions the status bar calls running',
+        index.activeSessions(now).length === 1);
+
+    // The threshold still decides: widening the pool is not "foreign sessions
+    // are always live".
+    const cold = external('codex-cold', 'codex', 'yesterday');
+    cold.agentId = 'ops';
+    cold.lastTs = cold.mtime = now - 6 * 3600_000;
+    index.setExternal([busy, cold]);
+    ok('a quiet foreign session is still quiet',
+        index.isAgentActive('ops', now) === false);
+    ok('…and does not inflate the running count',
+        index.activeSessions(now).length === 1);
+}
+
+// ---------------------------------------------------------------------------
+// A per-AGENT finding states its scope, not just the fleet row
+// ---------------------------------------------------------------------------
+{
+    const { buildInsights } = out('health.js');
+    const index = newIndex();
+    const now = Date.now();
+    // One Claude session this week — enough for the duty check to fire at all…
+    const claude = {
+        file: 'k', sessionId: 'k1', agentId: 'a1', mtime: now - 1000, lastTs: now - 1000,
+        daily: {}, tools: {}, skillCalls: {}, memoryReads: {}, toolCalls: 0, errors: 0
+    };
+    Object.defineProperty(index, 'sessions', { value: new Map([['k', claude]]), writable: true });
+    // …and three the same agent had on engines this measurement cannot read.
+    index.setExternal(['codex', 'codex', 'agy'].map((src, i) => {
+        const s = external('x' + i, src, 'a thread');
+        s.agentId = 'a1';
+        s.lastTs = s.mtime = now - 2000;
+        return s;
+    }));
+
+    const agent = {
+        id: 'a1', name: 'manager', dir: 'D:/nowhere-x35',
+        duties: [{ title: 'watch the inbox', cadence: 'daily', watch: '', action: 'file it' }],
+        dutiesPath: 'D:/nowhere-x35/DUTIES.md',
+        contextLoad: { total: 0 }, memoryFiles: [], toolFiles: []
+    };
+    const found = buildInsights([agent], index,
+        { staleMemoryDays: 45, contextBudgetTokens: 999999, permissionLint: false })
+        .find(i => i.category === 'duties' && /never read DUTIES\.md/.test(i.message));
+
+    ok('the duty-compliance finding still fires', !!found);
+    // ‼️ THE FLEET ROW WAS EXPLAINED AND THE AGENT ROW WAS NOT — and the agent
+    // row is the one somebody acts on. "9 sessions and never read DUTIES.md" is
+    // a verdict on the agent's whole week; drawn from a quarter of it, unlabelled,
+    // it is a narrower claim than the fleet's and wrong more often.
+    ok('‼️ …and the AGENT row says what its count leaves out',
+        !!found && /Claude Code only/.test(found.scope || '') && /3 sessions/.test(found.scope || ''));
+    ok('…in the shared wording, engines named',
+        !!found && /Codex ×2 · Antigravity ×1/.test(found.scope || ''));
+    // ‼️ A FIELD, NOT A TAIL. Glued to the message it would be repeated down
+    // every row of the agent page's findings table and would eat the sidebar
+    // row before the finding itself got there.
+    ok('‼️ …and it is kept OFF the message so surfaces can place it',
+        !!found && !/Claude Code only/.test(found.message));
+
+    // An all-Claude agent gets no disclaimer: an unconditional one is noise,
+    // and noise is how a real warning stops being read.
+    const solo = newIndex();
+    Object.defineProperty(solo, 'sessions', {
+        value: new Map([['k', { ...claude, agentId: 'a2' }]]), writable: true
+    });
+    const quiet = buildInsights([{ ...agent, id: 'a2' }], solo,
+        { staleMemoryDays: 45, contextBudgetTokens: 999999, permissionLint: false })
+        .find(i => i.category === 'duties' && /never read DUTIES\.md/.test(i.message));
+    ok('an agent with nothing to exclude is not told about exclusions',
+        !!quiet && !quiet.scope);
+}
+
+// ---------------------------------------------------------------------------
+// The agent page says it once; the sidebar puts it in the hover
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const src = f => fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8');
+    const detail = src('src/panels/agentDetail.ts');
+    ok('‼️ the agent page collapses the scope to one line for the whole table',
+        /new Set\(deps\.getInsights\(\)[\s\S]{0,200}?i\.scope\)/.test(detail)
+        && /insightScope/.test(detail));
+    ok('…and the page actually draws it above the findings',
+        /DATA\.insightScope \? /.test(src('media/agentDetail.js')));
+    ok('‼️ the sidebar keeps the finding in the label and the scope in the hover',
+        /ins\.scope \? `\\n\\nScope: \$\{ins\.scope\}`/.test(src('src/views/trees.ts')));
+}
+
+// ---------------------------------------------------------------------------
+// The surfaces that cannot be instantiated without VS Code, read as source
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const src = f => fs.readFileSync(path.resolve(__dirname, '..', 'src', ...f.split('/')), 'utf8');
+
+    const trees = src('views/trees.ts');
+    // ‼️ The header counted `forAgent()` while the rows under it were claude
+    // top-level PLUS every foreign engine: two answers to one question, and on
+    // an agent that had moved to Codex the header contradicted the list it sat on.
+    ok('‼️ the Sessions header and its rows come from ONE list',
+        (trees.match(/this\.sessionsUnder\(/g) || []).length >= 2
+        && /sessionsUnder\(agentId: string\)/.test(trees));
+    ok('…which is both lists', /externalForAgent\(agentId\)/.test(trees));
+    ok('…and the cut it applies is stated, not hidden',
+        /SESSIONS_CHILD_N/.test(trees) && /of \$\{listed\.length\}/.test(trees));
+    // ‼️ The external bypass is gone: a foreign row now takes the same path as
+    // a Claude one, so it gets the same menu, the same viewer and the same
+    // engine-aware refusals.
+    ok('‼️ no row is built on the `session-external` bypass any more',
+        !/contextValue = 'session-external'/.test(trees));
+    ok('…the row builder no longer forks on the engine at all',
+        !/if \(s\.source\) \{/.test(trees));
+    ok('…so a foreign row can be resumed / renamed / pinned like any other',
+        /session-resumable/.test(trees));
+
+    const ext = src('extension.ts');
+    // ‼️ A document headed "fleet / all sessions / heavy hitters" that silently
+    // dropped three engines. The sentence is the shared one, not a new wording.
+    ok('‼️ the Cost Anomaly Report states its scope',
+        /claudeOnlyScopeNote\(index\.external\(\), 'Every figure in this report'\)/.test(ext));
+    ok('…and its heavy-hitter share no longer claims "all tokens"',
+        /of the measured tokens/.test(ext) && !/% of all tokens/.test(ext));
+    // The Turns op advertises an engine filter naming all four engines; over a
+    // claude-only pool, asking it for Codex returned "Codex did nothing".
+    ok('‼️ turns.list reads the pool its own filter promises',
+        /registerTurnsOps\(bridge, \{\s*[\s\S]{0,400}?sessions: \(\) => index\.allWithExternal\(\)/.test(ext));
+    ok('the roster counts every engine and names the measured subset',
+        /sessions: index\.forAgentWithExternal\(a\.id\)\.length/.test(ext)
+        && /measuredSessions: index\.forAgent\(a\.id\)\.length/.test(ext));
+    // ‼️ The op's own describe says "the data behind the page's Sessions
+    // button" — and the page passes `withExternal: true` while the op rebuilt
+    // the resolution by hand over the claude-only list.
+    ok('‼️ projects.sessions answers with the list its page shows',
+        /sessionsOfProject\(\(p as Project\)\.id, 0, \{ withExternal: true \}\)/.test(ext));
+    // One picker, two halves: `pinned()` has always spanned every engine, so a
+    // pinned Codex row sat above a "Recent" list it could never appear in.
+    ok('‼️ the session shelf\'s Recent half matches its Pinned half',
+        /const rest = \[\.\.\.index\.all\(\), \.\.\.index\.external\(\)\]/.test(ext));
+    ok('…and a row on an engine that quotes no price shows tokens, not $0.00',
+        /engineOf\(s\.source\)\.reportsCost[\s\S]{0,80}?fmtTokens\(totalTokens\(s\.usage\)\)/.test(ext));
+    ok('the farm-status board\'s recent list is a log, not a measurement',
+        /sessions: index\.allWithExternal\(\)\s*\n\s*\.slice\(\)\.sort/.test(ext));
+    ok('a track row written from another engine still resolves',
+        /const indexed = new Map\(index\.allWithExternal\(\)\.map/.test(ext)
+        && /const row = index\.allWithExternal\(\)\.find\(r => r\.sessionId === sid\)/.test(ext));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

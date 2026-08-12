@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.120.0 — X-35 closes: the last surfaces that could only see Claude (2026-08-12)
+
+**The sidebar stops keeping two answers.** An agent's `Sessions` header counted the Claude-only list while the rows underneath it were Claude plus every foreign engine, so the number and the list it sat on disagreed — worst on exactly the agent that had moved to Codex. Both now come from one list, and the header states its own cut (`15 of 42`) instead of applying it silently; the hover names the engine split.
+
+**A foreign session is no longer a second-class row.** The `session-external` bypass — no right-click menu at all, a click that dumped raw JSONL into an editor, the engine printed as its bare id — dated from before any of it worked another way. Every reason for it is gone: the viewer parses Codex, Gemini and Agent Farm's own Antigravity transcripts, Resume asks the engine before opening a terminal and says so when the answer is no, and rename/pin/tag reach the side list. Every row is built one way now; the differences that are real fall out of the row's own facts (no working folder → not resumable, no transcript → the click explains why, in that engine's words). The hover states cost in the terms the engine reports: tokens where no price is quoted, never `$0.00`.
+
+**"Working right now" is a log fact and answers for every engine.** `isAgentActive` read the Claude-only list, so an agent that spent the afternoon on Codex was drawn idle — grey dot in the sidebar, `active: false` on its portfolio row, its dashboard card and the bridge — beside a last-activity date, read from the widened list, saying it had been busy minutes ago. Fixed at the source, so the four surfaces cannot drift apart again; the status bar's "N sessions across M agents" moves with it.
+
+**The Turns page can open and export the rows it shows.** The table widened to every engine in 3.119.0 and every lookup behind it still went to the Claude-only list: a Codex turn you could see and tick refused to unfold and was dropped out of the Markdown export. The `turns.list` op takes an `engine` filter naming all four — over a Claude-only pool, asking it for Codex returned an empty array that read as "Codex did nothing".
+
+**Findings say what they could not see, and say it once.** The scope sentence rode on the two fleet rows; the row somebody actually acts on is the agent's — "6 sessions this week and never read DUTIES.md" is a verdict on the whole week drawn from a quarter of it. It is now a field rather than a tail on the message, so the sidebar keeps the finding in the label and the sentence in the hover, and the agent page prints it once above its findings table instead of eight times down it. It appears only for an agent that actually has foreign sessions. The Cost Anomaly Report, headed "fleet / all sessions / heavy hitters", carries the same sentence in the same words.
+
+**Four more surfaces that quietly meant "Claude".** `projects.sessions` promised "the data behind the page's Sessions button" and returned a strictly smaller set than that page shows; the session shelf listed pinned rows from every engine above a "Recent" half none of them could enter; the farm-status board's recent list omitted every Codex conversation, so a board read from another machine said the farm was idle; and a project track row written from a foreign session lost the turn number that makes it locatable later.
+
+The agent page gained its first render fixture — the one major surface with no picture — and was reviewed in dark and light themes. Verified with 8,303 automated assertions.
+
 ## 3.119.0 — Multi-engine work is documented honestly (2026-08-12)
 
 **The guide now describes the product that exists.** Claude Code, Codex, Gemini and Antigravity are first-class engines selected from the Engine box; `agentFarm.cliProfiles` is the deliberately smaller escape hatch for an arbitrary command Agent Farm does not understand. The old instructions that told readers to add Codex as a profile — and that Agent Farm could never host Antigravity — were left behind by the architecture and have been replaced in both English and Turkish.

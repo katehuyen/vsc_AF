@@ -1043,13 +1043,30 @@ export class SessionIndex implements vscode.Disposable {
         return now - s.mtime < this.activeThresholdMs();
     }
 
+    /**
+     * ‼️ "IS IT WORKING RIGHT NOW" IS A LOG FACT, NOT A MEASUREMENT (X-35).
+     *
+     * This asked the claude-only list, so an agent that spent the afternoon on
+     * Codex was drawn idle — grey dot in the sidebar, `active: false` on its
+     * portfolio row and its dashboard card, `active: false` over the bridge —
+     * while its own last-activity date, which every one of those surfaces reads
+     * from the widened list, said it had been busy minutes ago. A row that
+     * contradicts itself in two adjacent cells is worse than one that is merely
+     * incomplete, because the reader cannot tell which half to believe.
+     *
+     * Liveness needs a timestamp and nothing else: `isSessionActive` is pure
+     * mtime, which every engine's rows carry honestly. There is no Claude-shaped
+     * measurement here to protect, so this is the widening the split was always
+     * meant to allow — fixed once at the source rather than at each of the four
+     * callers, which is how the two halves drifted apart in the first place.
+     */
     isAgentActive(agentId: string, now = Date.now()): boolean {
-        return this.forAgent(agentId).some(s => this.isSessionActive(s, now));
+        return this.forAgentWithExternal(agentId).some(s => this.isSessionActive(s, now));
     }
 
     activeAgentIds(now = Date.now()): Set<string> {
         const ids = new Set<string>();
-        for (const s of this.sessions.values()) {
+        for (const s of this.allWithExternal()) {
             if (s.agentId && this.isSessionActive(s, now)) { ids.add(s.agentId); }
         }
         return ids;
@@ -1069,9 +1086,17 @@ export class SessionIndex implements vscode.Disposable {
      * the question really is about agents (the daily digest's `activeAgents`,
      * the chat `/status` line that says "N agents"), `activeAgentIds()` is
      * still the right call and is left alone.
+     *
+     * ‼️ …AND IT COUNTS EVERY ENGINE (X-35), for the same reason it counts a
+     * session with no agent: "what is running right now" is a log fact and a
+     * Codex turn is running exactly as hard as a Claude one. It also has to
+     * match its own tooltip — the status bar reads "N sessions across M agents"
+     * off this and `activeAgentIds()`, and widening one without the other can
+     * put more agents in that line than sessions. The money beside it stays
+     * Claude-only and says so.
      */
     activeSessions(now = Date.now()): SessionInfo[] {
-        return [...this.sessions.values()].filter(s => this.isSessionActive(s, now));
+        return this.allWithExternal().filter(s => this.isSessionActive(s, now));
     }
 
     latestSessionForAgent(agentId: string): SessionInfo | undefined {

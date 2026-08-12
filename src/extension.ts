@@ -3032,11 +3032,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'agents.list',
-            describe: 'The farm roster: id, name, dir, active-now, session count. args: none',
+            describe: 'The farm roster: id, name, dir, active-now, session count (every engine) and how many of those are Claude-shaped enough to carry cost/quality figures. args: none',
+            // ‼️ A ROSTER IS A LOG (X-35). `sessions` counted the claude-only
+            // list, so an agent that had moved to Codex answered "0 sessions"
+            // to the one op an agent asks to find out what the farm is doing.
+            // The measured subset is still worth naming — it is the denominator
+            // of every money figure the other ops return.
             handler: () => agents.map(a => ({
                 id: a.id, name: a.name, dir: a.dir,
                 active: index.isAgentActive(a.id),
-                sessions: index.forAgent(a.id).length
+                sessions: index.forAgentWithExternal(a.id).length,
+                measuredSessions: index.forAgent(a.id).length
             }))
         },
         /**
@@ -4702,24 +4708,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.sessions',
-            describe: 'The sessions that belong to one project, newest first, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. args: project (id or name), limit? (default 50), all? (true ignores limit)',
+            describe: 'The sessions that belong to one project, newest first, on EVERY engine, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. Each row carries its `engine`; `cost` covers the Claude-shaped rows only (`measured` counts them), because a plan-billed engine states no price. args: project (id or name), limit? (default 50), all? (true ignores limit)',
             handler: (args) => {
                 const key = argStr(args, 'project');
                 const p = projectStore.get(key);
                 need(p, `no project called "${key}" — projects.list shows them`);
                 const limit = args.all === true ? 0 : Math.max(1, Number(args.limit) || 50);
-                const rows = index.all()
-                    .filter(s => projectStore.resolve({
-                        sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd
-                    }).projectId === (p as Project).id)
-                    .sort((a, b) => (b.lastTs || b.mtime || 0) - (a.lastTs || a.mtime || 0));
+                // ‼️ THE OP AND THE PAGE IT NAMES READ THE SAME LIST (X-35). This
+                // rebuilt the resolution by hand over `index.all()` while the
+                // page's own Sessions button passes `withExternal: true`, so the
+                // describe promised "the data behind the page" and returned a
+                // strictly smaller set. One helper, one answer.
+                const rows = sessionsOfProject((p as Project).id, 0, { withExternal: true });
                 const shown = limit ? rows.slice(0, limit) : rows;
                 return {
                     project: (p as Project).name,
                     total: rows.length,
+                    measured: rows.filter(s => !s.source).length,
                     cost: Math.round(rows.reduce((n, s) => n + s.cost, 0) * 10000) / 10000,
                     sessions: shown.map(s => ({
                         sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
+                        engine: s.source ?? 'claude',
                         cwd: s.cwd ?? null, cost: s.cost, turns: s.turns,
                         lastTs: s.lastTs || s.mtime || 0,
                         via: projectStore.resolve({
@@ -6769,8 +6778,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cacheFile: toolboxProbeCacheFile
     });
     // Turns ops (§19.C): the Turns page's rows as data.
+    // ‼️ …which means the PAGE's pool (X-35). The op takes an `engine` filter
+    // naming all four, over a claude-only list: asking it for Codex turns
+    // returned an empty array that read as "Codex did nothing".
     registerTurnsOps(bridge, {
-        sessions: () => index.all(),
+        sessions: () => index.allWithExternal(),
         isActive: s => index.isSessionActive(s, Date.now())
     });
 
@@ -10498,7 +10510,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     project: (s.agentName && projectByAgent[s.agentName]) || '', status: s.status,
                     ts: s.lastEventTs, cost: 0, turns: s.prompts
                 })),
-            sessions: index.all()
+            // ‼️ THE RECENT LIST IS A LOG (X-35). `tokensToday` above is a
+            // measurement and stays Claude-only; "what has this farm been doing"
+            // is not, and a status board read from another machine that omits
+            // every Codex conversation is a board that says the farm was idle.
+            sessions: index.allWithExternal()
                 .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime)).slice(0, 25)
                 .map(s => ({
                     title: s.title, agent: s.agentName ?? '?',
@@ -12247,8 +12263,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const attributeTrack = (o: {
         projectId: string; session?: string; agent?: string; by: TrackSource; now: number;
     }): { session?: string; turn?: number; agent?: string; uncertain?: TrackDoubt } => {
+        // Both lists (X-35): the session doing the work is whichever engine the
+        // agent was driven on, and stamping "turn ?" on every Codex attempt
+        // loses the one figure that makes a track row locatable later.
         const turnOf = (sid: string): number | undefined => {
-            const row = index.all().find(r => r.sessionId === sid);
+            const row = index.allWithExternal().find(r => r.sessionId === sid);
             const n = row?.userTurns ?? 0;
             return n > 0 ? n : undefined;
         };
@@ -12610,8 +12629,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // rows, and copying its agent, model and turn count onto every one of
         // them is how a payload doubles for nothing. The whole index is read, not
         // just this project's sessions: a session can be refiled after the fact
-        // and its rows must still lead somewhere.
-        const indexed = new Map(index.all().map(s => [s.sessionId, s]));
+        // and its rows must still lead somewhere — on whichever engine it ran
+        // (X-35), or a track written from Codex is a row that leads nowhere.
+        const indexed = new Map(index.allWithExternal().map(s => [s.sessionId, s]));
         // The human's own closing notes, read straight back out of the document
         // they were written in. This tab shows them; it never writes them.
         const notes = new Map((roles.backloglog
@@ -14252,7 +14272,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.sessionShelf', async () => {
             interface ShelfItem extends vscode.QuickPickItem { s?: SessionInfo }
             const pinnedList = index.pinned();
-            const rest = index.all()
+            // ‼️ ONE LIST, ONE SCOPE (X-35). `pinned()` has always spanned every
+            // engine, so a Codex conversation could sit at the top of this
+            // picker under "Pinned" and be structurally absent from "Recent"
+            // three rows below it — the same shelf answering two ways.
+            const rest = [...index.all(), ...index.external()]
                 .filter(s => !s.pinned && !s.isSidechain)
                 .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                 .slice(0, 20);
@@ -14264,8 +14288,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const pinBtn = { iconPath: new vscode.ThemeIcon('pin'), tooltip: 'Pin / unpin' };
             const row = (s: SessionInfo): ShelfItem => ({
                 label: `${s.pinned ? '$(pinned) ' : '$(comment-discussion) '}${s.title}`,
-                description: [s.agentName, ...(s.tags ?? []), relTime(s.mtime)].filter(Boolean).join(' · '),
-                detail: `${s.userTurns} turns · ${fmtUSD(s.cost)}${s.cwd ? ` · ${s.cwd}` : ''}`,
+                description: [s.agentName, ENGINE_LABELS[s.source ?? ''] !== ENGINE_LABELS['']
+                    ? ENGINE_LABELS[s.source ?? ''] ?? s.source : '',
+                ...(s.tags ?? []), relTime(s.mtime)].filter(Boolean).join(' · '),
+                // `$0.00` on an engine that never quotes a price reads as "this
+                // was free"; the tokens are the figure it does report.
+                detail: `${s.userTurns} turns · ${s.cost > 0 || engineOf(s.source).reportsCost
+                    ? fmtUSD(s.cost)
+                    : `${fmtTokens(totalTokens(s.usage))} tok`}${s.cwd ? ` · ${s.cwd}` : ''}`,
                 buttons: [openBtn, pinBtn],
                 s
             });
@@ -16948,6 +16978,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             lines.push('# Agent Farm — Cost Anomaly Report');
             lines.push('');
             lines.push(`Generated: ${new Date(now).toLocaleString()} · baseline: trailing 14 days (median + MAD)`);
+            /**
+             * ‼️ THE REPORT SAYS WHAT "fleet" COVERS (X-35).
+             *
+             * Every figure below is computed off Claude's transcript format and
+             * correctly so — a plan-billed engine states no price, and averaging
+             * its honest zero in would show the farm halving its spend the week
+             * it started using Codex. What was wrong was the LABEL: a document
+             * headed "fleet / all sessions / heavy hitters" that silently left
+             * three engines out, so a reader comparing it against the Sessions
+             * page found a smaller number and nothing to explain the gap. The
+             * sentence is the same one the Health findings use, from the same
+             * function — a wording invented per surface disagrees per surface.
+             */
+            const scopeNote = claudeOnlyScopeNote(index.external(), 'Every figure in this report');
+            if (scopeNote) {
+                lines.push('');
+                lines.push(`> **Scope.** ${scopeNote}`);
+            }
             lines.push('');
             lines.push('| Agent | Today | 14d median | Robust σ | Factor | Anomaly |');
             lines.push('| --- | --- | --- | --- | --- | --- |');
@@ -16974,9 +17022,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             lines.push('## Heavy hitters (last 7 days)');
             lines.push('');
             lines.push(hh.sessionCount
-                ? `**${hh.heavy.length} of ${hh.sessionCount} sessions (${hh.heavyCountPct}%) consume ` +
-                  `${hh.tokenSharePct}% of all tokens** (${fmtTokens(hh.totalTokens)} total, ${fmtUSD(hh.totalCost)}).`
-                : 'No sessions in the window.');
+                ? `**${hh.heavy.length} of ${hh.sessionCount} measured sessions (${hh.heavyCountPct}%) consume ` +
+                  `${hh.tokenSharePct}% of the measured tokens** (${fmtTokens(hh.totalTokens)} total, ${fmtUSD(hh.totalCost)}).`
+                : 'No measured sessions in the window.');
             lines.push('');
             for (const s of hh.heavy.slice(0, 10)) {
                 lines.push(`- ${s.agentName ?? '?'} — "${s.title}" · ${fmtTokens(s.tokens)} tok · ` +

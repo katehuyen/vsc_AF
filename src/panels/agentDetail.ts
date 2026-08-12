@@ -236,6 +236,19 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
                 severity: i.severity, category: i.category,
                 message: i.message, filePath: i.filePath, anchor: i.guideAnchor
             })),
+        /**
+         * ‼️ SAID ONCE, ABOVE THE TABLE (X-35).
+         *
+         * Several findings on this page are measured against Claude's
+         * transcript format and cannot see this agent's Codex or Antigravity
+         * work — which the reader has to know, and which is the same sentence
+         * every time. On a table it is a per-agent fact, not a per-row one:
+         * repeated down eight rows it is the paragraph nobody reads, and the
+         * rows lose the width they need for the finding itself.
+         */
+        insightScope: [...new Set(deps.getInsights()
+            .filter(i => i.agentId === agent.id && i.scope)
+            .map(i => i.scope as string))].join(' ') || '',
         // same advanced table as the dashboard (same row shape / component):
         // union of the true top-N per sortable criterion, sorted client-side;
         // N follows the webview's Show box (0 = all sessions ship)
