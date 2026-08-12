@@ -92,20 +92,45 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
     const today = dayKey(now);
     const D = 24 * 3600 * 1000;
     return deps.getAgents().map(a => {
-        const sessions = deps.index.forAgent(a.id);
+        /**
+         * ‼️ "WHEN DID THIS AGENT LAST WORK" IS NOT A CLAUDE QUESTION (X-35).
+         *
+         * This page exists to answer who is working and who has gone quiet, and
+         * it read the claude-only list — so an agent whose whole recent week ran
+         * on Codex was reported as **dormant**, with a last-activity date from
+         * before the user switched engines. That is the single most misleading
+         * thing a portfolio row can say.
+         *
+         * The split is the same one the rest of the extension makes, and it is
+         * drawn deliberately per FIGURE rather than per row:
+         *   · WHEN and HOW MANY are log facts → every engine (`allSessions`).
+         *   · COST and TOKENS are measured off Claude's transcript format and
+         *     would read zero on a foreign one → `measured` only.
+         * Mixing the second into a fleet average is how cost-per-session halves
+         * overnight for no reason.
+         */
+        const allSessions = deps.index.forAgentWithExternal(a.id);
+        const measured = deps.index.forAgent(a.id);
         let lastActivity = 0, sessions7 = 0, sessions30 = 0, cost7 = 0, cost30 = 0, tokens30 = 0, wTokens30 = 0, costToday = 0;
         const files = new Set<string>();
-        for (const s of sessions) {
+        for (const s of allSessions) {
             const ts = s.lastTs || s.mtime || 0;
             lastActivity = Math.max(lastActivity, ts);
             const age = now - ts;
             if (age <= 30 * D) {
                 sessions30++;
+                if (age <= 7 * D) { sessions7++; }
+            }
+        }
+        for (const s of measured) {
+            const ts = s.lastTs || s.mtime || 0;
+            const age = now - ts;
+            if (age <= 30 * D) {
                 cost30 += s.cost;
                 tokens30 += totalTokens(s.usage);
                 wTokens30 += s.wTokens;
                 for (const f of Object.keys(s.filesEdited ?? {})) { files.add(f); }
-                if (age <= 7 * D) { sessions7++; cost7 += s.cost; }
+                if (age <= 7 * D) { cost7 += s.cost; }
             }
             costToday += s.daily[today]?.cost ?? 0;
         }

@@ -37,6 +37,8 @@ export interface OtelSessionRef {
     toolCalls: number;
     errors: number;
     machine?: string;
+    /** External CLI id (codex/gemini/agy) — absent means Claude. See gen_ai.system. */
+    source?: string;
 }
 
 /** Deterministic hex id from a string (OTLP: traceId 32 hex, spanId 16 hex). */
@@ -95,6 +97,16 @@ export function buildOtlpTraces(sessions: OtelSessionRef[]): unknown {
                 attr('gen_ai.usage.output_tokens', s.usage.output),
                 attr('gen_ai.usage.total_tokens', totalTokens(s.usage)),
                 attr('gen_ai.request.model', s.models.join(',')),
+                /**
+                 * ‼️ WHICH SYSTEM SERVED IT (X-35). `gen_ai.system` is the
+                 * OpenTelemetry GenAI convention's own attribute for exactly
+                 * this, and without it every span in the exported file looked
+                 * like the same provider: a Codex trace and a Claude trace were
+                 * distinguishable only by guessing from the model string, which
+                 * is not something a dashboard can group by. Absent `source`
+                 * means Claude — the same absence every other surface reads.
+                 */
+                attr('gen_ai.system', s.source ?? 'claude'),
                 attr('cost.usd', s.cost),
                 attr('tool.calls', s.toolCalls),
                 attr('error.count', s.errors),
