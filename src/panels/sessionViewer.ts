@@ -798,8 +798,24 @@ export class SessionViewerPanel {
      *  written to in the last 90s counts as live too (sessions the monitor can't
      *  see, e.g. started outside Agent Farm) — unless the last writer was our own
      *  capture run. */
+    /**
+     * ‼️ THE ONE PLACE THIS PANEL ASKS "WHICH SESSION AM I?" (X-35).
+     *
+     * `buildData` parses the transcript and knows the answer — Codex states it
+     * in `session_meta.session_id`, Gemini inside its JSON — and two actions on
+     * this panel went back to `path.basename(file, '.jsonl')` instead, which is
+     * the session id only on Claude. So a Codex viewer asked the live monitor
+     * about `rollout-2026-08-12T14-…` and focused a terminal by a name nothing
+     * is called: both simply missed, one silently, the other by opening the
+     * wrong window.
+     */
+    private sessionId(): string {
+        const id = this.viewData().sessionId;
+        return typeof id === 'string' && id ? id : path.basename(this.file, '.jsonl');
+    }
+
     private looksLive(): boolean {
-        if (this.deps.isSessionLive?.(path.basename(this.file, '.jsonl'))) { return true; }
+        if (this.deps.isSessionLive?.(this.sessionId())) { return true; }
         try {
             const m = fs.statSync(this.file).mtimeMs;
             if (Date.now() - m < 90_000 && m > this.lastCaptureAt) { return true; }
@@ -1028,7 +1044,7 @@ export class SessionViewerPanel {
                 break;
             case 'focusTerminal':
                 vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
-                    sessionId: path.basename(this.file, '.jsonl'),
+                    sessionId: this.sessionId(),
                     cwd: typeof msg.cwd === 'string' ? msg.cwd : undefined
                 });
                 break;

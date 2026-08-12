@@ -1168,8 +1168,15 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         && /id="nt-title"[^>]*value="triage"/.test(html()));
     ok('‼️ …and "any agent" is one entry in the picker, not a modal asked first',
         html().includes('any agent: you pick when you launch it'));
-    ok('a template is not asked for a model or a project — it is a saved prompt',
-        !/id="nt-model"/.test(html()) && !/id="nt-project"/.test(html()));
+    // ‼️ REVERSED IN X-35, ON PURPOSE. This used to assert that a template gets
+    // no model and no project — "it is a saved prompt". Once a task could
+    // choose its ENGINE that stopped being a simplification and became a hole:
+    // a run set up on Codex and saved as a template came back as Claude every
+    // time, silently, and the object whose entire purpose is "that launch
+    // again" was the only one that could not state a launch. A template is a
+    // task you have not run yet, so it takes a task's dimensions.
+    ok('‼️ a template carries the LAUNCH it was saved with — engine, model, project',
+        /id="nt-model"/.test(html()) && /id="nt-project"/.test(html()));
     fld('nt-cancel').click();
 
     // ---- "which month of history?" is a list on the page
@@ -1236,8 +1243,19 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         /if \(list\.length < 2\) \{ return ''; \}/.test(page));
     ok('‼️ …offering one that cannot run as disabled, with the reason on the row',
         /\$\{e\.ready \? '' : ' disabled'\}/.test(page) && /cannot run here/.test(page));
-    ok('…and it says the two things that differ on a per-turn engine',
-        /becomes a SANDBOX chosen up front/.test(page) && /counts tokens instead/.test(page));
+    // ‼️ …AND IT NAMES EACH ENGINE'S OWN MECHANISM (X-35). "a SANDBOX" was said
+    // for all of them, which told the user that Gemini and Antigravity have a
+    // Codex sandbox. And "because it goes against a plan" asserted a billing
+    // arrangement off a capability flag — on an API key those turns are billed.
+    ok('…and it says what differs on a per-turn engine, per engine',
+        /Codex sandbox/.test(page) && /Gemini approval mode/.test(page)
+        && /Antigravity a request its own app can overrule/.test(page)
+        && /counting tokens instead/.test(page)
+        && !/goes against a plan/.test(page));
+    ok('‼️ …and that gemini has no effort setting, so the box is not drawn for it',
+        /Gemini has no reasoning-effort setting/.test(page)
+        && /if \(String\(engine \|\| ''\) === 'gemini'\) \{ return \[\]; \}/.test(page)
+        && /if \(!\(list \|\| \[\]\)\.length\) \{ return ''; \}/.test(page));
     ok('the value is read, carried and re-seeded like every other dimension',
         /v\('engine', 'engine'\)/.test(page)
         && /engine: t\.engine \?\? '',/.test(panel)
@@ -1271,15 +1289,22 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         + 'are NOT passed to a binary that has never heard of them',
         /if \(!profile && !perTurn\)/.test(tasks)
         && /task\.outputContract === 'json' && !perTurn/.test(tasks));
-    ok('the archive says which engine produced it, and what the sandbox was',
+    // ‼️ THE UP-FRONT SETTING IS NAMED BY THE ENGINE THAT HAS IT (X-35). This
+    // used to be `- Sandbox: ${codexSandboxFor(...)}` for every per-turn engine
+    // that was not Antigravity — which, once Gemini had a transport, wrote
+    // "Sandbox: read-only" into the archive of a run that had no sandbox at all,
+    // only an approval mode. One resolver names it: Codex → Sandbox, Gemini →
+    // Approval mode, Antigravity → none, print the note instead.
+    ok('the archive says which engine produced it, and names that engine\'s own permission setting',
         /- Engine: \$\{engine\.label\}/.test(tasks)
-        && /- Sandbox: \$\{codexSandboxFor\(task\.permissionMode\)\}/.test(tasks));
+        && /enginePermissionSetting\(engine\.id, task\.permissionMode\)/.test(tasks)
+        && /- \$\{set\.label\}: \$\{set\.value\}/.test(tasks));
     // ‼️ …and NOT the same sentence for an engine where it means something else:
     // on Antigravity the mode is a request the app's own setting can overrule
     // (measured — plan mode still wrote a file), so that archive says permissions,
     // not sandbox.
     ok('‼️ …and an engine whose mode is not a sandbox does not claim one',
-        /- Permissions: \$\{engineModeNote\(engine\.id, task\.permissionMode\)\}/.test(tasks));
+        /- Permissions: \$\{note\}/.test(tasks));
     ok('‼️ …and that the json contract was not applied, where a reader will find it',
         /json was NOT applied/.test(tasks));
 }

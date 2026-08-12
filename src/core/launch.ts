@@ -14,7 +14,7 @@
  * own default stays in charge.
  */
 
-import { engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
+import { engineFirstPromptFlag, engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
 
 /** One offered value of a launch dimension. `id: ''` is always "leave it alone". */
 export interface LaunchChoice {
@@ -148,13 +148,11 @@ function buildOtherEngineCommand(exe: string, engine: EngineId, o: LaunchOptions
             : {})
     })];
     if (o.prompt?.trim()) {
-        // ‼️ THE FIRST PROMPT IS A FLAG ON ONE AND A POSITIONAL ON THE OTHER.
-        // `agy` has no positional prompt at all: `-i` runs one and then STAYS
-        // interactive, which is what "start a session with this in it" means —
-        // `--print` would answer once and exit, leaving the user staring at a
-        // shell where they expected a conversation.
-        if (engine === 'agy') { parts.push('-i', quoteArg(o.prompt)); }
-        else { parts.push(quoteArg(o.prompt)); }
+        // ‼️ THE FIRST PROMPT IS A FLAG ON TWO OF THEM AND A POSITIONAL ON THE
+        // THIRD, and the difference is not cosmetic — it is whether the person
+        // ends up in a conversation or watching one answer and exit. Which is
+        // which lives in `engineFirstPromptFlag`, with the measurement.
+        parts.push(...engineFirstPromptFlag(engine), quoteArg(o.prompt));
     }
     return parts.join(' ');
 }

@@ -162,13 +162,25 @@ const by = (list, id) => list.find(e => e.id === id);
         key.auth.mode === 'apikey' && key.ready);
 }
 
-// ---------- Gemini: the login that was taken away ----------
+// ---------- Gemini: TWO routes, and neither is invented ----------
+//
+// ‼️ CORRECTED IN X-35, AGAINST THE SHIPPED CLI. This block used to assert that
+// Gemini "offers no plan sign-in" and that the row says the Google login "was
+// retired in June 2026". gemini-cli 0.55.1 still carries `oauth-personal`
+// (Login with Google) as a first-class auth type and takes that path on
+// startup — so the confident, dated claim sent users hunting for an API key
+// they may not need. The absence of a `login` SUBCOMMAND is not the absence of
+// a sign-in: this CLI opens a browser on its first run.
 {
     const bare = by(readEngines(probe({ path: ['gemini'] })), 'gemini');
-    ok('Gemini offers no plan sign-in, so no row pretends there is one',
-        !bare.loginCommand && /no plan sign-in/.test(bare.next));
-    ok('‼️ …and the reason is dated, so nobody hunts for a retired login',
-        /retired in June 2026/.test(bare.billing));
+    ok('Gemini has no login SUBCOMMAND, so no row invents one to copy',
+        !bare.loginCommand);
+    ok('‼️ …but the next step is the real route, not "key only"',
+        /Login with Google/.test(bare.next) && !/no plan sign-in/.test(bare.next));
+    ok('…and the billing line names BOTH routes rather than asserting one',
+        /Google account sign-in/.test(bare.billing) && /API key/.test(bare.billing));
+    ok('‼️ …and states that a dollar figure here is derived, never quoted',
+        /never quoted/.test(bare.billing));
 
     const keyed = by(readEngines(probe({ path: ['gemini'], vault: ['GEMINI_API_KEY'] })), 'gemini');
     ok('a key in the vault makes it ready', keyed.ready && keyed.key.inVault);

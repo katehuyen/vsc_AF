@@ -14,6 +14,10 @@ const dormantFarm = {
     workflowCount: 0, workflowRuns7d: 0,
     hasMediaKey: false, mediaAssetCount: 0, mediaCostMonth: 0,
     cliProfileCount: 0, externalSessions: {},
+    // ‼️ The BUILT-IN engines are their own axis (X-35): this machine has only
+    // Claude ready and no custom profiles, which is the one case that really is
+    // "Claude-only" — and the one the old single row said about every machine.
+    enginesReady: ['claude'], engineCount: 4,
     ingestFolderCount: 0, registeredAssetCount: 0,
     oversightLoopsOn: 0, qualitySamples: 0,
     secretCount: 0
@@ -22,7 +26,9 @@ const dormantFarm = {
 {
     const rows = buildFarmStatus(dormantFarm);
     const by = Object.fromEntries(rows.map(r => [r.id, r]));
-    ok('9 subsystem rows', rows.length === 9);
+    // ‼️ TEN: the ENGINES row split off from the custom-CLI one (X-35) — two
+    // independent facts that used to share a row and contradict the rest of the app.
+    ok('10 subsystem rows', rows.length === 10);
     ok('live is active with event count', by.live.state === 'active' && by.live.detail.includes('4200'));
     ok('tasks dormant -> setupExample action', by.tasks.state === 'dormant'
         && by.tasks.action.kind === 'command' && by.tasks.action.value === 'agentfarm.setupExample');
@@ -59,6 +65,7 @@ const dormantFarm = {
         workflowCount: 2, workflowRuns7d: 4,
         hasMediaKey: true, mediaAssetCount: 31, mediaCostMonth: 4.267,
         cliProfileCount: 2, externalSessions: { gemini: 3, codex: 1 },
+        enginesReady: ['claude', 'codex', 'gemini'], engineCount: 4,
         ingestFolderCount: 1, registeredAssetCount: 9,
         oversightLoopsOn: 2, qualitySamples: 40,
         secretCount: 3
@@ -69,7 +76,8 @@ const dormantFarm = {
     ok('active rows carry no action button', !by.tasks.action && !by.triggers.action && !by.workflows.action);
     ok('media active shows count + monthly cost', by.media.state === 'active'
         && by.media.detail.includes('31') && by.media.detail.includes('$4.27'));
-    ok('cli active lists per-source counts', by.cli.state === 'active' && /gemini ×3/.test(by.cli.detail) && /codex ×1/.test(by.cli.detail));
+    ok('the ENGINES row lists per-source session counts, not the profile row',
+        by.engines.state === 'active' && /gemini ×3/.test(by.engines.detail) && /codex ×1/.test(by.engines.detail));
     ok('ingest active', by.ingest.state === 'active' && by.ingest.detail.includes('9'));
     ok('oversight active with sample count', by.oversight.state === 'active' && by.oversight.detail.includes('40'));
 }
@@ -92,8 +100,43 @@ const dormantFarm = {
         && by.workflows.state === 'ready' && by.ingest.state === 'ready' && by.oversight.state === 'ready');
     ok('media key without output -> ready + media guide', by.media.state === 'ready'
         && by.media.action.kind === 'guide' && by.media.action.value === 'medya-uretim-hatti');
-    ok('cli profiles without sessions -> ready + drift honesty', by.cli.state === 'ready'
-        && /fail-soft/.test(by.cli.detail) && by.cli.action.value === 'coklu-cli-yurutucu');
+    ok('cli profiles configured -> ready, and said to be a different thing from an engine',
+        by.cli.state === 'ready' && /not monitored the way an engine is/.test(by.cli.detail)
+        && by.cli.action.value === 'coklu-cli-yurutucu');
+}
+
+// ---------- X-35: engines and custom CLI profiles are INDEPENDENT ----------
+//
+// ‼️ THE CASE THAT WAS MISSING, AND THE BUG IT LET THROUGH. One row used to
+// answer both questions off `cliProfileCount`, so a machine with no custom
+// profiles was told "sessions and tasks are Claude-only" — on a farm with 39
+// Codex sessions and one Antigravity session in its own index, an engine picker
+// in every launcher, and an engine column on the Tasks page. The status card
+// contradicted the sessions page and sent the user to a setting that would not
+// have helped. `cliProfileCount: 0 + externalSessions > 0` was never tested.
+{
+    const by = Object.fromEntries(buildFarmStatus({
+        ...dormantFarm,
+        cliProfileCount: 0,
+        externalSessions: { codex: 39, agy: 1 },
+        enginesReady: ['claude', 'codex', 'agy'], engineCount: 4
+    }).map(r => [r.id, r]));
+    ok('‼️ no custom CLI profiles does NOT make a four-engine farm "Claude-only"',
+        by.engines.state === 'active' && !/Claude-only/.test(by.engines.detail));
+    ok('…the engines row names which are ready and what has actually run',
+        /3\/4 engines ready/.test(by.engines.detail)
+        && /codex, agy/.test(by.engines.detail)
+        && /codex ×39/.test(by.engines.detail));
+    ok('…and the custom-profile row is its own, dormant, row',
+        by.cli.state === 'dormant' && by.cli.action.value === 'agentFarm.cliProfiles');
+
+    // …and the genuinely Claude-only machine still says so, on the right axis.
+    const only = Object.fromEntries(buildFarmStatus(dormantFarm).map(r => [r.id, r]));
+    ok('a machine where only Claude is installed reads as dormant on the ENGINES row',
+        only.engines.state === 'dormant' && /only Claude Code is ready/.test(only.engines.detail));
+    ok('…and history alone is enough to make the row active, with no engine installed now',
+        buildFarmStatus({ ...dormantFarm, externalSessions: { codex: 4 } })
+            .find(r => r.id === 'engines').state === 'active');
 }
 
 // ---------- projects · web view · chat channel (3.25/3.26) ----------

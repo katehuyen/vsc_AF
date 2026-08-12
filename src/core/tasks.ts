@@ -9,7 +9,8 @@ import {
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
-    codexSandboxFor, engineContextPrefix, engineModeNote, engineOf, runArgs, tuiArgs
+    engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
+    enginePermissionSetting, runArgs, tuiArgs
 } from './consoleEngine';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
@@ -186,7 +187,17 @@ export interface FarmSchedule extends RunDimensions {
     pendingRunKey?: string;
 }
 
-export interface FarmTemplate {
+/**
+ * ‼️ A TEMPLATE IS A TASK YOU HAVE NOT RUN YET, SO IT CARRIES A TASK'S
+ * DIMENSIONS (X-35).
+ *
+ * It did not, and the consequence was quiet and cumulative: a person could set
+ * a task up on Codex by hand, save it as a template so as not to have to do it
+ * again — and every run from that template went back to Claude. The one object
+ * whose whole purpose is "the same launch, again" was the one that could not
+ * remember the launch.
+ */
+export interface FarmTemplate extends RunDimensions {
     id: string;
     title: string;
     prompt: string;
@@ -195,7 +206,7 @@ export interface FarmTemplate {
     agentName?: string;
 }
 
-export interface WorkflowStep {
+export interface WorkflowStep extends RunDimensions {
     agentId: string;
     agentName: string;
     title: string;
@@ -1112,10 +1123,11 @@ export class TaskManager implements vscode.Disposable {
                         // is handed one; the terminal's cwd below is not enough.
                         cwd: task.workDir ?? agent.dir
                     }),
-                    // …and its first prompt is `-i`, not a positional: `--print`
-                    // would answer once and exit where a person expected to sit
-                    // in the conversation.
-                    ...(engine.id === 'agy' ? ['-i'] : []),
+                    // …and on two of the three the first prompt is a FLAG, not a
+                    // positional, or the terminal answers once and closes where a
+                    // person expected to sit in the conversation
+                    // (engineFirstPromptFlag carries the measurement).
+                    ...engineFirstPromptFlag(engine.id),
                     `"${p}"`
                 ].join(' ');
             } else {
@@ -1206,9 +1218,18 @@ export class TaskManager implements vscode.Disposable {
             // permission setting can overrule — measured, plan mode still wrote
             // a file. The word alone would carry an assumption neither can keep.
             (perTurn
-                ? engine.id === 'agy'
-                    ? `- Permissions: ${engineModeNote(engine.id, task.permissionMode)}\n`
-                    : `- Sandbox: ${codexSandboxFor(task.permissionMode)} — ${engineModeNote(engine.id, task.permissionMode)}\n`
+                ? (() => {
+                    // ‼️ NAMED BY THE ENGINE, NOT BY THE FIRST ONE THAT HAD ONE.
+                    // Codex has a sandbox, Gemini has an approval mode, and
+                    // Antigravity has neither — its restraint is the app's own
+                    // setting. Writing "Sandbox" over all three told the reader
+                    // a mechanism was in place that is not.
+                    const set = enginePermissionSetting(engine.id, task.permissionMode);
+                    const note = engineModeNote(engine.id, task.permissionMode);
+                    return set
+                        ? `- ${set.label}: ${set.value} — ${note}\n`
+                        : `- Permissions: ${note}\n`;
+                })()
                 : '') +
             // ‼️ AND THAT THE BODY BELOW IS AN ENVELOPE, NOT A TRANSCRIPT. This
             // engine states no price, so its token count is the only record of
@@ -1217,7 +1238,9 @@ export class TaskManager implements vscode.Disposable {
             // plain-text run would read more easily and record none of it.
             (perTurn && engine.id === 'agy'
                 ? '- Output: one `agy --output-format json` envelope — `response` is the answer, `usage` is what it cost, `conversation_id` is what resumes it\n'
-                : '') +
+                : perTurn && engine.id === 'gemini'
+                    ? '- Output: one `gemini --output-format json` envelope — `response` is the answer, `stats` is what it cost, `session_id` is what resumes it\n'
+                    : '') +
             // ‼️ AND WHAT THIS ENGINE COULD NOT HONOUR. The JSON output contract
             // is `claude -p --output-format json` — one envelope with the result,
             // the cost and the session id in it. `codex exec --json` is a
@@ -1964,7 +1987,17 @@ export class TaskManager implements vscode.Disposable {
         const prompt = this.substitute(step.prompt, handoff);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
             prompt, step.mode,
-            { workflowId: w.id, workflowRunId: runId, stepIndex: index, ...this.runProject(runId) });
+            {
+                workflowId: w.id, workflowRunId: runId, stepIndex: index,
+                ...this.runProject(runId),
+                // ‼️ THE STEP'S OWN ENGINE, MODEL, EFFORT AND PERMISSIONS (X-35).
+                // A workflow step is a task, and it was the one kind of task that
+                // could not say what to run it on — so an agent's chain was
+                // Claude-by-default no matter what the rest of the automation had
+                // been set to. `runExtras` drops what is unset, so a step that
+                // states nothing behaves exactly as it did.
+                ...runExtras(step)
+            });
         if (step.outputContract) { task.outputContract = step.outputContract; }
         this.startTask(task);
     }
@@ -2310,7 +2343,13 @@ export class TaskManager implements vscode.Disposable {
         const prompt = buildBrowserPrompt(url, goal, allowHosts);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
             prompt, 'headless',
-            { workflowId: w.id, workflowRunId: runId, stepIndex: index, ...this.runProject(runId) });
+            {
+                workflowId: w.id, workflowRunId: runId, stepIndex: index,
+                ...this.runProject(runId),
+                // A browser step is still a step, and it runs on the engine the
+                // step names (X-35) — see the note on the ordinary step path.
+                ...runExtras(step)
+            });
         this.startTask(task);
     }
 

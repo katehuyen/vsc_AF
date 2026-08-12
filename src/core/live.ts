@@ -770,6 +770,43 @@ export class LiveMonitor implements vscode.Disposable {
         return true;
     }
 
+    /**
+     * ‼️ THE SAME CONVERSATION, UNDER THE NAME IT TURNED OUT TO HAVE (X-35).
+     *
+     * A terminal launched on Codex, Gemini or Antigravity produces a live lane
+     * the moment the window opens — that is the only way those engines reach
+     * this page at all, since none of them fires hooks. But at that moment
+     * NOBODY knows the conversation's id: the CLI mints it, and it appears
+     * seconds later inside a transcript the index then parses. Two bad answers
+     * were available: leave the lane under a made-up `cli:` id for ever (so the
+     * card, the transcript, the cost and the project stamp all belong to four
+     * different keys), or wait for the real id and draw nothing until it comes
+     * (which is what "the Live Timeline never shows Codex" meant).
+     *
+     * So the lane is opened under a synthetic id and RE-KEYED when the real one
+     * is found — in one step, keeping the counters, the start time and the whole
+     * event history. Nothing is drawn twice and nothing is lost; the row simply
+     * learns its name.
+     *
+     * Refuses to overwrite a lane that already exists under the real id: that
+     * would be two live sessions merged into one on the strength of a guess.
+     */
+    adopt(fromSessionId: string, toSessionId: string): boolean {
+        const from = String(fromSessionId ?? '').trim();
+        const to = String(toSessionId ?? '').trim();
+        if (!from || !to || from === to) { return false; }
+        const s = this.sessionsMap.get(from);
+        if (!s || this.sessionsMap.has(to)) { return false; }
+        this.sessionsMap.delete(from);
+        s.sessionId = to;
+        this.sessionsMap.set(to, s);
+        for (const e of this.eventLog) {
+            if (e.sessionId === from) { e.sessionId = to; }
+        }
+        this.onDidUpdateEmitter.fire();
+        return true;
+    }
+
     private checkStuck(): void {
         const cfg = this.getConfig();
         const now = Date.now();

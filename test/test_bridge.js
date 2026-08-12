@@ -1285,7 +1285,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const at = src.indexOf("op: 'tasks.rerun'");
-        const block = src.slice(at, at + 2600);
+        const block = src.slice(at, at + 5200);
         ok('‼️ tasks.rerun takes the retry\'s edits, the way the page\'s retry form does',
             /prompt\?/.test(block) && /model\?/.test(block) && /effort\?/.test(block)
             && /permissionMode\?/.test(block));
@@ -1924,7 +1924,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && /resolveLaunchProject\(args\.project\)/.test(startBlock));
         // 5000, not 3000: the op's own description grew when the engine axis
         // arrived, and a window too small silently stops covering the handler.
-        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 5000);
+        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 9000);
         ok('console.start takes it too, in the same words',
             /project\? \(id or name/.test(consoleStart)
             && /resolveLaunchProject\(args\.project\)/.test(consoleStart));
@@ -1961,17 +1961,36 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // USD ceiling, the only limit with teeth, could never be reached by it.
         {
             const addBlock = src.slice(src.indexOf("op: 'tasks.add'"), src.indexOf("op: 'tasks.cancel'"));
-            ok('tasks.add takes an engine', /engine\? \(claude — the default — or codex/.test(addBlock));
+            // ‼️ THE LIST IS DERIVED, SO THE TEST CHECKS THE DERIVATION (X-35).
+            // This used to assert the literal words "claude — the default — or
+            // codex", which is exactly how the contract came to say Codex and
+            // Antigravity while Gemini had been a first-class engine for weeks:
+            // a hand-typed list and a hand-typed test agree with each other and
+            // with nothing else. Now the describe is built from `ENGINES`, and
+            // what is asserted is that it is built from `ENGINES`.
+            ok('tasks.add takes an engine, named from the registry rather than typed out',
+                /engine\? \('/.test(addBlock)
+                && /Object\.values\(ENGINES\)\.map\(e => `\$\{e\.id\} = \$\{e\.label\}`\)/.test(addBlock));
             ok('…and refuses one this machine cannot run BEFORE anything spawns',
                 /engineRefusal\(engineMatrix\(\), engine\)/.test(addBlock));
             ok('‼️ …and refuses `engine` together with `cli`, rather than silently '
                 + 'ranking two executors and making one argument a no-op',
                 /a task runs on ONE executor/.test(addBlock));
-            ok('…it names what changes on a per-turn engine: the sandbox, the missing '
-                + 'system-prompt channel, and the absent dollar figure',
-                /SANDBOX chosen up front/.test(addBlock)
-                && /has no such channel/.test(addBlock)
-                && /TOKENS\s*'?\s*\+?\s*'?and no dollar figure/.test(addBlock.replace(/\s+/g, ' ')));
+            // ‼️ AND IT NAMES ALL THREE MECHANISMS, NOT ONE OF THEM THREE TIMES.
+            // The old contract said "a SANDBOX" for every per-turn engine, which
+            // told a caller that Antigravity and Gemini have a Codex sandbox.
+            // They do not: Gemini has an approval mode and Antigravity's real
+            // restraint is its own app's setting.
+            ok('…it names what changes on a per-turn engine: the up-front permission, '
+                + 'the missing system-prompt channel, and the absent dollar figure',
+                /Codex SANDBOX/.test(addBlock)
+                && /Gemini APPROVAL MODE/.test(addBlock)
+                && /Antigravity/.test(addBlock)
+                && /has such a channel|has no such channel|none of these engines has such a channel/.test(addBlock)
+                && /and no dollar figure/.test(addBlock.replace(/\s+/g, ' ')));
+            ok('‼️ …and says that gemini takes no effort, rather than accepting one and dropping it',
+                /Gemini has NO/.test(addBlock)
+                && /reasoning-effort flag/.test(addBlock.replace(/'\s*\+\s*'/g, '')));
             ok('…and answers with the engine and whether it reports a price at all',
                 /engine: task\.engine \?\? 'claude'/.test(addBlock)
                 && /reportsCost: engineOf\(task\.engine\)\.reportsCost/.test(addBlock));
@@ -2813,7 +2832,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
     // `_REF/agentfarm-dev.md` is that the two surfaces move together.
     {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 4200);
+        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 9000);
 
         const sched = at('schedules.add');
         ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
@@ -2828,7 +2847,11 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const trig = at('triggers.add');
         ok('…and takes the same dimensions', /bridgeRunDimensions\(args\)/.test(trig));
         ok('…refuses a watch trigger with nothing to watch',
-            /A watch trigger needs watchPath/.test(trig));
+            /A watch trigger needs watch/.test(trig));
+        // ‼️ …and a path that is not there, which used to install happily and
+        // then never fire.
+        ok('…and refuses a watch path that does not exist',
+            /Watch path does not exist/.test(trig));
         ok('…and mints a webhook token rather than saving a URL nobody can call',
             /newId\(\) \+ newId\(\)/.test(trig));
         ok('templates.add and templates.list exist',

@@ -645,6 +645,11 @@
     /** One <select>, from a launch.ts choice list. `id:''` is always "leave it
      *  alone", and it is spelled out rather than shown as an empty row. */
     function choiceSel(id, label, list, value, title) {
+        // ‼️ NO CHOICES = NO BOX (X-35). An engine that has no such setting —
+        // Gemini has no reasoning effort at all — must not be given an empty
+        // dropdown to stare at; the control is simply not part of that engine's
+        // form. (`docs/CONVENTIONS.md`: a control with no referent is a bug.)
+        if (!(list || []).length) { return ''; }
         const opts = (list || []).map(c =>
             `<option value="${C.esc(c.id)}"${c.id === value ? ' selected' : ''}>${C.esc(c.label)}${c.id ? '' : ''}</option>`).join('');
         return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
@@ -671,6 +676,12 @@
     }
     /** The levels THAT model supports — Codex states them per model. */
     function ntEfforts(engine, model) {
+        // ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS (X-35). `gemini`
+        // has `-m` and nothing beside it — measured against its own option list
+        // — and passing an effort exits 42. A box with no referent is what
+        // docs/CONVENTIONS.md forbids, so it is empty here and the picker
+        // hides it rather than collecting a value the run cannot use.
+        if (String(engine || '') === 'gemini') { return []; }
         const em = ntEngineModels(engine);
         const fallback = (DATA.launch || {}).efforts || [];
         if (!em || !em.efforts) { return fallback; }
@@ -1119,14 +1130,14 @@
             const opts = list.map(e => `<option value="${e.id === 'claude' ? '' : C.esc(e.id)}"${
                 e.id === chosen ? ' selected' : ''}${e.ready ? '' : ' disabled'} title="${C.esc(e.next)}"
                 >${C.esc(e.label)}${e.ready ? '' : ' — cannot run here'}</option>`).join('');
-            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine such as Codex the permission mode below becomes a SANDBOX chosen up front — it cannot stop and ask — and the run states no dollar figure, because it goes against a plan and counts tokens instead. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
+            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). Gemini has no reasoning-effort setting at all, so that box is not drawn for it. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
                 <select id="nt-engine">${opts}</select></label>`;
         };
         const LEDE = {
             task: 'A task is one claude run. Everything except the agent and the prompt is optional — an empty field means no flag, and the agent\'s own settings stay in charge.',
             schedule: 'A schedule is a task that has not happened yet: it runs on its own at a set time, so it takes every dimension a task takes — and a guard, so it does not wake an agent for nothing.',
             trigger: 'A trigger runs when something happens. The brakes cap how OFTEN it fires; the guard caps WHETHER it should fire at all.',
-            template: 'A template is a saved prompt you launch by hand. It carries an agent and a mode so launching it is one click, not a form.',
+            template: 'A template is a saved LAUNCH you repeat by hand: the prompt, the agent, the mode — and the engine, model, effort and permissions it should run with. Launching it is one click, not a form.',
             workflow: 'A workflow is a chain: each step is handed the previous one\'s output. A step is not always an agent — it can call an API, render an asset, drive a browser, or stop and ask you.'
         };
         return `<div class="ntbox" id="ntbox">
@@ -1152,7 +1163,14 @@
                         <option value="headless"${c.mode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
                         <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
                     </select></label>` : ''}
-                ${wantsRun && c.kind !== 'template' ? `
+                ${/**
+                    * ‼️ A TEMPLATE GETS THESE TOO (X-35). It was excluded here —
+                    * `c.kind !== 'template'` — which made the one object whose
+                    * whole purpose is "that launch again" the only one that
+                    * could not state a launch. A task set up on Codex and saved
+                    * as a template came back as Claude every time it was run.
+                    */ ''}
+                ${wantsRun ? `
                 ${engineSel(c.engine)}
                 ${choiceSel('model', 'Model', ntModels(c.engine), c.model,
             'Which model runs it. ‼️ The list belongs to the ENGINE above: '

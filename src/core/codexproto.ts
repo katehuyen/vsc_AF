@@ -41,9 +41,11 @@
  *     here — without that, every Codex turn would report its context twice.
  *
  * ‼️ AND ONE THING IS NOT TRANSLATED, BECAUSE IT DOES NOT EXIST: Codex states no
- * dollar figure for a turn. It runs on a plan and counts tokens. `result` is
- * emitted with no `total_cost_usd` rather than a zero that would read as free or
- * an estimate that would be invented.
+ * dollar figure for a turn. It counts tokens. `result` is emitted with no
+ * `total_cost_usd` rather than a zero that would read as free or an estimate
+ * that would be invented — and NOT because "it runs on a plan", which this file
+ * cannot know: the same CLI signs in with a ChatGPT plan or an API key, and on a
+ * key every turn is invoiced (see EngineTransport.reportsCost).
  *
  * Pure: a reducer over lines. No io, no vscode, no spawning.
  */

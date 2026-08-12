@@ -88,6 +88,10 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<ProjectNode
     private parts(rows: ProjectRow[]): Record<string, PartsTotal> {
         return partsTotals(rows.map(r => r.project), rows.map(r => ({
             id: r.project.id, name: r.project.name, sessions: r.sessions,
+            // The tree folds a row it was handed; it does not have the
+            // record/measurement split, and a parts total is a sum of sessions
+            // rather than a claim about which of them carry dollars.
+            measuredSessions: r.sessions,
             cost: r.cost, tokens: 0, todayCost: r.todayCost, agents: [], lastTs: r.lastTs
         })));
     }

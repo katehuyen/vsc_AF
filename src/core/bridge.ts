@@ -20,6 +20,8 @@
  * new feature ships its bridge access by adding one registration.
  */
 
+import { ENGINES, engineTakesEffort } from './consoleEngine';
+
 export interface BridgeOpSpec {
     op: string;                       // e.g. "schedules.add"
     /** One-line contract shown in the farm.ops catalog: what it does + args. */
@@ -44,8 +46,31 @@ export class BridgeRegistry {
         });
     }
 
-    register(spec: BridgeOpSpec | BridgeOpSpec[]): void {
+    /**
+     * ‼️ AN OP IS REGISTERED ONCE, AND A SECOND REGISTRATION IS AN ERROR (X-35).
+     *
+     * This used to be a bare `Map.set`, which meant the LAST registration of a
+     * name silently won. It cost exactly what a silent overwrite always costs:
+     * `triggers.add` was rewritten to carry the four-engine run dimensions, and
+     * a second, older registration further down the same file — flat `model`
+     * only — quietly replaced it. The source read correctly, the tests passed
+     * on the source, and the running system used the version without engines.
+     * `templates.add` and `templates.list` were doubled the same way.
+     *
+     * So a duplicate now THROWS at startup, where it is one stack trace, rather
+     * than at some call site months later, where it is a mystery. Replacing an
+     * op on purpose is still possible — it just has to say so, which is the
+     * whole difference between an intention and an accident.
+     */
+    register(spec: BridgeOpSpec | BridgeOpSpec[], opts: { replace?: boolean } = {}): void {
         for (const s of Array.isArray(spec) ? spec : [spec]) {
+            if (!opts.replace && this.ops.has(s.op)) {
+                throw new Error(
+                    `Bridge op "${s.op}" is already registered. Two registrations of one op silently `
+                    + 'shadow each other — merge them into one, or pass { replace: true } if the '
+                    + 'override is deliberate.'
+                );
+            }
             this.ops.set(s.op, s);
         }
     }
@@ -154,11 +179,30 @@ export function optStr(args: Record<string, unknown>, key: string): string {
  */
 export function bridgeRunDimensions(args: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
+    // ‼️ THE ENGINE IS CHECKED WHERE IT IS WRITTEN DOWN, NOT WHERE IT RUNS
+    // (X-35). A schedule or a trigger is a run that has not happened yet, and a
+    // typo'd engine name used to be stored happily and refused hours later, at
+    // 3 a.m., with nobody watching — the failure furthest in time from the
+    // mistake that caused it. The runtime check still stands; this is the one
+    // that lets the caller fix it.
+    const engine = optStr(args, 'engine');
+    if (engine) {
+        need(engine.toLowerCase() in ENGINES,
+            `unknown engine "${engine}" — ${Object.keys(ENGINES).join(', ')}`);
+        out.engine = engine.toLowerCase();
+    }
     // `engine` rides here too (X-18): a schedule and a trigger are tasks that
     // have not happened yet, and every dimension a task has is one they have.
-    for (const k of ['engine', 'model', 'effort', 'permissionMode', 'cli', 'workDir']) {
+    for (const k of ['model', 'effort', 'permissionMode', 'cli', 'workDir']) {
         const v = optStr(args, k);
         if (v) { out[k] = v; }
+    }
+    // ‼️ AN EFFORT THE ENGINE HAS NO FLAG FOR IS REFUSED, NOT DROPPED. Gemini
+    // has no reasoning-effort setting at all (core/gemini.ts) and exits 42 when
+    // handed one. Accepting the field and silently ignoring it would let a
+    // caller believe a run is throttled when nothing is.
+    if (out.effort && !engineTakesEffort(String(out.engine ?? ''))) {
+        need(false, `engine "${out.engine}" has no reasoning-effort setting — leave effort out.`);
     }
     // `project` on the wire, `projectId` in the model: the caller names the
     // thing, the store holds its id.
@@ -167,6 +211,44 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     const priority = Number(args.priority);
     if (Number.isFinite(priority) && priority) { out.priority = Math.trunc(priority); }
     return out;
+}
+
+/**
+ * …and the same dimensions on the way BACK OUT — one serializer for
+ * `list` / `get` / `add` / `edit` / `rerun` (X-35).
+ *
+ * ‼️ THE RULE THIS ENFORCES IS THE PANEL–BRIDGE EQUIVALENCE ONE
+ * (`_REF/agentfarm-dev.md`): work set up on a page has to be readable and
+ * editable from the bridge WITHOUT LOSS. It was not — `schedules.list` returned
+ * a schedule with no engine, `tasks.get` called itself "one task in detail" and
+ * omitted every launch dimension, and a caller round-tripping either of them
+ * silently reset a Codex job to Claude. Every reply is built here so a field
+ * added to a run is added to all five at once.
+ *
+ * `null` rather than absent for a field that is genuinely unset: a reader
+ * distinguishing "not stated" from "the key does not exist in this build" is
+ * the difference between a default and a missing feature.
+ */
+export function bridgeDimsOut(
+    o: {
+        engine?: string; model?: string; effort?: string; permissionMode?: string;
+        cli?: string; workDir?: string; priority?: number; projectId?: string;
+    },
+    projectName?: (id: string) => string | undefined
+): Record<string, unknown> {
+    return {
+        // The default is named rather than left null: "which engine did this
+        // run on" has an answer for every run ever recorded, and it is `claude`
+        // for the ones made before there was a second one.
+        engine: o.engine ?? 'claude',
+        model: o.model ?? null,
+        effort: o.effort ?? null,
+        permissionMode: o.permissionMode ?? null,
+        cli: o.cli ?? null,
+        workDir: o.workDir ?? null,
+        priority: o.priority ?? 0,
+        project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null
+    };
 }
 
 /**

@@ -482,13 +482,42 @@ export interface ProjectRollupSession extends ProjectSessionRef {
     /** cost inside the caller's "today" window — budget comparisons use this */
     todayCost: number;
     lastTs: number;
+    /**
+     * ‼️ DOES THIS SESSION'S DOLLAR FIGURE MEAN ANYTHING? (X-35)
+     *
+     * Only Claude Code quotes a price per turn. A Codex or Gemini row's `cost`
+     * is DERIVED from a token count and a price table, and an Antigravity row
+     * has neither — so adding all three into one number produces a total whose
+     * units are three different things and whose comparison against a budget is
+     * meaningless.
+     *
+     * Absent = true, because every caller that existed before this field passed
+     * only Claude rows.
+     */
+    measured?: boolean;
 }
 
 export interface ProjectRollup {
     id: string;
     name: string;
     status?: ProjectStatus;
+    /**
+     * ‼️ HOW MANY CONVERSATIONS THIS PROJECT HAS — on every engine.
+     *
+     * This is the RECORD count and it is the number a person means by "how many
+     * sessions". It used to be built from the Claude-only pool while the
+     * project's own Sessions page listed all four engines, so one project had
+     * two official counts that disagreed by the number of Codex sessions on it
+     * (measured 2026-08-13: 260 here against 300 there).
+     */
     sessions: number;
+    /**
+     * …and how many of those carry a cost figure the `cost` below is made of.
+     * `sessions - measuredSessions` is the number of rows that are real work and
+     * contribute no dollars — which is the honest answer to "why is this project
+     * so cheap", and was previously indistinguishable from "it did nothing".
+     */
+    measuredSessions: number;
     cost: number;
     tokens: number;
     todayCost: number;
@@ -520,7 +549,8 @@ export function rollupProjectSessions(
         const fresh: ProjectRollup = {
             id,
             name: def?.name ?? UNASSIGNED,
-            sessions: 0, cost: 0, tokens: 0, todayCost: 0, agents: [], lastTs: 0
+            sessions: 0, measuredSessions: 0,
+            cost: 0, tokens: 0, todayCost: 0, agents: [], lastTs: 0
         };
         if (def) {
             fresh.status = def.status;
@@ -536,12 +566,20 @@ export function rollupProjectSessions(
 
     for (const s of sessions) {
         const b = bucket(resolveSessionProject(s, projects, links).projectId ?? UNASSIGNED_ID);
+        // ‼️ THE RECORD SIDE COUNTS EVERYTHING. How many conversations, by whom,
+        // and when the last one was are facts about the project, and they do not
+        // depend on whether the engine publishes a price.
         b.sessions++;
+        b.lastTs = Math.max(b.lastTs, s.lastTs);
+        if (s.agentName && !b.agents.includes(s.agentName)) { b.agents.push(s.agentName); }
+        // ‼️ THE MEASUREMENT SIDE COUNTS ONLY WHAT IT CAN ADD UP. Mixing a price
+        // Claude quoted with one derived from a token table would give a total
+        // in no unit at all — and it is compared against a budget.
+        if (s.measured === false) { continue; }
+        b.measuredSessions++;
         b.cost += s.cost;
         b.tokens += s.tokens;
         b.todayCost += s.todayCost;
-        b.lastTs = Math.max(b.lastTs, s.lastTs);
-        if (s.agentName && !b.agents.includes(s.agentName)) { b.agents.push(s.agentName); }
     }
 
     const out = [...buckets.values()];

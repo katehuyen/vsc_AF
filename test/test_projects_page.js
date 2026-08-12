@@ -100,7 +100,12 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         /const own = sessionOwnProject\(s\);[\s\S]{0,400}projectContextFile: projectContextFileFor\(own \|\| undefined\)/.test(extTs));
     ok('…a terminal launch takes the project at LAUNCH time, not when the id turns up',
         /const projectId = \(project !== undefined \? project : activeProjectId\(\)\) \|\| undefined;/.test(extTs)
-        && /termBindings\.push\(\{ title, cwd, term: terminal, launchedAt: Date\.now\(\), sessionId, projectId \}\)/.test(extTs));
+        // ‼️ `sessionId: laneId` since X-35: on a first-class external engine
+        // the caller has no id to give (the CLI has not minted one yet), so the
+        // launcher opens a synthetic live lane and binds THAT — and the binding
+        // is re-keyed in place when the transcript names the conversation. The
+        // project is still stamped at LAUNCH time, which is what this asserts.
+        && /termBindings\.push\(\{ title, cwd, term: terminal, launchedAt: Date\.now\(\), sessionId: laneId, projectId \}\)/.test(extTs));
     // ‼️ ONE read, used for both halves. Reading activeProjectId() again for the
     // stamp could land the other side of a change and file a session under a
     // project it was never told about.
@@ -115,7 +120,11 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
     ok('…and what a terminal session is TOLD and what it is FILED under come from one read',
         /const projectId = project !== undefined \? project : activeProjectId\(\);/.test(startClaude)
         && /projectContextFileFor\(projectId \|\| undefined\)/.test(startClaude)
-        && /sessionId, projectId\);/.test(startClaude)
+        // …and both reach the launcher on the same call. Since X-35 that call
+        // also names the ENGINE, because a terminal on Codex/Gemini/Antigravity
+        // needs a live lane opened for it and only the launcher knows one is
+        // being made.
+        && /sessionId, projectId, spec\.id\);/.test(startClaude)
         // …and only ONE read of the window: the context file and the stamp both
         // come off `projectId`, so a second `activeProjectId()` CALL here would
         // be the bug this rule exists to prevent. (The prose above it names the

@@ -11,7 +11,7 @@ import {
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
-import { EngineId, engineNote, engineOf, ENGINES } from '../core/consoleEngine';
+import { EngineId, engineNote, engineOf, ENGINES, noTranscriptNote } from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { EngineModels, narrowLaunch } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
@@ -1191,8 +1191,26 @@ export class ConsolePanel {
             // is no 'rename' message here: the row carries its identity in
             // `data-vscode-context` and the command does the rest.
             case 'openTranscript': {
-                const row = this.deps.index.all().find(s => s.sessionId === str('sessionId'));
-                if (row) { void vscode.commands.executeCommand('agentfarm.openSession', row.file); }
+                // ‼️ A VISIBLE BUTTON THAT DOES NOTHING IS WORSE THAN NO BUTTON
+                // (X-35). This searched the Claude-only pool, so on a Codex,
+                // Gemini or Antigravity row it found nothing and returned in
+                // silence — the user pressed "Open transcript" and the editor
+                // simply did not react. Three of the four engines DO leave a
+                // readable file; the fourth never will, and that is a sentence,
+                // not a no-op.
+                const sessionId = str('sessionId');
+                const row = this.deps.index.byId(sessionId);
+                if (row?.file) {
+                    void vscode.commands.executeCommand('agentfarm.openSession', row.file);
+                    break;
+                }
+                // The engine comes from the record when there is one and from
+                // the live session otherwise — a conversation started moments
+                // ago has not been indexed yet, and the note must still name the
+                // right CLI.
+                const engine = row?.source
+                    ?? this.deps.host.list().find(h => h.sessionId === sessionId)?.engine;
+                void vscode.window.showInformationMessage(`Agent Farm: ${noTranscriptNote(engine)}`);
                 break;
             }
             case 'openGuide':

@@ -1035,6 +1035,54 @@ export class SessionIndex implements vscode.Disposable {
         return this.allWithExternal().filter(s => s.agentId === agentId);
     }
 
+    /**
+     * ‼️ ONE RESOLVER FOR "WHICH SESSION IS THIS ID?" — across every engine.
+     *
+     * X-35 found the same three-line lookup written out at a dozen call sites,
+     * all of them `index.all().find(s => s.sessionId === id)`, all of them
+     * therefore CLAUDE-ONLY. Each one failed differently and quietly on a
+     * foreign session: the Console resumed a Codex thread with no carried
+     * usage and charged the whole conversation to its first turn; the live rows
+     * lost their title, tokens and turn count; the Session Viewer lost the
+     * owning agent and the launcher that started it.
+     *
+     * "Which conversation is this?" is a RECORD question, and the record covers
+     * all four engines. It is a different question from "what did it cost",
+     * which is a MEASUREMENT and stays on `all()` — that separation is the
+     * whole point of the two pools, and it is only safe when the record side
+     * has one obvious call to make.
+     */
+    /**
+     * …and the same resolver from the other direction: which session is in this
+     * FILE.
+     *
+     * ‼️ A TRANSCRIPT'S FILENAME IS NOT ITS SESSION ID ON THREE OF THE FOUR
+     * ENGINES (X-35). Claude names the file after the session, which is exactly
+     * why `path.basename(file).replace(/\.jsonl$/, '')` looked like a resolver
+     * and spread. Codex writes `rollout-2026-08-12T…-<uuid>.jsonl` and states the
+     * real id inside, in `session_meta.session_id`; Gemini writes `session-1.json`
+     * under a project-hash folder and states its id in the JSON. So the basename
+     * trick produced a key nothing else in the system uses, and every map built
+     * on it — the launcher/origin map above all — simply never matched.
+     */
+    byFile(file: string | undefined): SessionInfo | undefined {
+        const f = String(file ?? '').trim();
+        if (!f) { return undefined; }
+        return this.sessions.get(f) ?? this.externalList.find(s => s.file === f);
+    }
+
+    byId(sessionId: string | undefined): SessionInfo | undefined {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return undefined; }
+        // The map is keyed by FILE, not by session id, so this is a scan either
+        // way — and Claude first, because a Claude row is the one that carries
+        // measurements and the one nearly every caller means.
+        for (const s of this.sessions.values()) {
+            if (s.sessionId === id) { return s; }
+        }
+        return this.externalList.find(s => s.sessionId === id);
+    }
+
     externalForAgent(agentId: string): SessionInfo[] {
         return this.externalList.filter(s => s.agentId === agentId);
     }

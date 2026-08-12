@@ -470,6 +470,12 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         agent: STEP_SYNTHETIC.includes(s.agentName) ? '' : (s.agentName ?? ''),
         prompt: s.prompt ?? '',
         smode: s.mode === 'interactive' ? 'interactive' : 'headless',
+        // …and the launch the step states, or reopening the chain would reset
+        // every step's engine to "inherit" the first time it is saved (X-35).
+        sengine: s.engine ?? '',
+        smodel: s.model ?? '',
+        seffort: s.effort ?? '',
+        spermissionMode: s.permissionMode ?? '',
         onFail: s.onFail === undefined || s.onFail === 'stop' ? 'stop'
             : s.onFail === 'continue' ? 'continue' : 'goto',
         onFailStep: typeof s.onFail === 'number' ? s.onFail : 1,
@@ -607,6 +613,14 @@ export function stepFromDraft(
     return {
         step: {
             agentId: agent.id, agentName: agent.name, title, prompt: str('prompt'), mode, ...chain,
+            // ‼️ THE STEP'S OWN ENGINE AND MODEL (X-35). An agent step is a task,
+            // and it was the only kind of task that could not say what to run it
+            // on — so a chain built to run on Codex ran on Claude. Empty = the
+            // step states nothing and inherits, exactly as before.
+            engine: str('sengine') || undefined,
+            model: str('smodel') || undefined,
+            effort: str('seffort') || undefined,
+            permissionMode: str('spermissionMode') || undefined,
             outputContract: mode === 'headless' && str('contract') === 'json' ? 'json' : undefined,
             verify
         }
@@ -853,7 +867,12 @@ export class TasksPanel {
         send(tpl
             ? {
                 mode2: 'edit', id: tpl.id, title: tpl.title, prompt: tpl.prompt,
-                mode: tpl.mode, agent: tpl.agentName ?? ''
+                mode: tpl.mode, agent: tpl.agentName ?? '',
+                // …seeded with what it was saved with, or reopening the dialog
+                // would silently reset the engine it is holding.
+                engine: tpl.engine ?? '', model: tpl.model ?? '', effort: tpl.effort ?? '',
+                permissionMode: tpl.permissionMode ?? '', project: tpl.projectId ?? '',
+                cli: tpl.cli ?? '', workDir: tpl.workDir ?? '', priority: tpl.priority ?? 0
             }
             : { mode2: 'new' });
     }
@@ -1008,10 +1027,17 @@ export class TasksPanel {
         }
 
         // template
+        // ‼️ …AND A TEMPLATE KEEPS THE LAUNCH IT WAS SAVED WITH (X-35). It is
+        // the one object whose whole point is "that again", and it was the one
+        // that forgot the engine, the model, the effort and the permission mode
+        // — so a task set up on Codex, saved as a template and run from its row
+        // came back as Claude, silently. Same reader as the schedule and the
+        // trigger, so the three dialogs cannot drift.
         const fields = {
             title: str('title'), prompt: str('prompt'),
             mode: str('mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode,
-            agentId: agent?.id, agentName: agent?.name
+            agentId: agent?.id, agentName: agent?.name,
+            ...dims()
         };
         const existing = editing ? m.templates.find(t => t.id === id) : undefined;
         if (existing) {

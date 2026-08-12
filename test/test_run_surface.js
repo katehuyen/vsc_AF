@@ -146,15 +146,27 @@ const base = read('src/panels/base.ts');
     // `claude --continue` picks the latest session itself; a hosted session
     // resumes by id, so "latest" is resolved here
     const i = ext.indexOf("registerCommand('agentfarm.continueSession'");
-    const cont = ext.slice(i, i + 2200);
+    const cont = ext.slice(i, i + 5200);
     ok('Continue latest resolves "latest" for the Console',
         /sort\(\(a, b\) => \(b\.lastTs \|\| b\.mtime\) - \(a\.lastTs \|\| a\.mtime\)\)\[0\]/.test(cont));
     ok('…scoped to that agent\'s own folder',
         /normPath\(s\.cwd \?\? ''\) === normPath\(agent\.dir\)/.test(cont));
     ok('…and says so rather than opening an empty conversation that looks emptied',
         /has no earlier session in/.test(cont));
-    ok('…while the terminal path still uses the CLI\'s own --continue',
-        /startClaudeSession\(agent, \{ continueLast: true \}\)/.test(cont));
+    // ‼️ …AND "LATEST" MEANS LATEST ON ANY ENGINE (X-35). The terminal arm used
+    // to run `claude --continue` unconditionally and the Console arm to pick out
+    // of the Claude-only pool, so on a machine whose newest work was a Codex
+    // conversation the command reopened an older Claude one. The row is now
+    // chosen from the whole record and what happens next follows the engine that
+    // row names — including the case where that engine cannot resume in a
+    // terminal at all (Codex), which is offered the Console instead of being
+    // silently started fresh.
+    ok('…and "latest" is the latest on ANY engine, not the latest Claude one',
+        /index\.allWithExternal\(\)/.test(cont));
+    ok('…while the terminal path still uses the CLI\'s own --continue where it has one',
+        /continueLast: true/.test(cont));
+    ok('‼️ …and an engine that cannot resume in a terminal says so instead of starting fresh',
+        /resumeInTerminal/.test(cont) && /Continue it in the Console/.test(cont));
 }
 
 // ---------- the buttons: one button, the choice under it ----------
@@ -256,7 +268,14 @@ const base = read('src/panels/base.ts');
 
     const startOp = ext.slice(ext.indexOf("op: 'sessions.start'"),
         ext.indexOf("op: 'sessions.rename'"));
-    ok('sessions.start takes the engine too', /engine\? \(claude — the default — or codex/.test(startOp));
+    // ‼️ Derived from `ENGINES`, not typed out — the same fix as tasks.add. A
+    // hand-written "claude or codex" is how this contract came to omit Gemini
+    // for weeks while Gemini was a first-class engine (X-35).
+    ok('sessions.start takes the engine too, named from the registry',
+        /engine\? \('/.test(startOp)
+        && /Object\.values\(ENGINES\)\.map\(e => `\$\{e\.id\} = \$\{e\.label\}`\)/.test(startOp));
+    ok('‼️ …and states resume-in-terminal as a per-engine FACT rather than a rule',
+        /Codex does NOT/.test(startOp) && /--resume <id>/.test(startOp));
     ok('…refusing one that cannot run, in the RESPONSE',
         /const engineRefused = engineRefusal\(engineMatrix\(\), merged\.engine\);/.test(startOp));
     ok('…and stating what that engine changes about a turn',

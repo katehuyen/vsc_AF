@@ -677,13 +677,21 @@
      * window holding one Claude session and one Codex session prints money on
      * the first row and tokens on the second, correctly, at the same time.
      */
-    const NO_PRICE_TIP = 'This engine runs on a plan: it counts tokens and never states a per-turn price, '
-        + 'so there is no dollar figure to show. A $0.00 here would read as "free", which is why nothing is invented.';
+    // ‼️ "STATES NO PRICE", NOT "RUNS ON A PLAN" (X-35). This tooltip used to
+    // assert the billing arrangement off a capability flag — and the two are
+    // different facts. `reportsCost: false` means the CLI prints no dollars;
+    // Codex may be on a ChatGPT plan or an API key, Gemini on a Google account
+    // or GEMINI_API_KEY, and on a key every one of these turns is invoiced.
+    // Telling the user "on a plan" made a financial claim nothing had checked.
+    const NO_PRICE_TIP = 'This engine counts tokens and never states a per-turn price, so there is no dollar '
+        + 'figure to show. A $0.00 here would read as "free", which is why nothing is invented. Whether the '
+        + 'usage is covered by a plan or billed per token depends on how the engine is signed in — the '
+        + 'Engines page reads that from its own credentials.';
 
     function engineSpend(s, cost, tokens, wTokens) {
         if (!s || s.reportsCost !== false) { return spend(cost, tokens, wTokens); }
         const tok = tokens ? `${C.fmtTokW(tokens, wTokens)} tokens` : 'no tokens yet';
-        return `<span title="${C.esc(NO_PRICE_TIP)}">${tok} <span class="noprice">· on a plan, no price</span></span>`;
+        return `<span title="${C.esc(NO_PRICE_TIP)}">${tok} <span class="noprice">· no price stated</span></span>`;
     }
     /**
      * On a CARD there is room for one figure, and it is the tokens.
@@ -710,7 +718,7 @@
     const tokTip = (s, cost) => ((s && s.tokens) ? `${C.fmtTok(s.tokens)} raw tokens` : 'nothing spent yet')
         + ((s && s.wTokens) ? ` · ⚖ ${C.fmtTok(Math.round(s.wTokens))} against the 5h limit` : '')
         + (s && s.reportsCost === false
-            ? ` · ${s.engineLabel} runs on a plan — no per-turn price`
+            ? ` · ${s.engineLabel} states no per-turn price`
             : (cost ? ` · ${C.fmtUSD(cost)} spent` : ''));
 
     /**
@@ -1024,13 +1032,15 @@
         if (m.ms) { bits.push(m.ms >= 60000 ? `${Math.round(m.ms / 6000) / 10}m` : `${Math.round(m.ms / 100) / 10}s`); }
         // the same shape the live strip used while this turn was running, so the
         // estimate and the CLI's own figure land in the same place
-        // ‼️ …and on a plan-billed engine that shape is the tokens alone. The
-        // row is plain text (it is escaped below), so this branch says the words
-        // rather than reaching for the styled version.
+        // ‼️ …and on an engine that states no price that shape is the tokens
+        // alone. The row is plain text (it is escaped below), so this branch
+        // says the words rather than reaching for the styled version — and it
+        // says only what is known: the CLI printed no dollars. Whether the
+        // account is on a plan or a key is not this row's to claim (X-35).
         if (m.cost || m.tokens) {
             const cur = sel();
             bits.push(cur && cur.reportsCost === false
-                ? `${C.fmtTok(m.tokens)} tokens · on a plan, no price`
+                ? `${C.fmtTok(m.tokens)} tokens · no price stated`
                 : spend(m.cost, m.tokens));
         }
         if (!bits.length) { return ''; }

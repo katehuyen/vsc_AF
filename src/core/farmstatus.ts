@@ -37,6 +37,22 @@ export interface FarmStatusInput {
     mediaCostMonth: number;
     cliProfileCount: number;
     externalSessions: Record<string, number>; // source -> session count
+    /**
+     * ‼️ THE FIRST-CLASS ENGINES — A DIFFERENT AXIS FROM `cliProfiles` (X-35).
+     *
+     * `agentFarm.cliProfiles` is a list of arbitrary command templates the user
+     * wrote. Claude, Codex, Gemini and Antigravity are BUILT IN: the extension
+     * knows their flags, their sandboxes, their billing and whether they are on
+     * this machine. Two independent facts — and the status row hung both on the
+     * profile count, so with no profiles configured it announced "sessions and
+     * tasks are Claude-only" on a machine with 39 Codex sessions on disk and an
+     * engine picker in every launcher.
+     *
+     * Ids of the built-in engines that are installed and signed in.
+     */
+    enginesReady: string[];
+    /** …and how many are built in at all, so "1 of 4" can be said. */
+    engineCount: number;
     ingestFolderCount: number;
     registeredAssetCount: number;
     oversightLoopsOn: number;       // enabled sampling loops (quality/suggest/weekly)
@@ -137,25 +153,51 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
         });
     }
 
-    // External CLIs (multi-CLI sessions + transcript adapters).
+    // ‼️ TWO ROWS, BECAUSE THERE ARE TWO INDEPENDENT FACTS (X-35).
+    //
+    // The built-in ENGINES are what a session, a task, a schedule, a trigger and
+    // a mission can be run on. Custom CLI PROFILES are command templates for
+    // binaries this extension knows nothing about. One row used to answer both
+    // by looking at the profile count alone, so a machine with no profiles was
+    // told "sessions and tasks are Claude-only" while 39 Codex sessions and an
+    // Antigravity one sat in its own index — the status page contradicting the
+    // sessions page, and pointing the user at a setting that would not have
+    // helped.
     const extTotal = Object.values(i.externalSessions).reduce((a, b) => a + b, 0);
+    // Defensive on purpose: this input is assembled at a boundary, and a status
+    // page that throws takes the whole card down rather than showing one honest
+    // "unknown" row.
+    const readyAll = i.enginesReady ?? [];
+    const ready = readyAll.filter(e => e !== 'claude');
+    const engineDetail = `${readyAll.length}/${i.engineCount || 4} engines ready`
+        + (ready.length ? ` (${ready.join(', ')} beside Claude)` : '')
+        + (extTotal
+            ? ` · ${Object.entries(i.externalSessions).map(([s, n]) => `${s} ×${n}`).join(' · ')} session(s) on disk`
+            : '');
+    rows.push(ready.length || extTotal
+        ? {
+            id: 'engines', label: 'Engines',
+            // History counts: an engine that ran here is active even if its CLI
+            // has since been uninstalled, and vice versa.
+            state: extTotal ? 'active' : 'ready',
+            detail: engineDetail
+        }
+        : {
+            id: 'engines', label: 'Engines', state: 'dormant',
+            detail: 'only Claude Code is ready here — Codex, Gemini and Antigravity are supported but not installed or not signed in',
+            action: { label: 'Engines', kind: 'command', value: 'agentfarm.openEngines' }
+        });
     if (i.cliProfileCount === 0) {
         rows.push({
-            id: 'cli', label: 'External CLIs', state: 'dormant',
-            detail: 'no cliProfiles — sessions and tasks are Claude-only',
+            id: 'cli', label: 'Custom CLI profiles', state: 'dormant',
+            detail: 'none configured — this is for a binary Agent Farm has no built-in support for; the four engines above do not need one',
             action: { label: 'Configure profiles', kind: 'settings', value: 'agentFarm.cliProfiles' }
         });
-    } else if (extTotal === 0) {
-        rows.push({
-            id: 'cli', label: 'External CLIs', state: 'ready',
-            detail: `${i.cliProfileCount} profile(s) — no external sessions seen yet (adapters are fail-soft: a session that never appears may mean a format drift)`,
-            action: { label: 'Multi-CLI guide', kind: 'guide', value: 'coklu-cli-yurutucu' }
-        });
     } else {
-        const per = Object.entries(i.externalSessions).map(([s, n]) => `${s} ×${n}`).join(' · ');
         rows.push({
-            id: 'cli', label: 'External CLIs', state: 'active',
-            detail: `${per} session(s) tracked`
+            id: 'cli', label: 'Custom CLI profiles', state: 'ready',
+            detail: `${i.cliProfileCount} profile(s) — a profile's output is archived and that is all; it is not monitored the way an engine is`,
+            action: { label: 'Multi-CLI guide', kind: 'guide', value: 'coklu-cli-yurutucu' }
         });
     }
 

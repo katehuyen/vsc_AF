@@ -56,8 +56,20 @@
     // form model survives re-renders
     const form = {
         title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '',
-        team: {}, roles: {}, models: {},
+        // ‼️ `engine` AND `engines` — the mission-wide default and each member's
+        // override (X-35). The core has taken both since X-18 and this form
+        // offered neither, so every mission delegated on Claude no matter what
+        // the fleet was set up to use, and there was no way to say otherwise
+        // short of the bridge.
+        engine: '',
+        team: {}, roles: {}, models: {}, engines: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
+        // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
+        // engine no delegation ever states a dollar, so `maxCostUSD` — the limit
+        // the form presented as "the" budget — can never be reached: the run is
+        // fenced by this one alone, and a user who could not see it believed the
+        // dollar box was protecting them.
+        maxTokens: '',
         approvalMode: 'each-round'
     };
     // suggestions for the model inputs — the user's agentFarm.modelAliases
@@ -135,11 +147,23 @@
             .concat(DATA.agents.map(a =>
                 `<option value="${C.esc(a.id)}"${form.leadAgentId === a.id ? ' selected' : ''}>${C.esc(a.name)}</option>`))
             .join('');
+        // The engines this machine can actually run, from the same matrix every
+        // other picker reads — an engine that is not installed is offered with
+        // the reason it cannot be picked rather than silently missing.
+        const engines = DATA.engines || [];
+        const engineOpts = (sel, blank) => ['<option value="">' + blank + '</option>']
+            .concat(engines.map(e =>
+                `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}${e.ready ? '' : ' disabled'}>`
+                + `${C.esc(e.label)}${e.ready ? '' : ' — not ready on this machine'}</option>`))
+            .join('');
         const teamRows = DATA.agents.map((a, i) => `
             <div class="tmrow">
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
                     value="${C.esc(form.roles[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
+                <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
+                    title="Engine: which CLI this member's delegations run on — empty = the mission's engine below"
+                    ${form.team[a.id] ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
                 <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="modelopts"
                     placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy"
                     value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
@@ -162,15 +186,22 @@
                 <button class="secondary small" id="f-browse">Browse…</button>
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
             <div class="frow limrow">
-                ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent')}
+                ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent. Only Claude Code states a per-turn price, so on any other engine this limit can never be reached — the token ceiling beside it is what fences that run')}
+                ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. 0 = no token ceiling. This is the ONLY hard budget for a team delegating on Codex, Gemini or Antigravity')}
                 ${lim('maxRounds', 'Max rounds', 'Planner decisions')}
                 ${lim('maxTasks', 'Max tasks', 'Total delegations')}
                 ${lim('maxMinutes', 'Max minutes', 'Wall clock; waiting on you does not count')}
                 ${lim('maxParallel', 'Max parallel', 'Delegations per wave')}
             </div>
+            <div class="frow"><label>Delegation engine
+                <select id="f-engine">${engineOpts(form.engine, 'Claude Code (default)')}</select></label>
+                <span class="muted small">Which CLI the team's delegations run on; a member can override it on its own row.
+                ‼️ The PLANNER always runs on Claude Code — its control flow parses that CLI's JSON envelope and spends
+                <code>--disallowedTools</code> and <code>--max-turns</code>, which the others do not have. Delegation engine
+                and planner engine are separate axes on purpose.</span></div>
             <div class="frow"><label>Planner model
                 <input type="text" id="f-planner" list="modelopts" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
-                <span class="muted small">Who runs on what: planner = this field (else the lead's own default) · each delegation = the member's model field (else that agent's default / your model-policy rules in Farm Settings).</span></div>
+                <span class="muted small">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's engine + model (else the mission engine above, and that agent's default / your model-policy rules in Farm Settings).</span></div>
             ${modelDatalist()}
             <div class="frow"><label>Approval
                 <select id="f-approval">
@@ -191,12 +222,14 @@
         form.leadAgentId = document.getElementById('f-lead').value;
         form.workdir = document.getElementById('f-workdir').value;
         form.plannerModel = document.getElementById('f-planner').value;
+        form.engine = document.getElementById('f-engine').value;
         DATA.agents.forEach((a, i) => {
             form.team[a.id] = !!document.getElementById('tm-' + i).checked;
             form.roles[a.id] = document.getElementById('rl-' + i).value;
             form.models[a.id] = document.getElementById('md-' + i).value;
+            form.engines[a.id] = document.getElementById('en-' + i).value;
         });
-        ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxMinutes', 'maxParallel'].forEach(k => {
+        ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'].forEach(k => {
             form[k] = document.getElementById('lim-' + k).value;
         });
         form.approvalMode = document.getElementById('f-approval').value;
@@ -210,9 +243,14 @@
             input: {
                 title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
                 workdir: form.workdir, plannerModel: form.plannerModel,
+                engine: form.engine,
                 team: DATA.agents.filter(a => form.team[a.id])
-                    .map(a => ({ agentId: a.id, role: form.roles[a.id] || '', model: form.models[a.id] || '' })),
+                    .map(a => ({
+                        agentId: a.id, role: form.roles[a.id] || '',
+                        model: form.models[a.id] || '', engine: form.engines[a.id] || ''
+                    })),
                 maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
+                maxTokens: form.maxTokens,
                 maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
                 approvalMode: form.approvalMode
             }
@@ -446,8 +484,14 @@
         const lines = [
             `goal: ${sp.goal}`,
             `lead: ${sp.leadAgentName}${sp.plannerModel ? ` (planner: ${sp.plannerModel})` : ''}`,
-            `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '') + (m.model ? ` [${m.model}]` : '')).join(', ')}`,
-            `limits: $${sp.limits.maxCostUSD} · ${sp.limits.maxRounds} rounds · ${sp.limits.maxTasks} tasks · ${sp.limits.maxMinutes} min · ${sp.limits.maxParallel} parallel`,
+            `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '')
+                + ((m.engine || sp.engine) ? ` <${m.engine || sp.engine}>` : '')
+                + (m.model ? ` [${m.model}]` : '')).join(', ')}`,
+            // ‼️ THE ENGINE AND THE TOKEN CEILING BELONG IN THE SUMMARY (X-35).
+            // A run whose delegations went to Codex and whose only real fence
+            // was the token cap used to read as a $-budgeted Claude run.
+            `engines: delegations ${sp.engine || 'claude'} · planner claude (always)`,
+            `limits: $${sp.limits.maxCostUSD}${sp.limits.maxTokens ? ` · ${C.fmtTok(sp.limits.maxTokens)} tok` : ' · no token ceiling'} · ${sp.limits.maxRounds} rounds · ${sp.limits.maxTasks} tasks · ${sp.limits.maxMinutes} min · ${sp.limits.maxParallel} parallel`,
             `delegations: ${st.total}${st.failed ? ` (${st.failed} failed)` : ''} · ${mins} min${sp.workdir ? ` · workdir: ${sp.workdir}` : ''} · approval: ${sp.approvalMode}`
         ];
         if (shares.length) { lines.push(`tokens: ${shares.map(x => `${x.name} ${x.pct}%`).join(' · ')}`); }
@@ -581,7 +625,7 @@
             <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
                 title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
                 `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
-                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
+                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
@@ -589,7 +633,9 @@
             ${liveSection(run, sp)}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
-                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)}${runTokens(run) ? ` · ${C.fmtTok(runTokens(run))} tok` : ''} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
+                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)}${runTokens(run)
+                    ? ` · ${C.fmtTok(runTokens(run))}${sp.limits.maxTokens ? ` / ${C.fmtTok(sp.limits.maxTokens)}` : ''} tok`
+                    : ''} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
             </div>
             ${(() => {
                 const shares = tokenShares(run, sp);

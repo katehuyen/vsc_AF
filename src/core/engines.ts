@@ -257,17 +257,29 @@ const SPECS: EngineSpec[] = [
         label: 'Gemini',
         command: 'gemini',
         env: 'GEMINI_API_KEY',
-        // ‼️ Not a preference — a fact with a date on it. The panel says it
-        // because the alternative is the user hunting for a login that was
-        // taken away.
-        billing: 'An API key. The "sign in with Google" route this CLI used to have was retired in June 2026, so a plan is no longer a way to pay for it.',
+        // ‼️ CORRECTED IN X-35, AGAINST THE SHIPPED CLI. This row used to state
+        // that the "sign in with Google" route "was retired in June 2026, so a
+        // plan is no longer a way to pay for it" — a dated, confident claim that
+        // the CLI itself contradicts: gemini-cli 0.55.1 still carries
+        // `oauth-personal` (Login with Google) as a first-class auth type and
+        // takes that path on startup. Saying otherwise sent a user hunting for
+        // an API key they may not need, and — worse — it was the same mistake
+        // F-14 is about in the other direction: guessing at the billing
+        // arrangement instead of reading it. TWO routes, and which one is in use
+        // is what `read()` below actually determines.
+        billing: 'Either a Google account sign-in (the CLI\'s own `oauth-personal` route, which is what its free/Code-Assist tiers use) or an API key in GEMINI_API_KEY / GOOGLE_API_KEY. The CLI states no per-turn price on either, so a dollar figure beside a Gemini session is derived from your pricing rules, never quoted.',
         docs: 'https://github.com/google-gemini/gemini-cli',
         installCommand: 'npm install -g @google/gemini-cli',
+        // ‼️ There is no `gemini login`: the CLI opens a browser on its first run
+        // and writes the grant itself. So the step is "run it once", not a
+        // command to copy — and NOT "this engine has no plan sign-in", which is
+        // what the absence of a login command used to be read as.
+        signInHint: 'Run `gemini` once in a terminal and choose "Login with Google" — it opens a browser and stores the grant itself; there is no login subcommand to run.',
         read(probe) {
             if (probe.existsHome(GEMINI_OAUTH)) {
                 return {
                     mode: 'subscription', file: GEMINI_OAUTH,
-                    detail: 'A Google account sign-in is on disk — that route was retired in June 2026 and may no longer be served.'
+                    detail: 'A Google account sign-in is on disk — the CLI\'s `oauth-personal` route, which it still supports (checked against gemini-cli 0.55.1). What that account is entitled to is between you and Google; this box only knows the credential is there.'
                 };
             }
             if (probe.hasSecret('GEMINI_API_KEY') || probe.hasEnv('GEMINI_API_KEY')) {
@@ -423,6 +435,11 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
     // this branch Antigravity's row would read "Put  in the vault", which is
     // both nonsense and the "not configured" dead end this module replaces.
     if (!spec.env) { return spec.signInHint ?? `${spec.label} is not signed in.`; }
+    // ‼️ "NO PLAN SIGN-IN" IS A CLAIM, AND IT WAS WRONG FOR GEMINI (X-35). Not
+    // every engine's sign-in is a `login` SUBCOMMAND — gemini-cli's is a browser
+    // flow it starts by itself on first run — so "no loginCommand" does not mean
+    // "key only". An engine that has another route says so in its own words.
+    if (spec.signInHint) { return `${spec.signInHint} Or put ${spec.env} in the vault to pay per token.`; }
     return `Put ${spec.env} in the vault. This engine has no plan sign-in.`;
 }
 

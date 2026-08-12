@@ -35,6 +35,9 @@
 // the first time a third engine arrived.
 import { EngineId } from './engines';
 import { agyArgs, agyModeNote, agyRunArgs, agyTuiArgs, AgyTurnInit } from './agy';
+import {
+    geminiApprovalFor, geminiArgs, geminiModeNote, geminiRunArgs, geminiTuiArgs, GeminiTurnInit
+} from './gemini';
 
 export { EngineId };
 
@@ -55,9 +58,34 @@ export interface EngineTransport {
     shape: EngineShape;
     /** Can the model, effort or permission mode be changed WHILE a turn runs? */
     liveControls: boolean;
-    /** Does a finished turn come with a price? A subscription engine counts
-     *  tokens and states no dollars — see the note in codexproto.ts. */
+    /**
+     * Does a finished turn come with a price the CLI itself states?
+     *
+     * ‼️ THIS IS A CAPABILITY, NOT A BILLING ARRANGEMENT — and conflating the
+     * two was a real bug (X-35). `reportsCost: false` says "this CLI does not
+     * print a dollar figure". It does NOT say the usage was free, and it does
+     * not say it went against a subscription: Codex signs in with a ChatGPT plan
+     * OR an API key, and Gemini with a Google account OR `GEMINI_API_KEY`. The
+     * surfaces had turned "no price on the wire" into "you are on a plan, so
+     * this cost nothing", which is a financial claim this file cannot make.
+     *
+     * Which of the two an engine is actually using is read from its own
+     * credentials by `core/engines.ts` (`AuthState.mode`) — the only place that
+     * can know. Use `costSource` below for "where does the figure I am showing
+     * come from", and the engines page for "what is it charged against".
+     */
     reportsCost: boolean;
+    /**
+     * Where a cost figure for this engine COMES FROM, when one is shown.
+     *
+     * `cli`    — the engine states dollars itself; the figure is quoted.
+     * `tokens` — the engine states tokens only, and the dollars beside them are
+     *            DERIVED from `agentFarm.pricing`. Right for comparing runs,
+     *            wrong to put on an invoice, and meaningless if the account is
+     *            on a flat plan.
+     * `none`   — neither is available (a metadata-only history row).
+     */
+    costSource: 'cli' | 'tokens' | 'none';
     /** Human name for the surfaces. */
     label: string;
     /**
@@ -113,7 +141,7 @@ export interface EngineTransport {
 export const ENGINES: Record<EngineId, EngineTransport> = {
     claude: {
         id: 'claude', exe: 'claude', shape: 'persistent',
-        liveControls: true, reportsCost: true, label: 'Claude Code',
+        liveControls: true, reportsCost: true, costSource: 'cli', label: 'Claude Code',
         promptOn: 'stdin', spawnShell: true, resumeInTerminal: true,
         readableTranscript: true
     },
@@ -121,14 +149,26 @@ export const ENGINES: Record<EngineId, EngineTransport> = {
         id: 'codex', exe: 'codex', shape: 'perTurn',
         // A per-turn engine has nothing to change mid-turn: the flags of the
         // NEXT turn are the controls, and they take effect the moment it starts.
-        liveControls: false, reportsCost: false, label: 'Codex',
+        liveControls: false, reportsCost: false, costSource: 'tokens', label: 'Codex',
         promptOn: 'stdin', spawnShell: true, resumeInTerminal: false,
         readableTranscript: true
     },
     gemini: {
+        // ‼️ `@google/gemini-cli`, NOT the `agy` row below. Measured 2026-08-13
+        // against gemini-cli 0.55.1 — see `core/gemini.ts` for every flag.
+        //
+        // `promptOn: 'stdin'` because `isHeadlessMode()` is true the moment
+        // stdin is a pipe and the non-interactive path then reads stdin whole;
+        // `-p`'s value is APPENDED to it, so passing both sends the message
+        // twice. Nothing user-typed reaches the command line, which is why the
+        // shell its npm shim needs on Windows is safe here.
+        //
+        // `resumeInTerminal: true` because `--resume <uuid>` is an ordinary flag
+        // on the ordinary command — unlike Codex, whose resume is a separate
+        // subcommand with a different vocabulary.
         id: 'gemini', exe: 'gemini', shape: 'perTurn',
-        liveControls: false, reportsCost: false, label: 'Gemini',
-        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false,
+        liveControls: false, reportsCost: false, costSource: 'tokens', label: 'Gemini',
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: true,
         readableTranscript: true
     },
     agy: {
@@ -136,7 +176,7 @@ export const ENGINES: Record<EngineId, EngineTransport> = {
         // is `@google/gemini-cli`, a different program. This one is Google's
         // agent app, and the models it offers include Anthropic's.
         id: 'agy', exe: 'agy', shape: 'perTurn',
-        liveControls: false, reportsCost: false, label: 'Antigravity',
+        liveControls: false, reportsCost: false, costSource: 'tokens', label: 'Antigravity',
         promptOn: 'argv', spawnShell: false, resumeInTerminal: true,
         readableTranscript: false
     }
@@ -395,6 +435,15 @@ export function engineNote(id: string | undefined): string {
     if (e.shape === 'persistent') {
         return 'One long-lived process: a message typed mid-turn steers that turn, and model, effort and permissions can be changed while it runs. It reports what each turn cost.';
     }
+    if (e.id === 'gemini') {
+        // ‼️ NOT THE CODEX SENTENCE. This engine has no sandbox and no effort
+        // flag, and it is not "on a plan": it is billed by whatever it is signed
+        // in with (see engines.ts), and states no dollar figure either way.
+        return 'One process per turn: a message typed mid-turn is HELD until the turn ends, and the pickers are the NEXT turn\'s flags. '
+            + 'It has no reasoning-effort setting at all, and it cannot stop and ask — its policy engine turns "ask the user" into "deny" '
+            + 'on an unattended turn, so a mode that would have prompted refuses instead. It counts tokens and states no price, '
+            + 'whichever way the account is paid for.';
+    }
     if (e.id === 'agy') {
         // ‼️ THE SAME SHAPE, A DIFFERENT SENTENCE. Saying "a sandbox chosen up
         // front" here would be a promise this engine does not keep: measured,
@@ -404,7 +453,34 @@ export function engineNote(id: string | undefined): string {
             + 'It sees only the folders it is given, cannot be handed a picture, and takes its permissions from the Antigravity app rather than from this box. '
             + 'It runs on an account, so it counts tokens and states no price.';
     }
-    return 'One process per turn: a message typed mid-turn is HELD until the turn ends, the pickers are the NEXT turn\'s flags, and the permission mode becomes a sandbox chosen up front — this engine cannot stop and ask. It runs on a plan, so it counts tokens and states no price.';
+    // ‼️ "COUNTS TOKENS AND STATES NO PRICE" — and NOT "runs on a plan" (X-35).
+    // This sentence used to assert the billing arrangement, which this file
+    // cannot know: Codex signs in with a ChatGPT plan OR an API key, and the
+    // difference is the difference between a turn that is included and a turn
+    // that is invoiced. `core/engines.ts` reads the credential and says which.
+    return 'One process per turn: a message typed mid-turn is HELD until the turn ends, the pickers are the NEXT turn\'s flags, and the permission mode becomes a sandbox chosen up front — this engine cannot stop and ask. It counts tokens and states no price; whether that is billed against a plan or a key is what its sign-in says, on the Engines page.';
+}
+
+/**
+ * ‼️ ONE SENTENCE FOR "WHAT DOES THE MONEY FIGURE ON THIS ROW MEAN" (X-35).
+ *
+ * Three separate facts kept getting collapsed into one: whether the CLI PRINTS
+ * a price, where a shown figure CAME FROM, and what the account is CHARGED
+ * against. Collapsed, they produced the claim that a Gemini turn was free
+ * because the CLI printed no dollars — while the same account may be billed per
+ * token on an API key. Surfaces print this instead of inventing their own.
+ */
+export function engineCostNote(engine: string | undefined): string {
+    const e = engineOf(engine);
+    if (e.costSource === 'cli') {
+        return 'This engine states the price of each turn itself, so the figure is quoted, not estimated.';
+    }
+    if (e.costSource === 'none') {
+        return `${e.label} publishes neither a price nor a token count for this row — there is no figure to show, which is not the same as zero.`;
+    }
+    return `${e.label} counts TOKENS and states no price. Any dollar figure beside it is derived from your `
+        + '`agentFarm.pricing` rules — useful for comparing runs, and not a bill. Whether the account is '
+        + 'charged per token or covered by a plan depends on how it is signed in; the Engines page reads that.';
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +502,16 @@ export function engineNote(id: string | undefined): string {
  *  `thread` is whatever that engine calls a conversation it can pick up again. */
 export interface TurnInit {
     thread?: string;
+    /**
+     * ‼️ THE ID A FIRST TURN IS TOLD TO USE, where the engine lets it be chosen.
+     *
+     * Only Gemini does (`--session-id`, measured). Codex and Antigravity both
+     * announce an id only once the turn has started, so they ignore this — but
+     * an engine that CAN be told its own identity should be, because everything
+     * downstream (the live row, the project stamp, the terminal binding) is
+     * waiting to learn it from a parser otherwise.
+     */
+    newThread?: string;
     model?: string;
     effort?: string;
     permissionMode?: string;
@@ -435,34 +521,156 @@ export interface TurnInit {
     images?: string[];
 }
 
+/**
+ * ‼️ THE DISPATCH IS EXHAUSTIVE, AND THAT IS THE WHOLE FIX (X-35).
+ *
+ * These four functions used to read "if agy … else Codex", which meant every
+ * per-turn engine that was not Antigravity was handed `codex exec` — so Gemini,
+ * which has an engine row, a model list and a place in every picker, was talking
+ * to a program whose command line it does not share and whose output it does not
+ * emit. It did not fail loudly; it produced a Codex-shaped nothing.
+ *
+ * `never` below is what stops that happening again: a fifth engine added to
+ * `EngineId` without a transport is a COMPILE ERROR here, not a silent
+ * fallthrough discovered in production. The default branch is unreachable by
+ * construction and throws rather than guessing, because on this dispatch a guess
+ * is a turn sent to the wrong CLI.
+ */
+function unknownEngine(spec: never, what: string): never {
+    throw new Error(
+        `${what}: engine "${String((spec as unknown as EngineTransport)?.id ?? spec)}" has no transport. `
+        + 'Every per-turn engine needs its own argument vocabulary — it must never fall through to another engine\'s.'
+    );
+}
+
 /** The command line for ONE hosted turn on any per-turn engine. */
 export function turnArgs(engine: string | undefined, o: TurnInit): string[] {
     const spec = engineOf(engine);
-    if (spec.id === 'agy') {
-        const init: AgyTurnInit = {
-            conversation: o.thread, model: o.model, effort: o.effort,
-            permissionMode: o.permissionMode, cwd: o.cwd
-        };
-        return agyArgs(init);
+    switch (spec.id) {
+        case 'agy': {
+            const init: AgyTurnInit = {
+                conversation: o.thread, model: o.model, effort: o.effort,
+                permissionMode: o.permissionMode, cwd: o.cwd
+            };
+            return agyArgs(init);
+        }
+        case 'gemini': {
+            const init: GeminiTurnInit = {
+                thread: o.thread, newThread: o.newThread, model: o.model,
+                // ‼️ NO EFFORT. This CLI has no such flag (gemini.ts,
+                // measurement 4) and passing one exits 42 — so a value carried
+                // over from another engine's picker is dropped HERE, once.
+                permissionMode: o.permissionMode
+            };
+            return geminiArgs(init);
+        }
+        case 'codex':
+            return codexArgs(o as CodexTurnInit);
+        // ‼️ Not reachable: `claude` is persistent and never asks for a turn's
+        // argv. Listed so the exhaustiveness check below is real.
+        case 'claude':
+            return codexArgs(o as CodexTurnInit);
+        default:
+            return unknownEngine(spec.id, 'turnArgs');
     }
-    return codexArgs(o as CodexTurnInit);
 }
 
 /** …and for one unattended run — a headless task. */
 export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
-    return engineOf(engine).id === 'agy' ? agyRunArgs(o) : codexRunArgs(o);
+    const spec = engineOf(engine);
+    switch (spec.id) {
+        case 'agy': return agyRunArgs(o);
+        case 'gemini': return geminiRunArgs(o);
+        case 'codex': return codexRunArgs(o);
+        case 'claude': return codexRunArgs(o);
+        default: return unknownEngine(spec.id, 'runArgs');
+    }
 }
 
 /** …and for the interactive command a person is about to watch in a terminal. */
 export function tuiArgs(
     engine: string | undefined, o: CodexRunInit & { conversation?: string; continueLast?: boolean }
 ): string[] {
-    return engineOf(engine).id === 'agy' ? agyTuiArgs(o) : codexTuiArgs(o);
+    const spec = engineOf(engine);
+    switch (spec.id) {
+        case 'agy': return agyTuiArgs(o);
+        case 'gemini': return geminiTuiArgs(o);
+        case 'codex': return codexTuiArgs(o);
+        case 'claude': return codexTuiArgs(o);
+        default: return unknownEngine(spec.id, 'tuiArgs');
+    }
 }
 
 /** The one line beside a permission picker: what this mode does HERE. */
 export function engineModeNote(engine: string | undefined, mode: string | undefined): string {
-    return engineOf(engine).id === 'agy' ? agyModeNote(mode) : codexModeNote(mode);
+    const spec = engineOf(engine);
+    switch (spec.id) {
+        case 'agy': return agyModeNote(mode);
+        case 'gemini': return geminiModeNote(mode);
+        case 'codex': return codexModeNote(mode);
+        case 'claude': return codexModeNote(mode);
+        default: return unknownEngine(spec.id, 'engineModeNote');
+    }
+}
+
+/**
+ * ‼️ HOW A FIRST PROMPT REACHES A TERMINAL SESSION — a flag on two of them and
+ * a positional on the third, and getting it wrong does not look like an error.
+ *
+ * `agy -i <text>` runs the prompt and STAYS; `--print` would answer once and
+ * exit. Gemini is the same shape for a reason its own `--help` actively hides:
+ * the help calls the positional `query` "runs in interactive mode by default",
+ * but its code decides headless with `isHeadlessMode({ prompt, query })` — a
+ * positional query is TRUE there, so `gemini "do this"` answers once and exits.
+ * `-i/--prompt-interactive` is the flag that means what the help claims the
+ * positional does. Codex takes the plain positional.
+ *
+ * The failure is a person watching a terminal print an answer and close, where
+ * they expected to sit in a conversation — so it is a function, not a habit.
+ */
+export function engineFirstPromptFlag(engine: string | undefined): string[] {
+    const id = engineOf(engine).id;
+    return id === 'agy' || id === 'gemini' ? ['-i'] : [];
+}
+
+/**
+ * ‼️ WHAT A PERMISSION MODE IS *CALLED* ON THIS ENGINE, for the surfaces that
+ * write it down (a task archive, a bridge reply).
+ *
+ * It used to be `codexSandboxFor()` for every per-turn engine, which told a
+ * reader that Antigravity and Gemini have a Codex sandbox. They do not:
+ * Antigravity's real restraint is the app's own tool-permission setting, and
+ * Gemini has an approval mode whose vocabulary (`default` · `auto_edit` ·
+ * `yolo` · `plan`) is its own. A label that names the wrong mechanism is worse
+ * than none, because it reads as a guarantee.
+ *
+ * `undefined` = this engine has no up-front setting of its own to name; the
+ * caller should print `engineModeNote` alone.
+ */
+export function enginePermissionSetting(
+    engine: string | undefined, mode: string | undefined
+): { label: string; value: string } | undefined {
+    switch (engineOf(engine).id) {
+        case 'codex': return { label: 'Sandbox', value: codexSandboxFor(mode) };
+        case 'gemini': return { label: 'Approval mode', value: geminiApprovalFor(mode) };
+        // The app's own setting governs, and saying "sandbox" here would be a
+        // promise this engine does not keep (see agyModeNote).
+        case 'agy': return undefined;
+        case 'claude': return undefined;
+        default: return undefined;
+    }
+}
+
+/**
+ * ‼️ WHICH ENGINES TAKE A REASONING EFFORT AT ALL.
+ *
+ * Claude, Codex and Antigravity each have one; `gemini` has no such flag and
+ * exits 42 if it is given one. A picker that offers the box anyway is offering a
+ * control with no referent — the thing `docs/CONVENTIONS.md` already forbids —
+ * so every surface asks this instead of assuming four engines behave alike.
+ */
+export function engineTakesEffort(engine: string | undefined): boolean {
+    return engineOf(engine).id !== 'gemini';
 }
 
 /** The prompt as a per-turn engine receives it — the same wording on both, so
@@ -470,13 +678,20 @@ export function engineModeNote(engine: string | undefined, mode: string | undefi
 export function enginePromptText(
     engine: string | undefined, text: string, attachments: { kind: string; path: string }[] = []
 ): string {
-    const spec = engineOf(engine);
-    if (spec.id !== 'agy') { return codexPromptText(text, attachments); }
-    // ‼️ NO IMAGE CHANNEL ON THIS ONE (agy.ts): Codex keeps images out of the
-    // prompt because `-i` can carry them. Here there is no `-i`, so a picture is
-    // named as a path like everything else — the agent is told where it is and
-    // cannot look at it, which is better than it never being mentioned.
+    if (engineHasImageChannel(engine)) { return codexPromptText(text, attachments); }
+    // ‼️ NO IMAGE CHANNEL ON THESE (agy.ts, gemini.ts): Codex keeps images out
+    // of the prompt because `-i` can carry them. Here there is no `-i`, so a
+    // picture is named as a path like everything else — the agent is told where
+    // it is and cannot look at it, which is better than it never being
+    // mentioned.
     return codexPromptText(text, attachments.map(a => ({ ...a, kind: 'file' })));
+}
+
+/** Whether an image can be SEEN by this engine, or only named as a path. Codex
+ *  has `-i`; Antigravity and Gemini have no such flag on the headless path. */
+export function engineHasImageChannel(engine: string | undefined): boolean {
+    const id = engineOf(engine).id;
+    return id !== 'agy' && id !== 'gemini';
 }
 
 /** The project brief, fenced, for an engine with no system-prompt channel —

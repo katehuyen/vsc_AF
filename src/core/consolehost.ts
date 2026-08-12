@@ -14,11 +14,13 @@
  */
 
 import * as cp from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
 import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
+import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
@@ -60,9 +62,13 @@ export function looksLikeUri(s: string): boolean {
  * needs "which conversation is this" asks here instead of reaching into the
  * translator's own state and getting it right for one engine only.
  */
-function threadOf(h: { codex?: CodexState; agy?: AgyState }): string | undefined {
-    return h.agy?.conversationId ?? h.codex?.threadId;
+function threadOf(h: { codex?: CodexState; agy?: AgyState; gemini?: GeminiState }): string | undefined {
+    return h.agy?.conversationId ?? h.gemini?.sessionId ?? h.codex?.threadId;
 }
+
+/** A real UUID, because `--session-id` on Gemini is validated as one — a short
+ *  base-36 id like the rest of this file's would be refused. */
+const newUuid = (): string => crypto.randomUUID();
 
 /**
  * The staged copy of a dropped/pasted file keeps the name the user knows.
@@ -232,6 +238,19 @@ interface Hosted {
      * `threadOf` is the one place that asks "whichever of these exists".
      */
     agy?: AgyState;
+    /**
+     * …and Gemini's, which is a THIRD state for a third protocol
+     * (geminiproto.ts): its own session id, its turn counter and the reply it is
+     * still accumulating from `message` deltas.
+     *
+     * ‼️ IT DOES NOT CARRY A RUNNING TOTAL, AND THAT IS THE MEASUREMENT.
+     * `CodexState.spent` exists because Codex reports the THREAD's cumulative
+     * usage on every turn. Gemini's stats come from a per-process telemetry
+     * singleton that a resume does not restore, so they are already this turn's
+     * own — subtracting a baseline here would report zero for every turn after
+     * the first.
+     */
+    gemini?: GeminiState;
     /** The turn a per-turn engine is running: what was said, what rode with it,
      *  what the engine has complained about, and how many times this exact turn
      *  has been attempted (see the thread-store conflict in `runTurn`). */
@@ -447,24 +466,37 @@ export class ConsoleHost {
             },
             engine,
             // A resume already knows the thread; a fresh session learns it from
-            // the first `thread.started` (Codex) / `init` (Antigravity).
+            // the first `thread.started` (Codex) / `init` (Antigravity, Gemini)
+            // — except on Gemini, where the id is CHOSEN before the first turn
+            // (see `newThread` in runTurn) and `init` only confirms it.
             ...(engine.id === 'agy'
                 ? { agy: { ...newAgyState(), ...(init.resume ? { conversationId: init.resume } : {}) } }
-                : {
-                    codex: {
-                        ...newCodexState(),
-                        ...(init.resume ? { threadId: init.resume } : {}),
-                        // ‼️ …AND WHAT THE THREAD HAS ALREADY SPENT, or the first
-                        // turn after a resume is charged with the whole
-                        // conversation — see codexTurnUsage / codexTotalsFromUsage.
-                        ...(init.resume
-                            ? (() => {
-                                const spent = codexTotalsFromUsage(init.carried?.usage);
-                                return spent ? { spent } : {};
-                            })()
-                            : {})
+                : engine.id === 'gemini'
+                    ? {
+                        gemini: {
+                            ...newGeminiState(),
+                            ...(init.resume ? { sessionId: init.resume } : {})
+                        }
                     }
-                }),
+                    : {
+                        codex: {
+                            ...newCodexState(),
+                            ...(init.resume ? { threadId: init.resume } : {}),
+                            // ‼️ …AND WHAT THE THREAD HAS ALREADY SPENT, or the
+                            // first turn after a resume is charged with the whole
+                            // conversation — see codexTurnUsage /
+                            // codexTotalsFromUsage. This baseline is CODEX-ONLY:
+                            // it exists because that engine reports the thread's
+                            // running total, and applying it to an engine that
+                            // reports per-turn figures would zero every turn.
+                            ...(init.resume
+                                ? (() => {
+                                    const spent = codexTotalsFromUsage(init.carried?.usage);
+                                    return spent ? { spent } : {};
+                                })()
+                                : {})
+                        }
+                    }),
             // ‼️ Read HERE, at spawn, exactly like the Claude path writes the
             // file here — and only for a session that is starting. A resume is
             // continuing a thread that was already told, and telling it again
@@ -504,8 +536,19 @@ export class ConsoleHost {
             prompt = engineContextPrefix(h.context) + prompt;
             h.context = undefined;
         }
+        // ‼️ AN ENGINE THAT CAN BE TOLD ITS OWN NAME IS TOLD IT (X-35). Gemini
+        // takes `--session-id <uuid>` on a first turn, so the conversation's
+        // identity is a FACT before a byte is sent instead of something learned
+        // from a parser afterwards — which is what everything downstream (the
+        // live row, the project stamp, the terminal binding) was waiting for.
+        // Generated here rather than in the pure argv builder, and remembered on
+        // the state so a retried turn does not invent a second conversation.
+        const preset = h.engine.id === 'gemini' && !threadOf(h) && !h.state.sessionId
+            ? (h.gemini = { ...(h.gemini ?? newGeminiState()), sessionId: newUuid() }).sessionId
+            : undefined;
         const args = turnArgs(h.engine.id, {
-            thread: threadOf(h) ?? h.state.sessionId,
+            thread: preset ? undefined : (threadOf(h) ?? h.state.sessionId),
+            newThread: preset,
             model: h.state.model,
             effort: h.state.effort,
             permissionMode: h.state.permissionMode,
@@ -763,11 +806,18 @@ export class ConsoleHost {
                         h.agy = t.state;
                         return t.events;
                     })()
-                    : (() => {
-                        const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
-                        h.codex = t.state;
-                        return t.events;
-                    })();
+                    : h.engine.id === 'gemini'
+                        ? (() => {
+                            const t = translateGemini(
+                                h.gemini ?? newGeminiState(), parsed, { model: h.state.model });
+                            h.gemini = t.state;
+                            return t.events;
+                        })()
+                        : (() => {
+                            const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
+                            h.codex = t.state;
+                            return t.events;
+                        })();
                 for (const ev of events) {
                     const rr = reduceEvent(h.state, ev, now);
                     h.state = rr.state;

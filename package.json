@@ -1,8 +1,8 @@
 {
   "name": "agent-farm",
   "displayName": "Agent Farm",
-  "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.120.0",
+  "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini and Antigravity: live fleet status, cost analytics, session explorer, health & optimization insights.",
+  "version": "3.121.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -86,7 +86,7 @@
       },
       {
         "view": "agentfarm.tasks",
-        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nA task runs your prompt in the agent's folder, on the engine you choose — Claude Code, Codex, Gemini or Antigravity — headless into an archived file, or in a terminal you can watch.\n[Open Guide](command:agentfarm.openGuide)"
       },
       {
         "view": "agentfarm.missions",
@@ -433,7 +433,7 @@
       },
       {
         "command": "agentfarm.startSessionWith",
-        "title": "Start Session With… (choose CLI)",
+        "title": "Start Session With… (custom CLI profile)",
         "category": "Agent Farm",
         "icon": "$(run-all)"
       },

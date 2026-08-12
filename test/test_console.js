@@ -1494,14 +1494,20 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // X-19 — the money half.
     ok('‼️ a plan-billed session shows TOKENS where the dollars would be',
         /function engineSpend\(s, cost, tokens, wTokens\)/.test(js)
-        && /on a plan, no price/.test(js));
+        // ‼️ "no price stated" — NOT "on a plan" (X-35). The chip was asserting a
+        // billing arrangement off a capability flag; Codex and Gemini each sign
+        // in with either a subscription or an API key, and on a key these turns
+        // are invoiced. What is true here is only that the CLI printed no price.
+        && /no price stated/.test(js) && !/on a plan, no price/.test(js));
     ok('…and says why there is no figure rather than printing a zero',
         /would read as "free", which is why nothing is invented/.test(js));
     ok('…the running turn too, with no "~": the tokens are exact',
         /tokens this turn/.test(js));
     ok('…and the session line and the card hover follow the same rule',
         /const tokTip = \(s, cost\)/.test(js)
-        && /runs on a plan — no per-turn price/.test(js));
+        && /states no per-turn price/.test(js));
+    ok('‼️ …and the tooltip sends the user to where the billing arrangement IS known',
+        /Engines page reads that from its own credentials/.test(js));
     ok('the payload carries the engine and what it means, per session',
         /engine: s\.engine \?\? 'claude',/.test(panel)
         && /reportsCost: engineOf\(s\.engine\)\.reportsCost/.test(panel));

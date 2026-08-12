@@ -474,8 +474,16 @@ ok('run row shows delegation count with the failed badge',
 ok('run row tooltip characterizes the mission (goal, team, limits, tokens)',
     html().includes('goal: Fix the parser and prove it')
     && html().includes('team: coder — implements, reviewer')
-    && html().includes('limits: $5 · 8 rounds')
+    // ‼️ …and the token ceiling is stated beside the dollar one (X-35). A
+    // mission delegating on a subscription engine can never reach `maxCostUSD`,
+    // so a summary that named only the dollars described a fence that is not
+    // there. "no token ceiling" is said out loud rather than left blank.
+    && /limits: \$5 · (no token ceiling|[\d.]+k? tok) · 8 rounds/.test(html())
     && html().includes('delegations: 2 (1 failed)'));
+// ‼️ AND WHICH ENGINE THE DELEGATIONS RAN ON, beside the planner's — two axes,
+// and the planner's is Claude by design, not by omission.
+ok('run row tooltip names the delegation engine and the planner engine separately',
+    html().includes('engines: delegations claude · planner claude (always)'));
 ok('detail shows the per-agent token share line',
     html().includes('tokens by agent:') && html().includes('coder <b>71%</b>') && html().includes('lead (lead) <b>29%</b>'));
 ok('token share tooltip carries the raw amounts',

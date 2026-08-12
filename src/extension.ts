@@ -114,7 +114,10 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
-import { codexSandboxFor, ENGINES, engineNote, engineOf, noTranscriptNote, runArgs } from './core/consoleEngine';
+import {
+    ENGINES, engineModeNote, engineNote, engineOf, enginePermissionSetting,
+    noTranscriptNote, runArgs
+} from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
     claudeOnlyScopeNote
@@ -204,12 +207,14 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeRunDimensions, need, optStr, parseBridgeRequest
+    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, need, optStr,
+    parseBridgeRequest
 } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules,
-    previousOccurrenceKey, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
+    previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
+    TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
@@ -999,6 +1004,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // signal is the terminal itself: open → SessionStart, close → SessionEnd.
     // Namespaced `cli:` session ids keep them apart from claude's UUIDs.
     const cliTerminals = new Map<vscode.Terminal, { sessionId: string; cwd?: string }>();
+    /**
+     * Lanes opened for a FIRST-CLASS external engine's terminal, waiting to be
+     * told the conversation's real id (see openExternalLane / the reconcile pass
+     * beside it). Keyed by the synthetic id the lane currently carries.
+     */
+    const externalLanes = new Map<string, {
+        engine: string; cwd?: string; title: string; launchedAt: number; projectId?: string;
+    }>();
     context.subscriptions.push(vscode.window.onDidCloseTerminal(t => {
         const info = cliTerminals.get(t);
         if (!info) { return; }
@@ -2988,11 +3001,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const who = label && !String(agentRef ?? '').trim()
             ? { id: '', name: label }
             : findAgent(String(agentRef ?? ''));
+        // ‼️ A STEP IS A TASK, SO ITS RUN DIMENSIONS ARE READ AND CHECKED THE
+        // SAME WAY A TASK'S ARE (X-35). They used to ride through on the
+        // spread — unvalidated, and undocumented in the contract — which meant
+        // `engine: "gemnii"` was stored happily and refused at 3 a.m. when the
+        // chain fired. Same validator as `tasks.add`; the spread stays for the
+        // webhook/media/browser blocks, which this does not touch.
+        const dims = bridgeRunDimensions(raw);
         return {
             ...passthrough,
             agentId: who.id, agentName: who.name,
             title: stepTitle, prompt,
-            mode: raw.mode === 'interactive' ? 'interactive' : 'headless'
+            mode: raw.mode === 'interactive' ? 'interactive' : 'headless',
+            ...dims
         } as WorkflowStep;
     };
     /** A workflow by id or title, and one of its steps by 1-based place. */
@@ -3129,15 +3150,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'run time — a queued task can sit for hours and the window will have moved on), which CLI '
                 + 'profile executes it, how urgent it is, and where it runs. '
                 + 'args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), '
-                + 'engine? (claude — the default — or codex; ‼️ ON A PER-TURN ENGINE THE RUN IS SHAPED '
-                + 'DIFFERENTLY: `permissionMode` becomes a SANDBOX chosen up front because the engine cannot '
-                + 'stop and ask ("Default" therefore means read-only there), the project brief travels inside '
-                + 'the prompt rather than as a system prompt (that engine has no such channel), '
+                + 'engine? (' + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
+                + '; default claude. ‼️ ON A PER-TURN ENGINE THE RUN IS SHAPED '
+                + 'DIFFERENTLY: `permissionMode` is spent UP FRONT because the engine cannot stop and ask, '
+                + 'and what it becomes differs per engine — a Codex SANDBOX, a Gemini APPROVAL MODE whose '
+                + '"ask the user" resolves to deny with nobody watching, or on agy a request the Antigravity '
+                + 'app\'s own setting can overrule. "Default" therefore means "refuse what would have asked" '
+                + 'rather than "it will ask". The project brief travels inside the prompt rather than as a '
+                + 'system prompt (none of these engines has such a channel), '
                 + 'agentFarm.taskExtraArgs and the model-policy rules do NOT apply (they are Claude\'s '
                 + 'vocabulary), outputContract:"json" is not available, and the finished run reports TOKENS '
-                + 'and no dollar figure because it goes against a plan. An engine that is not installed or '
-                + 'not signed in is refused before anything spawns — ask engines.status), '
-                + 'model? (alias or id), effort? (low|medium|high|xhigh|max), '
+                + 'and no dollar figure — that is the engine, not a missing measurement. ‼️ Gemini has NO '
+                + 'reasoning-effort flag: passing `effort` with engine:"gemini" is refused rather than '
+                + 'ignored. An engine that is not installed or not signed in is refused before anything '
+                + 'spawns — ask engines.status), '
+                + 'model? (alias or id), effort? (low|medium|high|xhigh|max — not on gemini), '
                 + 'permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), '
                 + 'cli? (a name from agentFarm.cliProfiles — a DIFFERENT axis from `engine`: a CLI profile is '
                 + 'a command template for a binary Agent Farm knows nothing about, so passing both is refused), '
@@ -3206,8 +3233,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reportsCost: engineOf(task.engine).reportsCost,
                     model: task.model ?? null, effort: task.effort ?? null,
                     permissionMode: task.permissionMode ?? null,
-                    ...(engineOf(task.engine).shape === 'perTurn'
-                        ? { sandbox: codexSandboxFor(task.permissionMode) } : {}),
+                    // ‼️ NAMED BY THE ENGINE, NOT BY THE FIRST ONE THAT HAD ONE
+                    // (X-35). Every per-turn engine used to get `sandbox: …`
+                    // from `codexSandboxFor`, so an Antigravity or Gemini task
+                    // reported a Codex sandbox it does not have — a caller
+                    // reading `sandbox: "read-only"` off an Antigravity run was
+                    // being told about a restraint that is not there at all.
+                    // Codex has a sandbox; Gemini has an approval mode;
+                    // Antigravity's real restraint is the app's own setting, so
+                    // it names none and prints the note instead.
+                    ...(() => {
+                        const set = enginePermissionSetting(task.engine, task.permissionMode);
+                        return set ? { [set.label === 'Sandbox' ? 'sandbox' : 'approvalMode']: set.value } : {};
+                    })(),
+                    permissionNote: engineOf(task.engine).shape === 'perTurn'
+                        ? engineModeNote(task.engine, task.permissionMode) : null,
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
                     priority: task.priority ?? 0
                 };
@@ -3229,8 +3269,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '"… (retry N)". Everything omitted is the ORIGINAL\'s, which is the point of a retry; what '
                 + 'you pass is what you are CHANGING, the way the page\'s retry form does. A workflow-step '
                 + 'task with no edits resumes its chain instead. '
-                + 'args: id, prompt?, agent? (name|id), title?, mode? (headless|interactive), model?, '
-                + 'effort?, permissionMode?, cli?, workDir?, priority?, start? (default true)',
+                + 'args: id, prompt?, agent? (name|id), title?, mode? (headless|interactive), '
+                + 'engine? (claude|codex|gemini|agy — ‼️ "the same thing on a different engine" is the '
+                + 'commonest reason to retry at all, and this op could not express it), model?, '
+                + 'effort?, permissionMode?, cli?, workDir?, priority?, project?, start? (default true)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -3240,15 +3282,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const permissionMode = optStr(args, 'permissionMode') ?? '';
                 const errors = validateLaunch({ effort, permissionMode });
                 need(!errors.length, errors.join(' · '));
+                // ‼️ Validated against the engine this RETRY will run on — the
+                // one passed, or the original's — so "retry it on gemini" cannot
+                // quietly carry the old engine's effort into a CLI that has none.
+                const dims = bridgeRunDimensions({
+                    ...args,
+                    engine: optStr(args, 'engine') || (t as FarmTask).engine || ''
+                });
                 const over = {
                     ...(optStr(args, 'agent') ? { agent: findAgent(optStr(args, 'agent') as string) } : {}),
                     ...(optStr(args, 'title') ? { title: optStr(args, 'title') as string } : {}),
                     ...(optStr(args, 'mode') ? { mode: optStr(args, 'mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode } : {}),
+                    // Only what the CALLER stated is an override; the engine
+                    // resolved above for validation must not become one, or every
+                    // retry would pin the engine it merely inherited.
+                    ...(optStr(args, 'engine') ? { engine: dims.engine as string } : {}),
                     ...(optStr(args, 'model') ? { model: optStr(args, 'model') as string } : {}),
                     ...(effort ? { effort } : {}),
                     ...(permissionMode ? { permissionMode } : {}),
                     ...(optStr(args, 'cli') ? { cli: optStr(args, 'cli') as string } : {}),
                     ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
+                    ...(optStr(args, 'project') ? { projectId: optStr(args, 'project') as string } : {}),
                     ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
                     ...(args.start === false ? { autoStart: false } : {})
                 };
@@ -3256,7 +3310,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return copy
                     ? {
                         id: copy.id, status: copy.status, title: copy.title, attempt: copy.attempt ?? 1,
-                        model: copy.model ?? null, effort: copy.effort ?? null
+                        ...bridgeDimsOut(copy, (pid: string) => projectStore.get(pid)?.name)
                     }
                     : { resumedWorkflow: true };
             }
@@ -3293,11 +3347,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'schedules.list',
-            describe: 'Installed schedules. args: none',
+            describe: 'Installed schedules, each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. ‼️ The engine is part of the answer to "what will this do at 3 a.m.": a list that omitted it let a caller read a Codex schedule back as a Claude one and write it away again. args: none',
             handler: () => taskManager.schedules.map(s => ({
                 id: s.id, title: s.title, agent: s.agentName, kind: s.kind,
                 hour: s.hour, minute: s.minute, dow: s.dow, enabled: s.enabled, missed: s.missed,
-                model: s.model ?? null, fireIf: s.fireIf ?? null
+                fireIf: s.fireIf ?? null,
+                ...bridgeDimsOut(s, (pid: string) => projectStore.get(pid)?.name)
             }))
         },
         {
@@ -3322,9 +3377,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const dims = bridgeRunDimensions(args);
                 const s = taskManager.addSchedule({ ...seeds[0], model: model || undefined, fireIf, ...dims });
                 return {
-                    id: s.id, title: s.title, model: s.model ?? null, fireIf: s.fireIf ?? null,
-                    effort: s.effort ?? null, permissionMode: s.permissionMode ?? null,
-                    project: s.projectId ?? null, workDir: s.workDir ?? null, priority: s.priority ?? 0
+                    id: s.id, title: s.title, fireIf: s.fireIf ?? null,
+                    ...bridgeDimsOut(s, (pid: string) => projectStore.get(pid)?.name)
                 };
             }
         },
@@ -3370,13 +3424,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.list',
-            describe: 'Mission runs, newest first. args: none',
+            describe: 'Mission runs, newest first — with the engine the DELEGATIONS run on and the tokens they spent. ‼️ `costUSD: 0` on a mission whose delegates run on a subscription engine is not a cheap run, it is an engine that states no price: read `tokens` beside it. The planner is always Claude Code and is a separate axis (`plannerEngine`). args: none',
             handler: () => missionStore.runs.slice().reverse().map(r => {
                 const sp = missionStore.spec(r.specId);
                 return {
                     id: r.id, title: sp?.title ?? r.specId, status: r.status,
                     verdict: r.result?.verdict, rounds: r.rounds.length,
-                    costUSD: Math.round(r.totalCostUSD * 100) / 100, startedAt: r.startedAt
+                    costUSD: Math.round(r.totalCostUSD * 100) / 100,
+                    tokens: r.totalTokens ?? 0,
+                    // ‼️ WHICH ENGINE THIS MISSION DELEGATED ON. The core has
+                    // carried `MissionSpec.engine` and per-member engines since
+                    // X-18 and neither list op said a word about them, so a
+                    // caller could start a Codex mission over the bridge and
+                    // never read back that it was one (X-35).
+                    engine: sp?.engine ?? 'claude',
+                    plannerEngine: 'claude',
+                    team: (sp?.team ?? []).map(m => ({
+                        agent: m.agentId, role: m.role ?? null,
+                        engine: m.engine ?? sp?.engine ?? 'claude',
+                        model: m.model ?? null
+                    })),
+                    startedAt: r.startedAt
                 };
             })
         },
@@ -3384,7 +3452,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'missions.start',
             describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?}]), '
                 + 'title?, workdir?, plannerModel?, '
-                + 'engine? (which engine the DELEGATIONS run on — claude, the default, or codex; a team member '
+                + 'engine? (which engine the DELEGATIONS run on — '
+                + Object.values(ENGINES).map(e => e.id).join(', ')
+                + ', default claude; a team member '
                 + 'may override it with its own `engine`. ‼️ THE PLANNER ALWAYS RUNS ON CLAUDE CODE: the '
                 + 'mission\'s control flow parses `claude -p --output-format json` and spends --disallowedTools '
                 + 'and --max-turns, none of which the other engine has. An engine that cannot run here is '
@@ -3425,6 +3495,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // only one that moves. A caller reading `costUSD: 0` off a
                     // mission that ran all morning is not looking at a cheap run.
                     tokens: r.totalTokens ?? 0,
+                    // ‼️ AND THE TWO ENGINE AXES, WHICH ARE NOT ONE (X-35). The
+                    // planner is Claude Code by design — it parses that CLI's
+                    // JSON envelope and spends --disallowedTools / --max-turns —
+                    // while the DELEGATIONS run wherever the mission says, per
+                    // member. Reporting one number for both would hide whichever
+                    // of the two the reader was asking about.
+                    engine: sp?.engine ?? 'claude',
+                    plannerEngine: 'claude',
+                    // …and the ceiling that still binds when nothing states a
+                    // price. A run stopped by the token cap and a run stopped by
+                    // the dollar cap look identical without this.
+                    limits: {
+                        maxCostUSD: sp?.limits?.maxCostUSD ?? null,
+                        maxTokens: sp?.limits?.maxTokens ?? null,
+                        maxRounds: sp?.limits?.maxRounds ?? null,
+                        maxTasks: sp?.limits?.maxTasks ?? null,
+                        maxMinutes: sp?.limits?.maxMinutes ?? null,
+                        maxParallel: sp?.limits?.maxParallel ?? null
+                    },
+                    team: (sp?.team ?? []).map(m => ({
+                        agent: m.agentId, role: m.role ?? null,
+                        engine: m.engine ?? sp?.engine ?? 'claude',
+                        model: m.model ?? null
+                    })),
                     // a waiting run says WHAT it waits for, so an agent knows to
                     // call missions.answer / missions.approve
                     pendingQuestion: missionQuestions.get(r.id)?.question ?? null,
@@ -3445,11 +3539,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.list',
-            describe: 'Installed triggers (watch/hook/webhook). args: none',
+            describe: 'Installed triggers (watch/hook/webhook), each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. A workflow trigger has none of its own: its steps carry them. args: none',
             handler: () => taskManager.triggers.map(t => ({
                 id: t.id, title: t.title, type: t.type, enabled: t.enabled,
                 fireIf: t.fireIf ?? null,
-                model: t.action.kind === 'workflow' ? null : (t.action.model ?? null),
+                watchPath: t.watchPath ?? null,
+                hookEvent: t.hookEvent ?? null, hookAgent: t.hookAgent ?? null,
+                action: t.action.kind,
+                agent: t.action.kind === 'task' ? t.action.agentName : null,
+                ...(t.action.kind === 'workflow'
+                    ? { workflow: t.action.workflowId }
+                    : bridgeDimsOut(t.action, (pid: string) => projectStore.get(pid)?.name)),
                 fireCount: t.fireCount ?? 0, skipCount: t.skipCount ?? 0,
                 lastSkipReason: t.lastSkipReason ?? null
             }))
@@ -3459,8 +3559,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // in `_REF/agentfarm-dev.md`: a function a person can reach from a
             // panel is a function an agent can be told to use, in the same
             // commit, with the same dimensions.
+            // ‼️ ONE REGISTRATION. There used to be two of this op — this one,
+            // which carries the four-engine run dimensions, and an older one
+            // further down the file that took a nested `action` object with a
+            // flat `model` and nothing else. `Map.set` let the second quietly
+            // replace the first, so the engine-aware contract was in the source
+            // and out of the running system (X-35). The registry now refuses a
+            // duplicate; this handler is the UNION of the two, so nothing the
+            // older shape accepted has been taken away.
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watchPath? (watch), hookEvent?/hookAgent? (hook), token? (webhook — generated when absent), action? (task|dispatch|workflow, default task), agent (name|id, for action=task), prompt (for task/dispatch), mode? (headless|interactive), workflow? (id|title, for action=workflow), debounceSec?, cooldownSec?, maxPerHour?, enabled?, the run dimensions model?/effort?/permissionMode?/cli?/workDir?/priority?/project?, and fireIf? (same shape as schedules.add — the free brake that stops a wake-up before it costs anything)',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (claude|codex|gemini|agy — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ not on gemini, which has no such flag), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -3468,61 +3576,116 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const type = optStr(args, 'type') || 'watch';
                 need(['watch', 'hook', 'webhook'].includes(type),
                     'type must be watch | hook | webhook.');
-                const actKind = optStr(args, 'action') || 'task';
+                // ‼️ BOTH SHAPES, BECAUSE BOTH WERE PUBLISHED. The flat form is
+                // this op's own contract; the nested one is what the shadowing
+                // registration accepted for months, and a caller written against
+                // it must not break because the duplicate was removed.
+                const nested = args.action && typeof args.action === 'object' && !Array.isArray(args.action)
+                    ? args.action as Record<string, unknown>
+                    : undefined;
+                const actKind = (nested ? String(nested.kind ?? '') : optStr(args, 'action')) || 'task';
                 need(['task', 'dispatch', 'workflow'].includes(actKind),
                     'action must be task | dispatch | workflow.');
-                const mode: TaskMode = optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless';
-                const dims = bridgeRunDimensions(args);
+                const from = (key: string): string =>
+                    (nested && typeof nested[key] === 'string' ? String(nested[key]).trim() : '')
+                    || optStr(args, key);
+                const need1 = (key: string): string => {
+                    const v = from(key);
+                    need(v, `${key} is required for a ${actKind} action.`);
+                    return v;
+                };
+                const modeIn = from('mode');
+                const mode: TaskMode = modeIn === 'interactive' ? 'interactive' : 'headless';
+                // Dimensions may be stated at either level; the nested ones win
+                // because they are the more specific statement.
+                const dims = {
+                    ...bridgeRunDimensions(args),
+                    ...(nested ? bridgeRunDimensions(nested) : {})
+                };
                 let action: FarmTrigger['action'];
                 if (actKind === 'workflow') {
-                    const ref = optStr(args, 'workflow') || optStr(args, 'workflowId');
+                    const ref = from('workflow') || from('workflowId');
                     const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
                     need(w, 'Workflow not found — workflows.list shows current ones.');
                     action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id };
                 } else if (actKind === 'dispatch') {
-                    action = { kind: 'dispatch', title, prompt: argStr(args, 'prompt'), mode, ...dims };
+                    action = {
+                        kind: 'dispatch', title: from('title') || title,
+                        prompt: need1('prompt'), mode, ...dims
+                    };
                 } else {
-                    const agent = findAgent(argStr(args, 'agent'));
+                    const agent = findAgent(need1('agent'));
                     action = {
                         kind: 'task', agentId: agent.id, agentName: agent.name,
-                        title, prompt: argStr(args, 'prompt'), mode, ...dims
+                        title: from('title') || title, prompt: need1('prompt'), mode, ...dims
                     };
                 }
-                need(type !== 'watch' || optStr(args, 'watchPath'),
-                    'A watch trigger needs watchPath — the file or folder it watches.');
+                // ‼️ THE PATH IS CHECKED, not merely required — a watch on a
+                // folder that does not exist is a trigger that can never fire,
+                // and it used to be installed without a word.
+                const watchPath = optStr(args, 'watch') || optStr(args, 'watchPath');
+                if (type === 'watch') {
+                    need(watchPath, 'A watch trigger needs watch (the file or folder it watches).');
+                    need(fs.existsSync(watchPath), `Watch path does not exist: ${watchPath}`);
+                }
+                const hookEvent = optStr(args, 'hookEvent') || 'stop';
+                if (type === 'hook') {
+                    const kinds = ['start', 'prompt', 'toolStart', 'toolEnd', 'permission',
+                        'notify', 'stop', 'subagent', 'compact', 'end'];
+                    need(kinds.includes(hookEvent),
+                        `Unknown hookEvent "${hookEvent}" — use one of: ${kinds.join(', ')}.`);
+                }
                 const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
                 need(args.fireIf === undefined || fireIf,
                     'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
-                const num = (k: string, d: number): number => {
-                    const n = Number(args[k]);
-                    return Number.isFinite(n) ? Math.trunc(n) : d;
+                const num = (k: string, d: number, min: number): number => {
+                    const v = args[k];
+                    if (v === undefined) { return d; }
+                    need(typeof v === 'number' && Number.isFinite(v) && v >= min,
+                        `${k} must be a number ≥ ${min}.`);
+                    return Math.trunc(v as number);
                 };
+                const token = type === 'webhook' ? (optStr(args, 'token') || newId() + newId()) : undefined;
                 const t = taskManager.addTrigger({
                     title, type: type as FarmTrigger['type'],
-                    watchPath: type === 'watch' ? optStr(args, 'watchPath') : undefined,
-                    hookEvent: type === 'hook' ? (optStr(args, 'hookEvent') || 'stop') : undefined,
-                    hookAgent: type === 'hook' ? (optStr(args, 'hookAgent') || undefined) : undefined,
-                    token: type === 'webhook' ? (optStr(args, 'token') || newId() + newId()) : undefined,
+                    watchPath: type === 'watch' ? watchPath : undefined,
+                    hookEvent: type === 'hook' ? hookEvent : undefined,
+                    hookAgent: type === 'hook' && optStr(args, 'hookAgent')
+                        ? findAgent(optStr(args, 'hookAgent')).name : undefined,
+                    token,
                     action,
-                    debounceSec: num('debounceSec', 5),
-                    cooldownSec: num('cooldownSec', 60),
-                    maxPerHour: num('maxPerHour', 12),
+                    debounceSec: num('debounceSec', type === 'watch' ? 10 : 1, 1),
+                    cooldownSec: num('cooldownSec', 60, 0),
+                    maxPerHour: num('maxPerHour', 6, 0),
                     enabled: args.enabled !== false,
                     fireIf
                 });
-                return { id: t.id, title: t.title, type: t.type, token: t.token ?? null, enabled: t.enabled };
+                return {
+                    id: t.id, title: t.title, type: t.type, enabled: t.enabled,
+                    fireIf: t.fireIf ?? null, token: t.token ?? null,
+                    // The dimensions come straight back, so a caller can SEE
+                    // that the engine it asked for is the engine that was stored.
+                    ...(t.action.kind === 'workflow'
+                        ? { action: 'workflow', workflow: t.action.workflowId }
+                        : {
+                            action: t.action.kind,
+                            ...bridgeDimsOut(t.action, (pid: string) => projectStore.get(pid)?.name)
+                        }),
+                    ...(token ? { url: `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}` } : {})
+                };
             }
         },
         {
             op: 'templates.list',
-            describe: 'Saved prompt templates. args: none',
+            describe: 'Saved task templates, each with the launch it was saved with — engine, model, effort, permission mode, CLI, working folder, priority and project. args: none',
             handler: () => taskManager.templates.map(t => ({
-                id: t.id, title: t.title, mode: t.mode, agent: t.agentName ?? null
+                id: t.id, title: t.title, mode: t.mode, agent: t.agentName ?? null,
+                ...bridgeDimsOut(t, (pid: string) => projectStore.get(pid)?.name)
             }))
         },
         {
             op: 'templates.add',
-            describe: 'Save a prompt template (launched by hand from its row). args: title, prompt, mode? (headless|interactive), agent? (name|id)',
+            describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (claude|codex|gemini|agy), model?, effort? (not on gemini), permissionMode?, cli?, workDir?, priority?, project?',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -3532,9 +3695,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const t = taskManager.addTemplate({
                     title, prompt: argStr(args, 'prompt'),
                     mode: optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless',
-                    agentId: agent?.id, agentName: agent?.name
+                    agentId: agent?.id, agentName: agent?.name,
+                    // ‼️ The saved launch — the thing a template exists to hold
+                    // and the thing it used to drop (X-35).
+                    ...bridgeRunDimensions(args)
                 });
-                return { id: t.id, title: t.title, agent: t.agentName ?? null };
+                return {
+                    id: t.id, title: t.title, agent: t.agentName ?? null,
+                    ...bridgeDimsOut(t, (pid: string) => projectStore.get(pid)?.name)
+                };
             }
         },
         {
@@ -3685,15 +3854,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
-            op: 'templates.list',
-            describe: 'Saved task templates. args: none',
-            handler: () => taskManager.templates.map(t => ({
-                id: t.id, title: t.title, agent: t.agentName ?? null, mode: t.mode
-            }))
-        },
-        {
             op: 'templates.run',
-            describe: 'Run a template as a task now. args: id or title, agent? (name|id — required when the template is not bound to an agent)',
+            describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli?, workDir?, priority?, project?',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -3703,9 +3865,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? agents.find(a => a.id === t.agentId)
                     : findAgent(argStr(args, 'agent'));
                 need(agent, 'Agent not found for this template.');
-                const task = taskManager.addTask(agent as AgentInfo, t.title, t.prompt, t.mode);
+                // ‼️ THE SAVED LAUNCH, THEN THIS CALL'S OVERRIDES (X-35). Running
+                // a template used to build a bare task, so everything the
+                // template remembered about HOW to run was dropped at the one
+                // moment it mattered.
+                const over = bridgeRunDimensions({
+                    ...args, engine: optStr(args, 'engine') || t.engine || ''
+                });
+                const task = taskManager.addTask(agent as AgentInfo, t.title, t.prompt, t.mode,
+                    { ...runExtras(t), ...runExtras(over as RunDimensions) });
                 taskManager.startTask(task);
-                return { id: task.id, status: task.status };
+                return {
+                    id: task.id, status: task.status,
+                    ...bridgeDimsOut(task, (pid: string) => projectStore.get(pid)?.name)
+                };
             }
         },
         {
@@ -3961,7 +4134,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.start',
-            describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? (claude — the default — or codex; ‼️ on a terminal this opens THAT engine\'s own TUI, and three of Claude\'s dimensions have no equivalent there: `name` (-n), the project brief (that engine has no system-prompt channel, so a terminal session is NOT told about the project and says so) and resume/continue (refused — `codex exec resume` is measured only on the Console\'s path). An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions; on a per-turn engine this becomes a SANDBOX chosen up front, because it cannot stop and ask), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+            describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
+                + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule: Claude, Gemini (--resume <id>) and Antigravity (--conversation <id>) all resume in a terminal; Codex does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Gemini has no reasoning-effort flag. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — not on gemini), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions; on a per-turn engine this is spent up front because it cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on agy a request its app can overrule), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -4052,12 +4227,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.shelf',
-            describe: 'The pinned sessions (the user\'s shelf) with their labels — what they keep coming back to. args: none',
-            handler: () => index.pinned().map(s => ({
-                sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
-                tags: s.tags ?? [], lastTs: s.lastTs, cwd: s.cwd ?? null,
-                cost: Math.round(s.cost * 100) / 100
-            }))
+            describe: 'The pinned sessions (the user\'s shelf) with their labels — what they keep coming back to. Each row names its ENGINE and whether that engine states a price: `reportsCost: false` means the `cost` figure is derived from tokens rather than quoted, so a low number there is not a cheap session. args: none',
+            handler: () => index.pinned().map(s => {
+                // ‼️ THE SHELF ALREADY HELD ALL FOUR ENGINES AND SAID SO ABOUT
+                // NONE OF THEM (X-35). `index.pinned()` has been wide for a
+                // while; this reply carried a bare `cost` and no engine, so a
+                // pinned Codex conversation reached a bridge caller as an
+                // engine-less row worth zero dollars — indistinguishable from a
+                // Claude session that did nothing.
+                const engine = s.source ?? 'claude';
+                const spec = engineOf(engine);
+                return {
+                    sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
+                    tags: s.tags ?? [], lastTs: s.lastTs, cwd: s.cwd ?? null,
+                    engine, engineLabel: spec.label,
+                    turns: s.userTurns, tokens: totalTokens(s.usage),
+                    cost: Math.round(s.cost * 100) / 100,
+                    reportsCost: spec.reportsCost,
+                    // …and whether there is a file to open at all, which on
+                    // Antigravity is a permanent no rather than "not yet".
+                    hasTranscript: !!s.file
+                };
+            })
         },
         {
             op: 'sessions.page',
@@ -4145,25 +4336,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.live',
-            describe: 'The sessions the live monitor is tracking right now — what the Live Timeline shows: status, current tool, counters, the transcript\'s cost/tokens/turns, and whether a CLI process still owns each one (`alive`: false = it is over, its hooks just never said so; null = the CLI registry is unreadable, so nothing can be claimed). `afVersions` is which Agent Farm build(s) watched it, oldest first — more than one means the extension was updated or rolled back mid-session, so do not average the two halves together. args: none',
+            describe: 'The sessions the live monitor is tracking right now — what the Live Timeline shows: status, current tool, counters, the transcript\'s cost/tokens/turns, and whether a CLI process still owns each one (`alive`: false = it is over, its hooks just never said so; null = the CLI registry is unreadable, so nothing can be claimed). ‼️ Rows are joined against EVERY engine\'s transcripts, not just Claude\'s, and `cost`/`tokens`/`turns` are `null` when no transcript has been indexed yet — never 0, which would read as a session that did nothing. `engine` says which CLI it is and `reportsCost` whether that CLI states a price at all (false = the `cost` figure is derived from tokens, not quoted by the engine). `afVersions` is which Agent Farm build(s) watched it, oldest first — more than one means the extension was updated or rolled back mid-session, so do not average the two halves together. args: none',
             handler: () => {
-                const rows = new Map(index.all().map(r => [r.sessionId, r]));
+                // ‼️ THE JOIN IS A RECORD LOOKUP, SO IT USES THE WIDE POOL
+                // (X-35). Built from `index.all()` this table could not find a
+                // Codex or Antigravity row at all, and every miss was reported
+                // as `title: null, tokens: 0, turns: 0` — measured on a LIVE
+                // Codex session that had made 186 tool calls and whose own
+                // transcript said 137 779 tokens and one turn. "Not found" and
+                // "zero" are not the same claim, and printing the second for the
+                // first is the exact "unmeasured therefore free" mistake the
+                // cost surfaces spent X-19 removing.
+                const rows = new Map(index.allWithExternal().map(r => [r.sessionId, r]));
                 const owners = readCliSessions(claudeDir());
                 const known = fs.existsSync(sessionsDir(claudeDir()));
                 return live.sessions().map(s => {
                     const row = rows.get(s.sessionId);
                     const owner = ownerOf(owners, s.sessionId);
+                    const engine = row?.source ?? s.source ?? 'claude';
+                    // Does this engine publish a price at all? A Codex row's
+                    // `cost` is computed from tokens, and a `0` on an engine
+                    // that states none must not read as "this was free".
+                    const measured = engineOf(engine).reportsCost;
                     return {
                         sessionId: s.sessionId, label: live.labelOf(s),
                         agent: s.agentName ?? null, source: s.source ?? null,
+                        engine,
                         status: s.status, tool: s.currentTool ?? null,
                         startedAt: s.startedAt, lastEventTs: s.lastEventTs,
                         prompts: s.prompts, toolCalls: s.toolCalls,
                         compactions: s.compactions, subagents: s.subagentStops,
                         cwd: s.cwd ?? null, title: row?.title ?? null,
-                        cost: row ? Math.round(row.cost * 100) / 100 : 0,
-                        tokens: row ? totalTokens(row.usage) : 0,
-                        turns: row?.userTurns ?? 0,
+                        // ‼️ `null` = there is no row to read yet (a session that
+                        // has not been indexed), which is a different sentence
+                        // from a figure of zero.
+                        cost: row ? Math.round(row.cost * 100) / 100 : null,
+                        // …and this says which of the two the `cost` above is:
+                        // a price the engine stated, or one derived from tokens.
+                        reportsCost: measured,
+                        tokens: row ? totalTokens(row.usage) : null,
+                        turns: row ? row.userTurns : null,
                         alive: s.source ? null : (known ? !!owner : null),
                         pid: owner?.pid ?? null,
                         // X-7: which build was watching. Empty means the session
@@ -4217,7 +4429,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.start',
-            describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? (claude — the default — codex, or agy; ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; Codex and agy are ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. On Codex a permission mode becomes a sandbox chosen up front because the engine cannot stop and ask; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — the mode is a request the Antigravity app\'s own tool-permission setting can overrule, the session only sees the folder it was given, and there is no way to hand it an image. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ A subscription engine states no per-turn price, so a Codex or agy session reports tokens and no dollars — that is the engine, not a missing figure.',
+            // ‼️ THE ENGINE LIST IS DERIVED FROM THE REGISTRY, NOT TYPED OUT
+            // (X-35). This sentence said "claude, codex, or agy" for as long as
+            // Gemini has been a first-class engine, so a caller reading the
+            // catalog concluded Gemini was unsupported and never tried it. A
+            // contract written by hand goes stale the day a row is added; one
+            // built from `ENGINES` cannot.
+            describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? ('
+                + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
+                + '; default claude. ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; every other engine here is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. What a permission mode MEANS also differs per engine — on Codex it becomes a sandbox chosen up front; on Gemini an approval mode whose "ask the user" resolves to DENY when nobody is watching, and whose plan mode switches to yolo on exit in a headless run; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — it is a request the Antigravity app\'s own tool-permission setting can overrule. Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Gemini has NO reasoning-effort setting: pass no effort for it. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Only Claude Code states a per-turn price; every other engine reports tokens and no dollars — that is the engine, not a missing figure.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
@@ -4235,10 +4455,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? `${engine} is not ready on this machine — ${row.next}`
                         : `${engine} is not ready on this machine`);
                 }
-                // a resumed conversation brings its own totals with it, so the
-                // figures an agent reads back are the session's, not this
-                // process's (see CarriedTotals)
-                const past = resume ? index.all().find(s => s.sessionId === resume) : undefined;
+                // ‼️ A RESUMED CONVERSATION BRINGS ITS OWN TOTALS WITH IT, AND
+                // THE CONVERSATION MAY NOT BE CLAUDE'S (X-35). This looked the
+                // resume id up in the Claude-only pool, so a Codex thread was
+                // never found and `carried` stayed empty — and Codex reports the
+                // THREAD's running total on every turn, so the first turn back
+                // was charged with the whole conversation. The counter bug that
+                // was measured and fixed on the Console's own path was left
+                // standing on this one, because the lookup was the wrong pool
+                // rather than the wrong arithmetic. `byId` is the one resolver.
+                const past = resume ? index.byId(resume) : undefined;
                 // ‼️ The project is per-SESSION here, never a write to the
                 // window's active project: a background agent starting a session
                 // under project X must not silently move the project the person
@@ -6276,7 +6502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'schedules.edit',
-            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), model? (opus|sonnet|haiku|"" to clear — beats the modelPolicy engine), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails)',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (claude|codex|gemini|agy)/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
@@ -6339,6 +6565,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     need(!m || /^[\w.:-]+$/.test(m), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
                     patch.model = m || undefined;
                 }
+                // ‼️ THE OTHER SIX DIMENSIONS, WHICH THIS OP COULD NOT CHANGE
+                // (X-35). `schedules.add` has taken an engine since X-18 and
+                // `schedules.edit` took only the model — so a schedule set up on
+                // Codex could be created from the bridge and then never adjusted
+                // from it, which is exactly the panel–bridge asymmetry
+                // `_REF/agentfarm-dev.md` forbids. `""` clears a field, the same
+                // convention `model` already used.
+                {
+                    const keys = ['engine', 'effort', 'permissionMode', 'cli', 'workDir'] as const;
+                    const stated = keys.filter(k => args[k] !== undefined);
+                    if (stated.length) {
+                        // Validated by the SAME function `add` uses — with the
+                        // engine this schedule will end up on, so "effort on
+                        // gemini" is refused whether the engine was set now or
+                        // set last week.
+                        const dims = bridgeRunDimensions({
+                            engine: optStr(args, 'engine') || cur.engine || '',
+                            ...Object.fromEntries(stated.map(k => [k, optStr(args, k)]))
+                        });
+                        for (const k of stated) {
+                            patch[k] = (dims[k] as string | undefined) || undefined;
+                        }
+                    }
+                }
+                if (args.priority !== undefined) {
+                    const n = Number(args.priority);
+                    need(Number.isFinite(n), 'priority must be a number.');
+                    patch.priority = Math.trunc(n);
+                }
+                if (args.project !== undefined) {
+                    const p = optStr(args, 'project');
+                    patch.projectId = p || undefined;
+                }
                 if (args.fireIf !== undefined) {
                     if (args.fireIf === null || args.fireIf === '') { patch.fireIf = undefined; }
                     else {
@@ -6359,7 +6618,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.get',
-            describe: 'One task in detail, archived output included — the way to read what a task actually produced. args: id, tail? (max output chars, default 4000)',
+            describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project), what it cost in dollars AND tokens, and its archived output. The way to read what a task actually produced and what it actually ran on. args: id, tail? (max output chars, default 4000)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -6375,7 +6634,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     id: task.id, title: task.title, agent: task.agentName, status: task.status,
                     mode: task.mode, prompt: task.prompt, createdAt: task.createdAt,
                     startedAt: task.startedAt ?? null, endedAt: task.endedAt ?? null,
-                    costUSD: task.costUSD ?? null, deferredReason: task.deferredReason ?? null,
+                    costUSD: task.costUSD ?? null,
+                    // ‼️ THE OTHER CURRENCY, and on a per-turn engine the only
+                    // one that moves: a Codex/Gemini/Antigravity task states no
+                    // dollars, and `costUSD: null` beside no token figure read
+                    // as "nothing is known" when the tokens were right there.
+                    tokens: task.tokens ?? null,
+                    // …and WHAT IT RAN ON. "One task in detail" returned no
+                    // engine, no effort, no permission mode and no project —
+                    // so the op that exists to answer "what did this do" could
+                    // not answer "on which engine" (X-35).
+                    ...bridgeDimsOut(task, (pid: string) => projectStore.get(pid)?.name),
+                    deferredReason: task.deferredReason ?? null,
                     verified: task.verified ?? null, attempt: task.attempt ?? 0,
                     fromSchedule: task.fromSchedule ?? null, fromTrigger: task.fromTrigger ?? null,
                     missionId: task.missionId ?? null, workflowId: task.workflowId ?? null,
@@ -6395,84 +6665,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
-            op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watch? (existing file/folder — watch type), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type), hookAgent? (agent name filter, hook type), action ({kind:"task", agent, prompt, title?, mode?, model?} | {kind:"dispatch", prompt, title?, model?} | {kind:"workflow", workflow: id|title}), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work), debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
-            handler: (args) => {
-                const title = argStr(args, 'title');
-                const typeIn = argStr(args, 'type');
-                need(typeIn === 'watch' || typeIn === 'hook' || typeIn === 'webhook', 'type must be watch | hook | webhook.');
-                const type = typeIn as FarmTrigger['type'];
-                let watchPath: string | undefined, hookEvent: string | undefined,
-                    hookAgent: string | undefined, token: string | undefined;
-                if (type === 'watch') {
-                    watchPath = argStr(args, 'watch');
-                    need(fs.existsSync(watchPath), `Watch path does not exist: ${watchPath}`);
-                } else if (type === 'hook') {
-                    hookEvent = argStr(args, 'hookEvent');
-                    const kinds = ['start', 'prompt', 'toolStart', 'toolEnd', 'permission',
-                        'notify', 'stop', 'subagent', 'compact', 'end'];
-                    need(kinds.includes(hookEvent), `Unknown hookEvent "${hookEvent}" — use one of: ${kinds.join(', ')}.`);
-                    hookAgent = optStr(args, 'hookAgent') ? findAgent(optStr(args, 'hookAgent')).name : undefined;
-                } else {
-                    token = newId() + newId();
-                }
-                const rec = args.action && typeof args.action === 'object' && !Array.isArray(args.action)
-                    ? args.action as Record<string, unknown>
-                    : undefined;
-                need(rec, 'action is required: {kind:"task"|"dispatch"|"workflow", ...}.');
-                const a = rec as Record<string, unknown>;
-                const kind = String(a.kind ?? '');
-                let action: FarmTrigger['action'];
-                if (kind === 'task') {
-                    const agent = findAgent(String(a.agent ?? ''));
-                    const prompt = String(a.prompt ?? '').trim();
-                    need(prompt, 'action.prompt is required for a task action.');
-                    action = {
-                        kind: 'task', agentId: agent.id, agentName: agent.name,
-                        title: String(a.title ?? '').trim() || title, prompt,
-                        mode: a.mode === 'interactive' ? 'interactive' : 'headless',
-                        model: String(a.model ?? '').trim() || undefined
-                    };
-                } else if (kind === 'dispatch') {
-                    const prompt = String(a.prompt ?? '').trim();
-                    need(prompt, 'action.prompt is required for a dispatch action.');
-                    action = {
-                        kind: 'dispatch', title: String(a.title ?? '').trim() || title, prompt, mode: 'headless',
-                        model: String(a.model ?? '').trim() || undefined
-                    };
-                } else if (kind === 'workflow') {
-                    const wref = String(a.workflow ?? '').trim();
-                    const w = taskManager.workflows.find(x => x.id === wref || x.title === wref);
-                    need(w, 'Workflow not found — workflows.list shows current ones.');
-                    action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id };
-                } else {
-                    throw new Error('action.kind must be task | dispatch | workflow.');
-                }
-                const numArg = (key: string, def: number, min: number) => {
-                    const v = args[key];
-                    if (v === undefined) { return def; }
-                    need(typeof v === 'number' && Number.isFinite(v) && v >= min, `${key} must be a number ≥ ${min}.`);
-                    return Math.floor(v as number);
-                };
-                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
-                need(args.fireIf === undefined || fireIf,
-                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
-                const trigger = taskManager.addTrigger({
-                    title, type, watchPath, hookEvent, hookAgent, token, action, fireIf,
-                    debounceSec: numArg('debounceSec', type === 'watch' ? 10 : 1, 1),
-                    cooldownSec: numArg('cooldownSec', 60, 0),
-                    maxPerHour: numArg('maxPerHour', 6, 0),
-                    enabled: args.enabled !== false
-                });
-                return {
-                    id: trigger.id, title: trigger.title, type, fireIf: trigger.fireIf ?? null,
-                    ...(token ? { url: `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}` } : {})
-                };
-            }
-        },
-        {
             op: 'triggers.edit',
-            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), model? ("" to clear), fireIf? (precondition object, or null to clear)',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (claude|codex|gemini|agy)/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
@@ -6526,12 +6720,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 numPatch('debounceSec', 1);
                 numPatch('cooldownSec', 0);
                 numPatch('maxPerHour', 0);
-                if (args.model !== undefined) {
-                    need(tr.action.kind !== 'workflow', 'A workflow trigger has no model — set it on the steps.');
-                    const m = optStr(args, 'model');
-                    need(!m || /^[\w.:-]+$/.test(m), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
-                    if (tr.action.kind !== 'workflow') { tr.action.model = m || undefined; }
-                    updated.push('model');
+                // ‼️ EVERY DIMENSION THE INSTALLER TAKES, NOT JUST THE MODEL
+                // (X-35). `triggers.add` has carried an engine since X-18 while
+                // this op could change only `model`, so a Codex trigger created
+                // over the bridge could never be RETUNED over it — and a caller
+                // that read the trigger back, edited a field and wrote it away
+                // silently reset the engine. `""` clears a field.
+                {
+                    const keys = ['engine', 'model', 'effort', 'permissionMode', 'cli', 'workDir'] as const;
+                    const stated = keys.filter(k => args[k] !== undefined);
+                    if (stated.length) {
+                        need(tr.action.kind !== 'workflow',
+                            'A workflow trigger carries no run dimensions of its own — set them on the workflow\'s steps.');
+                        const action = tr.action as Exclude<FarmTrigger['action'], { kind: 'workflow' }>;
+                        const dims = bridgeRunDimensions({
+                            engine: optStr(args, 'engine') || action.engine || '',
+                            ...Object.fromEntries(stated.map(k => [k, optStr(args, k)]))
+                        });
+                        for (const k of stated) {
+                            action[k] = (dims[k] as string | undefined) || undefined;
+                            updated.push(k);
+                        }
+                    }
+                    if (args.priority !== undefined && tr.action.kind !== 'workflow') {
+                        const n = Number(args.priority);
+                        need(Number.isFinite(n), 'priority must be a number.');
+                        tr.action.priority = Math.trunc(n);
+                        updated.push('priority');
+                    }
+                    if (args.project !== undefined && tr.action.kind !== 'workflow') {
+                        tr.action.projectId = optStr(args, 'project') || undefined;
+                        updated.push('project');
+                    }
                 }
                 if (args.fireIf !== undefined) {
                     if (args.fireIf === null || args.fireIf === '') { tr.fireIf = undefined; }
@@ -6544,7 +6764,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 need(updated.length, 'Nothing to edit — pass at least one documented field.');
                 taskManager.updateTrigger(tr);
-                return { id: tr.id, title: tr.title, updated, fireIf: tr.fireIf ?? null };
+                return {
+                    id: tr.id, title: tr.title, updated, fireIf: tr.fireIf ?? null,
+                    ...(tr.action.kind === 'workflow'
+                        ? { action: 'workflow', workflow: tr.action.workflowId }
+                        : bridgeDimsOut(tr.action, (pid: string) => projectStore.get(pid)?.name))
+                };
             }
         },
         {
@@ -6560,7 +6785,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
+            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (claude|codex|gemini|agy — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (not on gemini, which has no such flag), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -6595,7 +6820,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'workflows.step.add',
             describe: 'Append one step to a workflow. args: workflow (id or title), step ({agent (name|id — '
-                + 'omit on a webhook/media/approval/select step), title, prompt, mode?, onFail? ("continue"|'
+                + 'omit on a webhook/media/approval/select step), title, prompt, mode?, engine? (per step), '
+                + 'model?, effort?, permissionMode?, cli?, workDir?, priority?, project?, onFail? ("continue"|'
                 + '1-based step), runIf?, outputContract? ("json"), verify? ({criteria, retries?}), parallel?, '
                 + 'webhook?, media?, browser?, approval?, select?})',
             handler: (args) => {
@@ -6661,22 +6887,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(w, 'Workflow not found — workflows.list shows current ones.');
                 taskManager.deleteWorkflow(w as FarmWorkflow);
                 return { deleted: (w as FarmWorkflow).title };
-            }
-        },
-        {
-            op: 'templates.add',
-            describe: 'Save a reusable task template. args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time)',
-            handler: (args) => {
-                const title = argStr(args, 'title');
-                need(!taskManager.templates.some(t => t.title === title),
-                    `A template titled "${title}" already exists.`);
-                const agent = optStr(args, 'agent') ? findAgent(optStr(args, 'agent')) : undefined;
-                const tpl = taskManager.addTemplate({
-                    title, prompt: argStr(args, 'prompt'),
-                    mode: optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless',
-                    agentId: agent?.id, agentName: agent?.name
-                });
-                return { id: tpl.id, title: tpl.title };
             }
         },
         {
@@ -7281,6 +7491,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agents: agents.map(a => ({ id: a.id, name: a.name })),
             // the user's model-name knowledge base feeds the model inputs
             modelAliases: cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
+            // ‼️ THE ENGINES, SO THE FORM CAN OFFER THEM (X-35). `MissionSpec`
+            // and `MissionTeamMember` have both carried an engine since X-18 and
+            // this page sent no matrix and drew no picker — so every mission
+            // started from the UI delegated on Claude, and the only way to say
+            // otherwise was the bridge. An engine that is not ready is listed
+            // with the reason rather than left out, the same rule the launcher
+            // pickers follow.
+            engines: engineMatrix().map(e => ({
+                id: e.id, label: e.label, ready: e.ready, next: e.next ?? null
+            })),
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),
@@ -7763,6 +7983,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 mediaCostMonth: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000),
                 cliProfileCount: cfg().get<CliProfile[]>('cliProfiles', []).length,
                 externalSessions: extBySource,
+                // ‼️ The BUILT-IN engines, read from the same matrix every
+                // picker uses — a separate fact from the custom profiles above
+                // (X-35), and the reason this page used to call a four-engine
+                // farm "Claude-only".
+                enginesReady: engineMatrix().filter(e => e.ready).map(e => e.id),
+                engineCount: Object.keys(ENGINES).length,
                 ingestFolderCount: cfg().get<IngestFolder[]>('ingestFolders', [])
                     .filter(f => f && typeof f.path === 'string' && !!f.path.trim()).length,
                 registeredAssetCount: readMediaMetas(taskManager.outputsDir)
@@ -8246,8 +8472,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Owner agent for the viewer's "⌂ <agent>" button: the index's assignment
         // is authoritative; the cwd fallback covers sessions the index hasn't
         // scanned yet (same resolver the live monitor uses).
+        // ‼️ …AND IT ASKS THE WHOLE RECORD (X-35). "Whose session is this" is a
+        // record question, and it was being asked of the Claude-only half — so
+        // the Viewer showed the right engine badge (that resolver searched both
+        // lists, two fields below) beside no owning agent at all on every Codex
+        // and Antigravity session, and then fell through to the cwd guess.
         agentForSession: (file: string, cwd?: string): { agentId: string; agentName: string } | undefined => {
-            const s = index.all().find(x => x.file === file);
+            const s = index.allWithExternal().find(x => x.file === file);
             let agent = s?.agentId ? agents.find(a => a.id === s.agentId) : undefined;
             if (!agent) {
                 const r = resolveAgentByCwd(cwd ?? s?.cwd);
@@ -8260,8 +8491,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         isSessionLive: (sessionId: string) => live.sessions().some(s => s.sessionId === sessionId),
         // The mechanism that started this run, straight off the index's own
         // record (see publishLaunchers) — never re-derived here.
-        launchedByFor: (sessionId: string) =>
-            index.all().find(s => s.sessionId === sessionId)?.launchedBy,
+        // ‼️ Both lists here too: a task, schedule, trigger or mission can start
+        // a session on ANY engine, so looking the launcher up in the Claude-only
+        // half reported every automated Codex/Gemini/Antigravity run as if a
+        // person had typed it.
+        launchedByFor: (sessionId: string) => index.byId(sessionId)?.launchedBy,
         // ‼️ …and BOTH lists are searched. `index.all()` is deliberately the
         // Claude-only half (external sessions are kept out of it so Claude
         // analytics never see them), so asking only there would answer "claude"
@@ -8771,7 +9005,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // is only passed for external-CLI sessions — claude terminals get none.
     const launchClaudeTerminal = (
         name: string, cwd: string | undefined, command: string,
-        env?: Record<string, string>, sessionId?: string, project?: string
+        env?: Record<string, string>, sessionId?: string, project?: string,
+        /**
+         * ‼️ WHICH ENGINE THIS TERMINAL IS RUNNING (X-35). Absent = Claude, which
+         * fires its own hooks and needs nothing from us. Anything else gets a
+         * synthetic live lane here, because there is no other way it can reach
+         * the Live Timeline — see `openExternalLane`.
+         */
+        engine?: string
     ): vscode.Terminal | undefined => {
         launchSeq += 1;
         void context.globalState.update('agentfarm.termLaunchSeq', launchSeq);
@@ -8785,20 +9026,106 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (an agent asking for a specific one over the bridge): undefined means
         // inherit the window's, '' means explicitly no project.
         const projectId = (project !== undefined ? project : activeProjectId()) || undefined;
+        // ‼️ A FIRST-CLASS EXTERNAL ENGINE GETS ITS LANE HERE, AT LAUNCH (X-35).
+        // The caller has no id to give — the CLI has not started yet, let alone
+        // minted one — so one is made up, the lane is opened under it, and the
+        // real id replaces it as soon as the transcript names it
+        // (`reconcileExternalLanes`). Without this, a Codex/Gemini/Antigravity
+        // terminal ran with NOTHING on the Live Timeline: those engines fire no
+        // hooks, and only the old custom-CLI path ever built a synthetic lane.
+        const laneId = sessionId
+            ?? (engine && engine !== 'claude'
+                ? openExternalLane(engine, cwd, title, projectId)
+                : undefined);
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
             openExternalTerminal(cwd, command, title);
-            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId, projectId });
-            if (sessionId && projectId) { stampSessionProject(sessionId, projectId); }
+            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId: laneId, projectId });
+            if (laneId && projectId) { stampSessionProject(laneId, projectId); }
             return undefined;
         }
         const terminal = vscode.window.createTerminal({ name: title, cwd, env });
-        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId, projectId });
-        if (sessionId && projectId) { stampSessionProject(sessionId, projectId); }
+        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId });
+        if (laneId && projectId) { stampSessionProject(laneId, projectId); }
+        // The terminal closing is the only end-of-session signal these engines
+        // have, and it is a reliable one: the conversation lives in the CLI's
+        // own store, but this WINDOW's session is over.
+        if (laneId && engine && engine !== 'claude') {
+            cliTerminals.set(terminal, { sessionId: laneId, cwd });
+        }
         terminal.show();
         terminal.sendText(command, true);
         return terminal;
     };
+
+    /**
+     * Open a live lane for a terminal on an engine that cannot announce itself.
+     *
+     * The id is deliberately in the same `cli:` namespace the custom-CLI path
+     * has always used, so nothing downstream has to learn a second shape of
+     * "not a Claude UUID" — and it is temporary by design.
+     */
+    const openExternalLane = (
+        engine: string, cwd: string | undefined, title: string, projectId: string | undefined
+    ): string => {
+        const id = `cli:${engine}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+        externalLanes.set(id, { engine, cwd, title, launchedAt: Date.now(), projectId });
+        live.handle({
+            session_id: id, cwd, engine,
+            hook_event_name: 'SessionStart', source: 'startup'
+        });
+        return id;
+    };
+
+    /**
+     * ‼️ …AND THE LANE LEARNS ITS REAL NAME WHEN THE TRANSCRIPT ARRIVES.
+     *
+     * Run whenever the index has re-read the CLIs' own transcripts. A lane is
+     * matched to a session only on evidence that is actually available: the same
+     * engine, the same working folder, and a conversation that STARTED after the
+     * terminal was opened. Anything looser would re-key a lane onto somebody
+     * else's conversation, which is worse than leaving it nameless — so an
+     * ambiguous match (two candidates) is left alone and tried again next time.
+     */
+    const reconcileExternalLanes = (): void => {
+        if (!externalLanes.size) { return; }
+        const taken = new Set(live.sessions().map(s => s.sessionId));
+        for (const [laneId, lane] of [...externalLanes]) {
+            if (!live.sessions().some(s => s.sessionId === laneId)) {
+                externalLanes.delete(laneId);
+                continue;
+            }
+            const hits = index.external().filter(s =>
+                s.source === lane.engine
+                && s.sessionId
+                && !taken.has(s.sessionId)
+                // A Console-hosted conversation already has its own mirrored
+                // lane (mirrorConsoleToLive); adopting one into a TERMINAL lane
+                // would put the same session on the page under two owners.
+                && !s.consoleHosted
+                && normPath(s.cwd ?? '') === normPath(lane.cwd ?? '')
+                // …started after this terminal did, with a little slack for the
+                // clock difference between a file's timestamp and ours.
+                && (s.firstTs || s.mtime) >= lane.launchedAt - 5000);
+            if (hits.length !== 1) { continue; }
+            const real = hits[0].sessionId;
+            if (!live.adopt(laneId, real)) { continue; }
+            externalLanes.delete(laneId);
+            // The binding and the project stamp follow the id, or the terminal
+            // this session is in becomes unfindable the moment it is renamed.
+            for (const b of termBindings) {
+                if (b.sessionId === laneId) { b.sessionId = real; }
+            }
+            for (const [term, info] of cliTerminals) {
+                if (info.sessionId === laneId) { cliTerminals.set(term, { ...info, sessionId: real }); }
+            }
+            if (lane.projectId) { stampSessionProject(real, lane.projectId); }
+        }
+    };
+    // The transcripts are what carry the real id, so the reconcile pass runs
+    // whenever the index has re-read them. It returns immediately when no lane
+    // is waiting, which is nearly always.
+    context.subscriptions.push(index.onDidUpdate(() => reconcileExternalLanes()));
 
     // ---------- A1: what a session starts WITH ----------
     // Until now every session started as a bare `claude` and the model, the
@@ -8912,7 +9239,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // and the interrupt resolver both find windows by that exact shape, and
         // "claude" is still the name for the engine everything else assumes.
         launchClaudeTerminal(`${spec.exe}: ${agent.name}`, cwd ?? agent.dir, command,
-            undefined, sessionId, projectId);
+            undefined, sessionId, projectId, spec.id);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
         // after boot, so look twice while the user is still watching. The name
@@ -9698,7 +10025,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const t of taskManager.tasks) {
             const f = t.costSessionFile;
             if (!f) { continue; }
-            const id = path.basename(String(f)).replace(/\.jsonl$/i, '');
+            // ‼️ THE ID COMES FROM THE INDEX, NOT FROM THE FILENAME (X-35). Only
+            // Claude names a transcript after its session; Codex writes
+            // `rollout-…-<uuid>.jsonl` and Gemini `session-1.json`, and both
+            // state the real id INSIDE the file, where the parsers already read
+            // it. Keying this map on a basename meant every automated run on a
+            // foreign engine was filed under an id nothing else uses — so the
+            // session it started showed 🧑 User as its origin, and the hover
+            // that should name the schedule named nothing. The basename stays as
+            // the last resort, because it is right on Claude and a task whose
+            // transcript has not been indexed yet still deserves an entry.
+            const id = index.byFile(String(f))?.sessionId
+                || path.basename(String(f)).replace(/\.jsonl$/i, '');
             if (!id) { continue; }
             const sched = t.fromSchedule
                 ? taskManager.schedules.find(s => s.id === t.fromSchedule) : undefined;
@@ -9768,7 +10106,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const rows: LastWindowRow[] = live.map(s => ({
             sessionId: s.sessionId as string,
             agentName: s.agentName,
-            title: index.all().find(x => x.sessionId === s.sessionId)?.title ?? '',
+            // ‼️ THE TITLE COMES FROM THE WHOLE RECORD, AND FROM THE SESSION
+            // ITSELF WHEN THERE IS NO RECORD YET (X-35). Looked up in the
+            // Claude-only pool, every Codex/Gemini/Antigravity conversation was
+            // persisted with an empty title — so the shelf that offers to
+            // reopen them showed a column of bare ids, which is a list nobody
+            // can choose from. The index may also simply not have caught up
+            // with a session started seconds ago, on any engine; the first
+            // thing the user said is the honest fallback, and it is the same
+            // text the index would have derived anyway.
+            title: index.byId(s.sessionId)?.title
+                ?? s.messages.find(m => m.role === 'user')?.text?.replace(/\s+/g, ' ').trim().slice(0, 80)
+                ?? '',
             cwd: s.cwd,
             endedAt: Date.now()
         }));
@@ -10811,16 +11160,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const projects = projectStore.all();
         const rolled = rollupProjectSessions(
             projects,
-            index.all().map(s => ({
+            // ‼️ EVERY ENGINE'S RECORD, ONE POOL OF MEASUREMENTS (X-35). Built
+            // from `index.all()` this produced a project's official session
+            // count and last-activity date out of Claude rows alone, while the
+            // project's own Sessions tab listed all four engines — measured on
+            // this machine: 260 here, 300 there, and a `lastTs` stuck on an
+            // older Claude session while the newest work on the project was a
+            // Codex one. `rollupProjectSessions` now counts the record and
+            // measures only what can be added up.
+            index.allWithExternal().map(s => ({
                 sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
                 cost: s.cost, tokens: totalTokens(s.usage),
                 todayCost: s.daily[today]?.cost ?? 0,
-                lastTs: s.lastTs || s.mtime || 0
+                lastTs: s.lastTs || s.mtime || 0,
+                // A foreign row's dollars are derived from a price table, not
+                // quoted by the engine — they must not join a budget total.
+                measured: !s.source
             })),
             projectStore.links());
         return rolled.map(r => ({
             name: r.id === UNASSIGNED_ID ? UNASSIGNED : r.name,
-            agents: r.agents, sessions: r.sessions, cost: r.cost, tokens: r.tokens,
+            agents: r.agents, sessions: r.sessions, measuredSessions: r.measuredSessions,
+            cost: r.cost, tokens: r.tokens,
             todayCost: r.todayCost, lastTs: r.lastTs,
             ...(r.budgetUSD ? { budgetUSD: r.budgetUSD } : {}),
             ...(projects.find(p => p.id === r.id)?.summary
@@ -10861,7 +11222,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return partsTotals(projects, projects.map(p => {
             const r = roll.find(x => x.name === p.name);
             return {
-                id: p.id, name: p.name, sessions: r?.sessions ?? 0, cost: r?.cost ?? 0,
+                id: p.id, name: p.name, sessions: r?.sessions ?? 0,
+                measuredSessions: r?.measuredSessions ?? 0, cost: r?.cost ?? 0,
                 tokens: r?.tokens ?? 0, todayCost: r?.todayCost ?? 0, agents: [],
                 lastTs: r?.lastTs ?? 0
             };
@@ -10890,7 +11252,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             summary: p.summary ?? null, tags: p.tags ?? [],
             people: p.people ?? [], agentRules: p.match?.agents ?? [],
             budgetUSD: p.budgetUSD ?? null, budgetTotalUSD: p.budgetTotalUSD ?? null,
-            sessions: roll?.sessions ?? 0, cost: roll?.cost ?? 0,
+            // ‼️ TWO COUNTS, BECAUSE THERE ARE TWO QUESTIONS (X-35). `sessions`
+            // is every conversation on this project, on every engine — the same
+            // number `projects.sessions` lists, which it used to contradict.
+            // `measuredSessions` is how many of them the `cost` below is made
+            // of; the difference is real work that publishes no price, not
+            // absence.
+            sessions: roll?.sessions ?? 0,
+            measuredSessions: roll?.measuredSessions ?? 0,
+            cost: roll?.cost ?? 0,
             todayCost: roll?.todayCost ?? 0, tokens: roll?.tokens ?? 0,
             lastTs: roll?.lastTs ?? 0,
             archived: !!p.folder && !!projectArchiveRoot() && isInsideArchive(p.folder, projectArchiveRoot()),
@@ -10962,7 +11332,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * proposes, a person approves.
      */
     const projectSuggestions = (opts: { limit?: number; project?: string } = {}): SuggestReport => {
-        const rows: SuggestSession[] = index.all().map(s => ({
+        // ‼️ EVERY SESSION, WHICH IS WHAT THE COMMENT ABOVE ALREADY SAID (X-35).
+        // The rule was written for all of them and the code read `index.all()`,
+        // so an unfiled Codex, Gemini or Antigravity conversation could never be
+        // proposed for a project no matter how obviously it belonged to one —
+        // and filing is the whole point of the feature. The signals a foreign
+        // row cannot carry (`filesEdited` is a Claude transcript detail; a cost
+        // it never published) go in EMPTY rather than as zeros, so the engine
+        // scores it on cwd, agent and title and never on invented evidence.
+        const rows: SuggestSession[] = index.allWithExternal().map(s => ({
             sessionId: s.sessionId,
             agentId: s.agentId,
             agentName: s.agentName,
@@ -10971,7 +11349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             filesEdited: Object.keys(s.filesEdited ?? {}),
             firstTs: s.firstTs,
             lastTs: s.lastTs || s.mtime,
-            cost: s.cost
+            cost: s.source ? 0 : s.cost
         }));
         // Closed projects are not proposed FOR — filing new work into something
         // marked done is the one suggestion nobody wants — but they stay in the
@@ -15473,19 +15851,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const where = arg?.surface
                     ?? (await pickRunSurface(`Continue ${agent.name}'s latest session`))?.surface;
                 if (!where) { return; }
-                if (where === 'terminal') {
-                    startClaudeSession(agent, { continueLast: true });
-                    return;
-                }
-                // `claude --continue` is a terminal affordance: it picks the most
-                // recent session in the folder itself. A hosted session resumes
-                // by ID, so "latest" has to be resolved here — and if there is
-                // none, say so instead of opening an empty conversation that
-                // looks like it lost the history.
-                const latest = index.all()
+                // ‼️ "LATEST" IS THE LATEST ON ANY ENGINE (X-35). Both arms of
+                // this command assumed Claude: the terminal arm ran
+                // `claude --continue` unconditionally, and the Console arm
+                // picked the newest row out of the Claude-only pool. On a
+                // machine whose most recent work was a Codex conversation, a
+                // command called "Continue Latest Session" therefore reopened an
+                // older Claude one — or claimed there was nothing to continue —
+                // and neither outcome said which engine it had been thinking
+                // about. The row is chosen from the RECORD first; what happens
+                // next follows from the engine that row names.
+                const latest = index.allWithExternal()
                     .filter(s => !s.isSidechain && !s.machine && s.sessionId
                         && normPath(s.cwd ?? '') === normPath(agent.dir))
                     .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))[0];
+                if (where === 'terminal') {
+                    const engine = engineOf(latest?.source);
+                    // Claude, Gemini and Antigravity can all pick a conversation
+                    // up in a terminal; Codex cannot (its resume is a separate
+                    // subcommand — EngineTransport.resumeInTerminal). Where the
+                    // engine cannot, the Console can, and saying so beats
+                    // silently starting a fresh conversation on the wrong CLI.
+                    if (latest && !engine.readableTranscript) {
+                        startClaudeSession(agent, { engine: engine.id, continueLast: true });
+                        return;
+                    }
+                    if (latest && !engine.resumeInTerminal) {
+                        const useConsole = await vscode.window.showInformationMessage(
+                            `Agent Farm: ${agent.name}'s latest session is a ${engine.label} one, and `
+                            + `${engine.label} cannot pick a conversation up in a terminal.`,
+                            'Continue it in the Console');
+                        if (useConsole) {
+                            await vscode.commands.executeCommand('agentfarm.resumeInConsole', latest);
+                        }
+                        return;
+                    }
+                    startClaudeSession(agent, {
+                        engine: engine.id,
+                        // On an engine that resumes by id, say WHICH — "the
+                        // latest in this folder" is the CLI's own idea of latest
+                        // and it does not know about the other three.
+                        ...(latest && engine.id !== 'claude'
+                            ? { resume: latest.sessionId }
+                            : { continueLast: true })
+                    });
+                    return;
+                }
                 if (!latest) {
                     const start = await vscode.window.showInformationMessage(
                         `Agent Farm: ${agent.name} has no earlier session in ${agent.dir} to continue.`,
@@ -15518,12 +15929,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.startSessionWith', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const profiles = cfg().get<CliProfile[]>('cliProfiles', []);
+            // ‼️ A BUILT-IN ENGINE IS NOT A CUSTOM PROFILE, AND THIS COMMAND IS
+            // FOR THE SECOND (X-35). The settings description already said not
+            // to write a profile for one of the four engines — and the example
+            // in this very message told the user to write one for `gemini` and
+            // `codex`, which is exactly how the same engine ended up startable
+            // through two channels with two identities and two feature sets.
+            // The engines have their own launcher (Start Session…, engine
+            // picker); this one is for a binary Agent Farm knows nothing about.
+            const profiles = cfg().get<CliProfile[]>('cliProfiles', [])
+                .filter(p => p && typeof p.name === 'string' && !(p.name.trim().toLowerCase() in ENGINES));
             if (!profiles.length) {
                 const add = await vscode.window.showInformationMessage(
-                    'Agent Farm: no alternative CLIs configured. Add one in agentFarm.cliProfiles (e.g. gemini, codex).',
-                    'Open Settings');
-                if (add === 'Open Settings') {
+                    'Agent Farm: no CUSTOM CLI profiles configured. This command is for a command-line tool '
+                    + `Agent Farm has no built-in support for — the four engines it does understand `
+                    + `(${Object.values(ENGINES).map(e => e.label).join(', ')}) are started from `
+                    + '"Start Session…", which knows their flags, permissions and billing.',
+                    'Start Session…', 'Open Settings');
+                if (add === 'Start Session…') {
+                    await vscode.commands.executeCommand('agentfarm.startSession', { agentId: agent.id });
+                } else if (add === 'Open Settings') {
                     void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.cliProfiles');
                 }
                 return;
@@ -15532,7 +15957,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const last = lastByAgent[agent.id] ?? 'claude';
             interface CliPick extends vscode.QuickPickItem { id: string; profile?: CliProfile }
             const items: CliPick[] = [
-                { id: 'claude', label: 'Claude Code', description: 'the default executor', profile: undefined },
+                {
+                    id: 'claude', label: 'Claude Code',
+                    description: 'the default executor — for Codex, Gemini or Antigravity use Start Session…',
+                    profile: undefined
+                },
                 ...profiles.map(p => ({ id: p.name, label: p.name, description: p.interactive ?? p.headless, profile: p }))
             ];
             for (const it of items) { if (it.id === last) { it.description += ' • last used'; } }
