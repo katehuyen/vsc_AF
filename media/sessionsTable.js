@@ -455,7 +455,20 @@
                 }) : ''}
                     ${engines.length > 1 ? window.AFFilter.multi({
                     id: ENGINE_MS, label: 'Engines', options: engines, selected: filters.engines,
-                    title: 'Which CLI ran the session — combines with every other filter here'
+                    title: 'Which CLI ran the session — combines with every other filter here',
+                    // ‼️ U-52 — "everything that is not the default" is the
+                    // question a four-engine list is read with, and it is the
+                    // one subset here that has a name. Claude on its own is a
+                    // single option, which a click on its name already gives
+                    // you; only offered once there is more than one other
+                    // engine, or the preset would be a slower way to click one
+                    // row.
+                    presets: engines.filter(e => e !== window.AFEngine.label('claude')).length > 1
+                        ? [{
+                            id: 'notclaude', label: 'Other engines',
+                            values: engines.filter(e => e !== window.AFEngine.label('claude')),
+                            title: 'Everything that did not run on the default engine.'
+                        }] : []
                 }) : ''}
                     ${projectNames().length > 1 ? window.AFFilter.multi({
                     id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,

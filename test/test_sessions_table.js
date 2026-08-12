@@ -528,6 +528,26 @@ const mkRow = (i, extra) => Object.assign({
     ok('Clear on the picker honestly matches nothing',
         ms.label('sess-agents-flt') === 'Agents: none' && html().includes('No sessions match the filters.'));
     click(q('.af-fclear'));
+
+    // ‼️ U-52 — "everything that is not the default" is the question a
+    // four-engine list is read with, and it is the one subset this axis has a
+    // name for. Claude on its own is a single option, which a click on its own
+    // name already gives you.
+    t.setRows([
+        mkRow(1), mkRow(2, { engine: 'codex' }), mkRow(3, { engine: 'gemini' })
+    ], 10);
+    ok('the engine picker names the non-default engines',
+        ms.presets('sess-engines-flt').join() === 'notclaude');
+    ms.preset('sess-engines-flt', 'notclaude');
+    ok('‼️ …and pressing it drops the Claude rows and keeps the rest',
+        !html().includes('title1') && html().includes('title2') && html().includes('title3'));
+    click(q('.af-fclear'));
+
+    // …and it is not offered when there is only one other engine: a preset
+    // there would be a slower way to press that one row's name.
+    t.setRows([mkRow(1), mkRow(2, { engine: 'codex' })], 10);
+    ok('one other engine is not a subset worth naming',
+        ms.presets('sess-engines-flt').length === 0);
 }
 
 // ---------- part: origin scope — the column, the one-click switch, the chips ----------

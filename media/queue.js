@@ -360,8 +360,15 @@
             { id: 'q-target', label: 'Targets', get: () => fTarget, set: v => { fTarget = v; },
                 title: 'Which targets to list — tick any combination',
                 options: (DATA.targets || []).slice() },
+            // U-52 — "mine" is one option, so a click on its name already gives
+            // you it. Its opposite — everything the fleet put here — is as many
+            // options as there are agents and had no name at all.
             { id: 'q-author', label: 'Authors', get: () => fAuthor, set: v => { fAuthor = v; },
                 title: 'Who wrote the item — tick any combination',
+                presets: (DATA.agents || []).length > 1 ? [{
+                    id: 'agents', label: 'Agents', values: (DATA.agents || []).slice(),
+                    title: 'Everything the fleet put here — every agent, and nothing you wrote yourself.'
+                }] : [],
                 options: [{ v: 'user', t: '🧑 mine' }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) },
             // ‼️ "No project" is an OPTION, not the absence of one — without it
             // a project filter makes the unfiled items vanish with nothing on
@@ -379,7 +386,8 @@
             <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip('Searched against the item, its target, its author, its resolution, its stamp and its tags.'))}">
             ${filterPickers().map(p => window.AFFilter.multi({
-                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title
+                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title,
+                presets: p.presets
             })).join('')}
             <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> show dropped</label>
             <button class="secondary" id="q-reset" title="Reset filters">↺</button>

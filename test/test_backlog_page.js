@@ -876,6 +876,16 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('…each saying what it means, because a word is not self-evident',
         /data-afms-preset="passive" aria-label="Finished with/.test(r.html()));
 
+    // U-52 — the other axis on this tab with a word of its own: "in a family"
+    // is both ends of one, and its opposite is a single option that a click on
+    // its own name already gives you. It lives behind ⚙ filters.
+    r.els('act').find(e => e.dataset.act === 'blFilters').click();
+    ok('the family axis names both ends of a family',
+        r.ms.presets('bl-rel').join() === 'family');
+    r.ms.preset('bl-rel', 'family');
+    ok('…and it is the parts and the wholes, never the ones that stand alone',
+        r.ms.ticked('bl-rel').join() === 'child,parent');
+
     // Being unfiled is not a STATE — it is whether the item has a code — so it
     // is its own axis rather than a seventh option pretending to be one.
     const r2 = run(data());

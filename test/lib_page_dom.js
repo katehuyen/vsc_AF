@@ -235,6 +235,11 @@ function runPage(scriptFile, DATA, extraWindow) {
 
     return {
         html, posted, query, els, sandbox,
+        /** The multi-pick dropdowns on this page, driven the way a hand does
+         *  (toggle · clickName · preset · selectAll · clear) — the same shim the
+         *  older per-page tests use, so a picker's behaviour is testable from
+         *  any page test rather than only from the two that grew their own. */
+        ms,
         last: () => posted[posted.length - 1],
         /** Fire a host message at the page — including the right-click relay. */
         send: (data) => onMessage.forEach(fn => fn({ data })),

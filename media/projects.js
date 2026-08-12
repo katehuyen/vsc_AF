@@ -2767,6 +2767,22 @@
      * is genuinely one choice, and a picker offering three at once would be
      * promising something the list cannot do.
      */
+    /**
+     * ‼️ U-51 — THE TWO SUBSETS THE STATE AXIS HAS A WORD FOR. The four states
+     * are really two questions: what is still work, and what is finished with.
+     * Either one cost a Clear plus two ticks, every time, on the axis this tab
+     * is filtered by more than any other.
+     *
+     * ‼️ U-52 — AND THE TRACK TAB'S STATE AXIS IS THE SAME AXIS, so it is the
+     * same constant rather than the same idea typed twice. A subset named on one
+     * tab and not on its neighbour is the reader learning a gesture and then
+     * losing it.
+     */
+    const BL_STATE_PRESETS = [
+        { id: 'active', label: 'Active', values: ['open', 'doing'], title: 'Still work — open and doing.' },
+        { id: 'passive', label: 'Passive', values: ['done', 'cancelled'], title: 'Finished with — done and cancelled.' }
+    ];
+
     const BL_PICKS = [
         {
             id: 'bl-states', key: 'states', label: 'state', allLabel: 'every state',
@@ -2776,14 +2792,7 @@
                 { v: 'open', t: 'open' }, { v: 'doing', t: 'doing' },
                 { v: 'done', t: 'done' }, { v: 'cancelled', t: 'cancelled' }
             ],
-            // ‼️ U-51 — THE TWO SUBSETS THIS AXIS HAS A WORD FOR. The four
-            // states are really two questions: what is still work, and what is
-            // finished with. Either one cost a Clear plus two ticks, every time,
-            // on the axis this tab is filtered by more than any other.
-            presets: [
-                { id: 'active', label: 'Active', values: ['open', 'doing'], title: 'Still work — open and doing.' },
-                { id: 'passive', label: 'Passive', values: ['done', 'cancelled'], title: 'Finished with — done and cancelled.' }
-            ]
+            presets: BL_STATE_PRESETS
         },
         {
             id: 'bl-filed', key: 'filed', label: 'filing', allLabel: 'any',
@@ -2827,7 +2836,14 @@
                 { v: 'child', t: 'part of something' },
                 { v: 'parent', t: 'has parts' },
                 { v: 'alone', t: 'stands on its own' }
-            ]
+            ],
+            // U-52 — the one subset this axis has a word for: everything that is
+            // IN a family, either end of it. The opposite ("stands on its own")
+            // is a single option, which a click on its name already gives you.
+            presets: [{
+                id: 'family', label: 'In a family', values: ['child', 'parent'],
+                title: 'Everything that is part of something or has parts — both ends of every family, and nothing that stands alone.'
+            }]
         }
     ];
 
@@ -4609,7 +4625,11 @@
                 options: [
                     { v: 'open', t: 'open' }, { v: 'doing', t: 'doing' },
                     { v: 'done', t: 'done' }, { v: 'cancelled', t: 'cancelled' }
-                ]
+                ],
+                // U-52 — the same axis as the backlog's, so the same two words.
+                // A subset named on one tab and not on its neighbour is the
+                // reader learning a gesture and then losing it.
+                presets: BL_STATE_PRESETS
             },
             {
                 id: 'trk-agents', key: 'agents', label: 'agent', allLabel: 'every agent', width: 210,
@@ -4620,7 +4640,8 @@
     }
     const trkPickHtml = () => trkPicks().map(p => window.AFFilter.multi({
         id: p.id, label: p.label, allLabel: p.allLabel, options: p.options,
-        selected: trkFilter[p.key], title: p.title, width: p.width
+        selected: trkFilter[p.key], title: p.title, width: p.width,
+        presets: p.presets
     })).join('');
 
     const trkData = () => td().track;

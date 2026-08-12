@@ -374,14 +374,27 @@
             { id: 'nt-type', label: 'Type', get: () => fType, set: v => { fType = v; },
                 title: 'Which notice types to list — tick any combination',
                 options: Object.keys(TYPES).map(k => ({ v: k, t: TYPES[k].icon + ' ' + TYPES[k].label })) },
+            // U-52 — the subset a level axis is really for. Four levels, and the
+            // question people actually bring to this page is "what matters",
+            // which cost a Clear plus two ticks.
             { id: 'nt-level', label: 'Level', get: () => fLevel, set: v => { fLevel = v; },
                 title: 'Which importance levels to list — tick any combination',
+                presets: [{
+                    id: 'urgent', label: 'Urgent', values: ['4', '3'],
+                    title: 'The top two — ' + LEVELS[4] + ' and ' + LEVELS[3] + '.'
+                }],
                 options: [4, 3, 2, 1].map(k => ({ v: String(k), t: 'L' + k + ' · ' + LEVELS[k] })) },
             { id: 'nt-agent', label: 'Agents', get: () => fAgent, set: v => { fAgent = v; },
                 title: 'Which agents\' notices to list — tick any combination',
                 options: (DATA.agents || []).slice() },
+            // U-52 — "Waiting" is one option, so a click on its name already
+            // gives you it; its opposite is TWO and had no name.
             { id: 'nt-status', label: 'Status', get: () => fStatus, set: v => { fStatus = v; },
                 title: 'Question status — tick any combination',
+                presets: [{
+                    id: 'settled', label: 'Settled', values: ['answered', 'declined'],
+                    title: 'Everything you have dealt with — answered and declined, nothing still waiting on you.'
+                }],
                 options: [{ v: 'open', t: '❓ Waiting' }, { v: 'answered', t: '✓ Answered' }, { v: 'declined', t: '✕ Declined' }] },
             // ‼️ "No project" is an OPTION, not the absence of one. Without it a
             // project filter would make the unfiled notices vanish with nothing
@@ -404,7 +417,8 @@
             ${chip('unread', `Unread (${unread})`, fMode === 'unread')}
             ${chip('questions', `❓ (${q})`, fMode === 'questions')}
             ${filterPickers().map(p => window.AFFilter.multi({
-                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title
+                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title,
+                presets: p.presets
             })).join('')}
             <select id="nt-sort">${sortOpts}</select>
             <button class="secondary" id="nt-reset" title="Reset filters, search and sort">↺ Reset</button>

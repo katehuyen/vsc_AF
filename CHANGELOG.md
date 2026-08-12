@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.122.3 — The named subsets, everywhere a list has a word for one (2026-08-13)
+
+**U-52.** `presets` has been part of `AFFilter.multi` since the Console needed `Dialog`, and for three versions exactly one picker in the extension used it — a preset is per-picker DATA and the component deliberately does not know what any of the words mean, so nothing ever prompts a page to declare one. A sweep of every picker found five more subsets that have a name:
+
+- **Track → state**: `Active` · `Passive`. It is the same axis as the backlog's, so it is the same constant rather than the same idea typed twice — a subset named on one tab and not on its neighbour is the reader learning a gesture and then losing it.
+- **Backlog → family**: `In a family` — both ends of one, parts and wholes, nothing that stands alone.
+- **Notices → level**: `Urgent` — the top two, Ultra and Important.
+- **Notices → status**: `Settled` — answered and declined, nothing still waiting on you. (`Waiting` is one option, and a click on its own name has always given you that.)
+- **Queue → authors**: `Agents` — everything the fleet put there and nothing you wrote yourself.
+- **Sessions tables → engines**: `Other engines` — everything that did not run on the default, which is the question a four-engine list is read with.
+
+**And a bar, written down, so the row does not fill up with decoration**: the subset needs a name somebody would use out loud, it must be two options or more (a single option is already one click, on its own name), and a picker built from a list of NAMES — agents, projects, targets — has no vocabulary for a subset to be named out of. Each one is only offered when it would actually save a press: the queue's `Agents` and the table's `Other engines` appear only once there is more than one of them.
+
+The failure this ships with a guard against is the one the backlog itself had: a `presets` declared in a page's list and dropped on the way to the component by a call site that never forwarded it — it draws nothing and says nothing. `test_presets.js` presses every one, and `lib_page_dom.js` now exposes the picker shim so any page test can.
+
 ## 3.122.2 — Active and Passive, one click each, on the backlog's state picker (2026-08-13)
 
 **U-51.** The four states are really two questions — what is still work, and what is finished with — and either one cost a **Clear** plus two ticks, on the axis this tab is filtered by more than any other. `Active` (open · doing) and `Passive` (done · cancelled) now sit between **Select all** and **Clear**, exactly where the Console's `show` box puts `Dialog`.

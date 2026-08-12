@@ -675,5 +675,22 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
         /class="pj-trk-code"/.test(r.html()));
 }
 
+// ---------------------------------------------------------------------------
+// U-52: the state axis here is the SAME axis as the backlog's, so it has the
+// same two words. A named subset offered on one tab and not on its neighbour is
+// the reader learning a gesture and then losing it.
+// ---------------------------------------------------------------------------
+{
+    const r = run();
+    ok('the state axis declares Active and Passive here too',
+        r.ms.presets('trk-states').join() === 'active,passive');
+    r.ms.preset('trk-states', 'passive');
+    ok('‼️ …and pressing one really narrows to those two states',
+        r.ms.ticked('trk-states').join() === 'done,cancelled');
+    r.ms.preset('trk-states', 'active');
+    ok('…the other way round as well',
+        r.ms.ticked('trk-states').join() === 'open,doing');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

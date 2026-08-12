@@ -267,6 +267,16 @@ the extension — there is nothing to opt into:
   Console's `show` box declares `Dialog` (you + the agent). The component knows
   the mechanism; only the page knows what the word means, so never put a preset
   in the component.
+  ‼️ **The bar, so a row does not fill up with decoration** (U-52): the subset
+  needs a name somebody would use out loud; it must be **two options or more**,
+  because a single option is already one click — on its own name; and a picker
+  built from a list of NAMES (agents, projects, targets) has no vocabulary for a
+  subset to be named out of. Where a preset applies it applies everywhere the
+  same axis does — the backlog and Track share one `state` constant rather than
+  two copies of one idea. The failure to watch for is the one the backlog had
+  for three versions: a `presets` declared in a page's list and **dropped on the
+  way to the component** by a call site that never forwarded it, which draws
+  nothing and says nothing. `test/test_presets.js` presses every one of them.
 
 `test/lib_afms_dom.js` drives all of it (`toggle` · `clickName` · `preset` ·
 `selectAll` · `clear`), so a picker's behaviour is testable from any page test.
