@@ -172,11 +172,18 @@ mark {
    filter box in the extension is one of these: tick any combination, with
    Select all / Clear above the list. */
 .afms { position: relative; display: inline-block; }
-.afms-btn { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
-.afms-btn.is-filtered {
-    border-color: var(--vscode-focusBorder);
-    box-shadow: inset 3px 0 0 var(--vscode-focusBorder);
-    background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+/* ‼️ A-14 — THE BUTTON IS A FIXED WIDTH AND ITS TEXT IS LEFT-ALIGNED.
+   afFilters.js writes the width from the widest text this particular picker can
+   ever print, so the row is laid out once and never moves again: it used to
+   grow by forty characters when a sentence-shaped option was chosen, wrap its
+   tail onto a second line, and rock back when the choice was undone. Left, not
+   centred, because with a fixed width a centred label slides sideways as the
+   value changes — which is the same complaint one level down. `text-overflow`
+   is the safety net for a label made mostly of emoji, where a `ch` estimate
+   under-reserves. */
+.afms-btn {
+    font-size: 12px; padding: 3px 9px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; text-align: left;
 }
 .afms-menu {
     position: absolute; left: 0; top: calc(100% + 4px); z-index: 60;

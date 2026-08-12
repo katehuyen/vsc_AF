@@ -15,6 +15,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 const code = fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
+/** The other half of this component: a width and a cut are only worth writing
+ *  if the sheet honours them (A-14). */
+const css = fs.readFileSync(path.resolve(__dirname, '../media/common.css'), 'utf8');
 
 // ---------------------------------------------------------------- harness
 // One "page": a html string the picker is rendered into, plus a render()
@@ -144,6 +147,47 @@ ok('the hint says what a name-click does',
         /^Agents: dev\n\nwho ran it\n\n[\s\S]*Click a NAME/.test(tip(AF.multi({
             id: 'k16d', label: 'Agents', options: AGENTS, selected: ['dev'], title: 'who ran it'
         }))));
+}
+
+// ---- A-14: the button is a fixed width and a short readout -----------------
+//
+// The backlog's control row rocked back and forth under the hand: choosing
+// "filed — has a code" grew the button by forty characters, pushed the tail of
+// the row onto a second line, and undoing the choice pulled it back. Two halves
+// to the fix, and both belong in the component because every picker in the
+// extension has the same shape.
+{
+    const SENTENCES = [
+        { v: 'coded', t: 'filed — has a code' },
+        { v: 'unfiled', t: '📥 unfiled' }
+    ];
+    const one = AF.multi({ id: 'a14a', label: 'filing', allLabel: 'any', options: SENTENCES, selected: ['coded'] });
+    const text = (/data-afms="a14a"[^>]*>([^<]*)</.exec(one) || [, ''])[1];
+    ok('‼️ a sentence-shaped option is cut to its head on the button',
+        /filing: filed… ▾/.test(text));
+    ok('…at the dash, never mid-word', !/has a cod/.test(text));
+
+    const tipHead = (/<span class="af-tiph">([\s\S]*?)<\/span>/.exec(one) || [, ''])[1];
+    ok('…and the hover still carries it whole, which is where it belongs',
+        /filing: filed — has a code/.test(tipHead));
+
+    const widthOf = h => Number((/style="width:(\d+)ch"/.exec(h) || [, 0])[1]);
+    ok('‼️ the button reserves the widest text it could ever print', widthOf(one) >= 20);
+    ok('…so every state of the same picker is the same width',
+        widthOf(one) === widthOf(AF.multi({ id: 'a14b', label: 'filing', allLabel: 'any', options: SENTENCES, selected: null }))
+        && widthOf(one) === widthOf(AF.multi({ id: 'a14c', label: 'filing', allLabel: 'any', options: SENTENCES, selected: [] }))
+        && widthOf(one) === widthOf(AF.multi({ id: 'a14d', label: 'filing', allLabel: 'any', options: SENTENCES, selected: ['coded', 'unfiled'] })));
+    ok('…and a picker with short options does not reserve a picker\'s worth of nothing',
+        widthOf(AF.multi({ id: 'a14e', label: 'due', allLabel: 'any', options: ['yes', 'no'] })) < widthOf(one));
+
+    // The button says `state: 2/4` in words. A second signal for the same fact,
+    // arriving on a control the user never asked to have redecorated, read as a
+    // stray bracket beside the box.
+    ok('‼️ nothing is drawn on the button to repeat what its text already says',
+        !/is-filtered/.test(one) && !/is-filtered/.test(css));
+    ok('…and the fixed width is honoured with an ellipsis rather than a clip',
+        /\.afms-btn\s*\{[^}]*text-overflow:\s*ellipsis/.test(css)
+        && /\.afms-btn\s*\{[^}]*text-align:\s*left/.test(css));
 }
 
 // the button click toggles the menu without touching the selection

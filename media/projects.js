@@ -2119,6 +2119,12 @@
                 /* A tag the user invented is marked as theirs — it filters like
                    any other, but it is not part of the shipped vocabulary. */
                 .pj-chip.own { border-style:dashed; }
+                /* ‼️ A-14 — EVERYTHING IN THIS ROW IS THE SAME SIZE. The
+                   ordering box was a bare <select>, so it inherited common.css's
+                   13px while the pickers to its left are 12 and the badges to
+                   its right are 11: the one control nobody had styled was the
+                   loudest thing in the strip. */
+                .pj-chips-row #bl-sort { font-size:12px; padding:3px 6px; }
                 .pj-bl-qwrap { position:relative; flex:0 0 210px; display:inline-flex; }
                 .pj-bl-q { flex:1; min-width:0; padding-right:22px; }
                 .pj-bl-qx { position:absolute; right:2px; top:50%; transform:translateY(-50%);
@@ -2797,6 +2803,43 @@
             ]
         }
     ];
+
+    /**
+     * ‼️ A-14 — THE ORDERING BOX SAYS ITS NAME, AND THE HOVER SAYS THE REST.
+     *
+     * These options were whole clauses — "family — parents, then their parts",
+     * "closed — last finished first" — printed in a control row eight things
+     * wide, at a size larger than everything beside it. A `<select>` sizes to
+     * its widest option, so one clause decided how much of the row this box took
+     * for ever, and it took it from the search box.
+     *
+     * `t` is the name, `full` is the clause. The clause is not lost: it is the
+     * FIRST LINE of the box's hover for whichever ordering is chosen (the rule
+     * in docs/CONVENTIONS.md — the changing half first, then the standing
+     * explanation), and it is on each option in the open list as well.
+     */
+    const BL_SORTS = [
+        { v: 'file', t: 'queue order', full: 'Queue order (yours) — your own line order in the file' },
+        { v: 'family', t: 'family', full: 'Family — each parent followed by its parts' },
+        { v: 'score', t: 'score', full: 'Score — priority ÷ effort' },
+        { v: 'priority', t: 'priority', full: 'Priority — ⏫ first' },
+        { v: 'effort', t: 'size', full: 'Size — the effort estimate, largest first' },
+        { v: 'code', t: 'code', full: 'Code — by area, then by number' },
+        { v: 'state', t: 'state', full: 'State — open, doing, done, cancelled' },
+        { v: 'type', t: 'work type', full: 'Work type — bug, feat, ux …' },
+        { v: 'due', t: 'due date', full: 'Due date — 📅 soonest first' },
+        { v: 'closed', t: 'closed', full: 'Closed — last finished first' },
+        { v: 'text', t: 'alphabetical', full: 'Alphabetical — by the item\'s own words' }
+    ];
+    const BL_SORT_TIP = 'Queue order is your own — it is what "do the top five" follows, and the only '
+        + 'one you can drag rows in. "Family" is the one view that NESTS: each parent followed by its '
+        + 'parts, families in the order their heads are queued in — a way of looking, which changes '
+        + 'neither the queue nor the file. "Closed" answers what you finished last: newest closing at '
+        + 'the top, and anything still open at the bottom, where it belongs.';
+    const blSortTip = () => {
+        const now = BL_SORTS.find(s => s.v === blSort);
+        return (now ? now.full + '\n\n' : '') + BL_SORT_TIP;
+    };
 
     const blPicksIn = where => BL_PICKS.filter(p => p.where === where);
     const blPickHtml = where => blPicksIn(where).map(p => window.AFFilter.multi({
@@ -3502,18 +3545,9 @@
                 ${blFilter.q.trim() ? '<button class="pj-bl-qx" data-blclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
             ${blPickHtml('bar')}
-            <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in. 'family' is the one view that NESTS: each parent followed by its parts, families in the order their heads are queued in — a way of looking, which changes neither the queue nor the file. 'closed' answers what you finished last: newest closing at the top, and anything still open at the bottom, where it belongs.">
-                <option value="file"${blSort === 'file' ? ' selected' : ''}>queue order (yours)</option>
-                <option value="family"${blSort === 'family' ? ' selected' : ''}>family — parents, then their parts</option>
-                <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
-                <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
-                <option value="effort"${blSort === 'effort' ? ' selected' : ''}>size</option>
-                <option value="code"${blSort === 'code' ? ' selected' : ''}>code</option>
-                <option value="state"${blSort === 'state' ? ' selected' : ''}>state</option>
-                <option value="type"${blSort === 'type' ? ' selected' : ''}>work type</option>
-                <option value="due"${blSort === 'due' ? ' selected' : ''}>due date</option>
-                <option value="closed"${blSort === 'closed' ? ' selected' : ''}>closed — last finished first</option>
-                <option value="text"${blSort === 'text' ? ' selected' : ''}>alphabetical</option>
+            <select id="bl-sort" title="${C.esc(blSortTip())}">
+                ${BL_SORTS.map(s => `<option value="${s.v}"${blSort === s.v ? ' selected' : ''}
+                    title="${C.esc(s.full)}">${C.esc(s.t)}</option>`).join('')}
             </select>
             <button class="pj-bl-badge" data-act="blDir"
                 title="${blDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${blDesc ? '↓' : '↑'}</button>

@@ -339,6 +339,20 @@ control it cleared, each pointing at the other's block.
   a gap that was already being kept for it.
 - **A control whose LABEL grows reserves for its widest label** — `⚙ Filters`
   gaining `(3)` must not shove its neighbours (`min-width`).
+- ‼️ **…AND A PICKER RESERVES THE WIDEST THING IT COULD EVER PRINT.** The widest
+  is knowable when the control is drawn — its label, its `allLabel`, `none`,
+  `n/total`, and every option — so `AFFilter.multi` measures it and writes a
+  fixed `ch` width. Nothing opts in. This is the backlog's control row: choosing
+  `filed — has a code` grew the button by forty characters, pushed the tail of
+  the row onto a second line, and undoing the choice pulled it back, so the
+  whole strip rocked under the hand. The other half of the same fix is that **an
+  option may be a sentence in the open MENU and only its head on the button** —
+  the menu is where you are choosing between them and has a line each; the
+  button is a readout, and the hover carries the sentence whole.
+- **Do not add a second signal for what the button already says in words.**
+  `state: 2/4` is not `state: every state`; an inset bar and a re-tinted fill on
+  top of that repeat the fact and read, on a small button with rounded corners,
+  as a stray bracket beside the box.
 
 ### A date box commits on `change`, never on `input`
 

@@ -1798,5 +1798,38 @@ function pickParent(r, code) {
         !!after && !/data-act="blCapReset"/.test(after[1]));
 }
 
+// ---------- A-14: the control row stops rocking ----------
+//
+// One <select> in a row of eight controls had never been styled, so it inherited
+// common.css's 13px next to 12px pickers and 11px badges — and it printed whole
+// clauses ("family — parents, then their parts"), which is what decided how much
+// of the row it took, for ever, at the search box's expense. The clause is not
+// lost: it is the first line of the box's hover for whatever is chosen, which is
+// the ordering rule in docs/CONVENTIONS.md.
+{
+    const r = run(data());
+    const box = /<select id="bl-sort"([\s\S]*?)<\/select>/.exec(r.html());
+    ok('the ordering box is still there', !!box);
+    const opts = [...box[1].matchAll(/<option[^>]*>([^<]+)<\/option>/g)].map(m => m[1].trim());
+    ok('‼️ every ordering is named in a word or two, not a clause',
+        opts.length >= 10 && opts.every(t => t.length <= 14 && !/[—–]/.test(t)));
+    ok('…and the clause rides on the option itself, for the open list',
+        /title="Family — each parent followed by its parts"/.test(box[1]));
+
+    const title = (/<select id="bl-sort" title="([^"]*)"/.exec(r.html()) || [, ''])[1];
+    ok('‼️ the box\'s hover opens on what is CHOSEN, then explains',
+        /^Queue order \(yours\)/.test(title) && /do the top five/.test(title));
+
+    const s = r.byId('bl-sort');
+    s.value = 'closed';
+    s.fire('change');
+    const after = (/<select id="bl-sort" title="([^"]*)"/.exec(r.html()) || [, ''])[1];
+    ok('…and it follows the choice rather than naming one ordering for ever',
+        /^Closed — last finished first/.test(after));
+
+    ok('…at the same size as everything beside it in the row',
+        /\.pj-chips-row #bl-sort \{[^}]*font-size:12px/.test(r.html()));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

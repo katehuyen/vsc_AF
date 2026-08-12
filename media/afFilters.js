@@ -60,16 +60,66 @@
         });
     }
 
-    /** null → all · [] → none · one → its own label · many → n/total. */
+    /**
+     * ‼️ A-14 — THE BUTTON'S TEXT IS A READOUT, NOT THE OPTION'S FULL SENTENCE.
+     *
+     * An option is allowed to be a sentence, because in the open menu it has a
+     * line to itself and a reader is choosing between them: "filed — has a
+     * code", "wholes only — nobody's part". Printing that sentence ON THE BUTTON
+     * is what made the backlog's control row unusable — the row grew by forty
+     * characters on one press, the tail wrapped to the next line, pressing again
+     * pulled it back, and the whole strip rocked back and forth under the hand.
+     *
+     * So the button prints the option's HEAD and the hover carries it in full
+     * (`selectionLine`, which is the first thing in the panel). The cut is at a
+     * word or at the dash the sentences use, never mid-word.
+     */
+    const ONE_MAX = 16;
+
+    function shorten(t) {
+        const s = String(t === undefined || t === null ? '' : t);
+        if (s.length <= ONE_MAX) { return s; }
+        // A sentence-shaped option says its head first and explains after a
+        // dash; that head is exactly what the button wants.
+        const dash = s.search(/\s[—–-]\s/);
+        if (dash > 0 && dash <= ONE_MAX) { return s.slice(0, dash) + '…'; }
+        const cut = s.slice(0, ONE_MAX - 1);
+        const space = cut.lastIndexOf(' ');
+        return (space > 5 ? cut.slice(0, space) : cut).replace(/[\s—–-]+$/, '') + '…';
+    }
+
+    /** null → all · [] → none · one → its own label, cut · many → n/total. */
     function buttonText(o, opts, sel) {
         const label = o.label || 'Filter';
-        if (sel === null || sel === undefined) { return label + ': ' + (o.allLabel || 'all'); }
+        if (sel === null || sel === undefined) { return label + ': ' + shorten(o.allLabel || 'all'); }
         if (!sel.length) { return label + ': none'; }
         if (sel.length === 1) {
             const hit = opts.find(x => x.v === sel[0]);
-            return label + ': ' + (hit ? hit.t : sel[0]);
+            return label + ': ' + shorten(hit ? hit.t : sel[0]);
         }
         return label + ': ' + sel.length + '/' + opts.length;
+    }
+
+    /**
+     * ‼️ …AND IT RESERVES THAT WIDTH WHETHER IT IS USING IT OR NOT.
+     *
+     * Cutting the text is half the fix: `state: all` and `state: cancelled` are
+     * still different widths, so the row still moved on every press — just less
+     * far. The widest thing this button can EVER print is knowable at the moment
+     * it is drawn, so it is measured once and the button is given it. Nothing
+     * else in the row has to know, and no page has to declare a width.
+     *
+     * `ch` is the width of a `0`, which in a proportional face is wider than an
+     * average lowercase letter — so this over-reserves slightly rather than
+     * clipping, which is the right way round. `text-overflow` in common.css is
+     * the safety net for a label made mostly of emoji.
+     */
+    function buttonWidth(o, opts) {
+        const label = (o.label || 'Filter').length + 2;          // "state: "
+        const widest = [o.allLabel || 'all', 'none', opts.length + '/' + opts.length]
+            .concat(opts.map(x => shorten(x.t)))
+            .reduce((m, s) => Math.max(m, String(s).length), 0);
+        return label + widest + 3;                                // + " ▾"
     }
 
     /** The sentence every one of these boxes now needs, because it gained a
@@ -141,8 +191,14 @@
             ` · <a data-afms-preset="${esc(p.id)}" aria-label="${esc(p.title || p.label || p.id)}">${esc(p.label || p.id)}</a>`).join('');
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
         const explanation = o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT;
-        const filtered = sel !== null && sel !== undefined;
-        const button = `<button type="button" class="secondary afms-btn${filtered ? ' is-filtered' : ''}" data-afms="${esc(o.id)}"` +
+        // ‼️ A-14 — NO SECOND SIGNAL THAT A FILTER IS SET. The button already
+        // says it, in words, in the one place a reader is looking: `state: 2/4`
+        // is not `state: every state`. The inset bar and re-tinted fill that
+        // arrived with the search rebuild said the same thing again, on a
+        // control the user had not asked to have redecorated — and read as a
+        // stray bracket beside the box.
+        const button = `<button type="button" class="secondary afms-btn" data-afms="${esc(o.id)}"` +
+            ` style="width:${buttonWidth(o, opts)}ch"` +
             `${o.disabled ? ' disabled' : ''} aria-label="${esc(selectionLine(o, opts, sel))}">` +
             `${esc(buttonText(o, opts, sel))} ▾</button>`;
         const trigger = window.AFTip && typeof window.AFTip.wrap === 'function'

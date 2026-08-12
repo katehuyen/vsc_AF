@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.121.4 — The backlog's control row stops rocking under the hand (2026-08-13)
+
+**A-14.** `search text or code · state: 2/4 ▾ · filing: 📥 unfiled ▾ · queue order (yours) · ↑ · cut at` was a row that moved every time you touched it. Three separate causes, and all three are fixed where they belong rather than on this one page.
+
+**A picker now reserves the widest text it could ever print.** That width is knowable when the control is drawn — its label, its "all" word, `none`, `n/total` and every option — so `AFFilter.multi` measures it once and writes a fixed width. Choosing `filed — has a code` used to grow the button by forty characters, push the tail of the row onto a second line, and pull it back when the choice was undone.
+
+**An option may be a sentence in the open menu and only its head on the button.** In the menu it has a line to itself and you are choosing between them; on the button it is a readout. The cut lands on the dash those sentences use, never mid-word, and the hover still carries the whole thing — it is the first line of the panel, as it has been since K-16.
+
+**The inset bar and re-tinted fill are gone.** They arrived with the search rebuild and applied to every picker in the extension. The button already says a filter is set, in words, in the one place a reader is looking; a second signal for the same fact, on a small button with rounded corners, read as a stray bracket beside the box.
+
+**And the ordering box is the same size as everything beside it.** It was the one control in the strip nobody had styled, so it inherited 13px next to 12px pickers and 11px badges — and it printed whole clauses (`family — parents, then their parts`), which is what decided how much of the row it took, permanently, at the search box's expense. Every ordering is now named in a word or two; the clause is on each option in the open list and is the first line of the box's hover for whichever ordering is chosen.
+
 ## 3.121.3 — One search engine, and every box says so (2026-08-13)
 
 **X-37.** The Search page was rebuilt with a real grammar under it and a Syntax card beside it, and the question afterwards was the obvious one: *are the other boxes the same?* Two were not, and neither of them looked wrong.
