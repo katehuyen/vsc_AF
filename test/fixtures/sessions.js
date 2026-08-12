@@ -37,4 +37,14 @@ const data = () => ({
     sessionTableN: 200
 });
 
-module.exports = { script: 'sessionsPage.js', data };
+// X-33 — the filter panel is a surface of its own and had never been looked at:
+// its controls carried thin native tooltips, and three of them carried none.
+const variants = () => [
+    { id: 'table', label: 'Sessions — the table', data: data() },
+    {
+        id: 'filters', label: 'Sessions — the filter panel open', data: data(),
+        act: (r) => { r.query('.af-filter')[0].click(); }
+    }
+];
+
+module.exports = { script: 'sessionsPage.js', data, variants };

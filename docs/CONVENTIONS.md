@@ -210,13 +210,22 @@ the extension — there is nothing to opt into:
 `test/lib_afms_dom.js` drives all of it (`toggle` · `clickName` · `preset` ·
 `selectAll` · `clear`), so a picker's behaviour is testable from any page test.
 
-**Chips that are a scope, not a set, follow the same two gestures.** The Search
-page's kind chips are the case that proved it: they were a plain toggle, and
-because the default scope is Dialog the two chips a reader most wants to press
-were already lit — so pressing one *removed* it and the row read as broken. A
-plain click means **only this**; Ctrl/⌘-click adds and removes. Never let the
-scope empty into "matches nothing", and write the gesture down beside the chips,
-not only in the code.
+**Chips that are a scope are BADGES, and a badge toggles.** A row of chips is
+read the way the Session Viewer's is: what is lit is what is included, a click
+adds or removes one, and **Ctrl/⌘-click means "only this one"**. The gesture is
+written beside the chips, not only in the code, and the scope can never empty —
+the last chip taken off returns to the default rather than to a page that
+matches nothing.
+
+- **The named subsets get their own chips** (`Dialog`, `Delegation`,
+  `Everything` on the Search page), because "the usual reading" and "exactly
+  these" are two different questions and one row should answer both.
+- **The lit chips ARE the answer.** Do not print a second sentence at the end of
+  the row saying which scope is on; that is the row asking to be read twice.
+- ‼️ This was briefly inverted — a plain click meant "only this" — after a
+  report that pressing a lit chip switched it off. The inversion cost the thing
+  the row exists for: **two kinds at once**, which the engine has always
+  accepted (U-42). The toggle is the rule; "only this" is the modifier.
 
 ### A text filter box has a ✕ inside it
 

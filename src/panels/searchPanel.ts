@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import {
     searchTranscripts, searchMemory, searchLiveEvents,
-    SearchResult, SearchRole
+    SearchResult, SearchRole, SearchableSession, ParseForeign, isSearchRole
 } from '../core/search';
-import { SessionIndex } from '../core/sessions';
+import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
 export interface SearchDeps {
@@ -17,6 +17,11 @@ export interface SearchDeps {
     /** D4 semantic layer — undefined when embeddings are off. */
     semanticSearch(query: string, agentName?: string): Promise<SearchResult>;
     semanticStatus(): { provider: string; sessions: number; chunks: number };
+    /** X-24: project name per agent name — the same axis the Sessions tables
+     *  group by, so "which project was this said on" means one thing. */
+    agentProjects?(): Record<string, string>;
+    /** X-35: how to read a transcript this engine's scanner cannot (cliViewer). */
+    parseForeign?: ParseForeign;
 }
 
 /** Pre-scoping passed by the surface that opened the panel (viewer → this
@@ -25,6 +30,117 @@ export interface SearchPreset {
     agentName?: string;
     file?: string;
     title?: string;
+}
+
+/** The word the Project axis uses for a session that belongs to no project.
+ *  Same string as the Sessions tables (media/sessionsTable.js). */
+const UNASSIGNED = 'Unassigned';
+
+/**
+ * ‼️ X-24 — THE FILTERS ARE A SESSION FILTER, NOT A RESULT FILTER.
+ *
+ * The complaint was that a page whose whole subject is finding things offered
+ * one axis (a date) while "everything there is to know about a session" —
+ * which agent, which engine, which project, which model, who started it,
+ * whether it is a subagent lane — sat unusable in the index. They narrow the
+ * SET THAT IS SCANNED rather than sieving hits afterwards, which is both
+ * honest (the "n sessions scanned" figure means what it says) and cheaper.
+ */
+export interface SessionFilters {
+    /** null / absent = every agent (incl. unassigned); [] = none. */
+    agents?: string[] | null;
+    /** engine ids — 'claude' | 'codex' | 'gemini' | 'agy' | anything a profile set. */
+    engines?: string[] | null;
+    /** project names, `Unassigned` for the sessions that belong to none. */
+    projects?: string[] | null;
+    /** model ids, exactly as the session records them. */
+    models?: string[] | null;
+    /** '' = both · 'user' = a person started it · 'auto' = an automation run. */
+    origin?: string;
+    /** '' = both · 'main' = no subagent lanes · 'sub' = only them. */
+    lane?: string;
+    pinnedOnly?: boolean;
+    errorsOnly?: boolean;
+    /** X-34: a session id, an id prefix, a transcript path, or part of a title. */
+    session?: string;
+}
+
+/** The values that actually exist in the pool — a picker built from reality
+ *  rather than from a fixed list, so a new engine or project needs no code. */
+interface SearchFacets {
+    agents: string[];
+    engines: string[];
+    projects: string[];
+    models: string[];
+}
+
+/** What X-34 answers with: the one session an id (or a path) points at. */
+interface SessionRef {
+    sessionId: string;
+    file: string;
+    title: string;
+    agentName: string;
+    engine: string;
+    ts: number;
+}
+
+export const engineOf = (s: SessionInfo): string => s.source ?? 'claude';
+
+/** Model ids without the vendor prefix every one of them carries — the same
+ *  shortening the tables show, so the picker and the cell agree. */
+export const modelsOf = (s: SessionInfo): string[] =>
+    (s.models ?? []).filter(Boolean).map(m => String(m).replace(/^claude-/, ''));
+
+const has = (list: string[] | null | undefined, v: string): boolean =>
+    !list ? true : list.includes(v);
+
+/**
+ * The sessions a search may look at, after the filters.
+ *
+ * ‼️ ONE FUNCTION, BOTH DOORS. The page and the `search.transcripts` bridge op
+ * ask the same question, and a second copy of these rules would answer it
+ * differently within a month — an agent told "only Codex sessions with errors"
+ * would get a different set from the person who typed it into the panel. So the
+ * panel calls this and so does the op.
+ */
+export function scopeSessions(
+    pool: SessionInfo[], f: SessionFilters, projectOf: (s: SessionInfo) => string
+): SessionInfo[] {
+    const origin = f.origin === 'user' || f.origin === 'auto' ? f.origin : '';
+    const lane = f.lane === 'main' || f.lane === 'sub' ? f.lane : '';
+    const session = (f.session ?? '').trim().toLowerCase();
+    return pool.filter(s => {
+        if (!has(f.agents, s.agentName ?? '')) { return false; }
+        if (!has(f.engines, engineOf(s))) { return false; }
+        if (!has(f.projects, projectOf(s))) { return false; }
+        if (f.models && !modelsOf(s).some(m => f.models?.includes(m))) { return false; }
+        if (origin && sessionOrigin(s) !== origin) { return false; }
+        if (lane === 'main' && s.isSidechain) { return false; }
+        if (lane === 'sub' && !s.isSidechain) { return false; }
+        if (f.pinnedOnly && !s.pinned) { return false; }
+        if (f.errorsOnly && !(s.errors > 0)) { return false; }
+        if (session) {
+            // ‼️ X-34 — an id, part of one, a path, or part of a title. The
+            // 8-character prefix is the form this extension prints everywhere
+            // ("4d361981#1"), so it must be the form that finds.
+            const hay = `${s.sessionId} ${s.title} ${s.file}`.toLowerCase();
+            if (!hay.includes(session)) { return false; }
+        }
+        return true;
+    });
+}
+
+/** The shape the engine scans, out of the index's own rows. */
+export function searchableSessions(list: SessionInfo[]): SearchableSession[] {
+    return list.map(s => ({
+        file: s.file,
+        agentName: s.agentName,
+        title: s.title,
+        mtime: s.mtime,
+        sessionId: s.sessionId,
+        engine: engineOf(s),
+        isSidechain: s.isSidechain
+    }));
 }
 
 /** D4 — full-fleet transcript search panel ("which agent did I discuss this with?"). */
@@ -56,6 +172,7 @@ export class SearchPanel {
             'Search',
             {
                 agents: this.deps.getAgentNames(),
+                facets: this.facets(),
                 semantic: this.deps.semanticStatus(),
                 preset: preset ?? null
             },
@@ -65,10 +182,78 @@ export class SearchPanel {
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
+    /**
+     * ‼️ EVERY ENGINE (X-27 / X-35). `index.all()` is claude-only by design —
+     * it feeds the analytics — and the Search page is a READING surface, not a
+     * measurement. Searching a four-engine fleet and being answered about one
+     * of them is the defect this call fixes; the sessions it adds carry honest
+     * zeros for cost, which nothing here divides by.
+     */
+    private pool(): SessionInfo[] {
+        return this.deps.index.allWithExternal();
+    }
+
+    private projectOf(s: SessionInfo): string {
+        const map = this.deps.agentProjects?.() ?? {};
+        return (s.agentName ? map[s.agentName] : '') || UNASSIGNED;
+    }
+
+    private facets(): SearchFacets {
+        const agents = new Set<string>();
+        const engines = new Set<string>();
+        const projects = new Set<string>();
+        const models = new Set<string>();
+        for (const s of this.pool()) {
+            if (s.agentName) { agents.add(s.agentName); }
+            engines.add(engineOf(s));
+            projects.add(this.projectOf(s));
+            for (const m of modelsOf(s)) { models.add(m); }
+        }
+        const abc = (a: string, b: string) => a.localeCompare(b);
+        return {
+            agents: [...agents].sort(abc),
+            // Claude first — it is the default and the longest lane — then the
+            // rest alphabetically, the order every other engine picker uses.
+            engines: [...engines].sort((a, b) => a === 'claude' ? -1 : b === 'claude' ? 1 : abc(a, b)),
+            // Named projects first, Unassigned last: it is a leftover, not a project.
+            projects: [...projects].sort((a, b) =>
+                a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : abc(a, b)),
+            models: [...models].sort(abc)
+        };
+    }
+
+    /**
+     * X-34 — "I know the id, take me there."
+     *
+     * A full id, an id PREFIX (six characters or more, because that is the
+     * form printed on every track chip and every log line), or a transcript
+     * path. It never narrows the search: the banner is drawn ABOVE the results
+     * and the text keeps searching as text, since an id pasted into the box is
+     * as often "where was this mentioned" as "open it".
+     */
+    private resolveRef(text: string): SessionRef | null {
+        const q = String(text ?? '').trim().toLowerCase();
+        if (q.length < 6) { return null; }
+        const pool = this.pool();
+        const asRef = (s: SessionInfo): SessionRef => ({
+            sessionId: s.sessionId, file: s.file, title: s.title,
+            agentName: s.agentName ?? '', engine: engineOf(s), ts: s.lastTs || s.mtime || 0
+        });
+        const exact = pool.find(s => s.sessionId.toLowerCase() === q)
+            ?? pool.find(s => s.file.toLowerCase() === q);
+        if (exact) { return asRef(exact); }
+        // A prefix must point at ONE session: two candidates is not an answer,
+        // and offering the first of them would be a coin toss wearing a link.
+        const starts = pool.filter(s => s.sessionId.toLowerCase().startsWith(q));
+        return starts.length === 1 ? asRef(starts[0]) : null;
+    }
+
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         switch (msg.type) {
             case 'search': {
                 const query = String(msg.query ?? '');
+                const f = (msg.filters && typeof msg.filters === 'object'
+                    ? msg.filters : {}) as SessionFilters;
                 // Agent picker: null/absent = all agents (no filter — unassigned
                 // sessions included); an array = exactly that set ([] = none).
                 const agentNames = Array.isArray(msg.agents)
@@ -76,8 +261,7 @@ export class SearchPanel {
                     : undefined;
                 const file = typeof msg.file === 'string' && msg.file ? msg.file : undefined;
                 const roles = Array.isArray(msg.roles) && msg.roles.length
-                    ? msg.roles.filter((r): r is SearchRole =>
-                        r === 'user' || r === 'assistant' || r === 'tool' || r === 'toolResult')
+                    ? msg.roles.filter(isSearchRole)
                     : undefined;
                 let result: SearchResult;
                 if (msg.semantic) {
@@ -90,12 +274,15 @@ export class SearchPanel {
                         result.hits = result.hits.filter(h => set.has(h.agentName));
                     }
                 } else {
-                    const sessions = this.deps.index.all().map(s => ({
-                        file: s.file,
-                        agentName: s.agentName,
-                        title: s.title,
-                        mtime: s.mtime
-                    }));
+                    // The agent picker is one of the filters; it arrives on its
+                    // own key for compatibility with every surface that presets
+                    // this page, so it is merged in rather than duplicated.
+                    const filters: SessionFilters = {
+                        ...f,
+                        agents: agentNames === undefined ? f.agents : agentNames
+                    };
+                    const scoped = scopeSessions(this.pool(), filters, s => this.projectOf(s));
+                    const sessions = searchableSessions(scoped);
                     // The date window is the MESSAGE's own time (core/search.ts
                     // tsFrom/tsTo), not the session's mtime: "what was said on
                     // Tuesday" and "sessions last written to on Tuesday" are
@@ -105,23 +292,30 @@ export class SearchPanel {
                     const opts = {
                         regex: !!msg.regex,
                         caseSensitive: !!msg.caseSensitive,
-                        agentNames,
+                        wholeWord: !!msg.wholeWord,
+                        // the set is already narrowed above; agentNames here
+                        // would apply the same cut twice and disagree on the
+                        // "unassigned" case
                         roles,
                         tsFrom: ms(msg.tsFrom),
                         tsTo: ms(msg.tsTo),
                         files: file ? [file] : undefined,
                         // a single session can take many more hits than a fleet scan
                         maxHits: file ? 400 : 150,
-                        maxPerFile: file ? 400 : 3
+                        maxPerFile: file ? 400 : 3,
+                        parseForeign: this.deps.parseForeign
                     };
                     result = searchTranscripts(sessions, query, opts);
                     // S5 sources ride along unless the scope is a single session
                     // (that session's content is fully covered by the scan above).
+                    // They have no engine/project/lane of their own, so only the
+                    // agent set applies to them.
+                    const srcOpts = { ...opts, agentNames: filters.agents ?? undefined };
                     if (!file && msg.memory !== false) {
-                        result.hits.push(...searchMemory(this.deps.getMemoryFiles(), query, opts));
+                        result.hits.push(...searchMemory(this.deps.getMemoryFiles(), query, srcOpts));
                     }
                     if (!file && msg.events !== false) {
-                        result.hits.push(...searchLiveEvents(this.deps.liveEventsFile(), query, opts));
+                        result.hits.push(...searchLiveEvents(this.deps.liveEventsFile(), query, srcOpts));
                     }
                 }
                 void this.panel.webview.postMessage({
@@ -129,7 +323,10 @@ export class SearchPanel {
                     // echoed back so the page can drop results of a superseded
                     // search (auto-search fires on every control change)
                     seq: typeof msg.seq === 'number' ? msg.seq : 0,
-                    semanticStatus: this.deps.semanticStatus()
+                    semanticStatus: this.deps.semanticStatus(),
+                    facets: this.facets(),
+                    // X-34: the id in the box (or in the Session filter), resolved
+                    idMatch: this.resolveRef(String(f.session || '') || query)
                 });
                 break;
             }
@@ -152,6 +349,10 @@ export class SearchPanel {
             case 'openTimeline':
                 void vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'findSession':
+                void vscode.commands.executeCommand('agentfarm.findSession',
+                    typeof msg.q === 'string' ? msg.q : undefined);
+                break;
             case 'buildIndex':
                 void vscode.commands.executeCommand('agentfarm.buildSemanticIndex');
                 break;
@@ -172,4 +373,35 @@ export class SearchPanel {
         SearchPanel.current = undefined;
         for (const d of this.disposables) { d.dispose(); }
     }
+}
+
+/**
+ * The session an id / path / phrase points at, and the candidates when it
+ * points at several — shared by the `findSession` command and the
+ * `sessions.find` bridge op so the two can never answer differently (X-34).
+ */
+export function findSessions(
+    pool: SessionInfo[], q: string, limit = 20
+): SessionInfo[] {
+    const needle = String(q ?? '').trim().toLowerCase();
+    if (!needle) {
+        return pool.slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime)).slice(0, limit);
+    }
+    const score = (s: SessionInfo): number => {
+        const id = s.sessionId.toLowerCase();
+        if (id === needle) { return 0; }
+        if (id.startsWith(needle)) { return 1; }
+        if (id.includes(needle)) { return 2; }
+        if (s.file.toLowerCase().includes(needle)) { return 3; }
+        if ((s.title ?? '').toLowerCase().includes(needle)) { return 4; }
+        if ((s.agentName ?? '').toLowerCase().includes(needle)) { return 5; }
+        if ((s.tags ?? []).some(t => t.toLowerCase().includes(needle))) { return 6; }
+        return -1;
+    };
+    return pool
+        .map(s => ({ s, n: score(s) }))
+        .filter(x => x.n >= 0)
+        .sort((a, b) => a.n - b.n || (b.s.lastTs || b.s.mtime) - (a.s.lastTs || a.s.mtime))
+        .slice(0, limit)
+        .map(x => x.s);
 }

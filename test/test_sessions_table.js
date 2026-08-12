@@ -619,6 +619,30 @@ const mkRow = (i, extra) => Object.assign({
         html().includes('title2') && !html().includes('title1'));
     txt.value = ''; txt._fn(ev());
 
+    // ‼️ X-34 — AND THE SESSION ID. The extension prints eight-character ids
+    // everywhere; the box that could take one back to its row did not look at
+    // it, so the id you already knew was the one thing you could not search by.
+    t.setRows([mkRow(1), mkRow(2, { sessionId: '4d361981-6215-4c0b-9b9f-ffdbc394e478' })], 10);
+    txt.value = '4d361981'; txt._fn(ev());
+    ok('‼️ the text filter finds a session by the id prefix that is printed',
+        html().includes('title2') && !html().includes('title1'));
+    txt.value = ''; txt._fn(ev());
+    ok('…and the box says so, rather than promising only titles',
+        html().includes('title, agent, label or id…'));
+
+    // ‼️ X-33 — the panel's own controls get the table's hovers. A native
+    // `title` here does not survive the repaint every filter change causes, and
+    // three of these controls carried no hover at all.
+    ok('‼️ every control in the filter panel carries a rich hover',
+        ['Started by', 'Active now', 'Has errors', 'Main only', 'Pinned only',
+            'When', 'Clear', 'Tokens', 'Minutes', 'Errors']
+            .every(head => html().includes(`<span class="af-tiph">${head}</span>`)));
+    ok('…and the range boxes say what is set as well as what the column means',
+        html().includes('Now: no limit') && html().includes('Now: every date'));
+    ok('…so nothing in it is left on a native title',
+        !/class="chip af-forig-[a-z]+[^"]*" title=/.test(html())
+        && !/class="af-ftext" title=/.test(html()));
+
     // the ★ Pinned filter = the shelf on its own
     t.setRows([mkRow(1), mkRow(2, { pinned: true }), mkRow(3)], 10);
     click(q('.af-fpin'));

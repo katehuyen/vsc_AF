@@ -413,6 +413,53 @@ function makeSandbox(opts) {
         && res.btn.textContent === '—');
 }
 
+// ---------- X-25: a delegating agent is not a user ----------
+//
+// ‼️ THE REPORTED CONFUSION. A subagent conversation is an agent handing work
+// to another agent, and both sides wore the words a PERSON's conversation
+// wears: the handover said USER and the answer said the model's name. The only
+// mark distinguishing them was a quiet "subagent" further along the meta line —
+// which is not what anybody scans, and which searching could not use at all.
+{
+    const t = makeSandbox();
+    const d = JSON.parse(JSON.stringify(t.data()));
+    d.agentName = 'developer';
+    d.messages.push(
+        { role: 'user', ts: 7000, text: 'devret bunu', turn: 3, sidechain: true },
+        { role: 'assistant', ts: 7100, text: 'bitirdim', turn: 3, sidechain: true, model: 'claude-opus-5' }
+    );
+    t.pushData(d);
+    t.click('t-expandall');
+    const html = t.appHtml();
+    ok('‼️ a handover is a DELEGATOR, by the name of the agent that wrote it',
+        html.includes('📤 DELEGATOR (developer)'));
+    ok('‼️ …and the side that answers is a HANDLER, not "the agent"',
+        html.includes('📥 HANDLER'));
+    ok('a person\'s own prompt is untouched', html.includes('🧑 USER'));
+    ok('…and so is the agent it is talking to',
+        html.includes('🤖 CLAUDE') || html.includes('🤖 AGENT'));
+
+    // The whole transcript can BE the lane (a subagent's own file); there the
+    // per-line flag is absent and the host says so instead (`laneFor`).
+    const lane = makeSandbox();
+    const l = JSON.parse(JSON.stringify(lane.data()));
+    l.agentName = 'manager';
+    l.lane = true;
+    lane.pushData(l);
+    lane.click('t-expandall');
+    ok('a subagent\'s OWN transcript is a lane from end to end',
+        lane.appHtml().includes('DELEGATOR (manager)')
+        && lane.appHtml().includes('HANDLER')
+        && !lane.appHtml().includes('🧑 USER'));
+
+    // An export handed to somebody else must not name its speakers differently
+    // from the screen — that would be a second vocabulary for the same fact.
+    t.send({ type: 'exportBuild', view: false, foldedTitles: false });
+    const md = t.posted().filter(m => m.type === 'exportMd').pop();
+    ok('the exported markdown uses the same words',
+        !!md && /\*\*DELEGATOR \(developer\)\*\*/.test(md.md) && /\*\*HANDLER\*\*/.test(md.md));
+}
+
 // ---------- the page's own heading is a session row too ----------
 // A session listed in a table carries the whole right-click action set; on that
 // session's OWN page the heading offered Copy/Paste and nothing else. And the

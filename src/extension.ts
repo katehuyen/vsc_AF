@@ -44,7 +44,7 @@ import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
 import {
-    searchLiveEvents, searchMemory, searchTranscripts, SearchResult, SearchRole
+    searchLiveEvents, searchMemory, searchTranscripts, SearchResult, isSearchRole
 } from './core/search';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
@@ -252,7 +252,7 @@ import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import { postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
-import { SearchPanel } from './panels/searchPanel';
+import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { buildData as buildViewerData, SessionViewerPanel } from './panels/sessionViewer';
@@ -3738,7 +3738,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // three sources: one behaviour, not a second implementation that
             // drifts. Read-only.
             op: 'search.transcripts',
-            describe: 'Search the fleet\'s transcripts, the agents\' memory notes and the orphaned live events — the Search panel\'s own engine. args: query (the query LANGUAGE by default: `foo bar` = both words in any order, `OR`, `-foo` excludes, `"a phrase"` is whole-word and ordered, `*` wildcards; a bare word is a plain substring), regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), roles? (array of user|assistant|tool|toolResult; default user+assistant = the conversation. Use ["user"] to search only what a person asked and ["assistant"] only what an agent answered), from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). Each hit carries file, sessionId, agentName, title, ts, role, turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources. `file` + `ts` are what sessions.open takes to land on the exact moment.',
+            describe: 'Search the fleet\'s transcripts — EVERY ENGINE — plus the agents\' memory notes and the orphaned live events. The Search panel\'s own engine, filters and query language, so an agent and a person asking the same question get the same answer. '
+                + 'args: query (the query LANGUAGE by default: `foo bar` = both words in any order, `OR`, `-foo` excludes, `"a phrase"` is whole-word and ordered, `*` wildcards; a bare word is a plain substring), '
+                + 'regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, wholeWord? (a BARE word must match a whole word too — what quotes already do, without the quotes), '
+                + 'roles? (array of user|assistant|delegator|handler|tool|toolResult; default user+assistant = the conversation. ‼️ `delegator` is one agent\'s handover text inside a subagent lane and `handler` is that subagent\'s reply — they used to arrive as user/assistant, so ["user"] now really is only what a PERSON asked), '
+                + 'file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), '
+                + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (claude|codex|gemini|agy…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
+                + 'from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). '
+                + 'Each hit carries file, sessionId, engine, agentName, title, ts, role, speaker (the agent that wrote a delegation), turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources. `file` + `ts` are what the viewer takes to land on the exact moment; sessions.find takes an id.',
             handler: (args) => {
                 const query = argStr(args, 'query');
                 const strs = (v: unknown): string[] | undefined =>
@@ -3752,38 +3759,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const t = Date.parse(bare ? `${v.trim()}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}` : v);
                     return Number.isFinite(t) ? t : undefined;
                 };
-                const roles = strs(args.roles)?.filter((r): r is SearchRole =>
-                    r === 'user' || r === 'assistant' || r === 'tool' || r === 'toolResult');
+                const roles = strs(args.roles)?.filter(isSearchRole);
                 const file = optStr(args, 'file');
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 150;
                 const opts = {
                     regex: args.regex === true,
                     caseSensitive: args.caseSensitive === true,
-                    agentNames: strs(args.agents),
+                    wholeWord: args.wholeWord === true,
                     roles: roles?.length ? roles : undefined,
                     tsFrom: when(args.from, false),
                     tsTo: when(args.to, true),
                     files: file ? [file] : undefined,
                     maxHits: limit,
-                    maxPerFile: file ? 400 : 3
+                    maxPerFile: file ? 400 : 3,
+                    // X-35: the other three engines' transcripts, read with the
+                    // very parser the Session Viewer reads them with
+                    parseForeign: (raw: string, f: string) => parseCliViewer(raw, f, pricing)
                 };
-                const result = searchTranscripts(
-                    index.all().map(s => ({
-                        file: s.file, agentName: s.agentName, title: s.title, mtime: s.mtime
-                    })), query, opts);
+                // ‼️ THE PANEL'S OWN SCOPE FUNCTION (searchPanel.scopeSessions),
+                // not a second copy of the rules: an agent told "only Codex
+                // sessions with errors" must get the set the person who types it
+                // into the panel gets.
+                const projectNames = agentProjectNames(
+                    agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all());
+                const scoped = scopeSessions(index.allWithExternal(), {
+                    agents: strs(args.agents),
+                    engines: strs(args.engines),
+                    projects: strs(args.projects),
+                    models: strs(args.models),
+                    origin: optStr(args, 'origin'),
+                    lane: optStr(args, 'lane'),
+                    pinnedOnly: args.pinnedOnly === true,
+                    errorsOnly: args.errorsOnly === true,
+                    session: optStr(args, 'sessionId')
+                }, s => (s.agentName ? projectNames[s.agentName] : '') || 'Unassigned');
+                const result = searchTranscripts(searchableSessions(scoped), query, opts);
                 // Scoped to one session, the two extra sources are noise: that
                 // session's text is already covered in full by the scan above.
+                // They have no engine, project or lane of their own, so only the
+                // agent set applies to them.
+                const srcOpts = { ...opts, agentNames: strs(args.agents) };
                 if (!file && args.memory !== false) {
                     result.hits.push(...searchMemory(
                         agents.flatMap(a => a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
-                        query, opts));
+                        query, srcOpts));
                 }
                 if (!file && args.events !== false) {
                     result.hits.push(...searchLiveEvents(
-                        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'), query, opts));
+                        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'), query, srcOpts));
                 }
                 need(!result.error, result.error ?? 'the query could not be read');
-                const idOf = new Map(index.all().map(s => [s.file, s.sessionId]));
                 return {
                     scanned: result.filesScanned,
                     // said out loud: a capped or timed-out scan is a PARTIAL
@@ -3792,13 +3817,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     partial: result.truncated || result.timedOut === true,
                     hits: result.hits.map(h => ({
                         file: h.file,
-                        sessionId: h.kind ? null : (idOf.get(h.file) ?? null),
+                        sessionId: h.sessionId ?? null,
+                        engine: h.engine ?? null,
                         agentName: h.agentName, title: h.title, ts: h.ts,
-                        role: h.role, turn: h.turn ?? null, tool: h.tool ?? null,
+                        role: h.role, speaker: h.speaker ?? null,
+                        turn: h.turn ?? null, tool: h.tool ?? null,
                         kind: h.kind ?? null,
                         before: h.before, match: h.match, after: h.after
                     }))
                 };
+            }
+        },
+        {
+            /**
+             * ‼️ X-34 — THE ID IS THE ONE THING A PERSON ALWAYS HAS.
+             *
+             * Every surface prints eight-character session ids: track chips,
+             * log lines, closing notes, the user's own writing. There was no op
+             * that took one back to the session it names — `sessions.recent`
+             * lists the newest ten and a search over transcripts finds what was
+             * SAID, not which session an id belongs to.
+             */
+            op: 'sessions.find',
+            describe: 'Find a session BY ITS ID — or by an id prefix, a transcript path, a title, an agent name or a label. Every engine, the whole index, not just the recent ones; ranked exact id → prefix → mention. This is the op for "the user quoted 4d361981, what is it": it answers with the row (id, title, agent, engine, project-less facts, when, cost, turns) and the transcript `file` the viewer takes. args: q (what you know — an id, part of one, a path, a phrase; the eight-character prefix this extension prints on every track chip and log line is enough; omit for the most recent), limit? (default 20)',
+            handler: (args) => {
+                const q = optStr(args, 'q');
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+                return findSessions(index.allWithExternal(), q, limit).map(s => ({
+                    id: s.sessionId,
+                    file: s.file,
+                    title: s.title,
+                    agent: s.agentName ?? null,
+                    engine: s.source ?? 'claude',
+                    origin: sessionOrigin(s),
+                    sidechain: s.isSidechain,
+                    pinned: s.pinned === true,
+                    tags: s.tags ?? [],
+                    cwd: s.cwd ?? null,
+                    firstTs: s.firstTs, lastTs: s.lastTs,
+                    turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
+                }));
             }
         },
         {
@@ -8107,7 +8165,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the one field whose job is to tell them apart.
         engineFor: (sessionId: string) =>
             index.external().find(s => s.sessionId === sessionId)?.source
-            ?? (index.all().some(s => s.sessionId === sessionId) ? 'claude' : undefined)
+            ?? (index.all().some(s => s.sessionId === sessionId) ? 'claude' : undefined),
+        // X-25: a subagent's OWN transcript — the index knows it by its folder
+        // depth, and the file itself does not say so on every line.
+        laneFor: (file: string) =>
+            index.allWithExternal().find(s => s.file === file)?.isSidechain === true
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -16180,10 +16242,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getMemoryFiles: () => agents.flatMap(a =>
                         a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
                     liveEventsFile: () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
+                    // X-24: the same project axis the Dashboard, the Sessions
+                    // page and an agent's page group by — one map, one answer.
+                    agentProjects: () => agentProjectNames(
+                        agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
+                    // X-35: the OTHER engines' transcripts, read with the very
+                    // parser the Session Viewer reads them with.
+                    parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),
                     semanticSearch,
                     semanticStatus
                 }, preset && typeof preset === 'object' ? preset : undefined);
             }),
+
+        /**
+         * ‼️ X-34 — "I KNOW THE ID. TAKE ME THERE."
+         *
+         * The extension prints eight-character session ids everywhere — track
+         * chips, log lines, the user's own notes — and there was no way to get
+         * from one back to the session it names. The shelf picker lists twenty
+         * recent sessions and matches on their titles; an id is neither recent
+         * nor a title. So this one searches the WHOLE pool, every engine, on
+         * every keystroke, and it ranks an exact id above a prefix above a
+         * mention, because that is the order the question is usually asked in.
+         */
+        vscode.commands.registerCommand('agentfarm.findSession', async (seed?: unknown) => {
+            const pool = index.allWithExternal();
+            if (!pool.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no sessions indexed yet.');
+                return;
+            }
+            interface Item extends vscode.QuickPickItem { s: SessionInfo }
+            const row = (s: SessionInfo): Item => ({
+                label: `$(comment-discussion) ${s.sessionId.slice(0, 8)} — ${s.title}`,
+                description: [s.agentName, s.source ?? 'claude', relTime(s.lastTs || s.mtime)]
+                    .filter(Boolean).join(' · '),
+                detail: `${s.sessionId}${s.cwd ? ` · ${s.cwd}` : ''}`,
+                s
+            });
+            const qp = vscode.window.createQuickPick<Item>();
+            qp.placeholder = 'Session id (a prefix is enough), a title, an agent or a transcript path';
+            qp.matchOnDescription = true;
+            qp.matchOnDetail = true;
+            qp.ignoreFocusOut = true;
+            // VS Code's own filtering is off: it would filter the list we just
+            // built for this very query, and cut exact-id matches whose label
+            // the user has not typed.
+            const fill = (q: string) => { qp.items = findSessions(pool, q, 30).map(row); };
+            qp.onDidChangeValue(v => fill(v));
+            qp.onDidAccept(() => {
+                const s = qp.selectedItems[0]?.s;
+                qp.hide();
+                if (s) { void vscode.commands.executeCommand('agentfarm.openSession', s.file); }
+            });
+            qp.onDidHide(() => qp.dispose());
+            if (typeof seed === 'string' && seed.trim()) { qp.value = seed.trim(); }
+            fill(qp.value);
+            qp.show();
+        }),
 
         vscode.commands.registerCommand('agentfarm.focusSessionTerminal',
             (rawArg?: SessionRef | SessionInfo) => {

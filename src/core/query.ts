@@ -19,6 +19,10 @@ export interface QueryOptions {
     /** hand the string to RegExp untouched — the Search page's raw mode */
     regex?: boolean;
     caseSensitive?: boolean;
+    /** X-24: anchor BARE words the way quotes anchor a phrase. Whole-word
+     *  matching used to exist only inside quotes, which is a rule nobody can
+     *  discover from looking at a search box. No effect in `regex` mode. */
+    wholeWord?: boolean;
 }
 
 export interface CompiledQuery {
@@ -35,11 +39,16 @@ export interface CompiledQuery {
     find(text: string): { index: number; length: number } | null;
 }
 
+/** One row of the grammar, with its columns intact — what a help card draws. */
+export interface QuerySyntaxRow { sym: string; what: string; example: string; }
+
 interface QueryModule {
     compile(q: string, opts?: QueryOptions): CompiledQuery;
     matches(text: string, q: string, opts?: QueryOptions): boolean;
-    tip(subject?: string): string;
+    tip(subject?: string, opts?: { wholeWord?: boolean }): string;
     SYNTAX: string;
+    SYNTAX_ROWS: QuerySyntaxRow[];
+    WHOLE_WORD_ON: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -56,4 +65,9 @@ export function queryMatches(text: string, q: string, opts: QueryOptions = {}): 
 
 /** The grammar, in the words the tooltips and the guide both use. */
 export const QUERY_SYNTAX = impl.SYNTAX;
-export function queryTip(subject?: string): string { return impl.tip(subject); }
+/** The same grammar with its columns intact — for a help card or a doc table. */
+export const QUERY_SYNTAX_ROWS: QuerySyntaxRow[] = impl.SYNTAX_ROWS;
+export const QUERY_WHOLE_WORD_NOTE = impl.WHOLE_WORD_ON;
+export function queryTip(subject?: string, opts?: { wholeWord?: boolean }): string {
+    return impl.tip(subject, opts);
+}

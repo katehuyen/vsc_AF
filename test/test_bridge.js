@@ -1499,12 +1499,13 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         fs.writeFileSync(f, [
             JSON.stringify({ type: 'user', timestamp: at('2026-08-01T10:00:00Z'), message: { content: 'the parser is wrong' } }),
             JSON.stringify({ type: 'assistant', timestamp: at('2026-08-01T10:00:05Z'), message: { content: [{ type: 'text', text: 'I will fix the parser' }] } }),
-            JSON.stringify({ type: 'user', timestamp: at('2026-08-09T09:00:00Z'), message: { content: 'the parser again' } })
+            JSON.stringify({ type: 'user', timestamp: at('2026-08-09T09:00:00Z'), message: { content: 'the parser again' } }),
+            // X-25: written by an AGENT handing work over, not by a person
+            JSON.stringify({ type: 'user', isSidechain: true, timestamp: at('2026-08-09T09:01:00Z'), message: { content: 'take the parser from here' } })
         ].join('\n'), 'utf8');
         const sessions = [{ file: f, agentName: 'dev', title: 'parser work', mtime: Date.now() }];
 
-        const roleOf = v => Array.isArray(v)
-            ? v.filter(r => ['user', 'assistant', 'tool', 'toolResult'].includes(r)) : undefined;
+        const roleOf = v => Array.isArray(v) ? v.filter(S.isSearchRole) : undefined;
         const when = (v, end) => {
             if (typeof v === 'number' && v > 0) { return v; }
             if (typeof v !== 'string' || !v.trim()) { return undefined; }
@@ -1559,9 +1560,18 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const late = await reg.dispatch('search.transcripts', { query: 'parser', from: '2026-08-05' });
         ok('…an open-ended window is honoured too', late.ok && late.result.hits.length === 1);
 
+        // ‼️ X-25 — the two kinds that used to hide inside `user`. A delegation
+        // is an agent writing to an agent; asking for what a PERSON said and
+        // being handed that text is the defect the roles were split over.
+        const dele = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['delegator'] });
+        ok('‼️ roles=["delegator"] finds one agent\'s handover to another',
+            dele.ok && dele.result.hits.length === 1 && dele.result.hits[0].role === 'delegator');
+        ok('…and it is NOT in what a person asked',
+            mine.result.hits.every(h => h.role === 'user'));
+
         // the real registration must carry the same contract
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const block = src.slice(src.indexOf("op: 'search.transcripts'"), src.indexOf("op: 'sessions.recent'"));
+        const block = src.slice(src.indexOf("op: 'search.transcripts'"), src.indexOf("op: 'sessions.find'"));
         ok('extension.ts registers it against the panel\'s own engine, not a copy',
             /searchTranscripts\(/.test(block) && /searchMemory\(/.test(block) && /searchLiveEvents\(/.test(block));
         ok('…with the roles, the window and the sources on the wire',
@@ -1569,8 +1579,53 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && /tsFrom: when\(args\.from, false\)/.test(block) && /tsTo: when\(args\.to, true\)/.test(block));
         ok('‼️ …and it says out loud when the scan was cut short',
             /partial: result\.truncated \|\| result\.timedOut === true/.test(block));
-        ok('…handing back what sessions.open needs to land on the moment',
-            /sessionId: h\.kind \? null : \(idOf\.get\(h\.file\) \?\? null\)/.test(block));
+        ok('…handing back what the viewer needs to land on the moment',
+            /sessionId: h\.sessionId \?\? null/.test(block) && /engine: h\.engine \?\? null/.test(block));
+
+        // ‼️ X-24 — the session axis reaches the bridge in the SAME words, and
+        // through the panel's own scope function rather than a second copy of
+        // the rules: an agent told "only Codex sessions with errors" must get
+        // the set the person who types it into the panel gets.
+        ok('‼️ every filter the panel offers is on the wire too',
+            ['engines\\?', 'projects\\?', 'models\\?', 'origin\\?', 'lane\\?',
+                'pinnedOnly\\?', 'errorsOnly\\?', 'sessionId\\?', 'wholeWord\\?']
+                .every(a => new RegExp(a).test(block)));
+        ok('…and they narrow the SCAN through the panel\'s own function',
+            /scopeSessions\(index\.allWithExternal\(\)/.test(block)
+            && /searchableSessions\(scoped\)/.test(block));
+        ok('‼️ X-35 — and the other three engines are read, not skipped',
+            /parseForeign: \(raw: string, f: string\) => parseCliViewer\(/.test(block));
+        ok('…the delegation kinds are documented where an agent will read them',
+            /delegator\|handler/.test(block) && /subagent lane/.test(block));
+
+        // ---------- X-34: sessions.find — the id you already have ----------
+        const findBlock = src.slice(src.indexOf("op: 'sessions.find'"), src.indexOf("op: 'sessions.recent'"));
+        ok('‼️ X-34 — the bridge can take an id back to its session',
+            findBlock.includes("op: 'sessions.find'") && /findSessions\(index\.allWithExternal\(\)/.test(findBlock));
+        ok('…over the whole index and every engine, not the recent ten',
+            /engine: s\.source \?\? 'claude'/.test(findBlock) && /file: s\.file/.test(findBlock));
+        ok('…and an id prefix is named as the form that works',
+            /id prefix/.test(findBlock) && /eight-character prefix/.test(findBlock));
+
+        // the ranking itself is the panel's, and it is what makes a prefix useful
+        // (the panel imports `vscode`, so it is loaded behind the same stub)
+        Module._load = function (request) {
+            if (request === 'vscode') { return { Uri: {}, window: {}, ViewColumn: {}, commands: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) } }; }
+            return origLoad.apply(this, arguments);
+        };
+        const SP = require(path.join(__dirname, '..', 'out', 'panels', 'searchPanel.js'));
+        Module._load = origLoad;
+        const pool = [
+            { sessionId: '4d361981-aaaa', file: 'a.jsonl', title: 'nothing', agentName: 'dev', lastTs: 1, mtime: 1, tags: [] },
+            { sessionId: 'ffffffff-bbbb', file: 'b.jsonl', title: 'about 4d361981', agentName: 'dev', lastTs: 9, mtime: 9, tags: [] },
+            { sessionId: 'cccccccc-cccc', file: 'c.jsonl', title: 'other', agentName: 'ops', lastTs: 5, mtime: 5, tags: ['4d361981'] }
+        ];
+        const found = SP.findSessions(pool, '4d361981', 10);
+        ok('‼️ an exact id prefix outranks a session that merely mentions it',
+            found.length === 3 && found[0].sessionId === '4d361981-aaaa');
+        ok('…a title match comes before a label match', found[1].file === 'b.jsonl');
+        ok('…and no query at all means the most recent, newest first',
+            SP.findSessions(pool, '', 2).map(s => s.file).join(',') === 'b.jsonl,c.jsonl');
     }
 
     // ---------- §19.C: usage.plan — the real subscription quota ----------

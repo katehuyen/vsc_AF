@@ -326,8 +326,15 @@
                 if (filters.pinnedOnly && !r.pinned) { return false; }
                 // tags are part of the searchable text: "zen" finds both the
                 // sessions titled that way and the ones you labelled zen
+                //
+                // ‼️ X-34 — AND THE SESSION ID. This extension prints
+                // eight-character ids everywhere (track chips, log lines, the
+                // user's own notes) and the one box on the page that could have
+                // taken one back to its session did not look at it. A bare word
+                // is a substring, so the printed prefix finds the row without
+                // anybody typing a whole UUID.
                 if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
-                    + (r.tags || []).join(' '))) { return false; }
+                    + (r.tags || []).join(' ') + ' ' + (r.sessionId || ''))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 // The picker lists LABELS ("Antigravity"), because that is what
                 // the badge in the column says and a filter that disagrees with
@@ -389,47 +396,85 @@
             return names.sort((a, b) => a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b));
         }
 
+        /**
+         * ‼️ X-33 — THE FILTER ROW GETS THE SAME HOVERS THE TABLE DOES.
+         *
+         * The rows below this panel carry rich, repaint-proof panels; the panel
+         * itself carried thin native `title`s — and several of its controls (the
+         * range boxes, the date range) carried NOTHING AT ALL. Worse, this whole
+         * block is rewritten on every filter change, and a browser does not put
+         * `:hover` back on the node that replaced the one the pointer was on: a
+         * native tooltip you were reading simply vanished and did not return.
+         * `AFTip` bridges exactly that (media/afTip.js), so every explanation
+         * here goes through it — and the range boxes say what the column MEANS
+         * plus what is currently set, which is the figure a reader wants.
+         */
+        const ftip = (trigger, head, body, cls) => window.AFTip.wrap(trigger, head, body, cls);
+
         function filterPanelHtml() {
             if (!filtersOpen) { return ''; }
             const agents = agentNames();
             const engines = engineNames();
-            const flag = (cls, label, on, tip) =>
-                `<button class="chip ${cls}${on ? ' on' : ''}" title="${tip}">${label}</button>`;
+            const flag = (cls, label, on, head, body) => ftip(
+                `<button class="chip ${cls}${on ? ' on' : ''}">${label}</button>`, head, body);
+            const RANGE_TIP = {
+                tokens: 'Every token the session moved — input, output and cache alike. The ⚖ column beside it is the same session measured against the plan limit.',
+                cost: 'What the session cost in dollars, from the pricing rules. A subscription engine reports no dollar figure and is honestly 0.',
+                ctx: 'How much context was in the window after the last reply — "how full was it when this stopped".',
+                duration: 'Wall clock from the first message to the last, in minutes. Not time spent working.',
+                turns: 'How many prompts a person (or a launcher) sent. A turn is one ask and everything the agent did to answer it.',
+                tools: 'Every tool call the session made across all of its turns.',
+                errors: 'Tool calls that came back as errors.'
+            };
             const ranges = FRANGES.map(k => {
                 const rg = filters.ranges[k.id] || {};
-                return `<label class="af-frange">${k.label}
+                const set = rg.min !== undefined || rg.max !== undefined
+                    ? `Now: ${rg.min !== undefined ? rg.min : '—'} to ${rg.max !== undefined ? rg.max : '—'}`
+                    : 'Now: no limit';
+                return ftip(`<label class="af-frange">${k.label}
                     <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
-                </label>`;
+                </label>`, k.label, `${set}\n\n${RANGE_TIP[k.id] || ''}\n\nEither end may be left empty — a min with no max means "at least this much".`);
             }).join('');
-            const origins = ORIGINS.map(o =>
-                `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}" title="${o.tip}">${o.glyph} ${o.label}</button>`).join('');
+            const origins = ORIGINS.map(o => ftip(
+                `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}">${o.glyph} ${o.label}</button>`,
+                `${o.glyph} ${o.label}`, o.tip)).join('');
+            const dateSet = filters.from || filters.to
+                ? `Now: ${filters.from || 'the beginning'} → ${filters.to || 'today'}`
+                : 'Now: every date';
             return `<div class="af-fpanel">
                 <div class="af-frow">
-                    <span class="muted small" title="Who started the session">Started by:</span>${origins}
+                    ${ftip('<span class="muted small">Started by:</span>', 'Started by',
+                'Who began the session: a person at a keyboard, or one of Agent Farm\'s own mechanisms — a schedule, a trigger, a task, a mission. Decided from a recorded launcher first and the transcript\'s entrypoint second, never guessed from timing.')}${origins}
                 </div>
                 <div class="af-frow">
-                    <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}"
-                        title="${C.esc(window.AFQuery.tip('Searched against the session title, its agent and its labels.'))}">
+                    ${ftip(`<input type="text" class="af-ftext" placeholder="title, agent, label or id…" value="${C.esc(filters.text)}">`,
+                'Filter the rows', window.AFQuery.tip('Searched against the session title, its agent, its labels — and its SESSION ID, so the eight-character prefix printed everywhere finds the row it names.'))}
                     ${hasAgentCol && agents.length > 1 ? window.AFFilter.multi({
-                        id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
-                        title: 'Which agents to list — tick any combination'
-                    }) : ''}
+                    id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
+                    title: 'Which agents to list — tick any combination'
+                }) : ''}
                     ${engines.length > 1 ? window.AFFilter.multi({
-                        id: ENGINE_MS, label: 'Engines', options: engines, selected: filters.engines,
-                        title: 'Which CLI ran the session — combines with every other filter here'
-                    }) : ''}
+                    id: ENGINE_MS, label: 'Engines', options: engines, selected: filters.engines,
+                    title: 'Which CLI ran the session — combines with every other filter here'
+                }) : ''}
                     ${projectNames().length > 1 ? window.AFFilter.multi({
-                        id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
-                        title: 'Which projects to list — manage them on the ◧ Projects page'
-                    }) : ''}
-                    ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
-                    ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
-                    ${flag('af-fmain', 'Main only', filters.mainOnly, 'Hide subagent (sidechain) sessions')}
-                    ${flag('af-fpin', '★ Pinned', filters.pinnedOnly, 'Only the sessions you pinned — your shelf')}
+                    id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
+                    title: 'Which projects to list — manage them on the ◧ Projects page'
+                }) : ''}
+                    ${flag('af-factive', 'Active now', filters.activeOnly, 'Active now',
+                    'Only sessions with a live process working right now — the ● in the first column.')}
+                    ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Has errors',
+                    'Only sessions with at least one tool error. Pair it with a Tools range to find where a session fought the same call over and over.')}
+                    ${flag('af-fmain', 'Main only', filters.mainOnly, 'Main only',
+                    'Hide the subagent (sidechain) transcripts — the lanes an agent opened by handing work to another agent.')}
+                    ${flag('af-fpin', '★ Pinned', filters.pinnedOnly, 'Pinned only',
+                    'Only the sessions on your shelf. Pinned rows are listed first everywhere and are never cut by a row limit.')}
                 </div>
                 <div class="af-frow">${ranges}
-                    <label class="af-frange">When <input type="date" class="af-ffrom" value="${C.esc(filters.from)}">–<input type="date" class="af-fto" value="${C.esc(filters.to)}"></label>
-                    <button class="chip af-fclear" title="Reset every filter">Clear</button></div>
+                    ${ftip(`<label class="af-frange">When <input type="date" class="af-ffrom" value="${C.esc(filters.from)}">–<input type="date" class="af-fto" value="${C.esc(filters.to)}"></label>`,
+                    'When', `${dateSet}\n\nThe window is the session's own last-activity date, and both ends are included — a single day means that whole day. Leave an end empty for an open one.`)}
+                    ${ftip('<button class="chip af-fclear">Clear</button>', 'Clear',
+                        'Reset every filter in this panel, including the origin scope above it and the text box. The sort order and the row count are not filters and are left alone.', 'tip-right')}</div>
             </div>`;
         }
 

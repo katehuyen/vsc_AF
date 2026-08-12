@@ -66,6 +66,31 @@ ok('…and "kelimenin bazıları oldu"',
 ok('…and not a sentence that only looks similar',
     !m('"kelime* bazıları ol*"', 'kelimenin bazilari oldu'));
 
+// ------------------------------------------------------ X-24: whole-word mode
+//
+// ‼️ Whole-word matching existed only inside quotes, which is a rule you cannot
+// discover by looking at a search box — the user's words were "I still do not
+// know how to choose between whole word and partial". It is a MODE now, and the
+// two must agree: what the mode does to a bare word is what quotes already do.
+{
+    const w = (q, text) => Q.compile(q, { wholeWord: true }).test(text);
+    ok('whole word anchors a BARE word the way quotes do',
+        !w('log', 'a dialogue') && w('log', 'the log file'));
+    ok('…and the default is still the plain substring it always was',
+        m('log', 'a dialogue'));
+    ok('…it respects Turkish letters too, which \\b cannot',
+        !w('ol', 'olsun') && w('ol', 'ol bakalım'));
+    ok('‼️ a * still opens the end it is written on, even in the mode',
+        w('refact*', 'refactoring') && w('*factor', 'refactor') && !w('refact', 'refactoring'));
+    ok('a quoted phrase means the same in both modes',
+        w('"tool call"', 'a tool call') && !w('"tool call"', 'a tool calls'));
+    ok('AND / OR / NOT are unaffected',
+        w('log OR trace', 'a trace here') && !w('log OR trace', 'a dialogue')
+        && w('log -trace', 'the log file'));
+    ok('regex mode ignores it — a raw pattern states its own boundaries',
+        Q.compile('log', { regex: true, wholeWord: true }).test('a dialogue'));
+}
+
 // ------------------------------------------------------------------- corners
 ok('an empty query matches everything', Q.compile('   ').empty && Q.compile('').test('x'));
 ok('case is ignored by default', m('AGENT', 'agent') && m('agent', 'AGENT'));
@@ -116,13 +141,31 @@ ok('regex mode is untouched and still its own thing',
     ok('…and a box can put its own subject in front of it',
         Q.tip('Search the backlog.').startsWith('Search the backlog.')
         && Q.tip('x').includes(Q.SYNTAX));
+    ok('a box in whole-word mode says so, above the grammar',
+        Q.tip('x', { wholeWord: true }).includes(Q.WHOLE_WORD_ON)
+        && !Q.tip('x').includes(Q.WHOLE_WORD_ON));
+
+    // ‼️ X-24 — THE EXAMPLES ARE IN THE LANGUAGE OF THE INTERFACE. They were
+    // Turkish in an English-language extension, which is a help text saying out
+    // loud that nobody read it. The guard is the alphabet, not a word list.
+    ok('‼️ the shipped grammar carries no Turkish examples',
+        !/[çğıöşüÇĞİÖŞÜ]/.test(Q.SYNTAX)
+        && !Q.SYNTAX_ROWS.some(r => /[çğıöşüÇĞİÖŞÜ]/.test(r.sym + r.what + r.example)));
+    ok('the grammar is also available with its columns intact, for a help card',
+        Array.isArray(Q.SYNTAX_ROWS) && Q.SYNTAX_ROWS.length >= 7
+        && Q.SYNTAX_ROWS.every(r => r.sym && r.what && r.example));
+    ok('…and every one of those examples is a query this grammar accepts',
+        Q.SYNTAX_ROWS.every(r => Q.compile(r.example).ok));
+
     const en = fs.readFileSync(path.join(__dirname, '..', 'docs', 'BLUEPRINT.en.md'), 'utf8');
     const tr = fs.readFileSync(path.join(__dirname, '..', 'docs', 'BLUEPRINT.tr.md'), 'utf8');
     const documented = doc => /The query language|Sorgu dili/.test(doc)
         && /`foo OR bar`/.test(doc) && /`-foo`/.test(doc)
-        && /"kelime\* bazıları ol\*"/.test(doc) && /afQuery\.js/.test(doc);
+        && /"refact\* the pars\*"/.test(doc) && /afQuery\.js/.test(doc);
     ok('the English guide documents the query language, with the table', documented(en));
     ok('the Turkish guide documents it too', documented(tr));
+    const wholeWorded = doc => /whole word|Whole word|tam kelime|Tam kelime/.test(doc);
+    ok('…and both guides document the whole-word mode', wholeWorded(en) && wholeWorded(tr));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

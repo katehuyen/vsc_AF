@@ -53,7 +53,22 @@ function runPage(scriptFile, DATA, extraWindow) {
             // assertion about something else.
             _html: '',
             get innerHTML() { return this._html; },
-            set innerHTML(v) { this._html = v; elCache.clear(); },
+            /**
+             * ‼️ ONLY A WHOLE-PAGE REPAINT EMPTIES THE ELEMENT CACHE.
+             *
+             * It used to be cleared on EVERY write, and that made a page which
+             * redraws itself untestable past its first press. A page wires its
+             * handlers immediately after writing its markup — and then writes
+             * its results block, which cleared the cache and orphaned the
+             * elements it had just wired. A later `query()` built fresh objects
+             * with no listeners, so the click did nothing and the assertion
+             * failed a long way from the cause.
+             *
+             * Writing `#app` IS the repaint: everything before it is gone and
+             * the page is about to wire the new markup. A slot write (`#out`, a
+             * status line) replaces one region and must leave the rest alone.
+             */
+            set innerHTML(v) { this._html = v; if (this.id === 'app') { elCache.clear(); } },
             value: attrs.value || '', type: attrs.type || '',
             checked: 'checked' in attrs, indeterminate: false,
             textContent: '', className: attrs.class || '', style: {},
@@ -163,7 +178,15 @@ function runPage(scriptFile, DATA, extraWindow) {
             addEventListener: (ev, fn) => { if (ev === 'message') { onMessage.push(fn); } }
         }, extraWindow || {}),
         document: {
-            getElementById: (id) => els[id] || (id === 'app' ? getEl('app') : (query('#' + id)[0] || null)),
+            // ‼️ THE MARKUP WINS OVER THE MEMO. `els` remembers every element
+            // ever handed out by id, and after a repaint that memo is the OLD
+            // node: a page looking its own button up got the pre-repaint object
+            // and attached a second handler to it, so one press ran the handler
+            // of every render it had lived through and a toggle toggled twice.
+            // Asking the current markup first keeps the two in step; the memo
+            // stays as the fallback for the ids that are slots rather than tags.
+            getElementById: (id) =>
+                (id === 'app' ? getEl('app') : (query('#' + id)[0] || els[id] || null)),
             querySelectorAll: query,
             querySelector: (s) => (s.indexOf('[data-afms') === 0 ? ms.querySelector(s) : query(s)[0] || null),
             addEventListener: () => { },

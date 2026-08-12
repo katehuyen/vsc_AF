@@ -50,6 +50,17 @@ export interface ViewerDeps {
      * Claude, which is what an unset `source` has always meant.
      */
     engineFor?(sessionId: string): string | undefined;
+    /**
+     * ‼️ X-25 — IS THE WHOLE TRANSCRIPT A DELEGATION LANE?
+     *
+     * A subagent conversation usually lives inside its parent's file, one
+     * `isSidechain` line at a time, and that flag is read here. But it can also
+     * be a file of its own (`…/<parentId>/subagents/x.jsonl`), and there the
+     * per-line flag is absent — the index knows only because it knows the
+     * folder depth. Without this the speakers in such a file would be labelled
+     * USER and AGENT, which is the very confusion X-25 is about.
+     */
+    laneFor?(file: string): boolean;
 }
 
 interface ViewMessage {
@@ -761,6 +772,7 @@ export class SessionViewerPanel {
             data.agentId = owner.agentId;
             data.agentName = owner.agentName;
         }
+        if (this.deps.laneFor?.(this.file)) { data.lane = true; }
         this.panel.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
         return data;
     }

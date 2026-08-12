@@ -388,6 +388,35 @@
     const ROLE_GLYPH = { user: '🧑', assistant: '🤖' };
 
     /**
+     * ‼️ X-25 — WHO IS TALKING IN A SUBAGENT LANE.
+     *
+     * A sidechain step's prompt was written by an AGENT handing work over, and
+     * it was labelled `USER` — identical to a person typing. The only thing
+     * distinguishing the two was a small "subagent" word further along the meta
+     * line, which is not what a reader scans. So the lane says what it is:
+     * DELEGATOR, and by name, because "which agent handed this over" is the
+     * question a delegation raises; and HANDLER for the side that answers,
+     * which must not read as AGENT either — that word already means "the agent
+     * I am talking to".
+     *
+     * The name comes from the session's own owner (DATA.agentName), never from
+     * the model id: a delegation is an act by an agent, not by a model.
+     */
+    const delegatorLabel = () =>
+        'DELEGATOR' + (DATA.agentName ? ` (${DATA.agentName})` : '');
+    /** Is this step inside a delegation lane — either its own line says so, or
+     *  the whole transcript is one (a subagent's own file; see `laneFor`). */
+    const inLane = m => !!(m.sidechain || DATA.lane);
+    /** The label of one step, for the page and for the exported markdown alike. */
+    function speakerLabel(m) {
+        if (inLane(m) && m.role === 'user') { return delegatorLabel(); }
+        if (inLane(m) && m.role === 'assistant') { return 'HANDLER'; }
+        if (m.role === 'assistant') { return C.aiLabel(m.model, true); }
+        return { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role]
+            || String(m.role || '').toUpperCase();
+    }
+
+    /**
      * The WORDS of one step — what a copy button has to put on the clipboard.
      *
      * A tool call's payload is its `input`; everything else says what it has to
@@ -431,9 +460,13 @@
         `<button class="copyb" data-copy="${idx}" title="Copy this step's text to the clipboard">⧉</button>`;
 
     function messageHtml(m, idx) {
-        const roleLabel = (ROLE_GLYPH[m.role] ? ROLE_GLYPH[m.role] + ' ' : '') + (m.role === 'assistant'
-            ? C.aiLabel(m.model, true)
-            : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role]);
+        // The 🧑 glyph names a PERSON, so a delegation lane does not wear it:
+        // the whole point of the label is that nobody typed this. 📤 / 📥 —
+        // the handover goes out, the answer comes back — and neither collides
+        // with the 🔧 the Search page's chip row already uses for tool traffic.
+        const glyph = inLane(m) ? (m.role === 'user' ? '📤' : m.role === 'assistant' ? '📥' : '')
+            : (ROLE_GLYPH[m.role] || '');
+        const roleLabel = (glyph ? glyph + ' ' : '') + speakerLabel(m);
         const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
         const cls = m.role + (m.isError ? ' error' : '') + hide;
         // ‼️ THE KIND LEADS THE META LINE. The transcript could always say what
@@ -625,10 +658,9 @@
                 const f = mdFence(m.text || '');
                 lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
             } else {
-                const roleLabel = m.role === 'assistant'
-                    ? C.aiLabel(m.model, true)
-                    : ({ user: 'USER', system: 'SYSTEM' }[m.role] || m.role.toUpperCase());
-                lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
+                // the SAME label the page draws — an export whose speakers are
+                // named differently from the screen is a second vocabulary
+                lines.push('', `**${speakerLabel(m)}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
             }
         }
         lines.push('');

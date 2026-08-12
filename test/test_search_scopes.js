@@ -1,16 +1,21 @@
-// Search S1-S5: tool-traffic coverage with dialog-default roles, scope tiers
-// (files / time window / agent), per-turn tagging, memory + live-event sources,
-// the regex time budget, and the grouped webview rendering.
+// Search S1-S5 + X-24 family: tool-traffic coverage with dialog-default roles,
+// scope tiers (files / time window / agent), per-turn tagging, memory +
+// live-event sources, the regex time budget — and the rebuild:
+//   X-25  a delegating agent is not a user (delegator / handler)
+//   X-35  the other three engines' transcripts are searchable too
+//   X-24  the session axis (engine · project · model · origin · lane · id)
+//   U-42  the kind chips are badges: a plain click toggles
+//   X-34  the id you already know, resolved above the results
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const vm = require('vm');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const S = require(path.join(__dirname, '..', 'out', 'core', 'search.js'));
-const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
+const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
+const fixture = require(path.join(__dirname, 'fixtures', 'search.js'));
 
 const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-search-'));
 const tfile = (name, lines) => {
@@ -31,7 +36,7 @@ const TS = (m) => Date.parse(T(m));
         { type: 'user', timestamp: T(5), message: { content: 'now the second phase' } },
         { type: 'assistant', timestamp: T(6), message: { content: [{ type: 'text', text: 'phase two begins' }] } }
     ]);
-    const sessions = [{ file: f, agentName: 'dev', title: 'refactor', mtime: TS(6) }];
+    const sessions = [{ file: f, agentName: 'dev', title: 'refactor', mtime: TS(6), sessionId: 'sess-a' }];
 
     // dialog default: tool input text is NOT found
     const r1 = S.searchTranscripts(sessions, 'tokenizer.js');
@@ -41,25 +46,102 @@ const TS = (m) => Date.parse(T(m));
     const r2 = S.searchTranscripts(sessions, 'tokenizer.js', { roles: ['tool'] });
     ok('tool input searched on demand', r2.hits.length === 1 && r2.hits[0].role === 'tool' && r2.hits[0].tool === 'Edit');
     ok('tool hit carries its turn + label', r2.hits[0].turn === 1 && r2.hits[0].turnLabel === 'please refactor the parser');
+    ok('…and the session it is in, so a result can be opened by id',
+        r2.hits[0].sessionId === 'sess-a');
 
     // roles toolResult → the result body is found
     const r3 = S.searchTranscripts(sessions, 'edit applied', { roles: ['toolResult'] });
     ok('tool result searched on demand', r3.hits.length === 1 && r3.hits[0].role === 'toolResult');
 
-    // everything: all four roles hit the same file
-    const r4 = S.searchTranscripts(sessions, 'tokenizer', { roles: ['user', 'assistant', 'tool', 'toolResult'], maxPerFile: 10 });
+    // everything: all roles hit the same file
+    const r4 = S.searchTranscripts(sessions, 'tokenizer', { roles: S.ALL_ROLES, maxPerFile: 10 });
     ok('everything-mode spans dialog and tool traffic', r4.hits.length === 3
         && r4.hits.map(h => h.role).join(',') === 'assistant,tool,toolResult');
 
     // dialog hit in turn 2 — turn counter advanced by the second prompt only
     const r5 = S.searchTranscripts(sessions, 'phase two');
     ok('turn counter tracks non-sidechain prompts', r5.hits.length === 1 && r5.hits[0].turn === 2 && r5.hits[0].turnLabel === 'now the second phase');
+
+    // ‼️ X-25 — the sidechain prompt was written BY AN AGENT, and calling it
+    // `user` is what made "search only my prompts" answer with an agent's
+    // handover text. It is a kind of its own now, and Dialog no longer carries it.
     const r6 = S.searchTranscripts(sessions, 'zebra');
-    ok('sidechain prompts searchable but do not open turns', r6.hits.length === 1 && r6.hits[0].turn === 1);
+    ok('‼️ a delegation prompt is NOT in the dialog default', r6.hits.length === 0);
+    const r6b = S.searchTranscripts(sessions, 'zebra', { roles: ['delegator'] });
+    ok('…it is found as a delegation, and says who delegated',
+        r6b.hits.length === 1 && r6b.hits[0].role === 'delegator'
+        && r6b.hits[0].speaker === 'dev' && r6b.hits[0].turn === 1);
+    ok('…and the delegation preset is two kinds, not one',
+        S.DELEGATION_ROLES.join(',') === 'delegator,handler'
+        && S.DIALOG_ROLES.join(',') === 'user,assistant');
 
     // time window = turn scope: restrict to turn 2's window (ts 5..6)
     const r7 = S.searchTranscripts(sessions, 'the', { tsFrom: TS(5), tsTo: TS(6), maxPerFile: 10 });
     ok('time window keeps only in-window hits', r7.hits.length >= 1 && r7.hits.every(h => h.ts >= TS(5) && h.ts <= TS(6)));
+
+    // whole word reaches the engine through the same compiler every box uses
+    ok('whole word narrows the engine too',
+        S.searchTranscripts(sessions, 'phas', { maxPerFile: 10 }).hits.length === 2
+        && S.searchTranscripts(sessions, 'phas', { wholeWord: true, maxPerFile: 10 }).hits.length === 0);
+}
+
+// ---------- X-25: a subagent's OWN transcript is a delegation lane ----------
+{
+    const f = tfile('sub.jsonl', [
+        { type: 'user', timestamp: T(1), message: { content: 'handle the migration, quokka' } },
+        { type: 'assistant', timestamp: T(2), message: { content: [{ type: 'text', text: 'migration done, quokka' }] } }
+    ]);
+    const sessions = [{ file: f, agentName: 'manager', title: 'sub', mtime: TS(2), isSidechain: true }];
+    ok('a subagent transcript carries no `user` at all',
+        S.searchTranscripts(sessions, 'quokka').hits.length === 0);
+    const r = S.searchTranscripts(sessions, 'quokka', { roles: S.DELEGATION_ROLES, maxPerFile: 5 });
+    ok('…both sides of it are delegator + handler',
+        r.hits.length === 2 && r.hits[0].role === 'delegator' && r.hits[1].role === 'handler');
+    ok('…and only the delegator names who wrote it',
+        r.hits[0].speaker === 'manager' && r.hits[1].speaker === undefined);
+}
+
+// ---------- X-35: the other engines are transcripts too ----------
+{
+    // A Codex rollout is not claude JSONL, so the line scanner reads nothing
+    // from it — which is exactly how a four-engine fleet stayed searchable on
+    // one. The panel hands the engine the very parser the viewer reads them
+    // with; here a stub stands in for it.
+    const f = path.join(tmpdir, 'codex.jsonl');
+    fs.writeFileSync(f, 'not-claude-shaped\n{"payload":{"message":"salamander"}}');
+    const sessions = [{
+        file: f, agentName: 'dev', title: 'codex run', mtime: 10,
+        sessionId: 'sess-cx', engine: 'codex'
+    }];
+    ok('without a foreign parser it finds nothing, honestly',
+        S.searchTranscripts(sessions, 'salamander').hits.length === 0);
+
+    let parsed = 0;
+    const parseForeign = () => {
+        parsed++;
+        return {
+            turns: [{ n: 1, label: 'the codex ask' }],
+            messages: [
+                { role: 'user', ts: 100, text: 'find the salamander', turn: 1 },
+                { role: 'assistant', ts: 200, text: 'salamander found', turn: 1 },
+                { role: 'tool', ts: 300, tool: 'Bash', input: 'grep salamander src', turn: 1 },
+                { role: 'system', ts: 400, text: 'salamander system noise', turn: 1 }
+            ]
+        };
+    };
+    const r = S.searchTranscripts(sessions, 'salamander', { parseForeign, maxPerFile: 10 });
+    ok('‼️ a foreign transcript is searched through the shared parser',
+        r.hits.length === 2 && r.hits.map(h => h.role).join(',') === 'user,assistant');
+    ok('…every hit is badged with the engine that wrote it',
+        r.hits.every(h => h.engine === 'codex' && h.sessionId === 'sess-cx'));
+    ok('…turn labels survive the crossing', r.hits[0].turn === 1 && r.hits[0].turnLabel === 'the codex ask');
+    const rt = S.searchTranscripts(sessions, 'grep', { parseForeign, roles: ['tool'] });
+    ok('…tool traffic too, name and input together',
+        rt.hits.length === 1 && rt.hits[0].tool === 'Bash');
+    // the parse is cached by mtime — the page re-searches on every keystroke
+    const before = parsed;
+    S.searchTranscripts(sessions, 'salamander', { parseForeign });
+    ok('…and an unchanged file is parsed once, not once per keystroke', parsed === before);
 }
 
 // ---------- engine: file scope, budget, regex error ----------
@@ -136,271 +218,144 @@ const TS = (m) => Date.parse(T(m));
     ok('missing store is fail-soft', S.searchLiveEvents(path.join(tmpdir, 'nope.jsonl'), 'x').length === 0);
 }
 
-// ---------- webview: grouped rendering, scope pill, click routing ----------
+// =========================================================================
+// the page
+// =========================================================================
+
+/** The page, driven exactly as the shell drives it, with a query typed in. */
+function page(extraData) {
+    const r = runPage('search.js', Object.assign(fixture.data(), extraData || {}));
+    const box = r.query('#q')[0];
+    box.value = 'parser';
+    box.fire('input');
+    return r;
+}
+const lastSearch = r => r.posted.filter(p => p.type === 'search').pop();
+/** Press Search without going through a chip (which repaints first). */
+const go = r => r.els.go.fire('click');
+
+// ---------- U-42: the kind chips are badges, and a badge toggles ----------
 {
-    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
-        + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
-    let posted = [];
-    let msgHandler = null;
-    const els = {};
-    function getEl(id) {
-        if (!els[id]) {
-            els[id] = {
-                id, listeners: {}, style: {}, value: '', checked: false, _html: '',
-                addEventListener(ev, fn) { this.listeners[ev] = fn; },
-                focus() { },
-                querySelectorAll(sel) {
-                    const list = [];
-                    const attr = /\[data-(hit|open-session)\]/.exec(sel);
-                    if (!attr) { return list; }
-                    const re = attr[1] === 'hit' ? /data-hit="(\d+)"/g : /data-open-session="([^"]*)" data-ts="([^"]*)"/g;
-                    let m;
-                    while ((m = re.exec(this._html))) {
-                        const el = attr[1] === 'hit'
-                            ? { dataset: { hit: m[1] } }
-                            : { dataset: { openSession: m[1], ts: m[2] } };
-                        el.addEventListener = (_e, fn) => { el._click = fn; };
-                        list.push(el);
-                    }
-                    this['_' + attr[1]] = list;
-                    return list;
-                },
-                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
-            };
-        }
-        return els[id];
-    }
-    const sandbox = {
-        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
-        window: {
-            AFCharts: { esc: (s) => String(s) },
-            __DATA__: {
-                agents: ['dev', 'ops'],
-                semantic: { provider: 'off', sessions: 0, chunks: 0 },
-                preset: { file: 'D:/t/sess1.jsonl', title: 'my session' }
-            },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
-        },
-        document: { getElementById: getEl, querySelectorAll: () => [] },
-        setTimeout: () => 0, clearTimeout: () => { }, console, Date
-    };
-    sandbox.globalThis = sandbox;
-    vm.createContext(sandbox);
-    vm.runInContext(code, sandbox); // shell()
+    const r = page();
+    const html = r.html();
+    ok('all six kinds are offered, delegation among them',
+        ['user', 'assistant', 'delegator', 'handler', 'tool', 'toolResult']
+            .every(id => html.includes(`data-chip="${id}"`)));
+    ok('Dialog is the default and is lit', /class="chip on" data-preset="dialog"/.test(html));
+    ok('…and the two extra sources are chips now, not checkboxes',
+        html.includes('data-src="mem"') && html.includes('data-src="events"')
+        && !html.includes('id="srcmem"'));
+    ok('‼️ the row no longer repeats itself in words at its end',
+        !html.includes('→ the conversation'));
 
-    const app = getEl('app');
-    ok('scope pill shows the preset session', app._html.includes('Session: my session') && app._html.includes('id="clearscope"'));
-    ok('Dialog chip is on by default', /class="chip on" data-preset="dialog"/.test(app._html));
-    ok('memory + events sources default on', app._html.includes('id="srcmem" type="checkbox" checked') && app._html.includes('id="srcevents" type="checkbox" checked'));
+    go(r);
+    ok('a search carries the dialog kinds',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
 
-    // run a search: the message must carry scope + roles + sources
-    //
-    // ‼️ The source ticks are CHANGED, not just written to. The page holds them
-    // in its own state now (U-3) because `shell()` rebuilds the markup on every
-    // chip press and a checkbox written as `checked` came back ticked however
-    // you had left it — so a value set on the element without telling it is a
-    // value the page never hears about, exactly as in a real browser.
-    getEl('q').value = 'parser';
-    getEl('srcmem').checked = true;
-    getEl('srcmem').listeners.change();
-    getEl('srcevents').checked = false;
-    getEl('srcevents').listeners.change();
-    getEl('go').listeners.click();
-    const sm = posted.find(p => p.type === 'search');
-    ok('search message carries the session scope', sm && sm.file === 'D:/t/sess1.jsonl');
-    ok('search message carries dialog roles + source picks', JSON.stringify(sm.roles.sort()) === '["assistant","user"]' && sm.memory === true && sm.events === false);
-
-    // results: two transcript hits in two turns of one session + memory + event
-    msgHandler({
-        data: {
-            type: 'results', semanticStatus: { provider: 'off', sessions: 0, chunks: 0 },
-            result: {
-                filesScanned: 1, truncated: false,
-                hits: [
-                    { file: 'D:/t/sess1.jsonl', agentName: 'dev', title: 'my session', ts: 1000, role: 'user', before: '', match: 'parser', after: ' one', turn: 1, turnLabel: 'first ask' },
-                    { file: 'D:/t/sess1.jsonl', agentName: 'dev', title: 'my session', ts: 2000, role: 'tool', tool: 'Edit', before: '', match: 'parser', after: ' two', turn: 2, turnLabel: 'second ask' },
-                    { file: 'D:/m/note.md', agentName: 'dev', title: 'note.md', ts: 3000, role: 'memory', kind: 'memory', before: '', match: 'parser', after: ' note' },
-                    { file: '', agentName: 'dev', title: 'prompt', ts: 4000, role: 'event', kind: 'event', before: '', match: 'parser', after: ' event' }
-                ]
-            }
-        }
-    });
-    const out = getEl('out');
-    ok('session group header rendered', out._html.includes('data-open-session="D:/t/sess1.jsonl"') && out._html.includes('2 hit(s)'));
-    ok('turn sub-headers label each turn', out._html.includes('Turn 1 — first ask') && out._html.includes('Turn 2 — second ask'));
-    ok('memory + event sections rendered', out._html.includes('Memory notes') && out._html.includes('Live events'));
-
-    posted = [];
-    out._hit.find(e => e.dataset.hit === '1')._click();
-    ok('transcript hit opens the session at its ts', posted[0] && posted[0].type === 'openSession' && posted[0].ts === 2000);
-    posted = [];
-    out._hit.find(e => e.dataset.hit === '2')._click();
-    ok('memory hit opens the md file', posted[0] && posted[0].type === 'openFile' && posted[0].file === 'D:/m/note.md');
-    posted = [];
-    out._hit.find(e => e.dataset.hit === '3')._click();
-    ok('orphan event hit opens the timeline', posted[0] && posted[0].type === 'openTimeline');
-    posted = [];
-    out['_open-session'][0]._click();
-    ok('group header opens the session', posted[0] && posted[0].type === 'openSession' && posted[0].file === 'D:/t/sess1.jsonl');
-
-    // ---- S-4: the answer opens in the scope the question was asked in -------
-    //
-    // ‼️ The transcript used to open showing EVERYTHING however narrow the
-    // search had been, so a Dialog search landed on a page full of tool calls —
-    // answering a question nobody asked. The scope rides along with the click.
-    posted = [];
-    out._hit.find(e => e.dataset.hit === '0')._click();
-    ok('‼️ a hit hands the viewer the kinds the search was made in',
-        posted[0] && JSON.stringify((posted[0].roles || []).slice().sort()) === '["assistant","user"]');
-    posted = [];
-    out['_open-session'][0]._click();
-    ok('…and so does the group header, not only the hit',
-        posted[0] && (posted[0].roles || []).length === 2);
-
-    // ---- U-3: the filter panel the Sessions and Turns pages already have ----
-    ok('a date window is offered, as a WHEN range like the tables',
-        app._html.includes('id="f-from"') && app._html.includes('id="f-to"')
-        && /class="frange"/.test(app._html));
-    ok('…and the results can be ordered rather than only listed',
-        app._html.includes('id="f-sort"')
-        && ['Newest first', 'Oldest first', 'Most matches', 'By agent']
-            .every(s => app._html.includes(s)));
-    ok('…with one press back to the defaults',
-        app._html.includes('id="f-clear"') && app._html.includes('Clear filters'));
-    // Nothing is set yet, so Clear has nothing to do and says so rather than
-    // pretending — the same rule the Backlog capture box's ↺ follows.
-    ok('…drawn inert while there is nothing to clear', /class="chip off" id="f-clear"/.test(app._html));
-    ok('the row says in words which kinds it is searching',
-        app._html.includes('→ the conversation'));
-
-    // The window is the engine's own message-time filter, and a day means the
-    // WHOLE day — a one-day window with a midnight `to` would find nothing.
-    posted = [];
-    getEl('f-from').value = '2026-08-01';
-    getEl('f-from').listeners.change();
-    getEl('go').listeners.click();
-    const dated = posted.find(p => p.type === 'search');
-    ok('a date window reaches the engine as tsFrom/tsTo',
-        dated && dated.tsFrom === Date.parse('2026-08-01T00:00:00.000') && dated.tsTo === 0);
-    posted = [];
-    getEl('f-to').value = '2026-08-01';
-    getEl('f-to').listeners.change();
-    getEl('go').listeners.click();
-    const both = posted.find(p => p.type === 'search');
-    ok('…and "to" is the END of its day, or a one-day window finds nothing',
-        both && both.tsTo === Date.parse('2026-08-01T23:59:59.999'));
+    // ‼️ THE FIX U-42 ASKED FOR: two kinds at once, by the obvious gesture.
+    r.query('[data-chip="tool"]')[0].fire('click');
+    ok('‼️ a plain click ADDS a kind — two are searchable at once',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","tool","user"]');
+    r.query('[data-chip="tool"]')[0].fire('click');
+    ok('…and clicking it again takes it away',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
+    r.query('[data-chip="user"]')[0].fire('click', { ctrlKey: true });
+    ok('…Ctrl/⌘-click still means ONLY that one',
+        JSON.stringify(lastSearch(r).roles) === '["user"]');
+    r.query('[data-chip="user"]')[0].fire('click');
+    ok('…and the scope can never empty into "matches nothing"',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
+    r.query('[data-preset="delegation"]')[0].fire('click');
+    ok('the Delegation preset is one press',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["delegator","handler"]');
+    r.query('[data-preset="all"]')[0].fire('click');
+    ok('…and Everything is all six', lastSearch(r).roles.length === 6);
+    r.query('[data-src="events"]')[0].fire('click');
+    ok('a source chip toggles the source', lastSearch(r).events === false && lastSearch(r).memory === true);
 }
 
-// ---------- U-3: what a click on a kind MEANS ------------------------------
-//
-// ‼️ THE REPORTED BREAKAGE, AND IT WAS NOT A DRAWING BUG. With Dialog on,
-// 🧑 User is lit — so pressing it TOGGLED IT OFF and the search silently became
-// "agent replies only": the chip you pressed went dark, the one you did not
-// touch stayed lit, and the row read as if the selection had not registered.
-// A plain click now means "only this kind", which is also the two questions the
-// page most needs ("only my prompts", "only its answers"), one press each.
+// ---------- X-24: the session axis ----------
 {
-    const src = fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
-    ok('‼️ a plain click on a kind means ONLY that kind',
-        /\} else \{\s*\n\s*roleSel = new Set\(\[id\]\);\s*\n\s*\}/.test(src));
-    ok('…Ctrl/⌘-click keeps the old add-and-remove',
-        /if \(ev\.ctrlKey \|\| ev\.metaKey\) \{\s*\n\s*if \(roleSel\.has\(id\)\) \{ roleSel\.delete\(id\); \} else \{ roleSel\.add\(id\); \}/.test(src));
-    ok('…and the scope can never be emptied into "matches nothing"',
-        /if \(!roleSel\.size\) \{ roleSel = new Set\(\[id\]\); \}/.test(src));
-    ok('…the gesture is written down where it is used, not only in the code',
-        /Click a kind to search ONLY in it · Ctrl-click \(⌘ on Mac\) to add or remove one/.test(src));
-    // Only the session GROUPS are re-ordered: the hits inside one are read
-    // forwards, and the turn sub-headers are computed by walking that order.
-    ok('sorting moves the groups and never the hits inside a session',
-        /const groupTs = g => r\.hits\[g\.hits\[0\]\]\.ts \|\| 0;/.test(src)
-        && /ONLY THE GROUPS MOVE/.test(src));
+    const r = page();
+    ok('the filter panel is folded until it is asked for', !r.html().includes('id="f-session"'));
+    r.els['f-toggle'].fire('click');
+    const html = r.html();
+    ok('‼️ every axis a session HAS is offered, not just a date',
+        ['f-session', 'f-from', 'f-to', 'f-sort'].every(id => html.includes(`id="${id}"`))
+        && ['f-engines', 'f-projects', 'f-models'].every(id => html.includes(`data-afms="${id}"`))
+        && html.includes('data-origin="auto"') && html.includes('data-lane="sub"')
+        && html.includes('data-flag="pinnedOnly"') && html.includes('data-flag="errorsOnly"'));
+    ok('…and the pickers are built from what the fleet actually holds',
+        html.includes('Antigravity') && html.includes('gpt-5.6-sol')
+        && html.includes('PRS.MuratVural_DEV_VSC.AgentFarm'));
+
+    const sess = r.query('#f-session')[0];
+    sess.value = '4d361981';
+    sess.fire('change');
+    r.query('[data-origin="auto"]')[0].fire('click');
+    ok('an origin reaches the host as a session filter', lastSearch(r).filters.origin === 'auto');
+    r.query('[data-lane="sub"]')[0].fire('click');
+    ok('…and so does the subagent lane', lastSearch(r).filters.lane === 'sub');
+    r.query('[data-flag="errorsOnly"]')[0].fire('click');
+    ok('…and the flags', lastSearch(r).filters.errorsOnly === true);
+    ok('‼️ X-34 — the id you already know is a filter of its own',
+        lastSearch(r).filters.session === '4d361981');
+    ok('the Filters chip counts what is narrowing', /⚙ Filters \(4\)/.test(r.html()));
 }
 
-// ---------- webview: agent picker (checkbox dropdown, fleet scope) ----------
+// ---------- the query modes ----------
 {
-    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
-        + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
-    let posted = [];
-    let msgHandler = null;
-    const els = {};
-    function getEl(id) {
-        if (!els[id]) {
-            els[id] = {
-                id, listeners: {}, style: {}, value: '', checked: false, _html: '',
-                addEventListener(ev, fn) { this.listeners[ev] = fn; },
-                focus() { },
-                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
-            };
-        }
-        return els[id];
-    }
-    const sandbox = {
-        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
-        window: {
-            AFCharts: { esc: (s) => String(s) },
-            __DATA__: {
-                agents: ['dev', 'ops', 'psy'],
-                semantic: { provider: 'off', sessions: 0, chunks: 0 },
-                preset: null
-            },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
-        },
-        document: { getElementById: getEl, querySelectorAll: () => [], querySelector: (s) => ms.querySelector(s) },
-        setTimeout: () => 0, clearTimeout: () => { }, console, Date
-    };
-    sandbox.globalThis = sandbox;
-    vm.createContext(sandbox);
-    const ms = createAfmsDom(() => getEl('app')._html);
-    vm.runInContext(code, sandbox); // shell()
+    const r = page();
+    ok('whole word is offered beside regex and match case',
+        r.html().includes('id="whole"') && r.html().includes('whole word'));
+    const w = r.query('#whole')[0];
+    w.checked = true;
+    w.fire('change');
+    ok('…and it reaches the engine', lastSearch(r).wholeWord === true);
+    ok('the box says what the mode is doing while it is on',
+        r.html().includes('Whole word is ON'));
+    ok('the grammar has a card of its own, not only a tooltip',
+        !r.html().includes('For example'));
+    r.els.qhelp.fire('click');
+    const h = r.html();
+    ok('…and it opens with the symbol, the meaning and an example',
+        h.includes('For example') && h.includes('codex OR gemini') && h.includes('refact*'));
+    ok('‼️ …in the language of the interface', !/[çğıöşüÇĞİÖŞÜ]/.test(
+        h.slice(h.indexOf('helpcard'), h.indexOf('helpcard') + 2500)));
+}
 
-    const app = getEl('app');
-    ok('picker defaults to all agents',
-        ms.label('search-agents') === 'Agents: all' && ms.ticked('search-agents').length === 3);
+// ---------- results: engines, delegation, the id banner ----------
+{
+    const r = runPage('search.js', fixture.data());
+    const v = fixture.variants().find(x => x.id === 'results');
+    v.act(r);
+    const out = r.els.out.innerHTML;
+    ok('every engine is badged in the results, not just the default one',
+        ['Claude', 'Codex', 'Gemini', 'Antigravity'].every(e => out.includes(`>${e}<`)));
+    ok('a delegation hit says WHO delegated', out.includes('delegator (manager)'));
+    ok('a handler hit is named as one', out.includes('>handler<'));
+    ok('the summary says which kinds were searched, and how many were not',
+        /searched in 🧑 User · 🤖 Agent \(4 other kinds not searched\)/.test(out));
+    ok('memory and event sections still stand apart',
+        out.includes('Memory notes') && out.includes('Live events'));
 
-    // untick one agent → subset is sent as an explicit array
-    ms.toggle('search-agents', 'ops', false);
-    ok('subset label counts the pick', ms.label('search-agents') === 'Agents: 2/3');
-    getEl('q').value = 'needle';
-    posted = [];
-    getEl('go').listeners.click();
-    let sm = posted.find(p => p.type === 'search');
-    ok('subset search carries exactly the ticked agents', sm && JSON.stringify(sm.agents) === '["dev","psy"]');
+    // ‼️ X-34 — the banner is ABOVE the hits, and it opens the session
+    ok('the id resolves to a session, drawn above everything',
+        out.includes('id="idhit"') && out.includes('Session #4d361981'));
+    r.posted.length = 0;
+    r.els.idhit.fire('click');
+    ok('…and one click opens it',
+        r.last().type === 'openSession' && r.last().file === 'D:/s/a.jsonl');
 
-    // Clear → empty set (finds nothing, honestly); Select all → null (no filter)
-    ms.clear('search-agents');
-    ok('Clear unticks everything',
-        ms.label('search-agents') === 'Agents: none' && ms.ticked('search-agents').length === 0);
-    posted = [];
-    getEl('go').listeners.click();
-    sm = posted.find(p => p.type === 'search');
-    ok('none-selected search sends an empty set', sm && JSON.stringify(sm.agents) === '[]');
-    ms.selectAll('search-agents');
-    ok('Select all restores the no-filter state',
-        ms.label('search-agents') === 'Agents: all' && ms.ticked('search-agents').length === 3);
-    posted = [];
-    getEl('go').listeners.click();
-    sm = posted.find(p => p.type === 'search');
-    ok('all-selected search sends no agent filter', sm && sm.agents === null);
-
-    // an arbitrary two-of-three pick — the point of the whole control
-    ms.only('search-agents', ['dev', 'psy']);
-    posted = [];
-    getEl('go').listeners.click();
-    sm = posted.find(p => p.type === 'search');
-    ok('any subset is expressible (clear, then tick two)', sm && JSON.stringify(sm.agents) === '["dev","psy"]');
-    ms.selectAll('search-agents');
-
-    // agent preset → only that agent ticked, single-agent label
-    msgHandler({ data: { type: 'preset', preset: { agentName: 'ops' } } });
-    ok('agent preset ticks only that agent',
-        ms.label('search-agents') === 'Agents: ops' && JSON.stringify(ms.ticked('search-agents')) === '["ops"]');
-    ok('agent preset shows the scope pill', app._html.includes('Agent: ops') && app._html.includes('id="clearscope"'));
-
-    // widening the pick retires the stale "Agent: X" pill
-    getEl('scope')._html = 'PILL'; // pre-seed: proves dropStaleAgentPreset really clears it
-    ms.toggle('search-agents', 'dev', true);
-    ok('changed pick retires the agent pill', getEl('scope')._html === ''
-        && ms.label('search-agents') === 'Agents: 2/3');
+    // the scope rides along with the click, as it always did — and the two
+    // delegation kinds arrive as the lines the viewer actually draws
+    r.query('[data-preset="delegation"]')[0].fire('click');
+    const rr = fixture.variants().find(x => x.id === 'results');
+    rr.act(r);
+    r.posted.length = 0;
+    r.els.out.querySelectorAll('[data-hit]')[0].fire('click');
+    ok('‼️ delegation hands the viewer the lines it draws (user/assistant)',
+        JSON.stringify((r.last().roles || []).slice().sort()) === '["assistant","user"]');
 }
 
 fs.rmSync(tmpdir, { recursive: true, force: true });

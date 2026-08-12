@@ -21,9 +21,66 @@ export interface SearchableSession {
     agentName?: string;
     title: string;
     mtime: number;
+    /** X-34: the id a person quotes ("#4d361981") — hits carry it back so a
+     *  result can be opened, right-clicked and matched by id. */
+    sessionId?: string;
+    /** X-27/X-35: which CLI wrote this transcript. Absent = claude, which is
+     *  what an unset `source` has always meant. Anything else is read by
+     *  `parseForeign` instead of the claude line scanner. */
+    engine?: string;
+    /** The whole transcript is a delegation lane (a subagent's own file). */
+    isSidechain?: boolean;
 }
 
-export type SearchRole = 'user' | 'assistant' | 'tool' | 'toolResult';
+/**
+ * WHO SAID IT — six kinds, not four.
+ *
+ * ‼️ X-25 — A DELEGATING AGENT IS NOT A USER. A sidechain line is written by
+ * the agent that handed the work over, and it used to arrive here wearing the
+ * word `user`: so "search only what I asked" answered with paragraphs an agent
+ * wrote to another agent, and nothing on the page could tell them apart. The
+ * distinction is a FACT on the line (`isSidechain`), not a guess, so it becomes
+ * two roles of its own and both are filterable.
+ */
+export type SearchRole = 'user' | 'assistant' | 'delegator' | 'handler' | 'tool' | 'toolResult';
+
+/** What the page's Dialog preset means — and the engine's default. */
+export const DIALOG_ROLES: SearchRole[] = ['user', 'assistant'];
+/** …and the delegation lane, which is opt-in for the reason above. */
+export const DELEGATION_ROLES: SearchRole[] = ['delegator', 'handler'];
+export const ALL_ROLES: SearchRole[] = ['user', 'assistant', 'delegator', 'handler', 'tool', 'toolResult'];
+
+export function isSearchRole(v: unknown): v is SearchRole {
+    return typeof v === 'string' && (ALL_ROLES as string[]).includes(v);
+}
+
+/** One message of a transcript this file cannot read itself — see `parseForeign`. */
+export interface ForeignMessage {
+    role: 'user' | 'assistant' | 'tool' | 'toolResult' | 'system';
+    ts: number;
+    text?: string;
+    tool?: string;
+    input?: string;
+    turn?: number;
+}
+
+export interface ForeignTranscript {
+    messages: ForeignMessage[];
+    turns?: { n: number; label: string }[];
+}
+
+/**
+ * ‼️ X-35 — THE OTHER THREE ENGINES ARE ALSO TRANSCRIPTS.
+ *
+ * This file scans Claude's JSONL line by line, and a Codex / Gemini /
+ * Antigravity transcript is a different shape entirely — so a fleet that ran on
+ * four CLIs was searchable on one, and the page said nothing about the other
+ * three. It is handed the SAME parser the Session Viewer reads them with
+ * (`core/cliViewer.ts → parseCliViewer`) rather than growing a second one here:
+ * two readers of one format disagree within a month, and the caller already has
+ * the pricing engine that one needs.
+ */
+export type ParseForeign = (raw: string, file: string) => ForeignTranscript | undefined;
 
 export interface SearchHit {
     file: string;
@@ -31,6 +88,13 @@ export interface SearchHit {
     title: string;
     ts: number;
     role: SearchRole | 'memory' | 'event';
+    /** The session this hit is in, when the caller supplied it. */
+    sessionId?: string;
+    /** Which CLI wrote the transcript — the badge a result row draws. */
+    engine?: string;
+    /** WHO, by name, where the role alone does not say it: the delegating agent
+     *  on a `delegator` hit ("DELEGATOR (developer)"). */
+    speaker?: string;
     /** snippet split around the first match so the UI can highlight safely. */
     before: string;
     match: string;
@@ -50,6 +114,8 @@ export interface SearchHit {
 export interface SearchOptions {
     regex?: boolean;
     caseSensitive?: boolean;
+    /** X-24: a bare word must match a whole word — see core/query.ts. */
+    wholeWord?: boolean;
     /** restrict to one agent (exact name). */
     agentName?: string;
     /** restrict to this agent set (exact names). undefined = every agent incl.
@@ -66,6 +132,8 @@ export interface SearchOptions {
     maxPerFile?: number;
     /** stop scanning further files after this long (regex safety net). */
     timeBudgetMs?: number;
+    /** How to read a transcript this file's own scanner cannot — see ParseForeign. */
+    parseForeign?: ParseForeign;
 }
 
 export interface SearchResult {
@@ -93,7 +161,17 @@ const CONTEXT_CHARS = 90;
 /** Per-message search-text cap — tool results can be megabytes; matches beyond
  *  this depth are traded for bounded regex time. */
 const TEXT_CAP = 200_000;
-const DEFAULT_ROLES: SearchRole[] = ['user', 'assistant'];
+/**
+ * ‼️ THE DEFAULT NARROWED WHEN `delegator` WAS BORN, AND THAT IS THE FIX.
+ *
+ * Dialog is you and the agent. A sidechain line used to arrive here as `user`,
+ * so the default silently included one agent's instructions to another and
+ * "search only what I asked" could not be asked at all (X-25). The delegation
+ * lane is now a preset of its own, one press away, and the results line says
+ * which kinds were searched — a narrowing nobody can see is the only kind
+ * worth worrying about.
+ */
+const DEFAULT_ROLES: SearchRole[] = DIALOG_ROLES;
 const DEFAULT_TIME_BUDGET_MS = 10_000;
 
 /**
@@ -111,7 +189,35 @@ const DEFAULT_TIME_BUDGET_MS = 10_000;
  * `-foo` matches a text it can point at nothing inside.
  */
 export function buildMatcher(query: string, opts: SearchOptions): CompiledQuery {
-    return compileQuery(query, { regex: opts.regex, caseSensitive: opts.caseSensitive });
+    return compileQuery(query, {
+        regex: opts.regex, caseSensitive: opts.caseSensitive, wholeWord: opts.wholeWord
+    });
+}
+
+/**
+ * Parsed foreign transcripts, keyed by file and invalidated by its mtime+size.
+ *
+ * A foreign transcript costs a full parse where a claude one costs a line
+ * scan, and the page re-searches on every control change — so the same six
+ * Codex files would be parsed on every keystroke. Bounded: a fleet has tens of
+ * these, not thousands, and the oldest entry goes when the ceiling is reached.
+ */
+const foreignCache = new Map<string, { sig: string; parsed: ForeignTranscript | undefined }>();
+const FOREIGN_CACHE_MAX = 200;
+
+function readForeign(file: string, raw: string, parse: ParseForeign): ForeignTranscript | undefined {
+    let sig = String(raw.length);
+    try { const st = fs.statSync(file); sig = `${st.mtimeMs}:${st.size}`; } catch { /* use the length */ }
+    const hit = foreignCache.get(file);
+    if (hit && hit.sig === sig) { return hit.parsed; }
+    let parsed: ForeignTranscript | undefined;
+    try { parsed = parse(raw, file); } catch { parsed = undefined; }
+    if (foreignCache.size >= FOREIGN_CACHE_MAX) {
+        const oldest = foreignCache.keys().next().value;
+        if (oldest !== undefined) { foreignCache.delete(oldest); }
+    }
+    foreignCache.set(file, { sig, parsed });
+    return parsed;
 }
 
 /** Flatten + match one text; null when it doesn't match. */
@@ -172,6 +278,57 @@ export function searchTranscripts(
         let fileHits = 0;
         let turn = 0;
         let turnLabel = '';
+        /** The whole file is a delegation lane (a subagent's own transcript). */
+        const lane = s.isSidechain === true;
+        /** One candidate text → a hit, or nothing. Shared by both scanners so a
+         *  foreign transcript is never a second kind of result. */
+        const emit = (t: { role: SearchRole; text: string; tool?: string },
+            ts: number, atTurn: number, label: string): void => {
+            if (fileHits >= maxPerFile || result.hits.length >= maxHits) { return; }
+            if (!roles.has(t.role) || !t.text) { return; }
+            const sn = snip(t.text, matcher);
+            if (!sn) { return; }
+            result.hits.push({
+                file: s.file,
+                agentName: s.agentName ?? '?',
+                title: s.title,
+                ts: ts || s.mtime,
+                role: t.role,
+                ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+                ...(s.engine ? { engine: s.engine } : {}),
+                // Only where the role does not already say who: a delegation was
+                // written BY an agent, and which one is the point of the label.
+                ...(t.role === 'delegator' && s.agentName ? { speaker: s.agentName } : {}),
+                ...sn,
+                turn: atTurn,
+                turnLabel: label,
+                tool: t.tool
+            });
+            fileHits++;
+        };
+
+        // ---- another CLI's transcript: parsed, not line-scanned (X-35) ----
+        const foreign = s.engine && s.engine !== 'claude' && opts.parseForeign
+            ? readForeign(s.file, raw, opts.parseForeign) : undefined;
+        if (foreign) {
+            const labels = new Map((foreign.turns ?? []).map(t => [t.n, t.label]));
+            for (const m of foreign.messages) {
+                if (fileHits >= maxPerFile || result.hits.length >= maxHits) { break; }
+                if (m.role === 'system') { continue; }
+                if ((tsFrom && m.ts && m.ts < tsFrom) || (tsTo && m.ts && m.ts > tsTo)) { continue; }
+                const text = m.role === 'tool'
+                    ? `${m.tool ?? ''} ${m.input ?? m.text ?? ''}`.trim()
+                    : (m.text ?? '');
+                // These engines have no sidechain of their own: a delegation
+                // lane exists only where the transcript records one, and
+                // inventing the role here would be a guess wearing a fact's
+                // clothes.
+                emit({ role: m.role, text, ...(m.tool ? { tool: m.tool } : {}) },
+                    m.ts, m.turn ?? 0, labels.get(m.turn ?? 0) ?? '');
+            }
+            continue;
+        }
+
         for (const lineText of raw.split('\n')) {
             if (fileHits >= maxPerFile || result.hits.length >= maxHits) { break; }
             if (!lineText.trim()) { continue; }
@@ -181,6 +338,13 @@ export function searchTranscripts(
             };
             try { line = JSON.parse(lineText); } catch { continue; }
 
+            // ‼️ X-25 — WHO IS TALKING, decided from the line's own `isSidechain`
+            // (or from the file being a subagent lane of its own). The word
+            // `user` on an agent's handover text was the whole complaint.
+            const side = lane || line.isSidechain === true;
+            const said: SearchRole = side ? 'delegator' : 'user';
+            const answered: SearchRole = side ? 'handler' : 'assistant';
+
             // Candidate texts on this line. A user line can hold prompt text AND
             // tool results; an assistant line text AND tool calls.
             const texts: { role: SearchRole; text: string; tool?: string }[] = [];
@@ -188,13 +352,13 @@ export function searchTranscripts(
             if (line.type === 'user') {
                 if (typeof content === 'string') {
                     if (!line.isMeta && !content.startsWith('<')) {
-                        texts.push({ role: 'user', text: content });
+                        texts.push({ role: said, text: content });
                         if (!line.isSidechain) { turn++; turnLabel = content.slice(0, 60); }
                     }
                 } else if (Array.isArray(content)) {
                     for (const b of content as { type?: string; text?: string; content?: unknown; is_error?: boolean }[]) {
                         if (b?.type === 'text' && b.text) {
-                            texts.push({ role: 'user', text: b.text });
+                            texts.push({ role: said, text: b.text });
                             if (!line.isSidechain) { turn++; turnLabel = b.text.slice(0, 60); }
                         } else if (b?.type === 'tool_result') {
                             texts.push({ role: 'toolResult', text: contentToText(b.content) || String(b.text ?? '') });
@@ -204,7 +368,7 @@ export function searchTranscripts(
             } else if (line.type === 'assistant' && Array.isArray(content)) {
                 for (const b of content as { type?: string; text?: string; name?: string; input?: unknown }[]) {
                     if (b?.type === 'text' && b.text) {
-                        texts.push({ role: 'assistant', text: b.text });
+                        texts.push({ role: answered, text: b.text });
                     } else if (b?.type === 'tool_use') {
                         // tool name + raw input — file paths, commands, code all live here
                         let input = '';
@@ -221,21 +385,7 @@ export function searchTranscripts(
 
             for (const t of texts) {
                 if (fileHits >= maxPerFile || result.hits.length >= maxHits) { break; }
-                if (!roles.has(t.role) || !t.text) { continue; }
-                const sn = snip(t.text, matcher);
-                if (!sn) { continue; }
-                result.hits.push({
-                    file: s.file,
-                    agentName: s.agentName ?? '?',
-                    title: s.title,
-                    ts: ts || s.mtime,
-                    role: t.role,
-                    ...sn,
-                    turn,
-                    turnLabel,
-                    tool: t.tool
-                });
-                fileHits++;
+                emit(t, ts, turn, turnLabel);
             }
         }
     }

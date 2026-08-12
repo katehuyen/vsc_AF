@@ -24,16 +24,23 @@
 //   -foo           NOT: rows that do not contain it (also `NOT foo`)
 //   (a OR b) c     parentheses group
 //   "exact words"  a PHRASE, and whole-word: "log" does not match "dialogue"
-//   kel*           `*` stands for any run of non-space characters
-//   "kelime* bazıları ol*"
+//   refact*        `*` stands for any run of non-space characters
+//   "refact* the pars*"
 //                  the two together: the phrase is anchored and its words may
-//                  each be partial — matches "kelimelerin bazıları olsun" and
-//                  "kelimenin bazıları oldu" alike.
+//                  each be partial — matches "refactor the parser" and
+//                  "refactored the parsing" alike.
 //
 // A BARE word is a substring, which is what every one of these boxes has always
 // done and what people type without thinking. Quotes are how you ask for more
 // precision, not less — that is the whole design: nothing anybody typed before
 // this file existed behaves differently now.
+//
+// ‼️ …AND `wholeWord` IS THAT PRECISION WITHOUT THE QUOTES (X-24). Whole-word
+// matching existed only inside quotes, which is a rule you cannot discover by
+// looking at a search box: the user's own words were "I still do not know how
+// to choose between whole-word and partial". So it is a MODE now — one tick,
+// the same anchoring applied to bare words, and `*` still opens whichever end
+// it is written on, because a mode must never contradict what was typed.
 (function (factory) {
     'use strict';
     const api = factory();
@@ -56,6 +63,24 @@
      *  a meaning; everything else is literal. */
     function wordPattern(w) {
         return escapeRe(w).replace(/\\\*/g, '[^\\s]*');
+    }
+
+    /**
+     * A BARE word — the thing people type without thinking.
+     *
+     * Plain, it is a substring and always has been. Under `wholeWord` it gets
+     * exactly the anchoring a quoted phrase gets, and for the same reason: the
+     * two must not disagree, or the mode would mean one thing inside quotes and
+     * another outside them. A `*` on either end says "I do not know how this
+     * ends", so that end is left open even in the mode — anchoring it would
+     * contradict what was typed, which no mode is allowed to do.
+     */
+    function barePattern(w, whole) {
+        const body = wordPattern(w);
+        if (!whole) { return body; }
+        const openStart = /^\*/.test(w);
+        const openEnd = /\*$/.test(w);
+        return (openStart ? '' : `(?<!${WORD})`) + body + (openEnd ? '' : `(?!${WORD})`);
     }
 
     /**
@@ -141,7 +166,7 @@
     //   not  := ('-'|'NOT') not | atom
     //   atom := '(' or ')' | term
 
-    function parse(tokens, flags) {
+    function parse(tokens, flags, whole) {
         let at = 0;
         const peek = () => tokens[at];
         const bad = m => { const e = new Error(m); e.afQuery = true; throw e; };
@@ -160,7 +185,7 @@
             if (t.t === 'close') { bad('a ) with no ( in front of it'); }
             if (t.t === 'op') { bad(`"${t.op.toUpperCase()}" needs something after it`); }
             at++;
-            const pattern = t.phrase ? phrasePattern(t.value, t.unclosed) : wordPattern(t.value);
+            const pattern = t.phrase ? phrasePattern(t.value, t.unclosed) : barePattern(t.value, whole);
             if (pattern === null) { bad('an empty phrase matches nothing — put a word inside the quotes'); }
             return { t: 'leaf', re: new RegExp(pattern, flags) };
         }
@@ -219,9 +244,11 @@
     /**
      * compile(q, opts) — the only entry point.
      *
-     * opts: { caseSensitive?, regex? } — `regex: true` hands the whole string to
-     * RegExp untouched, which is the Search page's raw mode and stays exactly
-     * what it was. Returns an object that is always safe to use:
+     * opts: { caseSensitive?, regex?, wholeWord? } — `regex: true` hands the
+     * whole string to RegExp untouched, which is the Search page's raw mode and
+     * stays exactly what it was (and where `wholeWord` therefore does nothing:
+     * a raw pattern already says its own boundaries). Returns an object that is
+     * always safe to use:
      *   empty  — nothing was typed; test() is true for everything
      *   ok     — it parsed; when false, `error` says what is wrong IN WORDS
      *   test(text)  — does this text match?
@@ -253,7 +280,7 @@
             };
         }
         let root;
-        try { root = parse(tokenize(src), flags); }
+        try { root = parse(tokenize(src), flags, o.wholeWord === true); }
         catch (e) {
             return {
                 empty: false, ok: false,
@@ -287,19 +314,49 @@
     // Said once, here, so twenty boxes cannot explain the same grammar twenty
     // ways — and so the guide (docs/BLUEPRINT) and the tooltips agree by
     // construction rather than by somebody remembering.
+    //
+    // ‼️ AND THE EXAMPLES ARE IN THE LANGUAGE OF THE INTERFACE. They were
+    // Turkish, in an English-language extension, which is a help text telling
+    // the reader that nobody looked at it. An example is the part of a
+    // grammar people actually read; it is not a place to be careless.
+    //
+    // SYNTAX_ROWS is the same knowledge with its columns intact, so a page can
+    // draw a real help CARD (symbol · meaning · example) instead of squeezing
+    // a grammar into a one-line hover. The flat SYNTAX below is built from it:
+    // two texts saying different things is the failure this file exists against.
+    const SYNTAX_ROWS = [
+        { sym: 'a b', what: 'both words, in any order', example: 'parser error' },
+        { sym: 'OR', what: 'either one (| works too)', example: 'codex OR gemini' },
+        { sym: '-a', what: 'without it (NOT a works too)', example: 'parser -test' },
+        { sym: '( )', what: 'group what belongs together', example: '(codex OR gemini) install' },
+        { sym: '"…"', what: 'that exact phrase, whole words', example: '"session id"' },
+        { sym: '*', what: 'any run of characters', example: 'refact*' },
+        { sym: '"a* b*"', what: 'a phrase whose words may be partial', example: '"refact* the pars*"' }
+    ];
+
     const SYNTAX = [
         'two words = both  ·  OR = either  ·  -word = without it  ·  ( ) group',
         '"in quotes" = that phrase, whole words: "log" is not found in "dialogue"',
-        '* = any run of characters — kelime* finds kelimeler, kelimenin',
-        '…and together: "kelime* bazıları ol*" finds both',
-        '"kelimelerin bazıları olsun" and "kelimenin bazıları oldu".',
-        'A bare word is still a plain substring — nothing you typed before behaves differently.'
+        '* = any run of characters — refact* finds refactor, refactoring',
+        '…and together: "refact* the pars*" finds both',
+        '"refactor the parser" and "refactored the parsing".',
+        'A bare word is a plain substring; tick "whole word" to anchor bare words too.'
     ].join('\n');
 
-    /** The tooltip a box gets: what it searches, then the grammar. */
-    function tip(subject) {
-        return (subject ? String(subject).trim() + '\n\n' : '') + SYNTAX;
+    /** What the whole-word mode changes, in one line, for the box that is in it. */
+    const WHOLE_WORD_ON = 'Whole word is ON: a bare word must match a whole word '
+        + '("log" no longer matches "dialogue"). A * still opens the end it is written on.';
+
+    /**
+     * The tooltip a box gets: what it searches, then the grammar.
+     * `opts.wholeWord` adds the one line that says what the mode is doing —
+     * a mode nobody can see from the box is a mode that reads as a bug.
+     */
+    function tip(subject, opts) {
+        const o = opts || {};
+        return (subject ? String(subject).trim() + '\n\n' : '')
+            + (o.wholeWord ? WHOLE_WORD_ON + '\n\n' : '') + SYNTAX;
     }
 
-    return { compile, matches, tip, SYNTAX, WORD };
+    return { compile, matches, tip, SYNTAX, SYNTAX_ROWS, WHOLE_WORD_ON, WORD };
 });
