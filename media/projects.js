@@ -1433,7 +1433,19 @@
         document.getElementById('app').innerHTML = `
             <style>
                 .pj-wrap { display:flex; gap:18px; align-items:flex-start; }
-                .pj-list { flex:0 0 240px; }
+                /* ‼️ A-13 — a THIRD narrower than it was (240 → 160). This column
+                   is a list of names you already know; the page beside it is
+                   where the work is, and eight controls in a row over there were
+                   competing for width with a column that was spending it on the
+                   tails of project names. A name that no longer fits is cut with
+                   an ellipsis and the row's hover carries it whole — which it
+                   already did, for every row, before this was narrowed.
+                   ‼️ min-width:0 is not decoration: a flex item's automatic
+                   minimum size is its CONTENT's, so the basis was being ignored
+                   and the column stood at whatever its widest child wanted —
+                   measured at 283px while the rule said 240. */
+                .pj-list { flex:0 0 160px; min-width:0; }
+                .pj-list .btnrow { flex-wrap:wrap; }
                 .pj-group { font-size:11px; text-transform:uppercase; opacity:.6; margin:12px 0 4px; }
                 .pj-item { display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:5px; cursor:pointer; }
                 .pj-item:hover { background:var(--vscode-list-hoverBackground); }
@@ -1963,6 +1975,11 @@
                 .pj-helpp:last-child { margin-bottom:0; }
                 .pj-open { display:flex; gap:4px; }
                 .pj-open button { padding:2px 9px; font-size:11px; }
+                /* ‼️ A-13 — a run of buttons that belong together is ONE flex
+                   item in the bar, so the bar breaks between groups before it
+                   breaks inside one. Without it the overflow picked a different
+                   button to drop at every panel width. */
+                .pj-docbar .pj-bar-grp { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
                 .pj-plan-sec { margin-bottom:14px; }
                 .pj-plan-item { display:flex; align-items:baseline; gap:7px; padding:3px 6px;
                     border-radius:4px; cursor:pointer; font-size:13px; }
@@ -2608,8 +2625,10 @@
         <div class="pj-docbar">
             <span><b>${d.open}</b> open · <b>${d.done}</b> done</span>
             <span class="muted small">${C.esc(d.path)}</span>
-            <span class="grow"></span>
+            ${/* A-13 — the doors onto a file sit with the file's own name, on
+                  every one of these bars. */''}
             ${openWithHtml(d.path)}
+            <span class="grow"></span>
         </div>
         ${rows || '<p class="muted small">The plan document has no checkbox lines yet.</p>'}
         <div class="pj-card">
@@ -3434,7 +3453,18 @@
             ${blCountsHtml(all, c)}
             <span class="muted small">${C.esc(d.path)}</span>
             ${blHelpHtml(d)}
+            ${/* ‼️ A-13 — TWO GROUPS, AND THE GAP BETWEEN THEM IS WHERE THE ROW
+                  BREAKS. Six buttons in one right-aligned run did not fit, so
+                  whichever ones happened to overflow dropped to a second line —
+                  a different set at every panel width, and the reader could not
+                  tell what belonged with what. The doors onto the FILE sit with
+                  the file's own name, on the left; the four things that REWRITE
+                  it keep the right-hand end they had. Each group is a flex box
+                  of its own, so it is placed whole and only splits internally
+                  once it truly cannot fit. */''}
+            ${openWithHtml(d.path)}
             <span class="grow"></span>
+            <span class="pj-bar-grp">
             ${/* ‼️ NEXT TO TIDY BECAUSE THE PAIR IS THE POINT, AND OPPOSITE TO IT
                   BECAUSE THEY TOUCH DIFFERENT THINGS: this one rearranges the
                   QUEUE and moves no line, Tidy rearranges the FILE and moves no
@@ -3451,7 +3481,7 @@
                     value="${C.esc(blArchiveDays)}" placeholder="days" aria-label="Days old">
                 <button class="secondary" data-act="blArchiveAge">Archive older</button>
             </span>
-            ${openWithHtml(d.path)}
+            </span>
         </div>
 
         <div class="pj-card">
@@ -4875,7 +4905,7 @@
             ${trkStatBarHtml(d, s)}
             ${trkHelpHtml(d)}
             ${/* ‼️ BOTH FILES ARE NAMED, ALWAYS. The document is one button away
-                  (Open with, at the end of this bar) and the LEDGER is the raw
+                  (Open with, beside the name — A-13) and the LEDGER is the raw
                   data behind everything on the page — a reader who cannot see
                   where it is has to take the whole tab on trust. */''}
             <span class="muted small" title="${C.esc(window.AFTip.lines([
@@ -4885,14 +4915,16 @@
             '',
             'The log is shared — its data lines are rewritten from the ledger and every line you write in it is kept. The ledger is append-only and is never edited in place.'
         ]))}">${C.esc(d.path || 'Backloglog.md')} · <code>${C.esc(d.ledger)}</code></span>
+            ${d.path ? openWithHtml(d.path) : ''}
             <span class="grow"></span>
+            <span class="pj-bar-grp">
             <button class="secondary" data-act="trkForm"
                 title="Record one event against a code by hand — the row you would have got if an agent had been asked to say what it did. It is stamped as coming from this panel, which means it is real but has no session and no turn: a click happens in no conversation, and a record that claimed one would point at a transcript where nothing happened.">✎ Record</button>
             <button class="secondary" data-act="trkFill"
                 title="Reconstruct the history of items that were closed before any of this was recorded, by searching the transcripts for the code itself. A clue or nothing: a row is only proposed where the code was literally written in a turn. It runs as a preview first and writes nothing until you say so.">⚕ Reconstruct</button>
             <button class="secondary" data-act="trkRebuild"
                 title="Write Backloglog.md again out of the ledger. Every line YOU wrote in it — closing notes, warnings, corrections — is read back and written out untouched; only the data lines and the session rows are regenerated. A box you ticked in Obsidian is noticed here and recorded, so the log has no silent gaps. Nothing is written when the result is identical to what is on disk.">↻ Rebuild the log</button>
-            ${d.path ? openWithHtml(d.path) : ''}
+            </span>
         </div>
 
         ${trkFormHtml(d)}
@@ -5874,8 +5906,8 @@
                         <span><b>${C.esc(sel.path)}</b></span>
                         ${sel.role ? `<span class="pj-doc-r">${C.esc(sel.role)}</span>` : ''}
                         <span class="muted small">${Math.round((sel.size || 0) / 102.4) / 10} KB</span>
-                        <span class="grow"></span>
                         ${openWithHtml(sel.path)}
+                        <span class="grow"></span>
                    </div>
                    ${sel.truncated ? '<p class="muted small">Only the first part is shown — open it to read the rest.</p>' : ''}
                    <pre class="pj-doc-text">${C.esc(sel.text || '')}</pre>`);
@@ -5913,8 +5945,8 @@
             ? `<div class="pj-docbar">
                     <span class="muted small">The project's own people document:</span>
                     <span><b>${C.esc(doc.path)}</b></span>
-                    <span class="grow"></span>
                     ${openWithHtml(doc.path)}
+                    <span class="grow"></span>
                </div>`
             : '';
         return `

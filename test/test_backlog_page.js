@@ -1831,5 +1831,39 @@ function pickParent(r, code) {
         /\.pj-chips-row #bl-sort \{[^}]*font-size:12px/.test(r.html()));
 }
 
+// ---------- A-13: the bar above the backlog breaks in ONE place ----------
+//
+// Six buttons in one right-aligned run did not fit, so whichever ones happened
+// to overflow dropped to a second line — a different set at every panel width,
+// and no way to tell what belonged with what. Two groups now, with the flexible
+// gap between them: the doors ONTO the file sit beside the file's own name, and
+// the four things that REWRITE it keep the right-hand end they had.
+{
+    const r = run(data());
+    const bar = /<div class="pj-docbar">([\s\S]*?)<\/div>\s*\n\s*<div class="pj-card">/.exec(r.html());
+    ok('the bar is still there', !!bar);
+    const at = s => bar[1].indexOf(s);
+    ok('‼️ the file\'s own name and the buttons that open it are on the same side',
+        at('Backlog.md') < at('class="pj-open"') && at('class="pj-open"') < at('class="grow"'));
+    ok('…and the four that rewrite the file stay at the right-hand end',
+        at('class="grow"') < at('data-act="blTidy"')
+        && at('data-act="blTidy"') < at('data-act="blGather"')
+        && at('data-act="blGather"') < at('data-act="blArchive"')
+        && at('data-act="blArchive"') < at('data-act="blArchiveAge"'));
+    ok('‼️ …as ONE flex item, so the bar breaks between the groups and not inside one',
+        at('class="pj-bar-grp"') > at('class="grow"')
+        && at('class="pj-bar-grp"') < at('data-act="blTidy"')
+        && /\.pj-docbar \.pj-bar-grp \{[^}]*display:flex/.test(r.html()));
+
+    // The other half of the same complaint: the column of names was taking
+    // width the page beside it needed. A name that no longer fits is cut, and
+    // every row already carried the whole thing in its hover.
+    ok('‼️ the projects column is a third narrower', /\.pj-list \{ flex:0 0 160px/.test(r.html()));
+    ok('…and it really is 160, which needs min-width:0 — a flex item\'s automatic '
+        + 'minimum is its CONTENT\'s, so the old basis was being ignored',
+        /\.pj-list \{ flex:0 0 160px; min-width:0; \}/.test(r.html()));
+    ok('…with the name cut rather than wrapped', /\.pj-name \{[^}]*text-overflow:ellipsis/.test(r.html()));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

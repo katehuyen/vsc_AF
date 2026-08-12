@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.122.1 — The bar above a project document breaks in one place, and the column of names stops taking the width (2026-08-13)
+
+**A-13.** Six buttons in one right-aligned run above the backlog did not fit, so whichever ones happened to overflow dropped to a second line — a different set at every panel width, with no way to tell what belonged with what. There are two groups now, with the flexible gap between them: **the doors ONTO the file sit beside the file's own name**, and the things that REWRITE it (Tidy · Gather · Archive all closed · Archive older) keep the right-hand end they had. Each run is a flex box of its own, so it is placed whole and only splits internally once it truly cannot fit — which means the bar breaks in one predictable place instead of shedding a button. The same shape is applied to all four of these bars, including Track's, which had the same six-in-a-row problem.
+
+**And the projects column is a third narrower — 240 → 160.** It is a list of names you already know; the page beside it is where the work is, and eight controls in a row over there were competing for width with a column spending it on the tails of project names. A name that no longer fits is cut with an ellipsis, and every row already carried the whole name in its hover.
+
+‼️ **It was not 240 either.** `min-width` was never set, and a flex item's automatic minimum size is its CONTENT's — so the basis was being ignored and the column stood at whatever its widest child wanted, measured at 283px while the rule said 240. Both halves were checked by measuring the rendered page rather than by reading the rule.
+
 ## 3.122.0 — One card per session, and an ended one can be continued from it (2026-08-13)
 
 **S-29.** An ended session keeps its card in the Console's left panel until you press **Remove from list**, and it keeps it for two reasons: the conversation is still readable, and the session is under your hand when you want it back. Only one of those actually worked.
