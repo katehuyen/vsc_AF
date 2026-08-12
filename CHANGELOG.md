@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.121.2 — A hover never opens towards the edge it is already on (2026-08-13)
+
+**K-18.** The `?` under the Console's composer sits a few pixels off the BOTTOM of the window, and its panel hung *downwards* out of it — so the thing it exists to explain was almost entirely off screen. Same mistake, other axis, as a 760px panel opening rightwards off a trigger already three quarters of the way across a row.
+
+This is now a rule the component keeps rather than a thing each call site has to remember: `afTip.js` measures the anchor and the panel the moment the pointer arrives — before the open delay has elapsed, so nothing is ever seen moving — and writes `af-up` / `af-left` where the default side does not fit and the other one is roomier. Where neither fits, the roomier half still shows more. A page's own `tip-right` and `tip-block` are statements about a LAYOUT and are never overruled; a `tip-free` panel is placed in full by its own placer and is left alone.
+
+Driven in a real Chrome to check it against something other than a string: a trigger 6px off the bottom of a 984×705 window now opens a 122px panel that ends at 684, and one against the right edge ends at 978. Held by `test_tip_repaint.js` (both edges, both opt-outs, and a re-measure after a repaint moves the row) and written into `docs/CONVENTIONS.md`.
+
 ## 3.121.1 — The saved-prompts picker stops covering its own list (2026-08-13)
 
 **U-54.** Every row in the Console's saved-prompts window carried a rich hover holding the whole prompt. In a list you are *reading in order*, that is a panel opening over the two neighbouring prompts you are comparing it against — the reader already asked for this window, so nothing has to be teased out of it. The rows keep their label and 120-character preview; the whole text is one click away in the composer, and `✎ Edit the file` opens the source. The hover rule in `docs/CONVENTIONS.md` is about a row you merely pass over on a page, and that distinction is now written down where it belongs.

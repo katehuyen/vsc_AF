@@ -159,6 +159,85 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
         !seven.w.classList.contains('af-on'));
 }
 
+// ---- K-18: it opens towards the middle, never towards the edge -------------
+// The bug the user reported: the composer's `?` sits a few pixels off the
+// BOTTOM of the window and its panel opened downwards, so nearly all of it was
+// outside the viewport. The rule is the component's — a page should not have to
+// know where it happens to be on screen — so it is driven here directly.
+{
+    // a 1000×800 window, and a panel 300 tall × 400 wide
+    documentStub.documentElement.clientWidth = 1000;
+    documentStub.documentElement.clientHeight = 800;
+
+    /** A wrapper whose trigger sits at the given rect, with a panel of a known
+     *  size. `offsetParent` is left unset, so the wrapper IS the anchor —
+     *  exactly what a plain `position:relative` wrapper gives. */
+    const mkAt = (left, top, w, h, cls) => {
+        const t = mkTip();
+        if (cls) { cls.split(/\s+/).forEach(c => t.w.cls.add(c)); }
+        t.w.getBoundingClientRect = () => ({ left: left, top: top, right: left + w, bottom: top + h });
+        t.t.getBoundingClientRect = () => ({});
+        t.t.offsetHeight = 300;
+        t.t.offsetWidth = 400;
+        return t;
+    };
+    const hover = t => { at = {}; at[key(1, 1)] = t.w; fire('pointerover', { target: t.w, clientX: 1, clientY: 1 }); };
+
+    const low = mkAt(40, 770, 14, 14);          // the composer's `?`: 16px of room under it
+    hover(low);
+    ok('‼️ a trigger against the bottom edge opens its panel UPWARDS',
+        low.w.classList.contains('af-up'));
+
+    const high = mkAt(40, 60, 14, 14);
+    hover(high);
+    ok('…and one with room under it is left alone', !high.w.classList.contains('af-up'));
+
+    const right = mkAt(940, 300, 40, 14);       // 20px of room to its right
+    hover(right);
+    ok('‼️ a trigger against the right edge opens back across the row',
+        right.w.classList.contains('af-left'));
+
+    const mid = mkAt(100, 300, 40, 14);
+    hover(mid);
+    ok('…and one with room to its right is left alone', !mid.w.classList.contains('af-left'));
+
+    // The page's own placement rules are statements about a LAYOUT; the flip is
+    // a statement about the window. The window never overrules the layout.
+    const declared = mkAt(940, 300, 40, 14, 'tip-right');
+    hover(declared);
+    ok('a page that already said tip-right is not argued with',
+        !declared.w.classList.contains('af-left'));
+    const block = mkAt(940, 300, 40, 14, 'tip-block');
+    hover(block);
+    ok('…nor is tip-block, whose panel is the block\'s width anyway',
+        !block.w.classList.contains('af-left'));
+    const blockLow = mkAt(40, 770, 14, 14, 'tip-block');
+    hover(blockLow);
+    ok('…but a tip-block near the bottom still flips upwards — that edge is nobody\'s layout',
+        blockLow.w.classList.contains('af-up'));
+
+    // tip-free is placed in full by the component's own placer (U-43); a class
+    // that moves it as well would fight those numbers.
+    const free = mkAt(40, 770, 14, 14, 'tip-free');
+    hover(free);
+    ok('a tip-free panel is left to its placer', !free.w.classList.contains('af-up'));
+
+    // A decision has to be re-taken when the row is replaced under a still
+    // pointer — the new node need not be where the old one was.
+    const wasLow = mkAt(40, 770, 14, 14);
+    at = {}; at[key(5, 5)] = wasLow.w;
+    fire('pointerover', { target: wasLow.w, clientX: 5, clientY: 5 });
+    const nowHigh = mkAt(40, 60, 14, 14);
+    wasLow.w.isConnected = false;
+    at[key(5, 5)] = nowHigh.w;
+    repaint();
+    ok('a repaint re-measures rather than inheriting the old side',
+        nowHigh.w.classList.contains('af-on') && !nowHigh.w.classList.contains('af-up'));
+
+    documentStub.documentElement.clientWidth = undefined;
+    documentStub.documentElement.clientHeight = undefined;
+}
+
 // ---- the CSS half: the class has to mean something -------------------------
 {
     const css = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'common.css'), 'utf8');
@@ -166,6 +245,13 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
         /\.af-tipw\.af-on\s*>\s*\.af-tip\s*\{[^}]*visibility:\s*visible/.test(css));
     ok('…with no delay — it is already open, and fading it in twice is a blink',
         /\.af-tipw\.af-on\s*>\s*\.af-tip\s*\{[^}]*transition-delay:\s*0s/.test(css));
+    // K-18: the classes the script writes have to mean something in the sheet,
+    // and they have to come after the page-declared ones they may override.
+    ok('‼️ …and the flip classes, which are what K-18 is',
+        /\.af-tipw\.af-up\s*>\s*\.af-tip\s*\{[^}]*bottom:\s*100%/.test(css)
+        && /\.af-tipw\.af-left\s*>\s*\.af-tip\s*\{[^}]*right:\s*0/.test(css));
+    ok('…declared after tip-block, so the flip is the last word on its edge',
+        css.indexOf('.af-tipw.af-up') > css.indexOf('.af-tipw.tip-block'));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

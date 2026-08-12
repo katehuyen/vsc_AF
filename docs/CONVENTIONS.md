@@ -104,6 +104,23 @@ edges of the gesture: longer to open, because sweeping a list must not flash a
 paragraph at every row, and a grace period on the way out so the pointer can
 travel into it.
 
+**‼️ A HOVER SURFACE OPENS TOWARDS THE MIDDLE OF THE WINDOW, NEVER TOWARDS THE
+EDGE IT IS ALREADY ON.** This is the rule, and it is not about one control: the
+Console composer's `?` sits a few pixels off the BOTTOM of the window, the panel
+hung *downwards* out of it, and nearly all of it was off screen — which is the
+same mistake as a 760px panel on the last column of a row growing further right.
+Anything anchored near an edge flips to the roomier side; where neither side
+fits, the roomier one still shows more.
+
+`afTip.js` does it for every panel from real measurements the moment the pointer
+arrives — before the open delay, so nothing is ever seen moving — by writing
+`af-up` / `af-left`, which `common.css` honours. **The classes are the
+component's**: a page's own `tip-right` / `tip-block` are statements about a
+LAYOUT and are never overruled by them, and a `tip-free` panel is placed in full
+by the placer instead. So there is nothing to opt into and nothing to remember —
+but if you ever hand-roll a floating surface (a menu, a popover, a card that
+grows out of a button), it owes the reader the same measurement.
+
 **‼️ It survives a repaint, and that is the component's job, not yours.** These
 pages redraw whole sections on the host's beat, and a browser does not put
 `:hover` back on the node that replaced the one the pointer was on until the

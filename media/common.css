@@ -329,6 +329,17 @@ span.af-tipw { display: inline; }
 .af-tipw.tip-block > .af-tip {
     left: 0; right: auto; width: 100%; min-width: 0; max-width: min(820px, 100%);
 }
+/* ‼️ K-18 — A PANEL NEVER OPENS TOWARDS THE EDGE IT IS ALREADY ON.
+   The default hangs the panel UNDER its trigger, which is right everywhere
+   except where it matters most: the composer's `?` sits a few pixels off the
+   bottom of the window, so the panel it opened was almost entirely outside the
+   viewport. These two classes are written by afTip.js from real measurements
+   when the pointer arrives — they are the component's answer, never a page's,
+   which is why they are named `af-*` and the page's own `tip-right` /
+   `tip-block` are left to win. They come last so the flip is the final word on
+   the edge it applies to. */
+.af-tipw.af-up > .af-tip { top: auto; bottom: 100%; }
+.af-tipw.af-left > .af-tip { left: auto; right: 0; }
 .af-tiph {
     display: block; margin-bottom: 6px; padding-bottom: 5px;
     font-size: 10px; opacity: .6; white-space: normal;

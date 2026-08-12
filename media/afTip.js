@@ -107,6 +107,62 @@
        quieter form.
        ------------------------------------------------------------------ */
     const doc = typeof document === 'object' && document ? document : null;
+
+    /* ------------------------------------------------------------------
+       ‼️ K-18 — A PANEL NEVER OPENS TOWARDS THE EDGE IT IS ALREADY ON.
+
+       The default panel hangs under its trigger (`top:100%`), which is right
+       everywhere except where it matters most: the composer's `?` sits a few
+       pixels off the BOTTOM of the window, so the panel opened downwards and
+       almost all of it was outside the viewport. The same thing happens on the
+       right-hand edge of a wide row.
+
+       The rule, and it is not specific to this component: **a hover surface
+       near an edge opens towards the CENTRE of the window, never further
+       towards the edge it is already against.** Nobody should have to remember
+       it per call site, so it is decided here, from measurements, at the moment
+       the pointer arrives — before the open delay has elapsed, so the panel is
+       never seen moving.
+
+       Two computed classes, `af-up` and `af-left`, honoured by common.css. They
+       are the component's, not the caller's: `tip-right` and `tip-block` are
+       what a PAGE says about a layout, and this never argues with either.
+       `tip-free` is placed in full by `place()` below and is left alone.
+       ------------------------------------------------------------------ */
+    /** The gap a panel keeps from the window's own edge. */
+    const EDGE = 8;
+
+    function flip(w) {
+        if (!w || !w.classList || !w.querySelector) { return; }
+        if (w.classList.contains('tip-free')) { return; }
+        const tip = w.querySelector('.af-tip');
+        if (!tip || typeof tip.getBoundingClientRect !== 'function') { return; }
+        w.classList.remove('af-up');
+        w.classList.remove('af-left');
+        // The panel is laid out even while hidden (`visibility`, not `display`),
+        // so this is the real size it will open at rather than a guess.
+        const host = tip.offsetParent || w;
+        if (!host || typeof host.getBoundingClientRect !== 'function') { return; }
+        const a = host.getBoundingClientRect();
+        const h = tip.offsetHeight || 0;
+        const wd = tip.offsetWidth || 0;
+        const root = doc.documentElement || {};
+        const vw = root.clientWidth || 0;
+        const vh = root.clientHeight || 0;
+        if (!vw || !vh || !h || !wd) { return; }
+        // Vertical: below the anchor by default, above it when below does not
+        // fit AND above is the roomier half. Where neither fits, the roomier
+        // half still shows more of the panel than the cramped one.
+        if (h > vh - EDGE - a.bottom && a.top - EDGE > vh - EDGE - a.bottom) {
+            w.classList.add('af-up');
+        }
+        // Horizontal only where the page has not already decided it.
+        if (!w.classList.contains('tip-block') && !w.classList.contains('tip-right')
+            && wd > vw - EDGE - a.left && a.right - EDGE > vw - EDGE - a.left) {
+            w.classList.add('af-left');
+        }
+    }
+
     if (doc && typeof doc.addEventListener === 'function'
         && typeof MutationObserver === 'function' && typeof doc.elementFromPoint === 'function') {
 
@@ -125,6 +181,10 @@
             const w = closestW(e.target);
             if (!w || w === over) { return; }
             over = w; atX = e.clientX; atY = e.clientY; scrolled = 0;
+            // Which way it opens is decided now, while the open delay is still
+            // running: a panel that jumps to the other side after it is visible
+            // is worse than one that opened in the wrong place.
+            flip(w);
         }, true);
 
         doc.addEventListener('pointermove', function (e) {
@@ -158,6 +218,9 @@
             if (!w) { return; }
             w.classList.add('af-on');
             bridged = w;
+            // The replacement node is a different element in a redrawn section;
+            // it may not sit exactly where the old one did.
+            flip(w);
             const tip = w.querySelector('.af-tip');
             if (tip && scrolled) { tip.scrollTop = scrolled; }
         };
