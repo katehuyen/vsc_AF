@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.121.1 — The saved-prompts picker stops covering its own list (2026-08-13)
+
+**U-54.** Every row in the Console's saved-prompts window carried a rich hover holding the whole prompt. In a list you are *reading in order*, that is a panel opening over the two neighbouring prompts you are comparing it against — the reader already asked for this window, so nothing has to be teased out of it. The rows keep their label and 120-character preview; the whole text is one click away in the composer, and `✎ Edit the file` opens the source. The hover rule in `docs/CONVENTIONS.md` is about a row you merely pass over on a page, and that distinction is now written down where it belongs.
+
 ## 3.121.0 — X-35, properly: Gemini gets a transport, and the audit's 23 findings are closed (2026-08-13)
 
 An independent read-only audit of the three X-35 sessions found that the item had been closed on the six surfaces the last session had listed, not on the product. It recorded 23 open defects — 4 critical, 12 high, 7 moderate — against a suite that was 8,308 green, and named the reason: most multi-engine tests proved that a word existed in the source rather than that a function behaved. Every finding was re-verified against `HEAD 220f6be` before being fixed, and each fix is now covered by a test that runs the code.

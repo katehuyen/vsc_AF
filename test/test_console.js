@@ -834,6 +834,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('the list is read when the menu opens, never carried on the payload',
         /snipOpen = \(\) => \{[\s\S]{0,300}postMessage\(\{ type: 'promptSnippets' \}\)/.test(js)
         && !/DATA\.snippets/.test(js));
+    // ‼️ U-54: the rows in this picker carry NO hover. The window is already
+    // open — the reader asked for it — so a panel opening again on every row
+    // swept past covers the neighbouring prompts being compared against. The
+    // hover rule in docs/CONVENTIONS.md is about a row you merely pass over.
+    ok('‼️ a prompt row in the open picker carries no hover, rich or native',
+        /class="snipitem" data-snip=/.test(js)
+        && !/AFTip\.wrap\([\s\S]{0,120}snipitem/.test(js)
+        && !/class="snipitem"[^>]*title=/.test(js));
     ok('an empty list and a missing file are two different sentences',
         /No blocks in that file yet/.test(js) && /snip\.error/.test(js));
     ok('…and either way the file itself is one click away',

@@ -1978,22 +1978,17 @@
                     group = it.group;
                     if (group) { rows.push(`<div class="snipgrp">${C.esc(group)}</div>`); }
                 }
-                // The whole block rides in the row as a hover: choosing between
-                // two prompts means reading them, and a picker that only shows
-                // names makes you guess.
-                //
-                // ‼️ IN THE RICH PANEL, NOT A `title`. A saved prompt is TEXT —
-                // the exact case docs/CONVENTIONS.md sends here: the native
-                // tooltip repeated the 120-character preview the row had just
-                // drawn and then stopped wherever the platform felt like
-                // stopping, which on a prompt worth saving is nearly all of it.
-                rows.push(window.AFTip.wrap(
-                    `<button class="snipitem" data-snip="${i}">
+                // ‼️ NO HOVER ON A ROW INSIDE A WINDOW THAT IS ALREADY OPEN.
+                // The hover rule in docs/CONVENTIONS.md is about a row you
+                // merely pass over on a page; this list is a window the user
+                // opened on purpose, and sweeping it flashed a panel over the
+                // very rows being compared. The row carries the label and a
+                // 120-character preview; the whole text is one click away in
+                // the box, and ✎ Edit the file opens the source.
+                rows.push(`<button class="snipitem" data-snip="${i}">
                     <span class="sniplbl">${C.esc(it.label)}</span>
                     <span class="snipprev">${C.esc(it.text.replace(/\s+/g, ' ').slice(0, 120))}</span>
-                </button>`,
-                    `${it.label}${it.group ? ` · ${it.group}` : ''} · ${window.AFTip.sizeNote(it.text)}`,
-                    it.text));
+                </button>`);
             }
             body = rows.join('');
         }

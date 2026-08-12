@@ -84,6 +84,15 @@ Where this already applies, and where a new surface should follow it: session
 Title (title + the whole opening prompt) · Project (what the project IS, folders
 first) · every turn's prompt · backlog items · the Next up strip's codes.
 
+**‼️ …BUT NOT INSIDE A WINDOW THE READER OPENED.** The rule above is about a row
+you *pass over* on a page that is showing you something else. A modal list — the
+Console's saved-prompts picker — is already the thing that was asked for, and
+its rows are read against each other: a panel opening on each one covers the two
+neighbours being compared, on a gesture nobody made. So a picker row carries the
+label and a short preview and **no hover at all**; whatever the panel would have
+held has to be reachable another way (choosing pastes the whole text; `✎ Edit the
+file` opens the source). Nothing in a modal earns a second layer over itself.
+
 **‼️ A trigger inside a SCROLLING box needs `tip-free`.** The panel grows out of
 its trigger, so an ancestor with `overflow:auto` — the backlog capture's "part
 of" picker, a 340px column — clips a 620px box down to nothing and puts the rest
