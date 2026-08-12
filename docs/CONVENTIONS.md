@@ -127,7 +127,12 @@ node test/render_page.js track --only timeline --light
 
 - `render_page.js` runs the REAL page script through the tests' own DOM shim
   (`lib_page_dom.js`), wraps its markup in `media/common.css` and a stand-in for
-  the editor's theme variables, and writes one self-contained HTML file.
+  the editor's theme variables, **puts it back inside `#app`**, and writes one
+  self-contained HTML file. ‼️ That last part was missing and it mattered: the
+  shim hands back what a page WROTE into `#app`, not the element, so a page
+  capping its own width there (`#app{max-width:1180px}` — the Search page) was
+  photographed at the full window instead. Every width read off those pictures
+  was a width of a layout the user cannot produce.
 - `shoot_page.js` photographs it with a headless Chrome **already on the
   machine** — no Playwright download. It uses a throwaway profile: the user's
   own browser windows are never touched, which is not a nicety.
@@ -195,6 +200,16 @@ rows.filter(r => q.test(r.title + ' ' + r.agent));
 - **Every box gets `AFQuery.tip('what THIS box searches.')` as its hover** — one
   line of subject, then the shared grammar. A box that explains the grammar in
   its own words is a box that will explain it differently next month.
+- ‼️ **…EXCEPT THE ONE BOX A WHOLE PAGE IS FOR.** A hover is free on a cell you
+  pass over; on the control you are *using*, it is a paragraph that opens every
+  time the pointer crosses the thing your hands are already on. The Search
+  page's query box has a `Syntax ▾` card one press below it, so it carries no
+  hover at all — and everything the hover knew that the card did not (what the
+  box actually searches, what each mode does to the grammar, the regex time
+  budget, what Meaning does not cover) was **moved into the card**, not dropped.
+  The test is ownership: a filter box in a table row keeps its hover, because
+  there is nowhere else for the grammar to live. A page that draws the grammar
+  in full does not also whisper it.
 - The grammar itself is documented for users in `docs/BLUEPRINT.{en,tr}.md`; the
   file is the spec, `test/test_query.js` is the guard.
 
@@ -248,6 +263,44 @@ happens where the text is rather than at a second widget along the row.
   page's query), clearing drops the last results too: hits sitting under an
   empty box are the page claiming to have found something for nothing.
 - Wiring the same element twice is a no-op, so a render path may call it freely.
+
+### A box that searches as you type must not lose the caret
+
+‼️ **A REPAINT IS NOT ALLOWED TO EVICT THE CURSOR.** These pages rebuild a whole
+card on every change, and a live box re-runs while you are still typing in it —
+so the answer arriving was itself what threw the caret out of the box. The next
+letter went nowhere and the only way back in was the mouse: a search that had to
+be re-aimed after every result, which is worse than one that waits for Enter.
+
+- `AFFilter.live` already does it for a box whose handler repaints synchronously
+  (`snapshot` / `restore`). Use it and you get this for nothing.
+- **A round trip needs more**, because the second repaint happens when the HOST
+  answers, long after the handler returned. Note the focused control at the top
+  of the repaint and give it back at the bottom — `focusMark` / `focusBack` in
+  `media/search.js` is the worked example. Address it by `id` where it has one,
+  otherwise by the data attribute it is bound through, so a **chip** pressed
+  from the keyboard also comes back under the keyboard.
+- **The first paint focuses the box the page is for**, once, and never again:
+  stealing focus on a later repaint is the same bug from the other side.
+- ‼️ **And it is testable — `lib_page_dom.js` models focus.** Writing `#app`
+  detaches everything and drops `activeElement`, exactly as a browser does, so a
+  page that has LOST the caret cannot answer off the dead node. A live box
+  without a caret assertion is a box waiting to break again.
+
+### A block's clearer belongs to that block, and reserves its own width
+
+Two failures, and they arrived together. A `Reset` that lit up for state it did
+not touch, and a `Clear` sitting at the opposite end of the panel from the
+control it cleared, each pointing at the other's block.
+
+- **One clearer per block, inside it, answering only for it.** If a reader has
+  to work out what a ✕ reaches, it is in the wrong place.
+- **The slot is drawn whether the button is or not** (`.act-slot`, a fixed
+  width). A clearer that appears the moment something becomes clearable is
+  right; a row that jumps sideways at that same moment is not — the ✕ arrives in
+  a gap that was already being kept for it.
+- **A control whose LABEL grows reserves for its widest label** — `⚙ Filters`
+  gaining `(3)` must not shove its neighbours (`min-width`).
 
 ### A date box commits on `change`, never on `input`
 

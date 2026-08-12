@@ -14,6 +14,7 @@
         { id: 'toolResult', icon: '📄', label: 'Results', text: 'Content returned by tools, including file contents, command output and errors' }
     ];
     const ALL_ROLES = ROLES.map(x => x.id);
+    const DEFAULT_ROLES = ['user', 'assistant'];
     const PRESETS = [
         { id: 'dialog', label: 'Conversation', roles: ['user', 'assistant'] },
         { id: 'delegation', label: 'Delegation', roles: ['delegator', 'handler'] },
@@ -31,7 +32,7 @@
     let semStatus = DATA.semantic || { provider: 'off', sessions: 0, chunks: 0 };
     let preset = DATA.preset || null;
     let agentSel = preset && preset.agentName ? new Set([preset.agentName]) : null;
-    let roleSel = new Set(['user', 'assistant']);
+    let roleSel = new Set(DEFAULT_ROLES);
     let mode = 'text';
     let queryText = '';
     let caseOn = false;
@@ -46,6 +47,7 @@
     let dirty = false;
     let seq = 0;
     let queryTimer = null;
+    let opened = false;
     const defaultFilters = () => ({
         engines: null, projects: null, models: null,
         origin: '', lane: '', pinnedOnly: false, errorsOnly: false,
@@ -75,9 +77,18 @@
     ].filter(Boolean).length;
     const sessionFilterCount = () => activeFilterCount()
         + (agentSel !== null ? 1 : 0) + (preset && preset.file ? 1 : 0);
-    const resettable = () => !!queryText.trim() || !!lastResult || !!preset || agentSel !== null
-        || mode !== 'text' || caseOn || wholeOn || !sameSet(['user', 'assistant'])
-        || !sourceMemory || !sourceEvents || activeFilterCount() > 0;
+    /**
+     * ‼️ A CONTROL CLEARS THE BLOCK IT SITS IN, AND NOTHING ELSE.
+     *
+     * The reset used to appear for ANY state on the page — including a session
+     * filter it does not touch — and it sat at the opposite end of the row from
+     * the badges it puts back, with the filter's own Clear at the end where the
+     * reset belonged. Two clearers, each pointing at the other's block. So: the
+     * content scope resets from inside the content-scope block, the session
+     * filters clear from beside the Filters button, and each one answers only
+     * for what a reader can see next to it.
+     */
+    const scopeChanged = () => !sameSet(DEFAULT_ROLES) || !sourceMemory || !sourceEvents;
 
     function badge(attrs, label, on, disabled) {
         return `<button type="button" class="chip${on ? ' on' : ''}${disabled ? ' disabled' : ''}"
@@ -110,11 +121,30 @@
         ).join('')}</span>`;
     }
 
+    /**
+     * ‼️ THE GRAMMAR IS EXPLAINED ONCE, AND THE BOX ITSELF STAYS QUIET.
+     *
+     * The query box used to carry a hover saying almost exactly what this card
+     * says — so the reader was interrupted by a paragraph every time the pointer
+     * crossed the one control they were actually using, to be told what a panel
+     * two rows down already tells them on request. The card is the surface that
+     * keeps it; everything the hover knew and this did not was moved in here:
+     * what the box actually searches, what each mode does to the grammar, the
+     * regex time budget, what Meaning does not cover, and what Whole word is
+     * doing while it is on.
+     */
     function guideHtml() {
         const rows = (window.AFQuery.SYNTAX_ROWS || []).map(r =>
             `<tr><td><code>${C.esc(r.sym)}</code></td><td>${C.esc(r.what)}</td><td><code>${C.esc(r.example)}</code></td></tr>`).join('');
+        const notes = [
+            '<b>What is searched.</b> Only the content kinds lit below the box, in the sessions the agent picker and the session filters leave in.',
+            '<b>Text.</b> Combines the rules above. A bare word also matches inside a longer word: turn on <b>▣ Whole word</b> when it must stand on its own, and <b>Aa Case</b> when Agent and agent have to differ.',
+            '<b>Regex.</b> The box goes straight to a JavaScript <code>RegExp</code>. None of the operators above apply, and an unsafe pattern is stopped after ten seconds.',
+            '<b>Meaning.</b> Compares the question with indexed conversation passages. That is indexed main-session conversation only, so tool traffic, memory notes, orphaned events, message dates and engines that were never indexed stay outside it.'
+        ];
+        if (wholeOn) { notes.splice(2, 0, C.esc(window.AFQuery.WHOLE_WORD_ON)); }
         return `<div class="guide"><table><thead><tr><th>Write</th><th>Meaning</th><th>Example</th></tr></thead><tbody>${rows}</tbody></table>
-            <p><b>Text</b> combines these rules. <b>Regex</b> uses only JavaScript regular-expression syntax. <b>Meaning</b> compares your question with indexed conversation passages.</p></div>`;
+            ${notes.map(n => `<p>${n}</p>`).join('')}</div>`;
     }
 
     function picker(id, label, options, selected, title, disabled) {
@@ -147,22 +177,49 @@
         </div>`;
     }
 
+    /**
+     * A ✕ in a slot of its own width.
+     *
+     * ‼️ THE SLOT IS THERE WHETHER THE BUTTON IS OR NOT. A clearer that appears
+     * the moment something becomes clearable is right — and a row that shifts
+     * sideways underneath the pointer at that same moment is not. Reserving the
+     * width means the block never moves: the ✕ arrives in the gap that was
+     * already being kept for it.
+     */
+    function clearSlot(id, on, label, head, body) {
+        return `<span class="act-slot">${on
+            ? tip(`<button type="button" id="${id}" class="slot-x" aria-label="${C.esc(label)}">✕</button>`, head, body)
+            : ''}</span>`;
+    }
+
+    /** What the content scope currently is, by name — the changing half of the
+     *  reset's hover, which is the half a reader is actually asking about. */
+    const litScope = () => [
+        ...ROLES.filter(r => roleSel.has(r.id)).map(r => r.label),
+        ...(sourceMemory ? ['Memory'] : []),
+        ...(sourceEvents ? ['Events'] : [])
+    ].join(' · ');
+
+    /**
+     * Three bands, and each one answers one question: HOW to read the query
+     * (mode), WHERE to look (agents, session filters), WHAT to look at (the
+     * content kinds). Every band lays out with flex and wraps inside itself, so
+     * a narrow window costs a line of height and never a collision: the old grid
+     * let the badges run under the Filters button at one width and stretched an
+     * empty purple box across half the row at the next.
+     */
     function controlsHtml() {
         const exact = mode !== 'meaning';
         const unavailable = mode === 'meaning';
         const fileScope = !!(preset && preset.file);
         const agents = facets.agents.length ? facets.agents : (DATA.agents || []);
-        const queryTip = mode === 'text'
-            ? window.AFQuery.tip('Searches only the content and sessions selected below.', { wholeWord: wholeOn })
-            : mode === 'regex'
-                ? 'This is passed to JavaScript RegExp. Query-language operators do not apply. Unsafe patterns are stopped after ten seconds.'
-                : 'Finds similar passages in the semantic index. This covers indexed main-session conversation only; tool traffic, memory, events, message dates and non-indexed engines are not searched.';
+        const filters = sessionFilterCount();
         const interaction = 'Click to add or remove a kind. Ctrl-click (⌘ on Mac) keeps only that kind.';
         return `<section class="search-panel">
             <div class="query-row">
-                ${tip(`<textarea id="q" rows="2" value="${C.esc(queryText)}"
+                <input id="q" type="text" value="${C.esc(queryText)}" spellcheck="false"
                     placeholder="${mode === 'meaning' ? 'Describe the idea or discussion…' : 'Words, phrase, path, error or session id…'}"
-                    aria-label="Search query" autofocus>${C.esc(queryText)}</textarea>`, 'How this query is read', queryTip, 'query-tip')}
+                    aria-label="Search query">
                 <button id="go" class="primary-search">${searching ? 'Searching…' : 'Search'}</button>
             </div>
             <div class="options-row">
@@ -171,28 +228,36 @@
                     ${tip(badge('data-query-option="whole" data-tone="whole"', '▣ Whole word', wholeOn, mode !== 'text'), 'Whole words', 'A bare word must match as a whole word: log no longer finds dialogue.')}
                     <button id="guide-toggle" class="text-action" aria-expanded="${guideOpen}">Syntax ${guideOpen ? '▴' : '▾'}</button>
                 </div>
-                <div class="top-actions">${scopeHtml()}
+                <div class="session-controls">${scopeHtml()}
                     ${picker('search-agents', 'Agents', agents, agentSel ? [...agentSel] : null,
                         'Which agents own the sessions to search.', fileScope)}
                     ${tip('<button id="find-session" class="secondary id-find">⌗ Find session ID…</button>',
                         'Find a session by ID', 'Search the entire session index directly. A full ID or the eight-character prefix printed throughout Agent Farm is enough; this does not filter text-search results.')}
+                    ${tip(badge(`id="more-toggle" aria-expanded="${moreOpen}" data-tone="filter"`, `⚙ Filters${filters ? ` (${filters})` : ''} ${moreOpen ? '▴' : '▾'}`, moreOpen || filters > 0),
+                        'Session filters', 'Open the engine, project, model, origin, lane, status, session-id, date and sort controls.', 'tip-right')}
+                    ${clearSlot('clear-filters', filters > 0, 'Clear the session filters',
+                        `Clear ${filters} session filter${filters === 1 ? '' : 's'}`,
+                        'Puts every session axis back to all: the agents, the opening scope, and whatever the Filters panel holds — engine, project, model, origin, lane, status, session id, dates and sort. The query and the content scope are untouched.')}
                 </div>
             </div>
             <div class="scope-layout${unavailable ? ' unavailable' : ''}" aria-disabled="${unavailable}">
-                <div class="preset-group"><span class="group-label">Quick scope</span>
-                    ${PRESETS.map(p => tip(badge(`data-preset="${p.id}" data-tone="preset"`, p.label, sameSet(p.roles), unavailable), p.label,
-                        `${p.roles.map(id => ROLES.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}.`)).join('')}
+                <div class="scope-head">
+                    <div class="preset-group"><span class="group-label">Quick scope</span>
+                        ${PRESETS.map(p => tip(badge(`data-preset="${p.id}" data-tone="preset"`, p.label, sameSet(p.roles), unavailable), p.label,
+                            `${p.roles.map(id => ROLES.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}.`)).join('')}
+                    </div>
                 </div>
                 <div class="role-group">
-                    ${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}
-                    ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
-                    ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
-                </div>
-                <div class="scope-actions">
-                    ${sessionFilterCount() ? '<button id="clear-filters" class="text-action contextual">Clear filters</button>' : ''}
-                    ${resettable() ? '<button id="reset-all" class="text-action contextual">↺ Reset</button>' : ''}
-                    ${tip(badge(`id="more-toggle" aria-expanded="${moreOpen}" data-tone="filter"`, `⚙ Filters${sessionFilterCount() ? ` (${sessionFilterCount()})` : ''} ${moreOpen ? '▴' : '▾'}`, moreOpen || sessionFilterCount() > 0),
-                        'Session filters', 'Open the engine, project, model, origin, lane, status, session-id, date and sort controls.', 'tip-right')}
+                    <span class="chip-run">${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}</span>
+                    <span class="chip-run">
+                        ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
+                        ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
+                    </span>
+                    <span class="scope-actions">
+                        ${clearSlot('reset-scope', !unavailable && scopeChanged(), 'Reset the content scope',
+                            `Reset — searching ${litScope()}`,
+                            'Puts this block back where it started: Conversation, with memory notes and orphaned events searched. It touches nothing else — the query, the mode and the session filters stay as they are.')}
+                    </span>
                 </div>
             </div>
             ${unavailable ? `<div class="meaning-line"><b>Meaning:</b> indexed main-session conversation only; content badges, memory/events and message dates do not apply. <span id="sem-status">${semanticStatusHtml()}</span></div>` : ''}
@@ -205,17 +270,66 @@
     function styleHtml() {
         return `<style>
             #app{max-width:1180px;margin:0 auto}.search-panel{margin-top:10px;padding:10px 12px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;background:var(--vscode-editorWidget-background,var(--vscode-editor-background))}
-            .query-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:7px;align-items:stretch}.query-tip{display:block;min-width:0}.query-tip>.af-clr{display:flex;width:100%;height:56px}.query-tip textarea{box-sizing:border-box;width:100%;height:56px;min-height:56px;max-height:180px;resize:vertical;font:14px/19px inherit;padding:8px 28px 8px 10px}.query-tip .af-clrx{top:16px}.primary-search{width:96px;font-weight:650}.options-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:7px}.mode-controls,.top-actions{display:flex;align-items:center;gap:5px;min-width:0}.top-actions{justify-content:flex-end}.top-actions .afms-btn{font-size:11px;padding:2px 8px}.id-find{font-size:11px;padding:2px 8px;white-space:nowrap}.control-label{font-size:10px;color:var(--vscode-descriptionForeground);white-space:nowrap}.grow{flex:1}
-            .chip{box-sizing:border-box;font-size:11px;line-height:17px;height:23px;padding:2px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.82;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-foreground);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 50%,transparent);background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent)}.chip[data-tone="preset"].on{background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 28%,transparent);border-color:var(--vscode-charts-purple,#b180d7)}.chip[data-tone="mode"].on{background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 24%,transparent);border-color:var(--vscode-charts-blue,#3794ff)}.chip[data-tone="case"].on,.chip[data-tone="whole"].on{background:color-mix(in srgb,var(--vscode-charts-green,#89d185) 22%,transparent);border-color:var(--vscode-charts-green,#89d185)}.chip[data-tone="filter"].on{background:color-mix(in srgb,var(--vscode-charts-orange,#d18616) 24%,transparent);border-color:var(--vscode-charts-orange,#d18616)}.chip-check{display:inline-block;width:12px;margin-right:2px;overflow:hidden;opacity:0}.chip.on .chip-check{opacity:1}.chip.disabled,.unavailable .chip:not(#more-toggle){opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}.contextual{white-space:nowrap}
-            .scope-layout{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px;align-items:center;margin-top:7px}.preset-group{display:flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 55%,transparent);border-radius:7px;background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 7%,transparent);white-space:nowrap}.group-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--vscode-charts-purple,#b180d7);margin-right:2px}.role-group{display:flex;align-items:center;justify-content:flex-start;gap:4px;min-width:0;white-space:nowrap}.scope-actions{display:flex;align-items:center;justify-content:flex-end;gap:3px;white-space:nowrap}.scope-actions #more-toggle{width:92px}
-            .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:grid;grid-template-columns:minmax(420px,1fr) repeat(3,minmax(120px,auto));align-items:center;gap:6px}.filter-row>.af-tipw:first-child{display:block;min-width:0}.fbox{box-sizing:border-box;width:100%;min-width:0;font-size:11px;padding:4px 7px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-layout.unavailable>.preset-group,.scope-layout.unavailable>.role-group{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:280px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;color:var(--vscode-descriptionForeground)}
-            .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}
-            @media(max-width:1100px){.scope-layout{grid-template-columns:1fr auto}.preset-group{grid-column:1}.scope-actions{grid-column:2;grid-row:1}.role-group{grid-column:1/-1;grid-row:2;overflow-x:auto;padding-bottom:2px}.filter-row{grid-template-columns:minmax(240px,1fr) repeat(3,minmax(110px,auto))}}
-            @media(max-width:780px){.options-row{grid-template-columns:1fr}.top-actions{justify-content:flex-start;flex-wrap:wrap}.scope-layout{grid-template-columns:1fr auto}.preset-group{overflow-x:auto}.role-group{display:grid;grid-template-columns:repeat(4,max-content);grid-auto-rows:23px;overflow:visible}.filter-row{grid-template-columns:1fr 1fr}.filter-row>.af-tipw:first-child{grid-column:1/-1}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
+            .query-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:7px}.query-row .af-clr{display:flex;min-width:0}#q{box-sizing:border-box;width:100%;height:32px;font:13px/18px inherit;padding:5px 28px 5px 10px}.primary-search{height:32px;width:96px;font-weight:650}
+            .options-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:8px}.mode-controls{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-width:0}.session-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:5px;min-width:0;margin-left:auto}.session-controls .afms-btn{font-size:11px;padding:2px 8px}.id-find{font-size:11px;padding:2px 8px;white-space:nowrap}#more-toggle{min-width:104px}.control-label{font-size:10px;color:var(--vscode-descriptionForeground);white-space:nowrap}.grow{flex:1}
+            .act-slot{display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px}.slot-x{border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground);cursor:pointer;font-size:12px;line-height:1;padding:3px 4px}.slot-x:hover{color:var(--vscode-foreground);background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
+            .chip{box-sizing:border-box;font-size:11px;line-height:17px;height:23px;padding:2px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.82;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-foreground);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 50%,transparent);background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent)}.chip[data-tone="preset"].on{background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 28%,transparent);border-color:var(--vscode-charts-purple,#b180d7)}.chip[data-tone="mode"].on{background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 24%,transparent);border-color:var(--vscode-charts-blue,#3794ff)}.chip[data-tone="case"].on,.chip[data-tone="whole"].on{background:color-mix(in srgb,var(--vscode-charts-green,#89d185) 22%,transparent);border-color:var(--vscode-charts-green,#89d185)}.chip[data-tone="filter"].on{background:color-mix(in srgb,var(--vscode-charts-orange,#d18616) 24%,transparent);border-color:var(--vscode-charts-orange,#d18616)}.chip-check{display:inline-block;width:12px;margin-right:2px;overflow:hidden;opacity:0}.chip.on .chip-check{opacity:1}.chip.disabled,.unavailable .chip{opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}
+            .scope-layout{margin-top:8px}.scope-head{display:flex;align-items:center;gap:8px}.preset-group{display:flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;overflow:hidden;padding:3px 6px;border:1px solid color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 55%,transparent);border-radius:7px;background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 7%,transparent);white-space:nowrap}.group-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--vscode-charts-purple,#b180d7);margin-right:2px}.scope-actions{display:inline-flex;align-items:center;flex:0 0 auto;margin-left:auto}.role-group{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:6px}.chip-run{display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex:0 1 auto}
+            .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:grid;grid-template-columns:minmax(420px,1fr) repeat(3,minmax(120px,auto));align-items:center;gap:6px}.filter-row>.af-tipw:first-child{display:block;min-width:0}.fbox{box-sizing:border-box;width:100%;min-width:0;font-size:11px;padding:4px 7px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-layout.unavailable .preset-group,.scope-layout.unavailable .role-group{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:460px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;margin:5px 0 0;color:var(--vscode-descriptionForeground)}.guide p code{font-size:10px}
+            .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}#out.busy{opacity:.5}
+            @media(max-width:1100px){.filter-row{grid-template-columns:minmax(240px,1fr) repeat(3,minmax(110px,auto))}}
+            @media(max-width:780px){.session-controls{justify-content:flex-start;margin-left:0}.filter-row{grid-template-columns:1fr 1fr}.filter-row>.af-tipw:first-child{grid-column:1/-1}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
         </style>`;
     }
 
+    /**
+     * ‼️ THE CARET SURVIVES THE REPAINT. THIS IS NOT A NICETY.
+     *
+     * The page rebuilds its whole card for every change, and the box searches as
+     * you type — so the answer arriving was itself what threw the cursor out of
+     * the box. One more letter went nowhere, and the only way back in was the
+     * mouse: a live search that had to be re-aimed after every result, which is
+     * worse than one that waits for Enter.
+     *
+     * So the focused control is noted before the swap and given back after it.
+     * `id` where there is one; otherwise the data attribute the control is
+     * addressed by, which is what a chip has — a chip pressed with the keyboard
+     * comes back under the keyboard.
+     */
+    const MARK_ATTR = {
+        role: 'data-role', preset: 'data-preset', mode: 'data-mode', source: 'data-source',
+        flag: 'data-flag', origin: 'data-origin', lane: 'data-lane', queryOption: 'data-query-option'
+    };
+
+    function focusMark() {
+        let el = null;
+        try { el = document.activeElement; } catch (e) { return null; }
+        if (!el || !el.tagName) { return null; }
+        let sel = el.id ? `#${el.id}` : '';
+        if (!sel && el.dataset) {
+            const key = Object.keys(MARK_ATTR).find(k => el.dataset[k] !== undefined && el.dataset[k] !== null);
+            if (key) { sel = `[${MARK_ATTR[key]}="${el.dataset[key]}"]`; }
+        }
+        if (!sel) { return null; }
+        const m = { sel };
+        try { m.start = el.selectionStart; m.end = el.selectionEnd; } catch (e) { /* not a text box */ }
+        return m;
+    }
+
+    function focusBack(m) {
+        if (!m) { return false; }
+        let el = null;
+        try { el = document.querySelector(m.sel); } catch (e) { return false; }
+        if (!el || typeof el.focus !== 'function') { return false; }
+        try { el.focus(); } catch (e) { return false; }
+        if (m.start !== undefined && m.start !== null && el.setSelectionRange) {
+            try { el.setSelectionRange(m.start, m.end); } catch (e) { /* date and number boxes */ }
+        }
+        return true;
+    }
+
     function shell() {
+        const mark = focusMark();
         document.getElementById('app').innerHTML = `${styleHtml()}${window.AFHeader.html({
             page: 'search', title: 'Search',
             sub: 'Find the exact conversation, action or session across the fleet.', refresh: false,
@@ -224,6 +338,13 @@
         window.AFHeader.wire(vscode);
         wire();
         renderResults();
+        // The caret goes back where it was — and on the very first paint there is
+        // nowhere to put it back, so it starts in the box the page is for.
+        if (!focusBack(mark) && !opened) {
+            opened = true;
+            const q = document.getElementById('q');
+            if (q && q.focus) { try { q.focus(); } catch (e) { /* stub DOM */ } }
+        }
     }
 
     function rememberQuery() {
@@ -231,11 +352,22 @@
         if (q) queryText = q.value;
     }
 
-    function changed(auto) {
+    /** A surface toggle — a panel opened, a client-side sort. The answer on
+     *  screen is still the answer to the question that was asked, so it is not
+     *  marked stale and nothing is re-run. */
+    function ui() {
         rememberQuery();
+        shell();
+    }
+
+    /** The search DEFINITION moved. Run it again where that is possible, and
+     *  say so where it is not: Meaning search is deliberate, and an empty box
+     *  has nothing to ask. */
+    function changed() {
+        rememberQuery();
+        if (mode !== 'meaning' && queryText.trim()) { run(); return; }
         dirty = !!lastResult;
         shell();
-        if (auto && mode !== 'meaning' && queryText.trim()) run();
     }
 
     function scheduleQuery() {
@@ -250,7 +382,13 @@
         }
         if (mode !== 'meaning' && q.length >= 3) {
             queryTimer = setTimeout(() => { queryTimer = null; run(); }, 500);
+            return;
         }
+        // Two words that will not run by themselves — a query too short to be
+        // worth scanning every transcript for, and Meaning, which is deliberate.
+        // The hits still on screen answer a question that is no longer in the
+        // box, so the page says so rather than letting them read as current.
+        if (lastResult && !dirty) { dirty = true; shell(); }
     }
 
     function clearSessionFilters() {
@@ -259,18 +397,11 @@
         flt = defaultFilters();
     }
 
-    function resetAll() {
-        if (queryTimer) clearTimeout(queryTimer);
-        queryTimer = null;
-        seq++;
-        queryText = '';
-        mode = 'text'; caseOn = false; wholeOn = false;
-        roleSel = new Set(['user', 'assistant']);
-        sourceMemory = true; sourceEvents = true;
-        moreOpen = false; guideOpen = false;
-        clearSessionFilters();
-        lastResult = null; idMatch = null; searching = false; dirty = false;
-        shell();
+    function resetScope() {
+        roleSel = new Set(DEFAULT_ROLES);
+        sourceMemory = true;
+        sourceEvents = true;
+        changed();
     }
 
     function run() {
@@ -297,7 +428,7 @@
     }
 
     function wirePicker(id, assign) {
-        window.AFFilter.wireMulti({ id, onChange: sel => { assign(sel); changed(true); } });
+        window.AFFilter.wireMulti({ id, onChange: sel => { assign(sel); changed(); } });
     }
 
     function wire() {
@@ -305,37 +436,47 @@
         if (q) {
             q.addEventListener('input', () => { queryText = q.value; scheduleQuery(); });
             q.addEventListener('keydown', e => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); }
+                // One line, one Enter: the box is a query, not a paragraph.
+                if (e.key === 'Enter') { if (e.preventDefault) { e.preventDefault(); } run(); }
             });
             window.AFFilter.clearable(q, () => {
                 if (queryTimer) clearTimeout(queryTimer);
                 queryTimer = null;
                 seq++;
-                queryText = ''; lastResult = null; idMatch = null; searching = false; dirty = false; renderResults();
+                queryText = ''; lastResult = null; idMatch = null; searching = false; dirty = false;
+                // The whole card, not just the results: emptying the box also
+                // retires the Searching… label and any stale-answer note, and
+                // the caret comes back to the box it was cleared from.
+                shell();
             });
         }
         document.getElementById('go').addEventListener('click', run);
         document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
-            mode = b.dataset.mode; changed(mode !== 'meaning');
+            mode = b.dataset.mode; changed();
         }));
+        // ‼️ Case and Whole word are part of the QUESTION, so they re-ask it. They
+        // used to only raise the "run Search again" note, which is a page telling
+        // you to press a button it could have pressed.
         document.querySelectorAll('[data-query-option]').forEach(b => b.addEventListener('click', () => {
             if (b.dataset.queryOption === 'case') caseOn = !caseOn; else wholeOn = !wholeOn;
-            changed(false);
+            changed();
         }));
-        document.getElementById('guide-toggle').addEventListener('click', () => { guideOpen = !guideOpen; changed(false); });
+        // …and a help card is not part of the question: opening it used to mark
+        // the answer on screen as stale.
+        document.getElementById('guide-toggle').addEventListener('click', () => { guideOpen = !guideOpen; ui(); });
         document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
-            roleSel = new Set(PRESETS.find(p => p.id === b.dataset.preset).roles); changed(true);
+            roleSel = new Set(PRESETS.find(p => p.id === b.dataset.preset).roles); changed();
         }));
         document.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', e => {
             const id = b.dataset.role;
             if (e.ctrlKey || e.metaKey) roleSel = new Set([id]);
             else if (roleSel.has(id)) roleSel.delete(id); else roleSel.add(id);
-            if (!roleSel.size) roleSel = new Set(['user', 'assistant']);
-            changed(true);
+            if (!roleSel.size) roleSel = new Set(DEFAULT_ROLES);
+            changed();
         }));
         document.querySelectorAll('[data-source]').forEach(b => b.addEventListener('click', () => {
             if (b.dataset.source === 'memory') sourceMemory = !sourceMemory; else sourceEvents = !sourceEvents;
-            changed(true);
+            changed();
         }));
         wirePicker('search-agents', sel => { agentSel = sel === null ? null : new Set(sel); preset = null; });
         wirePicker('f-engines', sel => { flt.engines = sel; });
@@ -343,30 +484,32 @@
         wirePicker('f-models', sel => { flt.models = sel; });
         const sf = document.getElementById('f-session');
         if (sf) {
-            window.AFFilter.live(sf, el => { flt.session = el.value; changed(true); }, 300);
-            window.AFFilter.clearable(sf, el => { flt.session = ''; el.value = ''; changed(true); });
+            window.AFFilter.live(sf, el => { flt.session = el.value; changed(); }, 300);
+            window.AFFilter.clearable(sf, el => { flt.session = ''; el.value = ''; changed(); });
         }
-        document.getElementById('more-toggle').addEventListener('click', () => { moreOpen = !moreOpen; changed(false); });
+        document.getElementById('more-toggle').addEventListener('click', () => { moreOpen = !moreOpen; ui(); });
         const clear = document.getElementById('clear-filters');
-        if (clear) clear.addEventListener('click', () => { clearSessionFilters(); changed(true); });
-        const reset = document.getElementById('reset-all');
-        if (reset) reset.addEventListener('click', resetAll);
+        if (clear) clear.addEventListener('click', () => { clearSessionFilters(); changed(); });
+        const reset = document.getElementById('reset-scope');
+        if (reset) reset.addEventListener('click', resetScope);
         const findSession = document.getElementById('find-session');
         if (findSession) findSession.addEventListener('click', () => {
             rememberQuery();
             vscode.postMessage({ type: 'findSession', q: queryText.trim() });
         });
-        document.querySelectorAll('[data-origin]').forEach(b => b.addEventListener('click', () => { flt.origin = b.dataset.origin; changed(true); }));
-        document.querySelectorAll('[data-lane]').forEach(b => b.addEventListener('click', () => { flt.lane = b.dataset.lane; changed(true); }));
-        document.querySelectorAll('[data-flag]').forEach(b => b.addEventListener('click', () => { flt[b.dataset.flag] = !flt[b.dataset.flag]; changed(true); }));
+        document.querySelectorAll('[data-origin]').forEach(b => b.addEventListener('click', () => { flt.origin = b.dataset.origin; changed(); }));
+        document.querySelectorAll('[data-lane]').forEach(b => b.addEventListener('click', () => { flt.lane = b.dataset.lane; changed(); }));
+        document.querySelectorAll('[data-flag]').forEach(b => b.addEventListener('click', () => { flt[b.dataset.flag] = !flt[b.dataset.flag]; changed(); }));
         if (moreOpen) {
             const from = document.getElementById('f-from'); const to = document.getElementById('f-to');
-            if (from) window.AFFilter.live(from, el => { flt.from = el.value; changed(true); }, 200);
-            if (to) window.AFFilter.live(to, el => { flt.to = el.value; changed(true); }, 200);
-            document.getElementById('f-sort').addEventListener('change', e => { flt.sort = e.target.value; changed(false); });
+            if (from) window.AFFilter.live(from, el => { flt.from = el.value; changed(); }, 200);
+            if (to) window.AFFilter.live(to, el => { flt.to = el.value; changed(); }, 200);
+            // ‼️ Sorting happens HERE, over hits the page already holds — asking
+            // the host again would be a round trip to receive the same answer.
+            document.getElementById('f-sort').addEventListener('change', e => { flt.sort = e.target.value; ui(); });
         }
         const clearScope = document.getElementById('clear-scope');
-        if (clearScope) clearScope.addEventListener('click', () => { preset = null; agentSel = null; changed(true); });
+        if (clearScope) clearScope.addEventListener('click', () => { preset = null; agentSel = null; changed(); });
         const settings = document.getElementById('sem-settings');
         if (settings) settings.addEventListener('click', () => vscode.postMessage({ type: 'openFarmSettings', focus: 'agentFarm.embeddingsProvider' }));
         const build = document.getElementById('build-index');
@@ -395,7 +538,12 @@
     function renderResults() {
         const out = document.getElementById('out');
         if (!out) return;
-        if (searching) { out.innerHTML = '<div class="empty">Searching the selected session pool…</div>'; return; }
+        // ‼️ A LIVE SEARCH DOES NOT BLANK THE ANSWER IT IS ABOUT TO REPLACE. The
+        // box re-runs half a second after a keystroke, so emptying the page for
+        // the length of every scan made the results flash out and back in under
+        // the reader — the previous answer stays, dimmed, until the new one lands.
+        out.className = searching ? 'busy' : '';
+        if (searching && !lastResult) { out.innerHTML = '<div class="empty">Searching the selected session pool…</div>'; return; }
         if (!lastResult) { out.innerHTML = '<div class="empty">Build the search above, then press Search.</div>'; return; }
         if (lastResult.error) { out.innerHTML = `<div class="partial">⚠ ${C.esc(lastResult.error)}</div>`; return; }
         const r = lastResult;
@@ -459,7 +607,7 @@
         if (verb === 'shOnly') {
             if (arg === 'agent') { preset = { agentName: String(ctx.agentName || '') }; agentSel = new Set([String(ctx.agentName || '')]); }
             else preset = { file: String(ctx.file || ''), title: String(ctx.title || '') };
-            changed(true); return;
+            changed(); return;
         }
         if (verb === 'shCopy') window.AFCtx.copy(!hit ? '' : arg === 'context'
             ? `${hit.before || ''}${hit.match || ''}${hit.after || ''}` : String(hit.match || hit.before || ''));

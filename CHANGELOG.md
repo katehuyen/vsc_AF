@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.118.0 — The Search panel stops moving (2026-08-12)
+
+**The query box is one line, and the caret stays in it.** It was a two-line textarea that could be dragged over the buttons below it; it is now a fixed-height single-line field, which is what a query is. More importantly, the live search no longer evicts the cursor: the page rebuilds its whole card on every change, so the answer arriving used to throw the caret out of the box and the next letter went nowhere. The focused control is now noted before each repaint and given back after it — with its caret position — and a chip pressed from the keyboard comes back under the keyboard. `Enter` runs the search.
+
+**The box carries no hover any more.** A paragraph that opened every time the pointer crossed the one control you are using was noise, especially with a `Syntax ▾` card one press below. Everything the hover knew and the card did not — what the box actually searches, what each mode does to the grammar, the ten-second regex budget, what Meaning does not cover, what Whole word is doing while it is on — was moved into the card.
+
+**Three bands, and none of them collide.** The panel now reads how (mode, case, whole word, syntax) · where (opening scope, agents, session id, filters) · what (quick scope and the content badges). The content block is two fixed rows: the purple `Quick scope` pill, then the badges — six content kinds and the two extra sources as separate runs, so a narrow window moves them as groups rather than orphaning one badge. The old grid ran the badges underneath the Filters button at one width and stretched an empty purple box across half the row at the next; neither can happen now.
+
+**Each clearer answers for the block it sits in, and nothing shifts when it appears.** `Reset` used to light up for filters it does not touch and sat at the opposite end of the row from the badges it puts back, with `Clear filters` at the end where the reset belonged. Now: a ✕ at the end of the badge row resets the content scope only, a ✕ beside the Filters chip clears the session axes only, and both live in slots that hold their width whether the button is there or not. Measured: the Filters chip and the badge row occupy identical geometry with nothing set and with two filters set.
+
+**Opening a panel is no longer a change of question.** Opening the syntax card or the filter panel used to mark the answer on screen as stale, and changing the sort asked the host again for hits the page already held. `Aa Case` and `▣ Whole word` do the opposite of what they did — they re-run the search instead of telling you to press a button the page could have pressed. A live search now dims the previous answer rather than blanking the page for the length of every scan.
+
+Two fixes to the looking glass came out of this: `render_page.js` now puts a page back inside `#app`, so a page that caps its own width there is photographed at the width the user actually gets (every earlier picture of Search was 200 px too wide), and `lib_page_dom.js` models focus — a repaint drops it exactly as a browser does, so the caret assertions cannot pass on a dead node.
+
+Verified with 8,214 automated assertions and Chromium renders at 1600, 1000, 880 and 780 px in dark and light themes.
+
 ## 3.117.0 — Search controls stop fighting the search (2026-08-12)
 
 **The query owns the row.** It is now a full-width, two-line textarea that may grow vertically, with only the fixed Search button beside it. Text and Regex searches are live again after a 500 ms pause; `Ctrl/⌘+Enter` runs immediately, while Meaning remains deliberate because it may spend a paid embedding call. Clearing or resetting invalidates an answer already in flight, so old results cannot return under an empty query.

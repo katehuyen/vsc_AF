@@ -291,6 +291,37 @@ const go = r => r.els.go.fire('click');
         lastSearch(r)?.query === 'parser' && lastSearch(r)?.semantic === false);
 }
 
+// ---------- ‼️ THE CARET STAYS IN THE BOX WHILE THE BOX SEARCHES ----------
+// The reported bug, and the reason a live search was unusable: the page rebuilds
+// its whole card, so the answer arriving threw the cursor out of the query box
+// and the next letter went nowhere. Every repaint on this path is asserted.
+{
+    const r = runPage('search.js', fixture.data(), {
+        setTimeout: fn => { fn(); return 1; }, clearTimeout: () => { }
+    });
+    const doc = r.sandbox.document;
+    const inBox = () => doc.activeElement && doc.activeElement.id === 'q';
+    ok('the page opens with the caret already in the query box', inBox());
+
+    const box = r.query('#q')[0];
+    box.value = 'parse';
+    box.selectionStart = 5; box.selectionEnd = 5;
+    box.fire('input');
+    ok('‼️ the repaint the live search causes does not take the focus away', inBox());
+    ok('…and the caret is where it was, not back at the first character',
+        inBox() && doc.activeElement.selectionStart === 5);
+
+    r.send({ type: 'results', seq: lastSearch(r).seq, result: fixture.RESULT });
+    ok('‼️ …nor does the ANSWER arriving: one more letter still lands in the box', inBox());
+    ok('…and the box still holds what was typed', r.query('#q')[0].raw.includes('value="parse"'));
+
+    const chip = r.query('[data-role="tool"]')[0];
+    chip.focus();
+    chip.fire('click');
+    ok('a chip pressed from the keyboard comes back under the keyboard',
+        doc.activeElement && doc.activeElement.dataset.role === 'tool');
+}
+
 // ---------- U-42: the kind chips are badges, and a badge toggles ----------
 {
     const r = page();
@@ -416,46 +447,96 @@ const go = r => r.els.go.fire('click');
         lastSearch(r).semantic === true && lastSearch(r).tsFrom === 0 && lastSearch(r).tsTo === 0);
 }
 
-// ---------- explanatory hover and selection state ----------
+// ---------- the query box: one line, no hover, and the caret stays in it ----------
 {
     const r = page();
     const html = r.html();
     const qTag = (/<input id="q"[^>]*>/.exec(html) || [''])[0];
-    ok('the query explanation is a rich AFTip, never a native title',
-        html.includes('class="af-tipw query-tip"') && html.includes('class="af-tipb"')
-        && !/\btitle=/.test(qTag));
+    ok('‼️ the query is ONE LINE at a fixed height, not a resizable textarea',
+        !!qTag && !html.includes('<textarea id="q"')
+        && html.includes('#q{box-sizing:border-box;width:100%;height:32px')
+        && !html.includes('resize:vertical'));
+    ok('‼️ …and it carries no hover of its own, native or rich',
+        !/\btitle=/.test(qTag) && !html.includes('query-tip'));
+    ok('everything that hover knew is in the syntax card instead', (() => {
+        r.els['guide-toggle'].fire('click');
+        const g = r.html();
+        return g.includes('What is searched.') && g.includes('ten seconds')
+            && g.includes('indexed main-session conversation only')
+            && g.includes('▣ Whole word');
+    })());
     ok('selected content carries fill class, check mark and aria state together',
         /class="chip on"[\s\S]*data-role="user"[\s\S]*aria-pressed="true"[^>]*>[\s\S]*chip-check[^>]*>✓/.test(html));
     ok('the check mark keeps its width in both states, so a press cannot resize a badge',
         html.includes('.chip-check{display:inline-block;width:12px')
-        && html.includes('.scope-actions #more-toggle{width:92px')
         && !html.includes('font-weight:600'));
+    ok('the Filters chip is wide enough for its own count, so gaining one shifts nothing',
+        html.includes('#more-toggle{min-width:104px}'));
     ok('direct session-id lookup is a visible first-class action', html.includes('id="find-session"'));
     r.els['find-session'].fire('click');
     ok('…and it invokes the whole-index finder with the current text as its seed',
         r.last().type === 'findSession' && r.last().q === 'parser');
-    ok('the query is a freely resizable textarea, not a one-line slit',
-        /<textarea id="q"[\s\S]*rows="2"/.test(html) && html.includes('max-height:180px'));
 }
 
-// ---------- one contextual reset returns the complete control panel ----------
+// ---------- ‼️ the two clearers each answer for the block they sit in ----------
 {
     const r = page();
     go(r);
+    ok('nothing to clear, and neither ✕ is drawn — but both slots hold their width',
+        !r.html().includes('id="reset-scope"') && !r.html().includes('id="clear-filters"')
+        && r.html().includes('class="act-slot"'));
+
+    // the CONTENT scope: its ✕ lives in the content-scope row
     r.query('[data-role="tool"]')[0].fire('click');
-    const staleSeq = lastSearch(r).seq;
-    ok('reset appears only after there is state to reset', r.html().includes('id="reset-all"'));
-    r.els['reset-all'].fire('click');
+    ok('a changed content scope lights the reset inside the scope row',
+        /class="scope-actions">[\s\S]*id="reset-scope"/.test(r.html()));
+    ok('‼️ …and a session filter does NOT light it — it is not that block',
+        (() => {
+            r.query('#more-toggle')[0].fire('click');
+            r.query('[data-origin="auto"]')[0].fire('click');
+            const h = r.html();
+            return h.includes('id="clear-filters"')
+                && /class="scope-actions">[\s\S]*id="reset-scope"/.test(h);
+        })());
+    ok('the filter clearer sits beside the Filters chip, not across the panel from it',
+        /id="more-toggle"[\s\S]{0,600}id="clear-filters"/.test(r.html())
+        && !/class="scope-actions">[\s\S]*id="clear-filters"/.test(r.html()));
+
+    // …and pressing it puts back ONLY the content scope
+    r.query('#reset-scope')[0].fire('click');
     const h = r.html();
-    ok('reset restores text mode, Conversation, both extra sources and no answer',
-        !h.includes('id="reset-all"')
-        && /data-mode="text"[\s\S]*aria-pressed="true"/.test(h)
+    ok('reset returns Conversation and both extra sources',
+        !h.includes('id="reset-scope"')
         && /data-preset="dialog"[\s\S]*aria-pressed="true"/.test(h)
         && /data-source="memory"[\s\S]*aria-pressed="true"/.test(h)
         && /data-source="events"[\s\S]*aria-pressed="true"/.test(h));
-    r.send({ type: 'results', seq: staleSeq, result: fixture.RESULT });
-    ok('reset also invalidates a search response that was already in flight',
-        !r.els.out.innerHTML.includes('11 matches'));
+    ok('‼️ …and leaves the session filters exactly where they were',
+        lastSearch(r).filters.origin === 'auto' && h.includes('id="clear-filters"'));
+    r.query('#clear-filters')[0].fire('click');
+    ok('the filter ✕ returns every session axis', lastSearch(r).filters.origin === ''
+        && !r.html().includes('id="clear-filters"'));
+}
+
+// ---------- a surface toggle is not a change of question ----------
+{
+    const r = page();
+    go(r);
+    r.send({ type: 'results', seq: lastSearch(r).seq, result: fixture.RESULT });
+    const stale = () => r.html().includes('The search definition changed');
+    r.query('#guide-toggle')[0].fire('click');
+    ok('‼️ opening the syntax card does not mark the answer on screen stale', !stale());
+    r.query('#more-toggle')[0].fire('click');
+    ok('…nor does opening the filter panel', !stale());
+    r.query('#f-sort')[0].fire('change', { target: { value: 'hits' } });
+    ok('…and sorting is done here, over hits the page already has',
+        !stale() && lastSearch(r).seq === 1);
+
+    // Case and Whole word ARE the question, so they re-ask it rather than
+    // telling the reader to press a button the page could have pressed.
+    const before = lastSearch(r).seq;
+    r.query('[data-query-option="case"]')[0].fire('click');
+    ok('‼️ Aa Case re-runs the search instead of raising a note',
+        lastSearch(r).seq > before && lastSearch(r).caseSensitive === true && !stale());
 }
 
 // ---------- results: engines, delegation, the id banner ----------

@@ -125,6 +125,29 @@ const variants = () => [
     {
         id: 'help', label: 'Search — the query help card', data: data(),
         act: (r) => { r.els['guide-toggle'].click(); }
+    },
+    // Meaning search cannot honour the content badges, so the whole block is
+    // drawn unavailable — the one variant that shows the dimmed state and the
+    // yellow boundary note under it.
+    {
+        id: 'meaning', label: 'Search — Meaning mode, content scope unavailable', data: data(),
+        act: (r) => { r.query('[data-mode="meaning"]')[0].fire('click'); }
+    },
+    // ‼️ THE STATE THE TWO CLEARERS WERE REPORTED IN. A content scope that is no
+    // longer the default AND session filters that are set — the one picture in
+    // which both ✕ appear, so it is the one that shows whether either of them
+    // shifts its row when it arrives, and whether each sits beside what it
+    // clears rather than across the panel from it.
+    {
+        id: 'clearers', label: 'Search — scope changed and filters set (both ✕ lit)', data: data(),
+        act: (r) => {
+            r.query('[data-role="tool"]')[0].fire('click');
+            r.query('[data-source="events"]')[0].fire('click');
+            r.query('#more-toggle')[0].fire('click');
+            r.query('[data-origin="auto"]')[0].fire('click');
+            r.query('[data-flag="errorsOnly"]')[0].fire('click');
+            results(r);
+        }
     }
 ];
 

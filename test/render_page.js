@@ -225,7 +225,13 @@ function main() {
         // them their width. So the slots are put back where they belong first.
         const app = r.els.app && r.els.app.innerHTML;
         const body = app && app.trim() ? inlineSlots(app, r.els) : r.html();
-        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page">${body}</div>`;
+        // ‼️ AND IT GOES BACK INSIDE `#app`. The shim hands back what a page WROTE
+        // into #app, not the element itself — so a page that caps its own width
+        // there (`#app{max-width:1180px}`, which the Search page does) was drawn
+        // at the full window instead, and every picture of it was of a layout the
+        // user cannot produce. A width argued about off a render is a width
+        // measured on the wrong page.
+        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div></div>`;
     }).join('\n');
 
     const html = `<!doctype html>

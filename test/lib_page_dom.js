@@ -42,6 +42,20 @@ function runPage(scriptFile, DATA, extraWindow) {
     const els = {};
     const elCache = new Map();
     let state = {};
+    /**
+     * ‼️ FOCUS IS MODELLED, BECAUSE LOSING IT IS A BUG PAGES ACTUALLY SHIP.
+     *
+     * These pages redraw a whole card while somebody is typing in it, and a
+     * `focus()` that did nothing meant the one thing a reader notices — the
+     * caret jumping out of the box on every keystroke — was invisible to every
+     * test in the repo. `activeElement` used to be a hard `null`, which reads to
+     * a page as "nothing was focused", so a page restoring focus and a page
+     * silently dropping it were indistinguishable here.
+     *
+     * Pages that ASK whether something is focused still get the honest answer:
+     * nothing is focused until something is focused.
+     */
+    let active = null;
 
     function mkEl(tag, dataset, attrs, raw) {
         return {
@@ -68,14 +82,26 @@ function runPage(scriptFile, DATA, extraWindow) {
              * the page is about to wire the new markup. A slot write (`#out`, a
              * status line) replaces one region and must leave the rest alone.
              */
-            set innerHTML(v) { this._html = v; if (this.id === 'app') { elCache.clear(); } },
+            // ‼️ …AND THE REPAINT DROPS THE FOCUS, exactly as a browser does.
+            // Writing #app detaches every element handed out so far, and a
+            // detached node cannot hold the caret — the browser hands focus back
+            // to the body. Without this the shim let a page that had LOST focus
+            // keep answering `activeElement.id === 'q'` off the dead node, which
+            // is the precise failure a focus test exists to catch.
+            set innerHTML(v) { this._html = v; if (this.id === 'app') { elCache.clear(); active = null; } },
+            // A real element knows its own id, and a page that asks the focused
+            // element what it is gets nothing back without this.
+            id: attrs.id || '',
             value: attrs.value || '', type: attrs.type || '',
             checked: 'checked' in attrs, indeterminate: false,
             textContent: '', className: attrs.class || '', style: {},
             classList: { add() { }, remove() { } },
             _listeners: {},
             addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); },
-            focus() { }, scrollIntoView() { }, setSelectionRange() { },
+            focus() { active = this; }, blur() { if (active === this) { active = null; } },
+            selectionStart: null, selectionEnd: null,
+            setSelectionRange(s, e) { this.selectionStart = s; this.selectionEnd = e; },
+            scrollIntoView() { },
             closest() { return null; },
             // Pages that hand their own root to wire() query through it. The
             // shim has one document, so an element's query is the page's query
@@ -193,7 +219,7 @@ function runPage(scriptFile, DATA, extraWindow) {
             createElement: (t) => mkEl(t, {}, {}, ''),
             get body() { return null; },
             get hidden() { return false; },
-            get activeElement() { return null; }
+            get activeElement() { return active; }
         },
         setTimeout: extraWindow && typeof extraWindow.setTimeout === 'function'
             ? extraWindow.setTimeout : () => 0,
