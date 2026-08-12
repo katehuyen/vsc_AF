@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.122.0 — One card per session, and an ended one can be continued from it (2026-08-13)
+
+**S-29.** An ended session keeps its card in the Console's left panel until you press **Remove from list**, and it keeps it for two reasons: the conversation is still readable, and the session is under your hand when you want it back. Only one of those actually worked.
+
+**Resuming it built a second card.** Whichever door you came in by — the card, the resumable list underneath, a session row on another page — the panel ended up holding two cards with the same session id, one live and one grey, and doing it again would have made three. The seat is now the host's own question: a card that has ENDED is the seat the resumed session takes (same hosted id, so a selection and a right-click menu keep pointing at the session they were pointing at), and a card that is still RUNNING is handed back untouched rather than spawning a second process on one transcript. It is decided in `ConsoleHost.start`, so all six routes get it — one of them had guarded half of it by hand and the other five guarded neither. Every engine, because nothing about it is Claude-shaped.
+
+**And the card can now continue its own session** — `Continue This Session Here`, first in the card's right-click menu and greyed until the session has ended. It is the same call every other resume route makes: the earlier conversation comes back with it, so does what it has already spent, and so does its own project (the appended context does not survive a resume, so that spawn is the one that has to re-tell it). A session that ended before the engine ever named it says so instead of failing quietly.
+
+`test_console_seat.js` drives the real `ConsoleHost` with a fake child rather than grepping the source for a word: end and resume three times over and there is still one card, a live card is handed back without a spawn, and two unrelated sessions are still two cards.
+
 ## 3.121.4 — The backlog's control row stops rocking under the hand (2026-08-13)
 
 **A-14.** `search text or code · state: 2/4 ▾ · filing: 📥 unfiled ▾ · queue order (yours) · ↑ · cut at` was a row that moved every time you touched it. Three separate causes, and all three are fixed where they belong rather than on this one page.

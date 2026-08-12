@@ -4437,7 +4437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // built from `ENGINES` cannot.
             describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; every other engine here is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. What a permission mode MEANS also differs per engine — on Codex it becomes a sandbox chosen up front; on Gemini an approval mode whose "ask the user" resolves to DENY when nobody is watching, and whose plan mode switches to yolo on exit in a headless run; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — it is a request the Antigravity app\'s own tool-permission setting can overrule. Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Gemini has NO reasoning-effort setting: pass no effort for it. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Only Claude Code states a per-turn price; every other engine reports tokens and no dollars — that is the engine, not a missing figure.',
+                + '; default claude. ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; every other engine here is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. What a permission mode MEANS also differs per engine — on Codex it becomes a sandbox chosen up front; on Gemini an approval mode whose "ask the user" resolves to DENY when nobody is watching, and whose plan mode switches to yolo on exit in a headless run; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — it is a request the Antigravity app\'s own tool-permission setting can overrule. Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Gemini has NO reasoning-effort setting: pass no effort for it. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Only Claude Code states a per-turn price; every other engine reports tokens and no dollars — that is the engine, not a missing figure.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
@@ -15240,6 +15240,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         /**
+         * ‼️ S-29 — AND THE OTHER HALF OF WHY THE CARD STAYS.
+         *
+         * An ended session keeps its card for two reasons, and only one of them
+         * was reachable from the card: you could still READ the conversation,
+         * but continuing it meant finding the same session again in the
+         * resumable list underneath — the one place the card was supposed to
+         * save you from. It is the same call every other resume route makes, on
+         * the row you are already pointing at, and it comes back to THIS card
+         * rather than opening a second one (see ConsoleHost.start).
+         */
+        vscode.commands.registerCommand('agentfarm.consoleResumeSession', (arg?: { hostId?: string }) => {
+            const id = consoleRowId(arg);
+            if (!id) { return; }
+            const s = consoleHost.get(id);
+            if (!s) { return; }
+            if (s.status !== 'ended' && s.status !== 'error') {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${s.agentName}'s session is still running — it is already where you left it.`);
+                return;
+            }
+            // A session the engine never named cannot be resumed by anybody:
+            // there is no thread id to hand back to the CLI.
+            if (!s.sessionId) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: that session ended before ${s.engine || 'the CLI'} gave it an id, so there is nothing to continue — start a new one.`);
+                return;
+            }
+            const past = index.byId(s.sessionId);
+            const back = consoleHost.start({
+                agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
+                engine: (s.engine || 'claude') as EngineId,
+                model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+                // its OWN project, never the window's — the context does not
+                // survive a resume, so this spawn is the one that re-tells it
+                projectId: s.projectId,
+                resume: s.sessionId,
+                // resume means CONTINUE: what was said comes back, and so does
+                // what it cost, or the composer would describe this process
+                // instead of the session
+                history: consoleHistory(s.sessionId),
+                carried: past ? carriedTotals(past) : undefined
+            });
+            forgetLastWindow(s.sessionId);
+            ConsolePanel.show(consoleDeps, { sessionId: back });
+        }),
+
+        /**
          * ‼️ END AND REMOVE, IN ONE CLICK — the two halves of "I am done with
          * this one".
          *
@@ -15332,12 +15379,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                     return;
                 }
-                const already = consoleHost.list().find(h =>
-                    h.sessionId === s.sessionId && h.status !== 'ended' && h.status !== 'error');
                 const agent = agents.find(a => a.name === s.agentName);
                 const d = launchDefaults();
                 const defaultEngine = (d.engine || 'claude') as EngineId;
-                const id = already?.id ?? consoleHost.start({
+                // ‼️ S-29 — "is there already a card for this session?" is the
+                // HOST's question now, for both answers: a live card is handed
+                // back untouched, and a card that has ended is the seat the
+                // resumed session takes. This route used to ask half of it by
+                // hand and the other five routes asked neither.
+                const id = consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId,
                     // A resume belongs to its transcript's engine and model.

@@ -351,9 +351,42 @@ export class ConsoleHost {
         return this.sessions.get(id)?.state;
     }
 
+    /**
+     * ‼️ S-29 — ONE CARD PER SESSION, ON EVERY ENGINE.
+     *
+     * An ended session keeps its card in the left panel until you say "Remove
+     * from list", and it keeps it for two reasons: so the conversation can still
+     * be read, and so it is under your hand when you want it back. Resuming it
+     * therefore has to come back to THAT card. It did not: every route built a
+     * fresh one, so the panel held two cards with the same session id — one live
+     * and one grey — and doing it again would have made three.
+     *
+     * The seat is the hosted id, and it is reused rather than replaced: the
+     * panel's selection, the right-click menu's `hostId` and anything else
+     * holding that id keep pointing at the session they were pointing at.
+     *
+     * A LIVE card for the same id is a different answer: there is nothing to
+     * revive, and spawning would put a second process on one transcript. The
+     * caller is handed the card that already exists. (One route guarded that by
+     * hand; six did not, which is the shape of bug this class exists to stop.)
+     */
+    private seatFor(sessionId: string): { id: string; live: boolean } | undefined {
+        for (const [id, h] of this.sessions) {
+            if (h.state.sessionId !== sessionId) { continue; }
+            const dead = h.state.status === 'ended' || h.state.status === 'error';
+            return { id, live: !dead };
+        }
+        return undefined;
+    }
+
     /** Start a hosted session. Returns our id; the CLI's own id arrives later. */
     start(init: HostedSessionInit): string {
-        const id = `cs${++this.seq}-${Date.now().toString(36)}`;
+        const seat = init.resume ? this.seatFor(init.resume) : undefined;
+        if (seat?.live) { return seat.id; }
+        const id = seat ? seat.id : `cs${++this.seq}-${Date.now().toString(36)}`;
+        // The grey card's process is long gone; what is dropped here is the
+        // record of it, a line before the new one takes the same seat.
+        if (seat) { this.sessions.delete(seat.id); }
         const projectId = init.projectId ?? this.activeProjectId();
         const engine = engineOf(init.engine);
         if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId); }

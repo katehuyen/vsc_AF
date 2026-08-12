@@ -272,6 +272,14 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.tagSession', when: CONSOLE_ANY, group: '1_session@6' },
     { command: 'agentfarm.copySessionId', when: CONSOLE_ANY, group: '1_session@7' },
     { command: 'agentfarm.focusSessionTerminal', when: CONSOLE_RESUMABLE, group: '1_session@8' },
+    // ‼️ S-29 — FIRST, BECAUSE IT IS THE ONE THING YOU DO TO A CARD THAT HAS
+    // ENDED. The card is kept after a session ends for two reasons: so the
+    // conversation can still be read, and so it is under your hand when you
+    // want it back. Only the reading half was reachable from the card —
+    // continuing meant finding the same session again in the resumable list
+    // below, which is the trip the card exists to save. Everything else in this
+    // group applies to a LIVE card, so the two never compete for the eye.
+    { command: 'agentfarm.consoleResumeSession', when: CONSOLE_LIVE, group: '2_run@0' },
     { command: 'agentfarm.consoleInterruptTurn', when: CONSOLE_LIVE, group: '2_run@1' },
     { command: 'agentfarm.consoleEndSession', when: CONSOLE_LIVE, group: '2_run@2' },
     // ‼️ …and the pair of them in one click. End leaves the card on the shelf

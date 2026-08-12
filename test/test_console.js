@@ -884,8 +884,21 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /afConsoleLive: !dead/.test(js) && /afConsoleEnded: dead/.test(js)
         && /afConsoleWorking: s\.status === 'working'/.test(js));
     ok('…as does the process they act on', /hostId: s\.id/.test(js));
+    // ‼️ S-29 — the fifth is Continue This Session Here, and it is the reason
+    // the card is kept at all: an ended session stays so it can be READ and so
+    // it is under your hand when you want it back, and only the reading half was
+    // reachable from the card. It sits FIRST because it is the one thing you do
+    // to a dead card; the rest apply to a live one.
     ok('the actions sit in their own group, under the naming ones',
-        web.filter(m => /^2_run@/.test(m.group || '')).length === 4);
+        web.filter(m => /^2_run@/.test(m.group || '')).length === 5);
+    ok('‼️ an ended card can be continued from its own menu',
+        !!cmd('agentfarm.consoleResumeSession')
+        && onCard('agentfarm.consoleResumeSession')
+        && cmd('agentfarm.consoleResumeSession').enablement === 'afConsoleEnded');
+    ok('…and it is the first thing offered on a card that has ended',
+        web.some(m => m.command === 'agentfarm.consoleResumeSession' && m.group === '2_run@0'));
+    ok('…and it resumes rather than starting something new',
+        /registerCommand\('agentfarm\.consoleResumeSession'[\s\S]{0,1600}resume: s\.sessionId/.test(ext));
     // ‼️ End and Remove are separate on purpose — ending leaves the card
     // readable — but the ordinary case is both, and it used to cost two
     // right-clicks with a repaint between them that moves the card you are
