@@ -114,9 +114,10 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
-import { codexSandboxFor, ENGINES, engineNote, engineOf, runArgs } from './core/consoleEngine';
+import { codexSandboxFor, ENGINES, engineNote, engineOf, noTranscriptNote, runArgs } from './core/consoleEngine';
 import {
-    readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS
+    readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
+    claudeOnlyScopeNote
 } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { effortsFor, readEngineModels } from './core/models';
@@ -1592,16 +1593,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }, 7_000);
     context.subscriptions.push({ dispose: () => { clearInterval(leaseTimer); taskLease.release(); } });
 
-    // Z4: attach real token costs to finished headless tasks. The task ran
-    // `claude -p` in the agent folder, so its transcript lands in the session
-    // index — match by lifespan and copy the priced cost onto the task.
-    // Ambiguity (a second session in the same folder at the same time) means
-    // no match: better no figure than a wrong one. Runner window only.
-    const costPending = new Map<string, { agentId: string; startedAt: number; endedAt: number; tries: number }>();
+    // Z4: attach real token costs to finished headless tasks. The task ran its
+    // engine's one-shot mode in the agent folder, so its transcript lands in
+    // the session index — match by lifespan and copy the priced cost onto the
+    // task. Ambiguity (a second session in the same folder at the same time)
+    // means no match: better no figure than a wrong one. Runner window only.
+    //
+    // ‼️ EVERY ENGINE, MATCHED TO ITS OWN (X-35). The pool is the wide list and
+    // the task's engine rides along: a Codex/Gemini/Antigravity task used to be
+    // unmatchable by construction, so it carried no cost, no token count and no
+    // transcript link for ever, while the tasks page showed the blank as if the
+    // run had simply not been measured yet. `matchTaskSession` does the engine
+    // filtering, which is also what keeps a Claude task off a Codex session
+    // that merely overlapped it.
+    const costPending = new Map<string,
+        { agentId: string; engine?: string; startedAt: number; endedAt: number; tries: number }>();
     const tryAttachCosts = () => {
         if (!taskRunner) { return; }
         for (const [id, p] of costPending) {
-            const hit = matchTaskSession(p, index.forAgent(p.agentId));
+            const hit = matchTaskSession(p, index.forAgentWithExternal(p.agentId));
             if (hit) {
                 taskManager.setTaskCost(id, hit.cost, hit.file, totalTokens(hit.usage));
                 costPending.delete(id);
@@ -1616,7 +1626,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (t.mode !== 'headless' || (t.status !== 'done' && t.status !== 'failed')) { continue; }
             if (t.costUSD !== undefined || !t.startedAt || !t.endedAt || t.endedAt < cutoff) { continue; }
             if (!costPending.has(t.id)) {
-                costPending.set(t.id, { agentId: t.agentId, startedAt: t.startedAt, endedAt: t.endedAt, tries: 0 });
+                costPending.set(t.id, {
+                    agentId: t.agentId, engine: t.engine,
+                    startedAt: t.startedAt, endedAt: t.endedAt, tries: 0
+                });
             }
         }
         tryAttachCosts();
@@ -2117,7 +2130,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const semanticStatus = () => ({
         provider: embeddingsCfg().provider,
-        ...semIndex.stats()
+        ...semIndex.stats(),
+        /**
+         * ‼️ THE ONE MODE ON THIS PAGE THAT IS NOT FOUR ENGINES (X-35).
+         *
+         * Text and Regex read `allWithExternal` and search every engine. Meaning
+         * cannot: `chunkTranscript` parses Claude Code's JSONL line shape, and a
+         * Codex rollout run through it yields no passages at all — so those
+         * sessions are indexed as empty and simply never match. Silently. Three
+         * modes on one page where one of them quietly answers over a quarter of
+         * the corpus is worse than a mode that is missing, so the mode says it.
+         */
+        excludedNote: claudeOnlyScopeNote(index.external(), 'The meaning index')
     });
     const semanticSearch = async (query: string, sessionIds?: string[]): Promise<SearchResult> => {
         const failed = (error: string): SearchResult => ({
@@ -9855,7 +9879,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const consoleHistory = (sessionId: string): ConsoleMessage[] => {
         const row = [...index.all(), ...index.external()].find(s => s.sessionId === sessionId);
         const file = row?.file;
-        if (!file) { return []; }
+        if (!file) {
+            /**
+             * ‼️ AN EMPTY PANEL IS NOT AN ANSWER (X-35). Resuming an Antigravity
+             * conversation opened a blank Console: its transcript is protobuf in
+             * a SQLite file, so there is nothing to read back, and a reader who
+             * had just been told "resume" saw only that everything they said had
+             * apparently gone. The engine keeps the context — the CLI is
+             * resumed by id — so the row says exactly that instead of nothing.
+             */
+            if (!row) { return []; }
+            return [{
+                id: 'xh-none', ts: row.lastTs || Date.now(), role: 'system',
+                text: noTranscriptNote(row.source)
+                    + ' The conversation itself is not lost: the engine is resumed by its id, so it still'
+                    + ' remembers what was said — only the scrollback above cannot be rebuilt here.'
+            }];
+        }
         try {
             const raw = fs.readFileSync(file, 'utf8');
             const external = parseCliViewer(raw, file, pricing);
@@ -10614,7 +10654,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             let body = '';
             try { body = t.outputFile ? archivedOutputBody(fs.readFileSync(t.outputFile, 'utf8')) : ''; }
             catch { /* no output */ }
-            const cost = matchTaskSession(t, index.all())?.cost ?? 0;
+            // ‼️ The run is matched on ITS OWN engine (X-35) — the wide pool,
+            // `matchTaskSession` filters. And what comes back is reported the
+            // way X-19 requires: a plan-billed engine spends tokens, not
+            // dollars, so the chat says tokens rather than letting an unstated
+            // $0.00 read as "that was free".
+            const hit = matchTaskSession(t, index.allWithExternal());
+            const priced = engineOf(t.engine).reportsCost;
+            const cost = priced ? hit?.cost ?? 0 : 0;
             const now = chatState();
             await saveChatState({
                 ...now,
@@ -10622,9 +10669,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 taskByChat: Object.fromEntries(
                     Object.entries(now.taskByChat).filter(([k]) => k !== String(chatId)))
             });
+            const spend = priced
+                ? (cost ? ` · ${fmtUSD(cost)}` : '')
+                : hit
+                    ? ` · ${fmtTokens(totalTokens(hit.usage))} tokens (${engineOf(t.engine).label} bills a plan, not a price)`
+                    : '';
             await chatSend(chatId,
                 `${t.status === 'done' ? '✅' : '⚠'} ${agent.name} — ${t.status}` +
-                (cost ? ` · ${fmtUSD(cost)}` : '') + '\n\n' + (body || '(no output)'));
+                spend + '\n\n' + (body || '(no output)'));
         });
         context.subscriptions.push(sub);
     };
@@ -13652,20 +13704,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openSession',
             (arg?: string | SessionRef, focusTs?: number, roles?: string[], resetView?: boolean) => {
                 let file = typeof arg === 'string' ? arg : arg?.file;
-                if (!file && arg && typeof arg === 'object' && arg.sessionId) {
+                if (!file && arg) {
                     file = sessionFromArg(arg)?.file;
-                    if (!file) {
-                        void vscode.window.showInformationMessage(
-                            'Agent Farm: no transcript on disk for that session yet.');
-                        return;
-                    }
                 }
-                if (file) {
-                    SessionViewerPanel.show(file, viewerDeps,
-                        typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined,
-                        Array.isArray(roles) ? roles.filter(r => typeof r === 'string') : undefined,
-                        resetView === true);
+                if (!file) {
+                    /**
+                     * ‼️ A CLICK THAT CANNOT WORK SAYS WHY (X-35). Two faults
+                     * met here: an Antigravity row was told its transcript was
+                     * not written "yet" — it never will be — and a row that
+                     * handed the command an empty PATH rather than an object
+                     * fell past the check entirely, so "Open transcript" did
+                     * nothing at all and looked like a broken menu item.
+                     */
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: ' + noTranscriptNote(sessionFromArg(arg)?.source)
+                        + ' Use "Resume in Console" to carry the conversation on here, where every turn is recorded.');
+                    return;
                 }
+                SessionViewerPanel.show(file, viewerDeps,
+                    typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined,
+                    Array.isArray(roles) ? roles.filter(r => typeof r === 'string') : undefined,
+                    resetView === true);
             }),
 
         // Z1: one-click working examples — the shortest path from "installed"
@@ -14096,10 +14155,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Timeline, the Needs queue.
         vscode.commands.registerCommand('agentfarm.copySessionPath',
             async (arg?: SessionRef | SessionInfo) => {
-                const files = sessionsFromArg(arg).map(s => s.file).filter((x): x is string => !!x);
+                const picked = sessionsFromArg(arg);
+                const files = picked.map(s => s.file).filter((x): x is string => !!x);
                 if (!files.length) {
+                    // Same engine-aware answer the viewer gives (X-35) — the
+                    // path is missing for a REASON, and on one engine it is a
+                    // permanent one.
                     void vscode.window.showInformationMessage(
-                        'Agent Farm: no transcript on disk for that session yet.');
+                        'Agent Farm: ' + noTranscriptNote(picked[0]?.source));
                     return;
                 }
                 await vscode.env.clipboard.writeText(files.join('\n'));
@@ -17090,7 +17153,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 title: 'Export sessions as OTLP/JSON traces'
             });
             if (!target) { return; }
-            const doc = buildOtlpTraces(index.all().map(s => ({
+            /**
+             * ‼️ EVERY ENGINE LEAVES THE BUILDING (X-35). This is a RECORD
+             * surface — the file is the fleet's trace history as an outside
+             * tool will see it. Reading `index.all()` meant a Codex or Gemini
+             * session simply did not exist in Langfuse: not "priced at zero",
+             * absent. `gen_ai.system` (set from `source`) is what makes them
+             * groupable there, so the widening and the attribute belong
+             * together. Money/token attributes stay whatever the source could
+             * measure — an engine that reports nothing exports zeros, which is
+             * the honest figure, not a hidden one.
+             */
+            const exported = index.allWithExternal();
+            const doc = buildOtlpTraces(exported.map(s => ({
                 sessionId: s.sessionId,
                 parentSessionId: s.parentSessionId,
                 title: s.title,
@@ -17102,11 +17177,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 models: s.models,
                 toolCalls: s.toolCalls,
                 errors: s.errors,
-                machine: s.machine
+                machine: s.machine,
+                source: s.source
             })));
             fs.writeFileSync(target.fsPath, JSON.stringify(doc, null, 2), 'utf8');
+            const byEngine = new Map<string, number>();
+            for (const s of exported) {
+                const e = s.source ?? 'claude';
+                byEngine.set(e, (byEngine.get(e) ?? 0) + 1);
+            }
+            const spread = [...byEngine.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([e, n]) => `${ENGINE_LABELS[e] ?? e} ${n}`).join(' · ');
             void vscode.window.showInformationMessage(
-                `Agent Farm: ${index.all().length} session span(s) exported — feed the file to Langfuse/Tempo/any OTLP-JSON consumer.`,
+                `Agent Farm: ${exported.length} session span(s) exported (${spread}) — feed the file to Langfuse/Tempo/any OTLP-JSON consumer; group by gen_ai.system.`,
                 'Open').then(c => {
                     if (c === 'Open') { void vscode.commands.executeCommand('vscode.open', target); }
                 });

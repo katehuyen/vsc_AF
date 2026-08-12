@@ -694,7 +694,12 @@
             ${window.AFHeader.html({
                 page: 'toolbox',
                 title: 'Toolbox',
-                sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends claude`,
+                // ‼️ WHOSE extension model this is (X-35). Skills, subagents,
+                // slash commands, hooks, plugins and output styles are Claude
+                // Code's own vocabulary — an agent you drive with Codex or
+                // Antigravity reads none of them, and a page that just said
+                // "extends claude" in lower case left that as a guess.
+                sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends Claude Code — this is Claude Code's extension model, and the other engines do not read it`,
                 related: [{ nav: 'airtable', label: '🗄️ Airtable Engine' }, { nav: 'capabilities', label: 'Capability Matrix' }, { nav: 'secrets', label: '🔑 Secrets' }],
                 guide: 'toolbox'
             })}

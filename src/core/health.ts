@@ -2,6 +2,7 @@ import { AgentInfo } from './agents';
 import { dailyCostHistory, detectCostAnomaly, todayCost } from './anomaly';
 import { antigravityStatus } from './antigravity';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
+import { claudeOnlyScopeNote } from './engines';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
 import { readMemoryFrontmatter } from './memusage';
 import { readAgentSkills, skillUsage } from './skills';
@@ -487,6 +488,20 @@ export function buildInsights(
 
     // 6c) Weekly cost trend (per agent and fleet)
     const trendFactor = cfg.trendFactor ?? 2;
+    /**
+     * ‼️ WHAT THE WORD "fleet" MEANS ON A MONEY INSIGHT (X-35).
+     *
+     * Every cost check below runs on `index.all()`, which is Claude-only by
+     * design and correctly so — a plan-billed engine states no price, and
+     * averaging its honest zero into a trend would make the farm look like it
+     * halved its spend the week it started using Codex. The defect was the
+     * LABEL: an insight signed "fleet" over a figure that silently dropped
+     * three engines. The per-agent rows say the same thing for the same reason,
+     * so the note rides on the fleet rows where the claim is widest.
+     */
+    const excludedNote = claudeOnlyScopeNote(index.external(), 'This figure');
+    const fleetTail = excludedNote ? ` ${excludedNote}` : '';
+
     if (trendFactor > 0) {
         const week = 7 * 24 * 3600 * 1000;
         const checkTrend = (label: string, agentId: string | undefined,
@@ -500,7 +515,8 @@ export function buildInsights(
                     agentId,
                     agentName: label,
                     category: 'trend',
-                    message: `Weekly cost trend: ${fmtUSD(current)} this week vs ${fmtUSD(previous)} last week (${(current / previous).toFixed(1)}x).`,
+                    message: `Weekly cost trend: ${fmtUSD(current)} this week vs ${fmtUSD(previous)} last week (${(current / previous).toFixed(1)}x).`
+                        + (agentId ? '' : fleetTail),
                     guideAnchor: 'trend-uyarilari'
                 });
             }
@@ -526,7 +542,8 @@ export function buildInsights(
                     agentId,
                     agentName: label,
                     category: 'cost-anomaly',
-                    message: `Cost anomaly: ${fmtUSD(anomaly.todayCost)} today is ${anomaly.factor.toFixed(1)}x the 14-day median (${fmtUSD(anomaly.median)}) — see the Cost Anomaly Report.`,
+                    message: `Cost anomaly: ${fmtUSD(anomaly.todayCost)} today is ${anomaly.factor.toFixed(1)}x the 14-day median (${fmtUSD(anomaly.median)}) — see the Cost Anomaly Report.`
+                        + (agentId ? '' : fleetTail),
                     guideAnchor: 'maliyet-anomalisi'
                 });
             }
@@ -610,7 +627,8 @@ export function buildInsights(
                     agentId: agent?.id,
                     agentName: label,
                     category: 'budget',
-                    message: `Daily budget exceeded: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    message: `Daily budget exceeded: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`
+                        + (agent ? '' : fleetTail),
                     guideAnchor: 'butce-uyarilari'
                 });
             } else if (cost >= 0.8 * limit) {
@@ -619,7 +637,8 @@ export function buildInsights(
                     agentId: agent?.id,
                     agentName: label,
                     category: 'budget',
-                    message: `Approaching daily budget: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    message: `Approaching daily budget: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`
+                        + (agent ? '' : fleetTail),
                     guideAnchor: 'butce-uyarilari'
                 });
             }

@@ -2,8 +2,9 @@ import * as vscode from 'vscode';
 import { describePrecondition } from '../core/automation';
 import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
 import { TriggerManager } from '../core/triggers';
-import { relTime } from '../core/util';
+import { fmtTokens, relTime } from '../core/util';
 import { full as afFull } from '../core/aftime';
+import { engineOf } from '../core/consoleEngine';
 
 /**
  * Tasks tree — the sidebar NAVIGATOR for the Tasks page.
@@ -264,13 +265,28 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         const statusLabel = t.status === 'queued' && t.deferredReason
             ? `deferred: ${t.deferredReason}`
             : t.status + (t.verified ? ` • verify ${t.verified}` : '');
-        const cost = t.costUSD !== undefined ? ` • $${t.costUSD.toFixed(2)}` : '';
+        /**
+         * ‼️ WHAT A RUN COST, IN THAT ENGINE'S OWN CURRENCY (X-19 · X-35).
+         * Every engine but Claude bills a plan and states no price, so its
+         * matched transcript prices at exactly $0.00 — and `• $0.00` on a row
+         * is not a small number, it is a WRONG one: it reads as "this run was
+         * free". Those rows now carry the figure the engine really does report,
+         * its token count, and the tooltip says why there is no dollar.
+         */
+        const eng = engineOf(t.engine);
+        const cost = t.costUSD === undefined ? ''
+            : eng.reportsCost ? ` • $${t.costUSD.toFixed(2)}`
+                : t.tokens ? ` • ${fmtTokens(t.tokens)} tok` : '';
         const from = t.fromSchedule ? 'schedule' : t.fromTrigger ? 'trigger'
             : t.workflowId !== undefined ? 'workflow' : 'you';
         item.description = `${t.agentName} • ${statusLabel}${prio}${cost} • ${relTime(when)}`;
         item.tooltip = `▶ TASK (one run) — ${t.title}\n[${t.status}] ${t.agentName} (${t.mode}) • started by: ${from}`
+            + (t.engine ? `\nengine: ${eng.label}` : '')
             + (t.model ? `\nmodel: ${t.model}` : '')
-            + (t.costUSD !== undefined ? `\nCost: $${t.costUSD.toFixed(4)} (API-equivalent, from the matched transcript)` : '')
+            + (t.costUSD === undefined ? ''
+                : eng.reportsCost
+                    ? `\nCost: $${t.costUSD.toFixed(4)} (API-equivalent, from the matched transcript)`
+                    : `\nTokens: ${fmtTokens(t.tokens ?? 0)} (from the matched transcript) — ${eng.label} bills a plan, so it states no price`)
             + `\n\n${t.prompt}`;
         // Workflow-step finals get a distinct context so the menu offers "resume chain" instead of a plain retry.
         const finalKind = t.workflowId !== undefined ? 'final-workflow' : 'final';

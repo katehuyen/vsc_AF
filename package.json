@@ -397,7 +397,7 @@
       },
       {
         "command": "agentfarm.startSession",
-        "title": "Start Claude Session",
+        "title": "Start Session (your default engine)",
         "category": "Agent Farm",
         "icon": "$(play)"
       },
@@ -8247,7 +8247,7 @@
         "agentFarm.taskExtraArgs": {
           "type": "string",
           "default": "",
-          "description": "Extra CLI arguments appended to every task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model."
+          "description": "Extra CLI arguments appended to a task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model. These are Claude Code's flag vocabulary, so a task queued on another engine (Codex / Gemini / Antigravity) ignores them — set that task's model and effort on the task itself."
         },
         "agentFarm.externalTerminal": {
           "type": "boolean",
@@ -8568,7 +8568,7 @@
             }
           },
           "default": [],
-          "description": "Alternative CLI executors for tasks (gemini / codex / …). Non-claude tasks get output archiving and exit-code status; deep monitoring (transcripts, live hooks, cost) stays Claude-specific."
+          "description": "Alternative CLI executors for tasks — an arbitrary command line, for a CLI Agent Farm knows nothing else about. A profile task gets output archiving and exit-code status, and nothing more: no transcript, no cost, no live events. This is a DIFFERENT axis from a task's engine — Codex, Gemini and Antigravity are first-class engines with their own transcripts and token counts, so pick one of those on the task instead of writing a profile for it. Live hooks remain Claude Code's alone, whichever route you take."
         },
         "agentFarm.relayFeeds": {
           "type": "array",
@@ -8770,7 +8770,7 @@
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",
           "default": false,
-          "description": "Also include Claude Code sessions whose working directory is outside the configured agent roots (shown under 'Other projects')."
+          "description": "Also include sessions whose working directory is outside the configured agent roots (shown under 'Other projects'). Applies to every engine — a Codex or Antigravity conversation in a stray folder is governed by this switch exactly like a Claude one."
         },
         "agentFarm.pricing": {
           "type": "array",

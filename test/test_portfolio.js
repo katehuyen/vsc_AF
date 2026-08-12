@@ -51,6 +51,10 @@ const deps = {
     ],
     index: {
         forAgent: id => store[id] || [],
+        // X-35: the page reads "when / how many" off every engine and "money /
+        // tokens" off the measurable ones. No foreign sessions in this fixture,
+        // so the two lists are the same and every figure below is unchanged.
+        forAgentWithExternal: id => store[id] || [],
         isAgentActive: () => false
     },
     getInsights: () => [

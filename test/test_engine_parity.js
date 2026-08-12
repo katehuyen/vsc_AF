@@ -62,14 +62,18 @@ function external(sessionId, source, autoTitle) {
     };
 }
 
-function newIndex() {
+// ‼️ `includeUnmatched` defaults to TRUE here, and that is itself part of the
+// contract: the farm's scope switch now governs foreign sessions exactly as it
+// governs Claude's (see the block at the end of this file), so a fixture with no
+// agent would otherwise never reach the list the other blocks are about.
+function newIndex(includeUnmatched = true) {
     const { PricingEngine } = out('pricing.js');
     return new SessionIndex(
         path.join(__dirname, 'fixtures', 'nowhere'), // claudeDir — never scanned here
         () => [],                                    // extra (synced) dirs
         new PricingEngine([]),
         () => [],                                    // agents
-        () => false,                                 // includeUnmatched
+        () => includeUnmatched,
         () => 30 * 60_000                            // activeThresholdMs
     );
 }
@@ -304,6 +308,114 @@ function newIndex() {
     claude.turns = [codex.turns[0]];
     ok('…and a session with no stated engine is reported as claude',
         turnRowsFor(claude, false)[0].engine === 'claude');
+}
+
+// ---------------------------------------------------------------------------
+// The farm's SCOPE switch governs every engine, not only Claude's
+// ---------------------------------------------------------------------------
+{
+    // ‼️ `includeUnmatchedProjects` was applied in the claude parse only, so one
+    // folder gave two answers: the Claude session in it was dropped from the
+    // index and the Codex session beside it was listed with no agent at all. A
+    // scope switch that governs one engine of four is not a scope switch.
+    const narrow = newIndex(false);
+    narrow.setExternal([
+        external('stray-1', 'codex', 'a conversation in a stray folder'),
+        Object.assign(external('mine-1', 'codex', 'a conversation in an agent folder'),
+            { agentId: 'a1', agentName: 'developer' })
+    ]);
+    ok('‼️ an unattributed foreign session obeys the scope switch',
+        narrow.external().length === 1 && narrow.external()[0].sessionId === 'mine-1');
+
+    const wide = newIndex(true);
+    wide.setExternal([external('stray-1', 'codex', 'a conversation in a stray folder')]);
+    ok('…and is listed when the switch is on',
+        wide.external().length === 1);
+    // …under the same name the claude path gives an unattributed session, so the
+    // two are one list rather than two shapes.
+    ok('…named the way the claude path names one',
+        wide.external()[0].agentName === 'Other projects');
+}
+
+// ---------------------------------------------------------------------------
+// A task is priced against ITS OWN engine's sessions
+// ---------------------------------------------------------------------------
+{
+    const { matchTaskSession } = out('taskcost.js');
+    const T0 = 1_000_000;
+    const ses = (id, source) => ({
+        file: `${id}.jsonl`, firstTs: T0 + 5_000, lastTs: T0 + 200_000, cost: 0.42, source
+    });
+    const task = { startedAt: T0, endedAt: T0 + 300_000 };
+
+    // ‼️ THE BUG. The matcher refused every session with a `source`, so a task
+    // queued on Codex could never match anything: no cost, no token count, no
+    // transcript link, for ever — and the tasks page showed the blank exactly
+    // the way it shows "not measured yet".
+    ok('‼️ a Codex task matches its Codex session',
+        matchTaskSession({ ...task, engine: 'codex' }, [ses('c1', 'codex')])?.file === 'c1.jsonl');
+    ok('…a Claude task still matches its Claude session',
+        matchTaskSession(task, [ses('k1', undefined)])?.file === 'k1.jsonl');
+    // …and the engine filter is what stops the two being confused, which is the
+    // job the old `!s.source` test was accidentally doing.
+    ok('‼️ a Claude task never picks up an overlapping Codex session',
+        matchTaskSession(task, [ses('c1', 'codex')]) === undefined);
+    ok('…nor a Codex task a Claude one',
+        matchTaskSession({ ...task, engine: 'codex' }, [ses('k1', undefined)]) === undefined);
+    ok('…and two candidates on the same engine are still an honest no-match',
+        matchTaskSession({ ...task, engine: 'codex' },
+            [ses('c1', 'codex'), ses('c2', 'codex')]) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Every engine leaves the building in the OTLP export
+// ---------------------------------------------------------------------------
+{
+    const { buildOtlpTraces } = out('otel.js');
+    const { emptyUsage: eu } = out('pricing.js');
+    const ref = (id, source) => ({
+        sessionId: id, title: id, firstTs: 1, lastTs: 2, cost: 0,
+        usage: eu(), models: [], toolCalls: 0, errors: 0, source
+    });
+    // ‼️ The export read `index.all()`, so a Codex trace did not reach Langfuse
+    // as "priced at zero" — it did not reach it at all.
+    const doc = buildOtlpTraces([ref('k1', undefined), ref('c1', 'codex'), ref('g1', 'agy')]);
+    const spans = doc.resourceSpans[0].scopeSpans[0].spans;
+    const systemOf = (n) => spans.find(s => s.name === n)
+        .attributes.find(a => a.key === 'gen_ai.system').value.stringValue;
+    ok('‼️ every engine gets a span', spans.length === 3);
+    ok('…and each span says which system served it',
+        systemOf('c1') === 'codex' && systemOf('g1') === 'agy');
+    ok('…and an absent source is Claude here too', systemOf('k1') === 'claude');
+}
+
+// ---------------------------------------------------------------------------
+// A row with no transcript says WHY, and "yet" is not always true
+// ---------------------------------------------------------------------------
+{
+    const { noTranscriptNote, engineOf: eng } = out('consoleEngine.js');
+    // ‼️ Antigravity's conversations are protobuf inside SQLite; there will never
+    // be a transcript. Telling that reader to wait is the quiet kind of wrong.
+    ok('an engine that writes one is only "not yet"',
+        /yet/.test(noTranscriptNote('codex')) && eng('codex').readableTranscript === true);
+    ok('‼️ the engine that never will does not say "yet"',
+        !/yet/.test(noTranscriptNote('agy')) && eng('agy').readableTranscript === false);
+    ok('…and the note names the engine', /Antigravity/.test(noTranscriptNote('agy')));
+}
+
+// ---------------------------------------------------------------------------
+// A Claude-only analytic states its scope in one wording, everywhere
+// ---------------------------------------------------------------------------
+{
+    const { claudeOnlyScopeNote, engineSpread } = out('engines.js');
+    const ext = [{ source: 'codex' }, { source: 'codex' }, { source: 'agy' }];
+    ok('the spread is spelt with labels, busiest first',
+        engineSpread(ext) === 'Codex ×2 · Antigravity ×1');
+    const note = claudeOnlyScopeNote(ext, 'This figure');
+    ok('‼️ a fleet figure says how many sessions it leaves out',
+        /3 sessions/.test(note) && /Codex ×2/.test(note));
+    ok('…and nothing is said when there is nothing to exclude',
+        claudeOnlyScopeNote([], 'This figure') === '');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

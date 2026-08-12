@@ -597,6 +597,26 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('comparison All lists every agent', cmpRows() === 14 && !lastHtml.includes('Showing 14 of 14'));
     const cc = getEl('cmp-count'); cc.value = '5'; cc.listeners.change();
     ok('comparison count box narrows to the top 5', cmpRows() === 5 && lastHtml.includes('Showing 5 of 14 agents.'));
+
+    // ---- X-35: the page counts every engine, and says which count is priced --
+    // ‼️ THE REPORTED SHAPE. `sessions` is the Claude-only figure every money
+    // column on the row is measured from; `sessionsAll` is what the agent
+    // actually has. The two used to be one number here and a different one on
+    // the agent's own page, so an agent driven mostly through Codex looked idle.
+    const mixed = [
+        Object.assign(mkAgent(1), { name: 'mostly-codex', sessions: 5, sessionsAll: 36 }),
+        Object.assign(mkAgent(2), { name: 'claude-only', sessions: 18, sessionsAll: 18 })
+    ];
+    msgHandler({ data: { type: 'data', data: Object.assign({}, sandbox.window.__DATA__, { agents: mixed }) } });
+    ok('‼️ a mixed-engine agent shows measured AND total',
+        /5 <span class="muted"[^>]*>of 36<\/span>/.test(lastHtml));
+    ok('…and an all-Claude agent stays one plain number',
+        lastHtml.includes('>18</td>') && !/of 18</.test(lastHtml));
+    ok('‼️ the Sessions tile counts every engine',
+        lastHtml.includes('<div class="kpi">54</div>') && lastHtml.includes('all time, every engine'));
+    ok('…and says how many of them carry a price', /23 priced/.test(lastHtml));
+    ok('‼️ the agent card agrees with the row beside it',
+        /36 sessions<\/span>/.test(lastHtml) && /18 sessions<\/span>/.test(lastHtml));
 }
 
 // ---------- part 3: agentWindowTotals — hour-exact vs day-granularity ----------

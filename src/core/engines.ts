@@ -345,6 +345,48 @@ export const ENGINE_LABELS: Record<string, string> = {
     ...Object.fromEntries(SPECS.map(s => [s.id, s.label]))
 };
 
+/** `Codex ×4 · Gemini ×1` — engines counted, busiest first, spelt as people say
+ *  them. Empty string when there is nothing to count. */
+export function engineSpread(sessions: { source?: string }[]): string {
+    const byEngine = new Map<string, number>();
+    for (const s of sessions) {
+        const key = s.source ?? '';
+        byEngine.set(key, (byEngine.get(key) ?? 0) + 1);
+    }
+    return [...byEngine.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([id, n]) => `${ENGINE_LABELS[id] ?? id} ×${n}`)
+        .join(' · ');
+}
+
+/**
+ * ‼️ THE ONE SENTENCE A CLAUDE-ONLY ANALYTIC OWES ITS READER (X-35).
+ *
+ * Cost, cache efficiency, context load, quality, recall, duty compliance — all
+ * of it is defined against Claude Code's transcript format and genuinely cannot
+ * be computed from a Codex rollout or an Antigravity metadata row. Keeping
+ * those analytics Claude-only is the RIGHT call; what was never right is a
+ * surface headed "fleet" that quietly dropped three engines, because a reader
+ * comparing it against the Sessions page finds a different number and has
+ * nothing to explain the gap.
+ *
+ * So every such surface says the same thing in the same words, from here — a
+ * sentence invented per page is a sentence that disagrees per page. `what` names
+ * the measurement in the reader's terms ("these cost figures", "this search").
+ * No sessions to exclude → empty string, and the caller prints nothing.
+ */
+export function claudeOnlyScopeNote(
+    external: { source?: string }[],
+    what: string
+): string {
+    if (!external.length) { return ''; }
+    return `${what} covers Claude Code only — ${external.length} `
+        + `session${external.length === 1 ? '' : 's'} on other engines `
+        + `(${engineSpread(external)}) ${external.length === 1 ? 'is' : 'are'} not in it, `
+        + 'because the measurement is defined against Claude\'s transcript format and '
+        + 'would read zero or read wrong on a foreign one. They are listed on the Sessions page.';
+}
+
 /**
  * The one sentence a row is worth reading for.
  *

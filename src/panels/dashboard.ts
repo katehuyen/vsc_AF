@@ -67,6 +67,16 @@ interface AgentSummary {
     pendingDuties: number;
     quality?: number;
     qualityCount: number;
+    /**
+     * ‼️ HOW MANY SESSIONS THE AGENT REALLY HAS, beside how many the money
+     * covers (X-35). `sessions` above is the Claude-only count every figure on
+     * the row is measured from — correct, and the documented split. But the
+     * agent's own page already counts every engine, so the two surfaces printed
+     * different numbers for the same agent with nothing to explain the gap, and
+     * an agent driven mostly through Codex looked idle on the Dashboard while
+     * its page showed a full table.
+     */
+    sessionsAll: number;
 }
 
 /** One row per session for the Sessions tables (dashboard + agent detail).
@@ -351,7 +361,8 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
             duties: a.duties.length,
             pendingDuties: a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length,
             quality: deps.quality?.(a.id)?.avg,
-            qualityCount: deps.quality?.(a.id)?.count ?? 0
+            qualityCount: deps.quality?.(a.id)?.count ?? 0,
+            sessionsAll: deps.index.forAgentWithExternal(a.id).length
         };
     });
 

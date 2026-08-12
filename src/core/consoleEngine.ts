@@ -94,25 +94,42 @@ export interface EngineTransport {
      * while the caller believed it had continued one.
      */
     resumeInTerminal: boolean;
+    /**
+     * ‼️ DOES A CONVERSATION ON THIS ENGINE LEAVE A FILE A VIEWER CAN OPEN?
+     *
+     * Three of them do — a JSONL transcript or rollout on disk, which is how
+     * they got into the sessions index in the first place. Antigravity does
+     * not: its conversations are protobuf BLOBs inside per-conversation SQLite
+     * databases (measured 2026-08-10, `cliTranscripts.ts`), so the row is built
+     * from the CLI's own metadata index and carries an EMPTY `file` on purpose.
+     *
+     * This exists because "no transcript on disk **yet**" is the sentence those
+     * rows used to get, and on this engine "yet" is a lie that leaves the user
+     * waiting for a file that is never coming.
+     */
+    readableTranscript: boolean;
 }
 
 export const ENGINES: Record<EngineId, EngineTransport> = {
     claude: {
         id: 'claude', exe: 'claude', shape: 'persistent',
         liveControls: true, reportsCost: true, label: 'Claude Code',
-        promptOn: 'stdin', spawnShell: true, resumeInTerminal: true
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: true,
+        readableTranscript: true
     },
     codex: {
         id: 'codex', exe: 'codex', shape: 'perTurn',
         // A per-turn engine has nothing to change mid-turn: the flags of the
         // NEXT turn are the controls, and they take effect the moment it starts.
         liveControls: false, reportsCost: false, label: 'Codex',
-        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false,
+        readableTranscript: true
     },
     gemini: {
         id: 'gemini', exe: 'gemini', shape: 'perTurn',
         liveControls: false, reportsCost: false, label: 'Gemini',
-        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false
+        promptOn: 'stdin', spawnShell: true, resumeInTerminal: false,
+        readableTranscript: true
     },
     agy: {
         // ‼️ `agy`, and the label is "Antigravity" — NOT "Gemini". The row above
@@ -120,9 +137,28 @@ export const ENGINES: Record<EngineId, EngineTransport> = {
         // agent app, and the models it offers include Anthropic's.
         id: 'agy', exe: 'agy', shape: 'perTurn',
         liveControls: false, reportsCost: false, label: 'Antigravity',
-        promptOn: 'argv', spawnShell: false, resumeInTerminal: true
+        promptOn: 'argv', spawnShell: false, resumeInTerminal: true,
+        readableTranscript: false
     }
 };
+
+/**
+ * ‼️ WHY THERE IS NOTHING TO OPEN — the engine's own answer (X-35).
+ *
+ * "No transcript on disk for that session yet" was said to every session with
+ * an empty `file`, and on Antigravity the word "yet" is simply false: the
+ * conversation is on disk, in a form nothing here can read, and it will never
+ * turn into a transcript. Telling a user to wait for that is the quiet kind of
+ * wrong this whole item exists to remove. Every caller that finds no file asks
+ * this instead of writing the sentence itself.
+ */
+export function noTranscriptNote(engine: string | undefined): string {
+    const e = engineOf(engine);
+    return e.readableTranscript
+        ? `No transcript on disk for that ${e.label} session yet — it is written as the conversation runs.`
+        : `${e.label} keeps its conversations as protobuf inside per-conversation SQLite files, `
+        + 'so there is no transcript to read — the row is built from the CLI\'s own index.';
+}
 
 /** The engine of an id that may be anything, defaulting to the one every
  *  existing session and every existing caller means. */

@@ -31,8 +31,8 @@
     // multi-pick: null = all (no filter), array = that subset, [] = none.
     // See media/afFilters.js.
     const PLAN_DEF = { q: '', kind: null, agent: null, model: null, state: null, guard: null, issues: false, group: 'kind', sort: 'when', asc: true };
-    const RUN_DEF = { q: '', agent: null, status: null, source: null, sort: 'when', asc: false };
-    const PICKS = { plan: ['kind', 'agent', 'model', 'state', 'guard'], run: ['agent', 'status', 'source'] };
+    const RUN_DEF = { q: '', agent: null, status: null, source: null, engine: null, sort: 'when', asc: false };
+    const PICKS = { plan: ['kind', 'agent', 'model', 'state', 'guard'], run: ['agent', 'status', 'source', 'engine'] };
     let planView = Object.assign({}, PLAN_DEF, saved.planView || {});
     let runView = Object.assign({}, RUN_DEF, saved.runView || {});
     // a pre-3.21 saved view holds strings — carry the choice over as a one-item set
@@ -249,9 +249,13 @@
         </div>`;
     }
 
-    function sortCell(view, key, label, num) {
+    // `tip` is the COLUMN's definition, and it belongs here rather than on every
+    // cell (docs/CONVENTIONS.md — defined once, on the heading). Without one the
+    // header keeps its old bare "sort".
+    function sortCell(view, key, label, num, tip) {
         const on = view.sort === key;
-        return `<th class="sortable${num ? ' num' : ''}" data-sort="${key}" title="sort">${C.esc(label)}${on ? (view.asc ? ' ▲' : ' ▼') : ''}</th>`;
+        const title = tip ? tip + ' · click to sort' : 'sort';
+        return `<th class="sortable${num ? ' num' : ''}" data-sort="${key}" title="${C.esc(title)}">${C.esc(label)}${on ? (view.asc ? ' ▲' : ' ▼') : ''}</th>`;
     }
 
     function applySort(rows, view, getters) {
@@ -1286,9 +1290,44 @@
             if (v.agent && v.agent.indexOf(r.agentName) < 0) { return false; }
             if (v.status && v.status.indexOf(r.status) < 0) { return false; }
             if (v.source && v.source.indexOf(r.sourceKind) < 0) { return false; }
-            if (!q.empty && !q.test(r.title + ' ' + r.prompt + ' ' + r.agentName + ' ' + r.source)) { return false; }
+            if (v.engine && v.engine.indexOf(engineLabel(r)) < 0) { return false; }
+            if (!q.empty && !q.test(r.title + ' ' + r.prompt + ' ' + r.agentName + ' ' + r.source
+                + ' ' + engineLabel(r))) { return false; }
             return true;
         });
+    }
+
+    // Which engine ran the run, said the way the badge says it. Same shape as
+    // the Turns page (media/turns.js): an absent `engine` is Claude, because on
+    // a Claude transcript the field is an ABSENCE, not a value.
+    function engineLabel(r) { return window.AFEngine.label(r.engine || 'claude'); }
+
+    /** The engines actually present in the runs, Claude first — built off the
+     *  ROWS, so an engine this build has never heard of is still filterable. */
+    function runEngines(d) {
+        const claude = window.AFEngine.label('claude');
+        const set = [];
+        (d.runs || []).forEach(r => {
+            const l = engineLabel(r);
+            if (set.indexOf(l) < 0) { set.push(l); }
+        });
+        return set.sort((a, b) => a === claude ? -1 : b === claude ? 1 : a.localeCompare(b));
+    }
+
+    /**
+     * ‼️ WHAT THE RUN SPENT, IN THE CURRENCY ITS ENGINE ACTUALLY REPORTS (X-19).
+     * Only Claude states a price. On every other engine the matched transcript
+     * prices at exactly $0.00, which `fmtUSD` then draws as "—" — the same glyph
+     * this column uses for "nothing measured yet", so a fully measured Codex run
+     * was indistinguishable from an unmeasured one. Those rows show tokens.
+     */
+    function runSpend(r) {
+        if (r.reportsCost === false) {
+            return r.tokens
+                ? `<span title="${C.esc(engineLabel(r) + ' bills a plan and states no price per run — tokens are what it does report')}">${C.fmtTok(r.tokens)} tok</span>`
+                : '—';
+        }
+        return fmtUSD(r.costUSD);
     }
 
     function runRowHtml(r) {
@@ -1312,8 +1351,11 @@
             <td class="state"><span class="pill ${st[1]}">${C.esc(st[0])}</span></td>
             <td class="from">${r.sourceKind === 'manual' ? '<span class="muted">you</span>'
                 : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`}</td>
+            <td class="eng">${window.AFEngine.badge(r.engine || 'claude',
+                'Engine: ' + engineLabel(r) + '\nPrice per run: '
+                + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}</td>
             <td class="num">${r.durMin !== undefined ? r.durMin + 'm' : '—'}</td>
-            <td class="num">${fmtUSD(r.costUSD)}</td>
+            <td class="num">${runSpend(r)}</td>
             <td class="when">${C.esc(rel(r.when))}</td>
             <td class="acts">
                 ${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
@@ -1325,9 +1367,11 @@
                 ${r.hasOutput ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}">✕</button>` : ''}
             </td>
-        </tr>${open ? `<tr class="detail"><td colspan="8"><div class="detailbox">
+        </tr>${open ? `<tr class="detail"><td colspan="9"><div class="detailbox">
             <div class="dgrid">
                 <div><b>Came from</b><div>${C.esc(r.sourceKind)} · ${C.esc(r.source)}</div></div>
+                <div><b>Engine</b><div>${C.esc(engineLabel(r))}${r.reportsCost === false
+                    ? ' <span class="muted small">— bills a plan, states no price</span>' : ''}</div></div>
                 ${r.verified ? `<div><b>Verify</b><div>${C.esc(r.verified)}</div></div>` : ''}
                 ${r.sessionFile ? `<div><b>Transcript</b><div><button class="mini secondary" data-tr="${C.esc(r.sessionFile)}">open session</button></div></div>` : ''}
             </div>
@@ -1343,9 +1387,11 @@
             cost: r => r.costUSD || 0, dur: r => r.durMin || 0
         });
         const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task')}<th class="state">Status</th><th>Started by</th>
-            ${sortCell(v, 'dur', 'Took', true)}${sortCell(v, 'cost', 'Cost', true)}${sortCell(v, 'when', 'When')}<th class="acts"></th></tr>`;
+            <th class="eng" title="Which CLI actually ran this task — the engine the run was queued on (empty = Claude Code)">Engine</th>
+            ${sortCell(v, 'dur', 'Took', true)}${sortCell(v, 'cost', 'Cost', true,
+                'API-equivalent price of the matched transcript. Only Claude Code reports a price; a plan-billed engine shows its token count instead, because $0.00 there would mean "free" and it does not.')}${sortCell(v, 'when', 'When')}<th class="acts"></th></tr>`;
         const body = !sorted.length
-            ? `<tr><td colspan="8" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
+            ? `<tr><td colspan="9" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
             : sorted.map(runRowHtml).join('');
         return `
             <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
@@ -1356,6 +1402,7 @@
                 ${sel('agent', 'Agent', v.agent, d.agents)}
                 ${sel('status', 'Status', v.status, Object.keys(STATUS))}
                 ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }])}
+                ${sel('engine', 'Engines', v.engine, runEngines(d))}
                 <span class="spacer"></span>
                 <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder">+ New task</button>
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
@@ -1364,7 +1411,7 @@
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
             ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'run' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
-            ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from' }, rows.length, d.runs.length)}
+            ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from', engine: 'engine' }, rows.length, d.runs.length)}
             <div class="cmdbar">
                 <input id="cmd" placeholder="Tell the farm what to do, in words — e.g. “run the filing batch on manager now”" value="${C.esc(cmdText)}">
                 <button id="cmdgo"${pendingCommand ? ' disabled' : ''}>${pendingCommand ? 'working…' : 'Go'}</button>
@@ -1495,6 +1542,7 @@
                 td.num, th.num { text-align:right; white-space:nowrap; width:1%; }
                 td.acts, th.acts { white-space:nowrap; text-align:right; width:1%; }
                 td.state, th.state { width:1%; white-space:nowrap; }
+                td.eng, th.eng { width:1%; white-space:nowrap; }
                 /* the free-growing text columns */
                 td.main { min-width:15rem; }
                 td.when, td.guardcell, td.lastrun, td.from { min-width:9rem; }

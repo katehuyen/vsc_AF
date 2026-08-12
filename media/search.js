@@ -107,14 +107,19 @@
         if (semStatus.provider === 'off') {
             return 'Meaning search is off. <a id="sem-settings">Choose an embeddings provider</a>.';
         }
-        return `Index: <b>${C.esc(semStatus.provider)}</b> · ${semStatus.sessions} sessions · ${semStatus.chunks} passages · <a id="build-index">update</a>`;
+        // ‼️ …and WHOSE conversations are in that index. Text and Regex read
+        // every engine; this one cannot (see semanticStatus in extension.ts),
+        // and a mode that answers over part of the corpus without saying so is
+        // the quiet kind of wrong.
+        return `Index: <b>${C.esc(semStatus.provider)}</b> · ${semStatus.sessions} sessions · ${semStatus.chunks} passages · <a id="build-index">update</a>`
+            + (semStatus.excludedNote ? ` <span class="muted">${C.esc(semStatus.excludedNote)}</span>` : '');
     }
 
     function modeHtml() {
         const modes = [
-            ['text', 'Text', 'The query language: words, phrases, OR, exclusions and wildcards'],
-            ['regex', 'Regex', 'A regular expression, with a ten-second safety budget'],
-            ['meaning', 'Meaning', 'Conceptually similar indexed conversation passages']
+            ['text', 'Text', 'The query language: words, phrases, OR, exclusions and wildcards. Reads every engine.'],
+            ['regex', 'Regex', 'A regular expression, with a ten-second safety budget. Reads every engine.'],
+            ['meaning', 'Meaning', 'Conceptually similar indexed conversation passages. Claude Code transcripts only — the index is built from their line format.']
         ];
         return `<span class="seg" role="group" aria-label="Search method">${modes.map(x =>
             tip(badge(`data-mode="${x[0]}" data-tone="mode"`, x[1], mode === x[0]), x[1], x[2])

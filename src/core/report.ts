@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { AgentInfo } from './agents';
-import { ENGINE_LABELS } from './engines';
+import { engineSpread } from './engines';
 import { Insight } from './health';
 import { totalTokens } from './pricing';
 import { SessionIndex, SessionInfo } from './sessions';
@@ -60,19 +60,10 @@ export function buildFleetReport(
      */
     const external = index.external().filter(s => inRange(s, cutoff));
     if (external.length) {
-        const byEngine = new Map<string, number>();
-        for (const s of external) {
-            const key = s.source ?? 'other';
-            byEngine.set(key, (byEngine.get(key) ?? 0) + 1);
-        }
-        const spelt = [...byEngine.entries()]
-            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-            .map(([id, n]) => `${ENGINE_LABELS[id] ?? id} ×${n}`)
-            .join(' · ');
-        lines.push(`- Other engines in the same period: **${external.length}** session${external.length === 1 ? '' : 's'} — ${spelt}.`
-            + ' Listed on the Sessions page; deliberately NOT in the figures above or anywhere below,'
-            + ' because every measurement in this report is defined against Claude\'s transcript format'
-            + ' and would read zero or read wrong on a foreign one.');
+        lines.push(`- Other engines in the same period: **${external.length}** session${external.length === 1 ? '' : 's'}`
+            + ` — ${engineSpread(external)}. Listed on the Sessions page; deliberately NOT in the figures`
+            + ' above or anywhere below, because every measurement in this report is defined against'
+            + ' Claude\'s transcript format and would read zero or read wrong on a foreign one.');
     }
     lines.push('');
 

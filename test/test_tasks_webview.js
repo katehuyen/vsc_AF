@@ -21,6 +21,9 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afQuery.js'), 'utf8')
     // …and every clock on the page goes through the one clock (media/afTime.js)
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTime.js'), 'utf8')
+    // …and which ENGINE ran a task is drawn with the shared badge (X-35), the
+    // same component every other table uses — never a colour invented here
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afEngine.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
@@ -114,7 +117,12 @@ const sandbox = {
         setState: (s) => { state = s; }
     }),
     window: {
-        AFCharts: { esc: (s) => String(s == null ? '' : s), fmtUSD: (v) => '$' + Number(v).toFixed(2) },
+        AFCharts: {
+            esc: (s) => String(s == null ? '' : s),
+            fmtUSD: (v) => '$' + Number(v).toFixed(2),
+            // X-35: a plan-billed engine's run shows tokens instead of a dollar
+            fmtTok: (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
+        },
         AFHeader: { html: (o) => `<header data-page="${o.page}">${o.title}</header>`, wire: () => { } },
         __DATA__: null,
         // The right-click relay arrives as a window message; the page listens
@@ -516,6 +524,57 @@ ok('the run says where it came from', html().includes('>schedule<') && html().in
 ok('a manual run says "you"', html().includes('>you<'));
 ok('cost per run is shown', html().includes('$0.22'));
 ok('the natural-language command bar is here, not on the plan tab', html().includes('id="cmd"'));
+
+// ---- X-35: which engine ran it, and what its cost figure is worth ----------
+// ‼️ A table of executions across four engines never named one — the same fault
+// the Turns page had — and the Cost column beside it was worse than silent: only
+// Claude Code states a price, so every other engine priced at exactly $0.00,
+// which `fmtUSD` draws as the same "—" the column uses for "not measured yet".
+{
+    const runsData = Object.assign({}, DATA, {
+        runs: [
+            Object.assign({}, DATA.runs[2], {
+                id: 'e1', title: 'claude run', engine: 'claude', reportsCost: true,
+                costUSD: 0.22, tokens: 500000
+            }),
+            Object.assign({}, DATA.runs[2], {
+                id: 'e2', title: 'codex run', engine: 'codex', reportsCost: false,
+                costUSD: 0, tokens: 93625
+            }),
+            Object.assign({}, DATA.runs[1], {
+                id: 'e3', title: 'queued run', engine: 'claude', reportsCost: true,
+                costUSD: undefined, tokens: undefined
+            })
+        ]
+    });
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: runsData } }));
+    /** Just the runs table, so an assertion cannot be satisfied by the summary
+     *  strip or the composer above it. */
+    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    ok('‼️ every run row carries the shared engine badge',
+        (table().match(/class="af-eng /g) || []).length === 3);
+    ok('…and the Engine column exists at all', table().includes('>Engine</th>'));
+    // …in the CELL. The column's own heading explains why $0.00 is not written
+    // there, so the string legitimately appears once, in a `title`.
+    ok('‼️ a plan-billed run shows TOKENS where a dollar would be a lie',
+        table().includes('93.6k tok') && !/<td class="num">[^<]*\$0\.00/.test(table()));
+    ok('…and a priced run still shows its dollar', table().includes('$0.22'));
+    // A run that has not been measured yet keeps the plain dash — the two must
+    // stay distinguishable, which is the whole point of the tokens above.
+    ok('…and an unmeasured run is still a bare dash',
+        (table().match(/<td class="num">—<\/td>/g) || []).length >= 1);
+    ok('…and the Engines filter is offered', table !== null && html().includes('Engines'));
+    // …and it actually narrows the table, the same way every other pick does.
+    setFilter('engine', 'Codex');
+    ok('‼️ picking one engine narrows the runs to it',
+        table().includes('codex run') && !table().includes('claude run'));
+    ok('…and it becomes a removable chip like the others',
+        html().includes('engine: Codex'));
+    clickData('clear', 'engine');
+    ok('…and clearing it brings the rest back', table().includes('claude run'));
+    // Put the page back on the runs the rest of this file is written against.
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: DATA } }));
+}
 
 posted = [];
 query('[data-task="cancel"]')[0].click();

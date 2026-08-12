@@ -17,6 +17,7 @@ import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
 import { handleAfNav, htmlShell } from './base';
 import { full as afFull } from '../core/aftime';
+import { engineOf } from '../core/consoleEngine';
 
 /**
  * Tasks — the agent-activity CONTROL PANEL.
@@ -146,6 +147,17 @@ interface RunRow {
     durMin?: number;
     detail: string;
     costUSD?: number;
+    /**
+     * ‼️ WHICH ENGINE RAN IT, AND WHETHER ITS COST MEANS ANYTHING (X-35 · X-19).
+     * A table of runs across four engines that never named one was the same
+     * fault the Turns page had; and the Cost column below it was worse than
+     * silent, because a plan-billed engine prices at exactly $0.00 and that
+     * reads as "free" rather than as "this engine states no price". `tokens` is
+     * the figure those rows do have.
+     */
+    engine: string;
+    reportsCost: boolean;
+    tokens?: number;
     verified?: string;
     hasOutput: boolean;
     outputFile?: string;
@@ -332,6 +344,9 @@ function buildRuns(deps: TasksDeps, now: number): RunRow[] {
             durMin,
             detail: t.status === 'queued' && t.deferredReason ? t.deferredReason : '',
             costUSD: t.costUSD,
+            engine: engineOf(t.engine).id,
+            reportsCost: engineOf(t.engine).reportsCost,
+            tokens: t.tokens,
             verified: t.verified,
             hasOutput: !!t.outputFile,
             outputFile: t.outputFile,

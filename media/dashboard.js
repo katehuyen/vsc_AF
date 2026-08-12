@@ -310,17 +310,25 @@
         const rows = cmpShown(all);
         return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_ALL)}</h2>
         <div class="tablewrap"><table>
-            <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Quality</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
+            <tr><th>Agent</th><th class="num" title="Sessions this row's figures are measured from — Claude Code transcripts. A second number is the agent's total across every engine; the gap is what carries no price.">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Quality</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
             ${rows.map(a => {
                 const promptTok = a.usage.input + a.usage.cacheRead + a.usage.cacheWrite;
                 const cacheEff = promptTok ? Math.round(100 * a.usage.cacheRead / promptTok) + '%' : '—';
                 const errPct = a.toolCalls ? Math.round(100 * a.errors / a.toolCalls) + '%' : '—';
                 const quality = a.quality !== undefined && a.quality !== null
-                    ? `<span title="${a.qualityCount} sampled session(s), last 14 days">${a.quality.toFixed(1)}/5</span>` : '—';
+                    ? `<span title="${a.qualityCount} sampled session(s), last 14 days · Claude Code transcripts only">${a.quality.toFixed(1)}/5</span>` : '—';
+                // ‼️ The measured count AND the real one (X-35). This cell used to
+                // print the Claude-only figure alone, so an agent mostly driven
+                // through Codex read as barely used here while its own page
+                // showed a full table — the same number, two answers.
+                const others = Math.max(0, (a.sessionsAll || 0) - a.sessions);
+                const sessCell = others
+                    ? `${a.sessions} <span class="muted" title="${a.sessions} measured (Claude Code) of ${a.sessionsAll} total — ${others} on other engines, which state no price and are not in this row's figures">of ${a.sessionsAll}</span>`
+                    : String(a.sessions);
                 return `<tr class="click" data-agent-row="${C.esc(a.id)}"
                     ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                     <td><strong>${C.esc(a.name)}</strong></td>
-                    <td class="num">${a.sessions}</td>
+                    <td class="num">${sessCell}</td>
                     <td class="num">${C.fmtUSD(a.totalCost)}</td>
                     <td class="num">${C.fmtTokW(a.totalTokens, a.totalWTokens)}</td>
                     <td class="num">${a.toolCalls}</td>
@@ -505,7 +513,16 @@
         const rangeMsgs = agents.reduce((a, ag) => a + sum(ag, days, 'msgs'), 0);
         const todayCost = agents.reduce((a, ag) => a + (ag.daily[today] ? ag.daily[today].cost : 0), 0);
         const activeCount = agents.filter(a => a.active).length;
-        const sessionsTotal = agents.reduce((a, ag) => a + ag.sessions, 0);
+        // ‼️ "farm scope" HAS TO MEAN THE FARM (X-35). This tile summed the
+        // Claude-only per-agent counts and captioned itself "all time, farm
+        // scope" — on a farm where a third of the conversations happen on
+        // another engine, that is a fleet claim over one engine's data, and it
+        // disagreed with the Sessions table two cards below on the same page.
+        // The KPI is now every engine; the caption says what the money-shaped
+        // figures beside it still cover.
+        const sessionsMeasured = agents.reduce((a, ag) => a + ag.sessions, 0);
+        const sessionsTotal = agents.reduce((a, ag) => a + (ag.sessionsAll || ag.sessions), 0);
+        const sessionsOther = Math.max(0, sessionsTotal - sessionsMeasured);
 
         // ‼️ THE 5h CARD IS WHERE THE WRONG UNIT HURT MOST. This window is the
         // plan's own reset span, and a bar drawn off the RAW total says the
@@ -551,7 +568,9 @@
                     ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
                     : '<div class="sub">API-equivalent value</div>'}</div>
             <div class="card" ${tile('Cost · ' + rangeLabel(), 'portfolio', C.fmtUSD(rangeCost))}><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTokW(rangeTokens, rangeWTokens)} tokens · ${rangeMsgs} msgs</div></div>
-            <div class="card" ${tile('Sessions', 'turns', sessionsTotal)}><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
+            <div class="card" ${tile('Sessions', 'turns', sessionsTotal)}><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, every engine${sessionsOther
+                ? ` · <span title="The cost, token and model figures on this page are measured from Claude Code transcripts and cover ${sessionsMeasured} of them; the other ${sessionsOther} ran on engines that state no price.">${sessionsMeasured} priced</span>`
+                : ''}</div></div>
             <div class="card" ${tile('5h window', '', '')}><div class="label">5h window</div>${windowHtml}</div>
             <div class="card" ${tile('Insights', 'portfolio', ins.error + ' errors · ' + ins.warning + ' warnings · ' + ins.info + ' info')}><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
                 <div class="sub">${ins.error} errors · ${ins.warning} warnings · ${ins.info} info <a data-guide="saglik-ve-optimizasyon">?</a></div></div>
@@ -615,7 +634,11 @@
             return `<div class="card agent-card" data-agent="${C.esc(a.id)}"
                 ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                 <h3><span class="dot ${a.active ? 'on' : 'off'}"></span>${C.esc(a.name)}${badges}</h3>
-                <div class="sub">${a.active ? 'ACTIVE' : relTime(a.lastActivity)} · ${a.sessions} sessions · ctx ~${C.fmtTok(a.contextLoad)} tok${a.duties ? ` · 👁 ${a.duties}${a.pendingDuties ? ` <span class="badge warn">${a.pendingDuties} pending</span>` : ''}` : ''}</div>
+                <div class="sub">${a.active ? 'ACTIVE' : relTime(a.lastActivity)} · <span title="${C.esc(
+                    (a.sessionsAll || a.sessions) > a.sessions
+                        ? `${a.sessionsAll} sessions in all — ${a.sessions} of them on Claude Code, which is where the money below is measured; the rest ran on engines that state no price.`
+                        : 'Every session this agent has, all engines counted.')
+                }">${a.sessionsAll || a.sessions} sessions</span> · ctx ~${C.fmtTok(a.contextLoad)} tok${a.duties ? ` · 👁 ${a.duties}${a.pendingDuties ? ` <span class="badge warn">${a.pendingDuties} pending</span>` : ''}` : ''}</div>
                 ${budgetBar}
                 <div class="spread" style="margin-top:8px">
                     <div><div class="label">today</div><strong>${C.fmtUSD(a.daily[today] ? a.daily[today].cost : 0)}</strong></div>

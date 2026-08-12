@@ -967,10 +967,34 @@ export class SessionIndex implements vscode.Disposable {
     private externalSig = '';
 
     setExternal(sessions: SessionInfo[]): void {
-        const sig = sessions.map(s => `${s.sessionId}:${s.lastTs}:${s.userTurns}:${s.toolCalls}`).join('|');
+        /**
+         * ‼️ THE FARM'S SCOPE RULE IS THE FARM'S, NOT CLAUDE'S (X-35).
+         *
+         * `includeUnmatchedProjects` is the user's answer to "do I want to see
+         * conversations from folders that are not my agents". It was applied
+         * only in the claude parse (`indexFile`), so the same folder produced
+         * two different answers depending on which CLI you had opened there:
+         * the Claude session was dropped and the Codex one beside it was listed
+         * with no agent at all. A scope switch that governs one engine of four
+         * is not a scope switch.
+         *
+         * Included-but-unattributed rows get the same "Other projects" name the
+         * claude path gives them, so the two are one list and not two shapes.
+         * The gate is part of the signature: flipping the setting must redraw
+         * even when nothing on disk moved.
+         */
+        const include = this.includeUnmatched();
+        const kept = sessions.filter(s => s.agentId || include);
+        for (const s of kept) {
+            if (!s.agentId && !s.agentName) {
+                s.agentName = s.machine ? `Other projects (${s.machine})` : 'Other projects';
+            }
+        }
+        const sig = (include ? 'w|' : 'n|')
+            + kept.map(s => `${s.sessionId}:${s.lastTs}:${s.userTurns}:${s.toolCalls}`).join('|');
         if (sig === this.externalSig) { return; }
         this.externalSig = sig;
-        this.externalList = sessions;
+        this.externalList = kept;
         // ‼️ The title BEFORE the marks, and both on every rescan (X-35). A
         // source re-parses its transcript whenever the file changes and hands
         // back a freshly derived title, so a rename applied once would be
