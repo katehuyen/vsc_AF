@@ -41,7 +41,12 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
     const now = Date.now();
     return {
         generatedAt: now,
-        rows: buildTurnRows(deps.index.all(), s => deps.index.isSessionActive(s, now)),
+        // ‼️ BOTH LISTS (X-35). The Turns page is the farm unrolled one row per
+        // turn — a LOG, which is what `allWithExternal` is for. It read the
+        // claude-only list, so no Codex turn had ever appeared on it; now that
+        // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
+        // something on the other side of the widening.
+        rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now)),
         tableN: TURNS_TABLE_N
     };
 }

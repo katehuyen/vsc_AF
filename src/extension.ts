@@ -116,7 +116,7 @@ import {
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import { codexSandboxFor, ENGINES, engineNote, engineOf, runArgs } from './core/consoleEngine';
 import {
-    readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus
+    readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS
 } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { effortsFor, readEngineModels } from './core/models';
@@ -910,6 +910,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // registry is there to be read — otherwise silence proves nothing.
             liveOwners: () => readCliSessions(claudeDir()),
             ownersKnown: () => fs.existsSync(sessionsDir(claudeDir())),
+            // ‼️ WHICH CARDS CAN ACTUALLY BE ENDED, ON ANY ENGINE (X-35).
+            // `liveOwners` reads CLAUDE's session registry, so a conversation
+            // hosted in the Console on Codex or Antigravity has no owner and the
+            // card offered no ⏻ End — even though `endLiveSession` has always
+            // handled a hosted session first and closes it properly. The button
+            // was hidden by the absence of a pid it was never going to have.
+            hostedIds: () => consoleHost.list()
+                .map(s => s.sessionId).filter((id): id is string => !!id),
             stuckMs: () => cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             getTurnActions, setTurnActions, getSessionTurnActions, setSessionTurnActions
         });
@@ -4044,9 +4052,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.interrupt',
-            describe: 'Stop what a live session is doing by typing Esc into its terminal — the turn ends, the session and its context survive. Integrated terminals only: a session running in an external OS window is reported back as such (nobody can type into it), and headless task/mission runs are stopped with tasks.stop / missions.cancel instead. args: sessionId',
+            describe: 'Stop what a live session is doing — the turn ends, the session and its context survive. Works on ANY engine, by the only route that engine has: a conversation Agent Farm hosts in the Console is stopped through the Console (there is no terminal to type into, and on a per-turn engine no long-lived process either), while a session running in a terminal gets Esc typed into it. Integrated terminals only for that second route: a session in an external OS window is reported back as such (nobody can type into it), and headless task/mission runs are stopped with tasks.stop / missions.cancel instead. args: sessionId',
             handler: async (args) => {
                 const sessionId = argStr(args, 'sessionId');
+                // ‼️ THE HOSTED ROUTE FIRST, ON EVERY ENGINE (X-35). Below this
+                // point the only thing on offer is Esc typed into a terminal —
+                // which a conversation Agent Farm hosts does not have, and which a
+                // per-turn engine could not receive between turns even if it did.
+                // The Console owns the child and stops it per engine.
+                const hosted = consoleHost.list().find(h => h.sessionId === sessionId);
+                if (hosted) {
+                    const stopped = consoleHost.interrupt(hosted.id);
+                    return {
+                        sessionId, interrupted: stopped,
+                        how: stopped
+                            ? 'stopped through the Console, which hosts this conversation'
+                            : 'nothing was running in it',
+                        engine: hosted.engine ?? 'claude'
+                    };
+                }
                 const openTerms = vscode.window.terminals;
                 const records: TermRecord[] = termBindings.map(b => ({
                     title: b.title, sessionId: b.sessionId,
@@ -4054,7 +4078,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     terminalIndex: b.term ? openTerms.indexOf(b.term) : undefined
                 }));
                 const agentName = live.sessions().find(s => s.sessionId === sessionId)?.agentName
-                    ?? index.all().find(s => s.sessionId === sessionId)?.agentName;
+                    // Both lists: a foreign session has a name too (X-35).
+                    ?? index.allWithExternal().find(s => s.sessionId === sessionId)?.agentName;
                 const target = resolveInterrupt({
                     sessionId, agentName, bindings: records, terminalNames: openTerms.map(t => t.name)
                 });
@@ -5832,15 +5857,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.files',
-            describe: 'What a session did to the CODE: every file it wrote to (Edit/Write/MultiEdit/NotebookEdit) with write counts and +/- line totals, read back from the transcript\'s own before/after text — so it is what THAT session changed, not what the file looks like now. args: sessionId or file (transcript path), detail? (true also returns each hunk, capped)',
+            describe: 'What a session did to the CODE: every file it wrote to (Edit/Write/MultiEdit/NotebookEdit) with write counts and +/- line totals, read back from the transcript\'s own before/after text — so it is what THAT session changed, not what the file looks like now. args: sessionId or file (transcript path), detail? (true also returns each hunk, capped). ‼️ CLAUDE TRANSCRIPTS ONLY, and it says so rather than answering "no files": the before/after text this reads is a property of Claude\'s tool-result format. A Codex rollout records its edits as shell `apply_patch` calls with the diff inside the command string, and Antigravity does not expose its steps at all — so for a session on another engine the answer is `engine` + a one-line reason, not an empty list that reads as "it changed nothing".',
             handler: (args) => {
                 const sessionId = optStr(args, 'sessionId');
                 const fileArg = optStr(args, 'file');
+                // ‼️ Looked up in BOTH lists so a foreign id gets an explanation
+                // instead of "session not found" — being told the wrong thing
+                // about a session that plainly exists is worse than a refusal.
                 const s = fileArg
-                    ? index.all().find(x => x.file === fileArg)
-                    : index.all().find(x => x.sessionId === sessionId);
+                    ? index.allWithExternal().find(x => x.file === fileArg)
+                    : index.allWithExternal().find(x => x.sessionId === sessionId);
                 need(s, 'session not found — sessions.recent lists current ones');
                 const target = s as SessionInfo;
+                if (target.source) {
+                    return {
+                        sessionId: target.sessionId, agent: target.agentName ?? null,
+                        engine: target.source, files: [],
+                        note: `This session ran on ${ENGINE_LABELS[target.source] ?? target.source}. `
+                            + 'Per-file before/after text is read out of Claude\'s tool results and that engine '
+                            + 'records its edits differently, so the code changes cannot be reconstructed here. '
+                            + 'The session itself is readable — open it with sessions.open — and `git diff` on its '
+                            + 'working folder is the honest answer to what changed.'
+                    };
+                }
                 let raw = '';
                 try { raw = fs.readFileSync(target.file, 'utf8'); } catch { /* gone */ }
                 const groups = groupByFile(collectEdits(raw.split('\n')));
@@ -13920,16 +13959,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (go !== 'Open a second process anyway') { return; }
                 }
                 const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
-                // Resume carries the launch defaults too: picking up yesterday's
-                // conversation should not silently drop today's model choice.
-                const merged = withDefaults({ resume: s.sessionId }, launchDefaults());
+                /**
+                 * ‼️ A SESSION COMES BACK ON THE ENGINE THAT HAD IT (X-35).
+                 *
+                 * This resumed everything as `claude --resume <id>`, hardcoded.
+                 * A Codex thread id or an Antigravity conversation id handed to
+                 * Claude Code names nothing it has ever seen, so "Resume" on a
+                 * foreign row opened a terminal that either errored or — worse —
+                 * started a brand new Claude session while the row you clicked
+                 * sat there untouched. The engine is on the row (`source`), the
+                 * per-engine resume flags have existed since X-18
+                 * (`buildLaunchCommand` → `tuiArgs`), and nothing was joining the
+                 * two.
+                 *
+                 * An engine that cannot be resumed in a terminal at all says so
+                 * instead of opening one: `ENGINES[…].resumeInTerminal` is the
+                 * measured fact, and an engine without it would silently drop the
+                 * `--resume` and start a fresh conversation — the same defect one
+                 * layer down.
+                 */
+                const engine = ((s.source ?? 'claude').trim().toLowerCase() || 'claude') as EngineId;
+                const spec = ENGINES[engine] as (typeof ENGINES)[EngineId] | undefined;
+                if (!spec) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: "${s.title}" ran on ${s.source} — this build does not know how to start that engine, so it cannot be resumed here.`);
+                    return;
+                }
+                if (!spec.resumeInTerminal) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: ${ENGINE_LABELS[engine] ?? engine} cannot pick a conversation back up from a terminal — `
+                        + 'it has no resume flag of its own, so a terminal would start a NEW session rather than this one.',
+                        'Open the transcript instead')
+                        .then(choice => {
+                            if (choice === 'Open the transcript instead' && s.file) {
+                                void vscode.commands.executeCommand('agentfarm.openSession', s.file);
+                            }
+                        });
+                    return;
+                }
+                // …and whether this machine can run that engine at all: opening a
+                // terminal on a missing CLI puts "command not found" in front of
+                // the user instead of the one line that fixes it.
+                const refused = engineRefusal(engineMatrix(), engine);
+                if (refused) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+                    return;
+                }
+                /**
+                 * Resume carries the launch defaults too — picking up yesterday's
+                 * conversation should not silently drop today's model choice.
+                 *
+                 * ‼️ BUT NOT ANOTHER ENGINE'S DEFAULTS. `launchDefaults()` is
+                 * fleet-wide and its model/effort belong to whichever engine it
+                 * names; handing `opus-5` to `codex resume` is refused by that CLI
+                 * outright, and `--effort medium` to a model that has only
+                 * low/high is the exact error X-30 was filed for. When the
+                 * session's engine is not the fleet default, the agent's own
+                 * per-engine store is the right layer and the fleet one is not
+                 * consulted at all.
+                 */
+                const base: LaunchOptions = { resume: s.sessionId, engine };
+                const fleet = launchDefaults();
+                const ownerAgent = s.agentId ? agents.find(a => a.id === s.agentId) : undefined;
+                const merged = engine === ((fleet.engine || 'claude') as EngineId)
+                    ? withDefaults(base, fleet)
+                    : (ownerAgent ? withAgentEngineDefaults(ownerAgent, base) : base);
                 // ‼️ …and it carries the project context too — the flag does not
                 // survive `--resume` (measured), so a resumed session that is
                 // not re-told knows nothing about its project. It is the
                 // SESSION's project, never the window's: see sessionOwnProject.
                 const own = sessionOwnProject(s);
-                launchClaudeTerminal(`claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
-                    buildLaunchCommand('claude', {
+                launchClaudeTerminal(`${spec.exe}: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
+                    buildLaunchCommand(spec.exe, {
                         ...merged, projectContextFile: projectContextFileFor(own || undefined)
                     }),
                     // '' = do not stamp. A resume does not decide where a session

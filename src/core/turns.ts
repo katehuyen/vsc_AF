@@ -51,6 +51,14 @@ export interface TurnRow {
     /** Who started the session this turn belongs to — 'user' dialog or 'auto' run. */
     origin: SessionOrigin;
     active: boolean;
+    /**
+     * ‼️ WHICH ENGINE RAN THE TURN (X-35). Named exactly as the sessions tables
+     * name it (`SessionInfo.source ?? 'claude'`), because a Claude transcript
+     * states no engine and the answer being an ABSENCE is why this page could
+     * not say "Claude" out loud. Every row carries it, so a page listing four
+     * engines' turns can be read and filtered.
+     */
+    engine: string;
 }
 
 /** All turn rows of one session, newest data included. */
@@ -84,7 +92,8 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             models: t.models,
             sidechain: s.isSidechain,
             origin,
-            active
+            active,
+            engine: s.source ?? 'claude'
         };
     });
 }
@@ -108,17 +117,22 @@ export function registerTurnsOps(
 ): void {
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (claude|codex|gemini|agy — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
         handler: (args) => {
             const agent = optStr(args, 'agent').toLowerCase();
+            const engine = optStr(args, 'engine').toLowerCase();
             const origin = optStr(args, 'origin').toLowerCase();
             const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
             return buildTurnRows(deps.sessions(), deps.isActive)
                 .filter(r => !agent || r.agentName.toLowerCase() === agent)
+                // ‼️ The same axis the page filters on — an agent calling this op
+                // to ask "what has Codex been doing" had no way to say so.
+                .filter(r => !engine || engine === 'all' || r.engine.toLowerCase() === engine)
                 .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
                 .slice(0, limit)
                 .map(r => ({
-                    agent: r.agentName, session: r.session, turn: `${r.n}/${r.of}`,
+                    agent: r.agentName, engine: r.engine,
+                    session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,

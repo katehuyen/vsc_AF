@@ -1993,11 +1993,21 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 /tokens: r\.totalTokens \?\? 0/.test(src));
         }
 
-        const intBlock = src.slice(src.indexOf("op: 'sessions.interrupt'"), src.indexOf("op: 'sessions.interrupt'") + 1600);
+        // The window has to cover the whole op — the hosted-session branch and
+        // its contract sentence both grew with X-35, and a fixed 1600 characters
+        // silently stopped reaching the terminal path it is checking.
+        const intBlock = src.slice(src.indexOf("op: 'sessions.interrupt'"), src.indexOf("op: 'live.versions'"));
         ok('sessions.interrupt sends the Esc key with no newline',
             /sendText\(INTERRUPT_KEY, false\)/.test(intBlock));
         ok('…and states the external-terminal limit in its contract',
             /external/i.test(intBlock));
+        // ‼️ X-35: a terminal is one of TWO routes, and it is not the one a
+        // hosted conversation takes. An op whose only implementation types Esc
+        // into a terminal cannot interrupt a Codex or Antigravity session at all —
+        // there is no terminal, and between turns there is no process either.
+        ok('‼️ …and stops a hosted conversation through the Console, on any engine',
+            /consoleHost\.list\(\)\.find\(h => h\.sessionId === sessionId\)/.test(intBlock)
+            && /consoleHost\.interrupt\(hosted\.id\)/.test(intBlock));
     }
 
     // ---------- live sessions: read, end, clear ----------

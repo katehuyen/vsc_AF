@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, FileMeta } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
+import { ENGINE_LABELS } from '../core/engines';
 import { indexedMemoryNames, memoryLastUsed, memoryUsage, readMemoryFrontmatter } from '../core/memusage';
 import { Insight } from '../core/health';
 import { FIX_COMMANDS, insightKey } from '../core/insightops';
@@ -482,6 +483,20 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
     const parts: string[] = [];
     if (s.tags?.length) { parts.push(s.tags.join(' · ')); }
     if (showAgent && s.agentName) { parts.push(s.agentName); }
+    /**
+     * ‼️ WHICH ENGINE, IN THE SIDEBAR (X-35).
+     *
+     * The tree has listed foreign sessions since E3 and never said which engine
+     * any of them ran on: a Codex conversation and a Claude one were the same
+     * grey line with the same icon. The engine goes in the description only when
+     * it is NOT Claude, and that is a deliberate departure from the table rule
+     * ("every engine wears a badge, because an absence is unreadable") — a table
+     * column is empty or it is not, and the reader has nothing else to go on,
+     * whereas here the tooltip below names the engine on EVERY row. So the dense
+     * line spends its characters on the exception and the hover answers always.
+     */
+    const engineLabel = ENGINE_LABELS[s.source ?? ''] ?? s.source;
+    if (engineLabel) { parts.push(engineLabel); }
     if (s.machine) { parts.push(`⇄ ${s.machine}`); }
     parts.push(relTime(s.mtime));
     if (s.cost > 0) { parts.push(fmtUSD(s.cost)); }
@@ -497,6 +512,10 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         // a launch name / rename replaces the derived title in the label —
         // keep what the conversation itself suggests visible here
         (s.autoTitle && s.autoTitle !== s.title ? `\nfrom the conversation: ${s.autoTitle}` : '') +
+        // …and the engine on EVERY row, including Claude: this is the surface
+        // that answers unconditionally, which is what lets the line above show
+        // it only for the exception.
+        `\nEngine: ${ENGINE_LABELS[s.source ?? ''] ?? s.source ?? ENGINE_LABELS['']}` +
         `\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` +
         (s.lastCtxTokens ? `\nContext now: ~${fmtTokens(s.lastCtxTokens)} tokens` : '') + rollupLine;
     item.command = {

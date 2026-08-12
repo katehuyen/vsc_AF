@@ -41,13 +41,21 @@
     const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
     const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
 
-    // agents / models: null = all (no filter, so one appearing later is in by
-    // itself); an array = exactly that subset, [] = none. See afFilters.js.
+    // agents / engines / models: null = all (no filter, so one appearing later
+    // is in by itself); an array = exactly that subset, [] = none. `engines` has
+    // the same shape for the same reason as in the sessions tables (X-27/X-35): a
+    // build that learns about a fifth engine must list its turns without anybody
+    // touching this default. See afFilters.js.
     const FDEF = () => ({
-        text: '', session: '', agents: null, models: null, origin: 'user',
+        text: '', session: '', agents: null, engines: null, models: null, origin: 'user',
         activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
+
+    // Which engine ran the row, said the way the badge says it. A row with no
+    // `engine` is a Claude transcript — the field is an ABSENCE there, which is
+    // exactly why the page could not print "Claude" until this line existed.
+    const engineLabel = r => window.AFEngine.label(r.engine || 'claude');
 
     // Content filter of an unfolded turn — the session viewer's chip set, same
     // semantics: empty selection = show everything; "Errors" matches the flag,
@@ -66,7 +74,11 @@
     // Visible column order — origin first (one narrow glyph strip to scan),
     // Tokens right after Model, next to the figures that explain it. HEAD/CELL
     // are keyed so the order lives in ONE list.
-    const COLUMNS = ['origin', 'agent', 'label', 'session', 'n', 'models', 'steps', 'tokens', 'ctx', 'when', 'took', 'duration', 'tools', 'errors', 'cost'];
+    // ‼️ `engine` SITS BESIDE `agent`, AS IT DOES IN THE SESSIONS TABLES (X-35).
+    // This page unrolls the whole farm one row per turn and could not say which
+    // engine ran any of them — and once a Codex turn appears beside a Claude one,
+    // "which agent" stops being enough to identify a row.
+    const COLUMNS = ['origin', 'agent', 'engine', 'label', 'session', 'n', 'models', 'steps', 'tokens', 'ctx', 'when', 'took', 'duration', 'tools', 'errors', 'cost'];
     // How much of a long text a cell shows before it is cut (the full string is
     // always in the cell's tooltip). The CSS caps match these.
     const LABEL_CHARS = 77;
@@ -179,6 +191,7 @@
     // counted here (a permanent "(1)" on the Filters chip says nothing).
     function activeFilterCount() {
         let n = (filters.text ? 1 : 0) + (filters.session ? 1 : 0) + (filters.agents ? 1 : 0)
+            + (filters.engines ? 1 : 0)
             + (filters.models ? 1 : 0) + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0)
             + (filters.mainOnly ? 1 : 0) + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
         FRANGES.forEach(k => {
@@ -196,6 +209,7 @@
             if (!text.empty && !text.test(r.label || '')) { return false; }
             if (!sess.empty && !sess.test(r.session || '')) { return false; }
             if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
+            if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
             if (filters.origin && originOf(r) !== filters.origin) { return false; }
             if (filters.models && !(r.models || []).some(m => filters.models.indexOf(m) >= 0)) { return false; }
             if (filters.activeOnly && !r.active) { return false; }
@@ -220,15 +234,27 @@
         });
     }
 
-    /** The agent / model values present in the pool — the pickers' options. */
+    /** The agent / engine / model values present in the pool — the pickers' options. */
     function filterFacets() {
         const rows = DATA.rows || [];
-        const agents = [], models = [];
+        const agents = [], models = [], engines = [];
         rows.forEach(r => {
             if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); }
+            const e = engineLabel(r);
+            if (e && engines.indexOf(e) < 0) { engines.push(e); }
             (r.models || []).forEach(m => { if (models.indexOf(m) < 0) { models.push(m); } });
         });
-        return { agents: agents.sort(), models: models.sort() };
+        // Claude first — the default and the longest lane — then the rest
+        // alphabetically. Built off the ROWS, not a fixed list of four: an id
+        // this build has never heard of still gets a badge, so it must still get
+        // a line in the picker it would otherwise be unfilterable behind. Same
+        // rule, same order as the sessions tables (media/sessionsTable.js).
+        const claude = window.AFEngine.label('claude');
+        return {
+            agents: agents.sort(), models: models.sort(),
+            engines: engines.sort((a, b) =>
+                a === claude ? -1 : b === claude ? 1 : a.localeCompare(b))
+        };
     }
 
     function filterPanelHtml() {
@@ -257,6 +283,10 @@
                 ${agents.length > 1 ? window.AFFilter.multi({
                     id: 'turns-agents', label: 'Agents', options: agents, selected: filters.agents,
                     title: 'Which agents\' turns to list — tick any combination'
+                }) : ''}
+                ${facets.engines.length > 1 ? window.AFFilter.multi({
+                    id: 'turns-engines', label: 'Engines', options: facets.engines, selected: filters.engines,
+                    title: 'Which engines\' turns to list — tick any combination'
                 }) : ''}
                 ${models.length > 1 ? window.AFFilter.multi({
                     id: 'turns-models', label: 'Models', selected: filters.models,
@@ -361,6 +391,7 @@
     const HEAD = {
         origin: '<th class="origcell" title="Who started the session this turn belongs to: 🧑 you · 🤖 automation">By</th>',
         agent: '<th title="Agent whose folder the session ran in">Agent</th>',
+        engine: '<th title="Which engine ran this turn — Claude Code, Codex, Gemini or Antigravity. A Claude transcript states no engine; the absence IS Claude.">Engine</th>',
         label: '<th title="The prompt that opened the turn">Turn</th>',
         session: '<th title="The session this turn belongs to">Session</th>',
         n: '<th class="num" title="Turn number / the session\'s turn count">#</th>',
@@ -385,6 +416,12 @@
             ])}">${o.glyph}</td>`;
         },
         agent: r => `<td title="${turnTip(r)}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
+        // The shared badge and the shared palette — never a colour invented here.
+        engine: r => `<td title="${tip([
+            line('Engine', engineLabel(r)),
+            line('Model', (r.models || []).join(', ') || '—'),
+            line('Turn', r.n + ' of ' + r.of)
+        ])}">${window.AFEngine.badge(r.engine || 'claude')}</td>`,
         // ‼️ The two TEXT columns hover into the rich panel (media/afTip.js):
         // a native tooltip cuts wherever the platform likes, which is the worst
         // possible treatment of the one cell that is actually words.
@@ -595,6 +632,10 @@
             window.AFFilter.wireMulti({
                 root, id: 'turns-agents',
                 onChange: sel => { filters.agents = sel; apply(); }
+            });
+            window.AFFilter.wireMulti({
+                root, id: 'turns-engines',
+                onChange: sel => { filters.engines = sel; apply(); }
             });
             window.AFFilter.wireMulti({
                 root, id: 'turns-models',

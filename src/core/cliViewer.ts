@@ -179,15 +179,32 @@ function usageDiff(next: Usage, prev: Usage): Usage {
     };
 }
 
+/**
+ * ‼️ `reasoning_output_tokens` IS ALREADY INSIDE `output_tokens` — the second
+ * place this file's twin got it wrong (X-35).
+ *
+ * Measured twice on this machine's own rollouts, and the file states the
+ * identity itself: `total_tokens` is `input + output`.
+ *
+ *   input 20 766 + output   822 = total  21 588   (reasoning   211)
+ *   input 32 705 304 + output 95 054 = total 32 800 358  (reasoning 31 839)
+ *
+ * Adding the two charged the model's private thinking twice, so every Codex
+ * TURN in the session viewer over-reported its output — and the per-turn cost
+ * and weighted tokens derived from it — by the size of that thinking. The
+ * cumulative-total handling around this function was already right (it takes a
+ * delta against the previous block); this one line was not.
+ */
 function codexUsage(value: unknown): Usage {
     const o = value && typeof value === 'object' ? value as Record<string, unknown> : {};
     const n = (k: string): number => typeof o[k] === 'number' && Number.isFinite(o[k])
         ? Math.max(0, Math.trunc(o[k] as number)) : 0;
-    const cached = n('cached_input_tokens');
+    const input = n('input_tokens');
+    const cached = Math.min(n('cached_input_tokens'), input);
     return {
-        input: Math.max(0, n('input_tokens') - cached),
-        output: n('output_tokens') + n('reasoning_output_tokens'),
-        cacheWrite: 0,
+        input: Math.max(0, input - cached),
+        output: n('output_tokens'),
+        cacheWrite: n('cache_write_input_tokens'),
         cacheRead: cached
     };
 }
@@ -314,7 +331,15 @@ function parseCodex(raw: string, file: string, pricing: PricingEngine): ParsedCl
             if (typeof info.model_context_window === 'number') { ctxLimit = info.model_context_window; }
             const last = info.last_token_usage && typeof info.last_token_usage === 'object'
                 ? info.last_token_usage as Record<string, unknown> : {};
-            if (typeof last.input_tokens === 'number') { ctxTokens = last.input_tokens; ctxTs = ts; }
+            // ‼️ The window held the request's whole input AND its reply, which is
+            // what `contextAfter` means on the Claude side — reading only
+            // `input_tokens` here made the viewer's gauge disagree with the same
+            // session's Ctx cell in every table (X-35).
+            if (typeof last.input_tokens === 'number') {
+                const lastU = codexUsage(last);
+                ctxTokens = lastU.input + lastU.cacheRead + lastU.cacheWrite + lastU.output;
+                ctxTs = ts;
+            }
             const model = typeof info.model === 'string' && info.model ? info.model : currentModel;
             if (model) { currentModel = model; models.add(model); }
             const dt = totalTokens(delta);

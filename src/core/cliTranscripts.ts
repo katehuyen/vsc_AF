@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PricingEngine, Usage, emptyUsage } from './pricing';
+import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
 import { conversationTitle, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
 import { truncate } from './util';
@@ -232,6 +232,32 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     let firstTs = 0, lastTs = 0;
     const models = new Set<string>();
 
+    /**
+     * ‼️ THE TURNS PAGE COULD NOT SHOW A CODEX TURN — because nothing built one.
+     *
+     * `buildTurnRows` maps over `SessionInfo.turns`, which the Claude parse fills
+     * and every foreign source left empty, so the page that unrolls the whole
+     * farm one row per turn silently held one engine's turns. Widening it to the
+     * external list would have added nothing: the rows were never there.
+     *
+     * A Codex rollout states every boundary the shape needs, and states them
+     * plainly: `user_message` opens a turn and carries its label and time,
+     * `token_count.last_token_usage` is that request's own spend AND the window
+     * it ended holding, `response_item` function/custom calls are its tools,
+     * `turn_context` names the model. So the turns are built from what the file
+     * says, and the fields it cannot answer stay at their honest zero rather
+     * than being interpolated from the session total.
+     */
+    const openTurn = (label: string, ts: number): void => {
+        info.turns.push({
+            n: info.turns.length + 1, label, ts,
+            tokens: 0, wTokens: 0, cost: 0,
+            apiCalls: 0, steps: 0, thinking: 0, ms: 0, endCtx: 0,
+            tools: 0, errors: 0, models: []
+        });
+    };
+    const turnNow = () => (info.turns.length ? info.turns[info.turns.length - 1] : undefined);
+
     for (const lineText of raw.split('\n')) {
         if (!lineText.trim()) { continue; }
         let line: CodexLine;
@@ -240,6 +266,9 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
         if (!Number.isNaN(ts)) {
             if (!firstTs) { firstTs = ts; }
             lastTs = ts;
+            // The turn runs to its last recorded line, exactly as on Claude.
+            const open = turnNow();
+            if (open && ts > open.ts) { open.ms = ts - open.ts; }
         }
         const p = line.payload;
         if (!p) { continue; }
@@ -257,8 +286,12 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
                 if (named && info.title === 'codex session') {
                     info.title = named; info.autoTitle = named;
                 }
+                openTurn(named || codexUserText(p.message).slice(0, 80),
+                    Number.isNaN(ts) ? (lastTs || info.mtime) : ts);
             } else if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
                 info.assistantMsgs++;
+                const open = turnNow();
+                if (open) { open.steps++; }
             } else if (p.type === 'token_count' && p.info) {
                 if (typeof p.info.model === 'string' && p.info.model) { models.add(p.info.model); lastModel = p.info.model; }
                 // token_count totals are CUMULATIVE — the last one is the session total.
@@ -267,12 +300,36 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
                 if (typeof p.info.model_context_window === 'number' && p.info.model_context_window > 0) {
                     ctxWindow = p.info.model_context_window;
                 }
+                // ‼️ The TURN's own figures come from `last_token_usage` — the
+                // request that just finished — never from the running total. It
+                // is emitted repeatedly within a turn, so the last one for the
+                // turn wins rather than accumulating (the same repeat problem
+                // the Claude side solves with `lastUsageKey`).
+                const open = turnNow();
+                if (open && p.info.last_token_usage) {
+                    const u = codexTotalsToUsage(p.info.last_token_usage);
+                    open.tokens = u.input + u.output + u.cacheWrite + u.cacheRead;
+                    open.endCtx = open.tokens;
+                    const m = (typeof p.info.model === 'string' && p.info.model) || lastModel;
+                    if (m) {
+                        if (!open.models.includes(m)) { open.models.push(m); }
+                        open.cost = pricing().costFor(m, u, Number.isNaN(ts) ? undefined : ts);
+                        open.wTokens = weightedTokens(m, u);
+                    }
+                    // One `token_count` closes one round trip to the model.
+                    open.apiCalls = Math.max(1, open.apiCalls);
+                }
             }
         } else if (line.type === 'response_item'
             && (p.type === 'function_call' || p.type === 'custom_tool_call')) {
             info.toolCalls++;
             const name = typeof p.name === 'string' && p.name ? p.name : 'tool';
             info.tools[name] = (info.tools[name] ?? 0) + 1;
+            const open = turnNow();
+            if (open) { open.tools++; open.steps++; }
+        } else if (line.type === 'response_item' && p.type === 'reasoning') {
+            const open = turnNow();
+            if (open) { open.thinking++; open.steps++; }
         }
     }
 

@@ -327,6 +327,25 @@ const SPECS: EngineSpec[] = [
 ];
 
 /**
+ * ‼️ id → what a person calls it, for the surfaces that are NOT webviews (X-35).
+ *
+ * `media/afEngine.js` is this map's twin and owns every webview: one component,
+ * one palette, one spelling. The sidebar trees, notifications, quick picks and
+ * report text have no access to it and were printing raw ids — a session row in
+ * the tree read `agy`, which is a word nobody outside this codebase knows. Built
+ * off `SPECS` rather than typed out again, so the host cannot drift from itself;
+ * the empty key is Claude because a Claude transcript states no engine and the
+ * answer being an ABSENCE is what made these surfaces silent about it.
+ *
+ * An id this build has never heard of resolves to nothing here — the callers
+ * fall back to the id itself, which is the same rule the badge follows.
+ */
+export const ENGINE_LABELS: Record<string, string> = {
+    '': 'Claude Code',
+    ...Object.fromEntries(SPECS.map(s => [s.id, s.label]))
+};
+
+/**
  * The one sentence a row is worth reading for.
  *
  * ‼️ IT NEVER SAYS ONLY WHAT IS WRONG. "Not configured" is the message this

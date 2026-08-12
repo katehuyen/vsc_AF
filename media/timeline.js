@@ -691,7 +691,9 @@
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
                     ${!gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — stops the running turn and leaves the session open. A conversation the Console hosts is stopped through the Console; one running in a terminal gets Esc typed into it.">⎋ Interrupt</button>` : ''}
                     ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
-                    ${s.owner && !s.source ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="End this session for real — its claude process (pid ${s.owner.pid}) is stopped and the session leaves this page. Asks first.">⏻ End session</button>` : ''}
+                    ${s.owner || s.hosted ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="${C.esc(s.hosted
+                        ? 'End this conversation for real — the Console closes it and the session leaves this page. Its transcript stays on disk. Asks first.'
+                        : 'End this session for real — its claude process (pid ' + s.owner.pid + ') is stopped and the session leaves this page. Asks first.')}">⏻ End session</button>` : ''}
                     <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="Take this session off the Live Timeline whole — this card AND its swim-lane row, in every range. The session itself is not touched: its transcript stays on disk, and it comes back here if it reports another event.">✕ Clear</button>
                 </div>
             </div>`;

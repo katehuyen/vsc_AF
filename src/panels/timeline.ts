@@ -15,6 +15,15 @@ export interface TimelineDeps {
     liveOwners: () => { sessionId: string; pid: number; entrypoint?: string; status?: string }[];
     /** Is that registry readable at all? Without it, "no process" means nothing. */
     ownersKnown: () => boolean;
+    /**
+     * Session ids the Console is hosting right now, on ANY engine.
+     *
+     * ‼️ `liveOwners` cannot answer this: it reads Claude's own session registry,
+     * so a hosted Codex or Antigravity conversation has no pid and never will.
+     * The End and Interrupt actions both work on a hosted session — the host
+     * closes it per engine — and this is what lets the card offer them.
+     */
+    hostedIds: () => string[];
     /** agentFarm.stuckThresholdMinutes in ms — the page marks silence with it. */
     stuckMs: () => number;
     /** Per-agent turn-ready notification actions (agentName → action ids). */
@@ -45,6 +54,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
     const rows = new Map(deps.index.allWithExternal().map(r => [r.sessionId, r]));
     const owners = deps.liveOwners();
     const ownersKnown = deps.ownersKnown();
+    const hosted = new Set(deps.hostedIds());
     return {
         now: Date.now(),
         stuckMs: deps.stuckMs(),
@@ -93,7 +103,10 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 // OS confirms, or nothing.
                 owner: owner
                     ? { pid: owner.pid, entrypoint: owner.entrypoint ?? '', status: owner.status ?? '' }
-                    : null
+                    : null,
+                // Agent Farm's Console owns this conversation, so it can be ended
+                // and interrupted whatever engine it runs on — see hostedIds.
+                hosted: hosted.has(s.sessionId)
             };
         }),
         events: deps.live.events(DATA_WINDOW_MS),

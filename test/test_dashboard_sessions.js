@@ -218,9 +218,16 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         && codexData.messages.filter(m => m.role === 'assistant').length === 1
         && codexData.messages.some(m => m.role === 'tool')
         && codexData.messages.some(m => m.role === 'toolResult'));
+    // ‼️ 120, NOT 130 (X-35). The reasoning tokens are already inside
+    // `output_tokens` — the rollout states `total_tokens = input + output` and two
+    // real measurements on this machine confirm it — so the old 130 was the
+    // model's private thinking billed twice. `context.limit` is the engine's own
+    // window, and `context.tokens` is what the LAST request held (input + reply),
+    // which is what the same figure means on a Claude transcript.
     ok('Codex viewer carries model, effort, tokens and context from its own protocol',
         codexData.models.includes('gpt-5.6-sol') && codexData.turns[0].attrs.effort === 'high'
-        && codexData.totalTokens === 130 && codexData.context.limit === 258400);
+        && codexData.totalTokens === 120 && codexData.context.limit === 258400
+        && codexData.context.tokens === 120);
 
     // Antigravity's private DB is schema-less protobuf. Console-hosted sessions
     // are therefore mirrored to Agent Farm's versioned, readable JSON instead.

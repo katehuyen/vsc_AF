@@ -690,15 +690,30 @@
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
             : '';
         const extEntries = Object.entries(DATA.externalSessions || {});
+        // ‼️ THE BADGE, NOT THE RAW ID (X-35). This line printed `codex ×3 · agy
+        // ×1` — the internal ids, in the generic footnote grey, on the one page
+        // that is supposed to be the farm at a glance. `agy` is not a word
+        // anybody outside this codebase knows, and the same engine wore a proper
+        // coloured badge two inches above in the sessions table.
         const externalNote = extEntries.length
-            ? `<p class="footnote">⌁ External CLI sessions: ${extEntries.map(([src, n]) => `${C.esc(src)} ×${n}`).join(' · ')} — kept out of the totals above; their costs use <code>agentFarm.pricing</code> rules when a model matches, otherwise $0.</p>`
+            ? `<p class="footnote">⌁ Sessions on other engines: ${extEntries
+                .map(([src, n]) => `${window.AFEngine.badge(src)} ×${n}`).join(' · ')}`
+              + ` — listed in the Sessions table above and kept OUT of the cost, token and model`
+              + ` figures on this page: those are defined against Claude's transcript format and`
+              + ` would read zero or read wrong on a foreign one. Where a model matches an`
+              + ` <code>agentFarm.pricing</code> rule its own cost is shown on its row; otherwise it is honestly $0.</p>`
             : '';
 
         document.getElementById('app').innerHTML = `
             ${window.AFHeader.html({
                 page: 'dashboard',
                 title: 'Agent Farm',
-                sub: `Generated ${window.AFTime.full(DATA.generatedAt)} · data: local Claude Code transcripts`,
+                // ‼️ "data: local Claude Code transcripts" was true when there was
+                // one engine and is a claim this page can no longer make (X-35):
+                // the Sessions table below holds four. What IS Claude-only is the
+                // analytics, and that distinction is worth stating rather than
+                // implying — see the footnote.
+                sub: `Generated ${window.AFTime.full(DATA.generatedAt)} · every engine's sessions; cost, token and model figures are Claude transcripts only`,
                 // Every day of the first week, then the longer spans, then two
                 // dates. "Yesterday and today" and "that week in July" were
                 // both unaskable when the smallest step was 7 days.

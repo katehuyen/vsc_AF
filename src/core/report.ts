@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { AgentInfo } from './agents';
+import { ENGINE_LABELS } from './engines';
 import { Insight } from './health';
 import { totalTokens } from './pricing';
 import { SessionIndex, SessionInfo } from './sessions';
@@ -42,9 +43,37 @@ export function buildFleetReport(
     const totalErrors = all.reduce((a, s) => a + s.errors, 0);
     lines.push('## Fleet totals');
     lines.push('');
-    lines.push(`- Sessions: **${all.length}** · Cost: **${fmtUSD(totalCost)}** · ` +
+    lines.push(`- Claude sessions: **${all.length}** · Cost: **${fmtUSD(totalCost)}** · ` +
         `Tokens: **${fmtTokens(totalTok)}** · ⚖ **${fmtTokens(Math.round(totalW))}** against the limit`);
     lines.push(`- Tool calls: **${totalTools}** · Errors: **${totalErrors}**${totalTools ? ` (${pct(totalErrors / totalTools)})` : ''}`);
+    /**
+     * ‼️ THE LINE ABOVE SAID "Sessions" AND MEANT "CLAUDE SESSIONS" (X-35).
+     *
+     * Everything measured in this report — cost, tokens, cache efficiency,
+     * context load, quality — is defined against Claude's transcript format and
+     * genuinely cannot be computed for the other engines, so the report stays
+     * Claude's and that is the right call. What was NOT right is a heading that
+     * says "Fleet totals" over a session count that quietly excluded three
+     * engines: a reader comparing it against the Sessions page found a different
+     * number and had nothing to explain the gap. The counts are stated, the
+     * exclusion is stated, and neither is folded into the money.
+     */
+    const external = index.external().filter(s => inRange(s, cutoff));
+    if (external.length) {
+        const byEngine = new Map<string, number>();
+        for (const s of external) {
+            const key = s.source ?? 'other';
+            byEngine.set(key, (byEngine.get(key) ?? 0) + 1);
+        }
+        const spelt = [...byEngine.entries()]
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .map(([id, n]) => `${ENGINE_LABELS[id] ?? id} ×${n}`)
+            .join(' · ');
+        lines.push(`- Other engines in the same period: **${external.length}** session${external.length === 1 ? '' : 's'} — ${spelt}.`
+            + ' Listed on the Sessions page; deliberately NOT in the figures above or anywhere below,'
+            + ' because every measurement in this report is defined against Claude\'s transcript format'
+            + ' and would read zero or read wrong on a foreign one.');
+    }
     lines.push('');
 
     // Per-agent comparison

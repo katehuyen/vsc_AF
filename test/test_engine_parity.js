@@ -241,5 +241,70 @@ function newIndex() {
     fs.rmSync(root, { recursive: true, force: true });
 }
 
+// ---------------------------------------------------------------------------
+// The host names engines the same way the webviews do
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const vm = require('vm');
+    const { ENGINE_LABELS } = out('engines.js');
+
+    // ‼️ TWO MAPS, ONE SPELLING — and this is the assertion that keeps them one.
+    // `media/afEngine.js` owns every webview; the host has no access to it, so
+    // the sidebar trees, notifications and report text were printing raw ids
+    // (`agy`, a word nobody outside this codebase knows). Now both exist, which
+    // is exactly the duplication this codebase warns about — so the drift is
+    // pinned here rather than left to be noticed on a screenshot.
+    const sandbox = { window: {} };
+    vm.createContext(sandbox);
+    vm.runInContext(
+        fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afEngine.js'), 'utf8'), sandbox);
+    const web = sandbox.window.AFEngine;
+
+    // ‼️ THE SAME ENGINES, AND THE SAME NAME FOR EACH — not byte-identical
+    // strings, because the two labels do different jobs and both are right: a
+    // 9px badge in a table cell says "Claude", the Engines settings row says
+    // "Claude Code". What must never drift is the SET of ids and which engine a
+    // name refers to, so the host label has to start with the badge's.
+    ok('‼️ the host and the webviews know exactly the same engines',
+        web.known.length === Object.keys(ENGINE_LABELS).filter(k => k).length
+        && web.known.every(id => typeof ENGINE_LABELS[id] === 'string'));
+    ok('…and each engine\'s two names are the same name',
+        web.known.every(id => ENGINE_LABELS[id].startsWith(web.label(id))));
+    // A Claude transcript states no engine, so BOTH sides must read the absence
+    // as Claude rather than as "unknown" — the omission the badge exists for.
+    ok('…and an absent engine is Claude on both sides',
+        web.id('') === 'claude' && !!ENGINE_LABELS['']);
+}
+
+// ---------------------------------------------------------------------------
+// A turn row says which engine ran it
+// ---------------------------------------------------------------------------
+{
+    const { turnRowsFor } = out('turns.js');
+
+    // ‼️ The Turns page maps over `SessionInfo.turns`, which only the Claude
+    // parse ever filled — so the page that calls itself "the whole farm unrolled
+    // one row per turn" held exactly one engine's turns, and widening it to the
+    // external list alone would have added nothing.
+    const codex = external('codex-turns-1', 'codex', 'codex session');
+    codex.turns = [{
+        n: 1, label: 'run the suite', ts: 10,
+        tokens: 2300, wTokens: 0, cost: 0,
+        apiCalls: 1, steps: 4, thinking: 1, ms: 900, endCtx: 2300,
+        tools: 2, errors: 0, models: ['gpt-5.4-mini']
+    }];
+    const rows = turnRowsFor(codex, false);
+    ok('‼️ a Codex turn becomes a row at all', rows.length === 1);
+    ok('…and the row names the engine that ran it', rows[0].engine === 'codex');
+
+    // A Claude transcript states no engine; the row must still say "claude"
+    // rather than leaving the column empty (the absence IS the answer).
+    const claude = external('claude-turns-1', undefined, 'a claude session');
+    claude.turns = [codex.turns[0]];
+    ok('…and a session with no stated engine is reported as claude',
+        turnRowsFor(claude, false)[0].engine === 'claude');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
