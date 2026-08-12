@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.117.0 — Search controls stop fighting the search (2026-08-12)
+
+**The query owns the row.** It is now a full-width, two-line textarea that may grow vertically, with only the fixed Search button beside it. Text and Regex searches are live again after a 500 ms pause; `Ctrl/⌘+Enter` runs immediately, while Meaning remains deliberate because it may spend a paid embedding call. Clearing or resetting invalidates an answer already in flight, so old results cannot return under an empty query.
+
+**Compact badges stay compact and stay put.** The visible terms are the product's own short vocabulary — **You · Agent · Delegator · Handler · Tools · Results** — with the full distinction in rich, scrollable AFTips. **Conversation · Delegation · Tool trail · Everything** now occupy a purple-framed `Quick scope` group instead of blending into the role switches. Selected colours differ by function, while reserved check space, unchanged font weight and a fixed Filters width prevent any press from resizing or shoving the controls. At narrow widths roles move as a stable group instead of wrapping one badge at a time or clipping the last choices.
+
+**The hidden panel no longer hides its way out.** Session id/title/path gets the wide flexible field. When any session filter is active, **Clear filters** remains outside beside the closed Filters badge; **Reset** returns the query, mode, roles, sources, scope and all filters to their initial state. Engine choices now come from the single product engine registry, so **Claude, Codex, Gemini and Antigravity** remain present even when one engine has no session in the current pool.
+
+**Known session ID is a direct door.** `Find session ID…` is visible in Search and opens the existing whole-index finder, seeded from the query. Full IDs and eight-character prefixes work across every engine; the detail-panel Session field remains what it actually is — a way to narrow a text scan.
+
+Verified with 8,198 automated assertions plus Chromium inspection at 1400, 900 and 700 px in dark and light themes.
+
 ## 3.116.0 — Search is compact again (2026-08-12)
 
 **The search page is a search page, not a three-step wizard.** The numbered Ask / Choose content / Narrow sessions cards and the six oversized content tiles are gone. Query + Search, query mode, content scope and the agent picker now fit into one compact control panel; the first result begins immediately below it.

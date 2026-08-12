@@ -23,8 +23,8 @@ panelin hemen altında cevabın kapsamını ve eksik bırakılan önizlemeleri a
   `aria-pressed=true` birlikte kullanılır.
 - Açıklama taşıyan hover yerli `title` kullanmaz. `AFTip` geniş, kaydırılabilir ve
   işaretçinin içine girebildiği paneldir.
-- Ağır metin taraması yazarken kendiliğinden çalışmaz. Enter veya ana `Search`
-  düğmesi aramayı başlatır.
+- Text ve Regex, kullanıcı yazmayı bıraktıktan 500 ms sonra en az üç karakterle
+  kendiliğinden yeniden aranır. `Search` beklenmez; `Ctrl/⌘+Enter` hemen arar.
 - Anlam araması ücretli olabileceği için hiçbir filtre değişiminde otomatik çalışmaz.
 - Anlam araması metin araması gibi davranıyormuş gibi gösterilmez; kapsamadığı
   seçenekler devre dışıdır ve sınırı görünür bir açıklamada yazılıdır.
@@ -87,6 +87,10 @@ Ortak dil `media/afQuery.js` içindedir ve host da aynı dosyayı yükler.
 kelimenin içinde bulmayı durdurur. Türkçe harfler için `\b` değil Unicode harf/sayı
 lookaround'u kullanılır.
 
+Sorgu denetimi tek satırlık dar bir input değildir: panelin kalan genişliğini alan,
+iki satır yüksekliğinde başlayan ve gerektiğinde 180 px'e kadar büyütülebilen bir
+textarea'dır. Yanında sabit genişlikte yalnız ana `Search` düğmesi bulunur.
+
 ### Regex
 
 Sorgu doğrudan JavaScript `RegExp` olarak derlenir. Text grameri bu kipte çalışmaz.
@@ -118,6 +122,11 @@ Altı transcript rolü vardır:
 
 Hazır kümeler: `Conversation`, `Delegation`, `Tool trail`, `Everything`.
 
+Hazır kümeler rollerin devamı gibi çizilmez: mor çerçeveli `Quick scope` grubunda
+durur; roller ayrı satır/grid alanındadır. Görünen rol adları kısa ve kanoniktir:
+`You · Agent · Delegator · Handler · Tools · Results`. Tam anlam ve tıklama davranışı
+uzun, kaydırılabilir `AFTip` içindedir.
+
 Düz tık bir rolü ekler/çıkarır; Ctrl/⌘-tık yalnız o rolü bırakır. Son rol çıkarılırsa
 boş ve anlaşılmaz bir kapsam yerine `Conversation` geri gelir. Ek kaynaklar `Memory
 notes` ve transcript'i kalmamış `Orphaned events` olarak ayrı seçilir.
@@ -137,6 +146,19 @@ notes` ve transcript'i kalmamış `Orphaned events` olarak ayrı seçilir.
 - Has errors
 - Mesaj tarih aralığı
 - Sonuç grup sırası
+
+Session kutusu bu satırın esnek ana sütunudur; motor/proje/model kutularından önce
+kalan alanı alır. `Clear filters`, daraltan bir seçim varsa panel kapalıyken de Filters
+yanında görünür. `Reset`, sorgu, kip, içerik, kaynak ve bütün oturum süzgeçlerini tek
+hareketle ilk duruma getirir. Rozetlerde onay işareti alanı her durumda ayrılır ve
+seçim yazı kalınlığını değiştirmez; bu yüzden tıklamak hiçbir rozeti ya da Filters
+düğmesini büyütüp küçültmez.
+
+Bilinen bir oturuma metin araması yapmadan gitmek için üst satırdaki
+`Find session ID…`, ana sorguyu başlangıç değeri olarak alıp bütün motorların tüm
+oturum indeksini doğrudan tarar. Tam kimlik veya sekiz karakterlik önek yeterlidir.
+Motor filtresi, o gün oturumu görünmese bile tek ürün motor kayıt defterindeki dört
+yerleşik motoru da daima taşır: Claude, Codex, Gemini ve Antigravity.
 
 Çoklu seçicide `null = hepsi`, `[] = hiçbiri`, `[a,b] = tam bu küme` anlamına gelir.
 Seçicideki düğme seçimi kısa gösterir; `AFTip` bütün seçili değerleri, eksenin anlamını

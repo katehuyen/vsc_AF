@@ -1616,6 +1616,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         };
         const SP = require(path.join(__dirname, '..', 'out', 'panels', 'searchPanel.js'));
         Module._load = origLoad;
+        ok('Search engine facets come from the one four-engine registry',
+            SP.BUILTIN_SEARCH_ENGINES.join(',') === 'claude,codex,gemini,agy');
         const pool = [
             { sessionId: '4d361981-aaaa', file: 'a.jsonl', title: 'nothing', agentName: 'dev', lastTs: 1, mtime: 1, tags: [] },
             { sessionId: 'ffffffff-bbbb', file: 'b.jsonl', title: 'about 4d361981', agentName: 'dev', lastTs: 9, mtime: 9, tags: [] },

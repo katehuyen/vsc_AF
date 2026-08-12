@@ -4,6 +4,7 @@ import {
     SearchResult, SearchRole, SearchableSession, ParseForeign, isSearchRole
 } from '../core/search';
 import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
+import { ENGINES } from '../core/consoleEngine';
 import { handleAfNav, htmlShell } from './base';
 
 export interface SearchDeps {
@@ -64,8 +65,10 @@ export interface SessionFilters {
     session?: string;
 }
 
-/** The values that actually exist in the pool — a picker built from reality
- *  rather than from a fixed list, so a new engine or project needs no code. */
+/** Projects/models come from the pool. Engine filters also carry every built-in
+ *  engine even before its first session exists: filtering is a choice of what
+ *  the product can read, not a census that hides Gemini on a quiet day. Any
+ *  external profile id found in the pool is added beside these four. */
 interface SearchFacets {
     agents: string[];
     engines: string[];
@@ -84,6 +87,9 @@ interface SessionRef {
 }
 
 export const engineOf = (s: SessionInfo): string => s.source ?? 'claude';
+/** One product engine registry, one Search filter list. Exported so a regression
+ *  test can prove Search did not quietly lose an engine again. */
+export const BUILTIN_SEARCH_ENGINES = Object.keys(ENGINES);
 
 /** Model ids without the vendor prefix every one of them carries — the same
  *  shortening the tables show, so the picker and the cell agree. */
@@ -201,7 +207,7 @@ export class SearchPanel {
 
     private facets(): SearchFacets {
         const agents = new Set<string>();
-        const engines = new Set<string>();
+        const engines = new Set<string>(BUILTIN_SEARCH_ENGINES);
         const projects = new Set<string>();
         const models = new Set<string>();
         for (const s of this.pool()) {

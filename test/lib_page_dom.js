@@ -195,7 +195,11 @@ function runPage(scriptFile, DATA, extraWindow) {
             get hidden() { return false; },
             get activeElement() { return null; }
         },
-        setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { },
+        setTimeout: extraWindow && typeof extraWindow.setTimeout === 'function'
+            ? extraWindow.setTimeout : () => 0,
+        clearTimeout: extraWindow && typeof extraWindow.clearTimeout === 'function'
+            ? extraWindow.clearTimeout : () => { },
+        setInterval: () => 0, clearInterval: () => { },
         console, Date, Math, JSON, String, Number, Object, Array, RegExp, Set, Map, isNaN,
         parseInt, parseFloat
     };

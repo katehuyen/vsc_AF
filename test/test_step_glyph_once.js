@@ -79,7 +79,7 @@ for (const [file, src] of [
     ['search.js', media('search.js')]
 ]) {
     ok(`${file} still offers 🔧 Tool calls as a filter`, file === 'search.js'
-        ? /icon: '🔧', label: 'Tool calls'/.test(src)
+        ? /icon: '🔧', label: 'Tools'/.test(src)
         : /🔧 Tool calls/.test(src));
 }
 

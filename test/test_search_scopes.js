@@ -279,6 +279,18 @@ const lastSearch = r => r.posted.filter(p => p.type === 'search').pop();
 /** Press Search without going through a chip (which repaints first). */
 const go = r => r.els.go.fire('click');
 
+// ---------- the ordinary search box is live; Meaning stays deliberate ----------
+{
+    const r = runPage('search.js', fixture.data(), {
+        setTimeout: fn => { fn(); return 1; }, clearTimeout: () => { }
+    });
+    const box = r.query('#q')[0];
+    box.value = 'parser';
+    box.fire('input');
+    ok('text search runs again while typing, without waiting for Search',
+        lastSearch(r)?.query === 'parser' && lastSearch(r)?.semantic === false);
+}
+
 // ---------- U-42: the kind chips are badges, and a badge toggles ----------
 {
     const r = page();
@@ -288,6 +300,12 @@ const go = r => r.els.go.fire('click');
             .every(id => html.includes(`data-role="${id}"`)));
     ok('Conversation is the default and visibly selected',
         /class="chip on"[\s\S]*data-preset="dialog"[\s\S]*aria-pressed="true"/.test(html));
+    ok('canonical compact role names stay on the badges; detail stays in the tooltip',
+        ['>🤖 Agent<', '>📤 Delegator<', '>📥 Handler<', '>🔧 Tools<', '>📄 Results<']
+            .every(s => html.includes(s)) && !html.includes('>🤖 Agent replies<'));
+    ok('quick scopes are visually a separate group, not more role badges in one run',
+        html.includes('class="preset-group"') && html.includes('Quick scope')
+        && html.includes('data-tone="preset"'));
     ok('…and the two extra sources are chips now, not checkboxes',
         html.includes('data-source="memory"') && html.includes('data-source="events"')
         && !html.includes('id="srcmem"'));
@@ -339,6 +357,8 @@ const go = r => r.els.go.fire('click');
     ok('…and the pickers are built from what the fleet actually holds',
         html.includes('Antigravity') && html.includes('gpt-5.6-sol')
         && html.includes('PRS.MuratVural_DEV_VSC.AgentFarm'));
+    ok('the session lookup box owns the flexible column instead of becoming a slit',
+        html.includes('grid-template-columns:minmax(420px,1fr)'));
 
     const sess = r.query('#f-session')[0];
     sess.value = '4d361981';
@@ -352,6 +372,11 @@ const go = r => r.els.go.fire('click');
     ok('‼️ X-34 — the id you already know is a filter of its own',
         lastSearch(r).filters.session === '4d361981');
     ok('the filter badge counts active session filters', r.html().includes('⚙ Filters (4)'));
+    ok('clear filters remains beside the closed filter badge', r.html().includes('id="clear-filters"'));
+    r.els['more-toggle'].fire('click');
+    r.els['clear-filters'].fire('click');
+    ok('clear filters works without reopening details and returns every axis',
+        !r.html().includes('id="clear-filters"') && r.html().includes('⚙ Filters'));
 }
 
 // ---------- the query modes ----------
@@ -385,7 +410,7 @@ const go = r => r.els.go.fire('click');
         html.includes('<b>Meaning:</b> indexed main-session conversation only')
         && html.includes('message dates do not apply'));
     ok('content kinds are visibly unavailable instead of being silently ignored',
-        html.includes('class="chiprow scope-row unavailable"') && html.includes('aria-disabled="true"'));
+        html.includes('class="scope-layout unavailable"') && html.includes('aria-disabled="true"'));
     go(r);
     ok('meaning reaches the host as its own mode and drops unsupported message dates',
         lastSearch(r).semantic === true && lastSearch(r).tsFrom === 0 && lastSearch(r).tsTo === 0);
@@ -401,6 +426,36 @@ const go = r => r.els.go.fire('click');
         && !/\btitle=/.test(qTag));
     ok('selected content carries fill class, check mark and aria state together',
         /class="chip on"[\s\S]*data-role="user"[\s\S]*aria-pressed="true"[^>]*>[\s\S]*chip-check[^>]*>✓/.test(html));
+    ok('the check mark keeps its width in both states, so a press cannot resize a badge',
+        html.includes('.chip-check{display:inline-block;width:12px')
+        && html.includes('.scope-actions #more-toggle{width:92px')
+        && !html.includes('font-weight:600'));
+    ok('direct session-id lookup is a visible first-class action', html.includes('id="find-session"'));
+    r.els['find-session'].fire('click');
+    ok('…and it invokes the whole-index finder with the current text as its seed',
+        r.last().type === 'findSession' && r.last().q === 'parser');
+    ok('the query is a freely resizable textarea, not a one-line slit',
+        /<textarea id="q"[\s\S]*rows="2"/.test(html) && html.includes('max-height:180px'));
+}
+
+// ---------- one contextual reset returns the complete control panel ----------
+{
+    const r = page();
+    go(r);
+    r.query('[data-role="tool"]')[0].fire('click');
+    const staleSeq = lastSearch(r).seq;
+    ok('reset appears only after there is state to reset', r.html().includes('id="reset-all"'));
+    r.els['reset-all'].fire('click');
+    const h = r.html();
+    ok('reset restores text mode, Conversation, both extra sources and no answer',
+        !h.includes('id="reset-all"')
+        && /data-mode="text"[\s\S]*aria-pressed="true"/.test(h)
+        && /data-preset="dialog"[\s\S]*aria-pressed="true"/.test(h)
+        && /data-source="memory"[\s\S]*aria-pressed="true"/.test(h)
+        && /data-source="events"[\s\S]*aria-pressed="true"/.test(h));
+    r.send({ type: 'results', seq: staleSeq, result: fixture.RESULT });
+    ok('reset also invalidates a search response that was already in flight',
+        !r.els.out.innerHTML.includes('11 matches'));
 }
 
 // ---------- results: engines, delegation, the id banner ----------
@@ -411,8 +466,8 @@ const go = r => r.els.go.fire('click');
     const out = r.els.out.innerHTML;
     ok('every engine is badged in the results, not just the default one',
         ['Claude', 'Codex', 'Gemini', 'Antigravity'].every(e => out.includes(`>${e}<`)));
-    ok('a delegation hit is named as a handover', out.includes('>handover<'));
-    ok('a handler hit is named as a sub-agent reply', out.includes('>sub-agent<'));
+    ok('a delegation hit keeps the Delegator term', out.includes('>delegator<'));
+    ok('a handler hit keeps the Handler term', out.includes('>handler<'));
     ok('the summary separates found matches from shown previews',
         out.includes('<b>11</b>matches') && out.includes('<b>8</b>previews'));
     ok('memory and event sections still stand apart',

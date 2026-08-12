@@ -6,12 +6,12 @@
     const DATA = window.__DATA__;
 
     const ROLES = [
-        { id: 'user', icon: '🧑', label: 'You', text: 'Prompts written by a person' },
-        { id: 'assistant', icon: '🤖', label: 'Agent replies', text: 'The agent’s own answers' },
-        { id: 'delegator', icon: '📤', label: 'Handover', text: 'What one agent assigned to another' },
-        { id: 'handler', icon: '📥', label: 'Sub-agent replies', text: 'What the delegated agent answered' },
-        { id: 'tool', icon: '🔧', label: 'Tool calls', text: 'Commands, paths, queries and inputs' },
-        { id: 'toolResult', icon: '📄', label: 'Tool results', text: 'Files, command output and errors' }
+        { id: 'user', icon: '🧑', label: 'You', text: 'Prompts written by a person in an ordinary session. Work assigned between agents is under Delegator instead' },
+        { id: 'assistant', icon: '🤖', label: 'Agent', text: 'Answers from the main agent in an ordinary session. Answers produced inside delegated work are under Handler instead' },
+        { id: 'delegator', icon: '📤', label: 'Delegator', text: 'The work instruction one agent sent to another agent when it delegated a task' },
+        { id: 'handler', icon: '📥', label: 'Handler', text: 'The answer produced by the agent that handled a delegated task' },
+        { id: 'tool', icon: '🔧', label: 'Tools', text: 'Tool names together with the submitted commands, paths, queries and other inputs' },
+        { id: 'toolResult', icon: '📄', label: 'Results', text: 'Content returned by tools, including file contents, command output and errors' }
     ];
     const ALL_ROLES = ROLES.map(x => x.id);
     const PRESETS = [
@@ -45,11 +45,13 @@
     let searching = false;
     let dirty = false;
     let seq = 0;
-    let flt = {
+    let queryTimer = null;
+    const defaultFilters = () => ({
         engines: null, projects: null, models: null,
         origin: '', lane: '', pinnedOnly: false, errorsOnly: false,
         session: '', from: '', to: '', sort: 'newest'
-    };
+    });
+    let flt = defaultFilters();
 
     const tip = (trigger, head, body, cls) => window.AFTip.wrap(trigger, head, body, cls);
     const sameSet = list => roleSel.size === list.length && list.every(x => roleSel.has(x));
@@ -71,11 +73,16 @@
         flt.pinnedOnly, flt.errorsOnly, flt.session, flt.from, flt.to,
         flt.sort !== 'newest'
     ].filter(Boolean).length;
+    const sessionFilterCount = () => activeFilterCount()
+        + (agentSel !== null ? 1 : 0) + (preset && preset.file ? 1 : 0);
+    const resettable = () => !!queryText.trim() || !!lastResult || !!preset || agentSel !== null
+        || mode !== 'text' || caseOn || wholeOn || !sameSet(['user', 'assistant'])
+        || !sourceMemory || !sourceEvents || activeFilterCount() > 0;
 
     function badge(attrs, label, on, disabled) {
         return `<button type="button" class="chip${on ? ' on' : ''}${disabled ? ' disabled' : ''}"
             ${attrs} aria-pressed="${on ? 'true' : 'false'}"${disabled ? ' disabled' : ''}>
-            ${on ? '<span class="chip-check" aria-hidden="true">✓</span>' : ''}${label}
+            <span class="chip-check" aria-hidden="true">✓</span><span class="chip-label">${label}</span>
         </button>`;
     }
 
@@ -99,7 +106,7 @@
             ['meaning', 'Meaning', 'Conceptually similar indexed conversation passages']
         ];
         return `<span class="seg" role="group" aria-label="Search method">${modes.map(x =>
-            tip(badge(`data-mode="${x[0]}"`, x[1], mode === x[0]), x[1], x[2])
+            tip(badge(`data-mode="${x[0]}" data-tone="mode"`, x[1], mode === x[0]), x[1], x[2])
         ).join('')}</span>`;
     }
 
@@ -136,7 +143,6 @@
                 ${tip(badge('data-flag="errorsOnly"', '⚠ Errors', flt.errorsOnly), 'Has errors', 'Only sessions with at least one tool error.')}
                 <span class="date-range${meaning ? ' unavailable' : ''}"><span>When</span><input id="f-from" type="date" value="${C.esc(flt.from)}"${meaning ? ' disabled' : ''}><span>–</span><input id="f-to" type="date" value="${C.esc(flt.to)}"${meaning ? ' disabled' : ''}></span>
                 <label class="sortbox"><span>Sort</span><select id="f-sort">${SORTS.map(s => `<option value="${s.id}"${flt.sort === s.id ? ' selected' : ''}>${s.label}</option>`).join('')}</select></label>
-                <span class="grow"></span><button id="clear-filters" class="text-action"${activeFilterCount() ? '' : ' disabled'}>Clear details</button>
             </div>
         </div>`;
     }
@@ -154,32 +160,40 @@
         const interaction = 'Click to add or remove a kind. Ctrl-click (⌘ on Mac) keeps only that kind.';
         return `<section class="search-panel">
             <div class="query-row">
-                ${tip(`<input id="q" type="text" value="${C.esc(queryText)}"
+                ${tip(`<textarea id="q" rows="2" value="${C.esc(queryText)}"
                     placeholder="${mode === 'meaning' ? 'Describe the idea or discussion…' : 'Words, phrase, path, error or session id…'}"
-                    aria-label="Search query" autofocus>`, 'How this query is read', queryTip, 'query-tip')}
+                    aria-label="Search query" autofocus>${C.esc(queryText)}</textarea>`, 'How this query is read', queryTip, 'query-tip')}
                 <button id="go" class="primary-search">${searching ? 'Searching…' : 'Search'}</button>
             </div>
-            <div class="chiprow mode-row">
-                <span class="control-label">Mode</span>${modeHtml()}
-                ${tip(badge('data-query-option="case"', 'Aa Case', caseOn, !exact), 'Match case', 'Agent and agent become different.')}
-                ${tip(badge('data-query-option="whole"', '▣ Whole word', wholeOn, mode !== 'text'), 'Whole words', 'A bare word must match as a whole word: log no longer finds dialogue.')}
-                <button id="guide-toggle" class="text-action" aria-expanded="${guideOpen}">Syntax ${guideOpen ? '▴' : '▾'}</button>
-                <span class="grow"></span>${scopeHtml()}
-                ${picker('search-agents', 'Agents', agents, agentSel ? [...agentSel] : null,
-                    'Which agents own the sessions to search.', fileScope)}
+            <div class="options-row">
+                <div class="mode-controls"><span class="control-label">Mode</span>${modeHtml()}
+                    ${tip(badge('data-query-option="case" data-tone="case"', 'Aa Case', caseOn, !exact), 'Match case', 'Agent and agent become different.')}
+                    ${tip(badge('data-query-option="whole" data-tone="whole"', '▣ Whole word', wholeOn, mode !== 'text'), 'Whole words', 'A bare word must match as a whole word: log no longer finds dialogue.')}
+                    <button id="guide-toggle" class="text-action" aria-expanded="${guideOpen}">Syntax ${guideOpen ? '▴' : '▾'}</button>
+                </div>
+                <div class="top-actions">${scopeHtml()}
+                    ${picker('search-agents', 'Agents', agents, agentSel ? [...agentSel] : null,
+                        'Which agents own the sessions to search.', fileScope)}
+                    ${tip('<button id="find-session" class="secondary id-find">⌗ Find session ID…</button>',
+                        'Find a session by ID', 'Search the entire session index directly. A full ID or the eight-character prefix printed throughout Agent Farm is enough; this does not filter text-search results.')}
+                </div>
             </div>
-            <div class="chiprow scope-row${unavailable ? ' unavailable' : ''}" aria-disabled="${unavailable}">
-                <span class="control-label">Search in</span>
-                ${PRESETS.map(p => tip(badge(`data-preset="${p.id}"`, p.label, sameSet(p.roles), unavailable), p.label,
-                    `${p.roles.map(id => ROLES.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}.`)).join('')}
-                <span class="chipsep"></span>
-                ${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}
-                <span class="chipsep"></span>
-                ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
-                ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
-                <span class="grow"></span>
-                ${tip(badge(`id="more-toggle" aria-expanded="${moreOpen}"`, `⚙ Filters${activeFilterCount() ? ` (${activeFilterCount()})` : ''} ${moreOpen ? '▴' : '▾'}`, moreOpen || activeFilterCount() > 0),
-                    'Session filters', 'Open the engine, project, model, origin, lane, status, session-id, date and sort controls.', 'tip-right')}
+            <div class="scope-layout${unavailable ? ' unavailable' : ''}" aria-disabled="${unavailable}">
+                <div class="preset-group"><span class="group-label">Quick scope</span>
+                    ${PRESETS.map(p => tip(badge(`data-preset="${p.id}" data-tone="preset"`, p.label, sameSet(p.roles), unavailable), p.label,
+                        `${p.roles.map(id => ROLES.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}.`)).join('')}
+                </div>
+                <div class="role-group">
+                    ${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}
+                    ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
+                    ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
+                </div>
+                <div class="scope-actions">
+                    ${sessionFilterCount() ? '<button id="clear-filters" class="text-action contextual">Clear filters</button>' : ''}
+                    ${resettable() ? '<button id="reset-all" class="text-action contextual">↺ Reset</button>' : ''}
+                    ${tip(badge(`id="more-toggle" aria-expanded="${moreOpen}" data-tone="filter"`, `⚙ Filters${sessionFilterCount() ? ` (${sessionFilterCount()})` : ''} ${moreOpen ? '▴' : '▾'}`, moreOpen || sessionFilterCount() > 0),
+                        'Session filters', 'Open the engine, project, model, origin, lane, status, session-id, date and sort controls.', 'tip-right')}
+                </div>
             </div>
             ${unavailable ? `<div class="meaning-line"><b>Meaning:</b> indexed main-session conversation only; content badges, memory/events and message dates do not apply. <span id="sem-status">${semanticStatusHtml()}</span></div>` : ''}
             ${filterPanelHtml()}
@@ -191,11 +205,13 @@
     function styleHtml() {
         return `<style>
             #app{max-width:1180px;margin:0 auto}.search-panel{margin-top:10px;padding:10px 12px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;background:var(--vscode-editorWidget-background,var(--vscode-editor-background))}
-            .query-row{display:flex;gap:7px}.query-tip{display:block;flex:1}.query-tip>input{box-sizing:border-box;width:100%;font-size:14px;padding:7px 9px}.primary-search{min-width:92px;font-weight:650}.chiprow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:7px}.control-label{font-size:10px;color:var(--vscode-descriptionForeground);white-space:nowrap}.grow{flex:1}.chipsep{width:1px;height:18px;margin:0 2px;background:var(--vscode-widget-border,#5555)}
-            .chip{font-size:11px;line-height:17px;padding:1px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.78;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-button-foreground);background:var(--vscode-button-background);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent);font-weight:600}.chip-check{margin-right:3px}.chip.disabled,.unavailable .chip:not(#more-toggle){opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.mode-row .afms-btn{font-size:11px;padding:2px 8px}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}
-            .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.filter-row>.af-tipw:first-child{flex:1;min-width:210px}.fbox{box-sizing:border-box;width:100%;font-size:11px;padding:3px 6px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-row.unavailable>.control-label,.scope-row.unavailable>.chipsep{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:280px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;color:var(--vscode-descriptionForeground)}
+            .query-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:7px;align-items:stretch}.query-tip{display:block;min-width:0}.query-tip>.af-clr{display:flex;width:100%;height:56px}.query-tip textarea{box-sizing:border-box;width:100%;height:56px;min-height:56px;max-height:180px;resize:vertical;font:14px/19px inherit;padding:8px 28px 8px 10px}.query-tip .af-clrx{top:16px}.primary-search{width:96px;font-weight:650}.options-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:7px}.mode-controls,.top-actions{display:flex;align-items:center;gap:5px;min-width:0}.top-actions{justify-content:flex-end}.top-actions .afms-btn{font-size:11px;padding:2px 8px}.id-find{font-size:11px;padding:2px 8px;white-space:nowrap}.control-label{font-size:10px;color:var(--vscode-descriptionForeground);white-space:nowrap}.grow{flex:1}
+            .chip{box-sizing:border-box;font-size:11px;line-height:17px;height:23px;padding:2px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.82;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-foreground);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 50%,transparent);background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent)}.chip[data-tone="preset"].on{background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 28%,transparent);border-color:var(--vscode-charts-purple,#b180d7)}.chip[data-tone="mode"].on{background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 24%,transparent);border-color:var(--vscode-charts-blue,#3794ff)}.chip[data-tone="case"].on,.chip[data-tone="whole"].on{background:color-mix(in srgb,var(--vscode-charts-green,#89d185) 22%,transparent);border-color:var(--vscode-charts-green,#89d185)}.chip[data-tone="filter"].on{background:color-mix(in srgb,var(--vscode-charts-orange,#d18616) 24%,transparent);border-color:var(--vscode-charts-orange,#d18616)}.chip-check{display:inline-block;width:12px;margin-right:2px;overflow:hidden;opacity:0}.chip.on .chip-check{opacity:1}.chip.disabled,.unavailable .chip:not(#more-toggle){opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}.contextual{white-space:nowrap}
+            .scope-layout{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px;align-items:center;margin-top:7px}.preset-group{display:flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 55%,transparent);border-radius:7px;background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 7%,transparent);white-space:nowrap}.group-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--vscode-charts-purple,#b180d7);margin-right:2px}.role-group{display:flex;align-items:center;justify-content:flex-start;gap:4px;min-width:0;white-space:nowrap}.scope-actions{display:flex;align-items:center;justify-content:flex-end;gap:3px;white-space:nowrap}.scope-actions #more-toggle{width:92px}
+            .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:grid;grid-template-columns:minmax(420px,1fr) repeat(3,minmax(120px,auto));align-items:center;gap:6px}.filter-row>.af-tipw:first-child{display:block;min-width:0}.fbox{box-sizing:border-box;width:100%;min-width:0;font-size:11px;padding:4px 7px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-layout.unavailable>.preset-group,.scope-layout.unavailable>.role-group{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:280px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;color:var(--vscode-descriptionForeground)}
             .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}
-            @media(max-width:780px){.chipsep{display:none}.filter-row>.af-tipw:first-child{min-width:100%;flex-basis:100%}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
+            @media(max-width:1100px){.scope-layout{grid-template-columns:1fr auto}.preset-group{grid-column:1}.scope-actions{grid-column:2;grid-row:1}.role-group{grid-column:1/-1;grid-row:2;overflow-x:auto;padding-bottom:2px}.filter-row{grid-template-columns:minmax(240px,1fr) repeat(3,minmax(110px,auto))}}
+            @media(max-width:780px){.options-row{grid-template-columns:1fr}.top-actions{justify-content:flex-start;flex-wrap:wrap}.scope-layout{grid-template-columns:1fr auto}.preset-group{overflow-x:auto}.role-group{display:grid;grid-template-columns:repeat(4,max-content);grid-auto-rows:23px;overflow:visible}.filter-row{grid-template-columns:1fr 1fr}.filter-row>.af-tipw:first-child{grid-column:1/-1}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
         </style>`;
     }
 
@@ -222,7 +238,44 @@
         if (auto && mode !== 'meaning' && queryText.trim()) run();
     }
 
+    function scheduleQuery() {
+        if (queryTimer) clearTimeout(queryTimer);
+        queryTimer = null;
+        const q = queryText.trim();
+        if (!q) {
+            seq++;
+            lastResult = null; idMatch = null; searching = false; dirty = false;
+            renderResults();
+            return;
+        }
+        if (mode !== 'meaning' && q.length >= 3) {
+            queryTimer = setTimeout(() => { queryTimer = null; run(); }, 500);
+        }
+    }
+
+    function clearSessionFilters() {
+        preset = null;
+        agentSel = null;
+        flt = defaultFilters();
+    }
+
+    function resetAll() {
+        if (queryTimer) clearTimeout(queryTimer);
+        queryTimer = null;
+        seq++;
+        queryText = '';
+        mode = 'text'; caseOn = false; wholeOn = false;
+        roleSel = new Set(['user', 'assistant']);
+        sourceMemory = true; sourceEvents = true;
+        moreOpen = false; guideOpen = false;
+        clearSessionFilters();
+        lastResult = null; idMatch = null; searching = false; dirty = false;
+        shell();
+    }
+
     function run() {
+        if (queryTimer) clearTimeout(queryTimer);
+        queryTimer = null;
         rememberQuery();
         if (!queryText.trim()) return;
         searching = true; dirty = false; shell();
@@ -250,15 +303,20 @@
     function wire() {
         const q = document.getElementById('q');
         if (q) {
-            q.addEventListener('input', () => { queryText = q.value; });
-            q.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+            q.addEventListener('input', () => { queryText = q.value; scheduleQuery(); });
+            q.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); }
+            });
             window.AFFilter.clearable(q, () => {
+                if (queryTimer) clearTimeout(queryTimer);
+                queryTimer = null;
+                seq++;
                 queryText = ''; lastResult = null; idMatch = null; searching = false; dirty = false; renderResults();
             });
         }
         document.getElementById('go').addEventListener('click', run);
         document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
-            mode = b.dataset.mode; changed(false);
+            mode = b.dataset.mode; changed(mode !== 'meaning');
         }));
         document.querySelectorAll('[data-query-option]').forEach(b => b.addEventListener('click', () => {
             if (b.dataset.queryOption === 'case') caseOn = !caseOn; else wholeOn = !wholeOn;
@@ -290,8 +348,13 @@
         }
         document.getElementById('more-toggle').addEventListener('click', () => { moreOpen = !moreOpen; changed(false); });
         const clear = document.getElementById('clear-filters');
-        if (clear && !clear.disabled) clear.addEventListener('click', () => {
-            agentSel = null; flt = { engines: null, projects: null, models: null, origin: '', lane: '', pinnedOnly: false, errorsOnly: false, session: '', from: '', to: '', sort: 'newest' }; changed(true);
+        if (clear) clear.addEventListener('click', () => { clearSessionFilters(); changed(true); });
+        const reset = document.getElementById('reset-all');
+        if (reset) reset.addEventListener('click', resetAll);
+        const findSession = document.getElementById('find-session');
+        if (findSession) findSession.addEventListener('click', () => {
+            rememberQuery();
+            vscode.postMessage({ type: 'findSession', q: queryText.trim() });
         });
         document.querySelectorAll('[data-origin]').forEach(b => b.addEventListener('click', () => { flt.origin = b.dataset.origin; changed(true); }));
         document.querySelectorAll('[data-lane]').forEach(b => b.addEventListener('click', () => { flt.lane = b.dataset.lane; changed(true); }));
@@ -310,7 +373,7 @@
         if (build) build.addEventListener('click', () => vscode.postMessage({ type: 'buildIndex' }));
     }
 
-    const ROLE_WORD = { user: 'you', assistant: 'agent', delegator: 'handover', handler: 'sub-agent', tool: 'tool', toolResult: 'result', memory: 'memory', event: 'event' };
+    const ROLE_WORD = { user: 'you', assistant: 'agent', delegator: 'delegator', handler: 'handler', tool: 'tool', toolResult: 'result', memory: 'memory', event: 'event' };
     const SESSION_HINT = window.AFSessionCtx.HINT;
     const viewerRoles = () => [...roleSel].map(r => r === 'delegator' ? 'user' : r === 'handler' ? 'assistant' : r);
     const openSession = (file, ts) => vscode.postMessage({ type: 'openSession', file, ts: ts || 0, roles: viewerRoles() });
