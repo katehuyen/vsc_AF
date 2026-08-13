@@ -111,6 +111,10 @@ import {
     LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, validateLaunch, withDefaults
 } from './core/launch';
 import {
+    applyProfile, deleteProfile, describeProfile, editProfile, profileFrom,
+    renameProfile, replaceProfile, saveProfile
+} from './core/launchProfiles';
+import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
@@ -159,7 +163,8 @@ import {
 import {
     appendTrack, backfillFromHits, closingAttribution, closingStamp, parseBacklogLog, reconcileOutside,
     readTrackFile, renderBacklogLog, summarizeCode, shortSession, trackedCodes, trackFileIn,
-    TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TrackDoubt, TrackEvent, TrackRecord, TrackSource, turnSpan
+    TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TRACK_NOTE_MAX, TrackDoubt, TrackEvent, TrackRecord,
+    TrackSource, TrackSummary, turnSpan
 } from './core/backlogTrack';
 import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
@@ -5570,7 +5575,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog',
-            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. ‼️ AN ITEM MAY BE PART OF ANOTHER: `parent` is the code it belongs to (a `[parent:: P-4]` field on ITS line) and `children` are the codes that name it. That is COMPOSITION and it is not ⛔ dependency — a child is not blocked by its parent and a parent is not blocked by its children. The tree lives only in these links: a code stays flat (a `U` item is a child of a `P` epic as often as not), no line moves because of it, and the QUEUE does not know about it at all — every live coded item queues on its own account. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), parent? (a code = its direct children; "none" = items that belong to nothing), deep? (with parent: the WHOLE subtree including the named item — what "do P-4" means), sort? (file|closed, default file), limit?',
+            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. ‼️ AN ITEM MAY BE PART OF ANOTHER: `parent` is the code it belongs to (a `[parent:: P-4]` field on ITS line) and `children` are the codes that name it. That is COMPOSITION and it is not ⛔ dependency — a child is not blocked by its parent and a parent is not blocked by its children. The tree lives only in these links: a code stays flat (a `U` item is a child of a `P` epic as often as not), no line moves because of it, and the QUEUE does not know about it at all — every live coded item queues on its own account. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". ‼️ AND WHICH ROUND IT IS ON: an item that has been reopened carries `round` (2 = second go) and `earlierRounds` — the text the item HAD before each reopen, oldest first, snapshotted automatically at the moment it was reopened. The line itself only ever says the latest asking; an item on round 3 was asked for twice before in different words, and that is the context you are missing when you read it. Absent means round 1. Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), parent? (a code = its direct children; "none" = items that belong to nothing), deep? (with parent: the WHOLE subtree including the named item — what "do P-4" means), sort? (file|closed, default file), limit?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const sum = parseBacklog(text);
@@ -5601,6 +5606,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : items.filter(i => i.parent === parent);
                 }
                 const closedOf = backlogClosedAt(folder);
+                const rounds = backlogRounds(folder);
+                const roundsOf = (i: BacklogItem): Record<string, unknown> => {
+                    const r = rounds(i);
+                    return r.round > 1 ? { round: r.round, earlierRounds: r.earlier } : {};
+                };
                 // ‼️ `closed` is a DIFFERENT QUESTION from the file's order, and
                 // the only one the document cannot answer on its own: a closing
                 // time lives in the track ledger. Hunting the last few finished
@@ -5620,14 +5630,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     items: items.slice(0, limit).map(i => ({
                         ...backlogOut(i),
                         closedAt: closedOf(i),
-                        closedOn: closedOf(i) ? localStamp(closedOf(i) as number) : null
+                        closedOn: closedOf(i) ? localStamp(closedOf(i) as number) : null,
+                        // ‼️ X-36 — see backlogRounds. Round 1 carries nothing:
+                        // it is the normal case, and stating it on every item of
+                        // a two-hundred-line backlog is a column of noise.
+                        ...roundsOf(i)
                     }))
                 };
             }
         },
         {
             op: 'projects.backlog.next',
-            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. "Top N" means the first N entries of THAT order, with no silent effort filter: a queued L/XL item keeps its place. `sort` overrides the order only because asking "what is cheapest" is a different question from "what is next"; `maxEffort` narrows by size only when the caller explicitly asks for a ceiling. An item with no effort stated is never excluded by a ceiling because it has not been sized. ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL — no ceiling when omitted), sort? (file|score|priority, default file), includeBlocked?',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. "Top N" means the first N entries of THAT order, with no silent effort filter: a queued L/XL item keeps its place. `sort` overrides the order only because asking "what is cheapest" is a different question from "what is next"; `maxEffort` narrows by size only when the caller explicitly asks for a ceiling. An item with no effort stated is never excluded by a ceiling because it has not been sized. ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. ‼️ AN ITEM THAT HAS BEEN REOPENED SAYS SO AND BRINGS ITS EARLIER ASKINGS WITH IT: `round` (2 = second go) and `earlierRounds` (what the item SAID before each reopen, oldest first). Read them before you start — the item\'s own text is only the LATEST asking, and doing what round 1 said is how a thing gets reopened a third time. `projects.tracks {code}` then gives you what was actually done each time. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL — no ceiling when omitted), sort? (file|score|priority, default file), includeBlocked?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const res = nextBacklog(text, {
@@ -5644,10 +5658,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? { sort: optStr(args, 'sort') as 'file' | 'score' | 'priority' } : {}),
                     ...(args.includeBlocked === true ? { includeBlocked: true } : {})
                 });
+                // ‼️ X-36 — THIS is the door where the rounds matter most. An
+                // agent asking "what do I work on" and being handed an item on
+                // its third go, with only the third wording, will do the same
+                // thing that failed twice. The earlier askings ride with it.
+                const rounds = backlogRounds(folder);
                 return {
                     project: project.name, file: relDoc(folder, file),
                     considered: res.considered,
-                    items: res.items.map(backlogOut),
+                    items: res.items.map(i => {
+                        const r = rounds(i);
+                        return r.round > 1
+                            ? { ...backlogOut(i), round: r.round, earlierRounds: r.earlier }
+                            : backlogOut(i);
+                    }),
                     queue: res.queue, staleQueue: res.staleQueue,
                     blocked: res.blocked.map(b => ({ code: b.item.code ?? null, text: b.item.text, waitingOn: b.waitingOn }))
                 };
@@ -5712,7 +5736,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.check',
-            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. Pass `note` to say in one sentence what was done; that is the closing note a person will read. args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. Pass `note` to say what was done, how it was closed and anything a reader should watch out for later; that is the closing note a person reads three months from now, and it has room to be one. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -9506,29 +9530,150 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ A-11 — EDIT MEANS EVERY DIMENSION, NOT THE NAME.
+     *
+     * A profile could be renamed, and that was read as "editable". It is not
+     * what a person means: a profile is a setup, so editing one is changing the
+     * setup — its engine, its model, its effort, what it may do without asking,
+     * the prompt it opens with — and its name is simply one more row in that
+     * list. Doing it by "set the launcher up the way you want it and then press
+     * replace" is the same work done backwards, through a surface that is about
+     * to start a session.
+     *
+     * So this is the launcher's own picker, pointed at a saved row instead of
+     * at a launch: same rows, same sub-pickers, same vocabulary — and the top
+     * row commits instead of starting anything. The model and effort lists read
+     * the DRAFT's engine (S-20/X-30), so editing a Codex profile never offers a
+     * Claude model.
+     *
+     * Returns the edited profile, or undefined if nothing was committed.
+     */
+    const editLaunchProfile = async (start: LaunchProfile): Promise<LaunchProfile | undefined> => {
+        let draft: LaunchProfile = { ...start };
+        const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
+        interface Row extends vscode.QuickPickItem { act?: string }
+        for (;;) {
+            const spec = engineOf(draft.engine);
+            const em = () => engineModelMatrix()[(draft.engine || 'claude') as EngineId];
+            const rows: Row[] = [
+                {
+                    label: '$(check) Save changes',
+                    description: describeProfile(draft),
+                    detail: `stored under "${draft.name}" in agentFarm.launchProfiles`,
+                    act: 'ok'
+                },
+                { label: 'The profile', kind: vscode.QuickPickItemKind.Separator },
+                {
+                    label: '$(bookmark) Name', description: draft.name,
+                    detail: 'what the profile is called — NOT the session\'s name, which stays per launch',
+                    act: 'name'
+                },
+                { label: 'The setup it stores', kind: vscode.QuickPickItemKind.Separator },
+                {
+                    label: '$(server-process) Engine', description: spec.label,
+                    detail: engineNote(spec.id), act: 'engine'
+                },
+                {
+                    label: '$(sparkle) Model', description: show(draft.model),
+                    detail: em()?.note ?? 'which model the session runs on', act: 'model'
+                },
+                {
+                    label: '$(pulse) Effort', description: show(draft.effort),
+                    detail: 'how hard it thinks before it answers', act: 'effort'
+                },
+                {
+                    label: '$(shield) Permissions', description: show(draft.permissionMode),
+                    detail: 'what the session may do without asking', act: 'perm'
+                },
+                {
+                    label: '$(comment-discussion) First prompt', description: show(draft.prompt, '—'),
+                    detail: 'sent as the opening message of every session started from this profile',
+                    act: 'prompt'
+                }
+            ];
+            const pick = await vscode.window.showQuickPick(rows, {
+                title: `Edit profile "${start.name}"`,
+                placeHolder: `${draft.name} — ${describeProfile(draft)}`,
+                ignoreFocusOut: true, matchOnDescription: true
+            });
+            if (!pick?.act) { return undefined; } // Esc = change nothing
+            if (pick.act === 'ok') {
+                return draft.name.trim() ? profileFrom(draft, draft.name) : undefined;
+            }
+            if (pick.act === 'name') {
+                const v = await vscode.window.showInputBox({
+                    prompt: 'Profile name', value: draft.name, ignoreFocusOut: true,
+                    validateInput: s => (s.trim() ? undefined : 'a profile needs a name')
+                });
+                if (v?.trim()) { draft.name = v.trim(); }
+                continue;
+            }
+            if (pick.act === 'engine') {
+                const v = await pickEngine(spec.id, `Profile "${draft.name}"`);
+                if (v !== undefined) { draft.engine = v as EngineId; }
+                continue;
+            }
+            if (pick.act === 'model') {
+                const cur = em();
+                const v = await pickChoice(`Model for this profile — ${cur.note}`,
+                    cur.models, draft.model ?? '', true);
+                if (v !== undefined) { draft.model = v; }
+                continue;
+            }
+            if (pick.act === 'effort') {
+                const v = await pickChoice('Reasoning effort for this profile',
+                    effortsFor(em(), draft.model ?? ''), draft.effort ?? '', false);
+                if (v !== undefined) { draft.effort = v; }
+                continue;
+            }
+            if (pick.act === 'perm') {
+                const v = await pickChoice('What may a session from this profile do without asking?',
+                    PERMISSION_CHOICES, draft.permissionMode ?? '', false);
+                if (v !== undefined) { draft.permissionMode = v; }
+                continue;
+            }
+            if (pick.act === 'prompt') {
+                const v = await vscode.window.showInputBox({
+                    prompt: 'First prompt (empty = none)', value: draft.prompt ?? '', ignoreFocusOut: true
+                });
+                if (v !== undefined) { draft = { ...draft, prompt: v.trim() }; }
+                continue;
+            }
+        }
+    };
+
+    /**
      * ‼️ A-11 — A LIST YOU CAN ONLY ADD TO IS NOT A LIST, IT IS A LEAK.
      *
      * Launch profiles could be saved and loaded and nothing else: a name typed
      * wrong stayed wrong for ever, a profile for an engine you stopped using
      * stayed in the picker, and the only way to change one was to save a second
-     * profile over its name and hope you remembered it exactly. Three gestures
-     * were missing and all three act on a row that ALREADY EXISTS — which is
-     * what a quickpick is for (docs/CONVENTIONS.md, "Making things"): the
-     * launcher itself is the form, and a profile is a launch that was kept.
+     * profile over its name and hope you remembered it exactly. The gestures
+     * that were missing all act on a row that ALREADY EXISTS — which is what a
+     * quickpick is for (docs/CONVENTIONS.md, "Making things"): the launcher
+     * itself is the form, and a profile is a launch that was kept.
      *
      * So the rows carry their own buttons. `showQuickPick` cannot do that, so
      * this is `createQuickPick`, which is the same list with the per-row
      * affordances a management surface needs and no extra box in the way.
      *
+     * ‼️ AND PICKING A ROW STILL LOADS IT. That is what this list has always
+     * been for and what its row in the launcher still says; the buttons are the
+     * management that was missing, not a replacement for the one gesture that
+     * was already right.
+     *
      * `current` is what the launcher is set to right now, which is what
      * "replace" stores — the gesture "make this profile mean what I have in
-     * front of me", and the reason a rename alone would not have been enough.
+     * front of me", and the reason editing alone would not have been enough.
      *
      * Returns the profile to LOAD, or undefined — every other outcome is
      * finished by the time this resolves.
      */
-    const manageLaunchProfiles = async (current: LaunchProfile): Promise<LaunchProfile | undefined> => {
-        const rename = { iconPath: new vscode.ThemeIcon('edit'), tooltip: 'Rename this profile' };
+    const manageLaunchProfiles = async (current: LaunchOptions): Promise<LaunchProfile | undefined> => {
+        const edit = {
+            iconPath: new vscode.ThemeIcon('edit'),
+            tooltip: 'Edit this profile — name, engine, model, effort, permissions, first prompt'
+        };
         const replace = {
             iconPath: new vscode.ThemeIcon('save'),
             tooltip: 'Replace what it stores with the settings currently in the launcher'
@@ -9545,13 +9690,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const chosen = await new Promise<{ act: string; profile: LaunchProfile } | undefined>(resolve => {
                 const qp = vscode.window.createQuickPick<Row>();
                 qp.title = 'Launch profiles';
-                qp.placeholder = 'Pick one to load it — or use the buttons on a row to rename, replace or delete it';
+                qp.placeholder = 'Pick one to load it — or use the buttons on a row to edit, replace or delete it';
                 qp.ignoreFocusOut = true;
                 qp.matchOnDescription = true;
                 qp.items = list.map(p => ({
-                    label: p.name, description: describeLaunch(p),
+                    // ‼️ describeProfile, not describeLaunch: a profile's `name`
+                    // IS `LaunchOptions.name`, so describing it as a launch
+                    // printed the profile's own name as the session's, in
+                    // quotes, on every row.
+                    label: p.name, description: describeProfile(p),
                     detail: p.prompt ? `first prompt: ${p.prompt}` : undefined,
-                    buttons: [rename, replace, remove], profile: p
+                    buttons: [edit, replace, remove], profile: p
                 }));
                 let done = false;
                 const finish = (v?: { act: string; profile: LaunchProfile }) => {
@@ -9561,11 +9710,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     qp.hide();
                 };
                 qp.onDidTriggerItemButton(e => finish({
-                    act: e.button === rename ? 'rename' : e.button === replace ? 'replace' : 'delete',
+                    act: e.button === edit ? 'edit' : e.button === replace ? 'replace' : 'delete',
                     profile: e.item.profile
                 }));
                 qp.onDidAccept(() => {
-                    const hit = qp.selectedItems[0];
+                    // `activeItems` and not `selectedItems`: a quickpick that is
+                    // not multi-select fills `selectedItems` on accept, but a
+                    // row reached with the arrow keys and no click leaves it
+                    // empty on some paths — and an Enter that quietly does
+                    // nothing is exactly the "it does not load any more" bug.
+                    const hit = qp.selectedItems[0] ?? qp.activeItems[0];
                     if (hit) { finish({ act: 'load', profile: hit.profile }); }
                 });
                 qp.onDidHide(() => { finish(undefined); qp.dispose(); });
@@ -9573,39 +9727,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (!chosen) { return undefined; }
             if (chosen.act === 'load') { return chosen.profile; }
-            if (chosen.act === 'rename') {
-                const name = await vscode.window.showInputBox({
-                    prompt: 'New name for this profile', value: chosen.profile.name, ignoreFocusOut: true
-                });
-                const want = name?.trim();
-                if (!want || want === chosen.profile.name) { continue; }
-                // A rename onto a name that exists REPLACES it, which is the
-                // same rule Save already follows — two profiles with one name
-                // would make the picker unusable.
+            if (chosen.act === 'edit') {
+                const next = await editLaunchProfile(chosen.profile);
+                if (!next) { continue; }
+                const said = next.name === chosen.profile.name
+                    ? `profile "${next.name}" now stores ${describeProfile(next)}`
+                    : `profile "${chosen.profile.name}" is now "${next.name}" — ${describeProfile(next)}`;
                 await writeLaunchProfiles(
-                    launchProfiles()
-                        .filter(p => p.name !== want && p.name !== chosen.profile.name)
-                        .concat([{ ...chosen.profile, name: want }]),
-                    `profile "${chosen.profile.name}" is now "${want}"`);
+                    editProfile(launchProfiles(), chosen.profile.name, next), said);
                 continue;
             }
             if (chosen.act === 'replace') {
+                const next = profileFrom(current, chosen.profile.name);
                 await writeLaunchProfiles(
-                    launchProfiles()
-                        .filter(p => p.name !== chosen.profile.name)
-                        .concat([{ ...current, name: chosen.profile.name }]),
-                    `profile "${chosen.profile.name}" now stores ${describeLaunch(current)}`);
+                    replaceProfile(launchProfiles(), chosen.profile.name, current),
+                    `profile "${chosen.profile.name}" now stores ${describeProfile(next)}`);
                 continue;
             }
             // Destructive, so it keeps its modal — the one native surface
             // docs/CONVENTIONS.md deliberately leaves in place.
             const go = await vscode.window.showWarningMessage(
                 `Delete the launch profile "${chosen.profile.name}"?`,
-                { modal: true, detail: `It stores ${describeLaunch(chosen.profile)}. Nothing else is affected — no session, no agent, no setting but this list.` },
+                { modal: true, detail: `It stores ${describeProfile(chosen.profile)}. Nothing else is affected — no session, no agent, no setting but this list.` },
                 'Delete it');
             if (go !== 'Delete it') { continue; }
             await writeLaunchProfiles(
-                launchProfiles().filter(p => p.name !== chosen.profile.name),
+                deleteProfile(launchProfiles(), chosen.profile.name),
                 `profile "${chosen.profile.name}" deleted`);
         }
     };
@@ -9694,13 +9841,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 },
                 { label: 'Setup', kind: vscode.QuickPickItemKind.Separator },
                 ...(launchProfiles().length ? [{
-                    // ‼️ A-11 — the row is the whole management surface now, not
-                    // just a way in. It said "Load", which is why the list could
-                    // only ever grow: nothing on it offered the other three
-                    // things a person does to a saved setup.
-                    label: '$(bookmark) Profiles…',
+                    // ‼️ A-11 — THE ROW KEEPS THE NAME IT HAD. Loading is what
+                    // a person comes to this row to do and what it has always
+                    // said; renaming it to "Profiles…" because the list gained
+                    // management buttons renamed the door after the cupboard.
+                    // The management is on the rows inside, and the detail line
+                    // is where that belongs.
+                    label: '$(bookmark) Load a profile…',
                     description: launchProfiles().map(p => p.name).join(' · '),
-                    detail: 'load one, or rename · replace · delete it from its own row (agentFarm.launchProfiles)',
+                    detail: 'pick one to load it — or edit · replace · delete it from its own row (agentFarm.launchProfiles)',
                     act: 'load'
                 } as Row] : []),
                 {
@@ -9807,17 +9956,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 continue;
             }
             if (pick.act === 'load') {
-                const loaded = await manageLaunchProfiles({
-                    name: '', model: merged.model, effort: merged.effort,
-                    permissionMode: merged.permissionMode, ...(o.prompt ? { prompt: o.prompt } : {})
-                });
-                if (loaded) {
-                    o = {
-                        ...o, model: loaded.model ?? '', effort: loaded.effort ?? '',
-                        permissionMode: loaded.permissionMode ?? '',
-                        prompt: loaded.prompt ?? o.prompt
-                    };
-                }
+                // ‼️ A-11 — `merged`, ENGINE INCLUDED, is what the launcher is
+                // set to; handing over a hand-built object that listed three of
+                // the five dimensions is how "replace" quietly dropped the
+                // engine and the prompt of the very launch it was replacing.
+                const loaded = await manageLaunchProfiles(merged);
+                // …and applyProfile puts back every dimension the profile
+                // stores, clears the ones it does not, and leaves the session's
+                // own name alone. That is the whole load, in one call that a
+                // test can reach (src/core/launchProfiles.ts).
+                if (loaded) { o = applyProfile(o, loaded); }
                 continue;
             }
             if (pick.act === 'save') {
@@ -9825,21 +9973,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     prompt: 'Profile name', ignoreFocusOut: true
                 });
                 if (!name?.trim()) { continue; }
-                const next: LaunchProfile[] = [
-                    ...launchProfiles().filter(p => p.name !== name.trim()),
-                    {
-                        name: name.trim(), model: merged.model, effort: merged.effort,
-                        permissionMode: merged.permissionMode, ...(o.prompt ? { prompt: o.prompt } : {})
-                    }
-                ];
-                try {
-                    await cfg().update('launchProfiles', next, vscode.ConfigurationTarget.Global);
-                    void vscode.window.showInformationMessage(
-                        `Agent Farm: profile "${name.trim()}" saved (agentFarm.launchProfiles).`);
-                } catch (e) {
-                    void vscode.window.showWarningMessage(
-                        `Agent Farm: could not write agentFarm.launchProfiles — ${String(e)}`);
-                }
+                // ‼️ From `merged`, so the profile keeps the ENGINE and the
+                // values inherited from the user's defaults — a profile that
+                // stored a model without the engine it belongs to was a setup
+                // that could not be reproduced.
+                await writeLaunchProfiles(
+                    saveProfile(launchProfiles(),
+                        profileFrom({ ...merged, prompt: o.prompt }, name)),
+                    `profile "${name.trim()}" saved`);
                 continue;
             }
             if (pick.act === 'default') {
@@ -12664,6 +12805,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
 
+    /**
+     * ‼️ X-36 — WHICH ROUND AN ITEM IS ON, AND WHAT IT SAID ON THE EARLIER ONES.
+     *
+     * An item reopened three times says only the third thing on its line, and
+     * the two askings that made a third necessary were nowhere — so the agent
+     * handed "do K-8" was told nothing about having already done K-8 twice, and
+     * finding that out was left to whether it thought to go looking. It is
+     * attached to the item wherever an item is handed out, so nobody has to.
+     */
+    const backlogRounds = (folder: string): ((i: BacklogItem) => {
+        round: number; earlier: { at: string; text: string }[];
+    }) => {
+        const records = readTracks(folder);
+        const byCode = new Map<string, TrackSummary>();
+        for (const code of trackedCodes(records)) { byCode.set(code, summarizeCode(code, records)); }
+        return (i: BacklogItem) => {
+            const sum = i.code ? byCode.get(i.code) : undefined;
+            return {
+                round: sum?.round ?? 1,
+                earlier: (sum?.rounds ?? []).map(r => ({
+                    at: localStamp(r.ts), text: r.prevText ?? ''
+                }))
+            };
+        };
+    };
+
     /** Newest closing first, with everything that has no closing time behind it
      *  — in either direction, because "not closed" is not "closed long ago". */
     const byClosedDesc = (closedOf: (i: BacklogItem) => number | null) =>
@@ -12700,6 +12867,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // agent was driven on, and stamping "turn ?" on every Codex attempt
         // loses the one figure that makes a track row locatable later.
         const turnOf = (sid: string): number | undefined => {
+            // ‼️ P-14 — THE LIVE COUNT WINS FOR A LIVE SESSION, and that is
+            // precisely the case that was failing. The transcript index is a
+            // SCAN; the session asking to be attributed is MID-TURN, so the scan
+            // that would have counted this turn has not run yet. 40 of 241 rows
+            // in this project's ledger were stamped "uncertain: turn" for that
+            // reason alone — each one sitting next to a session id that was
+            // perfectly certain, which is what made the badge read as noise.
+            // The hooks counted the prompt before the agent started working, so
+            // the number is there; nobody was asking for it.
+            const alive = live.sessions().find(s => s.sessionId === sid);
+            if (alive && alive.prompts > 0) { return alive.prompts; }
             const row = index.allWithExternal().find(r => r.sessionId === sid);
             const n = row?.userTurns ?? 0;
             return n > 0 ? n : undefined;
@@ -12790,6 +12968,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * extension running still sees where the item ended), then the document
      * rebuild (which reads both of the above).
      */
+    /** An item's words as the backlog file has them right now, or '' if the file
+     *  or the code is not there. Read fresh: a cached copy would be the text
+     *  from before whatever is happening now. */
+    const backlogTextOf = (folder: string, code: string): string => {
+        try {
+            const file = scanRoles(folder).backlog;
+            if (!file) { return ''; }
+            const doc = readProjectDoc(folder, relDoc(folder, file));
+            if (!doc.ok) { return ''; }
+            const up = code.toUpperCase();
+            return parseBacklog(doc.text ?? '').items.find(i => i.code === up)?.text ?? '';
+        } catch { return ''; }
+    };
+
+    /** A note, in one line, long enough to be a closing note and cut visibly. */
+    const capNote = (s: string): string => {
+        const one = s.replace(/\s+/g, ' ').trim();
+        return one.length > TRACK_NOTE_MAX ? one.slice(0, TRACK_NOTE_MAX - 1) + '…' : one;
+    };
+
     const recordTrack = (o: {
         projectId: string; folder: string; code: string; event: TrackEvent;
         by: TrackSource; agent?: string; session?: string; note?: string; now?: number;
@@ -12800,13 +12998,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(o.session ? { session: o.session } : {}),
             ...(o.agent ? { agent: o.agent } : {})
         });
+        // ‼️ X-36 — A REOPEN TAKES THE WORDS WITH IT. Read BEFORE anything is
+        // written, from the file as it stands: this is the last moment the
+        // item's previous round exists anywhere, and after it the line is the
+        // user's to overwrite with what they want this time. Every door goes
+        // through here except a box un-ticked in Obsidian, which is caught by
+        // `reconcileOutside` for the same reason and in the same way.
+        const prevText = o.event === 'reopen' ? backlogTextOf(o.folder, o.code) : '';
         const rec: TrackRecord = {
             code: o.code.toUpperCase(), event: o.event, ts: now, by: o.by,
+            ...(prevText ? { prevText: capNote(prevText) } : {}),
             ...(who.session ? { session: who.session } : {}),
             ...(who.turn ? { turn: who.turn } : {}),
             ...(who.agent ? { agent: who.agent } : {}),
             ...(who.uncertain ? { uncertain: who.uncertain } : {}),
-            ...(o.note ? { note: o.note.replace(/\s+/g, ' ').trim().slice(0, 300) } : {})
+            // ‼️ P-14 — A CLOSING NOTE CUT MID-SENTENCE IS WORSE THAN A SHORT
+            // ONE. The cap was 300 characters and it was applied silently, so a
+            // note that said what was done, how it was closed and what to watch
+            // out for later arrived in the log ending on a preposition — and
+            // nobody could tell whether the writer had stopped there. The ledger
+            // is one JSON line per record, so the room costs nothing; where a
+            // note really is longer than this the cut is DRAWN.
+            ...(o.note ? { note: capNote(o.note) } : {})
         };
         appendTrack(trackLedgerOf(o.folder), rec);
 
@@ -13097,6 +13310,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 due: item?.due ?? null,
                 turns: sum.turns,
                 doubtful: sum.doubtful,
+                /**
+                 * ‼️ P-14 — WHICH PART IS UNCERTAIN, not merely that something
+                 * is. The card wore a bare "uncertain" over rows that named a
+                 * session, gave its id and linked to it — so the badge read as
+                 * a contradiction, and a reader who cannot tell what a warning
+                 * is about learns to ignore all of them. Every one of these has
+                 * a reason recorded against it; the row simply never carried
+                 * them up.
+                 */
+                doubts: [...new Set([...sum.runs, ...sum.loose]
+                    .map(r => r.uncertain).filter(Boolean))],
+                /** ‼️ X-36 — which go this is, and what it said on the earlier
+                 *  ones. The card is where a person asks "why is this open
+                 *  again", and the answer was in nobody's hands. */
+                round: sum.round,
+                rounds: sum.rounds.map(r => ({ ts: r.ts, text: r.prevText ?? '' })),
                 /** True when ANY of its rows was reconstructed rather than
                  *  watched — the one thing a reader must be able to see before
                  *  they trust a history. */
@@ -13114,6 +13343,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 closedTs: closed?.ts ?? 0,
                 closedEvent: closed?.event ?? null,
                 closedBy: closed?.by ?? null,
+                /**
+                 * ‼️ P-14 — HOW IT WAS CLOSED, which the page could not show
+                 * because it was never sent. The note an agent writes when it
+                 * closes an item is the answer to the question this whole tab
+                 * exists for, and it lived one hover deep inside an event chip
+                 * that looked exactly like an event chip with nothing on it.
+                 * `note` above is the HUMAN's, read out of Backloglog.md; this
+                 * is the closer's own, and the two are different things.
+                 */
+                closedNote: closed?.note ?? '',
                 sessions: sum.runs.map(r => {
                     seen.add(r.session);
                     return {
@@ -13614,10 +13853,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const folder = (projectStore.get(id)?.folder ?? '').trim();
                     const code = target.code ?? (folder ? codeAtTarget(folder, target) : undefined);
                     if (!res.error && code && folder) {
-                        recordTrack({
+                        const rec = recordTrack({
                             projectId: id, folder, code, by: 'panel',
                             event: state === 'open' ? 'reopen' : state as TrackEvent
                         });
+                        // ‼️ X-36 — SAY IT, OR NOBODY WILL BELIEVE IT. The whole
+                        // point is that the person reopening an item can now
+                        // type over its text without a thought, and they will
+                        // only do that if they are told the old wording was
+                        // taken. Said once, where the press was.
+                        if (rec.prevText) {
+                            return {
+                                ...res,
+                                note: `${code} reopened — round ${summarizeCode(code, readTracks(folder)).round}.`
+                                    + ' What it said before is kept in Backloglog.md, so write what you want'
+                                    + ' this time straight over it.'
+                            };
+                        }
                     }
                     return res;
                 },
@@ -18494,52 +18746,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'launch.profiles',
-            describe: 'The saved launch setups (agentFarm.launchProfiles) — a named model + effort + '
-                + 'permission mode (+ an optional first prompt) the session launcher can load in one '
-                + 'press. Read them before offering the user "the usual": a profile is what they have '
-                + 'already decided, so proposing the same combination as if it were new is noise. '
-                + 'Returns [{name, model, effort, permissionMode, prompt?}]. No args.',
+            describe: 'The saved launch setups (agentFarm.launchProfiles) — a named ENGINE + model + '
+                + 'effort + permission mode (+ an optional first prompt) the session launcher can load '
+                + 'in one press. Read them before offering the user "the usual": a profile is what they '
+                + 'have already decided, so proposing the same combination as if it were new is noise. '
+                + '‼️ `name` here is the PROFILE\'s name and never a session name — a profile carries no '
+                + '-n, or every session started from it would be called the same thing. '
+                + 'Returns [{name, engine?, model, effort, permissionMode, prompt?}]. No args.',
             handler: () => launchProfiles()
         },
         {
             op: 'launch.profile.set',
-            describe: 'Create a launch profile, or REPLACE the one with that name. args: name '
-                + '(required), model?, effort?, permissionMode?, prompt? — each empty means "no flag", '
-                + 'exactly as it does in the launcher. ‼️ Check engines.models first: a model or an '
-                + 'effort the engine does not offer is stored happily here and refused later, by a CLI, '
-                + 'in a session the user is sitting in front of.',
+            describe: 'Create a launch profile, or REPLACE what the one with that name stores — which '
+                + 'is also how a profile is EDITED: pass the whole setup you want it to have, because '
+                + 'what you leave out is cleared rather than kept. args: name (required), engine? '
+                + '(claude|codex|gemini|agy — empty means the default engine), model?, effort?, '
+                + 'permissionMode?, prompt? — each empty means "no flag", exactly as it does in the '
+                + 'launcher. Replacing keeps the row\'s place in the list. ‼️ Check engines.models '
+                + 'first: a model or an effort the engine does not offer is stored happily here and '
+                + 'refused later, by a CLI, in a session the user is sitting in front of. Rename with '
+                + 'launch.profile.rename — the two together are the whole edit.',
             handler: async (args) => {
                 const name = argStr(args, 'name').trim();
                 need(!!name, 'a profile needs a name');
-                const next: LaunchProfile[] = [
-                    ...launchProfiles().filter(p => p.name !== name),
-                    {
-                        name,
-                        model: optStr(args, 'model') ?? '',
-                        effort: optStr(args, 'effort') ?? '',
-                        permissionMode: optStr(args, 'permissionMode') ?? '',
-                        ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
-                    }
-                ];
-                need(await writeLaunchProfiles(next, `profile "${name}" saved`),
+                const p = profileFrom({
+                    ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') as EngineId } : {}),
+                    model: optStr(args, 'model') ?? '',
+                    effort: optStr(args, 'effort') ?? '',
+                    permissionMode: optStr(args, 'permissionMode') ?? '',
+                    ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
+                }, name);
+                need(await writeLaunchProfiles(
+                    saveProfile(launchProfiles(), p), `profile "${name}" saved`),
                     'agentFarm.launchProfiles could not be written');
-                return { name, profiles: launchProfiles().length };
+                return { name, stored: describeProfile(p), profiles: launchProfiles().length };
             }
         },
         {
             op: 'launch.profile.rename',
-            describe: 'Rename a launch profile, keeping what it stores. args: name (required), to '
-                + '(required). Renaming onto a name that already exists REPLACES it — the launcher '
-                + 'picks by name, so two rows with one name is a list nobody can use.',
+            describe: 'Rename a launch profile, keeping what it stores and its place in the list. '
+                + 'args: name (required), to (required). Renaming onto a name that already exists '
+                + 'REPLACES it — the launcher picks by name, so two rows with one name is a list '
+                + 'nobody can use.',
             handler: async (args) => {
                 const name = argStr(args, 'name').trim();
                 const to = argStr(args, 'to').trim();
                 need(!!to, 'the new name cannot be empty');
-                const found = launchProfiles().find(p => p.name === name);
-                need(!!found, `no launch profile called "${name}" — launch.profiles lists them`);
+                need(launchProfiles().some(p => p.name === name),
+                    `no launch profile called "${name}" — launch.profiles lists them`);
                 need(await writeLaunchProfiles(
-                    launchProfiles().filter(p => p.name !== to && p.name !== name)
-                        .concat([{ ...found!, name: to }]),
+                    renameProfile(launchProfiles(), name, to),
                     `profile "${name}" is now "${to}"`),
                     'agentFarm.launchProfiles could not be written');
                 return { name: to };
@@ -18556,7 +18812,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(launchProfiles().some(p => p.name === name),
                     `no launch profile called "${name}" — launch.profiles lists them`);
                 need(await writeLaunchProfiles(
-                    launchProfiles().filter(p => p.name !== name), `profile "${name}" deleted`),
+                    deleteProfile(launchProfiles(), name), `profile "${name}" deleted`),
                     'agentFarm.launchProfiles could not be written');
                 return { name, profiles: launchProfiles().length };
             }

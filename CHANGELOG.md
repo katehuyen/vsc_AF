@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.125.0 — An item remembers being asked before, and a profile loads what it saved (2026-08-13)
+
+**A-12 — the Search page's empty right-hand half was six invisible tooltips.** The page had a horizontal scrollbar under content that fits, and scrolling into it showed nothing, because nothing could be drawn there. `visibility: hidden` hides a box; it does not take it out of layout — and an absolutely positioned box that nothing clips grows the DOCUMENT's scrollable area. Every `AFTip` panel hanging off a trigger in the right-hand half of a page was silently extending it. Measured on Search at an 884px window: `documentElement.scrollWidth` 1384, i.e. **500px of empty page**. A panel that is not open now has no box at all — `min-width` included, because min beats max in CSS and `max-width: 0` on its own would have left 280px standing. The second half of the complaint fixed itself with it: the ✕ tooltips at the right edge were supposed to flip left already (K-18), but the flip measured a panel that had no measurable size yet and gave up before deciding.
+
+**P-14 — the Track page's three silences.**
+
+- **A badge that says which part is uncertain.** Nearly every row wore a bare `uncertain` while naming its session, printing its id and linking to it — which reads as a contradiction, and a warning a reader cannot place is one they learn to ignore. `turn` — by far the commonest — means the session is certain and only which turn of it is not. Every distinct reason is now its own badge (`turn?` · `multi?` · `guess?`), and the panel says what it means.
+- **…and there are far fewer of them, because the turn was knowable.** The turn number came from the transcript index, which is a scan; a session asking to be attributed is MID-turn, so the scan that would have counted it has not run. **40 of the 241 rows in this project's ledger were stamped uncertain for that reason alone.** The live count — the hooks counted the prompt before the agent started working — now wins for a live session.
+- **The closing note is drawn.** What an agent wrote when it closed an item is the answer to the question this whole tab exists for, and it was never sent to the page: it lived one hover deep inside an event chip that looked exactly like a chip with nothing behind it. It is on the card now, said to be the closer's (the note beside it is the human's, out of `Backloglog.md` — two sources, two colours), long ones open whole in the panel rather than being cut, and a chip that carries a note wears a ✎ so it is worth stopping on. The ledger's silent 300-character cap — which ended a "what to watch out for later" sentence mid-clause — is 2000, and where a note really is longer the cut is **drawn**.
+
+**X-36 — an item that has been asked for before says so, and brings the earlier askings with it.** Reopening an item handed its old text straight back, so the person doing it had to decide by hand, every time, whether to delete it, keep it, or write around it — and whatever they chose, the next agent got one paragraph with no way to tell which round it belonged to. Now the words are **snapshotted at the moment of the reopen**, by whichever door did it (the panel, the bridge, or a box un-ticked in Obsidian, which is the commonest one and is caught by the same reconciliation). So:
+
+- The item's line is free for what is wanted THIS time; nobody preserves anything on purpose. The panel says so where the press was.
+- `Backloglog.md` carries `[round:: 3]` on the data line and the earlier askings above the history they produced, numbered and dated.
+- The Track card wears a purple `round N` and opens on what each earlier round said.
+- **And the agent is HANDED it.** `projects.backlog` and `projects.backlog.next` attach `round` and `earlierRounds` to the item, so "do K-8" can no longer be answered with the thing that already failed twice. Round 1 carries nothing — it is the normal case, and stating it on two hundred lines is a column of noise.
+
+**A-11 — a launch profile now loads what it saved, and editing one means every dimension.** Reopened, and the reasons were exact: the row had been renamed, loading had stopped working, and "editable" had shipped as a rename box.
+
+- **The engine was dropped, on the way in AND on the way out.** A profile saved while the launcher was on Codex stored no engine, so loading it produced a Claude session carrying Codex's model name — the failure furthest in time from the mistake, on the one dimension that decides what every other dimension MEANS.
+- **A profile's name is not the session's name**, though they are the same field (`LaunchProfile extends LaunchOptions`, whose `name` is `-n`). Every row also described itself with the launcher's own `describeLaunch`, which printed the profile's name in quotes as if it were a session's.
+- **Edit is the launcher's own picker, pointed at a saved row**: name, engine, model, effort, permissions, first prompt — with the model and effort lists reading the DRAFT's engine, so editing a Codex profile is never offered a Claude model. Rename and "replace with what the launcher has" are still there; they were two thirds of an edit, not an edit.
+- **The row keeps the name it had** — `Load a profile…`. Loading is what a person comes to it for; the management is on the rows inside, which is what the detail line is for.
+- The rules now live in `src/core/launchProfiles.ts` as functions that take a list and return a list, because the reason two of them were wrong for a release is that they lived inside a quickpick loop nothing can call. On the bridge in the same commit: `launch.profile.set` takes `engine` (it could only write profiles that load wrong without it), and every op runs the same core functions the picker does.
+
 ## 3.124.0 — A task keeps its own record, and a ceiling that holds it says so (2026-08-13)
 
 **M-7 — its time came and went, and nothing said a word.** A schedule set for 09:00 was still sitting at `parked` at 11:00 with no reason on it, no toast, no log line, and a Plan row cheerfully drawing *next tomorrow 09:00*. Four separate silences, fixed at the four places that knew:

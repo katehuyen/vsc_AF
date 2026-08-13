@@ -262,5 +262,119 @@ const RECORDS = [
             .includes('90_Archive/_tracks/backlog-track.jsonl'));
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ P-14 — THE TWO THINGS THAT MADE THE RECORD LOOK BROKEN WHEN IT WAS NOT
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+
+    // (1) The turn. 40 of this project's 241 ledger rows were stamped
+    // `uncertain: turn` — session certain, turn not — because the only place
+    // asked was the transcript INDEX, which is a scan, while the session asking
+    // to be attributed is mid-turn and has not been scanned yet. The hooks had
+    // counted the prompt before the agent started; nobody was asking them.
+    ok('‼️ P-14 — a LIVE session is asked for its own turn count first',
+        /const alive = live\.sessions\(\)\.find\(s => s\.sessionId === sid\);/.test(ext)
+        && /if \(alive && alive\.prompts > 0\) \{ return alive\.prompts; \}/.test(ext));
+    ok('…and the index is still the answer for a session that has ended',
+        /const row = index\.allWithExternal\(\)\.find\(r => r\.sessionId === sid\);/.test(ext));
+
+    // (2) The note. It was cut at 300 characters, silently — so a closing note
+    // arrived in the log ending mid-clause and a reader could not tell the
+    // truncation from a writer who had stopped there.
+    ok('‼️ P-14 — a closing note has room to be one', T.TRACK_NOTE_MAX >= 2000);
+    ok('…and where it really is longer, the cut is DRAWN',
+        /one\.slice\(0, TRACK_NOTE_MAX - 1\) \+ '…'/.test(ext));
+
+    // (3) …and the page is sent BOTH of the things it was being blamed for not
+    // showing: which part of the attribution is doubted, and how it was closed.
+    ok('‼️ P-14 — the row carries which doubt, not just that there is one',
+        /doubts: \[\.\.\.new Set\(\[\.\.\.sum\.runs, \.\.\.sum\.loose\]/.test(ext));
+    ok('‼️ P-14 — …and the closer\'s own note',
+        /closedNote: closed\?\.note \?\? ''/.test(ext));
+
+    // ---- X-36: the reopen takes the words with it, from every door ----------
+    ok('‼️ X-36 — a reopen through the ops reads the item\'s text BEFORE anything is written',
+        /const prevText = o\.event === 'reopen' \? backlogTextOf\(o\.folder, o\.code\) : '';/.test(ext));
+    ok('…and the doors that hand an item out carry the earlier askings with it',
+        /round: r\.round, earlierRounds: r\.earlier/.test(ext));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ X-36 — A REOPENED ITEM CARRIES ITS ROUNDS
+//
+// A backlog line holds one text: whatever it says now. Reopening handed the old
+// words straight back, so the person doing it had to decide by hand whether to
+// delete them, keep them or write around them — and whichever they chose, the
+// next agent got one paragraph with no way to tell which round it belonged to.
+// ---------------------------------------------------------------------------
+{
+    const T0 = Date.UTC(2026, 7, 1, 9, 0);
+    const item = (state, text) => ({
+        code: 'K-8', text, state, line: 3, area: 'K', section: 'K — Console',
+        kinds: [], priority: 'normal', blockedBy: [], children: []
+    });
+
+    // (1) The commonest door: a box un-ticked in Obsidian. Nothing is running,
+    // nobody records anything — the reconciler notices, and it is the only
+    // moment the previous round still exists anywhere.
+    {
+        const closed = [{ code: 'K-8', event: 'done', ts: T0, by: 'agent' }];
+        const back = T.reconcileOutside([item('open', 'ARAMA BULMUYOR: ilk isteğim')], closed, T0 + 1000);
+        ok('‼️ X-36 — a box un-ticked outside is a reopen that keeps the words',
+            back.length === 1 && back[0].event === 'reopen'
+            && back[0].prevText === 'ARAMA BULMUYOR: ilk isteğim');
+        // …and a CLOSE outside is not: there is no earlier round to keep.
+        const shut = T.reconcileOutside([item('done', 'x')], [{ code: 'K-8', event: 'doing', ts: T0, by: 'agent' }], T0);
+        ok('…and a close carries none — a round is a thing you ask for again',
+            shut.length === 1 && !shut[0].prevText);
+    }
+
+    // (2) The summary counts the rounds however they were recorded, and can
+    // only SHOW the ones that kept their words.
+    {
+        const recs = [
+            { code: 'K-8', event: 'done', ts: T0, by: 'agent' },
+            { code: 'K-8', event: 'reopen', ts: T0 + 1000, by: 'outside', prevText: 'ilk isteğim' },
+            { code: 'K-8', event: 'done', ts: T0 + 2000, by: 'agent' },
+            // an older reopen, from before any of this was recorded
+            { code: 'K-8', event: 'reopen', ts: T0 + 3000, by: 'panel' }
+        ];
+        const sum = T.summarizeCode('K-8', recs);
+        ok('‼️ X-36 — "this is the third go" counts every reopen', sum.round === 3);
+        ok('…and only the ones that kept their wording can show it',
+            sum.rounds.length === 1 && sum.rounds[0].prevText === 'ilk isteğim');
+    }
+
+    // (3) ‼️ THE DUPLICATION TRAP. Every row shape `itemBlock` emits has to be
+    // recognised as a MACHINE row on the way back in, or it is read as the
+    // human's prose, preserved, and written again next to the freshly generated
+    // one — a file that grows a copy of every round on every single rebuild.
+    // This repo has been bitten by exactly that once already.
+    {
+        const items = [item('open', 'ÜÇÜNCÜ İSTEĞİM: hâlâ bulmuyor')];
+        const recs = [
+            { code: 'K-8', event: 'done', ts: T0, by: 'agent' },
+            { code: 'K-8', event: 'reopen', ts: T0 + 1000, by: 'outside', prevText: 'ilk isteğim' },
+            { code: 'K-8', event: 'done', ts: T0 + 2000, by: 'agent' },
+            { code: 'K-8', event: 'reopen', ts: T0 + 3000, by: 'outside', prevText: 'ikinci isteğim' }
+        ];
+        const one = T.renderBacklogLog({ project: 'Demo', items, records: recs });
+        ok('‼️ X-36 — the earlier askings are IN the log, numbered and dated',
+            /_round 1_/.test(one) && /_round 2_/.test(one)
+            && one.includes('ilk isteğim') && one.includes('ikinci isteğim'));
+        ok('…and the data line says which go it is on', /\[round:: 3\]/.test(one));
+        const twice = T.renderBacklogLog({ project: 'Demo', items, records: recs, existing: one });
+        ok('‼️ …and a rebuild does not grow a second copy of them', one === twice);
+        ok('…nor a third', T.renderBacklogLog({ project: 'Demo', items, records: recs, existing: twice }) === twice);
+        ok('…and an item nobody reopened says nothing about rounds',
+            !/\[round::/.test(T.renderBacklogLog({
+                project: 'Demo', items: [item('done', 'tek seferde bitti')],
+                records: [{ code: 'K-8', event: 'done', ts: T0, by: 'agent' }]
+            })));
+    }
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

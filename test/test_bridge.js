@@ -225,34 +225,40 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
     // ---------- A-11: launch profiles, from the bridge as well as the picker ----
     //
-    // The launcher grew rename / replace / delete on its rows; the rule
+    // The launcher grew edit / replace / delete on its rows; the rule
     // (_REF/agentfarm-dev.md) is that a function the user can trigger reaches
     // the bridge in the same commit, so an agent asked to "clean up my profiles"
     // is not left telling the user to do it by hand. Registered here the way the
-    // extension registers it, over the same one write path.
+    // extension registers it — over the SAME core functions and the same one
+    // write path, because two implementations of "one name, one profile" is how
+    // the picker and the bridge came to disagree in the first place.
     {
+        const { profileFrom, saveProfile, renameProfile, deleteProfile, describeProfile } =
+            require(path.join(__dirname, '..', 'out', 'core', 'launchProfiles.js'));
         let stored = [{ name: 'gece', model: 'haiku', effort: 'low', permissionMode: '' }];
         const write = async (next) => { stored = next; return true; };
         const r4 = new BridgeRegistry();
         r4.register([
             { op: 'launch.profiles', describe: 'the saved launch setups', handler: () => stored },
             {
-                op: 'launch.profile.set', describe: 'create or replace one. args: name',
+                op: 'launch.profile.set', describe: 'create or replace one. args: name, engine',
                 handler: async (a) => {
                     const name = String(a.name || '').trim();
                     need(!!name, 'a profile needs a name');
-                    await write([...stored.filter(p => p.name !== name),
-                    { name, model: String(a.model || ''), effort: String(a.effort || ''), permissionMode: '' }]);
-                    return { name, profiles: stored.length };
+                    const p = profileFrom({
+                        engine: String(a.engine || ''), model: String(a.model || ''),
+                        effort: String(a.effort || ''), permissionMode: String(a.permissionMode || ''),
+                        prompt: String(a.prompt || '')
+                    }, name);
+                    await write(saveProfile(stored, p));
+                    return { name, stored: describeProfile(p), profiles: stored.length };
                 }
             },
             {
                 op: 'launch.profile.rename', describe: 'rename one. args: name, to',
                 handler: async (a) => {
-                    const found = stored.find(p => p.name === a.name);
-                    need(!!found, `no launch profile called "${a.name}"`);
-                    await write([...stored.filter(p => p.name !== a.name && p.name !== a.to),
-                    { ...found, name: String(a.to) }]);
+                    need(stored.some(p => p.name === a.name), `no launch profile called "${a.name}"`);
+                    await write(renameProfile(stored, String(a.name), String(a.to || '')));
                     return { name: a.to };
                 }
             },
@@ -260,7 +266,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 op: 'launch.profile.delete', describe: 'delete one. args: name',
                 handler: async (a) => {
                     need(stored.some(p => p.name === a.name), `no launch profile called "${a.name}"`);
-                    await write(stored.filter(p => p.name !== a.name));
+                    await write(deleteProfile(stored, String(a.name)));
                     return { name: a.name, profiles: stored.length };
                 }
             }
@@ -276,15 +282,25 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         await r4.dispatch('launch.profile.set', { name: 'derin', model: 'fable', effort: 'high' });
         ok('‼️ …and saving the same name REPLACES it — two rows with one name is an unusable picker',
             stored.length === 2 && stored.find(p => p.name === 'derin').model === 'fable');
+        // ‼️ A-11 — the dimension the whole item turned on. A bridge that could
+        // not store an engine could only write profiles that load wrong.
+        const eng = await r4.dispatch('launch.profile.set',
+            { name: 'kodex', engine: 'codex', model: 'gpt-5.1-codex-max' });
+        ok('‼️ a profile made from the bridge carries its ENGINE',
+            stored.find(p => p.name === 'kodex').engine === 'codex');
+        ok('…and the op says back what it stored, in the launcher\'s words',
+            /^Codex/.test(eng.result.stored));
         await r4.dispatch('launch.profile.rename', { name: 'derin', to: 'derin düşünme' });
         ok('rename keeps what it stores',
             stored.some(p => p.name === 'derin düşünme' && p.model === 'fable'));
+        ok('…and its place in the list, which is the user\'s order',
+            stored.map(p => p.name).join(',') === 'gece,derin düşünme,kodex');
         const ghost = await r4.dispatch('launch.profile.delete', { name: 'yok' });
         ok('‼️ deleting one that was never there is an ERROR, not a quiet success',
             !ghost.ok && /no launch profile called "yok"/.test(ghost.error));
         await r4.dispatch('launch.profile.delete', { name: 'gece' });
         ok('…and deleting a real one leaves the rest alone',
-            stored.length === 1 && stored[0].name === 'derin düşünme');
+            stored.length === 2 && stored[0].name === 'derin düşünme');
         const unnamed = await r4.dispatch('launch.profile.set', { model: 'opus' });
         ok('a profile with no name is refused', !unnamed.ok && /needs a name/.test(unnamed.error));
     }

@@ -234,6 +234,29 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     ok('a repaint re-measures rather than inheriting the old side',
         nowHigh.w.classList.contains('af-on') && !nowHigh.w.classList.contains('af-up'));
 
+    // ---- A-12: the flip still decides, on a panel that has no box yet --------
+    // A CLOSED panel is clamped to nothing in the sheet (see the CSS block
+    // below), so whether it has measurable size when the pointer arrives is an
+    // ordering question about `:hover` and the pointer event — and if the answer
+    // ever came back "not yet", the flip would silently stop rather than fail.
+    // The component gives it a box for the length of the measurement instead.
+    {
+        const shy = mkAt(940, 300, 40, 14);
+        let measuredW = 0, measuredH = 0;
+        Object.defineProperty(shy.t, 'offsetWidth', {
+            get() { return shy.w.classList.contains('af-measure') ? (measuredW = 400) : 0; }
+        });
+        Object.defineProperty(shy.t, 'offsetHeight', {
+            get() { return shy.w.classList.contains('af-measure') ? (measuredH = 300) : 0; }
+        });
+        hover(shy);
+        ok('‼️ A-12 — a panel with no box yet is given one for the measurement',
+            measuredW === 400 && measuredH === 300);
+        ok('…so the edge flip still happens', shy.w.classList.contains('af-left'));
+        ok('‼️ …and the box is handed straight back — it is a measurement, not a state',
+            !shy.w.classList.contains('af-measure'));
+    }
+
     documentStub.documentElement.clientWidth = undefined;
     documentStub.documentElement.clientHeight = undefined;
 }
@@ -252,6 +275,20 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
         && /\.af-tipw\.af-left\s*>\s*\.af-tip\s*\{[^}]*right:\s*0/.test(css));
     ok('…declared after tip-block, so the flip is the last word on its edge',
         css.indexOf('.af-tipw.af-up') > css.indexOf('.af-tipw.tip-block'));
+
+    // ‼️ A-12 — THE PAGE IS NOT MADE WIDER BY THINGS THAT ARE NOT DRAWN.
+    // `visibility: hidden` hides a box; it does not take it out of layout, and
+    // an absolutely positioned box nothing clips grows the DOCUMENT's scroll
+    // width. Measured on the Search page at an 884px window before this rule:
+    // scrollWidth 1384 — 500px of empty page, scrollable, containing six
+    // invisible tooltips and nothing else.
+    const closed = /\.af-tipw:not\(:hover\)[^{]*>\s*\.af-tip\s*\{([^}]*)\}/.exec(css);
+    ok('‼️ A-12 — a closed panel is clamped to no box at all', !!closed);
+    ok('‼️ …including min-width, which BEATS max-width and would leave 280px standing',
+        !!closed && /min-width:\s*0/.test(closed[1]) && /max-width:\s*0/.test(closed[1]));
+    ok('…and it opens again for every state the component calls open',
+        !!closed && ['af-open', 'af-on', 'af-measure', ':hover']
+            .every(s => closed[0].includes(s)));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

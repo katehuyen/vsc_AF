@@ -47,7 +47,14 @@ const ITEM = (code, over) => Object.assign({
     section: code[0] + ' — Alan', line: 100, priority: 'normal', effort: 'M', kinds: ['feat'],
     parent: null, children: [], plan: null, due: null,
     turns: 4, doubtful: false, backfilled: false, sources: ['agent'],
-    stamp: null, note: '', firstTs: T - 2 * DAY, lastTs: T, closedTs: 0,
+    // ‼️ P-14 — WHICH part is uncertain, and HOW the item was closed. A bare
+    // "uncertain" over a row that named its session read as a contradiction, and
+    // the closer's own note — the answer to the question this tab exists for —
+    // was never sent to the page at all.
+    doubts: [],
+    // ‼️ X-36 — which go this is, and what the item said on the earlier ones.
+    round: 1, rounds: [],
+    stamp: null, note: '', closedNote: '', firstTs: T - 2 * DAY, lastTs: T, closedTs: 0,
     closedEvent: null, closedBy: null, sessions: [], loose: []
 }, over || {});
 
@@ -57,6 +64,13 @@ function rows() {
             text: 'END SESSION İŞLEMİYOR: oturumu durdurmak için butona basıyorum, buton işini yapmış gibi görünüyor ama birkaç saniye sonra ajan yeni satırlar göndermeye devam ediyor — bu çok kararlı çalışan bir şeydi, kim neden bozdu.',
             state: 'done', effort: 'M', kinds: ['bug'], priority: 'high', turns: 9,
             stamp: 'b28b7369#1', note: 'İki ayrı sebep: öldürme sırası ve boru boşalması.',
+            // The long closing note is the case the row has to survive: it is
+            // cut on the card and opens whole in the panel.
+            closedNote: 'Kapatıldı — 3.124.0. İki ayrı sebep vardı ve ikisi de kapatıldı: '
+                + 'öldürme sırası (çocuk süreç önce, kabuk sonra) ve boru boşalması — '
+                + 'kapanmamış bir stdout borusu, süreç ölmüş olsa bile okuyucuyu satır '
+                + 'göndermeye devam ettiriyordu. Sonradan bakan biri için: aynı belirti '
+                + 'tekrar ederse önce boru kapanışına bakılsın, öldürme sırasına değil.',
             firstTs: T - 6 * H, lastTs: T - H, closedTs: T - H, closedEvent: 'done', closedBy: 'agent',
             sessions: [run('K-12', 'developer', [
                 { event: 'doing', ts: T - 6 * H },
@@ -75,7 +89,7 @@ function rows() {
         }),
         ITEM('U-25', {
             text: 'TRACK ARAYÜZ: Last worked ve First worked aynı şeyi gösteriyor; alt sekmelerde renklendirme hiç yapılmamış; Timeline sütunları dar; tooltip kullanılmamış; sekme şeridi tamamen renksiz.',
-            state: 'doing', kinds: ['ux'], effort: 'M', turns: 7, doubtful: true,
+            state: 'doing', kinds: ['ux'], effort: 'M', turns: 7, doubtful: true, doubts: ['multi'],
             firstTs: T - 3 * DAY, lastTs: T - 30 * 60000,
             sessions: [
                 run('U-25', 'developer', [
@@ -120,7 +134,8 @@ function rows() {
         ITEM('S-13', {
             text: 'Otomatik oturum adlandırmasında zaman zaman ortaya çıkan yanlışlık',
             state: 'done', effort: 'S', turns: 2, backfilled: true, sources: ['backfill'],
-            doubtful: true, stamp: 'ff629d56#1',
+            doubtful: true, doubts: ['guess'], stamp: 'ff629d56#1',
+            closedNote: 'Transkriptten geri kuruldu — gözlenmedi.',
             firstTs: T - 6 * DAY, lastTs: T - 6 * DAY + H,
             closedTs: T - 6 * DAY + H, closedEvent: 'done', closedBy: 'agent',
             sessions: [run('S-13', 'manager', [
@@ -135,6 +150,17 @@ function rows() {
             loose: [{ code: 'M-4', event: 'cancelled', ts: T - 8 * DAY, at: '', session: null, short: null, turn: null, agent: null, by: 'outside', uncertain: 'none', note: 'kapsam dışı bırakıldı' }]
         }),
         ITEM('A-2', {
+            // ‼️ X-36 — the case the item was written about: asked for twice
+            // before, and until now the card said nothing about either.
+            round: 3,
+            rounds: [
+                { ts: T - 12 * DAY, text: 'Resume edilen turda ücret görünmüyor, bir bak.' },
+                {
+                    ts: T - 11 * DAY,
+                    text: 'RESUME ÜCRETİ HÂLÂ EKSİK: geçen sefer bakıldı ama yalnız ilk tur '
+                        + 'düzeldi; devam eden turda taşınan bağlam yine sayılmıyor.'
+                }
+            ],
             text: 'Resume edilen turda ücret eksik geliyordu', state: 'done', kinds: ['bug'],
             effort: 'S', turns: 4, firstTs: T - 11 * DAY, lastTs: T - 10 * DAY,
             closedTs: T - 10 * DAY, closedEvent: 'done', closedBy: 'agent',

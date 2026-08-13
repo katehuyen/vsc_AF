@@ -139,17 +139,30 @@
         if (!tip || typeof tip.getBoundingClientRect !== 'function') { return; }
         w.classList.remove('af-up');
         w.classList.remove('af-left');
-        // The panel is laid out even while hidden (`visibility`, not `display`),
-        // so this is the real size it will open at rather than a guess.
         const host = tip.offsetParent || w;
         if (!host || typeof host.getBoundingClientRect !== 'function') { return; }
         const a = host.getBoundingClientRect();
-        const h = tip.offsetHeight || 0;
-        const wd = tip.offsetWidth || 0;
+        // ‼️ A-12 — A CLOSED PANEL HAS NO BOX (common.css), because a hidden one
+        // that is still laid out drags the document's scroll width past the
+        // window. By the time this runs the wrapper is normally already
+        // `:hover`, so the panel is at its real size — but that is an ordering
+        // assumption about the browser, and getting it wrong here would silently
+        // stop the flip rather than fail. Measure, and if the box is not there,
+        // give it one for the length of this function.
+        let h = tip.offsetHeight || 0;
+        let wd = tip.offsetWidth || 0;
+        let measuring = false;
+        if (!h || !wd) {
+            measuring = true;
+            w.classList.add('af-measure');
+            h = tip.offsetHeight || 0;
+            wd = tip.offsetWidth || 0;
+        }
+        const done = () => { if (measuring) { w.classList.remove('af-measure'); } };
         const root = doc.documentElement || {};
         const vw = root.clientWidth || 0;
         const vh = root.clientHeight || 0;
-        if (!vw || !vh || !h || !wd) { return; }
+        if (!vw || !vh || !h || !wd) { done(); return; }
         // Vertical: below the anchor by default, above it when below does not
         // fit AND above is the roomier half. Where neither fits, the roomier
         // half still shows more of the panel than the cramped one.
@@ -161,6 +174,7 @@
             && wd > vw - EDGE - a.left && a.right - EDGE > vw - EDGE - a.left) {
             w.classList.add('af-left');
         }
+        done();
     }
 
     if (doc && typeof doc.addEventListener === 'function'

@@ -97,6 +97,20 @@ export interface TrackRecord {
      *  the document, where a person can rewrite it. This is the event's own
      *  caption ("root cause not found"). */
     note?: string;
+    /**
+     * ‼️ X-36 — THE WORDS THE ITEM HAD WHEN IT WAS REOPENED. Only ever set on a
+     * `reopen`, and it is the whole mechanism behind "a reopened item carries
+     * its rounds".
+     *
+     * Reopening an item used to hand its old text straight back, so the person
+     * doing it had to decide, by hand and every time, whether to delete what was
+     * there, keep it, or write around it — and whatever they chose, the NEXT
+     * agent got one paragraph with no way to tell which round it belonged to.
+     * The text is taken at the moment the state changes, by whichever door
+     * changed it, so the item's line is free for the new words and round N-1 is
+     * not something anybody has to preserve on purpose.
+     */
+    prevText?: string;
 }
 
 /** The ledger's file name inside the tracks folder. */
@@ -108,6 +122,22 @@ export const TRACK_FILE = 'backlog-track.jsonl';
  *  long tool call and short enough that yesterday's stalled session does not get
  *  the credit. */
 export const TRACK_LIVE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * ‼️ P-14 — HOW MUCH ROOM A CLOSING NOTE GETS.
+ *
+ * It was 300 characters, applied without a word, and a closing note is the one
+ * thing in this whole record a PERSON reads three months later: what was done,
+ * how it was closed, and what to watch out for. Three hundred characters ends
+ * that sentence somewhere in the middle of the second clause — and, because
+ * nothing marked the cut, a reader could not tell the truncation from a writer
+ * who had simply stopped.
+ *
+ * The ledger is one JSON line per record and the log is a document, so the room
+ * costs nothing worth counting. It is still capped, because a note is a note
+ * and not a report — the report goes in the vault and the note points at it.
+ */
+export const TRACK_NOTE_MAX = 2000;
 
 // ---------------------------------------------------------------------------
 // the ledger — reading and appending
@@ -125,6 +155,7 @@ export function serializeTrack(rec: TrackRecord): string {
     out.by = rec.by;
     if (rec.uncertain) { out.uncertain = rec.uncertain; }
     if (rec.note) { out.note = rec.note; }
+    if (rec.prevText) { out.prevText = rec.prevText; }
     return JSON.stringify(out);
 }
 
@@ -156,7 +187,8 @@ export function parseTrack(text: string): TrackRecord[] {
             ...(isFinite(turn) && turn > 0 ? { turn } : {}),
             ...(o.agent ? { agent: String(o.agent) } : {}),
             ...(TRACK_DOUBTS.includes(doubt) ? { uncertain: doubt } : {}),
-            ...(o.note ? { note: String(o.note).replace(/\s+/g, ' ').trim() } : {})
+            ...(o.note ? { note: String(o.note).replace(/\s+/g, ' ').trim() } : {}),
+            ...(o.prevText ? { prevText: String(o.prevText).replace(/\s+/g, ' ').trim() } : {})
         });
     }
     out.sort((a, b) => a.ts - b.ts);
@@ -215,6 +247,15 @@ export interface TrackSummary {
     lastTs: number;
     /** The event that closed it, if one did. */
     closed?: TrackRecord;
+    /**
+     * ‼️ X-36 — WHICH ROUND THIS IS. 1 for an item nobody has reopened; 2 for
+     * one on its second go. Every reopen that carried the words the item had
+     * before it, oldest first — so "what did I ask for the first three times,
+     * and what was done about it" is a fact the next agent is HANDED rather
+     * than one it has to think to go looking for.
+     */
+    round: number;
+    rounds: TrackRecord[];
     /** True when anything in here is stamped uncertain. */
     doubtful: boolean;
 }
@@ -272,6 +313,11 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
         firstTs: timed.length ? timed[0].ts : 0,
         lastTs: timed.length ? timed[timed.length - 1].ts : 0,
         ...(closed ? { closed } : {}),
+        // ‼️ X-36 — every reopen is a round, whichever door did it. Only the
+        // ones that carried the old words can SHOW a round; the count is of all
+        // of them, because "this is the third time" is true either way.
+        round: reopened.length + 1,
+        rounds: reopened.filter(r => !!r.prevText),
         doubtful: mine.some(r => !!r.uncertain)
     };
 }
@@ -330,7 +376,11 @@ export function reconcileOutside(
             uncertain: stated ? 'guess' : 'none',
             note: stated
                 ? 'closed outside Agent Farm; the date is the line\'s own ✅'
-                : 'changed outside Agent Farm; this is when it was noticed'
+                : 'changed outside Agent Farm; this is when it was noticed',
+            // ‼️ X-36 — a box un-ticked in Obsidian is a REOPEN like any other,
+            // and it is the commonest one. The words are taken here, before the
+            // person who reopened it starts typing over them.
+            ...(event === 'reopen' && item.text ? { prevText: item.text } : {})
         });
     }
     return out;
@@ -465,10 +515,14 @@ const LOG_ITEM = /^-\s+\*\*([A-Z]{1,2}-\d+(?:\.\d+)*)\*\*/;
  * open with `_no session_` and every outside-closed item had two identical rows
  * within two rebuilds. Change a row's opening here and change it there.
  */
-const LOG_ROW = /^\s+-\s+(?:`|_no session_)/;
+const LOG_ROW = /^\s+-\s+(?:`|_no session_|_round \d+_)/;
 /** What a row with no session to point at opens with. Shared by the writer and
  *  the pattern above so the two cannot drift apart again. */
 const LOG_NO_SESSION = '_no session_';
+/** ‼️ X-36 — and what a ROUND row opens with. Same rule, same reason: this
+ *  shape is emitted by `itemBlock` and must be recognised by `LOG_ROW`, or the
+ *  file grows a second copy of every round on every rebuild. */
+const LOG_ROUND = (n: number): string => `_round ${n}_`;
 const LOG_HEADING = /^#{1,6}\s+/;
 
 /** Where blocks whose code is not in the backlog are parked, so that a
@@ -646,6 +700,10 @@ export function renderBacklogLog(o: RenderLogInput): string {
 /** One item: the data line, the session rows, then whatever the human wrote. */
 function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string[] {
     const fields: string[] = [`[status:: ${item.state}]`];
+    // ‼️ X-36 — on the DATA line, so it is the first thing read and so a query
+    // can ask for "everything on its third go". An item nobody reopened says
+    // nothing: round 1 is the normal case and stating it everywhere is noise.
+    if (sum.round > 1) { fields.push(`[round:: ${sum.round}]`); }
     fields.push(`[sessions:: ${sum.runs.length}]`);
     if (sum.turns) { fields.push(`[turns:: ${sum.turns}]`); }
     if (sum.firstTs) { fields.push(`[first:: ${localDay(sum.firstTs)}]`); }
@@ -666,6 +724,18 @@ function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string
     if (why) { fields.push(`[uncertain:: ${why}]`); }
 
     const lines = [`- **${item.code}** ${fields.join(' ')}`];
+    // ‼️ X-36 — THE EARLIER ROUNDS, ABOVE THE HISTORY THEY PRODUCED.
+    //
+    // The item's line holds ONE text: whatever it says now. So an item asked for
+    // three times said only the third thing, and the first two askings — which
+    // are the whole reason there was a third — existed nowhere. They are here,
+    // numbered and dated, taken automatically at the moment each reopen
+    // happened. Nobody has to preserve anything by hand, and nobody has to
+    // decide whether to.
+    sum.rounds.forEach((r, i) => {
+        lines.push(`    - ${LOG_ROUND(i + 1)} · ${localStamp(r.ts)} · reopened —`
+            + ` _${r.prevText}_`);
+    });
     for (const run of sum.runs) {
         const closes = run.events.some(e => CLOSING.includes(e.event));
         const label = closes ? `**${lastEventOf(run)}**` : lastEventOf(run);

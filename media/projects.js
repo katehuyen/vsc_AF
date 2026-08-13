@@ -1711,6 +1711,26 @@
                     background:var(--vscode-inputValidation-warningBackground,#663); }
                 .pj-trk-note { margin-top:5px; padding-left:8px; font-size:12px; opacity:.9;
                     border-left:2px solid var(--vscode-focusBorder,#3794ff); }
+                /* ‼️ P-14 — the CLOSER's note, and it is a different thing from
+                   the one above it: that one is the human's, written in
+                   Backloglog.md, and this one is what the agent said when it
+                   closed the item. Two sources, two rules, never one colour. */
+                .pj-trk-close { margin-top:5px; padding-left:8px; font-size:12px; opacity:.95;
+                    border-left:2px solid var(--vscode-charts-green,#3fb950); }
+                .pj-trk-close b { font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+                    color:var(--vscode-charts-green,#3fb950); margin-right:5px; }
+                /* …and the mark that says a chip HAS one. Without it a chip
+                   carrying a paragraph and a chip carrying nothing were the
+                   same eleven pixels. */
+                .pj-trk-notemark { margin-left:4px; opacity:.75; }
+                /* ‼️ X-36 — this item has been asked for before. Purple, which
+                   is nothing else on this page: it is not a warning and not a
+                   state, it is a COUNT of how many times we have been here. */
+                .pj-trk-round { font-size:10px; padding:1px 6px; border-radius:8px; white-space:nowrap;
+                    color:var(--vscode-charts-purple,#b180d7);
+                    border:1px solid color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 60%, transparent); }
+                .pj-trk-ev.noted { border:1px solid color-mix(in srgb,
+                    var(--vscode-focusBorder,#3794ff) 55%, transparent); }
                 /* timeline view */
                 .pj-trk-day { font-size:11px; text-transform:uppercase; opacity:.55; margin:10px 0 3px; }
                 /* ‼️ EVERY COLUMN IS GIVEN ITS WIDTH, AND THE NOTE TAKES THE REST.
@@ -5441,7 +5461,26 @@
                 ${trkEffortHtml(d, row)}
                 ${trkFamilyHtml(row)}
                 ${row.backfilled ? `<span class="pj-trk-m" title="${C.esc('Reconstructed: some rows below are marked guess')}">⚕</span>` : ''}
-                ${row.doubtful ? `<span class="pj-trk-doubt" title="${C.esc('Uncertain: the run that carries it says why')}">uncertain</span>` : ''}
+                ${/* ‼️ P-14 — IT SAYS WHICH PART IT IS UNSURE OF. A bare
+                      "uncertain" over rows that named a session, printed its id
+                      and linked to it read as a contradiction, and a warning a
+                      reader cannot place is one they learn to ignore. Every
+                      doubt has a reason recorded against it; the badge is that
+                      reason, and the panel is what it means. */''}
+                ${row.doubtful ? trkDoubtHtml(row) : ''}
+                ${/* ‼️ X-36 — HOW MANY TIMES THIS HAS BEEN ASKED FOR. The item's
+                      line says only the LATEST asking, so a card on its third
+                      go looked exactly like one nobody had ever reopened — and
+                      "why is this open again" had no answer anywhere. The
+                      earlier wordings are in the panel, dated. */''}
+                ${row.round > 1 ? window.AFTip.wrap(
+            `<span class="pj-trk-round">round ${row.round}</span>`,
+            `${row.code} · reopened ${row.round - 1} time(s)`,
+            window.AFTip.lines((row.rounds || []).length
+                ? (row.rounds || []).map((r, i) =>
+                    `Round ${i + 1} — asked ${window.AFTime.stamp(r.ts)}:\n${r.text}\n`)
+                : ['Reopened before this was recorded, so the earlier wording was not kept.']),
+            'tip-block') : ''}
                 ${trkStampHtml(row)}
                 <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
                     title="Open the backlog at this item's line">↗</button>
@@ -5453,8 +5492,44 @@
                     title="Reconstruct this one item's history from the transcripts (preview first)">⚕</button>
             </div>
             ${runs}
+            ${/* ‼️ P-14 — HOW IT WAS CLOSED, ON THE CARD. The closing note is
+                  the answer to the question this tab exists for, and it was one
+                  hover deep inside an event chip that looked exactly like a chip
+                  with nothing behind it. It is drawn, said to be the closer's,
+                  and long ones open whole in the panel rather than being cut. */''}
+            ${row.closedNote ? window.AFTip.wrap(
+            `<div class="pj-trk-close"><b>closed</b> ${C.esc(trkClip(row.closedNote, 220))}</div>`,
+            `${row.code} · closed by ${C.esc(row.closedBy || '?')}`
+            + (row.closedTs ? ` · ${window.AFTime.stamp(row.closedTs)}` : ''),
+            row.closedNote.length > 220 ? row.closedNote : '', 'tip-block') : ''}
             ${row.note ? `<div class="pj-trk-note" title="${C.esc('Your own closing note, read out of Backloglog.md. This page never writes it — edit it there.')}">${C.esc(row.note)}</div>` : ''}
         </div>`;
+    }
+
+    /** Cut long text for a row and SAY that it was cut — the panel has the rest. */
+    function trkClip(s, n) {
+        const t = String(s || '');
+        return t.length > n ? t.slice(0, n - 1) + '…' : t;
+    }
+
+    /**
+     * ‼️ P-14 — THE DOUBT NAMES ITSELF.
+     *
+     * `turn` — by far the commonest — means the session is certain and only
+     * which turn of it is not, which is a completely different statement from
+     * "we do not know who did this". Drawn as one badge per distinct reason, so
+     * a card carrying both `turn` and `multi` says both.
+     */
+    function trkDoubtHtml(row) {
+        const list = (row.doubts || []).length ? row.doubts : ['?'];
+        return list.map(d => {
+            const known = TRK_DOUBTS.find(x => x.id === d);
+            return `<span class="pj-trk-doubt" title="${C.esc(window.AFTip.lines([
+                known ? known.tip : 'The attribution is a best effort.',
+                '',
+                'Everything else on this card is recorded, not guessed.'
+            ]))}">${C.esc(d)}?</span>`;
+        }).join('');
     }
 
     /** One session's share of an item's history. The run IS a session, so it
@@ -5586,9 +5661,15 @@
             `Recorded by: ${e.by}`,
             e.uncertain ? `Uncertain: ${e.uncertain}` : ''
         ]);
-        const chip = `<span class="pj-trk-ev e-${C.esc(e.event)}"`
+        // ‼️ P-14 — A CHIP WITH SOMETHING BEHIND IT LOOKS DIFFERENT FROM ONE
+        // WITHOUT. These were identical whether or not anybody had written a
+        // word about the event, so the only way to find a note was to hover two
+        // hundred chips on the chance — which is the same as not having them.
+        // The mark is the reader's reason to stop.
+        const chip = `<span class="pj-trk-ev e-${C.esc(e.event)}${e.note ? ' noted' : ''}"`
             + `${e.note ? '' : ` title="${C.esc(head)}"`}>`
-            + `${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}</span>`;
+            + `${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}`
+            + `${e.note ? '<span class="pj-trk-notemark">✎</span>' : ''}</span>`;
         return window.AFTip.wrap(chip, head, e.note || '', `${cls ? cls + ' ' : ''}tip-block`);
     }
 

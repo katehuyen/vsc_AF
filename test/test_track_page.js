@@ -158,6 +158,82 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
 }
 
 // ---------------------------------------------------------------------------
+// ‼️ P-14 — WHAT THE CARD SAYS ABOUT ITS OWN DOUBT, AND ABOUT ITS ENDING
+//
+// Two complaints, one card. Almost every row wore a bare "uncertain" while
+// naming a session, printing its id and linking to it — which reads as a
+// contradiction, and a warning a reader cannot place is one they stop reading.
+// And the note an agent writes when it CLOSES an item — the answer to the
+// question this whole tab exists for — never reached the page at all: the row
+// carried `closedTs`, `closedEvent` and `closedBy`, and not the sentence.
+// ---------------------------------------------------------------------------
+{
+    const rows = track();
+    rows.rows[0].doubts = ['multi'];
+    rows.rows[0].closedNote = 'Kapatıldı: iki tarafı da küçük harfe çevirerek. '
+        + 'Sonradan bakan biri için: eşleşme artık büyük/küçük harf duyarsız, '
+        + 'yani eski kayıtlar da bulunuyor.';
+    rows.rows[1].doubts = ['guess', 'none'];
+    const r = run({ tabData: { track: rows } });
+    const h = r.html();
+
+    ok('‼️ P-14 — the doubt badge NAMES what it is unsure of',
+        h.includes('>multi?</span>') && !/>uncertain<\/span>/.test(h));
+    ok('…and a card with two reasons says both', h.includes('>guess?</span>')
+        && h.includes('>none?</span>'));
+    ok('…with what that reason means in the panel, not a word repeated on every card',
+        h.includes('More than one live session'));
+
+    ok('‼️ P-14 — the closing note is DRAWN, not buried one hover deep',
+        h.includes('class="pj-trk-close"') && h.includes('Kapatıldı: iki tarafı da küçük harfe'));
+    ok('…said to be the closer\'s, next to the human\'s own which is a different thing',
+        h.includes('closed by lower-casing both sides') && h.includes('class="pj-trk-note"'));
+    ok('…and a long one is cut visibly rather than silently',
+        h.includes('…') && h.includes('Sonradan bakan biri için'));
+
+    ok('‼️ P-14 — an event chip that carries a note LOOKS like it does',
+        /class="pj-trk-ev e-touch noted"/.test(h) && h.includes('pj-trk-notemark'));
+    ok('…and one that carries nothing is left plain',
+        /class="pj-trk-ev e-doing"[^>]*title=/.test(h));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ X-36 — AN ITEM ASKED FOR MORE THAN ONCE SAYS SO, AND SAYS WHAT IT ASKED
+//
+// A backlog line holds ONE text: whatever it says now. So an item reopened
+// twice said only the third thing, the two askings that made a third necessary
+// existed nowhere, and every agent handed it started from a blank slate on work
+// that had already failed twice. The reopen now takes the words with it.
+// ---------------------------------------------------------------------------
+{
+    const rows = track();
+    rows.rows[0].round = 3;
+    rows.rows[0].rounds = [
+        { ts: T - 4 * DAY, text: 'ilk isteğim: eşleşme büyük/küçük harfe takılıyor' },
+        { ts: T - 2 * DAY, text: 'ikinci kez: yalnız bir yer düzeltilmiş, arama hâlâ bulmuyor' }
+    ];
+    const r = run({ tabData: { track: rows } });
+    const h = r.html();
+
+    ok('‼️ X-36 — a card on its third go says which round it is',
+        h.includes('class="pj-trk-round"') && h.includes('round 3'));
+    ok('…and carries what was asked each earlier time, dated',
+        h.includes('Round 1 — asked') && h.includes('eşleşme büyük/küçük harfe takılıyor')
+        && h.includes('ikinci kez'));
+    ok('…and an item nobody reopened wears nothing — round 1 is the normal case',
+        (h.match(/class="pj-trk-round"/g) || []).length === 1);
+
+    // An item reopened before any of this was recorded has a round count and no
+    // earlier wording. It says that rather than drawing an empty panel.
+    const older = track();
+    older.rows[1].round = 2;
+    older.rows[1].rounds = [];
+    const r2 = run({ tabData: { track: older } });
+    ok('…and one reopened before the snapshot existed admits the wording is gone',
+        r2.html().includes('the earlier wording was not kept'));
+}
+
+// ---------------------------------------------------------------------------
 // X-23: every Track door opens one neutral transcript reading view
 // ---------------------------------------------------------------------------
 {

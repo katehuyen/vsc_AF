@@ -293,6 +293,24 @@ span.af-tipw { display: inline; }
     color: var(--vscode-foreground);
     box-shadow: 0 5px 16px #0007;
 }
+/* ‼️ A-12 — A CLOSED PANEL MUST NOT MAKE THE PAGE WIDER.
+   `visibility: hidden` hides a box; it does not remove it from layout, and an
+   absolutely positioned box that nothing clips grows the DOCUMENT's scrollable
+   area. So every panel hanging off a trigger in the right-hand half of a page
+   was silently extending it: measured on the Search page at a 884px window,
+   `documentElement.scrollWidth` was 1384 — 500px of empty page you could scroll
+   into, with a horizontal scrollbar under a page that fits. Nothing was drawn
+   there and nothing could be; it was six invisible tooltips.
+
+   So a panel that is not open has no box at all. `min-width` has to go with it:
+   min beats max in CSS, so `max-width: 0` alone would still leave 280px
+   standing. It comes back the instant the wrapper is hovered — in the same
+   style recalculation as the edge flip below, so the box never exists in the
+   wrong place, not even for the 250ms the fade is waiting. */
+.af-tipw:not(:hover):not(.af-open):not(.af-on):not(.af-measure) > .af-tip {
+    min-width: 0; max-width: 0; max-height: 0;
+    padding: 0; border-width: 0; overflow: hidden;
+}
 /* the same beat the backlog's step menus use: sweeping a pointer down two
    hundred rows must not flash a paragraph at every one. Closing is instant. */
 .af-tipw:not(.tip-free):hover > .af-tip, .af-tip:hover { visibility: visible; opacity: 1; transition-delay: .25s; }
