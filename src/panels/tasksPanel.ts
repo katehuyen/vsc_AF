@@ -12,6 +12,7 @@ import {
     FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
     RunDimensions, ScheduleKind, scheduleDue, TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
+import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
@@ -245,6 +246,11 @@ function scheduleSetup(s: FarmSchedule): { label: string; value: string }[] {
     if (s.ignoreBudget) {
         out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' });
     }
+    // ‼️ M-3 — WHAT HAPPENS IF IT FAILS is a dimension of the run like the rest,
+    // and the anatomy lists every dimension that was STATED. An absent policy is
+    // the user's default and says nothing, for the same reason an unset model
+    // says nothing.
+    if (s.retry) { out.push({ label: 'If it fails', value: describeRetry(s.retry) }); }
     if (s.lastRunKey) { out.push({ label: 'Last occurrence settled', value: s.lastRunKey }); }
     if (s.pendingRunKey) {
         out.push({ label: 'Held over', value: `${s.pendingRunKey} — waiting for quiet hours to end` });
@@ -277,6 +283,7 @@ function triggerSetup(t: FarmTrigger, armed: boolean): { label: string; value: s
         if (a.permissionMode) { out.push({ label: 'Permissions', value: a.permissionMode }); }
         if (a.workDir) { out.push({ label: 'Working folder', value: a.workDir }); }
         if (a.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+        if (a.retry) { out.push({ label: 'If it fails', value: describeRetry(a.retry) }); }
     }
     return out;
 }
@@ -294,6 +301,7 @@ function templateSetup(t: FarmTemplate): { label: string; value: string }[] {
     if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
     if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
     if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+    if (t.retry) { out.push({ label: 'If it fails', value: describeRetry(t.retry) }); }
     return out;
 }
 
@@ -499,8 +507,14 @@ function runSetup(
     if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
     if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
     if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+    if (t.retry) { out.push({ label: 'If it fails', value: describeRetry(t.retry) }); }
     if (t.outputContract === 'json') { out.push({ label: 'Output', value: 'JSON (structured handoff)' }); }
-    if (t.attempt) { out.push({ label: 'Attempt', value: `retry ${t.attempt}` }); }
+    // `attempt` is the workflow VERIFY loop's counter; `retryAttempt` is M-3's
+    // failure retry. Two different mechanisms, so two different lines — one
+    // number covering both would say "retry 2" about a run that was never
+    // retried for failing.
+    if (t.attempt) { out.push({ label: 'Verify attempt', value: String(t.attempt) }); }
+    if (t.retryAttempt) { out.push({ label: 'Attempt', value: `retry ${t.retryAttempt} after a failure` }); }
     return out;
 }
 
@@ -839,7 +853,8 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
-        ignoreBudget: !!t.ignoreBudget
+        ignoreBudget: !!t.ignoreBudget,
+        ...retrySeed(t.retry)
     };
 }
 
@@ -860,6 +875,25 @@ function cloneSeed(
     const g = t.fromTrigger ? m.triggers.find(x => x.id === t.fromTrigger) : undefined;
     if (g) { return { kind: 'trigger', seed: { ...triggerSeed(g, fallbackAgent), mode2: 'new', id: '' } }; }
     return { kind: 'task', seed: taskSeed(t) };
+}
+
+/**
+ * ‼️ M-3 — a retry policy in the form's flat vocabulary, and the three states
+ * kept apart. A stored policy of `{max: 0}` is "never retry this one" and an
+ * ABSENT policy is "follow my default"; collapsing them here would turn every
+ * edit of an unconfigured schedule into a decision the user never made.
+ */
+function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
+    if (!r) { return { retryMode: 'default' }; }
+    if (!r.max) { return { retryMode: 'off' }; }
+    return {
+        retryMode: 'custom',
+        retryMax: r.max,
+        retryDelayMin: r.delayMin ?? 30,
+        retryBackoff: r.backoff ?? 'same',
+        retryWhen: r.when ?? 'limit',
+        retryPrompt: r.prompt ?? ''
+    };
 }
 
 /** A precondition in the form's flat vocabulary. */
@@ -889,6 +923,7 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
         cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
+        ...retrySeed(s.retry),
         every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
         time: `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`,
         onceAt: s.onceAt ? localInput(s.onceAt) : '',
@@ -911,6 +946,7 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
         cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
+        ...retrySeed(dims.retry),
         debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
         enabled: t.enabled,
         ...guardSeed(t.fireIf)
@@ -1172,7 +1208,13 @@ export class TasksPanel {
             // ‼️ M-7 — the budget waiver rides with the AUTOMATION, so every run
             // it makes carries it. Ticking it on each produced task by hand is
             // exactly what nobody is there to do at 09:00.
-            ...(item.ignoreBudget === true ? { ignoreBudget: true } : {})
+            ...(item.ignoreBudget === true ? { ignoreBudget: true } : {}),
+            // ‼️ M-3 — and so does the retry policy, for the same reason: an
+            // automation that fails at 03:00 with nobody watching is the case
+            // "try it again in half an hour" exists for. Absent (the form's
+            // "use my default") stays absent — storing the resolved default
+            // would freeze it against a setting the user changes later.
+            ...(normalizeRetry(item.retry) ? { retry: normalizeRetry(item.retry) as RetryPolicy } : {})
         });
         const done = (text: string): void => {
             void this.panel.webview.postMessage({ type: 'plan-saved', text });
@@ -1628,7 +1670,11 @@ export class TasksPanel {
                     ...(str('workDir') ? { workDir: str('workDir') } : {}),
                     ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
                     // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)
-                    ...(t.ignoreBudget === true ? { ignoreBudget: true } : {})
+                    ...(t.ignoreBudget === true ? { ignoreBudget: true } : {}),
+                    // M-3 — what happens if it fails (see core/retry.ts). Absent
+                    // means the user's default, which is why it is not filled in
+                    // with a resolved policy here.
+                    ...(normalizeRetry(t.retry) ? { retry: normalizeRetry(t.retry) as RetryPolicy } : {})
                 });
                 if (t.start === true) { m.startTask(task); }
                 void this.panel.webview.postMessage({

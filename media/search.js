@@ -152,8 +152,25 @@
             ${notes.map(n => `<p>${n}</p>`).join('')}</div>`;
     }
 
-    function picker(id, label, options, selected, title, disabled) {
-        return window.AFFilter.multi({ id, label, options, selected, title, disabled });
+    function picker(id, label, options, selected, title, disabled, presets) {
+        return window.AFFilter.multi({
+            id, label, options, selected, title, disabled, presets: presets || []
+        });
+    }
+
+    /**
+     * ‼️ U-52 — the one subset an engine list has a word for, in the same words
+     * the sessions table and the Runs table use. The guard is the same too:
+     * with a single other engine the preset would be a slower way to click one
+     * row, and a click on a row's own name already means "only this".
+     */
+    function otherEnginePresets(ids) {
+        const claude = window.AFEngine.label('claude');
+        const rest = (ids || []).filter(e => window.AFEngine.label(e) !== claude);
+        return rest.length > 1 ? [{
+            id: 'notclaude', label: 'Other engines', values: rest,
+            title: 'Everything that did not run on the default engine.'
+        }] : [];
     }
 
     function filterPanelHtml() {
@@ -164,7 +181,8 @@
                 ${tip(`<input id="f-session" class="fbox" type="text" value="${C.esc(flt.session)}" placeholder="session id, title or path…">`,
                     'Session', 'A full id, the eight-character prefix shown by Agent Farm, a transcript path, or part of a session title.')}
                 ${picker('f-engines', 'Engines', facets.engines.map(e => ({ v: e, t: window.AFEngine.label(e) })), flt.engines,
-                    'Which CLI wrote the transcript. Meaning search returns only sessions present in its current index.')}
+                    'Which CLI wrote the transcript. Meaning search returns only sessions present in its current index.',
+                    false, otherEnginePresets(facets.engines))}
                 ${picker('f-projects', 'Projects', facets.projects, flt.projects,
                     'The project resolved for each individual session: explicit membership, code root, then agent default.')}
                 ${picker('f-models', 'Models', facets.models, flt.models, 'A session appears under every model it used.')}

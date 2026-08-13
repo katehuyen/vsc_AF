@@ -955,6 +955,40 @@ const FAMILY = [
     const looped = B.gatherFamilies(LOOP);
     ok('‼️ a parent chain that loops leaves every item in the queue exactly once',
         looped.queue.slice().sort().join() === 'P-1,P-2,P-3');
+
+    // ---- U-56: the same relation from the PART's end ---------------------
+    //
+    // ‼️ Gather is pressed on the whole and rearranges a family; this is
+    // pressed on ONE row that has drifted. The difference that matters is
+    // what it must NOT touch: every other entry keeps its place.
+    {
+        const j = B.joinParent(FAM, 'K-8');
+        ok('‼️ U-56 — the part goes under its whole and NOTHING else moves',
+            j.ok && j.queue.join() === 'P-5,K-8,P-5.1,P-12,P-5.2');
+        ok('…and it says where it went', /K-8/.test(j.note || '') && /P-5/.test(j.note || ''));
+        ok('‼️ NO LINE MOVED — the 🎯 block is the only thing rewritten',
+            j.text.split('\n').filter(l => /^- \[/.test(l)).join()
+            === FAM.split('\n').filter(l => /^- \[/.test(l)).join());
+
+        // ‼️ It lands at the END of the run already behind the whole, so
+        // siblings somebody has already gathered are not pushed down.
+        const two = B.joinParent(j.text, 'P-12');
+        ok('‼️ a second part joins the END of the family run, above nobody',
+            two.queue.join() === 'P-5,K-8,P-12,P-5.1,P-5.2');
+
+        ok('running it on a part that is already there is a no-op that says so',
+            /already under/.test(B.joinParent(two.text, 'K-8').note || ''));
+
+        // The two refusals, and each names the reason rather than the rule.
+        ok('an item that belongs to nothing is refused, and told why',
+            /P-5 is not part of anything/.test(B.joinParent(FAM, 'P-5').error || ''));
+        ok('a whole that is not in the queue is refused with ITS reason',
+            /P-5.*closed/.test(B.joinParent(
+                FAM.replace('- [ ] P-5 the work layer', '- [x] P-5 the work layer'), 'K-8'
+            ).error || ''));
+        ok('a code that is not there at all is refused by name',
+            /no backlog item with code Z-9/.test(B.joinParent(FAM, 'Z-9').error || ''));
+    }
 }
 
 console.log(`${pass} passed, ${fail} failed`);

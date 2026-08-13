@@ -2153,8 +2153,9 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
         const {
-            addBacklogItem, archiveBacklogDone, BACKLOG_CODE, gatherFamilies, moveInQueue, nextBacklog, parseBacklog,
-            placeInQueue, setBacklogFields, setBacklogQueue, setBacklogState, tidyBacklogFile
+            addBacklogItem, archiveBacklogDone, BACKLOG_CODE, gatherFamilies, joinParent, moveInQueue,
+            nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue,
+            setBacklogState, tidyBacklogFile
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
             require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
@@ -2471,6 +2472,16 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
+                    op: 'projects.backlog.under',
+                    describe: 'send ONE part under its whole in the queue. args: project, code',
+                    handler: a => {
+                        const code = String(a.code || '').trim().toUpperCase();
+                        need(!!code, 'which item should be sent under its parent? pass `code`');
+                        const r = editBacklog(t => joinParent(t, code));
+                        return { queue: r.queue, note: r.note ?? null };
+                    }
+                },
+                {
                     op: 'projects.backlog.archive',
                     describe: 'archive every closed item, or only old ones. args: project, olderThanDays?',
                     handler: a => {
@@ -2565,6 +2576,35 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             ok('…and running it a second time says there was nothing to do',
                 /already/.test(((await reg.dispatch('projects.backlog.gather',
                     { project: 'Agent Farm' })).result || {}).note || ''));
+
+            // ---- U-56: ONE part, from the bridge as well as the row's menu ----
+            // The gesture only exists because gather moves rows the user was not
+            // asking about; the op has to prove it moves exactly one.
+            await reg.dispatch('projects.backlog.reorder',
+                { project: 'Agent Farm', code: 'P-3', dest: 'P-2', place: 'before' });
+            const orderNow = () => {
+                const s = parseBacklog(readBacklog());
+                return queueOrder(s.items, s.queue);
+            };
+            const before = orderNow();
+            const under = await reg.dispatch('projects.backlog.under',
+                { project: 'Agent Farm', code: 'P-3' });
+            ok('‼️ projects.backlog.under puts the part directly behind its whole',
+                under.ok && under.result.queue.indexOf('P-3')
+                === under.result.queue.indexOf('P-1') + 1);
+            ok('…and moves NOTHING else — every other entry keeps its order',
+                under.result.queue.filter(c => c !== 'P-3').join()
+                === before.filter(c => c !== 'P-3').join());
+            ok('…running it again says it is already there',
+                /already under/.test(((await reg.dispatch('projects.backlog.under',
+                    { project: 'Agent Farm', code: 'P-3' })).result || {}).note || ''));
+            const noParent = await reg.dispatch('projects.backlog.under',
+                { project: 'Agent Farm', code: 'P-2' });
+            ok('‼️ an item that belongs to nothing is REFUSED, not moved to the top',
+                !noParent.ok && /not part of anything/.test(noParent.error));
+            const noCode = await reg.dispatch('projects.backlog.under', { project: 'Agent Farm' });
+            ok('…and it will not guess which item you meant',
+                !noCode.ok && /pass `code`/.test(noCode.error));
 
             const emptied = await reg.dispatch('projects.backlog.queue',
                 { project: 'Agent Farm', codes: [] });
@@ -2661,6 +2701,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
             'projects.backlog.promote', 'projects.backlog.open',
             'projects.backlog.queue', 'projects.backlog.tidy', 'projects.backlog.gather',
+            // U-56 — the child-side twin of gather.
+            'projects.backlog.under',
             'projects.track', 'projects.tracks', 'projects.tracks.backfill',
             // P-5 — the Track tab's ↻ button, and therefore an agent's too.
             'projects.backloglog',
@@ -2848,7 +2890,11 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
     // `_REF/agentfarm-dev.md` is that the two surfaces move together.
     {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 9000);
+        // 12k, not 9k: `tasks.add` has the longest contract in the file and M-3
+        // added the retry policy to it. A window that stops short does not fail
+        // loudly — it silently stops seeing the handler, and every assertion
+        // about the handler starts measuring an empty string.
+        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 12000);
 
         const sched = at('schedules.add');
         ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
@@ -2899,6 +2945,26 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ …and the caller is told whether the run actually STARTED, not just what it is called',
             /const started = args\.start !== false \? taskManager\.startTask\(task\)/.test(add)
             && /heldBy: started \? null : \(task\.deferredReason/.test(add));
+
+        // ---------- M-3: what happens if it FAILS, on the bridge too ----------
+        // The page can set it on a task, a schedule and a trigger, so the same
+        // words have to work here or the two surfaces disagree about a run that
+        // then does not happen. Same reader, same clamp, same three states.
+        ok('‼️ the retry policy is a dimension like the rest, read in the one reader',
+            /const retry = normalizeRetry\(args\.retry\);/.test(bridge));
+        ok('…and it survives the way back out, so a round trip cannot drop it',
+            /retry: o\.retry \?\? null/.test(bridge));
+        ok('‼️ …and an ABSENT policy reads back as the default rather than as an object — '
+            + 'writing it back resolved would freeze a setting the user can still change',
+            /the user\\'s default \(agentFarm\.taskRetry\)/.test(bridge));
+        ok('tasks.add takes it, clamped by the same function the form uses',
+            /normalizeRetry\(args\.retry\)/.test(add));
+        ok('‼️ …and its contract says which failures it is about, and that omitting it '
+            + 'is not the same as switching it off',
+            /only when the Claude session limit was hit/.test(add)
+            && /is a different statement from/.test(add));
+        ok('…and the answer says what the policy resolved to today',
+            /retryPolicy: describeRetry\(task\.retry/.test(add));
 
         // ---------- M-8: what happened to a run, and where a deleted one went ----
         const get = at('tasks.get');

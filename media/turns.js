@@ -286,7 +286,18 @@
                 }) : ''}
                 ${facets.engines.length > 1 ? window.AFFilter.multi({
                     id: 'turns-engines', label: 'Engines', options: facets.engines, selected: filters.engines,
-                    title: 'Which engines\' turns to list — tick any combination'
+                    title: 'Which engines\' turns to list — tick any combination',
+                    // ‼️ U-52 — the same named subset, in the same words, as the
+                    // sessions tables and the Runs table: a four-engine list is
+                    // read with "everything that is not the default". Only once
+                    // there is more than one of them, or it is a slower way to
+                    // click a single row.
+                    presets: facets.engines.filter(e => e !== window.AFEngine.label('claude')).length > 1
+                        ? [{
+                            id: 'notclaude', label: 'Other engines',
+                            values: facets.engines.filter(e => e !== window.AFEngine.label('claude')),
+                            title: 'Everything that did not run on the default engine.'
+                        }] : []
                 }) : ''}
                 ${models.length > 1 ? window.AFFilter.multi({
                     id: 'turns-models', label: 'Models', selected: filters.models,

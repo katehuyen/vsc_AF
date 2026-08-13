@@ -340,6 +340,15 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'backlogGather', title: 'Gather its parts under it', act: 'blGather',
         when: `${BACKLOG_ROW} && afParts`, group: '3_move@2'
     },
+    // ‼️ U-56 — THE SAME GESTURE FROM THE OTHER END, and only on a row that HAS
+    // a whole. "Gather" is pressed on the parent and moves everything that
+    // belongs to it; this is pressed on ONE part that has drifted and moves
+    // only that row. On an item that belongs to nothing the line would have no
+    // destination, so the page says which rows those are (`afPartOf`).
+    {
+        id: 'backlogJoinParent', title: 'Send it under its parent', act: 'blJoin',
+        when: `${BACKLOG_ROW} && afPartOf`, group: '3_move@3'
+    },
     ...picker(CTX_PREFIX + 'blOpenWith', BACKLOG_ROW, 'blGo', OPEN_MODES),
     ...picker(CTX_PREFIX + 'blState', BACKLOG_ROW, 'blState', [
         ['open', 'Open — not started'],

@@ -21,6 +21,7 @@
  */
 
 import { ENGINES, engineTakesEffort } from './consoleEngine';
+import { describeRetry, normalizeRetry, RetryPolicy } from './retry';
 
 export interface BridgeOpSpec {
     op: string;                       // e.g. "schedules.add"
@@ -216,6 +217,14 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     // to say the same thing with the same word, or the two surfaces disagree
     // about a run that then does not happen at 09:00.
     if (args.ignoreBudget === true) { out.ignoreBudget = true; }
+    // ‼️ M-3 — AND WHAT HAPPENS IF IT FAILS, for the same reason: the page can
+    // set it on a task, a schedule and a trigger, so an agent asked to "make the
+    // nightly batch try three more times half an hour apart" must be able to say
+    // it in the same words. Clamped here, once, by the same function the form
+    // uses — the alternative is a bridge that can store a policy the UI would
+    // have refused.
+    const retry = normalizeRetry(args.retry);
+    if (retry) { out.retry = retry; }
     return out;
 }
 
@@ -239,7 +248,7 @@ export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
-        ignoreBudget?: boolean;
+        ignoreBudget?: boolean; retry?: RetryPolicy;
     },
     projectName?: (id: string) => string | undefined
 ): Record<string, unknown> {
@@ -258,7 +267,16 @@ export function bridgeDimsOut(
         // ‼️ M-7 — a run that walks past the daily budget must SAY that it does.
         // Reading a schedule back without it and writing it away again is how a
         // waiver the user set on purpose disappears in a round trip.
-        ignoreBudget: !!o.ignoreBudget
+        ignoreBudget: !!o.ignoreBudget,
+        // ‼️ M-3 — null means "the user's default", which is a DIFFERENT answer
+        // from `{max: 0}` ("never retry this one"). Reading it back as an object
+        // either way would make a round trip freeze the default in place — and
+        // the words say WHICH of the two it is rather than resolving a setting
+        // this function has no business reading.
+        retry: o.retry ?? null,
+        retryPolicy: o.retry
+            ? describeRetry(o.retry)
+            : 'the user\'s default (agentFarm.taskRetry)'
     };
 }
 

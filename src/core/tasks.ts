@@ -18,6 +18,7 @@ import {
 } from './media';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
+import { describeRetry, normalizeRetry, RetryPolicy, retryDecision } from './retry';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -137,6 +138,19 @@ export interface FarmTask {
      * task blocked by those is waiting rather than refused.
      */
     ignoreBudget?: boolean;
+    /**
+     * ‼️ M-3 — WHAT HAPPENS IF IT FAILS. Absent = the user's default policy
+     * (`agentFarm.taskRetry`), which is itself the behaviour this extension has
+     * always had. See core/retry.ts; a task states it because a retry is a
+     * property of THIS work, not of the machine.
+     */
+    retry?: RetryPolicy;
+    /** The task this one is a retry of — the FIRST run of the chain, so a chain
+     *  of five all point at the same original rather than at each other. */
+    retryOf?: string;
+    /** Which retry this is. Absent / 0 = the original run. It is a FIELD and no
+     *  longer a number parsed out of the title, which is what it was. */
+    retryAttempt?: number;
 }
 
 /** One thing that happened to a task. `kind` is the verb; `note` is the one
@@ -204,6 +218,13 @@ export interface RunDimensions {
      * have one.
      */
     projectId?: string;
+    /**
+     * ‼️ M-3 — AND WHAT HAPPENS IF IT FAILS. It travels with the automation for
+     * the same reason the budget waiver does: the nightly run nobody is watching
+     * is the one where "it failed at 03:00 and that was that" costs a day.
+     * Absent = the user's default (`agentFarm.taskRetry`).
+     */
+    retry?: RetryPolicy;
 }
 
 /** The run dimensions of an automation, in the shape `addTask` takes them —
@@ -219,6 +240,10 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     if (d.workDir) { r.workDir = d.workDir; }
     if (d.priority) { r.priority = Math.trunc(d.priority); }
     if (d.ignoreBudget) { r.ignoreBudget = true; }
+    // ‼️ Normalised on the way through, so a policy typed into a form, seeded
+    // from a JSON file or sent over the bridge cannot reach a task un-clamped.
+    const retry = normalizeRetry(d.retry);
+    if (retry) { r.retry = retry; }
     return r;
 }
 
@@ -522,6 +547,11 @@ interface StoreShape {
 export interface TaskManagerOptions {
     /** CLI args for internal judge calls — always a cheap model. */
     judgeArgs?: () => string;
+    /** ‼️ M-3 — the user's DEFAULT retry policy (`agentFarm.taskRetry`), used by
+     *  every run that does not state one of its own. Read through a function
+     *  because it is a setting: a window that has been open for a week must
+     *  honour what was changed on Tuesday. */
+    defaultRetry?: () => RetryPolicy | undefined;
     maxConcurrent?: () => number;
     maxConcurrentPerAgent?: () => number;
     /** Return a reason string to defer auto work (e.g. quota window nearly full), or undefined. */
@@ -1066,7 +1096,7 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
-            | 'missionId'>>
+            | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -1519,7 +1549,7 @@ export class TaskManager implements vscode.Disposable {
             ? ` after ${Math.max(1, Math.round((task.endedAt - task.startedAt) / 60000))} min` : ''));
         this.save();
         this.pump();
-        if (status === 'failed') { this.maybeScheduleLimitRetry(task); }
+        if (status === 'failed') { this.maybeScheduleRetry(task); }
 
         // Workflow chaining takes precedence over plain queue auto-advance.
         if (task.workflowId !== undefined && task.stepIndex !== undefined) {
@@ -1546,43 +1576,81 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
-    /** Session-limit resilience: a headless task that failed ONLY because the
-     *  Claude usage/session limit was hit (its output says so) is NOT a real
-     *  failure — the work was never attempted. Re-run it a little later so it is
-     *  not silently dropped; the limit clears within hours and a later attempt
-     *  succeeds. Capped so a persistent problem can't loop forever. Fires only
-     *  while VS Code stays open (the same constraint as every other automation). */
-    private maybeScheduleLimitRetry(task: FarmTask): void {
-        const CAP = 6;
-        const DELAY_MS = 40 * 60 * 1000;
+    /**
+     * ‼️ M-3 — WHAT HAPPENS WHEN A RUN FAILS, DECIDED BY A POLICY THE USER CAN SEE.
+     *
+     * This used to be a private rule with the numbers written into it: six
+     * attempts, forty minutes, only for the Claude session limit, with the
+     * attempt number parsed out of the task's TITLE. All of that is now
+     * `core/retry.ts`, stated on the task like every other run dimension, and
+     * defaulting to exactly the old behaviour so no existing automation changes.
+     *
+     * What is still decided HERE, because it is about this machine and not about
+     * the work: an interactive task has a person in front of it (they can press
+     * the button themselves), a workflow step is retried by the workflow's own
+     * verify/advance path, and a run whose agent no longer exists has nowhere to
+     * go. Fires only while VS Code stays open — the same constraint as every
+     * other automation.
+     */
+    private maybeScheduleRetry(task: FarmTask): void {
         if (task.mode !== 'headless' || !task.agentId || task.workflowId !== undefined) { return; }
         let out = '';
         try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* no output yet */ }
-        if (!/hit your session limit|session limit[^.]*reset/i.test(out)) { return; }
-        const attempt = Number(/\(limit-retry (\d+)\)\s*$/.exec(task.title)?.[1] ?? 0);
-        if (attempt >= CAP) { return; }
+        const fallback = this.opts.defaultRetry?.();
+        const d = retryDecision(task.retry, {
+            attempt: task.retryAttempt ?? 0, output: out, fallback
+        });
+        if (!d.retry) {
+            // ‼️ A retry that did NOT happen is the thing somebody comes looking
+            // for, and the old rule was silent about it. One line, on the task's
+            // own record, saying which rule stopped it — except when retrying is
+            // simply switched off, where "it did not retry" is not news.
+            if (d.why !== 'retry is off for this run') {
+                noteTaskEvent(task, 'finished', `no retry — ${d.why}`);
+                this.save();
+            }
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === task.agentId);
         if (!agent) { return; }
-        const baseTitle = task.title.replace(/\s*\(limit-retry \d+\)\s*$/, '');
-        const nextTitle = `${baseTitle} (limit-retry ${attempt + 1})`;
-        const prompt = task.prompt;
+        const baseTitle = task.title.replace(/\s*\((?:limit-)?retry \d+\)\s*$/, '');
+        const nextTitle = `${baseTitle} (retry ${d.attempt})`;
+        const policy = task.retry;
+        // The prompt is REPLACED, never appended: a retry is a fresh headless run
+        // with no memory of the last one, so "and this time do it properly" on
+        // its own would arrive with nothing to refer to.
+        const prompt = (policy?.prompt ?? fallback?.prompt ?? '').trim() || task.prompt;
         const mode = task.mode;
+        noteTaskEvent(task, 'retried', d.why);
+        this.save();
         try {
             if (task.outputFile) {
                 fs.appendFileSync(task.outputFile,
-                    `\n\n---\n[session limit] Bu is yalnizca oturum limiti dolu oldugu icin basarisiz oldu — gercek hata degil. ` +
-                    `~${Math.round(DELAY_MS / 60000)} dk sonra otomatik yeniden denenecek (deneme ${attempt + 1}/${CAP}); limit temizlenince kosacak.\n`);
+                    `\n\n---\n[retry] ${d.why}. `
+                    + `Policy: ${describeRetry(policy, fallback)}.\n`);
             }
         } catch { /* best-effort note */ }
-        // Same work, same project — and it fires minutes later, from a timer, in
-        // a window that may be showing something else entirely by then.
-        const projectId = task.projectId;
+        // Same work, same dimensions, same project — and it fires minutes later,
+        // from a timer, in a window that may be showing something else entirely.
         setTimeout(() => {
             try {
-                const t = this.addTask(agent, nextTitle, prompt, mode, { projectId });
+                const t = this.addTask(agent, nextTitle, prompt, mode, {
+                    projectId: task.projectId,
+                    ...(task.engine ? { engine: task.engine } : {}),
+                    ...(task.model ? { model: task.model } : {}),
+                    ...(task.effort ? { effort: task.effort } : {}),
+                    ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
+                    ...(task.cli ? { cli: task.cli } : {}),
+                    ...(task.workDir ? { workDir: task.workDir } : {}),
+                    ...(task.priority ? { priority: task.priority } : {}),
+                    ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
+                    ...(policy ? { retry: policy } : {}),
+                    retryOf: task.retryOf ?? task.id,
+                    retryAttempt: d.attempt
+                });
                 this.startTask(t);
             } catch { /* ignore */ }
-        }, DELAY_MS);
+        }, Math.max(60_000, d.delayMs));
     }
 
     // ---------- verification (A2) ----------

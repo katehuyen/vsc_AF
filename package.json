@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini and Antigravity: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.125.0",
+  "version": "3.126.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1527,6 +1527,11 @@
       {
         "command": "agentfarm.ctx.backlogGather",
         "title": "Gather its parts under it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogJoinParent",
+        "title": "Send it under its parent",
         "category": "Agent Farm"
       },
       {
@@ -4442,6 +4447,11 @@
           "group": "3_move@2"
         },
         {
+          "command": "agentfarm.ctx.backlogJoinParent",
+          "when": "webviewSection == 'afBacklogRow' && afPartOf",
+          "group": "3_move@3"
+        },
+        {
           "command": "agentfarm.ctx.trackOpen",
           "when": "webviewSection == 'afTrackRow'",
           "group": "1_open@1"
@@ -5974,6 +5984,11 @@
         },
         {
           "command": "agentfarm.ctx.backlogGather",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.backlogJoinParent",
           "when": "false",
           "group": "ctx"
         },
@@ -8270,6 +8285,54 @@
           "type": "string",
           "default": "--model claude-haiku-4-5-20251001",
           "description": "CLI arguments for internal verification (judge) calls — keep this on a cheap model."
+        },
+        "agentFarm.taskRetry": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "What happens when a headless task FAILS, for every run that does not state its own policy. Leave it empty to keep the shipped behaviour: six attempts, forty minutes apart, and only when the Claude session limit was hit — i.e. when the work was never actually attempted.",
+          "properties": {
+            "max": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20,
+              "description": "How many times to try AGAIN after a failure. 0 = never retry."
+            },
+            "delayMin": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 1440,
+              "description": "Minutes to wait before the first retry."
+            },
+            "backoff": {
+              "type": "string",
+              "enum": [
+                "same",
+                "double"
+              ],
+              "enumDescriptions": [
+                "Every retry waits the same number of minutes.",
+                "The wait doubles each time (capped at 12 hours) — the right shape against something that is busy rather than broken."
+              ],
+              "description": "How the wait grows between attempts."
+            },
+            "when": {
+              "type": "string",
+              "enum": [
+                "limit",
+                "any"
+              ],
+              "enumDescriptions": [
+                "Only when the Claude usage/session limit was hit, so nothing was attempted. This is the default.",
+                "Any non-zero exit."
+              ],
+              "description": "Which failures are worth trying again."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Sent INSTEAD of the original prompt on a retry. Leave empty to send the same work again. A retry is a fresh headless run with no memory of the last one, so a prompt here has to stand on its own."
+            }
+          },
+          "additionalProperties": false
         },
         "agentFarm.maxConcurrentTasks": {
           "type": "number",

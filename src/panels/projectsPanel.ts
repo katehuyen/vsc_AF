@@ -121,6 +121,8 @@ export interface ProjectsPanelDeps {
     /** Pull every part up under its whole in the QUEUE, keeping each family's
      *  head exactly where it stands. `code` narrows it to that one family. */
     backlogGather(id: string, code?: string): { error?: string; note?: string };
+    /** U-56 — one part, under its own whole. The child-side twin of gather. */
+    backlogJoinParent(id: string, code: string): { error?: string; note?: string };
     /** Carry misfiled items back under their own heading, then put each area's
      *  items in code order. The queue is unaffected by either. */
     backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[] };
@@ -725,6 +727,17 @@ export class ProjectsPanel {
                 if (!id) { break; }
                 const code = String(msg.code ?? '').trim().toUpperCase();
                 const res = this.deps.backlogGather(id, code || undefined);
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Queue rearranged.'));
+                break;
+            }
+            // ‼️ U-56 — the part's own end of it: ONE row goes under its whole
+            // and nothing else in the queue changes place. A code is required,
+            // because "send it under its parent" is meaningless without an it.
+            case 'backlogJoinParent': {
+                if (!id) { break; }
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                if (!code) { break; }
+                const res = this.deps.backlogJoinParent(id, code);
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Queue rearranged.'));
                 break;
             }

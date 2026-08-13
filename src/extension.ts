@@ -173,7 +173,7 @@ import {
     addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
     BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
-    BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, gatherFamilies,
+    BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, gatherFamilies, joinParent,
     moveInQueue, nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields,
     setBacklogQueue, setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
@@ -221,6 +221,9 @@ import {
     previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
+import {
+    describeRetry, normalizeRetry, RETRY_MAX_ATTEMPTS, RETRY_MAX_DELAY_MIN, RetryPolicy
+} from './core/retry';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
     MissionLimits, missionLiveSlice, MissionRun, MissionSpec, MissionStore, newMissionId,
@@ -1460,6 +1463,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             portableRoots,
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
+            // ‼️ M-3 — the fleet-wide answer to "what happens when a run fails",
+            // used by every task that does not state its own. Unset means the
+            // shipped default, which is the behaviour this extension has always
+            // had (core/retry.ts, DEFAULT_RETRY).
+            defaultRetry: () => normalizeRetry(cfg().get<unknown>('taskRetry')),
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
@@ -3190,7 +3198,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
                 + 'it does NOT lift the 5-hour quota guard or the concurrency limits, which '
                 + 'protect the plan window and the machine. A task held by those is waiting, '
-                + 'not refused, and launches by itself when they clear)',
+                + 'not refused, and launches by itself when they clear), '
+                // ‼️ M-3 — WHAT HAPPENS IF IT FAILS, and it is not a boolean.
+                + 'retry? ({max, delayMin, backoff, when, prompt} — how many times to try AGAIN '
+                + '(0 = never, max ' + RETRY_MAX_ATTEMPTS + '), how many minutes before the first one '
+                + '(max ' + RETRY_MAX_DELAY_MIN + '), whether the wait stays the "same" or "double"s each '
+                + 'time, and for WHICH failures: "limit" = only when the Claude session limit was hit, '
+                + 'i.e. the work was never attempted — the shipped default — or "any" = any non-zero exit. '
+                + '`prompt` REPLACES the original on every retry (a retry is a fresh headless run with no '
+                + 'memory of the last one, so "and this time do it properly" alone would arrive with '
+                + 'nothing to refer to); leave it out to send the same work again. OMIT `retry` entirely '
+                + 'to inherit the user\'s agentFarm.taskRetry, which is a different statement from '
+                + '{max: 0}. Read `retryPolicy` in the answer to see what it resolved to)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -3241,7 +3260,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(cli ? { cli } : {}),
                         ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
                         ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
-                        ...(args.ignoreBudget === true ? { ignoreBudget: true } : {})
+                        ...(args.ignoreBudget === true ? { ignoreBudget: true } : {}),
+                        // ‼️ M-3 — what happens if it fails, clamped by the same
+                        // function the form uses. Absent leaves the user's own
+                        // default in charge, which is not the same as {max:0}.
+                        ...(normalizeRetry(args.retry) ? { retry: normalizeRetry(args.retry) as RetryPolicy } : {})
                     });
                 // ‼️ M-7 — `startTask` ANSWERS, and the caller is told. It used
                 // to be called for its effect and the reply said `status` from
@@ -3279,7 +3302,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? engineModeNote(task.engine, task.permissionMode) : null,
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
                     priority: task.priority ?? 0,
-                    ignoreBudget: !!task.ignoreBudget
+                    ignoreBudget: !!task.ignoreBudget,
+                    // ‼️ M-3 — what will happen if it fails, said back in words.
+                    // `retry: null` means the user's default is in charge, and
+                    // `retryPolicy` spells out what that resolves to TODAY, so
+                    // the caller does not have to read a settings file to know
+                    // whether the run it just queued will try again.
+                    retry: task.retry ?? null,
+                    retryPolicy: describeRetry(task.retry, normalizeRetry(cfg().get<unknown>('taskRetry')))
                 };
             }
         },
@@ -5930,6 +5960,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.backlog.under',
+            describe: '‼️ ONE PART, UNDER ITS OWN WHOLE — the other end of projects.backlog.gather, and the one to use when a single item has drifted away from the family it belongs to. Gather is pressed on the WHOLE and moves everything under it, which rearranges rows nobody asked about; this moves EXACTLY the code you name and every other entry keeps its place. It lands at the end of the run of parts already sitting behind the whole, so siblings that are already gathered are not pushed down; where the whole has no parts beside it, that is directly behind it. Refused, with the reason, when the item has no `[parent:: …]` on its line or when its whole is not in the queue (closed, uncoded or missing) — never silently moved to the top. Rewrites the 🎯 block and moves no line. args: project (id or name), code (required)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const code = argStr(args, 'code').trim().toUpperCase();
+                need(!!code, 'which item should be sent under its parent? pass `code`');
+                let queue: string[] = [];
+                const out = editProjectDoc(folder, file, src => {
+                    const res = joinParent(src, code);
+                    queue = res.queue;
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    code, queue, note: out.note ?? null
+                };
+            }
+        },
+        {
             op: 'projects.backlog.tidy',
             describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. Returns `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
             handler: (args) => {
@@ -6718,6 +6768,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // so the op that exists to answer "what did this do" could
                     // not answer "on which engine" (X-35).
                     ...bridgeDimsOut(task, (pid: string) => projectStore.get(pid)?.name),
+                    // ‼️ M-3 — WHICH ATTEMPT THIS IS. A run that says `failed`
+                    // and a run that says `failed` for the fourth time are not
+                    // the same answer, and the chain used to be recoverable only
+                    // by reading "(limit-retry 3)" off the end of a title.
+                    retryAttempt: task.retryAttempt ?? 0,
+                    retryOf: task.retryOf ?? null,
                     deferredReason: task.deferredReason ?? null,
                     // ‼️ M-7/M-8 — the run's own record. `deferredReason` is the
                     // LAST reason only; this is every one of them, in order.
@@ -13912,6 +13968,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     edit(id, text => setBacklogQueue(text, codes)),
                 backlogGather: (id: string, code?: string) =>
                     edit(id, text => gatherFamilies(text, code)),
+                backlogJoinParent: (id: string, code: string) =>
+                    edit(id, text => joinParent(text, code)),
                 backlogTidy: (id: string) => {
                     let moved = 0;
                     let reseated: string[] = [];

@@ -1309,6 +1309,17 @@ const famData = () => {
     r.send({ type: 'afctx', act: 'blGather', ctx: { code: 'P-1', key: 'P-1', line: 13 } });
     const one = r.posted.filter(m => m.type === 'backlogGather').pop();
     ok('the row\'s menu asks for that one family', one && one.code === 'P-1');
+
+    // ‼️ U-56 — the other end of the same relation. Gather is offered on a row
+    // that HAS parts; this is offered on a row that IS one, and moves only it.
+    ok('‼️ a row that IS a part publishes so to its menu', ctxOf('K-2').afPartOf === true);
+    ok('…and a row that belongs to nothing says that instead', ctxOf('P-2').afPartOf === false);
+    ok('…a row in the MIDDLE of a chain says both, because it is both',
+        ctxOf('K-2').afParts === true && ctxOf('K-2').afPartOf === true);
+    r.send({ type: 'afctx', act: 'blJoin', ctx: { code: 'K-2', key: 'K-2', line: 14 } });
+    const under = r.posted.filter(m => m.type === 'backlogJoinParent').pop();
+    ok('the row\'s menu sends that ONE code to be put under its parent',
+        under && under.code === 'K-2');
 }
 
 // The picker on the row: what it offers, and the one thing it must never offer.

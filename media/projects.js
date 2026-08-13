@@ -4169,7 +4169,11 @@
             // Whether this item HAS parts — "gather its parts under it" is an
             // offer about a whole, and on a row with nothing under it the menu
             // line would do nothing at all.
-            afParts: (i.children || []).length > 0
+            afParts: (i.children || []).length > 0,
+            // ‼️ U-56 — and whether it IS a part, which is the other end of the
+            // same relation and the other half of the menu: "send it under its
+            // parent" has no destination on an item that belongs to nothing.
+            afPartOf: !!i.parent
         });
     }
 
@@ -7557,6 +7561,13 @@
             // toolbar's button does for every family at once.
             case 'blGather':
                 vscode.postMessage({ type: 'backlogGather', id: id(), code: ctx.code || '' });
+                return;
+            // ‼️ U-56 — the same relation from the part's end. Gather moves a
+            // whole family; this moves ONE row and leaves every other entry
+            // where it stands, which is what a reader looking at one drifted
+            // part actually wants.
+            case 'blJoin':
+                vscode.postMessage({ type: 'backlogJoinParent', id: id(), code: ctx.code || '' });
                 return;
             // The queue's box opens with the item already written into it —
             // quoting a backlog line at yourself is the whole gesture, and the

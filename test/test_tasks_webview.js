@@ -806,6 +806,73 @@ query('[data-expand="run:r3"]')[0].click();
     ok('…and it travels with the task the form sends',
         posted.some(p => p.type === 'task-new' && p.task.ignoreBudget === true));
 
+    // ---------------------------------------------- M-3: what if it FAILS
+    //
+    // ‼️ THREE STATES, AND A CHECKBOX CAN ONLY MAKE TWO. "use my default" (which
+    // may change after this run is saved), "never" (whatever the default
+    // becomes) and "these numbers" are three different statements, and the one
+    // that used to be unsayable is the middle one.
+    sandbox.document.getElementById('nt-open').click();
+    ok('‼️ M-3 — the form asks what happens if the run fails',
+        /id="nt-retrymode"/.test(html()));
+    ok('…and it opens on "use my default", so nothing is decided by opening a form',
+        /<option value="default" selected/.test(html()));
+    ok('…the numbers are not in the way until they are asked for',
+        !/id="nt-retrymax"/.test(html()));
+    sandbox.document.getElementById('nt-prompt').value = 'gece taraması';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    sandbox.document.getElementById('nt-retrymode').value = 'custom';
+    sandbox.document.getElementById('nt-retrymode').fire('change');
+    ok('‼️ …and asking for them shows all four, plus the prompt question',
+        ['nt-retrymax', 'nt-retrydelay', 'nt-retrybackoff', 'nt-retrywhen', 'nt-retryprompt']
+            .every(id => !!sandbox.document.getElementById(id)));
+    ok('…and the retry prompt says it REPLACES the original, which is the trap',
+        /Sent INSTEAD of the prompt above/.test(html()));
+    sandbox.document.getElementById('nt-retrymax').value = '3';
+    sandbox.document.getElementById('nt-retrymax').fire('input');
+    sandbox.document.getElementById('nt-retrydelay').value = '15';
+    sandbox.document.getElementById('nt-retrydelay').fire('input');
+    sandbox.document.getElementById('nt-retrybackoff').value = 'double';
+    sandbox.document.getElementById('nt-retrybackoff').fire('change');
+    sandbox.document.getElementById('nt-retrywhen').value = 'any';
+    sandbox.document.getElementById('nt-retrywhen').fire('change');
+    posted = [];
+    sandbox.document.getElementById('nt-add').click();
+    const withRetry = posted.find(p => p.type === 'task-new');
+    ok('‼️ …and the whole policy travels with the task, as ONE field',
+        withRetry && withRetry.task.retry
+        && withRetry.task.retry.max === 3 && withRetry.task.retry.delayMin === 15
+        && withRetry.task.retry.backoff === 'double' && withRetry.task.retry.when === 'any');
+
+    // ‼️ "never" is a decision and has to reach the host as one — an absent
+    // policy would leave the user's default in charge, which is the opposite.
+    sandbox.document.getElementById('nt-open').click();
+    sandbox.document.getElementById('nt-prompt').value = 'tek denemelik iş';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    sandbox.document.getElementById('nt-retrymode').value = 'off';
+    sandbox.document.getElementById('nt-retrymode').fire('change');
+    posted = [];
+    sandbox.document.getElementById('nt-add').click();
+    const never = posted.find(p => p.type === 'task-new');
+    ok('‼️ …and "never retry it" is sent as {max: 0}, not as silence',
+        never && never.task.retry && never.task.retry.max === 0);
+
+    // …and the third state sends nothing at all, which is what makes it the
+    // default rather than a snapshot of it.
+    sandbox.document.getElementById('nt-open').click();
+    sandbox.document.getElementById('nt-prompt').value = 'varsayılanı kullan';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    // Put the picker back the way a fresh form draws it. (This shim hands out
+    // the same element object across renders, so the box still holds what the
+    // previous case typed into it — a browser would have replaced the node.)
+    sandbox.document.getElementById('nt-retrymode').value = 'default';
+    sandbox.document.getElementById('nt-retrymode').fire('change');
+    posted = [];
+    sandbox.document.getElementById('nt-add').click();
+    const dflt = posted.find(p => p.type === 'task-new');
+    ok('‼️ …and "use my default" sends NO policy, so a later change still applies',
+        dflt && dflt.task.retry === undefined);
+
     // ------------------------------------- a task and a schedule are one form
     sandbox.document.getElementById('nt-open').click();
     ok('‼️ M-7 — the kind is a FIELD, not a door you had to pick before typing',

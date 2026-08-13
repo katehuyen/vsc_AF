@@ -234,14 +234,32 @@
     // Every pick filter on the page, so the markup and the wiring are built from
     // one list (options are recomputed per render — the data moves).
     let pickDefs = [];
-    /** A multi-pick dropdown: tick any combination, not "all or exactly one". */
-    function sel(name, label, value, options) {
+    /** A multi-pick dropdown: tick any combination, not "all or exactly one".
+     *  `presets` are this list's own named subsets (U-52) — the component knows
+     *  the mechanism and only the caller knows what "Automation" means. */
+    function sel(name, label, value, options, presets) {
         const id = 'tf-' + tab + '-' + name;
         pickDefs.push({ id, name, options });
         return window.AFFilter.multi({
-            id, label, options, selected: value,
+            id, label, options, selected: value, presets: presets || [],
             title: 'Filter by ' + label.toLowerCase() + ' — tick any combination'
         });
+    }
+
+    /**
+     * ‼️ U-52 — "EVERYTHING THAT IS NOT THE DEFAULT ENGINE", the question a
+     * four-engine list is read with, wherever such a list is drawn. Same subset,
+     * same words and the same guard as the sessions table: Claude alone is a
+     * single option, which a click on its own name already gives you, so the
+     * preset only appears once there is more than one other engine — otherwise
+     * it would be a slower way to click one row.
+     */
+    function otherEnginePresets(labels) {
+        const rest = (labels || []).filter(e => e !== window.AFEngine.label('claude'));
+        return rest.length > 1 ? [{
+            id: 'notclaude', label: 'Other engines', values: rest,
+            title: 'Everything that did not run on the default engine.'
+        }] : [];
     }
 
     /** A pick filter's chip text: one value by name, several as a count. */
@@ -444,9 +462,19 @@
             <div class="toolbar">
                 <input type="search" id="planq" placeholder="Search name, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
                     title="${C.esc(window.AFQuery.tip('Searched against the name, the prompt, the schedule and the agent.'))}">
-                ${sel('kind', 'Kind', v.kind, Object.keys(KIND).map(k => ({ v: k, t: KIND[k].label })))}
+                ${/* ‼️ U-52 — the one subset this list has a word for. Three of
+                      the four kinds start on their own — a clock, an event, a
+                      chain — and the fourth is a prompt you launch by hand; on
+                      the tab whose whole subject is automation that is the
+                      reading, and it cost a Clear plus three ticks. */''}
+                ${sel('kind', 'Kind', v.kind, Object.keys(KIND).map(k => ({ v: k, t: KIND[k].label })), [{
+            id: 'auto', label: 'Automatic', values: ['schedule', 'trigger', 'workflow'],
+            title: 'Everything that starts on its own — a template is launched by hand.'
+        }])}
                 ${sel('agent', 'Agent', v.agent, d.agents)}
                 ${sel('model', 'Model', v.model, models)}
+                ${/* No preset on State or Guard: each is two options, and a
+                      click on an option's own name already means "only this". */''}
                 ${sel('state', 'State', v.state, [{ v: 'on', t: 'on' }, { v: 'off', t: 'off' }])}
                 ${sel('guard', 'Guard', v.guard, [{ v: 'yes', t: 'guarded' }, { v: 'no', t: 'unguarded' }])}
                 <label class="cbx"><input type="checkbox" data-f="issues"${v.issues ? ' checked' : ''}> needs attention</label>
@@ -628,6 +656,14 @@
             // host turns it into a retry of THAT task (its lineage, its attempt
             // number) rather than an unrelated new one.
             retryOf: '',
+            // ‼️ M-3 — WHAT HAPPENS IF IT FAILS. Three states and they are three
+            // different statements: 'default' = whatever agentFarm.taskRetry
+            // says (and it can change after this run is saved), 'off' = never,
+            // whatever the default becomes, 'custom' = these numbers. A form
+            // with only a checkbox could not say the first one at all.
+            retryMode: 'default',
+            retryMax: 3, retryDelayMin: 30, retryBackoff: 'same',
+            retryWhen: 'limit', retryPrompt: '',
             // schedule
             every: 'daily', time: '09:00', dow: 1, onceAt: '', missed: 'skip', enabled: true,
             // trigger
@@ -674,6 +710,49 @@
         stepMsg = '';
         composerMsg = msg || '';
         render();
+    }
+
+    /**
+     * ‼️ M-3 — WHAT HAPPENS WHEN THIS RUN FAILS.
+     *
+     * The extension has always retried some failures; the numbers were written
+     * into the code (six attempts, forty minutes) and only one kind of failure
+     * qualified, so the answer to "will this try again, and when?" was not
+     * visible anywhere and not changeable at all.
+     *
+     * The control is a three-state picker and not a checkbox, because there are
+     * three statements and a checkbox can only make two: **my default** (which
+     * may change after this run is saved), **never** (whatever the default
+     * becomes), and **these numbers**. The four fields only appear for the
+     * third, so the common case is one line.
+     */
+    function retryHtml(c) {
+        const modes = [
+            ['default', 'use my default'],
+            ['off', 'never retry it'],
+            ['custom', 'set it here…']
+        ];
+        const sel = (id, value, list) => `<select id="nt-${id}">${list.map(o =>
+            `<option value="${C.esc(o[0])}"${o[0] === value ? ' selected' : ''}>${C.esc(o[1])}</option>`
+        ).join('')}</select>`;
+        const head = `<label class="ntf wide" title="${C.esc(
+            'What happens when this run FAILS. "use my default" follows agentFarm.taskRetry, which is six '
+            + 'attempts forty minutes apart and only when the Claude session limit was hit — i.e. when the '
+            + 'work was never actually attempted. That default can change later and this run follows it; '
+            + '"never retry it" and "set it here" are decisions about THIS run and do not.')}"><span>If it fails</span>
+            ${sel('retrymode', c.retryMode, modes)}</label>`;
+        if (c.retryMode !== 'custom') { return head; }
+        return head + `
+            <label class="ntf" title="How many times to try AGAIN after a failure. 0 means never."><span>Tries</span>
+                <input type="number" id="nt-retrymax" min="0" max="20" step="1" value="${C.esc(String(c.retryMax))}"></label>
+            <label class="ntf" title="Minutes to wait before the first retry."><span>First wait</span>
+                <input type="number" id="nt-retrydelay" min="1" max="1440" step="1" value="${C.esc(String(c.retryDelayMin))}"></label>
+            <label class="ntf" title="How the wait grows. Doubling is the right shape against something that is busy rather than broken — a fixed interval against a rate limit is how a retry policy becomes the problem. Capped at 12 hours."><span>Then</span>
+                ${sel('retrybackoff', c.retryBackoff, [['same', 'the same wait'], ['double', 'double it each time']])}</label>
+            <label class="ntf" title="Which failures are worth trying again. A session limit means the work was never attempted and the limit clears by itself within hours; any other failure may well repeat."><span>On</span>
+                ${sel('retrywhen', c.retryWhen, [['limit', 'a session limit only'], ['any', 'any failure']])}</label>
+            <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to."><span>Retry prompt</span>
+                <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>`;
     }
 
     /** One <select>, from a launch.ts choice list. `id:''` is always "leave it
@@ -1286,7 +1365,8 @@
                     */ ''}
                 <label class="ntf wide cbxf" title="The daily budget (Farm Settings → budgets) stops a run before it starts and keeps it queued until the ceiling clears — which for an unattended run can mean the whole day. Tick this and the budget is not consulted for this one. ‼️ It does NOT lift the 5-hour quota guard or the concurrency limits: those protect the plan window and this machine, they are not a number you set about money, and a run held by them is waiting rather than refused."><span>Budget</span>
                     <label class="cbx"><input type="checkbox" id="nt-ignorebudget"${c.ignoreBudget ? ' checked' : ''}>
-                        run it even when the daily budget is spent</label></label>` : ''}
+                        run it even when the daily budget is spent</label></label>
+                ${retryHtml(c)}` : ''}
             </div>
             ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
             ${c.kind === 'trigger' ? triggerHtml(c) : ''}
@@ -1329,6 +1409,12 @@
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
+        // M-3 — the fields only exist while the picker says "set it here", and
+        // `v`/`n` skip what is not on the page, so switching back to `default`
+        // keeps the numbers in the draft for when it is switched on again.
+        v('retrymode', 'retryMode'); v('retrybackoff', 'retryBackoff');
+        v('retrywhen', 'retryWhen'); v('retryprompt', 'retryPrompt');
+        n('retrymax', 'retryMax'); n('retrydelay', 'retryDelayMin');
         // schedule
         v('every', 'every'); v('time', 'time'); v('onceAt', 'onceAt'); v('missed', 'missed');
         n('dow', 'dow');
@@ -1375,6 +1461,22 @@
         return '';
     }
 
+    /** The draft's three-state retry picker, as the one field the host stores.
+     *  undefined = say nothing, so the user's default stays in charge. */
+    function retryFromDraft(c) {
+        if (!c || c.retryMode === 'default') { return undefined; }
+        if (c.retryMode === 'off') { return { max: 0 }; }
+        const out = {
+            max: Number(c.retryMax) || 0,
+            delayMin: Number(c.retryDelayMin) || 1,
+            backoff: c.retryBackoff === 'double' ? 'double' : 'same',
+            when: c.retryWhen === 'any' ? 'any' : 'limit'
+        };
+        const p = String(c.retryPrompt || '').trim();
+        if (p) { out.prompt = p; }
+        return out;
+    }
+
     function submitComposer(force) {
         readComposer();
         // A step card left open is a thought half-typed, not a thought
@@ -1382,13 +1484,23 @@
         if (composer.kind === 'workflow' && !commitStep()) { return; }
         const err = composerError(composer);
         if (err) { composerMsg = err; render(); return; }
+        // ‼️ M-3 — the three states become ONE field on the wire, built here so
+        // the page and the host cannot disagree about what "use my default"
+        // means. Absent = the default; `{max: 0}` = never; anything else = these
+        // numbers. The host clamps it again (core/retry.ts) — a page is not a
+        // place to trust a number from.
+        const retryOut = retryFromDraft(composer);
+        const withRetry = (o) => (retryOut ? Object.assign(o, { retry: retryOut }) : o);
         if (composer.kind === 'task') {
-            post({ type: 'task-new', task: Object.assign({}, composer, { force: force === true }) });
+            post({
+                type: 'task-new',
+                task: withRetry(Object.assign({}, composer, { force: force === true }))
+            });
             return;
         }
         // One message for every other kind: the host knows which manager method
         // a kind belongs to, and the page does not have to.
-        post({ type: 'plan-save', item: Object.assign({}, composer) });
+        post({ type: 'plan-save', item: withRetry(Object.assign({}, composer)) });
     }
 
     // -------------------------------------------------------------- RUN side
@@ -1628,9 +1740,28 @@
                 <input type="search" id="runq" placeholder="Search run, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
                     title="${C.esc(window.AFQuery.tip('Searched against the run title, its prompt, the agent and what started it.'))}">
                 ${sel('agent', 'Agent', v.agent, d.agents)}
-                ${sel('status', 'Status', v.status, Object.keys(STATUS))}
-                ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }])}
-                ${sel('engine', 'Engines', v.engine, runEngines(d))}
+                ${/* ‼️ U-52 — the six statuses are really two questions, and the
+                      page already has both words: "Clear finished" is a button
+                      three inches to the right. Either reading cost a Clear plus
+                      three ticks on the axis this table is filtered by most. */''}
+                ${sel('status', 'Status', v.status, Object.keys(STATUS), [
+            {
+                id: 'live', label: 'Still going', values: ['running', 'queued', 'parked'],
+                title: 'Everything that has not finished — working, waiting its turn, or held.'
+            },
+            {
+                id: 'finished', label: 'Finished', values: ['done', 'failed', 'cancelled'],
+                title: 'Everything that is over, however it ended.'
+            }
+        ])}
+                ${/* ‼️ U-52 — "was this me or the farm?" is the question this
+                      column exists for, and three of its four values are one
+                      side of it. */''}
+                ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }], [{
+            id: 'auto', label: 'Automation', values: ['schedule', 'trigger', 'workflow'],
+            title: 'Everything the farm started by itself — not the runs you pressed.'
+        }])}
+                ${sel('engine', 'Engines', v.engine, runEngines(d), otherEnginePresets(runEngines(d)))}
                 <span class="spacer"></span>
                 <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
                 ${/* ‼️ M-8 — the ✕ on a row is the one deletion a HAND makes, and
@@ -2040,6 +2171,14 @@
             byId('nt-guardRecursive', 'change', () => readComposer());
             byId('nt-enabled', 'change', () => readComposer());
             byId('nt-ignorebudget', 'change', () => readComposer());
+            // ‼️ M-3 — the four numbers only exist while the picker says "set it
+            // here", so this one repaints; everything under it just reads.
+            byId('nt-retrymode', 'change', () => { readComposer(); render(); });
+            byId('nt-retrybackoff', 'change', () => readComposer());
+            byId('nt-retrywhen', 'change', () => readComposer());
+            byId('nt-retrymax', 'input', () => readComposer());
+            byId('nt-retrydelay', 'input', () => readComposer());
+            byId('nt-retryprompt', 'input', () => readComposer());
             // ‼️ M-7 — THE KIND CHANGES AND THE DRAFT SURVIVES. Everything typed
             // so far is read out of the boxes first, then the same object is
             // reopened under the new kind: `newDraft` merges the seed over the

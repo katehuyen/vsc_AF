@@ -106,8 +106,21 @@ function runPage(scriptFile, DATA, extraWindow) {
             // Pages that hand their own root to wire() query through it. The
             // shim has one document, so an element's query is the page's query
             // — every element these tests build is inside #app anyway.
-            querySelectorAll(sel) { return query(sel); },
-            querySelector(sel) { return query(sel)[0] || null; },
+            //
+            // ‼️ …EXCEPT A PICKER, which has its own shim (lib_afms_dom) and
+            // must answer here exactly as it answers on `document`. A page that
+            // wires its filters through a ROOT rather than the document used to
+            // get markup-parsed elements instead of the picker stubs, so every
+            // control inside the menu came back with no listeners — and a test
+            // pressing one failed saying the page had not wired it, which was
+            // the shim's fault and not the page's.
+            querySelectorAll(sel) {
+                return String(sel).indexOf('[data-afms') === 0 ? [] : query(sel);
+            },
+            querySelector(sel) {
+                return String(sel).indexOf('[data-afms') === 0
+                    ? ms.querySelector(sel) : (query(sel)[0] || null);
+            },
             click() { this.fire('click'); },
             fire(ev, extra) {
                 (this._listeners[ev] || []).forEach(fn => fn(Object.assign({

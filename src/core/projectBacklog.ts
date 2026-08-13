@@ -1668,6 +1668,79 @@ export function gatherFamilies(text: string, root?: string): QueueEditResult {
         : res;
 }
 
+/**
+ * ‼️ U-56 — ONE PART, TO ITS OWN WHOLE. The child-side half of `gatherFamilies`.
+ *
+ * "Gather its parts under it" is pressed on the WHOLE and moves everything that
+ * belongs to it, which is the right gesture when a family has scattered and the
+ * wrong one when a reader is looking at a single part that has drifted: it
+ * rearranges rows they were not asking about. This moves exactly the row it was
+ * pressed on, and nothing else in the queue changes place.
+ *
+ * ‼️ IT LANDS AT THE END OF THE FAMILY RUN, not immediately behind the parent.
+ * A whole with three parts already gathered under it has a BLOCK, and dropping
+ * the newcomer directly behind the whole would push its siblings down and
+ * reorder a group nobody touched. Where the whole has no parts beside it, the
+ * end of the run IS immediately behind it, which is what the item asks for.
+ *
+ * Like every other ordering write here, no line in the document moves — the 🎯
+ * block is rewritten.
+ */
+export function joinParent(text: string, code: string): QueueEditResult {
+    const src = String(text ?? '');
+    const parsed = parseBacklog(src);
+    const want = String(code ?? '').trim().toUpperCase();
+    const order = queueOrder(parsed.items, parsed.queue);
+    if (order.indexOf(want) < 0) {
+        return { ok: false, queue: order, error: queueRefusal(parsed, want) };
+    }
+    const item = parsed.items.find(i => i.code === want);
+    const parent = (item?.parent ?? '').toUpperCase();
+    if (!parent) {
+        return {
+            ok: false, queue: order,
+            error: `${want} is not part of anything — it has no [parent:: …] on its line,`
+                + ' so there is nothing to send it under'
+        };
+    }
+    if (order.indexOf(parent) < 0) {
+        // The whole is closed, uncoded or gone. Saying WHICH is the difference
+        // between a user fixing it in ten seconds and opening the file to look,
+        // so the reason comes from the same place every other refusal does.
+        return {
+            ok: false, queue: order,
+            error: `${want} belongs to ${parent}, which is not in the queue — `
+                + queueRefusal(parsed, parent)
+        };
+    }
+
+    // Which codes are parts of the parent, so the run below it can be measured.
+    const siblings = new Set(parsed.items
+        .filter(i => i.code && (i.parent ?? '').toUpperCase() === parent)
+        .map(i => i.code as string));
+
+    // ‼️ ALREADY THERE IS A STATE, NOT A COMPARISON OF RESULTS. A part sitting
+    // in the middle of its family's run is under its whole by any reading a
+    // person has; moving it to the end of that run to make the answer identical
+    // would reorder siblings to report "nothing changed".
+    const pAt = order.indexOf(parent);
+    const iAt = order.indexOf(want);
+    if (iAt > pAt && order.slice(pAt + 1, iAt).every(c => siblings.has(c))) {
+        return { ok: true, text: src, queue: order, note: `${want} is already under ${parent}` };
+    }
+
+    const rest = order.filter(c => c !== want);
+    const at = rest.indexOf(parent);
+    // Walk past the parts already sitting behind the whole — that block is the
+    // family, and the row joins the end of it.
+    let to = at + 1;
+    while (to < rest.length && siblings.has(rest[to])) { to++; }
+    rest.splice(to, 0, want);
+
+    const res = setBacklogQueue(src, rest);
+    return res.ok ? { ...res, note: `${want} now follows ${parent} in the queue` } : res;
+}
+
 /** Why a code is not in the queue, said precisely. ‼️ Three different causes, and
  *  one message covering all of them would send somebody to read the file: not a
  *  code at all, no such item, or closed. */

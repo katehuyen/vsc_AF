@@ -56,7 +56,22 @@
     const SCOPE_FACET = {
         id: 'scope', label: 'Scope',
         of: x => (x.it.scope === 'user' ? 'user' : (x.it.agentName || 'agent')),
-        title: 'USER scope is shared by every agent on this machine; an agent-scope entry belongs to that agent alone and shadows a user one of the same name.'
+        title: 'USER scope is shared by every agent on this machine; an agent-scope entry belongs to that agent alone and shadows a user one of the same name.',
+        /**
+         * ‼️ U-52 — THE ONE SUBSET THIS AXIS HAS A WORD FOR, and it is on seven
+         * tabs. The list is "user" plus one entry per agent, so "show me what
+         * belongs to agents, not the shared user-scope entries everybody gets"
+         * — the reading this picker is opened with — cost a Clear plus a tick
+         * per agent. `user` alone is a single option, which a click on its own
+         * name already gives you.
+         */
+        presets: opts => {
+            const mine = (opts || []).filter(o => o !== 'user');
+            return mine.length > 1 ? [{
+                id: 'agents', label: 'Agents', values: mine,
+                title: 'Everything that belongs to an agent — not the user-scope entries every agent shares.'
+            }] : [];
+        }
     };
     const usedOf = x => ((x.it.detail.usage30d || 0) > 0 ? 'used' : 'never used');
     const FACETS = {
@@ -217,13 +232,20 @@
 
     /** The filter row a tab wears: its facets, its sort, and the way out. */
     function filterBar(kind, shown, total) {
-        const pickers = facetsFor(kind).map(f => window.AFFilter.multi({
-            id: 'tbf-' + kind + '-' + f.id,
-            label: f.label,
-            options: facetOptions(kind, f),
-            selected: facetSel(kind, f.id),
-            title: f.title || ''
-        })).join(' ');
+        const pickers = facetsFor(kind).map(f => {
+            const options = facetOptions(kind, f);
+            return window.AFFilter.multi({
+                id: 'tbf-' + kind + '-' + f.id,
+                label: f.label,
+                options,
+                selected: facetSel(kind, f.id),
+                title: f.title || '',
+                // U-52 — a facet's named subsets are computed from the values
+                // this tab actually has, because the list is data: "Agents"
+                // means nothing until there is more than one of them.
+                presets: typeof f.presets === 'function' ? f.presets(options) : []
+            });
+        }).join(' ');
         const sorts = (SORTS[kind] || []).map(s =>
             `<option value="${esc(s.v)}"${sortOf(kind) === s.v ? ' selected' : ''}>${esc(s.t)}</option>`).join('');
         const clear = anyActive(kind)

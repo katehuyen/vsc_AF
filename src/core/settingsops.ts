@@ -85,7 +85,7 @@ const CATEGORY_OF: Record<string, string> = {
     maxConcurrentPerAgent: 'tasks', quotaGuardPercent: 'tasks', queueAutoAdvance: 'tasks',
     dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
     quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
-    judgeArgs: 'tasks', evalRunArgs: 'tasks',
+    judgeArgs: 'tasks', evalRunArgs: 'tasks', taskRetry: 'tasks',
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',

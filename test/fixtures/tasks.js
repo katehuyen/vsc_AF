@@ -246,7 +246,24 @@ const planData = () => {
 
 const variants = () => ([
     { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() },
-    { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() }
+    { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() },
+    // ‼️ M-3 — the form with the retry block OPEN, which is the only state the
+    // four numbers exist in. A picture of it shut would say nothing about the
+    // row it adds, and the row is the change.
+    {
+        id: 'tasks-retry', label: 'Tasks → the New-task form, with a retry policy set',
+        data: data(),
+        act: (r) => {
+            const open = (id) => r.query('#' + id)[0];
+            open('nt-open').click();
+            const p = open('nt-prompt');
+            p.value = 'gece taraması — dosyaları filele';
+            p.fire('input');
+            const mode = open('nt-retrymode');
+            mode.value = 'custom';
+            mode.fire('change');
+        }
+    }
 ]);
 
 module.exports = { script: 'tasksPage.js', data, variants, runs };
