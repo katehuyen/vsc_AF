@@ -210,6 +210,12 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     if (project) { out.projectId = project; }
     const priority = Number(args.priority);
     if (Number.isFinite(priority) && priority) { out.priority = Math.trunc(priority); }
+    // ‼️ M-7 — "RUN IT WHATEVER THE BUDGET SAYS" IS A DIMENSION LIKE THE REST.
+    // The page offers it on a task, a schedule and a trigger; an agent asked to
+    // "set the morning report up so the budget cannot stop it" has to be able
+    // to say the same thing with the same word, or the two surfaces disagree
+    // about a run that then does not happen at 09:00.
+    if (args.ignoreBudget === true) { out.ignoreBudget = true; }
     return out;
 }
 
@@ -233,6 +239,7 @@ export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
+        ignoreBudget?: boolean;
     },
     projectName?: (id: string) => string | undefined
 ): Record<string, unknown> {
@@ -247,7 +254,11 @@ export function bridgeDimsOut(
         cli: o.cli ?? null,
         workDir: o.workDir ?? null,
         priority: o.priority ?? 0,
-        project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null
+        project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null,
+        // ‼️ M-7 — a run that walks past the daily budget must SAY that it does.
+        // Reading a schedule back without it and writing it away again is how a
+        // waiver the user set on purpose disappears in a round trip.
+        ignoreBudget: !!o.ignoreBudget
     };
 }
 

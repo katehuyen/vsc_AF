@@ -2866,6 +2866,36 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('…and an absent field is left out, never written as an empty flag',
             /if \(v\) \{ out\[k\] = v; \}/.test(bridge));
 
+        // ---------- M-7: the one ceiling a run may be told to walk past ----------
+        // The page offers "run it even when the daily budget is spent" on a
+        // task, a schedule and a trigger. An agent asked to set the morning
+        // report up so the budget cannot stop it has to be able to say the same
+        // word, and to READ IT BACK — a round trip that dropped it would quietly
+        // undo a waiver the user set on purpose, and the run would not happen.
+        ok('‼️ the budget waiver is a dimension like the rest, read in the one reader',
+            /if \(args\.ignoreBudget === true\) \{ out\.ignoreBudget = true; \}/.test(bridge));
+        ok('…and it survives the way back out, so a round trip cannot drop it',
+            /ignoreBudget: !!o\.ignoreBudget/.test(bridge));
+        const add = at('tasks.add');
+        ok('…tasks.add takes it too', /args\.ignoreBudget === true \? \{ ignoreBudget: true \}/.test(add));
+        ok('‼️ …and its contract says what it does NOT lift',
+            /does NOT lift the 5-hour quota guard/.test(add));
+        ok('‼️ …and the caller is told whether the run actually STARTED, not just what it is called',
+            /const started = args\.start !== false \? taskManager\.startTask\(task\)/.test(add)
+            && /heldBy: started \? null : \(task\.deferredReason/.test(add));
+
+        // ---------- M-8: what happened to a run, and where a deleted one went ----
+        const get = at('tasks.get');
+        ok('‼️ tasks.get returns the run\'s own record, not only its last reason',
+            /events: task\.events \?\? \[\]/.test(get) && /Read `events` before concluding/.test(get));
+        const del = at('tasks.delete');
+        ok('‼️ a deleted row is FILED, and the op says so rather than promising "permanently"',
+            /filedIn: taskManager\.historyDir/.test(del) && !/permanently/.test(del));
+        const hist = at('tasks.history');
+        ok('‼️ …and the archive can be READ, which is what "where do I look at a deleted task" needs',
+            /const month = optStr\(args, 'month'\)/.test(hist)
+            && /prompt: t\.prompt, events: t\.events \?\? \[\]/.test(hist));
+
         // ‼️ And the commands that used to ask in boxes now open the form.
         for (const cmd of ['addSchedule', 'editSchedule', 'addTrigger', 'editTrigger', 'renameWorkflow']) {
             const i = src.indexOf(`registerCommand('agentfarm.${cmd}'`);

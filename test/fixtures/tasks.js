@@ -13,6 +13,13 @@
  * colours, the Engines filter in the toolbar, and a Cost column that shows
  * tokens where the engine bills a plan.
  *
+ * ‼️ …AND FOR M-7/M-8, WHICH ADDED A COLUMN AND A WARNING NOBODY HAD DRAWN. The
+ * Session column has to fit an id without shoving Cost off the edge, the Undo
+ * button has to sit in a toolbar that already had three, and the overdue row
+ * and the "this window does not fire schedules" banner are the two loudest
+ * things on the page — both of which are only ever seen in a picture. The
+ * second variant is the Plan tab, which is where they live.
+ *
  * ‼️ THE CLOCK IS THE REAL ONE, like the Turns and Timeline fixtures and for the
  * same reason: the When column counts against `Date.now()`, so a pinned stamp
  * would draw every row as "-13317s ago" and the picture would be of a bug that
@@ -20,6 +27,46 @@
  */
 const NOW = Date.now();
 const min = n => NOW - n * 60000;
+
+/** The panel derives this from the transcript's file name; the fixture says it
+ *  the same way rather than inventing a second spelling. */
+const sid = f => (f || '').split(/[\\/]/).pop().replace(/\.jsonl$/, '');
+
+/**
+ * ‼️ M-8 — WHAT THE PANEL NOW SENDS WITH EVERY ROW: which conversation the run
+ * was, what it was set up with, and what happened to it in order. Derived from
+ * the row rather than typed out six times, so the picture cannot drift from the
+ * shape the panel builds.
+ */
+const dress = r => Object.assign({
+    sessionId: sid(r.sessionFile),
+    setup: [
+        { label: 'Agent', value: `${r.agentName} · ${r.mode}` },
+        {
+            label: 'Started by',
+            value: r.sourceKind === 'manual' ? 'you' : `${r.sourceKind} "${r.source}"`
+        },
+        ...(r.engine && r.engine !== 'claude' ? [{ label: 'Engine', value: r.engine }] : []),
+        ...(r.status === 'queued' ? [{ label: 'Priority', value: '3' }] : [])
+    ],
+    events: [
+        {
+            ts: r.when - (r.durMin || 1) * 60000 - 60000, kind: 'created',
+            note: r.sourceKind === 'manual' ? 'by you' : `by a ${r.sourceKind}`
+        },
+        ...(r.detail ? [{ ts: r.when - 30000, kind: 'parked', note: r.detail }] : []),
+        ...(r.durMin !== undefined
+            ? [{ ts: r.when - r.durMin * 60000, kind: 'started', note: `${r.engine || 'claude'} · ${r.mode}` }]
+            : []),
+        ...(r.status === 'done' || r.status === 'failed'
+            ? [{ ts: r.when, kind: 'finished', note: `${r.status} after ${r.durMin} min` }]
+            : [])
+    ],
+    seed: {
+        agent: r.agentName, prompt: r.prompt, mode: r.mode,
+        engine: r.engine === 'claude' ? '' : (r.engine || ''), project: 'prj_1'
+    }
+}, r);
 
 const runs = () => ([
     {
@@ -79,14 +126,15 @@ const runs = () => ([
         detail: 'agent busy (developer)', engine: 'claude', reportsCost: true,
         hasOutput: false, prompt: 'akış okuyucusunu UTF-8 sınırında böl ve doğrula'
     }
-]);
+].map(dress));
 
 const data = () => ({
     generatedAt: NOW,
     tab: 'run',
     gate: {
         paused: false, pausedUntil: undefined, pauseReason: '',
-        quietFrom: '23:30', quietTo: '04:30', blocked: false, blockReason: ''
+        quietFrom: '23:30', quietTo: '04:30', blocked: false, blockReason: '',
+        runsQueue: true
     },
     summary: {
         running: 1, runLimit: 2, queued: 1, needsYou: 0,
@@ -95,6 +143,7 @@ const data = () => ({
     },
     plan: [],
     runs: runs(),
+    undoable: 0,
     agents: ['developer', 'manager', 'basit', 'psikolog'],
     perAgentLimit: 1,
     workflows: [],
@@ -115,8 +164,89 @@ const data = () => ({
     }
 });
 
+/**
+ * ‼️ M-7 — THE PLAN TAB, ON THE DAY THE ITEM WAS WRITTEN ABOUT. 09:00 came and
+ * went, the schedule did not run, and every surface went on drawing a healthy
+ * row with tomorrow's date on it. Two things are new here and BOTH are only
+ * ever seen in a picture: the loud line under an overdue row, and the banner a
+ * window that does not hold the queue lease puts above everything else.
+ */
+const plan = () => ([
+    {
+        id: 's1', kind: 'schedule', title: 'sabah13',
+        when: 'every day 09:00', nextAt: NOW + 22 * 3600e3, agentName: 'developer', model: '',
+        guard: '', hasGuard: false, switchable: true, enabled: true,
+        cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+        lastNote: '', issues: ['no-guard', 'overdue'],
+        // …and it is the not-runner branch, because that is what this variant's
+        // gate says. The row states the fact; the banner carries the paragraph.
+        overdue: 'its time has passed — and schedules do not fire from this window (see above).',
+        detail: {
+            prompt: 'sabah raporunu yaz ve worklog\'a bir satır düş',
+            target: 'runs on developer · headless',
+            timing: 'every day 09:00 · missed → skip', steps: [], missed: 'skip',
+            setup: [
+                { label: 'Fires', value: 'every day 09:00' },
+                { label: 'If it is missed', value: 'skip it — that occurrence is lost' },
+                { label: 'Agent', value: 'developer · headless' },
+                { label: 'Budget', value: 'runs even when the daily budget is spent' }
+            ]
+        }
+    },
+    {
+        id: 's2', kind: 'schedule', title: 'AGENT_AREA dosyalama turu',
+        when: 'every day 05:00', nextAt: NOW + 14 * 3600e3, agentName: 'manager', model: 'opus',
+        guard: 'files in …/00_INPUT (skip _LOG_.md)', hasGuard: true,
+        switchable: true, enabled: true,
+        cost7d: 12.3, runs7d: 3, skipped7d: 4, skipRate: 57,
+        lastRunAt: NOW - 7200e3, lastNote: '2 files waiting', issues: [], overdue: '',
+        detail: {
+            prompt: '00_INPUT klasöründeki her dosyayı dosyala',
+            target: 'runs on manager · headless',
+            timing: 'every day 05:00 · missed → run', steps: [], missed: 'run',
+            setup: [
+                { label: 'Fires', value: 'every day 05:00' },
+                { label: 'If it is missed', value: 'run it at the first opportunity' },
+                { label: 'Agent', value: 'manager · headless' },
+                { label: 'Guard', value: 'files in …/00_INPUT (skip _LOG_.md)' },
+                { label: 'Model', value: 'opus' }
+            ]
+        }
+    },
+    {
+        id: 't1', kind: 'trigger', title: 'Medya izleyicisi',
+        when: 'on change · …/02_MEDIALASTIR', agentName: 'manager', model: '',
+        guard: '', hasGuard: false, switchable: true, enabled: true,
+        cost7d: 70.9, runs7d: 23, skipped7d: 0, skipRate: 0,
+        lastRunAt: NOW - 3600e3, lastNote: 'no files waiting',
+        issues: ['no-guard'], overdue: '',
+        detail: {
+            prompt: 'medyayı dosyala', target: 'runs on manager',
+            timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '',
+            setup: [
+                { label: 'Fires', value: 'on change · …/02_MEDIALASTIR' },
+                { label: 'Armed', value: 'yes — the path exists and is being watched' },
+                { label: 'Brakes', value: 'debounce 60s · cooldown 300s · max 6/h' }
+            ]
+        }
+    }
+]);
+
+const planData = () => {
+    const d = data();
+    return Object.assign(d, {
+        tab: 'plan',
+        plan: plan(),
+        // the gate in front of every other gate — this window cannot fire
+        gate: Object.assign({}, d.gate, { runsQueue: false }),
+        summary: Object.assign({}, d.summary, { issues: 2 }),
+        undoable: 2
+    });
+};
+
 const variants = () => ([
-    { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() }
+    { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() },
+    { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() }
 ]);
 
 module.exports = { script: 'tasksPage.js', data, variants, runs };

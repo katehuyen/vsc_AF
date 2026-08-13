@@ -10,7 +10,7 @@ import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch
 import { EngineModels } from '../core/models';
 import {
     FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
-    RunDimensions, ScheduleKind, TaskManager, TaskMode, WorkflowStep
+    RunDimensions, ScheduleKind, scheduleDue, TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
@@ -124,6 +124,14 @@ interface PlanRow {
     lastNote: string;
     /** machine-readable problems, for the "only problems" filter and badges */
     issues: string[];
+    /**
+     * ‼️ M-7 — ITS TIME CAME AND WENT, AND NOTHING RAN. Empty when the row is
+     * healthy; a sentence when the schedule is due RIGHT NOW and has not fired.
+     * This is the fact the page could not state: everything on the row went on
+     * saying "every day 09:00, next tomorrow 09:00" while the occurrence it was
+     * supposed to produce simply never happened.
+     */
+    overdue: string;
     /** everything the expanded row shows — no second page needed */
     detail: {
         prompt: string;
@@ -131,6 +139,11 @@ interface PlanRow {
         timing: string;
         steps: string[];
         missed: string;
+        /** ‼️ M-8 — the WHOLE setup, not the word "schedule". The triangle said
+         *  a run came from a schedule and then could not say at what time, on
+         *  what day, with what guard, on which engine, under which project —
+         *  which is everything a reader opens a triangle for. */
+        setup: { label: string; value: string }[];
     };
 }
 
@@ -163,6 +176,24 @@ interface RunRow {
     outputFile?: string;
     sessionFile?: string;
     prompt: string;
+    /**
+     * ‼️ M-8 — WHICH CONVERSATION THIS RUN WAS. A task that ran opened a
+     * session; the transcript was matched to it minutes later (costPending →
+     * `costSessionFile`) and the only thing done with that fact was to put a
+     * price in the Cost column. So the page knew the session and would not say
+     * which one — the row's most useful outward link, hidden behind a triangle
+     * as an unlabelled "open session" button. The id is drawn, and it opens.
+     */
+    sessionId: string;
+    /** The task's own record, oldest first — see FarmTask.events. This is what
+     *  the Status badge opens: the whole life of the run, timestamped. */
+    events: { ts: number; kind: string; note?: string }[];
+    /** Everything the run was CREATED with, the way the form asked for it —
+     *  M-8's "let me see what I typed into each box", read-only. */
+    setup: { label: string; value: string }[];
+    /** The run's dimensions in the composer's own vocabulary, so "show me the
+     *  form again" is the same form and not a second rendering of one. */
+    seed: Record<string, unknown>;
 }
 
 function scheduleWhen(s: FarmSchedule): string {
@@ -182,6 +213,88 @@ function triggerTarget(t: FarmTrigger): string {
     if (t.action.kind === 'workflow') { return 'runs a workflow'; }
     if (t.action.kind === 'dispatch') { return 'dispatch → best agent'; }
     return `runs on ${t.action.agentName}`;
+}
+
+/**
+ * ‼️ M-8 — THE WHOLE SETUP OF A SCHEDULE, THE WAY IT WAS TYPED IN.
+ *
+ * The expanded row said "schedule" and stopped. What a reader opens a triangle
+ * for is the anatomy: at what time, on which days, what happens to a missed
+ * occurrence, which engine and model and permissions, which project, which
+ * folder — the dimensions that decide what the unattended run actually DOES.
+ * Every one of them was already stored and none of them was drawn.
+ *
+ * Only what was STATED is listed. A row saying "Model: (default)" for eight
+ * dimensions nobody set is a wall of nothing; the absence is the normal case
+ * and is said once, by the list simply being short.
+ */
+function scheduleSetup(s: FarmSchedule): { label: string; value: string }[] {
+    const out: { label: string; value: string }[] = [
+        { label: 'Fires', value: scheduleWhen(s) },
+        { label: 'If it is missed', value: MISSED_WORD[s.missed ?? 'skip'] },
+        { label: 'Agent', value: `${s.agentName} · ${s.mode}` }
+    ];
+    if (s.fireIf?.kind) { out.push({ label: 'Guard', value: describePrecondition(s.fireIf) }); }
+    if (s.engine) { out.push({ label: 'Engine', value: engineOf(s.engine).label }); }
+    if (s.model) { out.push({ label: 'Model', value: s.model }); }
+    if (s.effort) { out.push({ label: 'Effort', value: s.effort }); }
+    if (s.permissionMode) { out.push({ label: 'Permissions', value: s.permissionMode }); }
+    if (s.cli) { out.push({ label: 'CLI profile', value: s.cli }); }
+    if (s.workDir) { out.push({ label: 'Working folder', value: s.workDir }); }
+    if (s.priority) { out.push({ label: 'Priority', value: String(s.priority) }); }
+    if (s.ignoreBudget) {
+        out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' });
+    }
+    if (s.lastRunKey) { out.push({ label: 'Last occurrence settled', value: s.lastRunKey }); }
+    if (s.pendingRunKey) {
+        out.push({ label: 'Held over', value: `${s.pendingRunKey} — waiting for quiet hours to end` });
+    }
+    return out;
+}
+
+const MISSED_WORD: Record<string, string> = {
+    skip: 'skip it — that occurrence is lost',
+    run: 'run it at the first opportunity',
+    ask: 'ask, with Run / Skip buttons'
+};
+
+/** The same anatomy for a trigger: what arms it, what brakes it, and what the
+ *  run it produces will be. `armed` is a live fact, not a stored one. */
+function triggerSetup(t: FarmTrigger, armed: boolean): { label: string; value: string }[] {
+    const out: { label: string; value: string }[] = [{ label: 'Fires', value: triggerWhen(t) }];
+    if (t.type === 'watch') {
+        out.push({ label: 'Watched path', value: t.watchPath ?? '(not set)' });
+        out.push({ label: 'Armed', value: armed ? 'yes — the path exists and is being watched' : 'NO — the path is missing, so nothing can fire' });
+    }
+    out.push({ label: 'Brakes', value: `debounce ${t.debounceSec}s · cooldown ${t.cooldownSec}s · max ${t.maxPerHour || '∞'}/h` });
+    if (t.fireIf?.kind) { out.push({ label: 'Guard', value: describePrecondition(t.fireIf) }); }
+    out.push({ label: 'Runs', value: triggerTarget(t) });
+    if (t.action.kind !== 'workflow') {
+        const a = t.action;
+        if (a.engine) { out.push({ label: 'Engine', value: engineOf(a.engine).label }); }
+        if (a.model) { out.push({ label: 'Model', value: a.model }); }
+        if (a.effort) { out.push({ label: 'Effort', value: a.effort }); }
+        if (a.permissionMode) { out.push({ label: 'Permissions', value: a.permissionMode }); }
+        if (a.workDir) { out.push({ label: 'Working folder', value: a.workDir }); }
+        if (a.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+    }
+    return out;
+}
+
+/** …and for a template, which is a LAUNCH and nothing else. */
+function templateSetup(t: FarmTemplate): { label: string; value: string }[] {
+    const out: { label: string; value: string }[] = [
+        { label: 'Agent', value: t.agentName ? `${t.agentName} · ${t.mode}` : `any agent — you pick · ${t.mode}` }
+    ];
+    if (t.engine) { out.push({ label: 'Engine', value: engineOf(t.engine).label }); }
+    if (t.model) { out.push({ label: 'Model', value: t.model }); }
+    if (t.effort) { out.push({ label: 'Effort', value: t.effort }); }
+    if (t.permissionMode) { out.push({ label: 'Permissions', value: t.permissionMode }); }
+    if (t.cli) { out.push({ label: 'CLI profile', value: t.cli }); }
+    if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
+    if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
+    if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+    return out;
 }
 
 /** Assemble every work DEFINITION into one shape the table can manage. */
@@ -224,12 +337,37 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
 
     const rows: PlanRow[] = [];
 
+    // ‼️ M-7 — WHY A DUE OCCURRENCE HAS NOT HAPPENED, in the order the scheduler
+    // itself checks. Every one of these gates was silent from the page's side:
+    // the follower window never even looks at the clock, and the other three
+    // wrote a line into an automation log the row summarised as "last note".
+    // A schedule whose minute has passed is now asked the same questions the
+    // tick asks, and answers on its own row.
+    const notRunner = !m.runsTheQueue;
+    const gate = m.automationGate(new Date(now));
+    const overdueReason = (s: FarmSchedule): string => {
+        if (!s.enabled) { return ''; }
+        if (!scheduleDue(s, new Date(now)).due) { return ''; }
+        // ‼️ SAID ONCE. The banner at the top of the page explains the lease in
+        // full; repeating that paragraph on every overdue row is the wall of
+        // nothing this item exists to remove. The row states the fact and points
+        // at the one place that is already carrying the explanation.
+        if (notRunner) { return 'its time has passed — and schedules do not fire from this window (see above).'; }
+        if (gate) { return `its time has passed and automation is blocked — ${gate.reason}.`; }
+        const pre = m.checkPrecondition(s.fireIf);
+        if (!pre.ok) { return `its time has passed and the guard says there is nothing to do — ${pre.detail}.`; }
+        // Due, allowed, and the tick has not come round yet: at most 30 seconds.
+        return 'its time has passed — the next scheduler tick (≤30s) will start it.';
+    };
+
     for (const s of m.schedules) {
         const st = stats(s.id);
         const issues: string[] = [];
         if (s.enabled && !s.fireIf?.kind) { issues.push('no-guard'); }
         if (s.pendingRunKey) { issues.push('deferred'); }
         if (s.enabled && !st.lastRunAt) { issues.push('never-ran'); }
+        const overdue = overdueReason(s);
+        if (overdue) { issues.push('overdue'); }
         rows.push({
             id: s.id, kind: 'schedule', title: s.title,
             when: scheduleWhen(s),
@@ -241,13 +379,14 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             switchable: true, enabled: s.enabled,
             ...st,
             lastNote: st.lastReason,
-            issues,
+            issues, overdue,
             detail: {
                 prompt: s.prompt,
                 target: `runs on ${s.agentName} · ${s.mode}`,
                 timing: `${scheduleWhen(s)} · missed → ${s.missed ?? 'skip'}`,
                 steps: [],
-                missed: s.missed ?? 'skip'
+                missed: s.missed ?? 'skip',
+                setup: scheduleSetup(s)
             }
         });
     }
@@ -272,13 +411,14 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             ...st,
             lastNote: t.lastSkipReason && !st.lastReason ? t.lastSkipReason
                 : (st.lastReason || (ts ? describeTriggerStat(ts) : '')),
-            issues,
+            issues, overdue: '',
             detail: {
                 prompt: t.action.kind === 'workflow' ? '' : t.action.prompt,
                 target: triggerTarget(t),
                 timing: `debounce ${t.debounceSec}s · cooldown ${t.cooldownSec}s · max ${t.maxPerHour || '∞'}/h`,
                 steps: [],
-                missed: ''
+                missed: '',
+                setup: triggerSetup(t, armed)
             }
         });
     }
@@ -291,9 +431,10 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
             lastNote: `${w.steps.length} step(s)`,
-            issues: w.steps.length ? [] : ['empty'],
+            issues: w.steps.length ? [] : ['empty'], overdue: '',
             detail: {
                 prompt: '', target: `${w.steps.length} step chain`, timing: '',
+                setup: [{ label: 'Steps', value: String(w.steps.length) }],
                 steps: w.steps.map((s, i) =>
                     `${i + 1}. ${s.title}${s.parallel ? ' ∥' : ''} — ${s.agentName || (s.approval ? 'approval gate' : s.select ? 'selection gate' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser' : s.mode)}`),
                 missed: ''
@@ -309,16 +450,58 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
             lastNote: '',
-            issues: [],
+            issues: [], overdue: '',
             detail: {
                 prompt: t.prompt,
                 target: t.agentName ? `runs on ${t.agentName} · ${t.mode}` : `any agent · ${t.mode}`,
-                timing: '', steps: [], missed: ''
+                timing: '', steps: [], missed: '',
+                setup: templateSetup(t)
             }
         });
     }
 
     return rows;
+}
+
+/** A transcript is named `<sessionId>.jsonl`; '' when nothing was matched. */
+function sessionIdOf(file?: string): string {
+    if (!file) { return ''; }
+    const base = path.basename(file).replace(/\.jsonl$/i, '');
+    return /^[0-9a-f-]{8,}$/i.test(base) ? base : base;
+}
+
+/**
+ * ‼️ M-8 — WHAT WAS TYPED INTO EACH BOX, kept as a readout rather than as a
+ * second form. Only what was STATED is listed: an unattended run's dimensions
+ * are mostly empty by design ("no flag, the agent decides"), and eight rows of
+ * "(default)" would bury the two the user actually chose.
+ */
+function runSetup(
+    t: FarmTask,
+    schedTitles: Map<string, string>, trigTitles: Map<string, string>, wfTitles: Map<string, string>
+): { label: string; value: string }[] {
+    const out: { label: string; value: string }[] = [
+        { label: 'Agent', value: `${t.agentName} · ${t.mode}` }
+    ];
+    out.push({
+        label: 'Started by',
+        value: t.fromSchedule ? `schedule "${schedTitles.get(t.fromSchedule) ?? t.fromSchedule}"`
+            : t.fromTrigger ? `trigger "${trigTitles.get(t.fromTrigger) ?? t.fromTrigger}"`
+                : t.workflowId !== undefined
+                    ? `workflow "${wfTitles.get(t.workflowId) ?? t.workflowId}" · step ${(t.stepIndex ?? 0) + 1}`
+                    : t.missionId ? 'a mission' : 'you'
+    });
+    if (t.engine) { out.push({ label: 'Engine', value: engineOf(t.engine).label }); }
+    if (t.model) { out.push({ label: 'Model', value: t.model }); }
+    if (t.effort) { out.push({ label: 'Effort', value: t.effort }); }
+    if (t.permissionMode) { out.push({ label: 'Permissions', value: t.permissionMode }); }
+    if (t.cli) { out.push({ label: 'CLI profile', value: t.cli }); }
+    if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
+    if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
+    if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
+    if (t.outputContract === 'json') { out.push({ label: 'Output', value: 'JSON (structured handoff)' }); }
+    if (t.attempt) { out.push({ label: 'Attempt', value: `retry ${t.attempt}` }); }
+    return out;
 }
 
 function buildRuns(deps: TasksDeps, now: number): RunRow[] {
@@ -351,7 +534,20 @@ function buildRuns(deps: TasksDeps, now: number): RunRow[] {
             hasOutput: !!t.outputFile,
             outputFile: t.outputFile,
             sessionFile: t.costSessionFile,
-            prompt: t.prompt.length > 600 ? t.prompt.slice(0, 599) + '…' : t.prompt
+            // ‼️ M-8 — the id, not just the path. A transcript file is named
+            // `<sessionId>.jsonl`, so the column costs nothing to fill and the
+            // reader gets the one string they can match against a Console card,
+            // a swim lane or a log line.
+            sessionId: sessionIdOf(t.costSessionFile),
+            events: t.events ?? [],
+            setup: runSetup(t, schedTitles, trigTitles, wfTitles),
+            seed: taskSeed(t),
+            // ‼️ M-8 — THE WHOLE PROMPT. It was cut at 600 characters for a
+            // `<pre>` in the expander, and a prompt is exactly the thing a
+            // reader opens a row for ("what did I actually ask it to do?").
+            // The panel it goes into scrolls (AFTip), so the cap is gone; the
+            // only limit left is the one the store already applies.
+            prompt: t.prompt
         };
     };
 
@@ -388,7 +584,14 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
             quietTo: m.automation.quietTo ?? '',
             blocked: !!gateNow,
             blockKind: gateNow?.kind,
-            blockReason: gateNow?.reason ?? ''
+            blockReason: gateNow?.reason ?? '',
+            // ‼️ M-7 — THE GATE IN FRONT OF THE GATE. `runner()` decides whether
+            // this window fires schedules or launches anything at all, and it
+            // was invisible from here: in a follower window a schedule's time
+            // passes, nothing runs, nothing is logged, and the Plan tab draws a
+            // healthy row with tomorrow's date on it. A page whose subject is
+            // automation has to be able to say "not from here".
+            runsQueue: m.runsTheQueue
         },
         summary: {
             running: m.tasks.filter(t => t.status === 'running').length,
@@ -635,7 +838,82 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         engine: t.engine ?? '', model: t.model ?? '', effort: t.effort ?? '',
         permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
         project: t.projectId ?? '', workDir: t.workDir ?? '',
-        priority: t.priority ?? 0
+        priority: t.priority ?? 0,
+        ignoreBudget: !!t.ignoreBudget
+    };
+}
+
+/**
+ * ‼️ M-7 — "ANOTHER ONE LIKE THIS" MEANS ANOTHER ONE OF THE SAME KIND.
+ *
+ * A run started by a schedule is a schedule's OUTPUT, and cloning it produced a
+ * plain one-off task: the timing — the whole reason the thing existed — was
+ * silently dropped, and the form opened with no time field at all. The
+ * schedule's own fields are the seed when the row came from one, so the copy is
+ * a copy. A run nobody automated stays a task, which is what it is.
+ */
+function cloneSeed(
+    t: FarmTask, m: TaskManager, fallbackAgent: string
+): { kind: string; seed: Record<string, unknown> } {
+    const s = t.fromSchedule ? m.schedules.find(x => x.id === t.fromSchedule) : undefined;
+    if (s) { return { kind: 'schedule', seed: { ...scheduleSeed(s), mode2: 'new', id: '' } }; }
+    const g = t.fromTrigger ? m.triggers.find(x => x.id === t.fromTrigger) : undefined;
+    if (g) { return { kind: 'trigger', seed: { ...triggerSeed(g, fallbackAgent), mode2: 'new', id: '' } }; }
+    return { kind: 'task', seed: taskSeed(t) };
+}
+
+/** A precondition in the form's flat vocabulary. */
+function guardSeed(p: Precondition | undefined): Record<string, unknown> {
+    return {
+        guardKind: p?.kind ?? '',
+        guardPath: p?.path ?? '',
+        guardExcept: (p?.except ?? []).join(', '),
+        guardMin: p?.minCount ?? 1,
+        guardHours: p?.hours ?? 24,
+        guardRecursive: p?.recursive !== false
+    };
+}
+
+/**
+ * ‼️ ONE READING OF A STORED OBJECT INTO THE FORM, USED BY EVERY DOOR.
+ *
+ * These were written inline inside `compose()` and could therefore only ever
+ * serve Edit. "Another one like this" needed the same reading and did not have
+ * it, which is precisely why cloning a scheduled run produced a task with no
+ * time on it: there was nowhere to ask for a schedule's fields from.
+ */
+function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
+    return {
+        mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
+        mode: s.mode, engine: s.engine ?? '', model: s.model ?? '', effort: s.effort ?? '',
+        permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
+        cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
+        ignoreBudget: !!s.ignoreBudget,
+        every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
+        time: `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`,
+        onceAt: s.onceAt ? localInput(s.onceAt) : '',
+        ...guardSeed(s.fireIf)
+    };
+}
+
+function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unknown> {
+    const a = t.action;
+    const dims = a.kind === 'workflow' ? {} : (a as RunDimensions);
+    return {
+        mode2: 'edit', id: t.id, title: t.title, ttype: t.type,
+        watchPath: t.watchPath ?? '', hookEvent: t.hookEvent ?? 'stop',
+        hookAgent: t.hookAgent ?? '', token: t.token ?? '',
+        act: a.kind, workflowId: a.kind === 'workflow' ? a.workflowId : '',
+        agent: a.kind === 'task' ? a.agentName : fallbackAgent,
+        prompt: a.kind === 'workflow' ? '' : a.prompt,
+        mode: a.kind === 'workflow' ? 'headless' : a.mode,
+        engine: dims.engine ?? '', model: dims.model ?? '', effort: dims.effort ?? '',
+        permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
+        cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
+        ignoreBudget: !!dims.ignoreBudget,
+        debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
+        enabled: t.enabled,
+        ...guardSeed(t.fireIf)
     };
 }
 
@@ -651,6 +929,10 @@ function localInput(ts: number): string {
 export class TasksPanel {
     private static current: TasksPanel | undefined;
     private disposables: vscode.Disposable[] = [];
+    /** ‼️ M-8 — the last rows taken off the list, for a single-level undo. Kept
+     *  on the panel and not in the store: an undo is about the gesture you just
+     *  made in this window, and it must not survive a reload as a stale offer. */
+    private lastDeleted?: FarmTask[];
 
     /** Old section names still arrive from menus and notifications. */
     private static toTab(section?: TasksSection): TasksTab | undefined {
@@ -774,7 +1056,12 @@ export class TasksPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.panel.webview.postMessage({
+            // ‼️ M-8 — the undo offer is the PANEL's, not the store's: it is
+            // about the gesture just made in this window, so it is added here
+            // rather than being persisted where a reload would resurrect it.
+            type: 'data', data: { ...buildData(this.deps), undoable: this.lastDeleted?.length ?? 0 }
+        });
     }
 
     private task(id: unknown): FarmTask | undefined {
@@ -805,49 +1092,14 @@ export class TasksPanel {
             void this.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
         };
         const node = id ? this.planNode(kind, id) : undefined;
-        const guardSeed = (p: Precondition | undefined): Record<string, unknown> => ({
-            guardKind: p?.kind ?? '',
-            guardPath: p?.path ?? '',
-            guardExcept: (p?.except ?? []).join(', '),
-            guardMin: p?.minCount ?? 1,
-            guardHours: p?.hours ?? 24,
-            guardRecursive: p?.recursive !== false
-        });
         if (kind === 'schedule') {
             const s = node?.schedule;
-            if (!s) { send({ mode2: 'new' }); return; }
-            send({
-                mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
-                mode: s.mode, engine: s.engine ?? '', model: s.model ?? '', effort: s.effort ?? '',
-                permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
-                cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
-                every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
-                time: `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`,
-                onceAt: s.onceAt ? localInput(s.onceAt) : '',
-                ...guardSeed(s.fireIf)
-            });
+            send(s ? scheduleSeed(s) : { mode2: 'new' });
             return;
         }
         if (kind === 'trigger') {
             const t = node?.trigger;
-            if (!t) { send({ mode2: 'new' }); return; }
-            const a = t.action;
-            const dims = a.kind === 'workflow' ? {} : (a as RunDimensions);
-            send({
-                mode2: 'edit', id: t.id, title: t.title, ttype: t.type,
-                watchPath: t.watchPath ?? '', hookEvent: t.hookEvent ?? 'stop',
-                hookAgent: t.hookAgent ?? '', token: t.token ?? '',
-                act: a.kind, workflowId: a.kind === 'workflow' ? a.workflowId : '',
-                agent: a.kind === 'task' ? a.agentName : ((this.deps.getAgents()[0]?.name) ?? ''),
-                prompt: a.kind === 'workflow' ? '' : a.prompt,
-                mode: a.kind === 'workflow' ? 'headless' : a.mode,
-                engine: dims.engine ?? '', model: dims.model ?? '', effort: dims.effort ?? '',
-                permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
-                cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
-                debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
-                enabled: t.enabled,
-                ...guardSeed(t.fireIf)
-            });
+            send(t ? triggerSeed(t, (this.deps.getAgents()[0]?.name) ?? '') : { mode2: 'new' });
             return;
         }
         if (kind === 'workflow') {
@@ -916,7 +1168,11 @@ export class TasksPanel {
             ...(str('cli') ? { cli: str('cli') } : {}),
             ...(str('workDir') ? { workDir: str('workDir') } : {}),
             ...(num('priority', 0) ? { priority: num('priority', 0) } : {}),
-            ...(str('project') ? { projectId: str('project') } : {})
+            ...(str('project') ? { projectId: str('project') } : {}),
+            // ‼️ M-7 — the budget waiver rides with the AUTOMATION, so every run
+            // it makes carries it. Ticking it on each produced task by hand is
+            // exactly what nobody is there to do at 09:00.
+            ...(item.ignoreBudget === true ? { ignoreBudget: true } : {})
         });
         const done = (text: string): void => {
             void this.panel.webview.postMessage({ type: 'plan-saved', text });
@@ -1219,7 +1475,12 @@ export class TasksPanel {
                 if (msg.act === 'start' && t.status === 'queued') { m.startTask(t); }
                 else if (msg.act === 'cancel' && (t.status === 'queued' || t.status === 'running')) { m.cancelTask(t); }
                 else if (msg.act === 'done' && t.status === 'running') { m.completeTask(t); }
-                else if (msg.act === 'delete' && t.status !== 'running') { m.deleteTask(t); }
+                // ‼️ M-8 — a deleted row is filed and comes back. `deleteTask`
+                // archives it; the copy kept here is the single-level undo, the
+                // same shape the Notices page uses.
+                else if (msg.act === 'delete' && t.status !== 'running') {
+                    this.lastDeleted = [m.deleteTask(t)];
+                }
                 else if (msg.act === 'rerun' && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
                 else if (msg.act === 'next' && t.status === 'queued') { m.runTaskNext(t); }
                 else if (msg.act === 'terminal') { m.revealTerminal(t); }
@@ -1261,8 +1522,30 @@ export class TasksPanel {
                 // (agentfarm.retryTaskEdit) and no way to change the agent, the
                 // model or anything else — while ADDING one asked a different
                 // set of questions again. Same form, prefilled from the row.
+                // ‼️ M-7 — …AND IT COPIES THE KIND, NOT JUST THE WORDS. A run a
+                // schedule produced clones back into a SCHEDULE (with its time,
+                // its day, its missed policy and its guard); a trigger's run
+                // clones into a trigger. Only a run nobody automated is a task.
                 else if (msg.act === 'clone') {
-                    void this.panel.webview.postMessage({ type: 'task-compose', seed: taskSeed(t) });
+                    const c = cloneSeed(t, this.deps.manager, (this.deps.getAgents()[0]?.name) ?? '');
+                    if (c.kind === 'task') {
+                        void this.panel.webview.postMessage({ type: 'task-compose', seed: c.seed });
+                    } else {
+                        void this.panel.webview.postMessage({
+                            type: 'plan-compose', kind: c.kind, seed: c.seed
+                        });
+                    }
+                }
+                this.refresh();
+                break;
+            }
+            // ‼️ M-8 — PUT THE ROW BACK. Single level, the Notices page's shape:
+            // an undo is about the press you just made, so once it is used it is
+            // gone rather than becoming a button that undoes something older.
+            case 'task-undo': {
+                if (this.lastDeleted?.length) {
+                    m.restoreTasks(this.lastDeleted);
+                    this.lastDeleted = undefined;
                 }
                 this.refresh();
                 break;
@@ -1324,7 +1607,8 @@ export class TasksPanel {
                         permissionMode: str('permissionMode') || undefined,
                         cli: str('cli') || undefined,
                         workDir: str('workDir') || undefined,
-                        priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined
+                        priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
+                        ignoreBudget: t.ignoreBudget === true ? true : undefined
                     });
                     if (copy) {
                         void this.panel.webview.postMessage({
@@ -1342,7 +1626,9 @@ export class TasksPanel {
                     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
                     ...(str('cli') ? { cli: str('cli') } : {}),
                     ...(str('workDir') ? { workDir: str('workDir') } : {}),
-                    ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {})
+                    ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
+                    // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)
+                    ...(t.ignoreBudget === true ? { ignoreBudget: true } : {})
                 });
                 if (t.start === true) { m.startTask(task); }
                 void this.panel.webview.postMessage({

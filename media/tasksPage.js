@@ -55,7 +55,10 @@
         'always-fails': ['always fails', 'Its last runs all failed.'],
         'never-ran': ['never ran', 'Enabled, but it has not fired once.'],
         'deferred': ['deferred', 'Held back by quiet hours; fires when the window ends.'],
-        'empty': ['no steps', 'A workflow with no steps does nothing.']
+        'empty': ['no steps', 'A workflow with no steps does nothing.'],
+        // ‼️ M-7 — the badge for the thing that had no name: its minute has
+        // passed and it has not run. The row says WHY in words underneath.
+        'overdue': ['overdue', 'Its time has passed and it has not run. The row says what stopped it.']
     };
 
     function persist() {
@@ -115,6 +118,23 @@
                        </span>`}
                 <button class="secondary" data-gate="open" title="Nightly window: nothing wakes on its own. A due schedule is deferred to the end of the window, not dropped.">🌙 Quiet ${quiet}</button>
             </div>
+            ${/**
+                * ‼️ M-7 — THE GATE IN FRONT OF EVERY OTHER GATE, AND IT WAS
+                * INVISIBLE. Only ONE VS Code window fires schedules and launches
+                * queued work (the ownership lease, B11); in every other window
+                * the scheduler tick returns immediately and writes nothing. So a
+                * schedule's time passed, nothing happened, nothing was logged,
+                * and this page — the page whose entire subject is automation —
+                * drew a healthy row with tomorrow's date on it. The window that
+                * cannot fire says so, at the top, before anything else is read.
+                */ ''}
+            ${g.runsQueue === false ? `<div class="notrunner">
+                ⚠ <b>Schedules do not fire from this window.</b> Another VS Code window holds the
+                queue lease and runs everything: schedules, triggers, and anything waiting to launch.
+                What you see here is a live mirror of that window's store, so the rows are real — but
+                pressing <b>run</b> here does nothing on its own, and a schedule whose time passes will
+                fire over there. Close the other window (or use it) to take the lease.
+            </div>` : ''}
             ${gateEdit ? gateHtml(g) : ''}
             <div class="ctl-row stats">
                 <span class="stat" title="running / farm-wide limit">⚙️ <b>${s.running}</b>/${s.runLimit} running</span>
@@ -320,8 +340,19 @@
             <td class="tick">${p.switchable ? `<input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"${selected.has(key) ? ' checked' : ''}>` : ''}</td>
             <td class="expand" data-expand="${key}" role="button" tabindex="0" title="details">${open ? '▾' : '▸'}</td>
             <td class="main">
-                <div class="rowtitle"><span title="${C.esc(k.hint)}">${k.icon}</span> <b>${C.esc(p.title)}</b> ${badges}</div>
+                ${window.AFTip.wrap(`<div class="rowtitle"><span title="${C.esc(k.hint)}">${k.icon}</span> <b>${C.esc(p.title)}</b> ${badges}</div>
                 <div class="muted small">${C.esc(p.when)}${p.nextAt ? ` · next ${C.esc(until(p.nextAt))}` : ''}</div>
+                ${/* ‼️ M-7 — SAID ON THE ROW, NOT ONLY IN A HOVER. "Its time came
+                      and went and the page went on looking healthy" is the whole
+                      complaint; a fact you have to hover to find would be the
+                      same failure one layer in. */''}
+                ${p.overdue ? `<div class="overdue small">⚠ ${C.esc(p.overdue)}</div>` : ''}`,
+            `${k.label} · ${p.when}${p.nextAt ? ' · next ' + until(p.nextAt) : ''}`,
+            window.AFTip.lines([
+                p.overdue ? '⚠ ' + p.overdue + '\n' : '',
+                setupLines(p.detail && p.detail.setup).join('\n'),
+                p.detail && p.detail.prompt ? '\n' + p.detail.prompt : ''
+            ]), 'tip-free mainw', 'data-aftip-anchor=".prow"')}
             </td>
             <td class="agent">${p.agentName ? C.esc(p.agentName) : '<span class="muted">—</span>'}</td>
             <td>${p.model ? `<span class="badge">${C.esc(p.model)}</span>` : '<span class="muted">default</span>'}</td>
@@ -341,10 +372,13 @@
     function planDetailHtml(p) {
         const d = p.detail;
         return `<tr class="detail"><td colspan="10"><div class="detailbox">
+            ${p.overdue ? `<div class="overdue">⚠ ${C.esc(p.overdue)}</div>` : ''}
+            ${/* ‼️ M-8 — THE WHOLE ANATOMY, not the word "schedule". At what time,
+                  on which day, what happens to a missed occurrence, which engine
+                  and model and permissions, which project, which folder — all of
+                  it was stored and none of it was drawn. */''}
             <div class="dgrid">
-                ${d.target ? `<div><b>Target</b><div>${C.esc(d.target)}</div></div>` : ''}
-                ${d.timing ? `<div><b>Timing</b><div>${C.esc(d.timing)}</div></div>` : ''}
-                ${p.hasGuard ? `<div><b>Fires only if</b><div>${C.esc(p.guard)}</div></div>` : ''}
+                ${(d.setup || []).map(x => `<div><b>${C.esc(x.label)}</b><div>${C.esc(x.value)}</div></div>`).join('')}
                 ${p.skipped7d || p.runs7d ? `<div><b>Last 7 days</b><div>${p.runs7d} run(s) · ${p.skipped7d} skipped (${p.skipRate}%) · ${fmtUSD(p.cost7d)}</div></div>` : ''}
             </div>
             ${d.steps.length ? `<div class="dsteps"><b>Steps</b><ol>${d.steps.map((s, n) =>
@@ -1086,6 +1120,16 @@
         const spec = COMPOSE[c.kind] || COMPOSE.task;
         const editing = c.mode2 === 'edit';
         const retry = c.mode2 === 'retry';
+        // ‼️ M-8 — THE FORM AS A READOUT. "Let me see what I typed into each box"
+        // is answered by the box, not by a second rendering of it: the same
+        // card, the same fields, the same order, every control disabled. A
+        // paraphrase in a detail grid would be a second thing to keep in step.
+        // ‼️ The disabling is done in ONE place after the card is drawn (see
+        // `wire`), not by threading a `disabled` through forty template holes:
+        // the kind-specific blocks are built by three other functions, and a
+        // flag any of them forgot would produce a "read-only" form with three
+        // live controls in it.
+        const ro = c.mode2 === 'view';
         // A trigger that runs a workflow has no agent, no prompt and no run
         // dimensions of its own — the workflow's steps carry all of that.
         const wantsRun = spec.runs && !(c.kind === 'trigger' && c.act === 'workflow');
@@ -1140,15 +1184,49 @@
             template: 'A template is a saved LAUNCH you repeat by hand: the prompt, the agent, the mode — and the engine, model, effort and permissions it should run with. Launching it is one click, not a form.',
             workflow: 'A workflow is a chain: each step is handed the previous one\'s output. A step is not always an agent — it can call an API, render an asset, drive a browser, or stop and ask you.'
         };
-        return `<div class="ntbox" id="ntbox">
+        /**
+         * ‼️ M-7 — THE KIND IS A FIELD, NOT A DOOR YOU HAD TO PICK BEFORE YOU
+         * STARTED TYPING.
+         *
+         * A task and a schedule differ by ONE thing — whether a clock starts it
+         * — and everything else about them is the same nine fields. But the kind
+         * was decided by which button you pressed, so realising halfway through
+         * "actually this should run every morning" meant closing the form,
+         * losing the prompt and starting again on the other tab. It is one
+         * picker now and the draft survives the change: the shared block is
+         * kept, only the kind-specific block is redrawn.
+         *
+         * Offered when CREATING only. Changing the kind of a STORED object is a
+         * different act — it would have to delete one thing and make another,
+         * with its own history and its own id — and inventing that quietly
+         * behind a dropdown is exactly the decision nobody asked for. When you
+         * are editing, the kind is a word.
+         */
+        const KIND_PICK = [
+            { id: 'task', label: 'task — runs once, now or when you start it' },
+            { id: 'schedule', label: 'schedule — a clock starts it, again and again' },
+            { id: 'trigger', label: 'trigger — something happening starts it' },
+            { id: 'template', label: 'template — a saved launch you repeat by hand' },
+            { id: 'workflow', label: 'workflow — a chain of steps' }
+        ];
+        const kindField = (editing || retry || ro)
+            ? ''
+            : `<label class="ntf wide" title="A task and a schedule are the same object with one difference: whether a clock starts it. Change this and everything you have already typed stays — only the part below that depends on the kind is redrawn. (Changing the kind of something already saved is not offered: that would be deleting one thing and making another, which is a decision to make on purpose.)"><span>This is a…</span>
+                <select id="nt-kind">${KIND_PICK.map(k =>
+                `<option value="${k.id}"${k.id === c.kind ? ' selected' : ''}>${C.esc(k.label)}</option>`).join('')}</select></label>`;
+        return `<div class="ntbox${ro ? ' ro' : ''}" id="ntbox">
             <div class="ctl-row">
-                <span class="ctl-title">${retry ? 'Retry' : editing ? 'Edit' : 'New'} ${C.esc(spec.label)}</span>
-                <span class="muted small">${C.esc(retry
-                ? 'A retry is the original run again, and every field below is yours to change first — that is what “run it again on opus” means. It keeps the original\'s lineage and is queued as “… (retry N)”.'
-                : (LEDE[c.kind] || ''))}</span>
+                <span class="ctl-title">${ro ? 'How this run was made' : retry ? 'Retry' : editing ? 'Edit' : 'New'} ${ro ? '' : C.esc(spec.label)}</span>
+                <span class="muted small">${C.esc(ro
+                ? 'The form this run was created with, exactly as it was filled in. Nothing here can be changed — to make another one like it, use “Make another like this one” on the row.'
+                : retry
+                    ? 'A retry is the original run again, and every field below is yours to change first — that is what “run it again on opus” means. It keeps the original\'s lineage and is queued as “… (retry N)”.'
+                    : (LEDE[c.kind] || ''))}</span>
+                ${ro ? '<span class="roflag">read-only</span>' : ''}
                 <span class="spacer"></span>
                 <button class="secondary mini" id="nt-close">✕</button>
             </div>
+            ${kindField ? `<div class="ntgrid">${kindField}</div>` : ''}
             <div class="ntgrid">
                 ${wantsRun ? `<label class="ntf wide"><span>Prompt <em>required</em></span>
                     <textarea id="nt-prompt" rows="4"
@@ -1188,25 +1266,45 @@
                 <label class="ntf" title="Higher runs sooner when the queue is full. It also ages up while waiting, so nothing starves."><span>Priority</span>
                     <input type="number" id="nt-priority" step="1" value="${C.esc(String(c.priority || 0))}"></label>
                 <label class="ntf wide" title="Run it somewhere other than the agent's own folder — a worktree, a repo it is working on. Empty = the agent folder."><span>Working folder</span>
-                    <input type="text" id="nt-workdir" value="${C.esc(c.workDir)}" placeholder="(optional) — defaults to the agent's folder"></label>` : ''}
+                    <input type="text" id="nt-workdir" value="${C.esc(c.workDir)}" placeholder="(optional) — defaults to the agent's folder"></label>
+                ${/**
+                    * ‼️ M-7 — "RUN IT WHATEVER THE BUDGET SAYS."
+                    *
+                    * The daily budget in Farm Settings is a brake with no
+                    * release: over the ceiling nothing new launches, and an
+                    * unattended run whose time came at 09:00 simply sat there.
+                    * That is right for what the ceiling protects against and
+                    * wrong for the one piece of work that has to happen anyway
+                    * — and it is the USER'S ceiling, so the user may lift it for
+                    * a named run.
+                    *
+                    * Deliberately narrow, and the label says so: it waives the
+                    * BUDGET and nothing else. The 5-hour quota guard protects
+                    * the plan window and the concurrency limits protect this
+                    * machine; neither is a policy about money, and a run held by
+                    * those is waiting rather than refused.
+                    */ ''}
+                <label class="ntf wide cbxf" title="The daily budget (Farm Settings → budgets) stops a run before it starts and keeps it queued until the ceiling clears — which for an unattended run can mean the whole day. Tick this and the budget is not consulted for this one. ‼️ It does NOT lift the 5-hour quota guard or the concurrency limits: those protect the plan window and this machine, they are not a number you set about money, and a run held by them is waiting rather than refused."><span>Budget</span>
+                    <label class="cbx"><input type="checkbox" id="nt-ignorebudget"${c.ignoreBudget ? ' checked' : ''}>
+                        run it even when the daily budget is spent</label></label>` : ''}
             </div>
             ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
             ${c.kind === 'trigger' ? triggerHtml(c) : ''}
             ${c.kind === 'workflow' ? workflowHtml(c) : ''}
             ${composerMsg ? `<div class="ntmsg${composerDup ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
             <div class="ctl-row">
-                ${c.kind === 'task' ? `<label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
+                ${ro ? '' : `${c.kind === 'task' ? `<label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
                     <input type="checkbox" id="nt-start"${c.start ? ' checked' : ''}> start it now</label>` : ''}
                 ${c.kind === 'schedule' || c.kind === 'trigger' ? `<label class="cbx" title="Off = it is saved but does not fire until you switch it on.">
-                    <input type="checkbox" id="nt-enabled"${c.enabled ? ' checked' : ''}> switched on</label>` : ''}
+                    <input type="checkbox" id="nt-enabled"${c.enabled ? ' checked' : ''}> switched on</label>` : ''}`}
                 <span class="spacer"></span>
-                ${composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
-                <button id="nt-add">${c.kind === 'task'
+                ${ro ? '' : composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
+                ${ro ? '' : `<button id="nt-add">${c.kind === 'task'
                 ? (retry
                     ? (c.start ? 'Retry it now' : 'Queue the retry')
                     : (c.start ? 'Add and start' : 'Add to the queue'))
-                : (editing ? 'Save changes' : 'Create the ' + spec.label)}</button>
-                <button class="secondary" id="nt-cancel">Cancel</button>
+                : (editing ? 'Save changes' : 'Create the ' + spec.label)}</button>`}
+                <button class="secondary" id="nt-cancel">${ro ? 'Close' : 'Cancel'}</button>
             </div>
         </div>`;
     }
@@ -1230,7 +1328,7 @@
         v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
-        b('start', 'start'); b('enabled', 'enabled');
+        b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
         // schedule
         v('every', 'every'); v('time', 'time'); v('onceAt', 'onceAt'); v('missed', 'missed');
         n('dow', 'dow');
@@ -1348,6 +1446,69 @@
         return fmtUSD(r.costUSD);
     }
 
+    /* ======================================================================
+       ‼️ M-8 — THE ROW IS READ WITHOUT LEAVING IT.
+
+       This table showed eight facts about a run that has thirty, and the rest
+       was behind a triangle, behind an unlabelled button, or nowhere at all.
+       Every column is a hover opportunity and every one of them was spent on
+       nothing — the model to copy is the sessions table, where each column and
+       each figure carries what you would otherwise open the object for
+       (docs/CONVENTIONS.md → maximum information, minimum clicks).
+
+       One subject per trigger, no fact in two of them: the TASK carries the
+       whole prompt, the STATUS carries the run's own history in time order,
+       FROM carries the automation's whole setup, SESSION carries the
+       conversation, and the figures carry their own derivations.
+       ====================================================================== */
+    const tipw = (trigger, head, body, cls) =>
+        window.AFTip.wrap(trigger, head, body, 'tip-free' + (cls ? ' ' + cls : ''),
+            'data-aftip-anchor=".prow"');
+
+    /** `Label: value` lines out of a setup list — one shape for every kind. */
+    const setupLines = list => (list || []).map(x => x.label + ': ' + x.value);
+
+    /**
+     * ‼️ THE PART OF A SESSION ID A PERSON CAN ACTUALLY MATCH.
+     *
+     * A Claude transcript is named after a UUID, so its first block is the
+     * handle everything else in the extension prints. A Codex one is
+     * `rollout-019ff43f`, and taking eight characters off THAT drew the column
+     * as "rollout-" on every Codex row — the same string four times, with the
+     * only distinguishing part cut off. Seen in one glance in a render; passes
+     * every string assertion in the repo.
+     */
+    function shortSid(id) {
+        const s = String(id || '');
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(s)) { return s.slice(0, 8); }
+        const tail = s.split('-').pop();
+        return tail.length > 12 ? tail.slice(-12) : tail;
+    }
+
+    const EVENT_WORD = {
+        created: 'made', parked: 'held back', started: 'started',
+        finished: 'ended', cancelled: 'cancelled', retried: 'retried'
+    };
+
+    /**
+     * ‼️ M-8 — THE RUN'S OWN HISTORY, IN TIME ORDER. "Its time came and went and
+     * I cannot see what happened" is the question this answers, and it could not
+     * be answered from three timestamps and a status: a run held back at a
+     * ceiling, released, held again and finally started leaves exactly the same
+     * three fields as one that simply sat there. Each line is stamped to the
+     * minute with its UTC, because these are machine events and comparing one
+     * against a provider's own log is the reason anybody opens this.
+     */
+    function runTimeline(r) {
+        const ev = r.events || [];
+        if (!ev.length) {
+            return 'Nothing was recorded for this run — it predates the run log,'
+                + ' which starts with tasks made from this version on.';
+        }
+        return ev.map(e => window.AFTime.full(e.ts) + ' · ' + (EVENT_WORD[e.kind] || e.kind)
+            + (e.note ? ' — ' + e.note : '')).join('\n');
+    }
+
     function runRowHtml(r) {
         const key = 'run:' + r.id;
         const open = expanded.has(key);
@@ -1361,20 +1522,60 @@
             afOutput: !!r.hasOutput, afSession: !!r.sessionFile,
             afFrom: r.sourceKind || 'manual'
         });
-        return `<tr class="prow ${open ? 'open' : ''}" ${ctx}
-            title="${C.esc(window.AFCtx.hint(r.sourceKind === 'manual' ? 'You started this run' : 'Started by ' + r.sourceKind + ' · ' + r.source))}">
-            <td class="expand" data-expand="${key}" role="button" tabindex="0">${open ? '▾' : '▸'}</td>
-            <td class="main"><div class="rowtitle"><b>${C.esc(r.title)}</b></div>
-                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${r.detail ? ' · ' + C.esc(r.detail) : ''}</div></td>
-            <td class="state"><span class="pill ${st[1]}">${C.esc(st[0])}</span></td>
-            <td class="from">${r.sourceKind === 'manual' ? '<span class="muted">you</span>'
-                : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`}</td>
+        const tokPerMin = r.durMin && r.tokens ? Math.round(r.tokens / r.durMin) : 0;
+        return `<tr class="prow ${open ? 'open' : ''}" ${ctx}>
+            <td class="expand" data-expand="${key}" role="button" tabindex="0"
+                title="${open ? 'Fold this run away' : 'The whole anatomy of this run — how it was set up and what it produced'}">${open ? '▾' : '▸'}</td>
+            ${/* ‼️ THE PROMPT, WHOLE. It was cut at 600 characters into a <pre>
+                  behind the triangle; "what did I actually ask it to do" is the
+                  first question anybody has about a run, and the panel scrolls.
+                  Clicking the title opens the form that MADE it, read-only. */''}
+            <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
+                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${r.detail ? ' · ' + C.esc(r.detail) : ''}</div>`,
+            `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
+            window.AFTip.lines([
+                r.prompt || '(no prompt)',
+                '\nClick the title to see the form this run was made with, filled in and read-only.'
+            ]), 'mainw')}</td>
+            ${/* THE STATUS IS THE DOOR TO THE RUN'S HISTORY — M-8. */''}
+            <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>`,
+                `${C.esc(st[0])}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
+                window.AFTip.lines([
+                    r.detail ? 'Held by: ' + r.detail + '\n' : '',
+                    runTimeline(r)
+                ]))}</td>
+            <td class="from">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
+                : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`,
+                r.sourceKind === 'manual' ? 'started by you' : `${r.sourceKind} · ${r.source}`,
+                window.AFTip.lines(setupLines(r.setup)))}</td>
             <td class="eng">${window.AFEngine.badge(r.engine || 'claude',
                 'Engine: ' + engineLabel(r) + '\nPrice per run: '
                 + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}</td>
-            <td class="num">${r.durMin !== undefined ? r.durMin + 'm' : '—'}</td>
+            ${/* ‼️ M-8 — WHICH CONVERSATION. A run that ran opened a session and
+                  the page KNEW which one (that is where the price comes from) —
+                  it just never said. Click it and the transcript opens. */''}
+            <td class="sess">${r.sessionId
+                ? tipw(`<span class="slink" data-tr="${C.esc(r.sessionFile)}" role="button" tabindex="0">${C.esc(shortSid(r.sessionId))}</span>`,
+                    `session ${C.esc(shortSid(r.sessionId))}`,
+                    window.AFTip.lines([
+                        'Session: ' + r.sessionId,
+                        r.tokens ? 'Tokens: ' + C.fmtTok(r.tokens) : '',
+                        r.costUSD !== undefined && r.reportsCost !== false ? 'Cost: ' + fmtUSD(r.costUSD) : '',
+                        'Transcript: ' + r.sessionFile,
+                        '\nClick to open the whole conversation this run had.'
+                    ]))
+                : `<span class="muted" title="${C.esc(live
+                    ? 'The transcript is matched a few minutes after the run ends — a run still going has not been matched yet.'
+                    : 'No transcript was matched to this run. An interactive run in a terminal, a non-claude CLI profile, or a run that died before it said anything all end up here.')}">—</span>`}</td>
+            <td class="num">${r.durMin !== undefined ? tipw(r.durMin + 'm',
+                `${r.durMin} minutes`,
+                window.AFTip.lines([
+                    'Started: ' + (r.events || []).filter(e => e.kind === 'started').map(e => window.AFTime.full(e.ts))[0] || '—',
+                    'Ended: ' + (r.events || []).filter(e => e.kind === 'finished' || e.kind === 'cancelled').map(e => window.AFTime.full(e.ts)).pop() || '—',
+                    tokPerMin ? 'Rate: ' + C.fmtTok(tokPerMin) + ' tokens per minute' : ''
+                ])) : '—'}</td>
             <td class="num">${runSpend(r)}</td>
-            <td class="when">${C.esc(rel(r.when))}</td>
+            <td class="when"><span title="${C.esc(window.AFTime.tip(r.when, 'This row\'s clock — when it ended, or when it started, or when it was made'))}">${C.esc(rel(r.when))}</span></td>
             <td class="acts">
                 ${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
                     <button class="mini secondary" data-task="next" data-id="${r.id}" title="move to the front">↑</button>` : ''}
@@ -1383,16 +1584,18 @@
                 ${live ? `<button class="mini secondary" data-task="cancel" data-id="${r.id}">cancel</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="rerun" data-id="${r.id}">re-run</button>` : ''}
                 ${r.hasOutput ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
-                ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}">✕</button>` : ''}
+                ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}" title="Take it off this list. It is filed in the task archive either way, and ↶ Undo puts it straight back.">✕</button>` : ''}
             </td>
-        </tr>${open ? `<tr class="detail"><td colspan="9"><div class="detailbox">
+        </tr>${open ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+            ${/* ‼️ M-8 — THE TRIANGLE SAYS THE WHOLE SETUP. It used to say the
+                  word "schedule" and stop, which is the one thing the row above
+                  it already said. */''}
             <div class="dgrid">
-                <div><b>Came from</b><div>${C.esc(r.sourceKind)} · ${C.esc(r.source)}</div></div>
-                <div><b>Engine</b><div>${C.esc(engineLabel(r))}${r.reportsCost === false
-                    ? ' <span class="muted small">— bills a plan, states no price</span>' : ''}</div></div>
+                ${(r.setup || []).map(x => `<div><b>${C.esc(x.label)}</b><div>${C.esc(x.value)}</div></div>`).join('')}
                 ${r.verified ? `<div><b>Verify</b><div>${C.esc(r.verified)}</div></div>` : ''}
-                ${r.sessionFile ? `<div><b>Transcript</b><div><button class="mini secondary" data-tr="${C.esc(r.sessionFile)}">open session</button></div></div>` : ''}
+                ${r.sessionId ? `<div><b>Session</b><div><button class="mini secondary" data-tr="${C.esc(r.sessionFile)}">${C.esc(shortSid(r.sessionId))} — open it</button></div></div>` : ''}
             </div>
+            <div class="dprompt"><b>What happened, in order</b><pre>${C.esc(runTimeline(r))}</pre></div>
             <div class="dprompt"><b>Prompt</b><pre>${C.esc(r.prompt)}</pre></div>
         </div></td></tr>` : ''}`;
     }
@@ -1404,12 +1607,19 @@
             when: r => r.when, title: r => r.title.toLowerCase(),
             cost: r => r.costUSD || 0, dur: r => r.durMin || 0
         });
-        const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task')}<th class="state">Status</th><th>Started by</th>
+        // ‼️ A COLUMN IS DEFINED ONCE, ON ITS <th> (docs/CONVENTIONS.md). The
+        // rows carry the figures; the heading carries what the figures mean.
+        const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task',
+            false, 'What the run was called, the agent it ran on and the mode. Hover a row for the whole prompt; click the title to see the form it was made with.')
+            }<th class="state" title="Where the run is now. Hover it for everything that has happened to it, in time order.">Status</th>
+            <th title="What put this run in the queue — a schedule, a trigger, a workflow step, or you. Hover it for that thing's whole setup.">Started by</th>
             <th class="eng" title="Which CLI actually ran this task — the engine the run was queued on (empty = Claude Code)">Engine</th>
-            ${sortCell(v, 'dur', 'Took', true)}${sortCell(v, 'cost', 'Cost', true,
-                'API-equivalent price of the matched transcript. Only Claude Code reports a price; a plan-billed engine shows its token count instead, because $0.00 there would mean "free" and it does not.')}${sortCell(v, 'when', 'When')}<th class="acts"></th></tr>`;
+            <th class="sess" title="The conversation this run had. A headless run opens a session like any other; its transcript is matched a few minutes after the run ends, which is also where the Cost column comes from. Click one to read it.">Session</th>
+            ${sortCell(v, 'dur', 'Took', true, 'Wall clock from the moment the process was spawned to the moment it exited — not time spent working.')}${sortCell(v, 'cost', 'Cost', true,
+                'API-equivalent price of the matched transcript. Only Claude Code reports a price; a plan-billed engine shows its token count instead, because $0.00 there would mean "free" and it does not.')}${sortCell(v, 'when', 'When',
+                    false, 'When it ended — or, for a run that has not, when it started or was made.')}<th class="acts"></th></tr>`;
         const body = !sorted.length
-            ? `<tr><td colspan="9" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
+            ? `<tr><td colspan="10" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
             : sorted.map(runRowHtml).join('');
         return `
             <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
@@ -1422,7 +1632,12 @@
                 ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }])}
                 ${sel('engine', 'Engines', v.engine, runEngines(d))}
                 <span class="spacer"></span>
-                <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder">+ New task</button>
+                <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
+                ${/* ‼️ M-8 — the ✕ on a row is the one deletion a HAND makes, and
+                      it was the only one with no way back. It files the row in
+                      the task archive now, and this puts it straight back. */''}
+                <button class="secondary" id="task-undo"${d.undoable ? '' : ' disabled'}
+                    title="${d.undoable ? 'Put the ' + d.undoable + ' run(s) you just deleted back on the list. Their output files are gone; everything else comes back.' : 'Nothing to undo'}">↶ Undo</button>
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
             </div>
@@ -1568,6 +1783,34 @@
                 td.acts .mini { margin-left:3px; }
                 td.state { text-align:center; }
                 .rowtitle { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
+                /* ‼️ M-8 — wrapping a cell's contents in an AFTip makes the
+                   WRAPPER the block child, so the column's own sizing has to
+                   move out to it or the free-growing text column stops growing
+                   (docs/CONVENTIONS.md). Same trap, same fix, every time. */
+                td.main > .af-tipw.mainw { display:block; min-width:0; }
+                td.sess, th.sess { width:1%; white-space:nowrap; }
+                /* The session id is a LINK and reads like every other one in the
+                   extension: monospace, so two ids can be compared at a glance. */
+                td.sess .slink { font-family:var(--vscode-editor-font-family, monospace);
+                    cursor:pointer; text-decoration:underline; text-decoration-style:dotted;
+                    text-underline-offset:2px; }
+                td.sess .slink:hover { color:var(--vscode-textLink-activeForeground,
+                    var(--vscode-textLink-foreground)); }
+                /* The title is a door now (it opens the form that made the run),
+                   so it has to look like one under the pointer. */
+                .rowtitle[data-taskform] { cursor:pointer; }
+                .rowtitle[data-taskform]:hover b { text-decoration:underline; }
+                /* ‼️ M-7 — a schedule whose time has passed and which has not run.
+                   Loud, because the whole complaint was that nothing said so. */
+                .overdue { color:var(--vscode-editorWarning-foreground,#cca700);
+                    font-weight:600; }
+                .notrunner { border:1px solid var(--vscode-editorWarning-foreground,#cca700);
+                    border-radius:7px; padding:7px 11px; margin:0 0 10px; font-size:12px;
+                    background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 10%, transparent); }
+                /* A read-only form is a READOUT of a form, and must not look like
+                   one you can type into — every control is dead and says so. */
+                .ntbox.ro input, .ntbox.ro select, .ntbox.ro textarea { opacity:.75; }
+                .roflag { font-size:11px; color:var(--vscode-editorWarning-foreground,#cca700); }
                 tr.grouphead td { background:var(--vscode-editorWidget-background, rgba(128,128,128,.06));
                     font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; opacity:.8; padding:5px 8px; }
                 tr.prow.open td { border-bottom:none; }
@@ -1673,6 +1916,17 @@
         click('[data-expand]', e => toggleExpand(e.currentTarget.dataset.expand));
         document.querySelectorAll('[data-expand]').forEach(el => key(el, () => toggleExpand(el.dataset.expand)));
 
+        // ‼️ M-8 — the run's title opens the FORM IT WAS MADE WITH, read-only.
+        // Everything is already on the row (`seed`), so it costs no round trip.
+        const openRunForm = (id) => {
+            const r = (DATA.runs || []).find(x => x.id === id);
+            if (!r) { return; }
+            openComposer(Object.assign({}, r.seed, { mode2: 'view', id: r.id }), 'task');
+        };
+        click('[data-taskform]', e => openRunForm(e.currentTarget.dataset.taskform));
+        document.querySelectorAll('[data-taskform]').forEach(el =>
+            key(el, () => openRunForm(el.dataset.taskform)));
+
         // plan actions
         click('[data-plan]', e => {
             const el = e.currentTarget;
@@ -1735,6 +1989,7 @@
             if (el) { el.addEventListener(ev, fn); }
         };
         byId('nt-open', 'click', () => openComposer());
+        byId('task-undo', 'click', () => post({ type: 'task-undo' }));
         byId('nt-close', 'click', () => closeComposer());
         byId('nt-cancel', 'click', () => closeComposer());
         byId('nt-add', 'click', () => submitComposer(false));
@@ -1784,6 +2039,28 @@
             });
             byId('nt-guardRecursive', 'change', () => readComposer());
             byId('nt-enabled', 'change', () => readComposer());
+            byId('nt-ignorebudget', 'change', () => readComposer());
+            // ‼️ M-7 — THE KIND CHANGES AND THE DRAFT SURVIVES. Everything typed
+            // so far is read out of the boxes first, then the same object is
+            // reopened under the new kind: `newDraft` merges the seed over the
+            // base, so the shared block is kept and only the kind-specific
+            // block below it is rebuilt. It also moves tabs, because a task
+            // lives on Run and a schedule on Plan.
+            byId('nt-kind', 'change', e => {
+                readComposer();
+                const seed = Object.assign({}, composer);
+                delete seed.kind;
+                openComposer(seed, e.currentTarget.value);
+            });
+            // ‼️ M-8 — ONE PLACE DISABLES THE READ-ONLY FORM. Every control
+            // inside the card, whichever function drew it — threading a flag
+            // through four builders is how a "read-only" form ends up with three
+            // live boxes in it. The buttons in the footer are not controls of
+            // the object and are drawn or not by the template.
+            if (composer.mode2 === 'view') {
+                document.querySelectorAll('#ntbox input, #ntbox select, #ntbox textarea')
+                    .forEach(el => { el.disabled = true; });
+            }
             // The Add button's own words follow the "start it now" box, so what
             // the press will do is readable before pressing it.
             byId('nt-start', 'change', () => { readComposer(); render(); });

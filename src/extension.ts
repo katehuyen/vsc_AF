@@ -1491,6 +1491,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 return undefined;
             },
+            // ‼️ M-7 — the manager decides things nobody is in the room for (a
+            // scheduled run held back by a ceiling), and the board is where the
+            // farm tells the user things. `postNewsOnce` keys the guard so a
+            // 30-second pump cannot repeat itself. `warning` at Important: it is
+            // work that did NOT happen at the time it was set for, which is more
+            // than routine and less than an emergency — the run is not lost.
+            announce: (n) => {
+                postNewsOnce(n.key, { title: n.title, body: n.body, level: 3, type: 'warning' });
+            },
             queueWorkCount: () => workQueueStore.list({ limit: 0 })
                 .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length,
             getEnv: (agentId) => vault.env(agentId),
@@ -3170,7 +3179,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'a command template for a binary Agent Farm knows nothing about, so passing both is refused), '
                 + 'project? (id or name; "" = explicitly none, '
                 + 'omit to inherit the window\'s active project), priority? (higher runs sooner), '
-                + 'workDir? (run it here instead of the agent folder), start? (default true)',
+                + 'workDir? (run it here instead of the agent folder), start? (default true), '
+                // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
+                + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
+                + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
+                + 'it does NOT lift the 5-hour quota guard or the concurrency limits, which '
+                + 'protect the plan window and the machine. A task held by those is waiting, '
+                + 'not refused, and launches by itself when they clear)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -3220,11 +3235,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(permissionMode ? { permissionMode } : {}),
                         ...(cli ? { cli } : {}),
                         ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
-                        ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {})
+                        ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
+                        ...(args.ignoreBudget === true ? { ignoreBudget: true } : {})
                     });
-                if (args.start !== false) { taskManager.startTask(task); }
+                // ‼️ M-7 — `startTask` ANSWERS, and the caller is told. It used
+                // to be called for its effect and the reply said `status` from
+                // before the attempt, so an agent that queued a run and read
+                // back "queued" could not tell "it is about to start" from "a
+                // ceiling refused it" — the same blindness the user had.
+                const started = args.start !== false ? taskManager.startTask(task) : false;
                 return {
                     id: task.id, status: task.status,
+                    started,
+                    // …and when it did not, why, in the manager's own words.
+                    heldBy: started ? null : (task.deferredReason ?? null),
                     agent: task.agentName, mode: task.mode,
                     engine: task.engine ?? 'claude',
                     // …and what that engine means for the figures this caller
@@ -3249,7 +3273,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     permissionNote: engineOf(task.engine).shape === 'perTurn'
                         ? engineModeNote(task.engine, task.permissionMode) : null,
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
-                    priority: task.priority ?? 0
+                    priority: task.priority ?? 0,
+                    ignoreBudget: !!task.ignoreBudget
                 };
             }
         },
@@ -3317,16 +3342,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.history',
-            describe: 'The archived task history — one .jsonl file per month, newest first, holding the runs '
-                + 'that have been cleared off the board. args: none',
-            handler: () => {
+            describe: 'The archived task history — the runs that have left the board, whether they were '
+                + 'cleared, aged out, or deleted by hand. Called bare it lists the monthly files, newest '
+                + 'first. ‼️ Called with `month` it reads the RUNS THEMSELVES, which is the answer to '
+                + '"what was that task I deleted": each row carries its title, agent, status, engine, cost, '
+                + 'prompt and its `events` (what happened to it, in order). '
+                + 'args: month? ("YYYY-MM" — omit to list the files), limit? (rows, newest first, default 50)',
+            handler: (args) => {
                 const dir = taskManager.historyDir;
                 if (!fs.existsSync(dir)) { return []; }
-                return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse()
-                    .map(f => {
-                        const st = fs.statSync(path.join(dir, f));
-                        return { month: f.replace(/\.jsonl$/, ''), file: path.join(dir, f), bytes: st.size, writtenAt: st.mtimeMs };
-                    });
+                const month = optStr(args, 'month');
+                if (!month) {
+                    return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse()
+                        .map(f => {
+                            const st = fs.statSync(path.join(dir, f));
+                            return { month: f.replace(/\.jsonl$/, ''), file: path.join(dir, f), bytes: st.size, writtenAt: st.mtimeMs };
+                        });
+                }
+                need(/^\d{4}-\d{2}$/.test(month), 'month is "YYYY-MM" — call this op bare to see which ones exist.');
+                const file = path.join(dir, `${month}.jsonl`);
+                need(fs.existsSync(file), `nothing archived for ${month} — call this op bare to see which months exist.`);
+                const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0
+                    ? Math.trunc(Number(args.limit)) : 50;
+                const rows: FarmTask[] = [];
+                for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+                    if (!line.trim()) { continue; }
+                    try { rows.push(JSON.parse(line) as FarmTask); } catch { /* skip a corrupt line */ }
+                }
+                return rows.slice(-limit).reverse().map(t => ({
+                    id: t.id, title: t.title, agent: t.agentName, status: t.status, mode: t.mode,
+                    createdAt: t.createdAt, startedAt: t.startedAt ?? null, endedAt: t.endedAt ?? null,
+                    costUSD: t.costUSD ?? null, tokens: t.tokens ?? null,
+                    prompt: t.prompt, events: t.events ?? [],
+                    ...bridgeDimsOut(t, (pid: string) => projectStore.get(pid)?.name)
+                }));
             }
         },
         {
@@ -6618,7 +6667,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.get',
-            describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project), what it cost in dollars AND tokens, and its archived output. The way to read what a task actually produced and what it actually ran on. args: id, tail? (max output chars, default 4000)',
+            describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project), what it cost in dollars AND tokens, its archived output, and `events`: WHAT HAPPENED TO IT, in order, each stamped. ‼️ Read `events` before concluding anything from `status`: a run held at a ceiling, released, held again and finally started leaves exactly the same three timestamps as one that simply sat there, and the reason it was held is only written down here. args: id, tail? (max output chars, default 4000)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -6646,6 +6695,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // not answer "on which engine" (X-35).
                     ...bridgeDimsOut(task, (pid: string) => projectStore.get(pid)?.name),
                     deferredReason: task.deferredReason ?? null,
+                    // ‼️ M-7/M-8 — the run's own record. `deferredReason` is the
+                    // LAST reason only; this is every one of them, in order.
+                    events: task.events ?? [],
                     verified: task.verified ?? null, attempt: task.attempt ?? 0,
                     fromSchedule: task.fromSchedule ?? null, fromTrigger: task.fromTrigger ?? null,
                     missionId: task.missionId ?? null, workflowId: task.workflowId ?? null,
@@ -6655,13 +6707,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.delete',
-            describe: 'Delete one task row permanently (its archived output file too — tasks.get first if you need it). A running task must be cancelled first. args: id',
+            describe: 'Take one task row off the board. ‼️ The ROW goes; the task is filed in the monthly '
+                + 'archive (tasks.history) exactly as Clear Finished files it, so "what was that run I '
+                + 'deleted" has an answer. Its archived OUTPUT file is deleted and does not come back — '
+                + 'tasks.get first if you need what it produced. A running task must be cancelled first. args: id',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
                 need((t as FarmTask).status !== 'running', 'Task is running — tasks.cancel it first.');
                 taskManager.deleteTask(t as FarmTask);
-                return { deleted: (t as FarmTask).id };
+                return { deleted: (t as FarmTask).id, filedIn: taskManager.historyDir };
             }
         },
         {

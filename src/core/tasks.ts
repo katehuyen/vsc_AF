@@ -107,6 +107,65 @@ export interface FarmTask {
     tokens?: number;
     /** Z4: the transcript the cost came from (opens in the session viewer). */
     costSessionFile?: string;
+    /**
+     * ‼️ M-7/M-8 — WHAT HAPPENED TO THIS TASK, IN ORDER.
+     *
+     * A row used to carry three timestamps and a status, which answers "how did
+     * it end" and nothing else. The question that was actually being asked was
+     * the opposite one: *its time came and went — what happened?* A task that is
+     * held back by a ceiling, released, held again and finally run looks
+     * identical on those three fields to one that simply sat there, and the
+     * reason it was held was overwritten by the next reason.
+     *
+     * So every transition writes a line here, at the moment it happens and next
+     * to the code that decides it — which is also the only place that knows WHY.
+     * It is the task's own record: cheap (a handful of short entries), capped,
+     * and it travels into the history archive with the task.
+     */
+    events?: TaskEvent[];
+    /**
+     * ‼️ M-7 — "RUN THIS WHATEVER THE BUDGET SAYS."
+     *
+     * The daily budget is a brake with no release, and that is right for the
+     * thing it protects against (a runaway automation spending the month in an
+     * afternoon) and wrong for the one run that has to happen anyway. It is the
+     * user's OWN ceiling, so the user may lift it for a named piece of work.
+     *
+     * Deliberately narrow: this waives the budget and NOTHING ELSE. The 5-hour
+     * quota guard protects the plan window itself and the concurrency limits
+     * protect the machine — neither is a policy the user set about money, and a
+     * task blocked by those is waiting rather than refused.
+     */
+    ignoreBudget?: boolean;
+}
+
+/** One thing that happened to a task. `kind` is the verb; `note` is the one
+ *  fact the verb does not already carry (a park's reason, an exit code) and is
+ *  never a sentence restating the kind. */
+export interface TaskEvent {
+    ts: number;
+    kind: TaskEventKind;
+    note?: string;
+}
+
+export type TaskEventKind =
+    | 'created'    // queued, by whom/what
+    | 'parked'     // a ceiling held the launch back — `note` is which
+    | 'started'    // the process was spawned
+    | 'finished'   // done / failed — `note` carries which and why
+    | 'cancelled'
+    | 'retried';
+
+/** The most a task keeps. A run that ping-pongs against a ceiling for a day
+ *  would otherwise grow without bound; the newest are the ones being read. */
+export const TASK_EVENTS_MAX = 40;
+
+/** Append one line to a task's own record. Exported pure so the reducer is
+ *  testable without a manager, and so nothing has to remember the cap. */
+export function noteTaskEvent(task: FarmTask, kind: TaskEventKind, note?: string): void {
+    const list = task.events ?? (task.events = []);
+    list.push(note ? { ts: Date.now(), kind, note } : { ts: Date.now(), kind });
+    if (list.length > TASK_EVENTS_MAX) { list.splice(0, list.length - TASK_EVENTS_MAX); }
 }
 
 /**
@@ -132,6 +191,11 @@ export interface RunDimensions {
     cli?: string;
     workDir?: string;
     priority?: number;
+    /** ‼️ The budget waiver travels with the automation, not only with the task
+     *  it produces — see FarmTask.ignoreBudget. This is the case it exists for:
+     *  a nightly run nobody is watching is exactly the one that must not be
+     *  silently held back by a ceiling that was hit at four in the afternoon. */
+    ignoreBudget?: boolean;
     /**
      * ‼️ DECLARED, NEVER INFERRED. An automation fires off a timer or a file
      * change; nobody was looking at a window, so there is no active project to
@@ -154,6 +218,7 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     if (d.cli) { r.cli = d.cli; }
     if (d.workDir) { r.workDir = d.workDir; }
     if (d.priority) { r.priority = Math.trunc(d.priority); }
+    if (d.ignoreBudget) { r.ignoreBudget = true; }
     return r;
 }
 
@@ -533,6 +598,14 @@ export interface TaskManagerOptions {
     /** Today's API-equivalent spend for a budget check: agentName → USD, plus
      *  the fleet total under '*'. Undefined = no budget enforcement. */
     budgetCheck?: (agentName: string) => string | undefined;
+    /**
+     * ‼️ M-7 — PUT SOMETHING ON THE BOARD. The manager decides things nobody is
+     * in the room for (a scheduled run held back by a ceiling), and a decision
+     * with no reader is the silent failure the constitution forbids. The host
+     * wires this to the once-per-key notice path so a 30-second pump cannot
+     * repeat itself; the manager never posts twice for the same key either.
+     */
+    announce?: (n: { key: string; title: string; body: string }) => void;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -625,6 +698,15 @@ export class TaskManager implements vscode.Disposable {
     private runner(): boolean {
         return this.opts.isRunner ? this.opts.isRunner() : true;
     }
+
+    /**
+     * ‼️ M-7 — THE SAME ANSWER, OUT LOUD. `runner()` is the silent gate in front
+     * of BOTH the scheduler and the pump: in a follower window a schedule's time
+     * passes and nothing fires, nothing is logged, and the Plan tab draws a
+     * perfectly healthy row with tomorrow's date on it. The window that cannot
+     * fire has to be able to say so, so the page can.
+     */
+    get runsTheQueue(): boolean { return this.runner(); }
 
     /** Machine roots for portable-path token save/load. */
     private proots(): PortableRoot[] {
@@ -1013,6 +1095,15 @@ export class TaskManager implements vscode.Disposable {
             ...extra
         };
         if (projectId) { task.projectId = projectId; } else { delete task.projectId; }
+        // The first line of the task's own record, and the only one that can say
+        // where the run came from — by the time it starts, `fromSchedule` is an
+        // id and the schedule may have been renamed or deleted.
+        noteTaskEvent(task, 'created',
+            task.fromSchedule ? 'by a schedule'
+                : task.fromTrigger ? 'by a trigger'
+                    : task.workflowId !== undefined ? `by a workflow (step ${(task.stepIndex ?? 0) + 1})`
+                        : task.missionId ? 'by a mission'
+                            : 'by you');
         this.tasks.push(task);
         this.save();
         return task;
@@ -1034,21 +1125,76 @@ export class TaskManager implements vscode.Disposable {
         // Budget is a BRAKE, not a notification: over the daily ceiling nothing
         // new launches. (It used to raise an insight and then start the task
         // anyway — a ceiling you can walk through is not a ceiling.)
-        const budget = this.opts.budgetCheck?.(task.agentName);
-        if (budget) { return budget; }
+        //
+        // ‼️ M-7 — …WITH ONE RELEASE, AND THE TASK HAS TO ASK FOR IT. The budget
+        // is the user's own policy about money, so a run they marked "whatever
+        // the budget says" is allowed past it. The quota guard and the
+        // concurrency limits above are NOT waivable here: those are the plan
+        // window and the machine, and neither is a number the user set about
+        // this task. A run held by them is waiting, not refused.
+        if (!task.ignoreBudget) {
+            const budget = this.opts.budgetCheck?.(task.agentName);
+            if (budget) { return budget; }
+        }
         return undefined;
     }
 
-    /** Request a start; if capacity/quota blocks it, the task waits and the pump launches it later. */
+    /**
+     * Request a start; if a ceiling blocks it, the task waits and the pump
+     * launches it later.
+     *
+     * ‼️ M-7 — AND THE HOLD IS RECORDED AND ANNOUNCED, because it is the exact
+     * event that was invisible: a scheduled run whose time came, whose row said
+     * "parked", and whose reason nobody was ever shown. The caller is told
+     * `false` so it can stop claiming the thing started (see fireSchedule).
+     */
     startTask(task: FarmTask): boolean {
         const block = this.launchBlock(task);
         if (block) {
+            const first = task.deferredReason !== block;
             task.autoStart = true;
             task.deferredReason = block;
+            // Only a CHANGE of reason is a new line: the pump retries every 30
+            // seconds and a log that wrote "still over budget" 120 times an hour
+            // would bury the transitions it exists to show.
+            if (first) { noteTaskEvent(task, 'parked', block); }
             this.save();
+            if (first) { this.announceParked(task, block); }
             return false;
         }
         return this.launch(task);
+    }
+
+    /**
+     * ‼️ NOBODY IS WATCHING AN UNATTENDED RUN — SO IT SAYS SO OUT LOUD.
+     *
+     * A task the user just pressed a button for parks in front of them, on the
+     * page they are looking at. A task a SCHEDULE started parks at 09:00 into a
+     * panel that may not be open until the afternoon, which is exactly the
+     * complaint: the time passed, nothing ran, and the extension behaved as if
+     * everything were normal. The board is where the farm tells the user
+     * things, so that is where this goes — once per task, keyed on the task's
+     * own id so a 30-second pump cannot repeat it.
+     */
+    private announceParked(task: FarmTask, reason: string): void {
+        if (!task.fromSchedule && !task.fromTrigger && task.workflowId === undefined) { return; }
+        const source = task.fromSchedule ? 'schedule' : task.fromTrigger ? 'trigger' : 'workflow';
+        this.opts.announce?.({
+            key: `task-parked:${task.id}`,
+            title: `"${task.title}" did not start — ${reason}`,
+            body: [
+                `A ${source} started this task at the time it was set for, and it was held back before it could run.`,
+                '',
+                `Agent: ${task.agentName}`,
+                `Held by: ${reason}`,
+                '',
+                'It is not lost: it stays queued and launches by itself as soon as the ceiling clears.'
+                + ' To run it regardless of the DAILY BUDGET, tick "run even if the budget is spent"'
+                + ' on the task (or on the schedule, so every one of its runs carries it).'
+                + ' The 5-hour quota guard and the concurrency limits are not waivable that way —'
+                + ' those protect the plan window and this machine.'
+            ].join('\n')
+        });
     }
 
     /** Effective launch priority: base priority plus one point per 30 min waited (anti-starvation aging). */
@@ -1090,6 +1236,7 @@ export class TaskManager implements vscode.Disposable {
                 task.status = 'failed';
                 task.endedAt = Date.now();
                 task.deferredReason = refused;
+                noteTaskEvent(task, 'finished', `failed before it started — ${refused}`);
                 this.save();
                 return false;
             }
@@ -1097,6 +1244,8 @@ export class TaskManager implements vscode.Disposable {
         task.status = 'running';
         task.startedAt = Date.now();
         task.deferredReason = undefined;
+        noteTaskEvent(task, 'started', `${engineOf(task.engine).label} · ${task.mode}`
+            + (task.model ? ` · ${task.model}` : ''));
         if (task.mode === 'headless') {
             this.spawnHeadless(task, agent);
         } else {
@@ -1366,6 +1515,8 @@ export class TaskManager implements vscode.Disposable {
     private finish(task: FarmTask, status: TaskStatus): void {
         task.status = status;
         task.endedAt = Date.now();
+        noteTaskEvent(task, 'finished', status + (task.startedAt
+            ? ` after ${Math.max(1, Math.round((task.endedAt - task.startedAt) / 60000))} min` : ''));
         this.save();
         this.pump();
         if (status === 'failed') { this.maybeScheduleLimitRetry(task); }
@@ -1588,6 +1739,7 @@ export class TaskManager implements vscode.Disposable {
         if (child) { this.killProcess(task.id, child); }
         task.status = 'cancelled';
         task.endedAt = Date.now();
+        noteTaskEvent(task, 'cancelled', 'by you');
         this.save();
     }
 
@@ -1603,10 +1755,44 @@ export class TaskManager implements vscode.Disposable {
         } catch { /* already gone */ }
     }
 
-    deleteTask(task: FarmTask): void {
+    /**
+     * ‼️ M-8 — A ROW YOU DELETE IS FILED, NOT BURNED, AND IT COMES BACK.
+     *
+     * Two ways off this list already archived the task into
+     * `task-history/YYYY-MM.jsonl` (Clear Finished, and the overflow past
+     * MAX_TASKS) and the third — the ✕ on the row, the one a person presses by
+     * accident — simply dropped it. So the only route that a HAND takes was the
+     * only one with no way back and no record: "I deleted it, where do I look
+     * now" had no answer. It goes to the same archive as the other two, which
+     * is what the Analytics page and every 7-day figure already read.
+     *
+     * The returned task is the caller's single-level undo (the Notices page's
+     * shape). Restoring it puts the row back where it was; its OUTPUT file is
+     * gone either way, and the row says so rather than offering a dead button.
+     */
+    deleteTask(task: FarmTask): FarmTask {
         this.tasks = this.tasks.filter(t => t.id !== task.id);
+        this.appendHistory([task]);
         this.deleteOutput(task);
         this.save();
+        return task;
+    }
+
+    /** Put deleted rows back (UI undo). Ids still present are skipped, so a
+     *  double-press cannot duplicate a row. Returns how many came back. */
+    restoreTasks(list: FarmTask[]): number {
+        let n = 0;
+        for (const t of list) {
+            if (!t || typeof t.id !== 'string' || this.tasks.some(x => x.id === t.id)) { continue; }
+            // The output file was deleted with the row and is not coming back;
+            // a row still offering an `output` button would be a dead button.
+            const back: FarmTask = { ...t };
+            delete back.outputFile;
+            this.tasks.push(back);
+            n++;
+        }
+        if (n) { this.save(); }
+        return n;
     }
 
     private deleteOutput(task: FarmTask): void {
@@ -1659,7 +1845,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
-                | 'priority' | 'projectId'>>
+                | 'priority' | 'projectId' | 'ignoreBudget'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
             this.resumeWorkflowFromTask(task);
@@ -1696,6 +1882,8 @@ export class TaskManager implements vscode.Disposable {
         copy.cli = over?.cli ?? task.cli;
         copy.workDir = over?.workDir ?? task.workDir;
         copy.missionId = task.missionId;
+        copy.ignoreBudget = over?.ignoreBudget ?? task.ignoreBudget;
+        noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);
         // A retry started by hand from a form can be queued rather than run —
         // the same "start it now" bargain every other route offers.
         if (over?.autoStart === false) {
@@ -2709,10 +2897,22 @@ export class TaskManager implements vscode.Disposable {
         // dimensions from the same place.
         const task = this.addTask(agent, s.title, s.prompt, s.mode,
             { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s) });
+        // ‼️ M-7 — THE SAME HONESTY THE TIMER PATH OWES (see fireSchedule). A
+        // press is not a launch: the budget, the quota guard and the concurrency
+        // limits all still stand in front of it, and logging "fired" for a run
+        // that was held is how the automation log came to disagree with the
+        // board it is supposed to explain.
+        const started = this.startTask(task);
         this.logAutomation({
-            kind: 'schedule', id: s.id, title: s.title, outcome: 'fired', reason: 'run now (manual)'
+            kind: 'schedule', id: s.id, title: s.title, outcome: 'fired',
+            reason: 'run now (manual)'
+                + (started ? '' : ` — HELD: ${task.deferredReason ?? 'could not launch'}`)
         });
-        this.startTask(task);
+        if (!started) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: "${s.title}" is queued but could NOT start`
+                + ` — ${task.deferredReason ?? 'a ceiling held it back'}.`);
+        }
     }
 
     /** 'ask' policy: (schedule.id + missedKey) pairs already offered in THIS
@@ -2818,15 +3018,28 @@ export class TaskManager implements vscode.Disposable {
         // there only because someone chose it ON the schedule (RunDimensions).
         const task = this.addTask(agent, s.title, s.prompt, s.mode,
             { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s) });
+        // ‼️ M-7 — SAY WHAT ACTUALLY HAPPENED, NOT WHAT WAS ATTEMPTED. This
+        // announced "scheduled task started" and then called startTask, which
+        // may hold the run back at a ceiling — so the one message the user got
+        // said the thing had begun on exactly the occasions it had not, and the
+        // automation log recorded a clean `fired` over the top of it. The launch
+        // is attempted FIRST and both the toast and the log line report the
+        // answer it gave.
+        const started = this.startTask(task);
         this.logAutomation({
             kind: 'schedule', id: s.id, title: s.title,
-            outcome: 'fired', reason: note ? `${pre.detail} (${note})` : pre.detail
+            outcome: 'fired',
+            reason: (note ? `${pre.detail} (${note})` : pre.detail)
+                + (started ? '' : ` — HELD: ${task.deferredReason ?? 'could not launch'}`)
         });
-        void vscode.window.showInformationMessage(
-            `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})` +
-            (caughtUp ? ' — caught up; the scheduled time passed while VS Code was closed.' : '') +
-            (note ? ` — ${note}.` : ''));
-        this.startTask(task);
+        const head = started
+            ? `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})`
+            : `Agent Farm: scheduled task "${s.title}" (${s.agentName}) is queued but could NOT start`
+            + ` — ${task.deferredReason ?? 'a ceiling held it back'}`;
+        const tail = (caughtUp ? ' — caught up; the scheduled time passed while VS Code was closed.' : '')
+            + (note ? ` — ${note}.` : '');
+        if (started) { void vscode.window.showInformationMessage(head + tail); }
+        else { void vscode.window.showWarningMessage(head + tail); }
     }
 
     dispose(): void {

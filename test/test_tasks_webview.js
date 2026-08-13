@@ -24,6 +24,9 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     // …and which ENGINE ran a task is drawn with the shared badge (X-35), the
     // same component every other table uses — never a colour invented here
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afEngine.js'), 'utf8')
+    // …and the hover panel (media/afTip.js) — M-8 turned every column of both
+    // tables into one, so a stub here would be testing a different page
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTip.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
@@ -68,7 +71,32 @@ const html = () => getEl('app')._html;
 const ms = createAfmsDom(html);
 
 /** Parse the rendered HTML into shim elements matching a CSS-ish selector. */
-function query(sel) {
+function query(sel, scope) {
+    // ‼️ A SELECTOR LIST IS A LIST, AND A DESCENDANT IS A DESCENDANT. The page
+    // makes a read-only form dead in ONE place —
+    // `querySelectorAll('#ntbox input, #ntbox select, #ntbox textarea')` — and
+    // a shim that read only the first branch, or read `#ntbox input` as "the
+    // element with that id", would report a form with live boxes in it as dead.
+    if (sel.includes(',')) {
+        const seen = new Set();
+        return sel.split(',').reduce((all, part) => {
+            for (const el of query(part.trim(), scope)) {
+                if (!seen.has(el)) { seen.add(el); all.push(el); }
+            }
+            return all;
+        }, []);
+    }
+    const desc = /^#([\w-]+)\s+(.+)$/.exec(sel);
+    if (desc) {
+        // The shim has no tree, so "inside #x" is the markup from that id up to
+        // the next table — enough for a card that is drawn above one.
+        const src = scope || html();
+        const i = src.indexOf(`id="${desc[1]}"`);
+        if (i < 0) { return []; }
+        const rest = src.slice(i);
+        const end = rest.indexOf('<table');
+        return query(desc[2], end > 0 ? rest.slice(0, end) : rest);
+    }
     const idM = /^#([\w-]+)/.exec(sel);
     const cls = /\.([\w-]+)/.exec(sel);
     const attrEq = /\[data-([\w-]+)="([^"]*)"\]/.exec(sel);
@@ -79,7 +107,7 @@ function query(sel) {
     const out = [];
     // textarea is in the list because the New-task form's prompt box is one and
     // a shim that cannot see it makes the form untestable (U-9).
-    const tags = html().match(/<(?:input|button|select|textarea|div|span|th|td|tr|label|a)\b[^>]*>/g) || [];
+    const tags = (scope || html()).match(/<(?:input|button|select|textarea|div|span|th|td|tr|label|a)\b[^>]*>/g) || [];
     for (const raw of tags) {
         const tag = /^<([a-z]+)/.exec(raw)[1];
         if (idM && !raw.includes(`id="${idM[1]}"`)) { continue; }
@@ -144,12 +172,20 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 
 const NOW = Date.now();
+// ‼️ M-8 — a transcript is named `<sessionId>.jsonl`, and the id is what the
+// Session column draws. A one-letter stand-in would have let the column pass
+// while slicing an id to eight characters was still untested.
+const SESSION_ID = '7379fd0f-4e00-4264-9537-1e9f50f8491b';
+const SESSION_FILE = 'D:/t/' + SESSION_ID + '.jsonl';
 const DATA = {
     generatedAt: NOW,
     tab: 'plan',
     gate: {
         paused: false, pausedUntil: undefined, pauseReason: '',
-        quietFrom: '23:30', quietTo: '04:30', blocked: false, blockReason: ''
+        quietFrom: '23:30', quietTo: '04:30', blocked: false, blockReason: '',
+        // ‼️ M-7 — the gate in front of every other gate: only ONE window fires
+        // schedules, and the page had no way to say "not this one".
+        runsQueue: true
     },
     summary: {
         running: 1, runLimit: 2, queued: 2, needsYou: 1,
@@ -224,15 +260,48 @@ const DATA = {
             switchable: true, enabled: true,
             cost7d: 12.3, runs7d: 3, skipped7d: 4, skipRate: 57,
             lastRunAt: NOW - 7200e3, lastNote: '2 files waiting', issues: [],
-            detail: { prompt: 'apply the filing duty', target: 'runs on manager · headless', timing: 'every day 05:00 · missed → run', steps: [], missed: 'run' }
+            // ‼️ M-7/M-8 — the row carries the whole SETUP (the triangle used to
+            // say the word "schedule" and stop) and, when its minute has passed
+            // with nothing having run, the reason why.
+            overdue: '',
+            detail: {
+                prompt: 'apply the filing duty', target: 'runs on manager · headless',
+                timing: 'every day 05:00 · missed → run', steps: [], missed: 'run',
+                setup: [
+                    { label: 'Fires', value: 'every day 05:00' },
+                    { label: 'If it is missed', value: 'run it at the first opportunity' },
+                    { label: 'Agent', value: 'manager · headless' },
+                    { label: 'Guard', value: 'files in …/00_INPUT (skip _LOG_.md)' },
+                    { label: 'Model', value: 'opus' }
+                ]
+            }
         },
         {
             id: 's2', kind: 'schedule', title: 'AI daily scan',
             when: 'every day 06:00', agentName: 'manager', model: '',
             guard: '', hasGuard: false, switchable: true, enabled: false,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
-            lastNote: '', issues: [],
-            detail: { prompt: 'scan AI news', target: 'runs on manager · headless', timing: 'every day 06:00 · missed → skip', steps: [], missed: 'skip' }
+            lastNote: '', issues: [], overdue: '',
+            detail: {
+                prompt: 'scan AI news', target: 'runs on manager · headless',
+                timing: 'every day 06:00 · missed → skip', steps: [], missed: 'skip',
+                setup: [{ label: 'Fires', value: 'every day 06:00' }]
+            }
+        },
+        {
+            // ‼️ M-7 — the case the whole item was written about: 09:00 came and
+            // went, and everything on the page went on looking healthy.
+            id: 's3', kind: 'schedule', title: 'sabah13',
+            when: 'every day 09:00', nextAt: NOW + 8e7, agentName: 'developer', model: '',
+            guard: '', hasGuard: false, switchable: true, enabled: true,
+            cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+            lastNote: '', issues: ['no-guard', 'overdue'],
+            overdue: 'its time has passed and automation is blocked — everything is paused.',
+            detail: {
+                prompt: 'sabah raporunu yaz', target: 'runs on developer · headless',
+                timing: 'every day 09:00 · missed → skip', steps: [], missed: 'skip',
+                setup: [{ label: 'Fires', value: 'every day 09:00' }]
+            }
         },
         {
             id: 't1', kind: 'trigger', title: 'Media watch',
@@ -240,49 +309,88 @@ const DATA = {
             guard: '', hasGuard: false, switchable: true, enabled: true,
             cost7d: 70.9, runs7d: 23, skipped7d: 0, skipRate: 0,
             lastRunAt: NOW - 3600e3, lastNote: 'no files waiting',
-            issues: ['no-guard', 'path-missing'],
-            detail: { prompt: 'file the media', target: 'runs on manager', timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '' }
+            issues: ['no-guard', 'path-missing'], overdue: '',
+            detail: {
+                prompt: 'file the media', target: 'runs on manager',
+                timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '',
+                setup: [
+                    { label: 'Fires', value: 'on change · …/02_MEDIALASTIR' },
+                    { label: 'Armed', value: 'NO — the path is missing, so nothing can fire' }
+                ]
+            }
         },
         {
             id: 'w1', kind: 'workflow', title: 'publish pipeline',
             when: 'when you run it (or a trigger does)', agentName: '', model: '',
             guard: '', hasGuard: false, switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
-            lastNote: '2 step(s)', issues: [],
-            detail: { prompt: '', target: '2 step chain', timing: '', steps: ['1. render ∥ — genel', '2. post — basit'], missed: '' }
+            lastNote: '2 step(s)', issues: [], overdue: '',
+            detail: {
+                prompt: '', target: '2 step chain', timing: '',
+                steps: ['1. render ∥ — genel', '2. post — basit'], missed: '',
+                setup: [{ label: 'Steps', value: '2' }]
+            }
         },
         {
             id: 'tp1', kind: 'template', title: 'triage inbox',
             when: 'when you run it', agentName: 'genel', model: '',
             guard: '', hasGuard: false, switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
-            lastNote: '', issues: [],
-            detail: { prompt: 'triage the inbox now', target: 'runs on genel · headless', timing: '', steps: [], missed: '' }
+            lastNote: '', issues: [], overdue: '',
+            detail: {
+                prompt: 'triage the inbox now', target: 'runs on genel · headless',
+                timing: '', steps: [], missed: '',
+                setup: [{ label: 'Agent', value: 'genel · headless' }]
+            }
         }
     ],
     runs: [
         {
             id: 'r1', title: 'live run', agentName: 'manager', mode: 'headless', status: 'running',
             source: 'AGENT_AREA batch', sourceKind: 'schedule', when: NOW - 300e3, durMin: 5,
-            detail: '', costUSD: 1.2, hasOutput: false, prompt: 'do the batch'
+            detail: '', costUSD: 1.2, hasOutput: false, prompt: 'do the batch',
+            sessionId: '', events: [{ ts: NOW - 400e3, kind: 'created', note: 'by a schedule' }],
+            setup: [{ label: 'Agent', value: 'manager · headless' }],
+            seed: { agent: 'manager', prompt: 'do the batch', mode: 'headless' }
         },
         {
             id: 'r2', title: 'parked run', agentName: 'genel', mode: 'headless', status: 'parked',
             source: 'you', sourceKind: 'manual', when: NOW - 600e3,
-            detail: 'agent busy (genel)', hasOutput: false, prompt: 'something'
+            detail: 'daily budget spent (genel: $4.10 of $4.00)', hasOutput: false, prompt: 'something',
+            sessionId: '',
+            // ‼️ M-7/M-8 — the run's own record: why it was held, and when.
+            events: [
+                { ts: NOW - 700e3, kind: 'created', note: 'by you' },
+                { ts: NOW - 690e3, kind: 'parked', note: 'daily budget spent (genel: $4.10 of $4.00)' }
+            ],
+            setup: [{ label: 'Agent', value: 'genel · headless' }],
+            seed: { agent: 'genel', prompt: 'something', mode: 'headless' }
         },
         {
             id: 'r3', title: 'finished run', agentName: 'basit', mode: 'headless', status: 'done',
             source: 'repo backup', sourceKind: 'schedule', when: NOW - 7200e3, durMin: 1,
             detail: '', costUSD: 0.22, hasOutput: true, outputFile: 'D:/out/r3.md',
-            sessionFile: 'D:/t/s.jsonl', prompt: 'commit the repo'
+            sessionFile: SESSION_FILE, sessionId: SESSION_ID, prompt: 'commit the repo',
+            events: [
+                { ts: NOW - 7400e3, kind: 'created', note: 'by a schedule' },
+                { ts: NOW - 7300e3, kind: 'started', note: 'Claude Code · headless' },
+                { ts: NOW - 7200e3, kind: 'finished', note: 'done after 1 min' }
+            ],
+            setup: [
+                { label: 'Agent', value: 'basit · headless' },
+                { label: 'Started by', value: 'schedule "repo backup"' }
+            ],
+            seed: { agent: 'basit', prompt: 'commit the repo', mode: 'headless', priority: 0 }
         },
         {
             id: 'r4', title: 'broken run', agentName: 'manager', mode: 'headless', status: 'failed',
             source: 'Media watch', sourceKind: 'trigger', when: NOW - 9200e3, durMin: 2,
-            detail: '', hasOutput: false, prompt: 'file the media'
+            detail: '', hasOutput: false, prompt: 'file the media',
+            sessionId: '', events: [], setup: [{ label: 'Agent', value: 'manager · headless' }],
+            seed: { agent: 'manager', prompt: 'file the media', mode: 'headless' }
         }
-    ]
+    ],
+    undoable: 0
 };
 sandbox.window.__DATA__ = DATA;
 
@@ -362,7 +470,7 @@ ok('…and the card is filled from what the gate currently says',
 // ------------------------------------------------------------------- tabs
 ok('there are exactly two tabs', query('[data-tab]').length === 2);
 ok('PLAN is the default tab', /class="tab on" data-tab="plan"/.test(html()));
-ok('tab counts come from the data', html().includes('📅 Plan <span class="tab-n">5</span>')
+ok('tab counts come from the data', html().includes('📅 Plan <span class="tab-n">6</span>')
     && html().includes('▶ Runs <span class="tab-n">4</span>'));
 ok('analytics is a link OUT, not a tab', html().includes('data-open="open-analytics"')
     && !/data-tab="analytics"/.test(html()));
@@ -386,7 +494,7 @@ ok('per-row 7d cost is shown', html().includes('$70.90') || html().includes('$71
 ok('switchable rows get a real switch', /class="sw on"/.test(html()) && /class="sw off"/.test(html()));
 ok('non-switchable rows say so instead of faking a switch',
     (html().match(/>manual</g) || []).length >= 2);
-ok('only switchable rows get a checkbox', query('.rowsel').length === 3);
+ok('only switchable rows get a checkbox', query('.rowsel').length === 4);
 
 // ------------------------------------------------------ PLAN: row actions
 posted = [];
@@ -411,8 +519,14 @@ ok('detail is closed by default', !html().includes('class="detailbox"'));
 query('[data-expand="schedule:s1"]')[0].click();
 ok('expanding opens detail INLINE (no second page)', html().includes('class="detailbox"'));
 ok('detail shows the full prompt', html().includes('apply the filing duty'));
-ok('detail shows the target', html().includes('runs on manager · headless'));
-ok('detail shows the guard', html().includes('Fires only if'));
+// ‼️ M-8 — the triangle carries the whole SETUP now, not the word "schedule".
+// The old two lines (Target / Timing) were a summary of a summary; these are
+// the fields as they were typed in, and only the ones actually stated.
+ok('detail shows the setup, field by field',
+    html().includes('<b>Fires</b>') && html().includes('every day 05:00')
+    && html().includes('<b>Agent</b>') && html().includes('manager · headless'));
+ok('detail shows the guard as one of them',
+    html().includes('<b>Guard</b>') && html().includes('files in …/00_INPUT'));
 ok('detail shows the 7-day record', html().includes('3 run(s) · 4 skipped (57%)'));
 query('[data-expand="schedule:s1"]')[0].click();
 ok('collapsing closes it again', !html().includes('class="detailbox"'));
@@ -437,7 +551,7 @@ const setFilter = (name, ...values) => {
 setFilter('kind', 'trigger');
 ok('filtering by kind narrows the table', html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
 ok('an active filter becomes a visible chip', html().includes('class="chips"') && html().includes('kind: trigger'));
-ok('the chip reports how much is hidden', html().includes('showing 1 of 5'));
+ok('the chip reports how much is hidden', html().includes('showing 1 of 6'));
 ok('a reset control appears with it', html().includes('data-resetview'));
 clickData('clear', 'kind');
 ok('clicking the chip removes that filter', html().includes('AGENT_AREA batch') && !html().includes('class="chips"'));
@@ -506,7 +620,7 @@ setFilter('group', 'kind');
     clickData('bulk', 'off');
     ok('bulk switch-off posts every selected row with its kind',
         posted[0] && posted[0].type === 'bulk' && posted[0].act === 'off'
-        && posted[0].rows.length === 3
+        && posted[0].rows.length === 4
         && posted[0].rows.some(r => r.kind === 'schedule' && r.id === 's1')
         && posted[0].rows.some(r => r.kind === 'trigger' && r.id === 't1'));
     posted = [];
@@ -518,7 +632,7 @@ setFilter('group', 'kind');
 clickData('tab', 'run');
 ok('the RUN tab renders its own toolbar', html().includes('Search run, prompt, agent'));
 ok('a live run is listed', html().includes('live run'));
-ok('a parked run explains why it is parked', html().includes('agent busy (genel)'));
+ok('a parked run explains why it is parked', html().includes('daily budget spent (genel: $4.10 of $4.00)'));
 ok('statuses render as pills', html().includes('>running<') && html().includes('>failed<'));
 ok('the run says where it came from', html().includes('>schedule<') && html().includes('AGENT_AREA batch'));
 ok('a manual run says "you"', html().includes('>you<'));
@@ -599,7 +713,147 @@ resetView();
 
 query('[data-expand="run:r3"]')[0].click();
 ok('a run expands to its prompt inline', html().includes('commit the repo'));
-ok('and offers its transcript', html().includes('data-tr="D:/t/s.jsonl"'));
+ok('and offers its transcript', html().includes(`data-tr="${SESSION_FILE}"`));
+ok('‼️ M-8 — …and the triangle carries the whole SETUP, not the word "schedule"',
+    html().includes('<b>Started by</b>') && html().includes('schedule &quot;repo backup&quot;'));
+ok('‼️ M-8 — …and what happened to the run, in order',
+    html().includes('What happened, in order') && html().includes('started — Claude Code · headless'));
+query('[data-expand="run:r3"]')[0].click();
+
+/* ======================================================================
+   M-7 / M-8 — WHAT THE ROW SAYS WITHOUT BEING OPENED.
+
+   The two items these tests are written from are one complaint in two
+   places: a scheduled run whose time came and went while every surface
+   went on looking healthy (M-7), and a run table that knew thirty facts
+   about a run and drew eight of them (M-8). So each assertion below asks
+   the page for a fact that WAS already in the data and was not drawn.
+   ====================================================================== */
+{
+    /** Just the runs table, so nothing here can be satisfied by the summary
+     *  strip, the toolbar or a composer above it. */
+    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    /** The text of every hover panel currently rendered. */
+    const tips = () => (html().match(/<span class="af-tipb">[\s\S]*?<\/span>/g) || []);
+    const tipWith = (needle) => tips().find(t => t.includes(needle));
+
+    // ---------------------------------------------------- the session column
+    ok('‼️ M-8 — the run table finally has a Session column', table().includes('>Session</th>'));
+    ok('…and the id is DRAWN, not hidden behind an unlabelled button',
+        table().includes(`>${SESSION_ID.slice(0, 8)}<`));
+    posted = [];
+    query('.slink')[0].click();
+    ok('…and clicking it opens that conversation',
+        posted[0] && posted[0].type === 'open-transcript' && posted[0].file === SESSION_FILE);
+    ok('a run with no matched transcript says WHY rather than drawing a bare dash',
+        /matched a few minutes after the run ends/.test(table()));
+    ok('…and the hover carries what the row cannot fit',
+        !!tipWith('Session: ' + SESSION_ID) && !!tipWith('Transcript: ' + SESSION_FILE));
+
+    // ------------------------------------------------ the run's own history
+    ok('‼️ M-8 — the Status badge carries everything that happened to the run, in time order',
+        !!tipWith('held back — daily budget spent (genel: $4.10 of $4.00)'));
+    ok('…stamped, because comparing one against a provider\'s log is why anybody opens it',
+        /\d{2}:\d{2}[^<]*· held back/.test(tips().join('')));
+    ok('…and a run older than the record says so instead of drawing an empty panel',
+        !!tipWith('predates the run log'));
+
+    // --------------------------------------------- the prompt, and the form
+    ok('‼️ M-8 — the whole prompt is on the row\'s own hover', !!tipWith('do the batch'));
+    ok('…and the title says it is a door', table().includes('data-taskform="r1"'));
+    ok('‼️ M-8 — "Started by" carries the automation\'s whole setup',
+        !!tipWith('Started by: schedule &quot;repo backup&quot;'));
+
+    // ------------------------------------------------------- undo (M-8)
+    ok('the ✕ on a row is answered by an Undo button', /id="task-undo"/.test(html()));
+    ok('…which is dead while there is nothing to undo', /id="task-undo"[^>]*disabled/.test(html()));
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: Object.assign({}, DATA, { undoable: 2 }) } }));
+    ok('…and offers itself, by count, once a row has been taken off',
+        /id="task-undo"(?![^>]*disabled)/.test(html()) && html().includes('the 2 run(s) you just deleted'));
+    posted = [];
+    sandbox.document.getElementById('task-undo').click();
+    ok('…and pressing it asks the host to put them back',
+        posted[0] && posted[0].type === 'task-undo');
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: DATA } }));
+
+    // ------------------------------- the form that MADE the run, read-only
+    query('[data-taskform="r3"]')[0].click();
+    ok('‼️ M-8 — clicking a run\'s title opens the form it was made with',
+        /id="ntbox"/.test(html()) && html().includes('How this run was made'));
+    ok('…filled in from the row, so it costs no round trip', /value="basit" selected/.test(html())
+        && html().includes('commit the repo'));
+    ok('…and it says out loud that it is a readout', html().includes('read-only')
+        && /class="ntbox ro"/.test(html()));
+    ok('…with nothing to press that would change anything',
+        !/id="nt-add"/.test(html()) && !/id="nt-start"/.test(html()));
+    ok('‼️ …and EVERY control dead — one place disables them, not forty template holes',
+        ['nt-prompt', 'nt-agent', 'nt-model', 'nt-effort', 'nt-priority']
+            .every(id => sandbox.document.getElementById(id).disabled === true));
+    sandbox.document.getElementById('nt-cancel').click();
+
+    // ---------------------------------------- "run it whatever the budget says"
+    sandbox.document.getElementById('nt-open').click();
+    ok('‼️ M-7 — the form can waive the DAILY BUDGET for one run',
+        /id="nt-ignorebudget"/.test(html()));
+    ok('…and says what it does NOT waive, where the box is',
+        /does NOT lift the 5-hour quota guard/.test(html()));
+    sandbox.document.getElementById('nt-prompt').value = 'mutlaka çalışsın';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    sandbox.document.getElementById('nt-ignorebudget').checked = true;
+    sandbox.document.getElementById('nt-ignorebudget').fire('change');
+    posted = [];
+    sandbox.document.getElementById('nt-add').click();
+    ok('…and it travels with the task the form sends',
+        posted.some(p => p.type === 'task-new' && p.task.ignoreBudget === true));
+
+    // ------------------------------------- a task and a schedule are one form
+    sandbox.document.getElementById('nt-open').click();
+    ok('‼️ M-7 — the kind is a FIELD, not a door you had to pick before typing',
+        /id="nt-kind"/.test(html()) && html().includes('schedule — a clock starts it'));
+    sandbox.document.getElementById('nt-prompt').value = 'sabah raporunu yaz';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    sandbox.document.getElementById('nt-kind').value = 'schedule';
+    sandbox.document.getElementById('nt-kind').fire('change');
+    ok('…changing it redraws the kind-specific block', /id="nt-time"/.test(html()));
+    ok('‼️ …and the draft survives the change — that is the whole point',
+        html().includes('sabah raporunu yaz'));
+    sandbox.document.getElementById('nt-cancel').click();
+    onMessage.forEach(fn => fn({
+        type: 'x', data: { type: 'plan-compose', kind: 'schedule', seed: { mode2: 'edit', id: 's1', title: 'x' } }
+    }));
+    ok('‼️ …but a STORED object\'s kind is not offered: that would be deleting one thing and making another',
+        /id="ntbox"/.test(html()) && !/id="nt-kind"/.test(html()));
+    sandbox.document.getElementById('nt-cancel').click();
+}
+
+// ------------------------------------------ M-7: the row that went past its time
+clickData('tab', 'plan');
+{
+    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    ok('‼️ M-7 — a schedule whose minute has passed with nothing run wears a badge for it',
+        /<span class="badge warn"[^>]*>overdue<\/span>/.test(table()));
+    ok('‼️ …and says WHY on the row itself — a fact you must hover for is the same failure one layer in',
+        /class="overdue small">⚠ its time has passed and automation is blocked/.test(table()));
+    ok('…and a healthy row says nothing of the sort',
+        (table().match(/class="overdue small"/g) || []).length === 1);
+    ok('‼️ M-8 — the plan triangle carries the setup of the thing, field by field',
+        html().includes('data-expand="schedule:s1"'));
+
+    // …and the gate in front of every other gate
+    ok('a window that runs the queue says nothing about it', !/class="notrunner"/.test(html()));
+    onMessage.forEach(fn => fn({
+        data: {
+            type: 'data',
+            data: Object.assign({}, DATA, { gate: Object.assign({}, DATA.gate, { runsQueue: false }) })
+        }
+    }));
+    ok('‼️ M-7 — a window that CANNOT fire schedules says so before anything else is read',
+        /class="notrunner"/.test(html())
+        && html().includes('Schedules do not fire from this window'));
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: DATA } }));
+    clickData('tab', 'run');
+}
+clickData('tab', 'plan');
 
 // -------------------------------------------- filters are remembered per tab
 clickData('tab', 'plan');
@@ -689,7 +943,7 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         lastMsg().type === 'open-output' && lastMsg().file === 'D:/out/r3.md');
     send({ type: 'afctx', act: 'tkTranscript', ctx: done });
     ok('and the transcript the same way',
-        lastMsg().type === 'open-transcript' && lastMsg().file === 'D:/t/s.jsonl');
+        lastMsg().type === 'open-transcript' && lastMsg().file === SESSION_FILE);
 
     send({ type: 'afctx', act: 'tkSource', ctx: done });
     ok('"show what started it" lands on the Plan tab searched for that definition',
