@@ -125,6 +125,20 @@ const runs = () => ([
         source: 'you', sourceKind: 'manual', when: min(2),
         detail: 'agent busy (developer)', engine: 'claude', reportsCost: true,
         hasOutput: false, prompt: 'akış okuyucusunu UTF-8 sınırında böl ve doğrula'
+    },
+    {
+        // ‼️ M-9 — A RUN THAT HAS LEFT THE BOARD, read out of the monthly
+        // archive. It is in the fixture because the whole question about it is
+        // visual: it has to be separable from the live rows at a glance and
+        // still be a real row, and its Actions cell is deliberately empty —
+        // which is exactly the kind of thing a string test cannot see.
+        id: 'r7', title: 'eski kuyruk temizliği', agentName: 'manager',
+        mode: 'headless', status: 'done', source: 'you', sourceKind: 'manual',
+        when: min(4200), durMin: 6, detail: '', costUSD: 0.18,
+        engine: 'claude', reportsCost: true, tokens: 240_000,
+        hasOutput: false, archived: true,
+        sessionFile: 'C:\\Users\\x\\.claude\\projects\\ajanlar\\11b4922a.jsonl',
+        prompt: 'kuyrukta kalan eski girdileri temizle ve raporla'
     }
 ].map(dress));
 
@@ -143,6 +157,10 @@ const data = () => ({
     },
     plan: [],
     runs: runs(),
+    // ‼️ M-9 — the archive is ON in this picture, because the month picker and
+    // the "✕ archive" way back only exist once it is, and a toolbar that has
+    // gained two controls is the thing to look at.
+    archive: { on: true, month: '', months: ['2026-06', '2026-07', '2026-08'] },
     undoable: 0,
     agents: ['developer', 'manager', 'basit', 'psikolog'],
     perAgentLimit: 1,

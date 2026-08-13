@@ -49,6 +49,48 @@ fs.appendFileSync(path.join(dir, `${mkey(recentTs)}.jsonl`),
 hist = ts.readTaskHistory(dir, NOW - 30 * DAY);
 check('history: cache invalidates on append', hist.length === 3 && hist.some(t => t.id === 'rec3'));
 
+// ---- 1b. M-8 (reopened): one id is one run, whatever the file says twice ----
+//
+// The archive is append-only and the same run reaches it more than once by
+// ordinary use — delete → Undo → delete — so every reader behind it (success
+// rate, cost, the run counts on the agent pages) was summing copies of one run.
+{
+    const d2 = fs.mkdtempSync(path.join(os.tmpdir(), 'af-arch-'));
+    const m = mkey(recentTs);
+    const dup = mk({ id: 'twice', endedAt: recentTs, costUSD: 3 });
+    fs.writeFileSync(path.join(d2, `${m}.jsonl`),
+        JSON.stringify(dup) + '\n'
+        + JSON.stringify(mk({ id: 'once', endedAt: recentTs })) + '\n'
+        + JSON.stringify(Object.assign({}, dup, { status: 'failed' })) + '\n');
+    const h = ts.readTaskHistory(d2, NOW - 30 * DAY);
+    check('‼️ M-8: an id filed twice is ONE run', h.filter(t => t.id === 'twice').length === 1);
+    check('‼️ …and the newest line about it is the one kept',
+        h.find(t => t.id === 'twice').status === 'failed');
+    check('…and the other rows are untouched', h.length === 2);
+
+    // Undo tells the archive too: a tombstone takes the id back out, and a
+    // later delete files it again — the LAST word about an id decides.
+    fs.appendFileSync(path.join(d2, `${m}.jsonl`),
+        JSON.stringify({ id: 'twice', undeleted: NOW }) + '\n');
+    const h2 = ts.readTaskHistory(d2, NOW - 30 * DAY);
+    check('‼️ M-8: an undone delete leaves the archive',
+        h2.length === 1 && !h2.some(t => t.id === 'twice'));
+    fs.appendFileSync(path.join(d2, `${m}.jsonl`),
+        JSON.stringify(Object.assign({}, dup, { status: 'cancelled' })) + '\n');
+    const h3 = ts.readTaskHistory(d2, NOW - 30 * DAY);
+    check('‼️ …and deleting it again files it back, once',
+        h3.filter(t => t.id === 'twice').length === 1
+        && h3.find(t => t.id === 'twice').status === 'cancelled');
+
+    // M-9's reader: the months it holds, and one month read by name.
+    check('M-9: the archive names its months', ts.archiveMonths(d2).join(',') === m);
+    check('M-9: a month reads with the same dedupe',
+        ts.readArchive(d2, [m]).filter(t => t.id === 'twice').length === 1);
+    check('M-9: a month nobody filed reads empty', ts.readArchive(d2, ['1999-01']).length === 0);
+    check('M-9: months of a missing dir are none',
+        ts.archiveMonths(path.join(d2, 'nope')).length === 0);
+}
+
 // ---- 2. mergeTaskRecords ----
 const merged = ts.mergeTaskRecords(
     [mk({ id: 'x', status: 'running' })],

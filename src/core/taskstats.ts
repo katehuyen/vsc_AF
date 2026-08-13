@@ -12,6 +12,20 @@ import * as path from 'path';
 /** Structural subset of FarmTask — history lines are full FarmTask JSON. */
 export interface TaskRecord {
     id: string;
+    /**
+     * ‼️ M-8 (reopened) — THIS LINE UNDOES THE ONE ABOVE IT.
+     *
+     * The archive is append-only, and undo is the one gesture that has to take
+     * something back out of it: delete files the row, Undo puts it back on the
+     * live list, and without a word to the archive the row now exists TWICE —
+     * once alive and once filed. Deleting it again wrote a second copy, and the
+     * analytics behind Runs counted a single run as two, with two costs.
+     *
+     * A tombstone is how an append-only log says "not that one": `undeleted` is
+     * the moment Undo ran, the reader takes the LAST line about an id, and the
+     * file is never rewritten. A line carrying this has no other fields.
+     */
+    undeleted?: number;
     agentId: string;
     agentName: string;
     title: string;
@@ -43,19 +57,52 @@ const historyCache = new Map<string, { mtime: number; size: number; records: Tas
 /**
  * Read archived tasks from task-history/YYYY-MM.jsonl files whose month can
  * contain records at/after `sinceTs`. Bad lines are skipped; missing dir = [].
+ *
+ * ‼️ M-8 (reopened) — ONE ID, ONE RUN, WHATEVER THE FILE SAYS TWICE.
+ *
+ * The archive is written by appending, so the same run reaches it more than
+ * once by ordinary use: delete → Undo → delete files it twice, and a month file
+ * recovered or re-synced by git can hold the same line again. Every reader
+ * behind this — success rate, cost, the run counts on the agent pages — was
+ * summing those copies, so the fix belongs HERE and not in each of them.
+ *
+ * The LAST line about an id wins, because it is the freshest thing the archive
+ * was told; a tombstone (`undeleted`) is such a line and removes the id
+ * altogether. Order is preserved from first sighting, which is what the callers
+ * that do not sort themselves have always been handed.
  */
 export function readTaskHistory(historyDir: string, sinceTs: number): TaskRecord[] {
-    const out: TaskRecord[] = [];
-    let names: string[];
-    try {
-        names = fs.readdirSync(historyDir).filter(n => /^\d{4}-\d{2}\.jsonl$/.test(n));
-    } catch {
-        return out;
-    }
     const minMonth = monthKey(sinceTs);
-    for (const name of names.sort()) {
-        if (name.slice(0, 7) < minMonth) { continue; }
-        const file = path.join(historyDir, name);
+    return readArchive(historyDir, archiveMonths(historyDir).filter(m => m >= minMonth))
+        .filter(t => (t.endedAt ?? t.createdAt) >= sinceTs);
+}
+
+/** Which months the archive holds, oldest first. Missing dir = none. */
+export function archiveMonths(historyDir: string): string[] {
+    try {
+        return fs.readdirSync(historyDir)
+            .filter(n => /^\d{4}-\d{2}\.jsonl$/.test(n))
+            .map(n => n.slice(0, 7))
+            .sort();
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * The archive itself — the named months, in file order, deduped.
+ *
+ * ‼️ EVERY READER OF THE ARCHIVE COMES THROUGH HERE. The statistics did, the
+ * bridge op did not, and the page had none — so "what was that run I deleted"
+ * was answered by three different readings of the same file, only one of which
+ * knew that an id can appear twice. There is one reading now and the callers
+ * differ only in which months they ask for.
+ */
+export function readArchive(historyDir: string, months: string[]): TaskRecord[] {
+    // id → the newest line about it, or null when the newest line is a tombstone
+    const seen = new Map<string, TaskRecord | null>();
+    for (const month of months) {
+        const file = path.join(historyDir, `${month}.jsonl`);
         try {
             const st = fs.statSync(file);
             const cached = historyCache.get(file);
@@ -68,15 +115,22 @@ export function readTaskHistory(historyDir: string, sinceTs: number): TaskRecord
                     if (!line.trim()) { continue; }
                     try {
                         const t = JSON.parse(line) as TaskRecord;
-                        if (t && t.id && t.agentId && t.status) { records.push(t); }
+                        // A tombstone carries an id and nothing else, so it is
+                        // kept by a rule of its own rather than by the one that
+                        // decides whether a RUN is complete enough to count.
+                        if (t && t.id && (t.undeleted || (t.agentId && t.status))) { records.push(t); }
                     } catch { /* skip corrupt line */ }
                 }
                 historyCache.set(file, { mtime: st.mtimeMs, size: st.size, records });
             }
             for (const t of records) {
-                if ((t.endedAt ?? t.createdAt) >= sinceTs) { out.push(t); }
+                seen.set(t.id, t.undeleted ? null : t);
             }
         } catch { /* unreadable month file */ }
+    }
+    const out: TaskRecord[] = [];
+    for (const t of seen.values()) {
+        if (t) { out.push(t); }
     }
     return out;
 }

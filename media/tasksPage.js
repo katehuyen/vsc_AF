@@ -691,13 +691,26 @@
         return draft;
     }
 
+    /**
+     * ‼️ THE FORM CHANGED TABS AND SAID SO.
+     *
+     * Changing the kind mid-draft works — the draft survives and the
+     * kind-specific block is rebuilt — but a task lives on Run and a schedule
+     * on Plan, so the form MOVES, and the page repainting under you with your
+     * form somewhere else reads as "nothing happened" (which is exactly how it
+     * was reported). The move is right; being silent about it was not.
+     */
+    let kindMoved = '';
+
     function openComposer(seed, kind) {
         const k = kind || (seed && seed.kind) || 'task';
+        const from = tab;
         composer = newDraft(k, seed);
         composerMsg = '';
         composerDup = false;
         stepMsg = '';
         tab = (COMPOSE[k] || COMPOSE.task).tab;
+        kindMoved = (kind && from && from !== tab) ? from : '';
         persist();
         render();
         const box = document.getElementById('nt-prompt') || document.getElementById('nt-title');
@@ -708,6 +721,7 @@
         composer = null;
         composerDup = false;
         stepMsg = '';
+        kindMoved = '';
         composerMsg = msg || '';
         render();
     }
@@ -1306,6 +1320,9 @@
                 <button class="secondary mini" id="nt-close">✕</button>
             </div>
             ${kindField ? `<div class="ntgrid">${kindField}</div>` : ''}
+            ${kindMoved ? `<div class="ntmoved">Now a ${C.esc(spec.label)} — so this form moved from the
+                ${kindMoved === 'run' ? 'Runs' : 'Plan'} tab to ${tab === 'run' ? 'Runs' : 'Plan'}, where that kind
+                lives. Everything you had typed came with it.</div>` : ''}
             <div class="ntgrid">
                 ${wantsRun ? `<label class="ntf wide"><span>Prompt <em>required</em></span>
                     <textarea id="nt-prompt" rows="4"
@@ -1617,8 +1634,24 @@
             return 'Nothing was recorded for this run — it predates the run log,'
                 + ' which starts with tasks made from this version on.';
         }
-        return ev.map(e => window.AFTime.full(e.ts) + ' · ' + (EVENT_WORD[e.kind] || e.kind)
-            + (e.note ? ' — ' + e.note : '')).join('\n');
+        // ‼️ M-8 — A REBUILT LINE SAYS SO. Runs that existed before the log was
+        // written get one built out of their own fields (migrateTaskEvents), so
+        // the tab answers for them too — but a reconstruction knows the times
+        // those fields kept and NOTHING between them, and passing that off as a
+        // witnessed record is how a page becomes untrustworthy in the one place
+        // it is read for evidence.
+        const some = ev.some(e => e.migrated);
+        const all = some && ev.every(e => e.migrated);
+        const lines = ev.map(e => window.AFTime.full(e.ts) + ' · ' + (EVENT_WORD[e.kind] || e.kind)
+            + (e.note ? ' — ' + e.note : '')
+            + (e.migrated && !all ? '  ·  rebuilt from the run\'s own fields' : ''));
+        if (all) {
+            lines.push('', 'Rebuilt from what this run itself kept: it was made before the'
+                + ' log existed, so these are the times its fields carry and nothing'
+                + ' that happened between them was recorded. Runs made from here on'
+                + ' write each line as it happens.');
+        }
+        return lines.join('\n');
     }
 
     function runRowHtml(r) {
@@ -1629,13 +1662,17 @@
         // ‼️ `afLive` is computed here rather than derived from the status in a
         // `when` clause: "live" is three statuses, and a menu that spelled that
         // out three times would drift the day a fourth is added.
-        const ctx = window.AFCtx.row('afTaskRun', {
+        // ‼️ M-9 — an archived row publishes no actions, because the task it
+        // describes is not there to act on. Everything it SAYS still works: the
+        // prompt, the setup, the timeline and the transcript link are the whole
+        // reason the row was kept.
+        const ctx = r.archived ? '' : window.AFCtx.row('afTaskRun', {
             taskId: r.id, afStatus: r.status, afLive: live,
             afOutput: !!r.hasOutput, afSession: !!r.sessionFile,
             afFrom: r.sourceKind || 'manual'
         });
         const tokPerMin = r.durMin && r.tokens ? Math.round(r.tokens / r.durMin) : 0;
-        return `<tr class="prow ${open ? 'open' : ''}" ${ctx}>
+        return `<tr class="prow ${open ? 'open' : ''}${r.archived ? ' arch' : ''}" ${ctx}>
             <td class="expand" data-expand="${key}" role="button" tabindex="0"
                 title="${open ? 'Fold this run away' : 'The whole anatomy of this run — how it was set up and what it produced'}">${open ? '▾' : '▸'}</td>
             ${/* ‼️ THE PROMPT, WHOLE. It was cut at 600 characters into a <pre>
@@ -1650,10 +1687,16 @@
                 '\nClick the title to see the form this run was made with, filled in and read-only.'
             ]), 'mainw')}</td>
             ${/* THE STATUS IS THE DOOR TO THE RUN'S HISTORY — M-8. */''}
-            <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>`,
-                `${C.esc(st[0])}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
+            <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>${r.archived
+                ? '<div class="muted small">archived</div>' : ''}`,
+                `${C.esc(st[0])}${r.archived ? ' · archived' : ''}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
                 window.AFTip.lines([
                     r.detail ? 'Held by: ' + r.detail + '\n' : '',
+                    r.archived
+                        ? 'This run is no longer on the list — it was deleted, cleared, or aged '
+                        + 'out past the cap, and this is its filed copy. Nothing here can be '
+                        + 'acted on; its output file was deleted with it.\n'
+                        : '',
                     runTimeline(r)
                 ]))}</td>
             <td class="from">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
@@ -1689,14 +1732,14 @@
             <td class="num">${runSpend(r)}</td>
             <td class="when"><span title="${C.esc(window.AFTime.tip(r.when, 'This row\'s clock — when it ended, or when it started, or when it was made'))}">${C.esc(rel(r.when))}</span></td>
             <td class="acts">
-                ${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
+                ${r.archived ? '' : `${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
                     <button class="mini secondary" data-task="next" data-id="${r.id}" title="move to the front">↑</button>` : ''}
                 ${r.status === 'parked' ? `<button class="mini secondary" data-task="unpark" data-id="${r.id}" title="try to start it again">retry start</button>` : ''}
                 ${r.status === 'running' ? `<button class="mini secondary" data-task="terminal" data-id="${r.id}">terminal</button>` : ''}
                 ${live ? `<button class="mini secondary" data-task="cancel" data-id="${r.id}">cancel</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="rerun" data-id="${r.id}">re-run</button>` : ''}
                 ${r.hasOutput ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
-                ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}" title="Take it off this list. It is filed in the task archive either way, and ↶ Undo puts it straight back.">✕</button>` : ''}
+                ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}" title="Take it off this list. It is filed in the task archive either way, and ↶ Undo puts it straight back.">✕</button>` : ''}`}
             </td>
         </tr>${open ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             ${/* ‼️ M-8 — THE TRIANGLE SAYS THE WHOLE SETUP. It used to say the
@@ -1710,6 +1753,43 @@
             <div class="dprompt"><b>What happened, in order</b><pre>${C.esc(runTimeline(r))}</pre></div>
             <div class="dprompt"><b>Prompt</b><pre>${C.esc(r.prompt)}</pre></div>
         </div></td></tr>` : ''}`;
+    }
+
+    /**
+     * ‼️ M-9 — THE RUNS THAT HAVE LEFT THE BOARD, IN THE TABLE THEY LEFT.
+     *
+     * Deleting a run files it in a monthly archive, and the only way to look at
+     * that archive was to open the .jsonl in the editor — the raw store, for a
+     * question ("I deleted it, now I need it") that the page above it already
+     * answers for every run still on the list. A second page would have meant a
+     * second table, a second set of filters and a second definition of every
+     * column; this is a SWITCH on the one table, so the search, the agent
+     * filter and the sort all keep working across both.
+     *
+     * The month picker only appears once the archive is on: it is the second
+     * question and nobody asks it before the first. `All months` is the default
+     * because the run being looked for is remembered by what it was, not by
+     * when it was deleted.
+     */
+    function archiveCtl(d) {
+        const a = d.archive || { on: false, month: '', months: [] };
+        const months = a.months || [];
+        if (!a.on) {
+            return `<button class="secondary" data-arch="" ${months.length ? '' : 'disabled'}
+                title="${C.esc(months.length
+                ? 'Also show the runs that have left this list — deleted, cleared, or aged out past the cap. '
+                + 'They are read from the monthly archive, they are read-only, and they answer '
+                + '"I deleted it and now I need to look at it" without opening a file. '
+                + months.length + ' month(s) filed: ' + months.join(', ')
+                : 'Nothing has been archived yet. A run reaches the archive when you delete it, '
+                + 'clear the finished ones, or the list grows past its cap.')}">⌛ Archive</button>`;
+        }
+        return `<select id="arch-month" title="Which month of the archive to read. Every month is the default: a run is remembered by what it was, not by when it left the list.">
+                <option value=""${a.month ? '' : ' selected'}>archive · all months</option>
+                ${months.slice().reverse().map(mo =>
+            `<option value="${C.esc(mo)}"${mo === a.month ? ' selected' : ''}>archive · ${C.esc(mo)}</option>`).join('')}
+            </select>
+            <button class="secondary" data-archoff="1" title="Back to the live list only.">✕ archive</button>`;
     }
 
     function runHtml(d) {
@@ -1731,7 +1811,11 @@
                 'API-equivalent price of the matched transcript. Only Claude Code reports a price; a plan-billed engine shows its token count instead, because $0.00 there would mean "free" and it does not.')}${sortCell(v, 'when', 'When',
                     false, 'When it ended — or, for a run that has not, when it started or was made.')}<th class="acts"></th></tr>`;
         const body = !sorted.length
-            ? `<tr><td colspan="10" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
+            ? `<tr><td colspan="10" class="empty">${d.runs.length
+                ? 'Nothing matches these filters.'
+                : (d.archive && d.archive.on)
+                    ? 'Nothing here — neither the live list nor the archive month you are reading holds a run.'
+                    : 'Nothing has run yet.'}</td></tr>`
             : sorted.map(runRowHtml).join('');
         return `
             <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
@@ -1771,6 +1855,7 @@
                     title="${d.undoable ? 'Put the ' + d.undoable + ' run(s) you just deleted back on the list. Their output files are gone; everything else comes back.' : 'Nothing to undo'}">↶ Undo</button>
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
+                ${archiveCtl(d)}
             </div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
             ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
@@ -1942,9 +2027,24 @@
                    one you can type into — every control is dead and says so. */
                 .ntbox.ro input, .ntbox.ro select, .ntbox.ro textarea { opacity:.75; }
                 .roflag { font-size:11px; color:var(--vscode-editorWarning-foreground,#cca700); }
+                /* The form said nothing when a kind change moved it to the other
+                   tab, and a page repainting with your form elsewhere reads as
+                   "it did not work". */
+                .ntmoved { font-size:11.5px; margin:0 0 8px; padding:5px 9px; border-radius:5px; line-height:1.5;
+                    border-left:2px solid var(--vscode-focusBorder);
+                    background:color-mix(in srgb, var(--vscode-focusBorder) 9%, transparent); }
                 tr.grouphead td { background:var(--vscode-editorWidget-background, rgba(128,128,128,.06));
                     font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; opacity:.8; padding:5px 8px; }
                 tr.prow.open td { border-bottom:none; }
+                /* ‼️ M-9 — an ARCHIVED run, read out of the monthly file. It is a
+                   real row and everything it says is true, so it is not dimmed
+                   into decoration; the left rule is what separates it from the
+                   live list, and the word "archived" under its status is what
+                   NAMES it (colour alone is not a signal — see CONVENTIONS). */
+                tr.prow.arch td:first-child { border-left:2px solid
+                    color-mix(in srgb, var(--vscode-descriptionForeground,#9d9d9d) 60%, transparent); }
+                tr.prow.arch td { background:color-mix(in srgb,
+                    var(--vscode-descriptionForeground,#9d9d9d) 6%, transparent); }
                 tr.detail td { padding:0 8px 10px 28px; }
                 .detailbox { border-left:2px solid var(--vscode-focusBorder); padding:6px 0 2px 12px; font-size:12px; }
                 .dgrid { display:flex; gap:22px; flex-wrap:wrap; margin-bottom:6px; }
@@ -2011,6 +2111,11 @@
         });
         click('[data-open]', e => post({ type: e.currentTarget.dataset.open }));
         document.querySelectorAll('[data-open][role=button]').forEach(el => key(el, () => post({ type: el.dataset.open })));
+        // ‼️ M-9 — the archive switch, its month, and the way back. The host
+        // holds which month is open, because the rows come from files it reads.
+        click('[data-arch]', e => post({ type: 'runs-archive', month: e.currentTarget.dataset.arch }));
+        click('[data-archoff]', () => post({ type: 'runs-archive' }));
+        on('#arch-month', 'change', e => post({ type: 'runs-archive', month: e.currentTarget.value }));
         click('[data-fixissues]', () => setView({ issues: true }));
         document.querySelectorAll('[data-fixissues]').forEach(el => key(el, () => setView({ issues: true })));
 

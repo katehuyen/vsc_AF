@@ -186,9 +186,17 @@ interface RunRow {
      * as an unlabelled "open session" button. The id is drawn, and it opens.
      */
     sessionId: string;
+    /**
+     * ‼️ M-9 — THIS ROW HAS LEFT THE BOARD. It comes from the monthly archive
+     * rather than the live list: everything it says is still true and nothing
+     * about it can be acted on, because the task it describes is gone. Drawn
+     * with its own badge and without the row's buttons — an archived run
+     * offering "cancel" would be a button that cannot mean anything.
+     */
+    archived?: true;
     /** The task's own record, oldest first — see FarmTask.events. This is what
      *  the Status badge opens: the whole life of the run, timestamped. */
-    events: { ts: number; kind: string; note?: string }[];
+    events: { ts: number; kind: string; note?: string; migrated?: true }[];
     /** Everything the run was CREATED with, the way the form asked for it —
      *  M-8's "let me see what I typed into each box", read-only. */
     setup: { label: string; value: string }[];
@@ -518,7 +526,7 @@ function runSetup(
     return out;
 }
 
-function buildRuns(deps: TasksDeps, now: number): RunRow[] {
+function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunRow[] {
     const m = deps.manager;
     const schedTitles = new Map(m.schedules.map(s => [s.id, s.title]));
     const trigTitles = new Map(m.triggers.map(t => [t.id, t.title]));
@@ -570,14 +578,30 @@ function buildRuns(deps: TasksDeps, now: number): RunRow[] {
         .filter(t => t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')
         .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
         .slice(0, 60);
-    return [...live, ...finished].map(row);
+    const rows = [...live, ...finished].map(row);
+    if (!archiveMonths) { return rows; }
+    // ‼️ M-9 — and the runs that have left the board, on request. They are the
+    // same rows built by the same function; `archived` is what the page draws
+    // differently, and the live ids are held back because a run restored by
+    // Undo is on BOTH lists until the tombstone reaches the file.
+    const liveIds = new Set(m.tasks.map(t => t.id));
+    const filed = m.archivedTasks(archiveMonths)
+        .filter(t => !liveIds.has(t.id))
+        .sort((a, b) => (b.endedAt ?? b.createdAt) - (a.endedAt ?? a.createdAt))
+        .map(t => ({ ...row(t), archived: true as const }));
+    return [...rows, ...filed];
 }
 
-function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
+function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<string, unknown> {
     const m = deps.manager;
     const now = Date.now();
     const plan = buildPlan(deps, now);
-    const runs = buildRuns(deps, now);
+    // ‼️ M-9 — `archive` is absent (off), '' (every month) or one month. The
+    // months themselves are always sent, because the control that turns this on
+    // has to say whether there is anything to turn on.
+    const months = m.archivedMonths;
+    const runs = buildRuns(deps, now,
+        archive === undefined ? undefined : archive ? [archive] : months);
     const limits = deps.limits();
     const gateNow = m.automationGate(new Date(now));
     const roll = rollupAutomationLog(m.automationLog, { now, windowMs: 7 * DAY_MS });
@@ -622,6 +646,9 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
         },
         plan,
         runs,
+        /** ‼️ M-9 — `on` is the switch's state, `months` is whether there is
+         *  anything behind it, `month` is which one is being shown ('' = all). */
+        archive: { on: archive !== undefined, month: archive ?? '', months },
         agents: deps.getAgents().map(a => a.name),
         perAgentLimit: limits.perAgent,
         // ‼️ THE TRIGGER FORM'S "run a workflow" OPTION WAS NEVER DRAWN. The
@@ -1096,8 +1123,31 @@ export class TasksPanel {
             // ‼️ M-8 — the undo offer is the PANEL's, not the store's: it is
             // about the gesture just made in this window, so it is added here
             // rather than being persisted where a reload would resurrect it.
-            type: 'data', data: { ...buildData(this.deps), undoable: this.lastDeleted?.length ?? 0 }
+            type: 'data',
+            data: {
+                ...buildData(this.deps, undefined, this.archive),
+                undoable: this.lastDeleted?.length ?? 0
+            }
         });
+    }
+
+    /**
+     * ‼️ M-9 — WHETHER THE ARCHIVE IS BEING SHOWN, AND WHICH MONTH.
+     *
+     * undefined = off · '' = every month it holds · 'YYYY-MM' = that one. It
+     * lives on the panel and not in the store because it is a way of LOOKING,
+     * like a filter — and reading months nobody asked for on every refresh is
+     * exactly what a task list this size should not do.
+     */
+    private archive?: string;
+
+    /** Show the archive (optionally one month), from a command or the bridge. */
+    static showArchive(deps: TasksDeps, month?: string): void {
+        TasksPanel.show(deps, 'run');
+        const p = TasksPanel.current;
+        if (!p) { return; }
+        p.archive = month ?? '';
+        p.refresh();
     }
 
     private task(id: unknown): FarmTask | undefined {
@@ -1373,7 +1423,7 @@ export class TasksPanel {
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
         index?: number; task?: unknown; item?: unknown;
-        quietFrom?: string; quietTo?: string; reason?: string;
+        quietFrom?: string; quietTo?: string; reason?: string; month?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -1520,8 +1570,19 @@ export class TasksPanel {
                 // ‼️ M-8 — a deleted row is filed and comes back. `deleteTask`
                 // archives it; the copy kept here is the single-level undo, the
                 // same shape the Notices page uses.
+                //
+                // ‼️ AND A FAILED ARCHIVE LEAVES THE ROW WHERE IT IS. The append
+                // is the commit point now, so a throw here means nothing was
+                // deleted — which is the one outcome that must be said out loud
+                // rather than looking like a row that quietly went nowhere.
                 else if (msg.act === 'delete' && t.status !== 'running') {
-                    this.lastDeleted = [m.deleteTask(t)];
+                    try {
+                        this.lastDeleted = [m.deleteTask(t)];
+                    } catch (e) {
+                        void vscode.window.showErrorMessage(
+                            'Agent Farm: the run was NOT deleted — its archive could not be written, '
+                            + `so nothing was removed. ${String(e)}`);
+                    }
                 }
                 else if (msg.act === 'rerun' && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
                 else if (msg.act === 'next' && t.status === 'queued') { m.runTaskNext(t); }
@@ -1589,6 +1650,15 @@ export class TasksPanel {
                     m.restoreTasks(this.lastDeleted);
                     this.lastDeleted = undefined;
                 }
+                this.refresh();
+                break;
+            }
+            // ‼️ M-9 — the archive is a way of LOOKING at this table, so it is a
+            // switch on the table and not a second page. `month` absent turns it
+            // off; '' is every month it holds.
+            case 'runs-archive': {
+                const month = typeof msg.month === 'string' ? msg.month : undefined;
+                this.archive = month;
                 this.refresh();
                 break;
             }
@@ -1696,7 +1766,13 @@ export class TasksPanel {
                 if (await this.confirm(
                     `Clear ${n} finished run(s)? History is archived first; output files are deleted.`,
                     'Clear')) {
-                    m.clearFinished();
+                    // ‼️ M-8 — "archived first" is now literally true, so a
+                    // failure means nothing was cleared. Said, not swallowed.
+                    try { m.clearFinished(); } catch (e) {
+                        void vscode.window.showErrorMessage(
+                            'Agent Farm: nothing was cleared — the archive could not be written. '
+                            + String(e));
+                    }
                 }
                 this.refresh();
                 break;
@@ -1738,8 +1814,14 @@ export class TasksPanel {
             // One row of an in-page picker was pressed. The act names what kind
             // of list it was; the id is the row's own.
             case 'chooser-pick':
-                if (msg.act === 'history' && msg.id) {
-                    run('vscode.open', vscode.Uri.file(path.join(m.historyDir, msg.id)));
+                // ‼️ M-9 — picking a month READS IT, in the table this page
+                // already draws runs with. It used to open the raw .jsonl in an
+                // editor: the store, not a surface, for the one question
+                // ("I deleted it and I need to look at it") the row above it
+                // answers in full for everything still on the list.
+                if (msg.act === 'history' && typeof msg.id === 'string') {
+                    this.archive = String(msg.id).replace(/\.jsonl$/, '');
+                    this.refresh();
                 }
                 break;
             case 'export-md':

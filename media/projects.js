@@ -3360,19 +3360,13 @@
      */
     function blCapResetHtml(cap) {
         const set = BL_CAP_AXES.filter(a => String(cap[a.k] || '') !== a.empty);
-        // ‼️ U-41 — the DRAGGED HEIGHT is one of the things this puts back, so
-        // it is one of the things that decides whether there is anything to put
-        // back. Without it the ↺ sat dimmed and inert on a card whose box had
-        // been pulled to half the screen.
-        const tall = !!String(cap.boxH || '');
-        if (!set.length && !tall) {
+        if (!set.length) {
             return `<span class="pj-bl-capreset" style="opacity:.2;cursor:default"
-                title="The five boxes, the queue place and the box's height are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
+                title="The five boxes and the queue place are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
         }
-        const now = set.map(a => `${a.label}: ${cap[a.k]}`)
-            .concat(tall ? [`box height: ${cap.boxH}`] : []).join(' · ');
+        const now = set.map(a => `${a.label}: ${cap[a.k]}`).join(' · ');
         return `<span class="pj-bl-capreset" data-act="blCapReset"
-            title="Put the capture card back to how it starts — ${C.esc(now)}. The boxes keep their last value on purpose, so filing a run of items into one area costs one choice, and the box keeps the height you dragged it to; this is the way out when the next item is a different kind of thing. What you have WRITTEN is not touched.">↺</span>`;
+            title="Put the capture boxes back to blank — ${C.esc(now)}. They keep their last value on purpose, so filing a run of items into one area costs one choice; this is the way out when the next item is a different kind of thing. What you have WRITTEN is not touched.">↺</span>`;
     }
 
     /**
@@ -4301,6 +4295,7 @@
                           this is rather than levelling them. */''}
                     ${closed && i.closedAt
                 ? `<span class="pj-bl-m closedat" title="${C.esc(blClosedTip(i))}">✅ ${C.esc(blClosedShort(i.closedAt))}</span>` : ''}
+                    ${blRoundHtml(i)}
                     ${blPartOfHtml(i, rel)}
                     ${blPartsHtml(i, rel)}
                     ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
@@ -4346,6 +4341,42 @@
                 </span>
             </span>
         </div>`;
+    }
+
+    /**
+     * ‼️ X-36 — HOW MANY TIMES THIS HAS BEEN ASKED FOR, ON THE ROW ITSELF.
+     *
+     * Reopening an item snapshots what it said, bumps its round and files the
+     * old wording — and every one of those facts was shown somewhere the person
+     * reopening it was not: the Track tab, Backloglog.md, and two bridge ops
+     * that only agents call. So the gesture completed perfectly and the row
+     * came back looking untouched, which reads as "nothing happened".
+     *
+     * It is the same badge the Track card carries, deliberately: one fact, one
+     * appearance, wherever it is drawn. The panel holds the earlier wordings in
+     * full and dated, because the whole point of the feature is that the user
+     * never has to keep them by hand — so they have to be READABLE without
+     * leaving the row, and `tip-block` keeps the panel inside the page.
+     */
+    function blRoundHtml(i) {
+        const n = Number(i.round) || 1;
+        if (n < 2) { return ''; }
+        const earlier = i.earlierRounds || [];
+        return window.AFTip.wrap(
+            `<span class="pj-trk-round">round ${n}</span>`,
+            `${i.code || '📥'} · reopened ${n - 1} time(s) — this line is the LATEST asking`,
+            window.AFTip.lines(earlier.length
+                ? [
+                    'What it said on the earlier rounds — kept for you, so the line '
+                    + 'above can just be rewritten:', '',
+                    ...earlier.map((r, k) => `Round ${k + 1} — asked ${r.at}`
+                        + (r.guess ? ' (as first seen after an edit outside — this MAY be the new wording)' : '')
+                        + (r.cut ? ' (cut — the request was longer than the ledger keeps)' : '')
+                        + `:\n${r.text}\n`)
+                ]
+                : ['Reopened before the system kept the earlier wording, so what was '
+                    + 'asked the first time is not recorded.']),
+            'tip-block');
     }
 
     /**
@@ -6815,12 +6846,22 @@
             });
         }
 
+        // ‼️ X-36 — REOPENING TAKES YOU TO THE ROW IT CHANGED. The state write
+        // is answered by a flash line, and this page repaints on every host
+        // push — so the one sentence saying "round 2, your old wording is kept"
+        // could be gone before it was read, which is exactly the "nothing
+        // happened" this item was reopened over. The round badge on the row is
+        // the durable half; this is the half that points at it.
+        const blStatePost = (el, state) => {
+            const row = blRow(el);
+            if (state === 'open') { blJump = (row && row.dataset.key) || ''; }
+            blPost('backlogState', row, { state });
+        };
         document.querySelectorAll('[data-blcheck]').forEach(el =>
             el.addEventListener('click', () =>
-                blPost('backlogState', blRow(el), { state: el.checked ? 'done' : 'open' })));
+                blStatePost(el, el.checked ? 'done' : 'open')));
         document.querySelectorAll('[data-blstate]').forEach(el =>
-            el.addEventListener('click', () =>
-                blPost('backlogState', blRow(el), { state: el.dataset.blstate })));
+            el.addEventListener('click', () => blStatePost(el, el.dataset.blstate)));
         // ▲/▼ and every row of their step menus are the same message: which way,
         // and how far. `by` is absent on top/bottom, where "how far" is the end.
         document.querySelectorAll('[data-blmove]').forEach(el =>
@@ -7273,16 +7314,12 @@
                     // by the next render, which this page does constantly.
                     const cap = blCapture();
                     for (const a of BL_CAP_AXES) { cap[a.k] = a.empty; }
-                    // ‼️ U-41 — AND THE HEIGHT THE BOX WAS DRAGGED TO. It is
-                    // kept in the same draft as the five boxes and for the same
-                    // reason (see blCapture `boxH`), so leaving it behind made
-                    // "put this back to how it starts" true of everything on
-                    // the card except the biggest thing on it. Clearing the
-                    // value is enough: the box is redrawn from the draft below,
-                    // and an empty `boxH` means the stylesheet's own min-height.
-                    // ‼️ THE TEXT IS STILL NOT TOUCHED — the height is a shape,
-                    // the words are work.
-                    cap.boxH = '';
+                    // ‼️ THE DRAGGED HEIGHT IS NOT AN AXIS AND IS NOT TOUCHED.
+                    // It belongs to the writing surface, like the words: a box
+                    // pulled taller to write a long item is part of writing it,
+                    // and clearing it here made the box elastic again — from
+                    // then on it grew and shrank with the column beside it every
+                    // time a select was picked. See blCapture `boxH`.
                     render();
                     break;
                 }

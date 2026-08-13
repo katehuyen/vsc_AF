@@ -884,6 +884,11 @@ query('[data-expand="run:r3"]')[0].click();
     ok('…changing it redraws the kind-specific block', /id="nt-time"/.test(html()));
     ok('‼️ …and the draft survives the change — that is the whole point',
         html().includes('sabah raporunu yaz'));
+    // ‼️ …AND IT SAYS THE FORM MOVED. A task lives on Run and a schedule on
+    // Plan, so the form really does change tabs; the page repainting with the
+    // form somewhere else is what got reported as "it still cannot switch".
+    ok('‼️ …and the tab it moved to is SAID, not left to be noticed',
+        /class="ntmoved"/.test(html()) && html().includes('this form moved from the'));
     sandbox.document.getElementById('nt-cancel').click();
     onMessage.forEach(fn => fn({
         type: 'x', data: { type: 'plan-compose', kind: 'schedule', seed: { mode2: 'edit', id: 's1', title: 'x' } }
@@ -1628,6 +1633,54 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         /- Permissions: \$\{note\}/.test(tasks));
     ok('‼️ …and that the json contract was not applied, where a reader will find it',
         /json was NOT applied/.test(tasks));
+}
+
+// ------------------------------------------- M-9: the archive, in this table
+//
+// "I deleted it and now I need to look at it" was answered by opening the raw
+// .jsonl in an editor. It is a switch on the Runs table now, so the search, the
+// filters and the sort all keep working — and an archived row publishes no
+// actions, because the task it describes is not there to act on.
+clickData('tab', 'run');
+{
+    const post0 = posted.length;
+    clickData('arch', '');
+    ok('‼️ M-9 — the Runs tab offers the archive, and asks the host for it',
+        posted.slice(post0).some(p => p.type === 'runs-archive' && p.month === ''));
+
+    onMessage.forEach(fn => fn({
+        type: 'x', data: {
+            type: 'data', data: Object.assign({}, DATA, {
+                archive: { on: true, month: '', months: ['2026-07', '2026-08'] },
+                runs: DATA.runs.concat([{
+                    id: 'a1', title: 'filed run', agentName: 'manager', mode: 'headless',
+                    status: 'done', source: 'you', sourceKind: 'manual', when: NOW - 9e6,
+                    detail: '', hasOutput: false, archived: true, prompt: 'the filed prompt',
+                    events: [{ ts: NOW - 9e6, kind: 'created', note: 'queued — by hand', migrated: true }]
+                }])
+            })
+        }
+    }));
+    ok('…and once it is on, the month picker appears with the months it holds',
+        /id="arch-month"/.test(html()) && html().includes('archive · 2026-08'));
+    ok('…and a way back to the live list only', /data-archoff/.test(html()));
+    const arch = (html().match(/<tr class="prow[^"]*arch[^"]*"[\s\S]*?<\/tr>/) || [''])[0];
+    ok('‼️ …the archived run is a REAL row — its prompt and title are all there',
+        arch.includes('filed run') && html().includes('the filed prompt'));
+    ok('‼️ …and it says it is archived, in words and not by colour alone',
+        arch.includes('archived'));
+    ok('‼️ …and it publishes NO actions: nothing on it can be acted on',
+        !/data-task="/.test(arch) && !/data-af-ctx/.test(arch));
+    ok('‼️ M-8 — a rebuilt timeline line says it was rebuilt, rather than passing for a witness',
+        html().includes('Rebuilt from what this run itself kept'));
+
+    const post1 = posted.length;
+    const mo = sandbox.document.getElementById('arch-month');
+    mo.value = '2026-07';
+    mo.fire('change');
+    ok('…and picking a month asks the host for that month',
+        posted.slice(post1).some(p => p.type === 'runs-archive' && p.month === '2026-07'));
+    onMessage.forEach(fn => fn({ type: 'x', data: { type: 'data', data: DATA } }));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -2977,6 +2977,18 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ …and the archive can be READ, which is what "where do I look at a deleted task" needs',
             /const month = optStr\(args, 'month'\)/.test(hist)
             && /prompt: t\.prompt, events: t\.events \?\? \[\]/.test(hist));
+        // ‼️ M-8 (reopened) — and it reads it through the ONE reader. It parsed
+        // the file itself, so an id the archive holds twice (delete → Undo →
+        // delete) came back twice here and once everywhere else.
+        ok('‼️ …through the same reader the page and the statistics use, so an id filed twice is one run',
+            /taskManager\.archivedTasks\(\[month\]\)/.test(hist)
+            && !/JSON\.parse\(line\)/.test(hist));
+        const histOpen = at('tasks.historyOpen');
+        ok('‼️ M-9 — and the archive has a SURFACE an agent can open, not just JSON',
+            /TasksPanel\.showArchive\(tasksDeps, month\)/.test(histOpen)
+            && /taskManager\.archivedMonths/.test(histOpen));
+        ok('…and it refuses a month nothing was filed in, saying which ones exist',
+            /months\.includes\(month\)/.test(histOpen) && /months held/.test(histOpen));
 
         // ‼️ And the commands that used to ask in boxes now open the form.
         for (const cmd of ['addSchedule', 'editSchedule', 'addTrigger', 'editTrigger', 'renameWorkflow']) {

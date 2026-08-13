@@ -222,6 +222,78 @@ const mk = (name, opts) =>
     m.dispose();
 }
 
+// ---------------------------------------- M-8 (reopened): the runs that were
+// already there get a history too, and the archive stops double-counting
+{
+    const { migrateTaskEvents } = require(path.join(ROOT, 'out/core/tasks.js'));
+    const base = {
+        id: 't1', agentId: 'a', agentName: 'yazar', title: 'iş', prompt: 'p',
+        status: 'queued', mode: 'headless', createdAt: 1000
+    };
+
+    const parked = Object.assign({}, base, { deferredReason: 'fleet daily budget spent ($388.91 of $300.00)' });
+    check('‼️ M-8: a task made before the log existed still gets one',
+        migrateTaskEvents(parked) && kinds(parked).join() === 'created,parked');
+    check('‼️ …and it carries the ceiling that is holding it RIGHT NOW — the thing being asked about',
+        parked.events[1].note.includes('daily budget'));
+    check('‼️ …and every rebuilt line SAYS it was rebuilt, because it is not a witness',
+        parked.events.every(e => e.migrated === true));
+
+    const ran = Object.assign({}, base, {
+        status: 'done', startedAt: 2000, endedAt: 5000, fromSchedule: 's1'
+    });
+    migrateTaskEvents(ran);
+    check('…a run that finished gets its three moments in order',
+        kinds(ran).join() === 'created,started,finished'
+        && ran.events[0].ts === 1000 && ran.events[2].ts === 5000);
+    check('…and where it came from is the one thing the timestamps cannot say',
+        ran.events[0].note === 'queued — a schedule');
+    const stopped = Object.assign({}, base, { status: 'cancelled', endedAt: 5000 });
+    migrateTaskEvents(stopped);
+    check('…a cancelled run says cancelled, not "finished — cancelled"',
+        kinds(stopped).join() === 'created,cancelled');
+
+    // Idempotent: a task that HAS a record is never rewritten, so this can run
+    // on every load and the first save makes it permanent.
+    const witnessed = Object.assign({}, base, { events: [{ ts: 9, kind: 'created' }] });
+    check('‼️ …and a task that already has a record is left exactly as it was',
+        migrateTaskEvents(witnessed) === false && witnessed.events.length === 1);
+
+    // The manager does it on load, once, for the tasks it finds in the store.
+    const store = path.join(tmp, 'mig.json');
+    fs.writeFileSync(store, JSON.stringify({
+        tasks: [Object.assign({}, base, { id: 'old', status: 'done', endedAt: 4000 })]
+    }), 'utf8');
+    const m2 = new TaskManager(store, agents, () => false, () => '', {});
+    check('‼️ M-8: loading the store rebuilds the records it finds without one',
+        kinds(m2.tasks[0]).join() === 'created,finished');
+    const written = JSON.parse(fs.readFileSync(store, 'utf8'));
+    check('…and the runner window writes them down, so it happens once',
+        (written.tasks[0].events || []).length === 2);
+    m2.dispose();
+}
+
+// ---------------------------------------- M-8/M-9: delete, undo, and the file
+{
+    const m = mk('arch', {});
+    const t = m.addTask(agent, 'silinecek', 'iş', 'headless');
+    t.status = 'done'; t.endedAt = Date.now();
+    m.deleteTask(t);
+    check('‼️ M-9: a deleted run is readable again, as a task and not as a file',
+        m.archivedTasks().filter(x => x.id === t.id).length === 1);
+    check('…and the month it went into is named', m.archivedMonths.length === 1);
+
+    m.restoreTasks([t]);
+    check('‼️ M-8: Undo takes it back OUT of the archive — it is on the live list again',
+        m.archivedTasks().filter(x => x.id === t.id).length === 0
+        && m.tasks.some(x => x.id === t.id));
+
+    m.deleteTask(m.tasks.find(x => x.id === t.id));
+    check('‼️ …and deleting it a second time files it once, not twice',
+        m.archivedTasks().filter(x => x.id === t.id).length === 1);
+    m.dispose();
+}
+
 // ------------------------------------------------ the window that cannot fire
 {
     const follower = mk('follower', { isRunner: () => false });

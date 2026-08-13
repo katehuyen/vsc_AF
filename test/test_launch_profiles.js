@@ -20,7 +20,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     applyProfile, deleteProfile, describeProfile, editProfile, profileFrom,
-    renameProfile, replaceProfile, saveProfile, PROFILE_KEYS
+    profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile,
+    PROFILE_KEYS
 } = require(path.join(__dirname, '..', 'out', 'core', 'launchProfiles.js'));
 
 const names = list => list.map(p => p.name).join(',');
@@ -146,6 +147,72 @@ const names = list => list.map(p => p.name).join(',');
         /^Codex/.test(describeProfile({ name: 'x', engine: 'codex', model: 'gpt-5.1-codex-max' })));
     ok('…and a profile that stores nothing says so instead of drawing an empty line',
         describeProfile({ name: 'boş' }) === 'CLI defaults');
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ A-11 (reopened) — WHERE IT OPENS IS PART OF THE SETUP.
+//
+// "You save the profile with Console picked and it loads back as a terminal."
+// The launcher has had a Where row for a long time; the profile had no such
+// field, so saving read it nowhere, loading wrote it nowhere, and the edit
+// picker did not even mention it. The user could not tell whether it was being
+// stored and ignored or never stored at all: it was never stored at all.
+{
+    const launcher = { engine: 'codex', model: 'gpt-5.1-codex-max', effort: 'high' };
+    const con = profileFrom(launcher, 'gece', 'console');
+    ok('‼️ a profile saved on the Console stores the Console',
+        profileSurface(con) === 'console');
+    ok('…and a profile saved on a terminal stores the terminal',
+        profileSurface(profileFrom(launcher, 'gece', 'terminal')) === 'terminal');
+    ok('‼️ …and the row SAYS it, because it is the dimension a reader notices first',
+        /in the Console/.test(describeProfile(con)));
+    ok('…the terminal reads as itself', /in a terminal/.test(describeProfile(
+        profileFrom(launcher, 'g', 'terminal'))));
+
+    // The compatibility rule: every profile saved before this says nothing, and
+    // must go on saying nothing rather than being read as "terminal".
+    ok('‼️ a profile that was never told where says NOTHING, not "terminal"',
+        profileSurface(profileFrom(launcher, 'eski')) === undefined
+        && !('surface' in profileFrom(launcher, 'eski')));
+    ok('…and its description does not invent a surface for it',
+        !/terminal|Console/.test(describeProfile(profileFrom(launcher, 'eski'))));
+    ok('…a value that is neither is not stored',
+        profileSurface(profileFrom(launcher, 'x', 'nowhere')) === undefined);
+    ok('a profile that stores ONLY a surface still describes itself',
+        describeProfile({ name: 'x', surface: 'console' }) === 'in the Console');
+
+    // Replace is "make this profile mean what I have in front of me", and the
+    // surface is part of what is in front of you.
+    const list = [profileFrom(launcher, 'gece', 'terminal')];
+    const rep = replaceProfile(list, 'gece', { model: 'opus' }, 'console');
+    ok('replace carries the launcher\'s current surface too',
+        profileSurface(rep[0]) === 'console' && rep[0].model === 'opus');
+    ok('…and replacing from a launcher with no surface clears it rather than keeping a stale one',
+        profileSurface(replaceProfile(list, 'gece', { model: 'opus' })[0]) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ A-11 (reopened) — ONE NAME ONE PROFILE, BUT NEVER SILENTLY.
+//
+// The audit found it: renaming A to B deleted B without a word. The end state
+// is right — the launcher picks by name — but a caller has to be able to SEE
+// the row it is about to destroy, or the rule is just data loss with a reason.
+{
+    const list = [
+        profileFrom({ model: 'opus' }, 'gece'),
+        profileFrom({ model: 'sonnet' }, 'sabah')
+    ];
+    ok('‼️ the row a new name would destroy is named before anything is written',
+        (profileNameClash(list, 'sabah', 'gece') || {}).name === 'sabah');
+    ok('…a name nobody owns is no clash', profileNameClash(list, 'öğle', 'gece') === undefined);
+    ok('…and keeping your own name is not a clash with yourself',
+        profileNameClash(list, 'gece', 'gece') === undefined);
+    ok('…nor is empty, which is refused elsewhere for its own reason',
+        profileNameClash(list, '   ', 'gece') === undefined);
+    // The list function itself is unchanged: the guard is the caller's, so the
+    // rule still holds once the user (or an agent with overwrite:true) says yes.
+    ok('once it is allowed, the rule still collapses the two rows into one',
+        names(editProfile(list, 'gece', { name: 'sabah', model: 'opus' })) === 'sabah');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

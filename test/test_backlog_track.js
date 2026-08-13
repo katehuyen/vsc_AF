@@ -69,6 +69,10 @@ const RECORDS = [
         s.runs.length === 2 && s.runs[0].session === '3f2a1b2c-aaaa');
     ok('a session collects its turns', s.runs[0].turns.join() === '11,12,13');
     ok('the turn count is across every session', s.turns === 4);
+    // ‼️ P-14 — three figures, and none of them made up. See below for the case
+    // that made this necessary.
+    ok('…and it says how many SESSIONS separately from how many turns',
+        s.sessions === 2 && s.turnsUnknown === 0);
     ok('the closing event is found', s.closed && s.closed.turn === 3);
     ok('the stamp is what goes on the backlog line', T.closingStamp(s) === '9c4d1f2a#3');
     ok('an item nobody touched summarises to nothing',
@@ -302,6 +306,95 @@ const RECORDS = [
 }
 
 // ---------------------------------------------------------------------------
+// ‼️ P-14 (reopened) — "EITHER MAKE THE TURN WORK OR TAKE IT AWAY."
+//
+// The badge said "turn?" on rows that named their session, gave its id and
+// linked to it — and the same row's summary said "1 turn". Both halves were
+// wrong in the same way: nobody was ASKING which turn, and where the answer was
+// missing a 1 was invented to fill the column.
+// ---------------------------------------------------------------------------
+{
+    const T0 = Date.UTC(2026, 7, 1, 9, 0);
+    const MIN = 60000;
+
+    // (1) An unknown turn is not one turn.
+    {
+        const recs = [
+            { code: 'K-8', event: 'done', ts: T0, by: 'agent', session: 'sess-a', uncertain: 'turn' }
+        ];
+        const s = T.summarizeCode('K-8', recs);
+        ok('‼️ a session whose turn is unknown contributes NO turns to the count',
+            s.turns === 0);
+        ok('…but it is still a session that touched the item',
+            s.sessions === 1 && s.turnsUnknown === 1);
+        // The line that made the contradiction visible: "[turns:: 1]" printed
+        // next to a row that also said the turn was not recorded.
+        const log = T.renderBacklogLog({
+            project: 'Demo',
+            items: [{
+                code: 'K-8', text: 'bir şey', state: 'done', line: 3, area: 'K',
+                section: 'K — Console', kinds: [], priority: 'normal', blockedBy: [], children: []
+            }],
+            records: recs
+        });
+        // Scoped to the item's own DATA line: the header comment carries an
+        // example block that mentions [turns:: 5] on purpose.
+        const dataLine = (log.match(/^- \*\*K-8\*\*.*$/m) || [''])[0];
+        ok('‼️ …and the log stops printing a turn count it does not have',
+            !/\[turns::/.test(dataLine) && /\[sessions:: 1\]/.test(dataLine));
+    }
+
+    // (2) The repair. Most "turn?" rows were never unknowable — the session is
+    // on the record and the transcript timestamps every turn, so the turn that
+    // was open at that moment is a lookup. Anything the lookup cannot answer
+    // keeps its doubt: that is the difference between resolving and guessing.
+    {
+        const recs = [
+            { code: 'K-8', event: 'touch', ts: T0 + 5 * MIN, by: 'agent', session: 'sess-a', uncertain: 'turn' },
+            { code: 'K-8', event: 'done', ts: T0 + 25 * MIN, by: 'agent', session: 'sess-a', uncertain: 'turn' },
+            // no session at all — genuinely unknowable, and it stays that way
+            { code: 'K-8', event: 'reopen', ts: T0 + 30 * MIN, by: 'panel', uncertain: 'none' },
+            // a different doubt, about something else entirely
+            { code: 'K-8', event: 'touch', ts: T0 + 35 * MIN, by: 'agent', session: 'sess-b', uncertain: 'multi' }
+        ];
+        // Turn 1 opened at T0, turn 2 at +20min.
+        const boundaries = { 'sess-a': [T0, T0 + 20 * MIN] };
+        const resolve = (session, ts) => {
+            const list = boundaries[session];
+            if (!list) { return undefined; }
+            let n = 0;
+            for (let i = 0; i < list.length; i++) { if (list[i] <= ts) { n = i + 1; } }
+            return n || undefined;
+        };
+        const fixed = T.repairTurns(recs, resolve);
+        ok('‼️ a row whose session and moment are both known gets its real turn',
+            fixed[0].turn === 1 && fixed[1].turn === 2);
+        ok('…and stops being uncertain, because it is not',
+            !fixed[0].uncertain && !fixed[1].uncertain);
+        ok('‼️ a row with no session is left exactly as it was',
+            fixed[2].uncertain === 'none' && fixed[2].turn === undefined);
+        ok('‼️ …and a doubt about something ELSE is never touched',
+            fixed[3].uncertain === 'multi');
+        ok('the summary then counts two real turns in one session',
+            T.summarizeCode('K-8', fixed).turns === 2);
+
+        // A lookup that answers nothing must change nothing — including the
+        // array identity, so a repair pass on every read costs nothing.
+        ok('a repair that finds nothing returns the very same list',
+            T.repairTurns(recs, () => undefined) === recs);
+        // A moment before the first turn opened is not turn 1.
+        ok('‼️ a record older than the session it names is not forced into turn 1',
+            T.repairTurns(
+                [{ code: 'K-8', event: 'done', ts: T0 - MIN, by: 'agent', session: 'sess-a', uncertain: 'turn' }],
+                resolve)[0].uncertain === 'turn');
+        // A record that already knows its turn is not re-derived.
+        const already = [{ code: 'K-8', event: 'done', ts: T0 + 25 * MIN, by: 'agent', session: 'sess-a', turn: 7 }];
+        ok('…and one that already carries a turn is left alone',
+            T.repairTurns(already, resolve)[0].turn === 7);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ‼️ X-36 — A REOPENED ITEM CARRIES ITS ROUNDS
 //
 // A backlog line holds one text: whatever it says now. Reopening handed the old
@@ -329,6 +422,33 @@ const RECORDS = [
         const shut = T.reconcileOutside([item('done', 'x')], [{ code: 'K-8', event: 'doing', ts: T0, by: 'agent' }], T0);
         ok('…and a close carries none — a round is a thing you ask for again',
             shut.length === 1 && !shut[0].prevText);
+
+        // ‼️ X-36 (reopened) — AND IT SAYS THAT IT MIGHT BE THE NEW WORDING.
+        // With no snapshot, the file is read AFTER the edit: if the box was
+        // un-ticked and the line rewritten in one save, what we find IS the
+        // new request. It is still kept (the ordinary case is an un-ticked box
+        // and untouched words) but it is kept SAID, never as a plain fact.
+        ok('‼️ a reopen read with nothing to compare against is flagged, not asserted',
+            back[0].prevGuess === true);
+    }
+
+    // (1b) ‼️ X-36 (reopened) — THE SNAPSHOT CLOSES THE RACE THE AUDIT FOUND.
+    // The reconciler now gets the line as it was on the previous pass, so
+    // un-ticking AND rewriting in one Obsidian save files the OLD wording.
+    {
+        const closed = [{ code: 'K-8', event: 'done', ts: T0, by: 'agent' }];
+        const before = T.snapshotBacklog([item('done', 'İLK İSTEĞİM: arama bulmuyor')]);
+        const after = [item('open', 'BU TURUN YENİ SÖZLERİ: hâlâ bulmuyor')];
+        const back = T.reconcileOutside(after, closed, T0 + 1000, before);
+        ok('‼️ the round kept is what the line said BEFORE the edit, not after',
+            back.length === 1 && back[0].prevText === 'İLK İSTEĞİM: arama bulmuyor');
+        ok('…and with a snapshot behind it, it is not a guess any more',
+            !back[0].prevGuess);
+        ok('the snapshot is by code, and skips what has none',
+            before.get('K-8') === 'İLK İSTEĞİM: arama bulmuyor' && before.size === 1);
+        // The snapshot must not resurrect a code that is not being reopened.
+        ok('…and it changes nothing about an item the ledger already explains',
+            T.reconcileOutside([item('done', 'x')], closed, T0, before).length === 0);
     }
 
     // (2) The summary counts the rounds however they were recorded, and can
@@ -367,6 +487,28 @@ const RECORDS = [
         ok('…and the data line says which go it is on', /\[round:: 3\]/.test(one));
         const twice = T.renderBacklogLog({ project: 'Demo', items, records: recs, existing: one });
         ok('‼️ …and a rebuild does not grow a second copy of them', one === twice);
+
+        // ‼️ X-36 (reopened) — A DOUBTFUL ROUND SAYS SO IN THE LOG. A history
+        // that hides which of its lines it is unsure of is worse than a shorter
+        // one: the reader takes all of it on the same trust.
+        const doubted = T.renderBacklogLog({
+            project: 'Demo', items,
+            records: recs.slice(0, 3).concat([{
+                code: 'K-8', event: 'reopen', ts: T0 + 3000, by: 'outside',
+                prevText: 'belki yeni belki eski', prevGuess: true
+            }])
+        });
+        ok('‼️ a round that may be the new wording is marked in the log',
+            /may be the new wording/.test(doubted));
+        const cut = T.renderBacklogLog({
+            project: 'Demo', items,
+            records: recs.slice(0, 3).concat([{
+                code: 'K-8', event: 'reopen', ts: T0 + 3000, by: 'outside',
+                prevText: 'çok uzundu…', prevCut: true
+            }])
+        });
+        ok('…and one that hit the ledger ceiling says that instead of trailing off',
+            /cut — the request was longer/.test(cut));
         ok('…nor a third', T.renderBacklogLog({ project: 'Demo', items, records: recs, existing: twice }) === twice);
         ok('…and an item nobody reopened says nothing about rounds',
             !/\[round::/.test(T.renderBacklogLog({

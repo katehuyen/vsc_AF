@@ -201,9 +201,28 @@ export function describeLaunch(o: LaunchOptions): string {
     return bits.length ? bits.join(' · ') : 'CLI defaults';
 }
 
+/**
+ * ‼️ WHERE A LAUNCH RUNS — a dimension of the launch, not of the command line.
+ *
+ * It is declared here rather than inside `activate()` because it is part of a
+ * saved SETUP (see `LaunchProfile.surface`): a profile that stored the engine,
+ * the model and the permissions but not whether the session opens in the
+ * Console or in a terminal reproduced everything about a launch except the
+ * window it happens in.
+ */
+export type RunSurface = 'terminal' | 'console';
+
 /** A saved, named launch setup (`agentFarm.launchProfiles`). */
 export interface LaunchProfile extends LaunchOptions {
     name: string;
+    /**
+     * ‼️ Console or terminal, saved WITH the setup. Absent means the profile
+     * predates this and says nothing — the launcher then keeps whatever it is
+     * already set to, which is what such a profile has always done. It is not
+     * a `LaunchOptions` field because it is not a flag: it decides which
+     * surface starts the session, not what is on its command line.
+     */
+    surface?: RunSurface;
 }
 
 /** The always-applied defaults (`agentFarm.launchDefaults`) — the three

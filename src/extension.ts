@@ -108,11 +108,12 @@ import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
-    LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, validateLaunch, withDefaults
+    LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, RunSurface,
+    validateLaunch, withDefaults
 } from './core/launch';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, profileFrom,
-    renameProfile, replaceProfile, saveProfile
+    profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
 import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
@@ -162,9 +163,10 @@ import {
 } from './core/projectDocs';
 import {
     appendTrack, backfillFromHits, closingAttribution, closingStamp, parseBacklogLog, reconcileOutside,
-    readTrackFile, renderBacklogLog, summarizeCode, shortSession, trackedCodes, trackFileIn,
-    TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TRACK_NOTE_MAX, TrackDoubt, TrackEvent, TrackRecord,
-    TrackSource, TrackSummary, turnSpan
+    readTrackFile, renderBacklogLog, repairTurns, snapshotBacklog, summarizeCode, shortSession,
+    trackedCodes, trackFileIn,
+    TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TRACK_NOTE_MAX, TRACK_PREV_MAX, TrackDoubt, TrackEvent,
+    TrackRecord, TrackSource, TrackSummary, turnSpan
 } from './core/backlogTrack';
 import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
@@ -3399,11 +3401,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(fs.existsSync(file), `nothing archived for ${month} — call this op bare to see which months exist.`);
                 const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0
                     ? Math.trunc(Number(args.limit)) : 50;
-                const rows: FarmTask[] = [];
-                for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-                    if (!line.trim()) { continue; }
-                    try { rows.push(JSON.parse(line) as FarmTask); } catch { /* skip a corrupt line */ }
-                }
+                // ‼️ M-8 — the SAME reading the page and the statistics get. This
+                // used to parse the lines itself, so an id the file holds twice
+                // (delete → Undo → delete) came back twice here and once
+                // everywhere else, and a run put back by Undo was still listed
+                // as archived. One reader, one answer.
+                const rows = taskManager.archivedTasks([month]);
                 return rows.slice(-limit).reverse().map(t => ({
                     id: t.id, title: t.title, agent: t.agentName, status: t.status, mode: t.mode,
                     createdAt: t.createdAt, startedAt: t.startedAt ?? null, endedAt: t.endedAt ?? null,
@@ -3411,6 +3414,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     prompt: t.prompt, events: t.events ?? [],
                     ...bridgeDimsOut(t, (pid: string) => projectStore.get(pid)?.name)
                 }));
+            }
+        },
+        {
+            op: 'tasks.historyOpen',
+            describe: 'Open the Tasks page with the ARCHIVE switched on, so the runs that have left the '
+                + 'board are drawn in the Runs table beside the live ones (read-only, badged). This is the '
+                + 'surface for "I deleted that run and now I need to look at it"; tasks.history is the same '
+                + 'data as JSON. args: month? ("YYYY-MM" — omit for every month it holds)',
+            handler: (args) => {
+                const month = optStr(args, 'month');
+                need(!month || /^\d{4}-\d{2}$/.test(month), 'month is "YYYY-MM" — omit it to read every month.');
+                const months = taskManager.archivedMonths;
+                need(!month || months.includes(month),
+                    `nothing archived for ${month} — months held: ${months.join(', ') || 'none'}`);
+                TasksPanel.showArchive(tasksDeps, month);
+                return { shown: month || 'all', months };
             }
         },
         {
@@ -5766,7 +5785,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.check',
-            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. Pass `note` to say what was done, how it was closed and anything a reader should watch out for later; that is the closing note a person reads three months from now, and it has room to be one. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. ‼️ `note` is REQUIRED when you close one (state done or cancelled) and it is checked, not merely asked for: say what was done, how it was closed and anything a reader should watch out for later. That is the closing note a person reads three months from now, it has room to be a real one, and every surface that shows a closure shows it — a closure with no note is the one thing nothing else can reconstruct, so it is refused here. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -5777,6 +5796,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const state = (optStr(args, 'state') || 'done') as BacklogState;
                 need(BACKLOG_STATES.includes(state),
                     `state must be one of ${BACKLOG_STATES.join(', ')}`);
+                // ‼️ P-14 — A CLOSING NOTE IS NOT OPTIONAL FOR AN AGENT.
+                //
+                // The page can show a closing note, the log has a place for it
+                // and the ledger has a field — and all eleven of the last
+                // eleven closures had it empty, because it was documented,
+                // encouraged and never required. "How did this get closed" is
+                // the question this whole track exists to answer, so a closure
+                // that does not answer it is refused here rather than filed as
+                // one more silent row. It is short by design (a sentence or
+                // two); the ceiling is generous and the FLOOR is what was
+                // missing. A human ticking the box on the panel is untouched:
+                // they are looking at the thing they just did.
+                const note = (optStr(args, 'note') ?? '').trim();
+                if (state === 'done' || state === 'cancelled') {
+                    need(note.length >= 15,
+                        `closing ${state === 'done' ? 'an item' : 'an item as cancelled'} needs a `
+                        + '`note`: one or two sentences saying what was done, how it was closed, and '
+                        + 'anything a reader should watch out for later. That note IS the answer to '
+                        + '"how was this solved" three months from now — every surface that shows a '
+                        + 'closure shows it, and it is the one part nothing else can reconstruct.');
+                }
                 let touched = ''; let code: string | null = null;
                 const out = editProjectDoc(folder, file, src => {
                     const res = setBacklogState(src, target, state);
@@ -5788,7 +5828,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const tracked = code ? recordTrack({
                     projectId: project.id, folder, code, by: 'agent',
                     event: state === 'open' ? 'reopen' : state as TrackEvent,
-                    ...(optStr(args, 'note') ? { note: optStr(args, 'note') as string } : {}),
+                    ...(note ? { note } : {}),
                     ...(optStr(args, 'session') ? { session: optStr(args, 'session') as string } : {})
                 }) : null;
                 projectDocWritten(project.id);
@@ -9629,6 +9669,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: '$(server-process) Engine', description: spec.label,
                     detail: engineNote(spec.id), act: 'engine'
                 },
+                // ‼️ A-11 — THE ROW THAT WAS NOT HERE AT ALL. Console or
+                // terminal is a dimension of the setup, and a profile that
+                // could not state it reopened wherever the launcher happened to
+                // be. "says nothing" is a real third answer and stays offered:
+                // it is what every profile saved before this means.
+                {
+                    label: '$(window) Where',
+                    description: profileSurface(draft) === 'console' ? 'the Console panel'
+                        : profileSurface(draft) === 'terminal' ? 'a terminal'
+                            : 'says nothing — wherever the launcher is set',
+                    detail: 'which surface a session started from this profile opens in',
+                    act: 'where'
+                },
                 {
                     label: '$(sparkle) Model', description: show(draft.model),
                     detail: em()?.note ?? 'which model the session runs on', act: 'model'
@@ -9654,14 +9707,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (!pick?.act) { return undefined; } // Esc = change nothing
             if (pick.act === 'ok') {
-                return draft.name.trim() ? profileFrom(draft, draft.name) : undefined;
+                if (!draft.name.trim()) { continue; }
+                // ‼️ A-11 — ONE NAME, ONE PROFILE — BUT NOT SILENTLY. The list
+                // functions enforce it by dropping whatever else owns the name;
+                // asked for at the moment of commit, that is a data loss the
+                // user chose. Unasked, it was another setup gone with no
+                // warning and no undo.
+                const clash = profileNameClash(launchProfiles(), draft.name, start.name);
+                if (clash) {
+                    const go = await vscode.window.showWarningMessage(
+                        `A different profile is already called "${clash.name}".`,
+                        {
+                            modal: true,
+                            detail: `Saving under this name REPLACES it. The one that would go stores ${describeProfile(clash)}. Pick another name to keep both.`
+                        },
+                        'Replace it');
+                    if (go !== 'Replace it') { continue; } // back to the picker
+                }
+                return profileFrom(draft, draft.name, profileSurface(draft));
             }
             if (pick.act === 'name') {
                 const v = await vscode.window.showInputBox({
                     prompt: 'Profile name', value: draft.name, ignoreFocusOut: true,
-                    validateInput: s => (s.trim() ? undefined : 'a profile needs a name')
+                    validateInput: s => {
+                        if (!s.trim()) { return 'a profile needs a name'; }
+                        // Said WHILE typing, not after committing: the box is
+                        // where a name can still be changed for free.
+                        const other = profileNameClash(launchProfiles(), s, start.name);
+                        return other
+                            ? `"${other.name}" already exists — saving this replaces it`
+                            : undefined;
+                    }
                 });
                 if (v?.trim()) { draft.name = v.trim(); }
+                continue;
+            }
+            if (pick.act === 'where') {
+                const v = await pickChoice(
+                    'Where does a session from this profile open?',
+                    [
+                        { id: '', label: 'Says nothing', detail: 'the launcher keeps whatever surface it is on' },
+                        { id: 'terminal', label: 'A terminal', detail: 'a real CLI terminal — the full TUI, slash commands, /resume' },
+                        { id: 'console', label: 'The Console panel', detail: 'the conversation stays inside Agent Farm' }
+                    ],
+                    profileSurface(draft) ?? '', false);
+                if (v !== undefined) {
+                    if (v === 'console' || v === 'terminal') { draft.surface = v; }
+                    else { delete draft.surface; }
+                }
                 continue;
             }
             if (pick.act === 'engine') {
@@ -9725,10 +9818,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Returns the profile to LOAD, or undefined — every other outcome is
      * finished by the time this resolves.
      */
-    const manageLaunchProfiles = async (current: LaunchOptions): Promise<LaunchProfile | undefined> => {
+    const manageLaunchProfiles = async (
+        current: LaunchOptions, currentSurface?: RunSurface
+    ): Promise<LaunchProfile | undefined> => {
         const edit = {
             iconPath: new vscode.ThemeIcon('edit'),
-            tooltip: 'Edit this profile — name, engine, model, effort, permissions, first prompt'
+            tooltip: 'Edit this profile — name, engine, where it opens, model, effort, permissions, first prompt'
         };
         const replace = {
             iconPath: new vscode.ThemeIcon('save'),
@@ -9794,9 +9889,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 continue;
             }
             if (chosen.act === 'replace') {
-                const next = profileFrom(current, chosen.profile.name);
+                // The surface is part of "what I have in front of me", so it is
+                // part of what replace stores — the same rule as Save.
+                const next = profileFrom(current, chosen.profile.name, currentSurface);
                 await writeLaunchProfiles(
-                    replaceProfile(launchProfiles(), chosen.profile.name, current),
+                    replaceProfile(launchProfiles(), chosen.profile.name, current, currentSurface),
                     `profile "${chosen.profile.name}" now stores ${describeProfile(next)}`);
                 continue;
             }
@@ -10016,12 +10113,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // set to; handing over a hand-built object that listed three of
                 // the five dimensions is how "replace" quietly dropped the
                 // engine and the prompt of the very launch it was replacing.
-                const loaded = await manageLaunchProfiles(merged);
+                const loaded = await manageLaunchProfiles(merged, where);
                 // …and applyProfile puts back every dimension the profile
                 // stores, clears the ones it does not, and leaves the session's
                 // own name alone. That is the whole load, in one call that a
                 // test can reach (src/core/launchProfiles.ts).
-                if (loaded) { o = applyProfile(o, loaded); }
+                if (loaded) {
+                    o = applyProfile(o, loaded);
+                    // ‼️ A-11 — INCLUDING THE SURFACE. Saving with the Console
+                    // selected and loading back into a terminal was the loudest
+                    // half of "it does not load the profile". A profile that
+                    // says nothing about where (every one saved before this)
+                    // leaves the launcher on the surface it is already on.
+                    const surface = profileSurface(loaded);
+                    if (surface) { where = surface; }
+                }
                 continue;
             }
             if (pick.act === 'save') {
@@ -10032,10 +10138,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ From `merged`, so the profile keeps the ENGINE and the
                 // values inherited from the user's defaults — a profile that
                 // stored a model without the engine it belongs to was a setup
-                // that could not be reproduced.
+                // that could not be reproduced. `where` rides along for the
+                // same reason: it is part of the setup in front of the user.
                 await writeLaunchProfiles(
                     saveProfile(launchProfiles(),
-                        profileFrom({ ...merged, prompt: o.prompt }, name)),
+                        profileFrom({ ...merged, prompt: o.prompt }, name, where)),
                     `profile "${name.trim()}" saved`);
                 continue;
             }
@@ -10696,7 +10803,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * `surface` and are never asked. Everything else — the command palette, a
      * tree row's context menu, a keybinding — gets this picker.
      */
-    type RunSurface = 'terminal' | 'console';
+    // ‼️ The type itself lives in core/launch.ts (A-11): a saved profile stores
+    // this dimension, so it cannot be a shape declared inside activate().
     const SURFACE_KEY = 'agentfarm.lastRunSurface';
 
     /**
@@ -12206,7 +12314,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const item = byCode.get(code);
                     if (!item || item.state === 'done' || item.state === 'cancelled') { continue; }
                     const sum = summarizeCode(code, records);
-                    if (sum.closed || !sum.turns) { continue; }
+                    // ‼️ `sessions`, not `turns` (P-14): "somebody worked on this
+                    // and left it open" is true whether or not we could name the
+                    // turn, and `turns` no longer invents one when we could not.
+                    if (sum.closed || !sum.sessions) { continue; }
                     const last = [...records].filter(r => r.code === code && r.note)
                         .sort((a, b) => b.ts - a.ts)[0];
                     unfinished.push({
@@ -12831,7 +12942,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const trackLedgerOf = (folder: string): string =>
         trackFileIn(tracksFolder(folder, projectSkeleton()));
 
-    const readTracks = (folder: string): TrackRecord[] => readTrackFile(trackLedgerOf(folder));
+    /**
+     * ‼️ P-14 — WHICH TURN OF A SESSION A MOMENT FELL IN.
+     *
+     * The one question the whole "turn?" badge turns on, and nothing was asking
+     * it: attribution used the session's TOTAL turn count, which is the right
+     * answer only while the last turn is the current one. Every turn records
+     * when it opened (`SessionInfo.turns[].ts`), so the turn that was open at
+     * `ts` is simply the last one that had started by then — deterministic, and
+     * therefore usable to REPAIR a record long after the fact, which a running
+     * count never could be.
+     *
+     * Returns undefined when the session is unknown here or its transcript
+     * carries no turn stamps. Undefined stays undefined: this is the function
+     * that exists so nothing has to invent a 1.
+     */
+    const turnAt = (sessionId: string, ts: number): number | undefined => {
+        const s = index.allWithExternal().find(r => r.sessionId === sessionId);
+        const turns = s?.turns ?? [];
+        if (!turns.length) { return undefined; }
+        let n = 0;
+        for (let i = 0; i < turns.length; i++) {
+            const t = turns[i];
+            if (typeof t?.ts !== 'number' || t.ts > ts) { break; }
+            n = i + 1;
+        }
+        // A timestamp BEFORE the first turn opened is not turn 0 and not turn 1
+        // — it is a record whose time and whose session disagree, and saying so
+        // is the whole point of the doubt code.
+        return n > 0 ? n : undefined;
+    };
+
+    /**
+     * ‼️ P-14 — the ledger, WITH the turns that were only ever missing a lookup
+     * filled in. See `repairTurns` and `turnAt`: a row whose session is known
+     * and whose moment falls inside a timestamped turn is not uncertain, it was
+     * merely never asked. Done on read, so every surface — the page, the log,
+     * the bridge — gets the same repaired view without anybody rewriting an
+     * append-only file that other windows are also appending to.
+     */
+    const readTracks = (folder: string): TrackRecord[] =>
+        repairTurns(readTrackFile(trackLedgerOf(folder)), (session, ts) => turnAt(session, ts));
 
     /**
      * WHEN each item was closed — the axis "what did I finish last" needs and
@@ -12871,7 +13022,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * attached to the item wherever an item is handed out, so nobody has to.
      */
     const backlogRounds = (folder: string): ((i: BacklogItem) => {
-        round: number; earlier: { at: string; text: string }[];
+        round: number;
+        earlier: { at: string; text: string; guess?: boolean; cut?: boolean }[];
     }) => {
         const records = readTracks(folder);
         const byCode = new Map<string, TrackSummary>();
@@ -12880,8 +13032,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const sum = i.code ? byCode.get(i.code) : undefined;
             return {
                 round: sum?.round ?? 1,
+                // ‼️ The two doubts travel with the words. A round read after an
+                // Obsidian edit may be the NEW wording, and one that hit the
+                // ledger ceiling is incomplete — a reader deciding what was
+                // asked last time has to be able to see which of those it is.
                 earlier: (sum?.rounds ?? []).map(r => ({
-                    at: localStamp(r.ts), text: r.prevText ?? ''
+                    at: localStamp(r.ts), text: r.prevText ?? '',
+                    ...(r.prevGuess ? { guess: true } : {}),
+                    ...(r.prevCut ? { cut: true } : {})
                 }))
             };
         };
@@ -12934,6 +13092,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // the number is there; nobody was asking for it.
             const alive = live.sessions().find(s => s.sessionId === sid);
             if (alive && alive.prompts > 0) { return alive.prompts; }
+            // ‼️ P-14 (reopened) — AND THE TURN AN EVENT FELL IN IS RECOVERABLE
+            // FROM THE TRANSCRIPT, so it is recovered rather than approximated.
+            // `userTurns` is the session's TOTAL, which is only the right answer
+            // when the event is in the last turn — true while writing, false for
+            // anything read back later, and the reason a repair pass could not
+            // be written at all. Each turn carries its own opening timestamp
+            // (SessionInfo.turns), so "which turn was open at `now`" is the last
+            // one that had started by then. That is a lookup, not a guess.
+            const at = turnAt(sid, o.now);
+            if (at) { return at; }
             const row = index.allWithExternal().find(r => r.sessionId === sid);
             const n = row?.userTurns ?? 0;
             return n > 0 ? n : undefined;
@@ -12973,6 +13141,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ X-36 (reopened) — the last text every coded item was seen with, per
+     * project folder. In memory, for this window's lifetime only: it narrows
+     * the Obsidian race (see reconcileOutside) and is not a second record of
+     * what an item once said — that is the ledger's, and two answers to one
+     * question is how they start disagreeing.
+     */
+    const outsideSeen = new Map<string, Map<string, string>>();
+
+    /**
      * Rebuild `Backloglog.md` from the ledger and the backlog as it stands.
      *
      * Two things happen here that are easy to miss. First, the state on each
@@ -12993,7 +13170,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         const items = parseBacklog(backlog.text ?? '').items;
         let records = readTracks(folder);
-        const missed = reconcileOutside(items, records, Date.now());
+        // ‼️ X-36 (reopened) — WHAT THE FILE SAID LAST TIME WE LOOKED. Handed to
+        // the reconciler so a box un-ticked AND rewritten in one Obsidian save
+        // files the OLD wording as the previous round rather than the new one.
+        // The snapshot is taken after, from the items just read, so the next
+        // pass has this pass's truth. See snapshotBacklog / TrackRecord.prevGuess.
+        const missed = reconcileOutside(items, records, Date.now(), outsideSeen.get(folder));
+        outsideSeen.set(folder, snapshotBacklog(items));
         if (missed.length) {
             appendTrack(trackLedgerOf(folder), missed);
             records = records.concat(missed);
@@ -13044,6 +13227,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return one.length > TRACK_NOTE_MAX ? one.slice(0, TRACK_NOTE_MAX - 1) + '…' : one;
     };
 
+    /**
+     * ‼️ X-36 (reopened) — THE PREVIOUS ROUND'S WORDING, WHOLE.
+     *
+     * It went through `capNote` and lost everything past 2,000 characters —
+     * of the ONE piece of text on this record that nothing else holds a copy
+     * of. See TRACK_PREV_MAX: the ceiling here is a guard against a runaway
+     * paste, not an editorial rule, and hitting it is recorded rather than
+     * left as a trailing "…" nobody can tell from a user who stopped.
+     */
+    const capPrev = (s: string): { prevText: string; prevCut?: boolean } => {
+        const one = s.replace(/\s+/g, ' ').trim();
+        return one.length > TRACK_PREV_MAX
+            ? { prevText: one.slice(0, TRACK_PREV_MAX - 1) + '…', prevCut: true }
+            : { prevText: one };
+    };
+
     const recordTrack = (o: {
         projectId: string; folder: string; code: string; event: TrackEvent;
         by: TrackSource; agent?: string; session?: string; note?: string; now?: number;
@@ -13063,7 +13262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const prevText = o.event === 'reopen' ? backlogTextOf(o.folder, o.code) : '';
         const rec: TrackRecord = {
             code: o.code.toUpperCase(), event: o.event, ts: now, by: o.by,
-            ...(prevText ? { prevText: capNote(prevText) } : {}),
+            ...(prevText ? capPrev(prevText) : {}),
             ...(who.session ? { session: who.session } : {}),
             ...(who.turn ? { turn: who.turn } : {}),
             ...(who.agent ? { agent: who.agent } : {}),
@@ -13257,6 +13456,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // WHEN each row was closed, so the page can answer "what did I finish
         // last" without a second idea of where that time comes from.
         const closedOf = backlogClosedAt(doc.folder);
+        // ‼️ X-36 (reopened) — AND WHICH ROUND, ON THE PAGE THE PERSON IS
+        // STANDING ON. The rounds were computed for the two BRIDGE doors and
+        // for the Track tab, and not for this one — so reopening an item from
+        // the Backlog page did everything it promised (snapshot the wording,
+        // bump the round, write the history) and then showed the user a row
+        // that looked exactly as it had a second earlier. "Nothing changed, as
+        // if the door had never opened" was a true report of this surface.
+        const rounds = backlogRounds(doc.folder);
         return {
             ...doc,
             counts: {
@@ -13264,7 +13471,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 cancelled: sum.cancelled, unclassified: sum.unclassified
             },
             areas: sum.areas,
-            items: sum.items.map(i => ({ ...backlogOut(i), closedAt: closedOf(i) })),
+            items: sum.items.map(i => {
+                const r = rounds(i);
+                return {
+                    ...backlogOut(i), closedAt: closedOf(i),
+                    // Round 1 carries nothing: it is the normal case, and a
+                    // badge on every row of a 200-line backlog is a column of
+                    // noise that teaches the reader to stop seeing it.
+                    ...(r.round > 1 ? { round: r.round, earlierRounds: r.earlier } : {})
+                };
+            }),
             // Addressed exactly as a row is: the code when there is one, the
             // 1-based line only for an uncoded capture. The page looks the words
             // up in `items` itself rather than being sent them twice.
@@ -13364,7 +13580,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 children: item?.children ?? [],
                 plan: item?.plan ?? null,
                 due: item?.due ?? null,
+                // ‼️ P-14 — THREE FIGURES, NOT ONE PRETENDING TO BE THREE. `turns`
+                // is what is KNOWN; `sessions` is how many touched it; `turnsUnknown`
+                // is the gap between them. The card used to be handed one number
+                // that quietly counted an unknown turn as 1, which is how a row
+                // came to read "1 turn" directly above "no turn recorded".
                 turns: sum.turns,
+                sessionsTouched: sum.sessions,
+                turnsUnknown: sum.turnsUnknown,
                 doubtful: sum.doubtful,
                 /**
                  * ‼️ P-14 — WHICH PART IS UNCERTAIN, not merely that something
@@ -16483,7 +16706,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind === 'task') { taskManager.cancelTask(node.task); }
         }),
         vscode.commands.registerCommand('agentfarm.deleteTask', (node?: TaskNode) => {
-            if (node?.kind === 'task') { taskManager.deleteTask(node.task); }
+            if (node?.kind !== 'task') { return; }
+            // ‼️ M-8 — the archive write is the commit point; if it fails the row
+            // is still there and the user has to be told, not left with a tree
+            // that silently did nothing.
+            try { taskManager.deleteTask(node.task); } catch (e) {
+                void vscode.window.showErrorMessage(
+                    `Agent Farm: the run was NOT deleted — its archive could not be written. ${String(e)}`);
+            }
         }),
         vscode.commands.registerCommand('agentfarm.retryTask', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.retryTask(node.task); }
@@ -17082,8 +17312,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.showChooser(tasksDeps, {
                 tab: 'run',
                 title: 'Task history',
-                lede: 'One file per month, holding the runs that have been cleared off the Runs tab.',
-                verb: 'open',
+                lede: 'One month per row, holding the runs that have left the Runs tab. Picking one '
+                    + 'reads it INTO the table above, read-only, beside the runs still on the list.',
+                verb: 'read',
                 act: 'history',
                 empty: 'No task history yet — a month\'s file is written the first time finished runs are cleared.',
                 items: files.map(f => {
@@ -18805,12 +19036,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'launch.profiles',
             describe: 'The saved launch setups (agentFarm.launchProfiles) — a named ENGINE + model + '
-                + 'effort + permission mode (+ an optional first prompt) the session launcher can load '
-                + 'in one press. Read them before offering the user "the usual": a profile is what they '
-                + 'have already decided, so proposing the same combination as if it were new is noise. '
+                + 'effort + permission mode + WHERE it opens (+ an optional first prompt) the session '
+                + 'launcher can load in one press. Read them before offering the user "the usual": a '
+                + 'profile is what they have already decided, so proposing the same combination as if '
+                + 'it were new is noise. '
                 + '‼️ `name` here is the PROFILE\'s name and never a session name — a profile carries no '
                 + '-n, or every session started from it would be called the same thing. '
-                + 'Returns [{name, engine?, model, effort, permissionMode, prompt?}]. No args.',
+                + 'Returns [{name, engine?, model, effort, permissionMode, prompt?, surface?}] — '
+                + '`surface` is "console" or "terminal", and ABSENT means the profile says nothing '
+                + 'about where, so the launcher keeps whatever surface it is already on.',
             handler: () => launchProfiles()
         },
         {
@@ -18819,21 +19053,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'is also how a profile is EDITED: pass the whole setup you want it to have, because '
                 + 'what you leave out is cleared rather than kept. args: name (required), engine? '
                 + '(claude|codex|gemini|agy — empty means the default engine), model?, effort?, '
-                + 'permissionMode?, prompt? — each empty means "no flag", exactly as it does in the '
-                + 'launcher. Replacing keeps the row\'s place in the list. ‼️ Check engines.models '
+                + 'permissionMode?, prompt?, surface? (console|terminal — omit it and the profile says '
+                + 'nothing about where, so the launcher keeps the surface it is on) — each empty means '
+                + '"no flag", exactly as it does in the launcher. Replacing keeps the row\'s place in '
+                + 'the list. ‼️ Check engines.models '
                 + 'first: a model or an effort the engine does not offer is stored happily here and '
                 + 'refused later, by a CLI, in a session the user is sitting in front of. Rename with '
                 + 'launch.profile.rename — the two together are the whole edit.',
             handler: async (args) => {
                 const name = argStr(args, 'name').trim();
                 need(!!name, 'a profile needs a name');
+                const surface = optStr(args, 'surface') ?? '';
+                need(!surface || surface === 'console' || surface === 'terminal',
+                    `surface is "console" or "terminal" — "${surface}" is neither (leave it out to say nothing)`);
                 const p = profileFrom({
                     ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') as EngineId } : {}),
                     model: optStr(args, 'model') ?? '',
                     effort: optStr(args, 'effort') ?? '',
                     permissionMode: optStr(args, 'permissionMode') ?? '',
                     ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
-                }, name);
+                }, name, (surface || undefined) as RunSurface | undefined);
                 need(await writeLaunchProfiles(
                     saveProfile(launchProfiles(), p), `profile "${name}" saved`),
                     'agentFarm.launchProfiles could not be written');
@@ -18843,15 +19082,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'launch.profile.rename',
             describe: 'Rename a launch profile, keeping what it stores and its place in the list. '
-                + 'args: name (required), to (required). Renaming onto a name that already exists '
-                + 'REPLACES it — the launcher picks by name, so two rows with one name is a list '
-                + 'nobody can use.',
+                + 'args: name (required), to (required), overwrite? (default false). ‼️ The launcher '
+                + 'picks by name, so two rows with one name is a list nobody can use — renaming onto '
+                + 'an existing name therefore DESTROYS that other profile. It is refused unless you '
+                + 'pass overwrite:true, and the refusal names what would have gone: deleting the '
+                + 'user\'s other setup is not something to do as a side effect of a rename.',
             handler: async (args) => {
                 const name = argStr(args, 'name').trim();
                 const to = argStr(args, 'to').trim();
                 need(!!to, 'the new name cannot be empty');
                 need(launchProfiles().some(p => p.name === name),
                     `no launch profile called "${name}" — launch.profiles lists them`);
+                const clash = profileNameClash(launchProfiles(), to, name);
+                need(!clash || args.overwrite === true,
+                    `"${to}" is already a different profile (it stores ${clash ? describeProfile(clash) : ''}) — `
+                    + 'renaming onto it would delete it. Pass overwrite:true if that is what you mean, '
+                    + 'or pick another name.');
                 need(await writeLaunchProfiles(
                     renameProfile(launchProfiles(), name, to),
                     `profile "${name}" is now "${to}"`),

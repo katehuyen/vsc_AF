@@ -627,18 +627,20 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r.els('blarea').find(e => e.dataset.blarea === '').click();
     ok('a later drag wins', (r.byId('bl-new').style.height || '') === '120px');
 
-    // ‼️ U-41 — AND THE ↺ PUTS THE HEIGHT BACK TOO. It was left out on the
-    // reasoning that height belongs to the writing surface; the user's reading
-    // is the other one, and it is the better one: the height is a SHAPE the
-    // card keeps between items, exactly like the five boxes beside it, so a
-    // control that says "put this card back to how it starts" and leaves the
-    // biggest thing on it at half the screen is not doing what it says. The
-    // WORDS are still untouched — that is the line this does not cross.
+    // The ↺ on the heading is about the five AXES. Height is part of the
+    // writing surface, like the words — and its tooltip promises those are not
+    // touched.
+    //
+    // ‼️ THIS IS A REVERT, AND IT STAYS REVERTED. Making ↺ clear the height too
+    // put the box back to `height:auto`, and `.pj-bl-cap` is a stretch flex
+    // row: from that moment the box grew and shrank on its own every time a
+    // select beside it changed the column's height. The ↺ also lit up and went
+    // dim off a state nothing on screen showed. Both were regressions on a
+    // control that worked.
     const reset = r.els('act').find(e => e.dataset.act === 'blCapReset');
     if (reset) { reset.click(); }
-    ok('‼️ the reset puts the dragged height back as well as the choices',
-        (r.byId('bl-new').style.height || '') === '');
-    ok('…and the words are still there', r.byId('bl-new').value !== undefined);
+    ok('‼️ the axes reset does not shrink the box — it resets choices, not the surface',
+        (r.byId('bl-new').style.height || '') === '120px');
 }
 
 // ---------- S-12: say WHERE it goes in the same gesture as writing it ----------
@@ -1835,6 +1837,50 @@ function pickParent(r, code) {
     const after = /<div class="pj-card-h">Capture([\s\S]{0,600}?)<\/div>/.exec(r.html());
     ok('…and it goes back to inert, because there is nothing left to reset',
         !!after && !/data-act="blCapReset"/.test(after[1]));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ X-36 (reopened) — THE ROUND IS ON THE ROW, ON THE PAGE YOU REOPENED IT FROM.
+//
+// Reopening an item snapshots its wording, bumps its round and files the old
+// text — and all three of those were only visible on the Track tab, in
+// Backloglog.md, and on two bridge ops that only agents call. So the user
+// pressed reopen on the Backlog page, everything worked, and the row came back
+// looking exactly as it had: "nothing changed, as if the door never opened".
+// ---------------------------------------------------------------------------
+{
+    const d = data();
+    d.tabData.backlog.items = d.tabData.backlog.items.map(i => (i.code === 'K-1' ? {
+        ...i, round: 3, earlierRounds: [
+            { at: '2026-08-01 10:00', text: 'ilk isteğim: arama bulmuyor' },
+            { at: '2026-08-09 18:20', text: 'ikinci isteğim: hâlâ bulmuyor', guess: true }
+        ]
+    } : i));
+    const r = run(d);
+    const html = r.html();
+    ok('‼️ a reopened item wears its round on its own backlog row',
+        /pj-trk-round">round 3</.test(html));
+    ok('…the same badge the Track card uses — one fact, one appearance',
+        html.indexOf('pj-trk-round') > 0);
+    ok('‼️ …and the earlier askings are readable from the row, dated and whole',
+        html.includes('ilk isteğim: arama bulmuyor')
+        && html.includes('ikinci isteğim: hâlâ bulmuyor'));
+    ok('…a round we are not sure of says so rather than passing as fact',
+        /MAY be the new wording/.test(html));
+    ok('…and the panel says what the badge is FOR: the line is the latest asking',
+        /this line is the LATEST asking/.test(html));
+
+    // Round 1 is every other row, and a badge on all of them is a column of
+    // noise that teaches the reader to stop seeing the ones that matter.
+    ok('‼️ an item nobody has reopened carries nothing at all',
+        (html.match(/pj-trk-round">round /g) || []).length === 1);
+
+    // A row reopened before the wording was ever kept must not pretend.
+    const d2 = data();
+    d2.tabData.backlog.items = d2.tabData.backlog.items.map(i =>
+        (i.code === 'K-1' ? { ...i, round: 2, earlierRounds: [] } : i));
+    ok('…and one reopened before any of this existed says that, not nothing',
+        /before the system kept the earlier wording/.test(run(d2).html()));
 }
 
 // ---------- A-14: the control row stops rocking ----------

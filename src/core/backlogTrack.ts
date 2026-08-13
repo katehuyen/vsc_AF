@@ -109,8 +109,29 @@ export interface TrackRecord {
      * The text is taken at the moment the state changes, by whichever door
      * changed it, so the item's line is free for the new words and round N-1 is
      * not something anybody has to preserve on purpose.
+     *
+     * ‼️ IT IS KEPT WHOLE — see TRACK_PREV_MAX. It shared the note's 2,000-char
+     * ceiling for one release and that silently truncated real requests.
      */
     prevText?: string;
+    /** True only when `prevText` hit TRACK_PREV_MAX — so a reader can tell a cut
+     *  from a user who stopped writing. Absent is the normal case. */
+    prevCut?: boolean;
+    /**
+     * ‼️ X-36 (reopened) — "this is the line AS WE FIRST SAW IT, not necessarily
+     * what it said before."
+     *
+     * Only ever set by `reconcileOutside`, and only when it had no snapshot to
+     * compare against. Un-ticking a box in Obsidian produces no event, so the
+     * reopen is noticed the next time the file is read — and if the user
+     * un-ticked the box AND rewrote the line in the same save, the text read
+     * then is the NEW wording. Storing that as the previous round is a lie that
+     * looks exactly like the truth, which is the worst kind of record. It is
+     * still stored, because in the ordinary case (box un-ticked, words left
+     * alone) it IS the previous round and dropping it would lose the common
+     * case to protect against the rare one — but it is stored SAID.
+     */
+    prevGuess?: boolean;
 }
 
 /** The ledger's file name inside the tracks folder. */
@@ -139,6 +160,26 @@ export const TRACK_LIVE_WINDOW_MS = 10 * 60 * 1000;
  */
 export const TRACK_NOTE_MAX = 2000;
 
+/**
+ * ‼️ X-36 (reopened) — A PREVIOUS ROUND'S WORDING IS NOT A NOTE, AND MUST NOT
+ * SHARE THE NOTE'S CEILING.
+ *
+ * `prevText` went through `TRACK_NOTE_MAX` because both are "some text on a
+ * record", and the two are opposites: a note is something an agent WRITES, and
+ * capping it is an editorial rule. `prevText` is the USER'S OWN REQUEST, taken
+ * off the line a moment before it is overwritten — it is the last copy that
+ * exists anywhere, and this project's real items run past 2,000 characters
+ * routinely. Cutting it was destroying the very thing the feature was built to
+ * keep. (X-36's own line is where it was caught: the stored round ends
+ * "…işte bütün bunların bir…", mid-sentence, and the rest is gone.)
+ *
+ * So it is kept WHOLE. The ceiling here is a guard against a pathological
+ * paste making one ledger line megabytes long, not an editorial limit — an
+ * order of magnitude above the longest item this has ever seen — and a record
+ * that hits it says so in `prevCut` rather than trailing off silently.
+ */
+export const TRACK_PREV_MAX = 32000;
+
 // ---------------------------------------------------------------------------
 // the ledger — reading and appending
 // ---------------------------------------------------------------------------
@@ -156,6 +197,8 @@ export function serializeTrack(rec: TrackRecord): string {
     if (rec.uncertain) { out.uncertain = rec.uncertain; }
     if (rec.note) { out.note = rec.note; }
     if (rec.prevText) { out.prevText = rec.prevText; }
+    if (rec.prevCut) { out.prevCut = true; }
+    if (rec.prevGuess) { out.prevGuess = true; }
     return JSON.stringify(out);
 }
 
@@ -188,11 +231,52 @@ export function parseTrack(text: string): TrackRecord[] {
             ...(o.agent ? { agent: String(o.agent) } : {}),
             ...(TRACK_DOUBTS.includes(doubt) ? { uncertain: doubt } : {}),
             ...(o.note ? { note: String(o.note).replace(/\s+/g, ' ').trim() } : {}),
-            ...(o.prevText ? { prevText: String(o.prevText).replace(/\s+/g, ' ').trim() } : {})
+            ...(o.prevText ? { prevText: String(o.prevText).replace(/\s+/g, ' ').trim() } : {}),
+            ...(o.prevCut === true ? { prevCut: true } : {}),
+            ...(o.prevGuess === true ? { prevGuess: true } : {})
         });
     }
     out.sort((a, b) => a.ts - b.ts);
     return out;
+}
+
+/**
+ * ‼️ P-14 — REPAIR THE ROWS THAT WERE ONLY EVER MISSING A LOOKUP.
+ *
+ * "Which turn was this closed in" is either recorded or it is not, and the user
+ * asked for the honest version of that: make it work, or take the badge away.
+ * It turns out most of the rows stamped `turn` were never unknowable — they
+ * were written by a session whose id is right there on the record, at a moment
+ * that falls inside a turn the transcript timestamps to the second. The writer
+ * had no way to ask (it used the session's running TOTAL, which is only correct
+ * for the turn in progress), so a fact that was on disk the whole time was
+ * filed as a doubt. 40 of this project's 241 rows are that case.
+ *
+ * `resolve` is the lookup — `(session, ts) => turn | undefined`. Anything it
+ * cannot answer keeps its doubt exactly as it is: a row with no session, or a
+ * transcript that has been pruned, is genuinely unknown and stays that way.
+ * Doubts that are NOT about the turn (`multi`, `none`, `guess`) are untouched
+ * — they say something else and this knows nothing about them.
+ *
+ * Pure, and applied on READ rather than written back: the ledger is append-only
+ * and shared between windows, and rewriting a hundred lines of somebody else's
+ * append log to add a number that can be recomputed is not a trade worth making.
+ */
+export function repairTurns(
+    records: TrackRecord[],
+    resolve: (session: string, ts: number) => number | undefined
+): TrackRecord[] {
+    let touched = false;
+    const out = records.map(r => {
+        if (r.uncertain !== 'turn' || !r.session || typeof r.turn === 'number') { return r; }
+        const turn = resolve(r.session, r.ts);
+        if (!turn) { return r; }
+        touched = true;
+        const next: TrackRecord = { ...r, turn };
+        delete next.uncertain;
+        return next;
+    });
+    return touched ? out : records;
 }
 
 export function readTrackFile(file: string): TrackRecord[] {
@@ -241,8 +325,23 @@ export interface TrackSummary {
     runs: TrackSessionRun[];
     /** Records with no session at all (panel clicks, outside edits). */
     loose: TrackRecord[];
-    /** How many distinct (session, turn) pairs touched it. */
+    /**
+     * ‼️ P-14 — HOW MANY DISTINCT TURNS ARE ACTUALLY KNOWN. Only real turn
+     * numbers are counted.
+     *
+     * It used to be `Math.max(run.turns.length, 1)` per session, which invented
+     * a turn for every session whose turn number was not known — so a row could
+     * print "turns: 1" and "no turn recorded" at the same time, one under the
+     * other. A figure that is made up when the answer is missing is worse than
+     * no figure: it is the same shape as a real one.
+     */
     turns: number;
+    /** How many SESSIONS touched it — the honest denominator, and a different
+     *  question from `turns`. A session whose turn is unknown counts here. */
+    sessions: number;
+    /** Of those sessions, how many could not say which turn they were in. This
+     *  is what the "turn?" badge is counting, and why `turns` is smaller. */
+    turnsUnknown: number;
     firstTs: number;
     lastTs: number;
     /** The event that closed it, if one did. */
@@ -309,7 +408,10 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     return {
         code,
         runs, loose,
-        turns: runs.reduce((n, r) => n + Math.max(r.turns.length, 1), 0),
+        // ‼️ P-14 — the KNOWN turns, and nothing invented. See TrackSummary.
+        turns: runs.reduce((n, r) => n + r.turns.length, 0),
+        sessions: runs.length,
+        turnsUnknown: runs.filter(r => !r.turns.length).length,
         firstTs: timed.length ? timed[0].ts : 0,
         lastTs: timed.length ? timed[timed.length - 1].ts : 0,
         ...(closed ? { closed } : {}),
@@ -352,8 +454,36 @@ export function trackedCodes(records: TrackRecord[]): string[] {
  * we noticed — flagged `uncertain: 'none'`, meaning "no session, no turn, and
  * this time is when this was seen, not when it happened".
  */
+/**
+ * What every coded item said the last time we looked, so the NEXT pass can tell
+ * an un-ticked box from an un-ticked box that was also rewritten.
+ *
+ * ‼️ It is a snapshot of the file, not of the ledger, and it is deliberately
+ * kept in memory only: it exists to narrow a race inside one window's lifetime,
+ * and a persisted copy would start being read as a record of what an item once
+ * said — which is the ledger's job and would then be two answers to one
+ * question.
+ */
+export function snapshotBacklog(items: BacklogItem[]): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const i of items) { if (i.code && i.text) { out.set(i.code, i.text); } }
+    return out;
+}
+
 export function reconcileOutside(
-    items: BacklogItem[], records: TrackRecord[], now = Date.now()
+    items: BacklogItem[], records: TrackRecord[], now = Date.now(),
+    /**
+     * ‼️ X-36 (reopened) — WHAT THE LINE SAID LAST TIME WE READ IT.
+     *
+     * Without this the reconciler reads the file AFTER the edit and stores
+     * whatever it finds as "the previous round". If the user un-ticked the box
+     * and rewrote the line in one save — which is exactly the gesture this
+     * feature is built for — that stores the NEW request as the OLD one, and
+     * nothing about the record shows it. With a snapshot from before the edit,
+     * the old wording is the one that is kept. See `TrackRecord.prevGuess` for
+     * what happens when there is no snapshot.
+     */
+    seen?: Map<string, string>
 ): TrackRecord[] {
     const out: TrackRecord[] = [];
     for (const item of items) {
@@ -369,6 +499,13 @@ export function reconcileOutside(
             : item.state === 'cancelled' ? 'cancelled'
                 : item.state === 'doing' ? 'doing' : 'reopen';
         const stated = item.doneOn ? dayToMs(item.doneOn) : 0;
+        // ‼️ X-36 — a box un-ticked in Obsidian is a REOPEN like any other, and
+        // it is the commonest one. The previous round comes from the SNAPSHOT
+        // when there is one — the line as it was before this edit — and only
+        // falls back to the line in front of us when there is not, saying so.
+        const kept = seen?.get(item.code);
+        const prev = event !== 'reopen' ? undefined
+            : (kept || item.text || undefined);
         out.push({
             code: item.code, event,
             ts: stated || now,
@@ -377,10 +514,8 @@ export function reconcileOutside(
             note: stated
                 ? 'closed outside Agent Farm; the date is the line\'s own ✅'
                 : 'changed outside Agent Farm; this is when it was noticed',
-            // ‼️ X-36 — a box un-ticked in Obsidian is a REOPEN like any other,
-            // and it is the commonest one. The words are taken here, before the
-            // person who reopened it starts typing over them.
-            ...(event === 'reopen' && item.text ? { prevText: item.text } : {})
+            ...(prev ? { prevText: prev } : {}),
+            ...(prev && !kept ? { prevGuess: true } : {})
         });
     }
     return out;
@@ -733,8 +868,15 @@ function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string
     // happened. Nobody has to preserve anything by hand, and nobody has to
     // decide whether to.
     sum.rounds.forEach((r, i) => {
+        // ‼️ A round that is not certain says so on its own line. `prevGuess` =
+        // read after an Obsidian edit with nothing to compare against, so it
+        // MAY be the new wording; `prevCut` = the words hit the ledger ceiling.
+        // A history that hides which of its lines it is unsure of is worse than
+        // one that has fewer lines.
+        const doubt = r.prevGuess ? ' _(as first seen after an edit outside — may be the new wording)_' : '';
+        const cut = r.prevCut ? ' _(cut — the request was longer than the ledger keeps)_' : '';
         lines.push(`    - ${LOG_ROUND(i + 1)} · ${localStamp(r.ts)} · reopened —`
-            + ` _${r.prevText}_`);
+            + ` _${r.prevText}_${doubt}${cut}`);
     });
     for (const run of sum.runs) {
         const closes = run.events.some(e => CLOSING.includes(e.event));

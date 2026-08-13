@@ -1,5 +1,5 @@
 import { EngineId } from './engines';
-import { describeLaunch, LaunchOptions, LaunchProfile } from './launch';
+import { describeLaunch, LaunchOptions, LaunchProfile, RunSurface } from './launch';
 
 /**
  * ‼️ A-11 — LAUNCH PROFILES, AS A THING THAT CAN BE TESTED.
@@ -17,6 +17,14 @@ import { describeLaunch, LaunchOptions, LaunchProfile } from './launch';
  *     failure furthest in time from the mistake, on the one dimension that
  *     decides what every other dimension MEANS. This is what "it does not load
  *     the profile any more" was: it loaded half of one.
+ *
+ *   · AND THE SURFACE WAS DROPPED THE SAME WAY. Console or terminal is decided
+ *     in the launcher next to the engine and the model, and it is the dimension
+ *     a reader NOTICES first — but it lived in a local variable that no profile
+ *     ever saw, so a setup saved with "the Console panel" on it reopened as a
+ *     terminal and there was no box anywhere, in saving or in editing, that
+ *     even mentioned it. It is `surface` on the profile now: stored on save,
+ *     applied on load, and one of the rows in the edit picker.
  *
  *   · AND A PROFILE'S NAME IS NOT THE SESSION'S NAME, though they are the same
  *     field: `LaunchProfile extends LaunchOptions`, whose `name` is `-n`, the
@@ -48,13 +56,26 @@ const put = (o: LaunchProfile | LaunchOptions, k: ProfileKey, v: string): void =
  * than carried: a `-n` inside a profile would rename every session started from
  * it, which is not what "save this setup" means to anybody.
  */
-export function profileFrom(o: LaunchOptions, name: string): LaunchProfile {
+export function profileFrom(
+    o: LaunchOptions, name: string, surface?: RunSurface
+): LaunchProfile {
     const out: LaunchProfile = { name: name.trim() };
     for (const k of PROFILE_KEYS) {
         const v = o[k];
         if (typeof v === 'string' && v.trim()) { put(out, k, v.trim()); }
     }
+    // ‼️ Only a REAL answer is stored. `undefined` means "this profile says
+    // nothing about where", which is what every profile saved before this
+    // meant, and what it must go on meaning — writing a default in here would
+    // silently start moving old profiles to the terminal.
+    if (surface === 'console' || surface === 'terminal') { out.surface = surface; }
     return out;
+}
+
+/** Where a profile says a session should open, or undefined when it does not
+ *  say — the launcher then keeps whatever surface it is already on. */
+export function profileSurface(p: LaunchProfile): RunSurface | undefined {
+    return p.surface === 'console' || p.surface === 'terminal' ? p.surface : undefined;
 }
 
 /**
@@ -118,9 +139,27 @@ export function renameProfile(
 
 /** Replace what a profile stores, keeping its name and its place. */
 export function replaceProfile(
-    list: LaunchProfile[], name: string, o: LaunchOptions
+    list: LaunchProfile[], name: string, o: LaunchOptions, surface?: RunSurface
 ): LaunchProfile[] {
-    return list.map(x => (x.name === name ? profileFrom(o, name) : x));
+    return list.map(x => (x.name === name ? profileFrom(o, name, surface) : x));
+}
+
+/**
+ * ‼️ THE ROW A NEW NAME WOULD DESTROY, NAMED — so no caller has to destroy it
+ * to find out.
+ *
+ * `editProfile` and `renameProfile` both obey one-name-one-profile by dropping
+ * whatever else owns the name. That is the right END state and a catastrophic
+ * DEFAULT: renaming "gece" to "sabah" quietly deleted the whole "sabah" setup,
+ * with no warning before and no way back after. The rule stays; the decision
+ * stops being silent. Returns the profile that is in the way, or undefined.
+ */
+export function profileNameClash(
+    list: LaunchProfile[], name: string, exceptName: string
+): LaunchProfile | undefined {
+    const want = name.trim();
+    if (!want || want === exceptName) { return undefined; }
+    return list.find(x => x.name === want);
 }
 
 /**
@@ -159,5 +198,12 @@ export function deleteProfile(list: LaunchProfile[], name: string): LaunchProfil
 export function describeProfile(p: LaunchProfile): string {
     const rest: LaunchOptions = { ...p };
     delete rest.name;
-    return describeLaunch(rest);
+    const said = describeLaunch(rest);
+    // ‼️ …and WHERE, because it is the dimension a reader notices first and the
+    // one that was invisible: a row that reads "opus · effort high" says
+    // nothing about the window the session will appear in.
+    const where = profileSurface(p);
+    if (!where) { return said; }
+    const w = where === 'console' ? 'in the Console' : 'in a terminal';
+    return said === 'CLI defaults' ? w : `${said} · ${w}`;
 }

@@ -19,6 +19,7 @@ import {
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { describeRetry, normalizeRetry, RetryPolicy, retryDecision } from './retry';
+import { archiveMonths, readArchive } from './taskstats';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -160,6 +161,11 @@ export interface TaskEvent {
     ts: number;
     kind: TaskEventKind;
     note?: string;
+    /** ‼️ M-8 — RECONSTRUCTED, NOT WITNESSED. Built by `migrateTaskEvents` out
+     *  of the fields a task kept before there was a record to write into, so
+     *  the time is the field's and nothing between the lines is known. Drawn
+     *  with that said, never as an equal of a line written as it happened. */
+    migrated?: true;
 }
 
 export type TaskEventKind =
@@ -180,6 +186,58 @@ export function noteTaskEvent(task: FarmTask, kind: TaskEventKind, note?: string
     const list = task.events ?? (task.events = []);
     list.push(note ? { ts: Date.now(), kind, note } : { ts: Date.now(), kind });
     if (list.length > TASK_EVENTS_MAX) { list.splice(0, list.length - TASK_EVENTS_MAX); }
+}
+
+/** Which month file a task belongs in — the archive's one naming rule, in one
+ *  place, so a record and the tombstone that cancels it never split up. */
+export function monthOf(task: { endedAt?: number; createdAt: number }): string {
+    const d = new Date(task.endedAt ?? task.createdAt);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * ‼️ M-8 (reopened) — THE RUNS THAT ALREADY EXISTED GET A HISTORY TOO.
+ *
+ * The event log starts the day it was written, so "what happened to this task,
+ * from the beginning" answered *nothing at all* for every task already in the
+ * store — including the one the user was looking at when they asked for it, a
+ * run parked for days with its reason on the row and an empty timeline under
+ * it. A feature that only works on things created after it shipped is not the
+ * feature that was asked for.
+ *
+ * So a task with no record gets one built from what it does carry: the three
+ * timestamps, where it came from, and the ceiling currently holding it. Every
+ * line is marked `migrated`, because a reconstruction is not a witness — it has
+ * the times the fields kept and nothing about what happened between them, and a
+ * page drawing it says so rather than passing it off as the real thing.
+ *
+ * Idempotent: a task with any record is left exactly as it is, so this can run
+ * on every load and the first save makes it permanent.
+ */
+export function migrateTaskEvents(task: FarmTask): boolean {
+    if (task.events?.length) { return false; }
+    const out: TaskEvent[] = [];
+    const src = task.fromSchedule ? 'a schedule'
+        : task.fromTrigger ? 'a trigger'
+            : task.workflowId ? 'a workflow step'
+                : 'by hand';
+    out.push({ ts: task.createdAt, kind: 'created', note: `queued — ${src}`, migrated: true });
+    // A ceiling that is holding it RIGHT NOW is the one thing here that is not
+    // a timestamp, and it is the fact the user was actually asking about. It
+    // takes the created time because the store never kept when it began.
+    if (task.deferredReason && task.status === 'queued') {
+        out.push({ ts: task.createdAt, kind: 'parked', note: task.deferredReason, migrated: true });
+    }
+    if (task.startedAt) {
+        out.push({ ts: task.startedAt, kind: 'started', note: task.mode, migrated: true });
+    }
+    if (task.endedAt) {
+        out.push(task.status === 'cancelled'
+            ? { ts: task.endedAt, kind: 'cancelled', migrated: true }
+            : { ts: task.endedAt, kind: 'finished', note: task.status, migrated: true });
+    }
+    task.events = out;
+    return true;
 }
 
 /**
@@ -777,6 +835,13 @@ export class TaskManager implements vscode.Disposable {
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
             this.automation = json.automation && typeof json.automation === 'object' ? json.automation : {};
             this.automationLog = Array.isArray(json.automationLog) ? json.automationLog : [];
+            // ‼️ M-8 — a task that predates the event log gets one built from
+            // its own fields (see `migrateTaskEvents`). Before the follower
+            // return, because a follower window DRAWS these rows and would
+            // otherwise show an empty timeline for the same task the runner
+            // window explains in full.
+            let migrated = false;
+            for (const t of this.tasks) { migrated = migrateTaskEvents(t) || migrated; }
             // B11: a follower window mirrors the store as-is — the stale pass
             // below would cancel rows that are alive in the runner window.
             if (!this.runner()) { return; }
@@ -831,7 +896,10 @@ export class TaskManager implements vscode.Disposable {
             }
             // Persist the corrections right away so the interrupted-run offer is
             // one-shot; the cancelled rows keep their manual Resume affordance.
-            if (staleChanged) { this.save(); }
+            // ‼️ M-8 — and the reconstructed records with them: the runner is the
+            // only window allowed to write, so it is the one that makes them
+            // permanent. It happens once; every later load finds them there.
+            if (staleChanged || migrated) { this.save(); }
         } catch { /* first run */ }
     }
 
@@ -907,22 +975,89 @@ export class TaskManager implements vscode.Disposable {
         return path.join(path.dirname(this.storageFile), 'task-history');
     }
 
-    /** Move finished tasks to the monthly history log instead of losing them. */
+    /** Which months the archive holds, oldest first. */
+    get archivedMonths(): string[] {
+        return archiveMonths(this.historyDir);
+    }
+
+    /**
+     * ‼️ M-9 — THE ARCHIVE, READ THE WAY THE LIVE LIST IS READ.
+     *
+     * "I deleted it but I need to look at it" was answered by opening a .jsonl
+     * file in the editor, which is the raw store and not a surface. These come
+     * back as ordinary tasks — same fields, same shape — so the page draws them
+     * with the row it already has and nothing has to learn a second format.
+     *
+     * The paths are expanded here for the same reason they are expanded on
+     * load: the archive is git-synced between machines and holds `${claudeDir}`
+     * tokens, so a transcript link built from a raw line would point nowhere.
+     */
+    archivedTasks(months?: string[]): FarmTask[] {
+        const want = months?.length ? months : this.archivedMonths;
+        return readArchive(this.historyDir, want)
+            .map(t => expandDeep(t as unknown as FarmTask, this.proots()));
+    }
+
+    /**
+     * Move finished tasks to the monthly history log instead of losing them.
+     *
+     * ‼️ M-8 (reopened) — IT REPORTS WHETHER IT WORKED, AND THE CALLER OBEYS.
+     *
+     * It used to swallow every error ("history is best-effort") while the one
+     * caller that a HAND drives — the ✕ on a row — went on to delete the output
+     * file and save the list anyway. A full disk, a permission error or a lock
+     * on the month file therefore looked exactly like a successful archive: the
+     * row was gone, the output was gone, and the archive it was supposedly
+     * filed in had never been written. That is not best-effort, it is silent
+     * data loss on the one deletion a person performs by accident.
+     *
+     * So it throws, and `deleteTask` does not commit unless it returns.
+     * Callers for whom the archive genuinely IS best-effort (overflow pruning,
+     * Clear Finished on rows that already ran) catch it themselves and say so
+     * at their own call site.
+     */
     private appendHistory(tasks: FarmTask[]): void {
+        if (!tasks.length) { return; }
+        fs.mkdirSync(this.historyDir, { recursive: true });
+        const byMonth = new Map<string, FarmTask[]>();
+        for (const t of tasks) {
+            (byMonth.get(monthOf(t)) ?? byMonth.set(monthOf(t), []).get(monthOf(t))!).push(t);
+        }
+        for (const [month, list] of byMonth) {
+            fs.appendFileSync(path.join(this.historyDir, `${month}.jsonl`),
+                list.map(t => JSON.stringify(tokenizeDeep(t, this.proots()))).join('\n') + '\n', 'utf8');
+        }
+    }
+
+    /**
+     * ‼️ M-8 (reopened) — UNDO TELLS THE ARCHIVE TOO.
+     *
+     * Deleting a row files it; Undo puts it back on the live list — and left to
+     * itself the archive still holds a copy of a run that is not deleted at
+     * all. The reader would show it in the history beside the live row, and
+     * delete → Undo → delete filed it a second time.
+     *
+     * The file is append-only, so taking it back is another line: a tombstone
+     * carrying the id and the moment, written to the SAME month file the record
+     * went to (`monthOf`, so the reader meets them in order and the last word
+     * is this one). Best-effort on purpose — the row is already back, and a
+     * failure here costs a stale line in a history view, never the run itself.
+     */
+    private appendUndelete(tasks: FarmTask[]): void {
         if (!tasks.length) { return; }
         try {
             fs.mkdirSync(this.historyDir, { recursive: true });
             const byMonth = new Map<string, FarmTask[]>();
             for (const t of tasks) {
-                const d = new Date(t.endedAt ?? t.createdAt);
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                (byMonth.get(key) ?? byMonth.set(key, []).get(key)!).push(t);
+                (byMonth.get(monthOf(t)) ?? byMonth.set(monthOf(t), []).get(monthOf(t))!).push(t);
             }
             for (const [month, list] of byMonth) {
                 fs.appendFileSync(path.join(this.historyDir, `${month}.jsonl`),
-                    list.map(t => JSON.stringify(tokenizeDeep(t, this.proots()))).join('\n') + '\n', 'utf8');
+                    list.map(t => JSON.stringify({ id: t.id, undeleted: Date.now() })).join('\n') + '\n', 'utf8');
             }
-        } catch { /* history is best-effort */ }
+        } catch (e) {
+            console.warn('[agent-farm] undo could not be filed in the task archive', e);
+        }
     }
 
     /** Keep the outputs archive under the configured size cap (oldest first). */
@@ -1027,9 +1162,17 @@ export class TaskManager implements vscode.Disposable {
                     t.status === 'done' || t.status === 'cancelled' || t.status === 'failed');
                 const overflow = this.tasks.length - MAX_TASKS;
                 const dropped = finished.slice(0, overflow);
-                this.appendHistory(dropped);
-                const drop = new Set(dropped.map(t => t.id));
-                this.tasks = this.tasks.filter(t => !drop.has(t.id));
+                // ‼️ M-8 — THE ARCHIVE WRITE DECIDES WHETHER THE ROWS GO. This
+                // one really is best-effort about the PRUNE — a list a little
+                // over its cap for one more save is nothing — but it must never
+                // be best-effort about the DATA: if the month file could not be
+                // written, the rows stay on the list rather than disappearing
+                // into an archive that does not have them.
+                try {
+                    this.appendHistory(dropped);
+                    const drop = new Set(dropped.map(t => t.id));
+                    this.tasks = this.tasks.filter(t => !drop.has(t.id));
+                } catch { /* keep them: over the cap beats gone */ }
             }
             // absolute machine paths leave as ${claudeDir}/${globalStorage}/${home}
             // tokens — the git-synced store stays valid on every machine
@@ -1837,10 +1980,18 @@ export class TaskManager implements vscode.Disposable {
      * The returned task is the caller's single-level undo (the Notices page's
      * shape). Restoring it puts the row back where it was; its OUTPUT file is
      * gone either way, and the row says so rather than offering a dead button.
+     *
+     * ‼️ M-8 (reopened) — THE ARCHIVE WRITE IS THE COMMIT POINT, AND IT IS
+     * FIRST. This used to drop the row, then attempt an archive that swallowed
+     * every error, then delete the output and save — so a full disk or a locked
+     * month file produced exactly the visible result of a successful archive
+     * with none of the archive. The order is now: file it, and only then take
+     * it off the list and delete its output. If the append throws, nothing has
+     * happened yet and the throw reaches the caller, which shows it.
      */
     deleteTask(task: FarmTask): FarmTask {
-        this.tasks = this.tasks.filter(t => t.id !== task.id);
         this.appendHistory([task]);
+        this.tasks = this.tasks.filter(t => t.id !== task.id);
         this.deleteOutput(task);
         this.save();
         return task;
@@ -1850,16 +2001,23 @@ export class TaskManager implements vscode.Disposable {
      *  double-press cannot duplicate a row. Returns how many came back. */
     restoreTasks(list: FarmTask[]): number {
         let n = 0;
+        const back: FarmTask[] = [];
         for (const t of list) {
             if (!t || typeof t.id !== 'string' || this.tasks.some(x => x.id === t.id)) { continue; }
             // The output file was deleted with the row and is not coming back;
             // a row still offering an `output` button would be a dead button.
-            const back: FarmTask = { ...t };
-            delete back.outputFile;
-            this.tasks.push(back);
+            const row: FarmTask = { ...t };
+            delete row.outputFile;
+            this.tasks.push(row);
+            back.push(row);
             n++;
         }
-        if (n) { this.save(); }
+        if (n) {
+            // ‼️ M-8 — and the archive is told, or it keeps a copy of a run that
+            // is sitting on the live list (see `appendUndelete`).
+            this.appendUndelete(back);
+            this.save();
+        }
         return n;
     }
 
@@ -1987,9 +2145,16 @@ export class TaskManager implements vscode.Disposable {
         this.routeToStep(w, stepIndex, handoff, runId);
     }
 
+    /**
+     * ‼️ M-8 (reopened) — NOTHING IS REMOVED BEFORE THE ARCHIVE HAS IT.
+     * Same bargain as `deleteTask`: the append is the commit point, and a
+     * failure here leaves the list exactly as it was rather than clearing rows
+     * whose only other copy was the output file it was about to delete.
+     */
     clearFinished(): number {
         const finished = this.tasks.filter(t =>
             t.status !== 'queued' && t.status !== 'running');
+        if (!finished.length) { return 0; }
         this.appendHistory(finished);
         for (const t of finished) { this.deleteOutput(t); }
         this.tasks = this.tasks.filter(t =>
