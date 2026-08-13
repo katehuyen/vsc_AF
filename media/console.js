@@ -207,7 +207,16 @@
         /* outside the flex identity line (the resume rows) there is no gap to
            inherit, so the id gets its own breathing space */
         .srow .m .nm + .sid { margin-left:4px; }
-        .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .srow .t2 { display:block; font-size:11px; margin-top:2px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* ‼️ U-50 — WRAPPING A LINE IN A TIP MAKES THE WRAPPER THE CHILD. The
+           trigger is no longer the flex item its rules were written for, so
+           those rules move out here — otherwise the identity line stops
+           shrinking, the name never reaches its ellipsis, and the card grows a
+           horizontal scroll inside a 250px column. */
+        .srow .h > .af-tipw.nw { flex:1 1 auto; min-width:0; display:block; overflow:hidden; }
+        .srow .h > .af-tipw.mw { flex:none; }
+        .srow > .af-tipw.t2w { display:block; min-width:0; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
         .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
         .talk { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 2px 10px;
@@ -934,13 +943,141 @@
      * omits the line leaves a reader to guess between "not yet" and "lost",
      * and those need different actions, so it is said instead of dropped.
      */
-    const whoTip = (agentName, sessionId, shape) => window.AFTip.lines([
-        'Agent: ' + (agentName || 'session'),
-        sessionId ? 'Session: ' + sessionId
-            : shape === 'perTurn'
-                ? 'Session: not yet — this engine names the conversation on its first completed turn'
-                : 'Session: not yet — the CLI names it as it starts'
-    ]);
+    const whoLine = (sessionId, shape) => sessionId
+        ? 'Session: ' + sessionId
+        : shape === 'perTurn'
+            ? 'Session: not yet — this engine names the conversation on its first completed turn'
+            : 'Session: not yet — the CLI names it as it starts';
+
+    /* ======================================================================
+       ‼️ U-50 — A CARD IS A SESSION, AND ITS HOVERS ARE WHERE THAT SESSION IS
+       READ WITHOUT OPENING ANYTHING.
+
+       These cards are 250px wide and show six facts about a conversation that
+       has forty. Everything they cut — the whole name, the folder, the model
+       actually answering, what the turn is parked on, what it has spent — was
+       reachable only by opening another page, and that click is the cost this
+       panel exists to remove. A native `title` could not carry any of it: it
+       repeats the line it is on and then stops wherever the platform feels
+       like stopping (docs/CONVENTIONS.md → Hover).
+
+       FOUR SUBJECTS PER CARD, AND THEY DO NOT OVERLAP. The identity line says
+       WHO and WHERE; the name says WHAT THIS CONVERSATION IS; the figure says
+       WHAT IT HAS SPENT; the phase says WHAT IS HAPPENING RIGHT NOW. A fact
+       lives in exactly one of them — four panels repeating each other read as
+       no panels at all, which is the complaint that produced this item.
+
+       ‼️ …AND THEY ARE `tip-free`, BECAUSE THE COLUMN SCROLLS. `.clist` is
+       `overflow-y:auto` at 250px: a panel growing out of its trigger is
+       clipped to that column and cannot be reached with the pointer. Anchored
+       to the CARD, so it opens under the card at a readable width whichever
+       row the pointer is on, and both edges of the gesture are slowed — this
+       is a list people sweep down.
+       ====================================================================== */
+    // ‼️ `cls` lands on the WRAPPER, and the wrapper becomes the flex/block
+    // child in place of the trigger — so every sizing rule that was on the
+    // trigger has to move out to it, or the line silently stops being sized
+    // (afTip.js says this; the identity line is exactly the case it means).
+    const cardTip = (trigger, head, body, cls) =>
+        window.AFTip.wrap(trigger, head, body, 'tip-free' + (cls ? ' ' + cls : ''),
+            'data-aftip-anchor=".srow"');
+
+    /** A value nobody set is said as the thing that will decide it — never as a
+     *  bare "Default", which is a word with no referent (CONVENTIONS.md). */
+    const orDefault = (v, who) => v || ('Default — ' + who + ' decides');
+    /** A figure per something, dropped when the denominator is not worth
+     *  dividing by (a session with one turn has no average). */
+    const perTurn = (n, turns) => (turns > 1 && n > 0 ? n / turns : 0);
+    const when = ts => (ts ? window.AFTime.full(ts) : '');
+
+    /** WHO and WHERE — the half of a card that does not move while it runs. */
+    const cardWhoTip = (s) => ({
+        head: `${s.agentName || 'session'} · ${s.engineLabel || window.AFEngine.label(s.engine)}`
+            + (s.sessionId ? ` · #${String(s.sessionId).slice(0, 8)}` : ''),
+        body: window.AFTip.lines([
+            'Agent: ' + (s.agentName || 'session'),
+            whoLine(s.sessionId, s.turnShape),
+            'Engine: ' + (s.engineLabel || window.AFEngine.label(s.engine)),
+            'Model: ' + orDefault(s.turnModel || s.model, 'the CLI'),
+            'Effort: ' + orDefault(s.turnEffort || s.effort, 'the model'),
+            'Permissions: ' + orDefault(s.permissionMode, 'the CLI'),
+            'Folder: ' + (s.cwd || '—'),
+            'Project: ' + (s.projectName
+                ? `${s.projectIcon || '◧'} ${s.projectName} — it was told about it before you typed`
+                : 'not filed under one'),
+            // ‼️ THE BLANK LINE IS PART OF THE STRING, not an entry of its own:
+            // `AFTip.lines` drops '' so a caller can write `cond ? x : ''`, and
+            // a separator written as an empty entry silently disappears. Same
+            // shape as the composer's `boxTip` — figures first, then the
+            // standing sentence, with air between them.
+            '\nClick the card to bring this conversation up; right-click it for the session\'s own actions.'
+        ])
+    });
+
+    /** WHAT THIS CONVERSATION IS — the name whole, which the card cuts, and the
+     *  shape of the thing it names. */
+    const cardNameTip = (s) => ({
+        head: (s.title ? `${s.title.length.toLocaleString()} characters` : 'not named yet')
+            + (s.turns ? ` · ${s.turns} turn${s.turns === 1 ? '' : 's'}` : ' · nothing said yet'),
+        body: window.AFTip.lines([
+            (s.title || 'The CLI names a session from its first exchange; this one has not had it yet.') + '\n',
+            'Turns: ' + (s.turns || 0),
+            'Last moved: ' + (s.lastTs ? `${relTime(s.lastTs)} ago · ${when(s.lastTs)}` : '—'),
+            (s.queued || []).length ? 'Held messages: ' + s.queued.length + ' — they go the moment this turn ends' : '',
+            s.exitReason ? 'Ended: ' + s.exitReason : ''
+        ])
+    });
+
+    /** WHAT IT HAS SPENT. Figures only, and the derived ones the card implies —
+     *  never a second query, all of it off numbers the row already has. */
+    const cardCostTip = (s) => {
+        const sp = sessionSpend(s);
+        const ptk = perTurn(s.tokens || 0, s.turns || 0);
+        const pc = perTurn(sp.cost || 0, s.turns || 0);
+        return {
+            head: `${s.agentName || 'session'} · ${s.tokens ? C.fmtTok(s.tokens) + ' tokens' : 'nothing spent yet'}`,
+            body: window.AFTip.lines([
+                'Raw tokens: ' + (s.tokens ? C.fmtTok(s.tokens) : '0'),
+                s.wTokens ? '⚖ Against the 5h limit: ' + C.fmtTok(Math.round(s.wTokens)) : '',
+                s.reportsCost === false
+                    ? 'Cost: ' + (s.engineLabel || 'this engine') + ' states no per-turn price'
+                    : 'Cost: ' + (sp.est ? '~' : '') + C.fmtUSD(sp.cost || 0)
+                        + (sp.est ? ' — the running turn is an estimate until it closes' : ''),
+                ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens'
+                    + (pc ? ' · ' + C.fmtUSD(pc) : '') : '',
+                s.contextTokens ? 'Context now: ' + C.fmtTok(s.contextTokens)
+                    + ' — what the next turn starts from' : ''
+            ])
+        };
+    };
+
+    /** WHAT IS HAPPENING RIGHT NOW — the only one of the four that is about
+     *  this moment, so it is the only one that may name the running turn. */
+    const cardStateTip = (s) => {
+        const p = phaseOf(s);
+        const ask = s.pendingAsk && (s.pendingAsk.questions || []).length
+            ? (s.pendingAsk.questions[0].question || s.pendingAsk.questions[0].header || '')
+            : '';
+        const perm = (s.pendingPermission && (s.pendingPermission.toolName || s.pendingPermission.tool)) || '';
+        return {
+            head: `${p.label || 'nothing said yet'}${s.lastTs ? ` · ${relTime(s.lastTs)} ago` : ''}`,
+            body: window.AFTip.lines([
+                'Now: ' + (p.label || 'nothing said yet'),
+                s.lastTs ? 'Since: ' + when(s.lastTs) : '',
+                s.status === 'working' && s.turnStartedAt
+                    ? 'This turn started: ' + relTime(s.turnStartedAt) + ' ago'
+                    + (s.turnModel ? ' · on ' + s.turnModel : '') : '',
+                s.status === 'working' && s.turnTokens
+                    ? 'This turn so far: ' + C.fmtTok(s.turnTokens) + ' tokens'
+                    + (s.turnApiCalls ? ' · ' + s.turnApiCalls + ' API calls' : '') : '',
+                ask ? 'Asking you: ' + ask : '',
+                perm ? 'Waiting on permission for: ' + perm : '',
+                (s.queued || []).length ? 'Held: ' + s.queued.length + ' message'
+                    + ((s.queued || []).length === 1 ? '' : 's') : '',
+                s.exitReason ? 'Why it ended: ' + s.exitReason : ''
+            ])
+        };
+    };
 
     /**
      * The kinds of line the Console shows, and what each one matches.
@@ -1259,6 +1396,9 @@
             // the nudge is the WAIT, and it grows on its own
             const waited = p.id === 'you' || p.id === 'blocked' ? relTime(s.lastTs) : '';
             const dead = s.status === 'ended' || s.status === 'error';
+            // U-50 — four subjects, four panels, no fact in two of them.
+            const twho = cardWhoTip(s), tname = cardNameTip(s);
+            const tcost = cardCostTip(s), tstate = cardStateTip(s);
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
@@ -1271,15 +1411,22 @@
                      // cannot be done to it right now (see ctxAttr)
                      afConsoleLive: !dead, afConsoleEnded: dead,
                      afConsoleWorking: s.status === 'working'
-                 })}
-                 title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
+                 })}>
+                ${/* ‼️ U-50 — THE CARD ITSELF CARRIES NO `title` ANY MORE. It used
+                      to repeat the name that is drawn two lines down and then add
+                      the same closing sentence to every card; worse, a native
+                      tooltip anywhere on the card raced the rich panels below it,
+                      so which of the two you got depended on which pixel you
+                      stopped on. Everything it said is in one of the four. */''}
                 <div class="h">
-                    <span class="n" title="${C.esc(whoTip(s.agentName, s.sessionId, s.turnShape))}"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
+                    ${cardTip(`<span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>`,
+                        twho.head, twho.body, 'nw')}
                     ${engineBadge(s)}
-                    <span class="m" title="${C.esc(tokTip(s, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
+                    ${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}
                 </div>
-                <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
+                ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
+                <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
+                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -1300,13 +1447,26 @@
         const back = (DATA.lastWindow || []).length ? `
             <div class="backhead">⟲ Where you left off</div>
             ${(DATA.lastWindow || []).map(r => `
-            <div class="srow back" data-back="${C.esc(r.sessionId)}"
-                 title="Continue this conversation here — it ended when the window did, and picks up with everything that was said">
+            <div class="srow back" data-back="${C.esc(r.sessionId)}">
+                ${/* U-50 — the shelf gets the same two panels the live cards do:
+                      WHO this was, and WHAT it was called. The row's own
+                      "continue this here" sentence was on every one of them and
+                      is now said once, at the end of the identity panel. */''}
                 <div class="h">
-                    <span class="n" title="${C.esc(whoTip(r.agentName, r.sessionId))}">${who(r.agentName, r.sessionId)}</span>
+                    ${cardTip(`<span class="n">${who(r.agentName, r.sessionId)}</span>`,
+                        `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''} · ended ${relTime(r.endedAt)} ago`,
+                        window.AFTip.lines([
+                            'Agent: ' + (r.agentName || 'session'),
+                            whoLine(r.sessionId),
+                            'Folder: ' + (r.cwd || '—'),
+                            'Ended: ' + when(r.endedAt),
+                            '\nClicking continues this conversation here — --resume picks the SAME session back up, same id, same transcript, with everything that was said. ✕ takes it off the shelf without touching the session.'
+                        ]), 'nw')}
                     <button class="only" data-backforget="${C.esc(r.sessionId)}" title="Take it off this shelf">✕</button>
                 </div>
-                <div class="t2">${C.esc(r.title || '(no name)')}</div>
+                ${cardTip(`<span class="t2">${C.esc(r.title || '(no name)')}</span>`,
+                    r.title ? `${r.title.length.toLocaleString()} characters` : 'never named',
+                    r.title || 'This session ended before the CLI named it.', 't2w')}
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `${callout}
@@ -1468,19 +1628,66 @@
         if (!st.showResume) { return ''; }
         const owned = new Set(DATA.owned || []);
         const list = DATA.resumable || [];
-        const rows = list.map(r => `
-            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
+        // ‼️ U-50 — THIS LIST HAD BEEN LEFT BEHIND. The live cards above it had
+        // been given hovers twice over while every row here carried one native
+        // `title` saying its folder — on a list whose whole job is choosing
+        // between a hundred conversations by what they were. Same treatment as
+        // the cards, same division of subjects: the name says what this
+        // conversation WAS, the identity line says who and where, the figure
+        // says what it spent and what resuming it starts from.
+        const rows = list.map(r => {
+            const busy = owned.has(r.sessionId);
+            const ptk = perTurn(r.tokens || 0, r.turns || 0);
+            return `
+            <div class="srow${busy ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
                  ${ctxAttr({
                      webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
                      sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
-                 })}
-                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
+                 })}>
+                ${/* THE NAME PANEL LEADS WITH THE OPENING PROMPT, not with the
+                      title — the title IS eighty characters of that prompt and is
+                      already drawn on the row, so repeating it would be the
+                      thin hover this item was written about. */''}
                 <div class="h">
-                    <span class="n"><span class="nm">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</span></span>
+                    ${cardTip(`<span class="n"><span class="nm">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</span></span>`,
+                        `${r.firstPrompt ? window.AFTip.sizeNote(r.firstPrompt) + ' · ' : ''}${r.turns || 0} turn${r.turns === 1 ? '' : 's'} · last touched ${relTime(r.ts)} ago`,
+                        window.AFTip.lines([
+                            (r.firstPrompt || r.title || '(never named)') + '\n',
+                            'Started: ' + (r.startedAt ? when(r.startedAt) : '—'),
+                            'Last touched: ' + when(r.ts),
+                            'Turns: ' + (r.turns || 0)
+                            + (r.tools ? ' · ' + r.tools + ' tool calls' : '')
+                            + (r.errors ? ' · ' + r.errors + ' errors' : ''),
+                            (r.models || []).length ? 'Models: ' + r.models.join(', ') : '',
+                            (r.tags || []).length ? 'Labels: ' + r.tags.join(', ') : '',
+                            r.pinned ? 'Pinned: on your shelf, so it stays at the top whatever the filter says' : '',
+                            busy
+                                ? '\nCannot be resumed: a live process owns this transcript right now — a terminal, or another window. Joining it would put two processes on one conversation.'
+                                : '\nClicking resumes it here, in the panel, with everything that was said. Right-click for the session\'s own actions.'
+                        ]), 'nw')}
                     ${resumeEngineBadge(r)}
                 </div>
-                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
-            </div>`).join('');
+                <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),
+                    `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''}`,
+                    window.AFTip.lines([
+                        'Agent: ' + (r.agentName || 'session'),
+                        whoLine(r.sessionId),
+                        'Engine: ' + window.AFEngine.label(r.engine),
+                        'Folder: ' + (r.cwd || '—')
+                    ]))} · ${relTime(r.ts)} ago${r.tokens ? ` · ${cardTip(`<span class="pair">${tokBadge(r.tokens)}</span>`,
+                        `${C.fmtTok(r.tokens)} tokens`,
+                        window.AFTip.lines([
+                            'Raw tokens: ' + C.fmtTok(r.tokens),
+                            r.wTokens ? '⚖ Against the 5h limit: ' + C.fmtTok(Math.round(r.wTokens)) : '',
+                            r.cost ? 'Cost: ' + C.fmtUSD(r.cost) : '',
+                            ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens' : '',
+                            r.contextTokens
+                                ? 'Context after its last reply: ' + C.fmtTok(r.contextTokens)
+                                + ' — what resuming it starts from, and what it costs you before you say anything'
+                                : ''
+                        ]))}` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+            </div>`;
+        }).join('');
         // How many of how many — a list that silently ends at fifteen is why
         // the filter had to exist in the first place.
         const total = Number(DATA.resumeTotal) || 0;

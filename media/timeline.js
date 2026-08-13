@@ -35,6 +35,11 @@
         .pathlink { cursor:pointer; }
         .pathlink:hover { text-decoration:underline; }
         .lanelabel:hover text { opacity:1; text-decoration:underline; }
+        /* U-53 — session ids are read against each other (is this the same run
+           as that one?), so they are set in the editor's own monospace and stay
+           quieter than the name above them even under the row's hover. */
+        .lane-sid { font-family:var(--vscode-editor-font-family, monospace); letter-spacing:-0.2px; }
+        .lanelabel:hover .lane-sid { opacity:.8; }
     </style>`;
 
     /**
@@ -429,7 +434,14 @@
 
     function lanesSvg(lanes, now, winMs) {
         if (!lanes.length) { return '<p class="muted">No lanes yet.</p>'; }
-        const W = 900, labelW = 100, rowH = 46, padT = 22;
+        // ‼️ U-53 — THE GUTTER IS THREE LINES NOW: the agent's name, the SESSION
+        // the row is drawing, and the YOUR-TURN toggles. The middle one is new
+        // and it is the one that was missing: "developer #2" says which of an
+        // agent's rows you are on but not which conversation, so the id had to
+        // be fished out of a hover on every glance — on the one page whose whole
+        // job is watching several sessions at once. Four more pixels of row for
+        // the fact the page is about.
+        const W = 900, labelW = 100, rowH = 50, padT = 22;
         const H = padT + lanes.length * rowH + 10;
         const from = now - winMs;
         const x = ts => labelW + ((ts - from) / winMs) * (W - labelW - 8);
@@ -479,14 +491,34 @@
             // with no mark is indistinguishable from a page that never learned.
             const laneEng = window.AFEngine.id(LIVE_BY_ID.get(primary.id)
                 && LIVE_BY_ID.get(primary.id).source);
+            // ‼️ U-53 — WHICH SESSION, WRITTEN DOWN, UNDER THE NAME. An anon row
+            // is already labelled by its own id (`#3f8a1c2b`), so it gets no
+            // second line saying the same thing — a repeated fact is not
+            // information. A packed track holds several sessions in sequence and
+            // says so (`+2`) rather than naming one of them and implying it is
+            // the row: the id shown is the row's CURRENT session, the same one
+            // its click and its right-click act on.
+            // ‼️ A LIVE SESSION MAY NOT HAVE AN ID YET. On a per-turn engine the
+            // id is the CLI's own conversation id and does not exist until a
+            // turn has run, so a row can be drawn before its session is named.
+            // Say that rather than print `(undefined)` — those need different
+            // reactions, and one of them is "wait".
+            const more = lane.sessions.length - 1;
+            const sid = String((primary && primary.id) || '');
+            const sidLine = lane.anon ? ''
+                : sid ? `(${sid.slice(0, 8)})${more > 0 ? ` +${more}` : ''}`
+                    : '(not named yet)';
             out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ` +
                 laneCtx(primary.id, lane.agent, 'afTimelineAgent') +
                 ` style="cursor:${lane.file ? 'pointer' : 'default'}">` +
                 `<circle class="${C.esc(window.AFEngine.cls(laneEng))}" cx="7.5" cy="${y + 10}" r="3.5"` +
                 ` fill="var(--af-engc, currentColor)" opacity="0.95"/>` +
-                `<text x="16" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 13 ? name.slice(0, 12) + '…' : name)}</text>` +
+                `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 13 ? name.slice(0, 12) + '…' : name)}</text>` +
+                (sidLine
+                    ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
+                    : '') +
                 `<title>${C.esc('Engine: ' + window.AFEngine.label(laneEng) + '\n\n' + tip)}</title></g>`;
-            const ty = y + 23;
+            const ty = y + 28;
             const rows = lane.rowsOfAgent || 1;
             const shared = rows > 1
                 ? ` This agent has ${rows} rows here and they all carry this same one setting — turning it on here turns it on for all ${rows}.`

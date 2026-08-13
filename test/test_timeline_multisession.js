@@ -111,14 +111,34 @@ vm.runInContext(code, sandbox); // runs render() once
 ok('lane row dev #1 exists', lastHtml.indexOf('>dev #1</text>') !== -1);
 ok('lane row dev #2 exists', lastHtml.indexOf('>dev #2</text>') !== -1);
 ok('sequential ops sessions share one plain row', lastHtml.indexOf('>ops</text>') !== -1 && lastHtml.indexOf('>ops #1</text>') === -1);
-ok('four lane rows total (svg height)', lastHtml.indexOf('viewBox="0 0 900 216"') !== -1);
-// S1's prompt mark sits in row 0 (cy = 22 + 23), S2's tool segment in row 1 (y = 22+46+23-7)
-ok('S1 mark drawn in first dev row', /<circle cx="[\d.]+" cy="45" r="4\.2"/.test(lastHtml));
-ok('S2 segment drawn in second dev row', /<rect x="[\d.]+" y="84" width="[\d.]+" height="14"/.test(lastHtml));
+ok('four lane rows total (svg height)', lastHtml.indexOf('viewBox="0 0 900 232"') !== -1);
+// U-53 made the gutter three lines: rowH 46 -> 50. S1's prompt mark sits in
+// row 0 (cy = 22+25), S2's tool segment in row 1 (y = 22+50+25-7).
+ok('S1 mark drawn in first dev row', /<circle cx="[\d.]+" cy="47" r="4\.2"/.test(lastHtml));
+ok('S2 segment drawn in second dev row', /<rect x="[\d.]+" y="90" width="[\d.]+" height="14"/.test(lastHtml));
+
+// ---- U-53: the row says WHICH SESSION, under the name ----
+//
+// "dev #1 / dev #2" says which of an agent's rows you are on and not which
+// conversation, so the id had to be fished out of a hover — on the one page
+// whose whole job is watching several sessions at once.
+ok('‼️ the row carries its session id, under the agent name',
+    /<text class="lane-sid" x="16" y="46" font-size="9\.5"[^>]*>\(S1\)<\/text>/.test(lastHtml));
+ok('…each row its own', /<text class="lane-sid"[^>]*>\(S2\)<\/text>/.test(lastHtml));
+ok('…and it is part of the label group, so it opens and right-clicks like the name',
+    /class="mark lanelabel" data-file="D:\/t\/S1.jsonl"[\s\S]{0,2500}?class="lane-sid"[\s\S]{0,120}?\(S1\)/.test(lastHtml));
+ok('…set in monospace, because ids are read against each other',
+    /\.lane-sid \{ font-family:var\(--vscode-editor-font-family/.test(lastHtml));
+// A packed row holds several sessions in sequence: naming one of them without
+// saying so would imply the row IS that session.
+ok('‼️ a packed row says how many more it is drawing',
+    /<text class="lane-sid"[^>]*>\(S3\) \+1<\/text>/.test(lastHtml));
 
 // ---- a session nobody could name is labelled by what it IS ----
 ok('unresolved session row is labelled by its id', lastHtml.indexOf('>#abcdef12</text>') !== -1);
 ok('…and says why', lastHtml.indexOf('not one of your agent folders') !== -1);
+ok('‼️ …and gets NO second line repeating it — a repeated fact is not information',
+    !/<text class="lane-sid"[^>]*>\(abcdef12\)/.test(lastHtml));
 
 // ---- the row label is a handle: rich tooltip + click ----
 ok('lane labels are clickable groups', lastHtml.indexOf('class="mark lanelabel"') !== -1);
@@ -159,7 +179,7 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
     // Transparent hit areas: the whole row answers for its live session, and a
     // packed row's earlier session answers for itself.
     const rects = [];
-    const re = /<rect x="([\d.]+)" y="(\d+)" width="([\d.]+)" height="42" fill="transparent" data-vscode-context="([^"]*)"\/>/g;
+    const re = /<rect x="([\d.]+)" y="(\d+)" width="([\d.]+)" height="46" fill="transparent" data-vscode-context="([^"]*)"\/>/g;
     let m;
     while ((m = re.exec(lastHtml))) {
         rects.push({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), sid: ctxOf(m[4]) });
@@ -167,11 +187,11 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
     ok('every row has a full-width right-click area', rects.filter(r => r.w === 792).length === 4);
     ok('…the dev rows target their own sessions',
         rects.some(r => r.y === 24 && r.w === 792 && r.sid === 'S1') &&
-        rects.some(r => r.y === 70 && r.w === 792 && r.sid === 'S2'));
-    ok('…a packed row targets the session that is live', rects.some(r => r.y === 116 && r.w === 792 && r.sid === 'S3'));
+        rects.some(r => r.y === 74 && r.w === 792 && r.sid === 'S2'));
+    ok('…a packed row targets the session that is live', rects.some(r => r.y === 124 && r.w === 792 && r.sid === 'S3'));
     ok('…and the earlier session on that row answers over its own span',
-        rects.some(r => r.y === 116 && r.sid === 'SOLD' && r.w < 792));
-    ok('…a row nobody could name is still a session', rects.some(r => r.y === 162 && r.sid === 'abcdef1234567890'));
+        rects.some(r => r.y === 124 && r.sid === 'SOLD' && r.w < 792));
+    ok('…a row nobody could name is still a session', rects.some(r => r.y === 174 && r.sid === 'abcdef1234567890'));
     ok('the hit areas are laid down before the bars, so left-click still opens',
         lastHtml.indexOf('fill="transparent"') < lastHtml.indexOf('rx="3" fill="var(--vscode-charts-green'));
 }
@@ -179,14 +199,14 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
 // ---- an unfinished tool call must not run to "now" forever ----
 {
     // row 2 (ops): toolStart at -9m, no toolEnd, session idle again since -8m
-    const ghost = /<rect x="([\d.]+)" y="130" width="([\d.]+)" height="14" rx="3" ([^>]*)>/.exec(lastHtml);
+    const ghost = /<rect x="([\d.]+)" y="140" width="([\d.]+)" height="14" rx="3" ([^>]*)>/.exec(lastHtml);
     ok('the unfinished tool is drawn', !!ghost);
     ok('…hollow and dashed, not as work in progress',
         !!ghost && ghost[3].indexOf('fill="none"') !== -1 && ghost[3].indexOf('stroke-dasharray') !== -1);
     ok('…and stops where the session did (≈1 minute, not 9)', !!ghost && Number(ghost[2]) < 60);
     ok('…and says so on hover', lastHtml.indexOf('unfinished: no end event ever arrived') !== -1);
     // row 0 (dev #1): the session says it IS inside this tool — that one grows
-    const live = /<rect x="([\d.]+)" y="38" width="([\d.]+)" height="14" rx="3" fill="var\(--vscode-charts-green/.exec(lastHtml);
+    const live = /<rect x="([\d.]+)" y="40" width="([\d.]+)" height="14" rx="3" fill="var\(--vscode-charts-green/.exec(lastHtml);
     ok('a tool the session is still on keeps growing', !!live && Number(live[1]) + Number(live[2]) > 880);
 }
 

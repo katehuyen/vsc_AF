@@ -259,9 +259,45 @@ const html = allHtml;
     // The hover spells out BOTH figures: the raw total and what it charged the
     // 5h limit. The card itself has room only for the pair; the sentence that
     // says which is which lives here (see charts.js WEIGHTED_TIP).
-    ok('…with the money one hover away', /title="48200t raw tokens · \$0\.12 spent"/.test(html()));
+    ok('…with the money one hover away', /Raw tokens: 48200t\nCost: \$0\.12/.test(html()));
     ok('…and the context the window is holding now', html().includes('ctx 24100t'));
     ok('…with the session\'s own name under the agent', html().includes('Kalan eksikler'));
+}
+
+// ---------- U-50: the card is read WITHOUT opening the session ----------
+//
+// Four subjects, four rich panels, and no fact in two of them. A native
+// `title` could carry none of it: it repeats the line it is on and stops
+// wherever the platform feels like stopping.
+{
+    const h = html();
+    ok('the card carries no native title of its own any more',
+        !/<div class="srow[^"]*" data-sel="[^"]*"[\s\S]{0,900}?\btitle="/.test(h));
+    ok('‼️ the panels are tip-free — the column scrolls and would clip them',
+        (h.match(/class="af-tipw tip-free/g) || []).length >= 4);
+    ok('…and anchored to the CARD, so one opens in the same place from any row',
+        /data-aftip-anchor="\.srow"/.test(h));
+
+    const panel = head => {
+        const re = new RegExp('<span class="af-tiph">' + head + '<\\/span><span class="af-tipb">([\\s\\S]*?)<\\/span>');
+        const m = re.exec(h);
+        return m ? m[1] : '';
+    };
+    // WHO and WHERE
+    const who = panel('developer · [^<]*');
+    ok('identity: the whole session id, the engine, and the folder',
+        /Session: 407c78cb-/.test(who) && /Engine: /.test(who) && /Folder: /.test(who));
+    ok('…the model and effort that are actually answering, never a bare "Default"',
+        /Model: /.test(who) && /Effort: /.test(who) && !/Model: Default$/m.test(who));
+    ok('…and the project the session was told about', /Project: /.test(who));
+    // WHAT IT HAS SPENT — figures, and the derived ones the row already implies
+    ok('cost: the raw figure, the money, and what the next turn starts from',
+        /Raw tokens: 48200t/.test(h) && /Context now: 24100t/.test(h));
+    // WHAT IS HAPPENING RIGHT NOW
+    ok('state: the phase and the moment it has been in it since',
+        /Now: [^\n]+\nSince: /.test(h));
+    ok('‼️ no fact is in two panels: the folder is named once',
+        (h.match(/\nFolder: /g) || []).length === 1);
 }
 
 // ---------- the page is built once, then patched ----------
@@ -922,7 +958,13 @@ const html = allHtml;
             sessionId: 'aaaa1111-0001', title: 'ZEN sürüm notları', agentName: 'developer',
             engine: 'claude',
             cwd: 'D:/a/dev', pinned: true, ts: Date.now() - 5 * 86400000,
-            cost: 0.31, tokens: 812000, contextTokens: 132000
+            cost: 0.31, tokens: 812000, contextTokens: 132000,
+            // U-50 — what the row's hover is FOR: what this conversation was
+            // actually asked to do, without opening it. All of it is already in
+            // the index (see resumeRow); no row costs a second query.
+            firstPrompt: 'ZEN sürüm notlarını hazırla ve mağaza açıklamasını da güncelle',
+            startedAt: Date.now() - 6 * 86400000,
+            turns: 24, tools: 310, errors: 2, models: ['claude-opus-5'], tags: ['sürüm']
         }, {
             // K-17: the list is every engine's now, not Claude's alone.
             sessionId: 'bbbb2222-0002', title: 'codex ile refactor', agentName: 'developer',
@@ -1043,11 +1085,35 @@ const html = allHtml;
     ok('a resumable row leads with what it spent, in tokens',
         />812000t tk</.test(rlist()));
     ok('…with the dollars moved into the tooltip, where the space is free',
-        /title="812000t raw tokens · \$0\.31 spent"/.test(rlist()));
+        /Raw tokens: 812000t\nCost: \$0\.31/.test(rlist()));
     ok('…says how long ago in days, not in hours',
         /5d ago/.test(rlist()) && !/120h ago/.test(rlist()));
     ok('…and keeps a figure and its label on one line',
         /class="pair"/.test(rlist()));
+
+    // ---- U-50: the list that had been left behind ----
+    //
+    // Every card above this list had been given hovers twice over while each
+    // row here carried one native `title` naming its folder — on the surface
+    // whose entire job is choosing between a hundred conversations by what
+    // they were.
+    ok('‼️ the row opens on the OPENING PROMPT, not on the title it already draws',
+        /ZEN sürüm notlarını hazırla ve mağaza açıklamasını da güncelle/.test(rlist()));
+    ok('…with the shape of the conversation under it',
+        /Turns: 24 · 310 tool calls · 2 errors/.test(rlist()));
+    ok('…which models had it, and your own labels',
+        /Models: claude-opus-5/.test(rlist()) && /Labels: sürüm/.test(rlist()));
+    ok('…and what clicking will do', /Clicking resumes it here/.test(rlist()));
+    ok('…the rich panel, tip-free, not a native title',
+        /class="af-tipw tip-free nw"/.test(rlist())
+        && !/data-resume="[^"]*"[\s\S]{0,400}?\btitle="/.test(rlist()));
+    ok('‼️ a row a live process owns says so where the click is offered',
+        (() => {
+            push(withResume({ owned: ['aaaa1111-0001'] }));
+            const r = /Cannot be resumed: a live process owns this transcript/.test(rlist());
+            push(withResume());
+            return r;
+        })());
     posted.length = 0;
     sandbox.document.querySelectorAll('[data-resume]')[0]._fn({});
     ok('…and still resumes when clicked',

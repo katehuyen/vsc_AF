@@ -655,7 +655,17 @@ export class ConsolePanel {
             wTokens: Math.round(s.wTokens),
             // "Ctx now" — the same figure the sessions tables show, so a row
             // says what resuming it would cost you in window before you do
-            contextTokens: s.lastCtxTokens ?? 0
+            contextTokens: s.lastCtxTokens ?? 0,
+            // ‼️ U-50 — WHAT THIS CONVERSATION WAS, so choosing one does not mean
+            // opening it first. `firstPrompt` rides on the session for exactly
+            // this reason (see SessionInfo) and the Sessions tables already show
+            // it on hover; this list — the one where a hundred titles are read
+            // against each other — was the surface that never got it. Everything
+            // here is already in the index: no row costs a second query.
+            firstPrompt: s.firstPrompt ?? '',
+            startedAt: s.firstTs,
+            turns: s.userTurns, tools: s.toolCalls, errors: s.errors,
+            models: s.models ?? [], tags: s.tags ?? []
         };
     }
 

@@ -1863,17 +1863,17 @@ function pickParent(r, code) {
 //
 // Six buttons in one right-aligned run did not fit, so whichever ones happened
 // to overflow dropped to a second line — a different set at every panel width,
-// and no way to tell what belonged with what. Two groups now, with the flexible
-// gap between them: the doors ONTO the file sit beside the file's own name, and
-// the four things that REWRITE it keep the right-hand end they had.
+// and no way to tell what belonged with what. Grouping them was the first half
+// and it was not enough: the whole group then travelled between lines as the
+// panel resized, so the bar still had two shapes. The break is declared now.
+// FIRST line: the counts at the left, the four things that REWRITE the file at
+// the right. SECOND line: the doors ONTO the file, at the left.
 {
     const r = run(data());
     const bar = /<div class="pj-docbar">([\s\S]*?)<\/div>\s*\n\s*<div class="pj-card">/.exec(r.html());
     ok('the bar is still there', !!bar);
     const at = s => bar[1].indexOf(s);
-    ok('‼️ the file\'s own name and the buttons that open it are on the same side',
-        at('Backlog.md') < at('class="pj-open"') && at('class="pj-open"') < at('class="grow"'));
-    ok('…and the four that rewrite the file stay at the right-hand end',
+    ok('the four that rewrite the file stay at the right-hand end of the FIRST line',
         at('class="grow"') < at('data-act="blTidy"')
         && at('data-act="blTidy"') < at('data-act="blGather"')
         && at('data-act="blGather"') < at('data-act="blArchive"')
@@ -1882,6 +1882,14 @@ function pickParent(r, code) {
         at('class="pj-bar-grp"') > at('class="grow"')
         && at('class="pj-bar-grp"') < at('data-act="blTidy"')
         && /\.pj-docbar \.pj-bar-grp \{[^}]*display:flex/.test(r.html()));
+    ok('‼️ the doors onto the file are BELOW that run, not beside it — the break '
+        + 'is declared so the bar cannot have a second shape at another width',
+        at('class="pj-bar-break"') > at('data-act="blArchiveAge"')
+        && at('class="pj-bar-break"') < at('class="pj-open"'));
+    ok('…and the break really ends the line (a full-width item of no height)',
+        /\.pj-docbar \.pj-bar-break \{ flex-basis:100%; height:0;/.test(r.html()));
+    ok('…with the counts still first and left, untouched',
+        at('class="pj-bl-cnt"') < at('class="grow"'));
 
     // The other half of the same complaint: the column of names was taking
     // width the page beside it needed. A name that no longer fits is cut, and

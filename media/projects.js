@@ -1980,6 +1980,15 @@
                    breaks inside one. Without it the overflow picked a different
                    button to drop at every panel width. */
                 .pj-docbar .pj-bar-grp { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+                /* ‼️ A-13 — …AND WHERE A BAR HAS BOTH KINDS, THE BREAK IS
+                   DECLARED, NOT LEFT TO THE WIDTH. Grouping alone still let the
+                   whole right-hand run drop below on a narrow panel and sit back
+                   up on a wide one, so the bar had two shapes and the reader met
+                   whichever one the window happened to produce. A zero-height
+                   full-width item ends the line for good: what REWRITES the file
+                   is on the first line at the right, the doors ONTO the file are
+                   on the second at the left, at every width. */
+                .pj-docbar .pj-bar-break { flex-basis:100%; height:0; margin:0; }
                 .pj-plan-sec { margin-bottom:14px; }
                 .pj-plan-item { display:flex; align-items:baseline; gap:7px; padding:3px 6px;
                     border-radius:4px; cursor:pointer; font-size:13px; }
@@ -3480,16 +3489,16 @@
             ${blCountsHtml(all, c)}
             <span class="muted small">${C.esc(d.path)}</span>
             ${blHelpHtml(d)}
-            ${/* ‼️ A-13 — TWO GROUPS, AND THE GAP BETWEEN THEM IS WHERE THE ROW
-                  BREAKS. Six buttons in one right-aligned run did not fit, so
-                  whichever ones happened to overflow dropped to a second line —
-                  a different set at every panel width, and the reader could not
-                  tell what belonged with what. The doors onto the FILE sit with
-                  the file's own name, on the left; the four things that REWRITE
-                  it keep the right-hand end they had. Each group is a flex box
-                  of its own, so it is placed whole and only splits internally
-                  once it truly cannot fit. */''}
-            ${openWithHtml(d.path)}
+            ${/* ‼️ A-13 — TWO LINES, AND THE BREAK IS DECLARED. Six buttons in
+                  one right-aligned run did not fit, so whichever ones happened
+                  to overflow dropped to a second line — a different set at every
+                  panel width, and the reader could not tell what belonged with
+                  what. Grouping them was not enough either: the whole group then
+                  moved between lines as the panel resized. So the line ends
+                  here, always. FIRST LINE: the counts of the file at the left
+                  (untouched), and the four things that REWRITE the file at the
+                  right, where they have always been. SECOND LINE: the doors ONTO
+                  the file, at the left, under the name they open. */''}
             <span class="grow"></span>
             <span class="pj-bar-grp">
             ${/* ‼️ NEXT TO TIDY BECAUSE THE PAIR IS THE POINT, AND OPPOSITE TO IT
@@ -3509,6 +3518,8 @@
                 <button class="secondary" data-act="blArchiveAge">Archive older</button>
             </span>
             </span>
+            <span class="pj-bar-break"></span>
+            ${openWithHtml(d.path)}
         </div>
 
         <div class="pj-card">
@@ -4947,7 +4958,6 @@
             '',
             'The log is shared — its data lines are rewritten from the ledger and every line you write in it is kept. The ledger is append-only and is never edited in place.'
         ]))}">${C.esc(d.path || 'Backloglog.md')} · <code>${C.esc(d.ledger)}</code></span>
-            ${d.path ? openWithHtml(d.path) : ''}
             <span class="grow"></span>
             <span class="pj-bar-grp">
             <button class="secondary" data-act="trkForm"
@@ -4957,6 +4967,9 @@
             <button class="secondary" data-act="trkRebuild"
                 title="Write Backloglog.md again out of the ledger. Every line YOU wrote in it — closing notes, warnings, corrections — is read back and written out untouched; only the data lines and the session rows are regenerated. A box you ticked in Obsidian is noticed here and recorded, so the log has no silent gaps. Nothing is written when the result is identical to what is on disk.">↻ Rebuild the log</button>
             </span>
+            ${/* A-13 — the same break as the backlog's bar: this one carries the
+                  same six-button problem and must not have a second shape. */''}
+            ${d.path ? `<span class="pj-bar-break"></span>${openWithHtml(d.path)}` : ''}
         </div>
 
         ${trkFormHtml(d)}

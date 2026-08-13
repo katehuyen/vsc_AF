@@ -8,10 +8,48 @@ Binding on every change to `media/` and `src/panels/`.
 
 ---
 
+## The principle everything below serves
+
+**‼️ MAXIMUM INFORMATION IN MINIMUM SPACE, AT MINIMUM CLICKS.** This is the
+house rule these pages are designed against, and every convention further down
+is a consequence of it. A reader who can see a fact should not have to open
+anything to get at it: the click that leaves the page costs them their place,
+their scroll position and the comparison they were in the middle of making.
+
+So when you are laying out a table, a card or any page element, the question is
+never "where would this fact fit" — it is **"can the reader have this without
+pressing anything?"** Where the answer is yes, the hover is the tool: it is
+free, it is already under the pointer, and it can be as long as the fact is.
+
+The worked example to copy is the **sessions table** — every column, and every
+figure in it, carries what a reader would otherwise have opened the session for.
+A new surface is finished when it reads like that one, and not before.
+
+---
+
 ## Hover
 
 **A hover is the most valuable surface on a page** — the pointer is already
 there, and it costs the reader nothing. Two rules, and they are not negotiable.
+
+### 0. The thing has a name, and the name is `AFTip`
+
+There are exactly **two** hover surfaces in this extension and confusing them is
+the most-repeated defect in this repo's history:
+
+| Name | What it is | What it may carry |
+|---|---|---|
+| **`AFTip`** | our own panel — `media/afTip.js`, `AFTip.wrap` / `AFTip.cell` | anything: it is as wide as it needs, it **scrolls** past a limit, and the pointer can travel into it |
+| `title` | the platform's native tooltip | a handful of **figures**, nothing else |
+
+**The rule, and nobody should ever have to be told it again: anything that is
+TEXT, or that COULD grow into text, is an `AFTip`.** A prompt, a backlog item, a
+description, a path list, a name that a row cuts, a paragraph of guidance, a
+readout of eight `Label: value` lines — all `AFTip`. `title` survives only for a
+short readout of figures that will never grow.
+
+Say **"put an AFTip on it"**; the component ships to every page from
+`htmlShell`, so there is nothing to wire and no excuse to hand-roll one.
 
 ### 1. A cell hover is a READOUT, not a paragraph
 
@@ -57,7 +95,7 @@ changes.
 - **A box with nothing to name opens on the explanation**, never on a blank
   first line: an empty line above the text reads as a value that is empty.
 
-### 2. Anything that is TEXT uses the rich panel, never `title`
+### 2. Anything that is TEXT uses `AFTip`, never `title`
 
 A native tooltip repeats what the cell already drew and then stops wherever the
 platform feels like stopping. For a prompt, a backlog item, a project's details,
@@ -79,10 +117,38 @@ AFTip.wrap(triggerHtml, head, body)
 - `body` — the thing itself, **whole**. Do not truncate to be polite; the panel
   scrolls. The only caps are at the data layer, and they are documented there
   (`SessionInfo.firstPrompt`, `TURN_PROMPT_MAX`).
+- ‼️ **A blank separator is part of a STRING, never an entry of its own.**
+  `AFTip.lines` drops `''` so a caller can write `cond ? x : ''`; a separator
+  written as an empty entry therefore vanishes, and the standing sentence ends
+  up glued to the last figure. Write `'\nAnd the sentence…'` (or `x + '\n'`),
+  the way the composer's `boxTip` does.
 
 Where this already applies, and where a new surface should follow it: session
 Title (title + the whole opening prompt) · Project (what the project IS, folders
-first) · every turn's prompt · backlog items · the Next up strip's codes.
+first) · every turn's prompt · backlog items · the Next up strip's codes · every
+line of a Console card and of the Resume list (U-50).
+
+**‼️ A CARD IS AN OBJECT, SO IT CARRIES SEVERAL PANELS — ONE PER SUBJECT, AND NO
+FACT IN TWO OF THEM.** The Console's cards are the worked example: the identity
+line says WHO and WHERE, the name says WHAT THIS CONVERSATION IS, the figure
+says WHAT IT HAS SPENT, the phase says WHAT IS HAPPENING RIGHT NOW. Split that
+way, four panels answer four questions; split badly, they are four copies of one
+paragraph and the reader learns to ignore all of them — which is the state U-50
+was raised about. Two tests come out of it and both are cheap: **name a
+subject** for every trigger you add, and **grep the card for a label you have
+written twice**.
+
+**‼️ …AND THE ROW ITSELF THEN CARRIES NO `title`.** A native tooltip anywhere on
+an object that also has panels races them: which of the two you get depends on
+which pixel you stopped on. Put everything the row-level `title` said into
+whichever panel owns that subject, and delete it.
+
+**‼️ `cls` LANDS ON THE WRAPPER, AND THE WRAPPER BECOMES THE CHILD.** Wrapping a
+trigger takes it out of its parent's layout: a flex item sized by a rule on the
+trigger silently stops being sized at all. Move that rule to the wrapper class
+in the same edit, then **measure the row** (`measure_page.js`) — this one is
+invisible in a string test and obvious in a picture only once it is bad enough
+to overflow.
 
 **‼️ …BUT NOT INSIDE A WINDOW THE READER OPENED.** The rule above is about a row
 you *pass over* on a page that is showing you something else. A modal list — the
