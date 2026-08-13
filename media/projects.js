@@ -4372,6 +4372,11 @@
                     ...earlier.map((r, k) => `Round ${k + 1} — asked ${r.at}`
                         + (r.guess ? ' (as first seen after an edit outside — this MAY be the new wording)' : '')
                         + (r.cut ? ' (cut — the request was longer than the ledger keeps)' : '')
+                        // ‼️ X-36 (V2) — the words are whole, but they were
+                        // recovered from the file afterwards rather than taken
+                        // at the moment. Which of the two it is belongs to the
+                        // reader, not to us.
+                        + (r.restored ? ' (recovered later from the file — the wording taken at the time was cut)' : '')
                         + `:\n${r.text}\n`)
                 ]
                 : ['Reopened before the system kept the earlier wording, so what was '

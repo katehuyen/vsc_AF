@@ -45,6 +45,16 @@ const realExec = cp.exec;
 cp.exec = (_c, cb) => { if (typeof cb === 'function') { cb(null, '', ''); } };
 const realExecSync = cp.execSync;
 cp.execSync = () => '';
+// killTree/killPid go through execFile — counted, never run: this is where the
+// seconds came from (see S-29 below), so the test has to see WHEN it happens.
+let reaps = 0;
+const realExecFile = cp.execFile;
+cp.execFile = (_c, _a, _o, cb) => {
+    reaps++;
+    const done = typeof _o === 'function' ? _o : cb;
+    if (typeof done === 'function') { done(null, '', ''); }
+    return new EventEmitter();
+};
 
 const { ConsoleHost } = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
 
@@ -124,9 +134,71 @@ const init = (o) => Object.assign({
     ok('…and resuming takes its seat', host.list().length === 1);
 }
 
-cp.spawn = realSpawn;
-cp.exec = realExec;
-cp.execSync = realExecSync;
+// ---------------------------------------------------------------------------
+// ‼️ S-29 (reopened) — END SESSION AND REMOVE FROM LIST ANSWER IMMEDIATELY.
+//
+// "5 saniye 10 saniye veya daha fazla bekleyerek oturum kapanıyor" — and the
+// reason was the order: everything ran BEFORE the state changed, and the last
+// two steps spawn `taskkill`. Spawning is asynchronous in its result and
+// synchronous in its cost, so the panel heard nothing until Windows had
+// created two processes. The card must turn on the press; the processes die a
+// tick later. `dispose` is the exception and it is the important one — a kill
+// deferred while the window is closing never happens at all.
+// ---------------------------------------------------------------------------
+const tick = () => new Promise(r => setImmediate(r));
 
-console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+async function s29() {
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({ resume: 'S-6' }));
+        let toldAt = -1;
+        host.onChange(() => { toldAt = reaps; });
+
+        const before = reaps;
+        toldAt = -1;
+        host.close(id);
+        ok('‼️ S-29: the card is told it ended straight away', toldAt >= 0
+            && host.get(id).status === 'ended');
+        ok('‼️ …BEFORE anything spawns a process — that wait was the whole bug',
+            toldAt === before && reaps === before);
+        await tick();
+        ok('…and the process is reaped on the very next tick, so nothing leaks',
+            reaps > before);
+    }
+
+    // Remove from list: one gesture, one repaint. Ending a live card first used
+    // to fire its own change, so the panel rebuilt the whole conversation twice.
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({ resume: 'S-7' }));
+        let fired = 0;
+        host.onChange(() => { fired++; });
+        host.forget(id);
+        ok('‼️ S-29: removing a live card repaints the panel once, not twice',
+            fired === 1 && host.list().length === 0);
+        await tick();
+        ok('…and its process still dies', reaps > 0);
+    }
+
+    // The window is going away: a deferred kill would never run, and an
+    // orphaned `claude` holds its session registry entry — which is what makes
+    // a conversation unreachable rather than merely leaked.
+    {
+        const host = new ConsoleHost(() => 'claude');
+        host.start(init({ resume: 'S-8' }));
+        const before = reaps;
+        host.dispose();
+        ok('‼️ S-29: dispose still kills SYNCHRONOUSLY — the tick never comes there',
+            reaps > before);
+    }
+}
+
+s29().then(() => {
+    cp.spawn = realSpawn;
+    cp.exec = realExec;
+    cp.execSync = realExecSync;
+    cp.execFile = realExecFile;
+
+    console.log(`${pass} passed, ${fail} failed`);
+    process.exit(fail ? 1 : 0);
+});

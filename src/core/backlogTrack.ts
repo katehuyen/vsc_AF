@@ -62,6 +62,38 @@ export type TrackSource =
 export const TRACK_SOURCES: TrackSource[] = ['agent', 'panel', 'outside', 'backfill'];
 
 /**
+ * ‼️ P-14 — AN AGENT DOES NOT CLOSE AN ITEM WITHOUT SAYING WHAT IT DID.
+ *
+ * ‼️ P-14 (V2) — AND THE RULE LIVES WITH THE LEDGER, NOT ON ONE DOOR. It was
+ * written into `projects.backlog.check`, which is the door an agent SHOULD use
+ * — while `projects.track { event:"done" }` writes the same closing event into
+ * the same ledger, decides the same "closed" answer on the Track page, and left
+ * `note` optional. A contract one op enforces and the next one beside it does
+ * not is not a contract; it is a habit. So the floor is checked by whatever
+ * writes the record, and every door inherits it.
+ *
+ * Only `agent` is held to it. A person clicking the checkbox in the panel is
+ * looking at the thing they just did; `outside` is a box ticked in Obsidian
+ * with nobody to ask; `backfill` is reconstruction, which by definition has no
+ * note to give. Refusing those would only mean losing the event.
+ */
+export const CLOSING_NOTE_MIN = 15;
+
+/** The refusal sentence, or undefined when the record may be written. */
+export function closingNoteRefusal(o: {
+    by: TrackSource; event: TrackEvent; note?: string;
+}): string | undefined {
+    if (o.by !== 'agent') { return undefined; }
+    if (o.event !== 'done' && o.event !== 'cancelled') { return undefined; }
+    if ((o.note ?? '').trim().length >= CLOSING_NOTE_MIN) { return undefined; }
+    return `closing ${o.event === 'done' ? 'an item' : 'an item as cancelled'} needs a `
+        + '`note`: one or two sentences saying what was done, how it was closed, and '
+        + 'anything a reader should watch out for later. That note IS the answer to '
+        + '"how was this solved" three months from now — every surface that shows a '
+        + 'closure shows it, and it is the one part nothing else can reconstruct.';
+}
+
+/**
  * ‼️ WHY THE (session, turn) ON THIS RECORD IS NOT CERTAIN. Absent means it is.
  *
  * The reason is stored as a CODE rather than a boolean, because "we could not
@@ -132,6 +164,29 @@ export interface TrackRecord {
      * case to protect against the rare one — but it is stored SAID.
      */
     prevGuess?: boolean;
+    /**
+     * ‼️ X-36 (V2) — A ROUND WHOSE WORDING WAS LOST IS COMPLETED BY ANOTHER
+     * RECORD, NOT BY EDITING THE OLD ONE.
+     *
+     * Rounds recorded before the ceiling was raised carry a `prevText` cut at
+     * 2,000 characters, mid-sentence. The words themselves are often still
+     * recoverable — from the backlog file, from git, from a transcript — but
+     * the ledger is APPEND-ONLY, and quietly rewriting a line in it would make
+     * every other line unbelievable: a history a surface can edit is not a
+     * history.
+     *
+     * So a correction is its own record, pointing at the `ts` of the reopen it
+     * completes and carrying the full text. The reopen line stays exactly as it
+     * was written; every reader (summarizeCode) applies the correction on top
+     * and marks the round `prevRestored`, so nobody mistakes recovered words
+     * for words captured at the time.
+     */
+    restoresTs?: number;
+    /**
+     * Derived, never stored: `summarizeCode` sets it on the round it just
+     * completed from a correction record. Serialization ignores it.
+     */
+    prevRestored?: boolean;
 }
 
 /** The ledger's file name inside the tracks folder. */
@@ -199,6 +254,9 @@ export function serializeTrack(rec: TrackRecord): string {
     if (rec.prevText) { out.prevText = rec.prevText; }
     if (rec.prevCut) { out.prevCut = true; }
     if (rec.prevGuess) { out.prevGuess = true; }
+    // `prevRestored` is derived by summarizeCode and never written: it is a
+    // statement ABOUT a pair of records, not a fact either of them carries.
+    if (typeof rec.restoresTs === 'number') { out.restoresTs = rec.restoresTs; }
     return JSON.stringify(out);
 }
 
@@ -233,7 +291,9 @@ export function parseTrack(text: string): TrackRecord[] {
             ...(o.note ? { note: String(o.note).replace(/\s+/g, ' ').trim() } : {}),
             ...(o.prevText ? { prevText: String(o.prevText).replace(/\s+/g, ' ').trim() } : {}),
             ...(o.prevCut === true ? { prevCut: true } : {}),
-            ...(o.prevGuess === true ? { prevGuess: true } : {})
+            ...(o.prevGuess === true ? { prevGuess: true } : {}),
+            ...(isFinite(Number(o.restoresTs)) && Number(o.restoresTs) > 0
+                ? { restoresTs: Number(o.restoresTs) } : {})
         });
     }
     out.sort((a, b) => a.ts - b.ts);
@@ -255,8 +315,16 @@ export function parseTrack(text: string): TrackRecord[] {
  * `resolve` is the lookup — `(session, ts) => turn | undefined`. Anything it
  * cannot answer keeps its doubt exactly as it is: a row with no session, or a
  * transcript that has been pruned, is genuinely unknown and stays that way.
- * Doubts that are NOT about the turn (`multi`, `none`, `guess`) are untouched
- * — they say something else and this knows nothing about them.
+ *
+ * ‼️ P-14 (V2) — THE MISSING TURN AND THE REASON FOR THE DOUBT ARE TWO AXES.
+ * This used to run only on rows whose doubt code was literally `turn`, so a row
+ * stamped `stale` or `multi` that ALSO had no turn was skipped — for a reason
+ * that says nothing about turns. The gate is now the fact ("no turn, but a
+ * session to ask about"), not the label. What the label decides is the CLEANUP:
+ * `turn` was a doubt purely about the number and goes when the number arrives;
+ * `stale`/`multi`/`none` are doubts about WHICH SESSION and survive untouched,
+ * because a turn read out of that session settles nothing about whether it was
+ * the right session.
  *
  * Pure, and applied on READ rather than written back: the ledger is append-only
  * and shared between windows, and rewriting a hundred lines of somebody else's
@@ -268,12 +336,12 @@ export function repairTurns(
 ): TrackRecord[] {
     let touched = false;
     const out = records.map(r => {
-        if (r.uncertain !== 'turn' || !r.session || typeof r.turn === 'number') { return r; }
+        if (typeof r.turn === 'number' || !r.session) { return r; }
         const turn = resolve(r.session, r.ts);
         if (!turn) { return r; }
         touched = true;
         const next: TrackRecord = { ...r, turn };
-        delete next.uncertain;
+        if (next.uncertain === 'turn') { delete next.uncertain; }
         return next;
     });
     return touched ? out : records;
@@ -396,7 +464,24 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     // The LAST closing event wins: an item closed, reopened and closed again is
     // closed where it closed the second time, and that is the one a reader wants.
     const closings = mine.filter(r => CLOSING.includes(r.event));
-    const reopened = mine.filter(r => r.event === 'reopen');
+    // ‼️ X-36 (V2) — CORRECTIONS ARE APPLIED ON READ. A later record can supply
+    // the wording a round lost to the old ceiling (see TrackRecord.restoresTs).
+    // The stored reopen is never touched; the round a reader sees is the pair.
+    const fixes = new Map<number, TrackRecord>();
+    for (const r of mine) {
+        if (typeof r.restoresTs === 'number' && r.prevText) { fixes.set(r.restoresTs, r); }
+    }
+    const restore = (r: TrackRecord): TrackRecord => {
+        const fix = fixes.get(r.ts);
+        if (!fix?.prevText) { return r; }
+        const next: TrackRecord = { ...r, prevText: fix.prevText, prevRestored: true };
+        // The cut is gone (that is what was fixed) and so is the guess, because
+        // a correction is somebody stating what the words were, not a reading.
+        delete next.prevCut;
+        delete next.prevGuess;
+        return next;
+    };
+    const reopened = mine.filter(r => r.event === 'reopen').map(restore);
     const last = closings[closings.length - 1];
     const lastReopen = reopened[reopened.length - 1];
     const closed = last && (!lastReopen || lastReopen.ts < last.ts) ? last : undefined;
@@ -875,8 +960,13 @@ function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string
         // one that has fewer lines.
         const doubt = r.prevGuess ? ' _(as first seen after an edit outside — may be the new wording)_' : '';
         const cut = r.prevCut ? ' _(cut — the request was longer than the ledger keeps)_' : '';
+        // ‼️ X-36 (V2) — and a round whose words were RECOVERED later says so.
+        // The text is right; what is not certain is that it is the text as of
+        // that exact moment, and a reader is entitled to know which it is.
+        const back = r.prevRestored
+            ? ' _(recovered later from the file — the wording at the time was cut)_' : '';
         lines.push(`    - ${LOG_ROUND(i + 1)} · ${localStamp(r.ts)} · reopened —`
-            + ` _${r.prevText}_${doubt}${cut}`);
+            + ` _${r.prevText}_${doubt}${cut}${back}`);
     });
     for (const run of sum.runs) {
         const closes = run.events.some(e => CLOSING.includes(e.event));

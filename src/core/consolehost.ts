@@ -1221,8 +1221,31 @@ export class ConsoleHost {
      * somebody telling us the first one did not take, and refusing it would
      * turn the safety net into a dead button. Only the parts that must happen
      * once (denying the parked question) are skipped on the repeat.
+     *
+     * ‼️ S-29 (reopened) — THE CARD TURNS THE MOMENT YOU PRESS IT.
+     *
+     * Everything here used to run before the state changed, and the last two
+     * steps SPAWN PROCESSES: `taskkill` for the tree, and another for the pid
+     * the CLI registry names. `child_process` spawning is asynchronous in its
+     * result and synchronous in its cost — `uv_spawn` blocks the extension
+     * host while Windows creates the process, and on a machine where a virus
+     * scanner inspects every launch that is not milliseconds. So the click sat
+     * there, twice, and only then did the panel hear that anything had
+     * happened: End session took seconds to do something the user had already
+     * decided.
+     *
+     * The order is now: shut the pipe (which MUST stay before the kill — see
+     * below), say the session ended, and reap the processes on the next tick.
+     * Nothing about the outcome changes; what changes is that the repaint no
+     * longer waits behind two process launches.
+     *
+     * `sync` is the one caller that cannot wait a tick: `dispose()` runs while
+     * the window is closing, and a deferred kill there would never run at all —
+     * which is precisely the orphaned-`claude` leak this method exists for.
+     * `silent` belongs to `forget`, which fires its own change straight after
+     * and would otherwise repaint the whole panel twice for one gesture.
      */
-    close(id: string): void {
+    close(id: string, o?: { sync?: boolean; silent?: boolean }): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
         const again = h.closed === true;
@@ -1250,7 +1273,6 @@ export class ConsoleHost {
         try { h.child?.stdout?.removeAllListeners('data'); h.child?.stdout?.destroy(); } catch { /* already gone */ }
         try { h.child?.stderr?.removeAllListeners('data'); h.child?.stderr?.destroy(); } catch { /* already gone */ }
         try { h.child?.stdin?.end(); } catch { /* already gone */ }
-        if (h.child) { killTree(h.child); }
         // …and the process the CLI itself registered for this session. A
         // `claude` that survives its window keeps that registry entry, which
         // tells everyone the session is open — and Claude Code cannot join a
@@ -1259,23 +1281,46 @@ export class ConsoleHost {
         // gap even when the shell tree above has already fallen apart.
         // …and only for the engine that keeps such a registry. A per-turn engine
         // registers nothing between turns, so there is nobody to look up.
+        const child = h.child;
         const sid = h.engine.shape === 'persistent' ? h.state.sessionId : undefined;
-        const pid = sid ? this.ownerPid(sid) : undefined;
-        if (pid && pid !== h.child?.pid) { killPid(pid); }
-        this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
+        const reap = (): void => {
+            if (child) { killTree(child); }
+            const pid = sid ? this.ownerPid(sid) : undefined;
+            if (pid && pid !== child?.pid) { killPid(pid); }
+        };
+        // Say it first (unless the caller is about to say something louder),
+        // then reap. See the note above: the reap spawns processes.
+        if (o?.silent) {
+            h.state = { ...h.state, status: 'ended', exitReason: h.state.exitReason ?? 'closed by you' };
+        } else {
+            this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
+        }
+        if (o?.sync) { reap(); } else { setImmediate(reap); }
     }
 
-    /** Forget an ended session (its transcript stays on disk). */
+    /**
+     * Forget an ended session (its transcript stays on disk).
+     *
+     * ‼️ S-29 (reopened) — ONE GESTURE, ONE REPAINT. Removing a card that was
+     * still live ended it first and let `close` fire its own change, so the
+     * panel rebuilt itself twice for one right-click: once for a card that had
+     * turned grey and once for a card that was gone. The Console's repaint
+     * redraws the whole conversation, which is the expensive thing on the page.
+     */
     forget(id: string): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
-        if (h.state.status !== 'ended' && h.state.status !== 'error') { this.close(id); }
+        if (h.state.status !== 'ended' && h.state.status !== 'error') {
+            this.close(id, { silent: true });
+        }
         this.sessions.delete(id);
         this.fire(id);
     }
 
     dispose(): void {
-        for (const id of [...this.sessions.keys()]) { this.close(id); }
+        // ‼️ Synchronously: the window is going away, and a kill deferred to a
+        // tick that never comes is the orphaned-process leak, not a fast panel.
+        for (const id of [...this.sessions.keys()]) { this.close(id, { sync: true, silent: true }); }
         this.sessions.clear();
         this.listeners = [];
     }

@@ -989,8 +989,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // per-turn engine has NO process between turns and is perfectly alive
     // (see Hosted.child), so every step of ending a session has to tolerate
     // there being nothing to end.
+    // ‼️ S-29 (reopened) — the lookup and the two kills moved INTO `reap`, which
+    // runs a tick after the card has already turned (spawning is what the user
+    // was waiting on). What must still be true is that the registered process is
+    // ended and not only our shell wrapper.
     ok('End session ends the process the CLI itself registered, not just our shell',
-        /private ownerPid:/.test(host) && /if \(pid && pid !== h\.child\?\.pid\) \{ killPid\(pid\); \}/.test(host));
+        /private ownerPid:/.test(host)
+        && /const reap = \(\): void => \{[\s\S]{0,400}killTree\(child\);/.test(host)
+        && /if \(pid && pid !== child\?\.pid\) \{ killPid\(pid\); \}/.test(host));
     ok('…and the extension gives it that lookup',
         /sid => ownerOf\(readCliSessions\(claudeDir\(\)\), sid\)\?\.pid/.test(ext));
 }
@@ -1397,7 +1403,11 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('a second press re-issues the kill instead of being swallowed',
         /const again = h\.closed === true;/.test(host)
         && /if \(!again && h\.state\.pendingAsk\)/.test(host)
-        && /h\.closed = true;[\s\S]{0,700}killTree\(h\.child\);/.test(host));
+        && /h\.closed = true;[\s\S]{0,1400}killTree\(child\);/.test(host));
+    // ‼️ S-29 (reopened) — and the pipe is STILL shut before the kill, which is
+    // the ordering the fault above was about. What moved is only the spawning.
+    ok('…and the pipe is shut before anything is killed, still',
+        /stdin\?\.end\(\);[\s\S]{0,900}const reap = /.test(host));
     // Every route that ends a hosted session goes through the one close().
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');

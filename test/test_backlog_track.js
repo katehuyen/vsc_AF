@@ -391,7 +391,105 @@ const RECORDS = [
         const already = [{ code: 'K-8', event: 'done', ts: T0 + 25 * MIN, by: 'agent', session: 'sess-a', turn: 7 }];
         ok('…and one that already carries a turn is left alone',
             T.repairTurns(already, resolve)[0].turn === 7);
+
+        // ‼️ P-14 (V2) — THE MISSING TURN AND THE REASON FOR THE DOUBT ARE TWO
+        // AXES. The repair used to run only on rows labelled `turn`, so a row
+        // labelled `stale` or `multi` that was ALSO missing its turn was skipped
+        // for a reason that says nothing about turns.
+        const other = [
+            { code: 'K-8', event: 'done', ts: T0 + 25 * MIN, by: 'agent', session: 'sess-a', uncertain: 'stale' },
+            { code: 'K-8', event: 'touch', ts: T0 + 5 * MIN, by: 'agent', session: 'sess-a', uncertain: 'multi' }
+        ];
+        const both = T.repairTurns(other, resolve);
+        ok('‼️ P-14: a row doubted for ANOTHER reason still gets the turn it was missing',
+            both[0].turn === 2 && both[1].turn === 1);
+        ok('‼️ …and keeps that doubt, because a turn read out of a session says'
+            + ' nothing about whether it was the right session',
+            both[0].uncertain === 'stale' && both[1].uncertain === 'multi');
     }
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ P-14 (V2) — THE CLOSING-NOTE CONTRACT LIVES ON THE LEDGER
+//
+// It was written into `projects.backlog.check` — the door an agent SHOULD use —
+// while `projects.track { event: "done" }` wrote the same closing event into the
+// same ledger with `note` optional. A rule one op enforces and the next one
+// beside it does not is not a rule.
+// ---------------------------------------------------------------------------
+{
+    const refusal = o => T.closingNoteRefusal(o);
+    ok('‼️ an agent closing an item with no note is refused',
+        /needs a .note./.test(refusal({ by: 'agent', event: 'done' }) || ''));
+    ok('…and cancelling counts as closing', !!refusal({ by: 'agent', event: 'cancelled' }));
+    ok('…a note too short to say anything is still no note',
+        !!refusal({ by: 'agent', event: 'done', note: 'bitti' }));
+    ok('…and a real one goes through',
+        refusal({ by: 'agent', event: 'done', note: 'Kapandı: kök neden X, düzeltme Y.' }) === undefined);
+    ok('a touch is not a closing and is never asked for one',
+        refusal({ by: 'agent', event: 'touch' }) === undefined
+        && refusal({ by: 'agent', event: 'reopen' }) === undefined
+        && refusal({ by: 'agent', event: 'doing' }) === undefined);
+    ok('‼️ …and only an AGENT is held to it: a person ticking the box in the panel'
+        + ' is looking at the thing they just did',
+        refusal({ by: 'panel', event: 'done' }) === undefined
+        && refusal({ by: 'outside', event: 'done' }) === undefined
+        && refusal({ by: 'backfill', event: 'done' }) === undefined);
+    ok('the floor is stated once, where the rule is',
+        T.CLOSING_NOTE_MIN === 15);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ X-36 (V2) — A ROUND WHOSE WORDING WAS CUT CAN BE GIVEN IT BACK
+//
+// The ledger is append-only, so the correction is its OWN record pointing at
+// the reopen it completes. The reopen line is never rewritten; every reader
+// applies the pair and marks the round as recovered rather than captured.
+// ---------------------------------------------------------------------------
+{
+    const T0 = Date.UTC(2026, 7, 1, 9, 0);
+    const reopenTs = T0 + 1000;
+    const recs = [
+        { code: 'X-9', event: 'done', ts: T0, by: 'agent', note: 'ilk tur kapandı, kök neden bulundu' },
+        {
+            code: 'X-9', event: 'reopen', ts: reopenTs, by: 'panel',
+            prevText: 'ilk turda istenen şey buydu ve cümle tam burada…', prevCut: true
+        },
+        {
+            code: 'X-9', event: 'touch', ts: T0 + 5000, by: 'agent',
+            restoresTs: reopenTs,
+            prevText: 'ilk turda istenen şey buydu ve cümle tam burada bitiyordu, hepsi bu.',
+            note: 'restored the wording of round 1'
+        }
+    ];
+    const sum = T.summarizeCode('X-9', recs);
+    ok('‼️ X-36: the round now carries the whole wording',
+        sum.rounds.length === 1 && /hepsi bu\.$/.test(sum.rounds[0].prevText));
+    ok('…the cut mark is gone, because that is what was fixed', !sum.rounds[0].prevCut);
+    ok('‼️ …and it says the words were RECOVERED, not captured at the time',
+        sum.rounds[0].prevRestored === true);
+    ok('‼️ the stored reopen record is untouched — the ledger is append-only',
+        recs[1].prevText.endsWith('…') && recs[1].prevCut === true
+        && recs[1].prevRestored === undefined);
+
+    const rendered = T.renderBacklogLog({
+        project: 'Demo',
+        items: [{
+            code: 'X-9', text: 'bir şey', state: 'open', line: 8,
+            section: 'X — Cross', kinds: [], indent: 0, raw: '- [ ] X-9 bir şey'
+        }],
+        records: recs
+    });
+    ok('…and the log says so where the round is drawn',
+        /recovered later from the file/.test(rendered) && /hepsi bu\./.test(rendered));
+
+    ok('a correction survives a round trip through the ledger format',
+        T.parseTrack(T.serializeTrack(recs[2]))[0].restoresTs === reopenTs);
+    ok('‼️ …while the derived mark is never written down — it is a statement'
+        + ' ABOUT a pair of records, not a fact either of them carries',
+        !/prevRestored/.test(T.serializeTrack(sum.rounds[0])));
+    ok('an ordinary reopen with nothing pointing at it is unchanged',
+        T.summarizeCode('X-9', recs.slice(0, 2)).rounds[0].prevRestored === undefined);
 }
 
 // ---------------------------------------------------------------------------

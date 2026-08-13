@@ -1580,8 +1580,7 @@ export class TasksPanel {
                         this.lastDeleted = [m.deleteTask(t)];
                     } catch (e) {
                         void vscode.window.showErrorMessage(
-                            'Agent Farm: the run was NOT deleted — its archive could not be written, '
-                            + `so nothing was removed. ${String(e)}`);
+                            `Agent Farm: the run was NOT deleted — ${String(e)}`);
                     }
                 }
                 else if (msg.act === 'rerun' && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
@@ -1647,8 +1646,16 @@ export class TasksPanel {
             // gone rather than becoming a button that undoes something older.
             case 'task-undo': {
                 if (this.lastDeleted?.length) {
-                    m.restoreTasks(this.lastDeleted);
-                    this.lastDeleted = undefined;
+                    // ‼️ M-8 (V2) — a follower window refuses this the same way
+                    // it refuses the delete, and the refusal is shown rather
+                    // than leaving a button that looks like it did nothing.
+                    try {
+                        m.restoreTasks(this.lastDeleted);
+                        this.lastDeleted = undefined;
+                    } catch (e) {
+                        void vscode.window.showErrorMessage(
+                            `Agent Farm: the run was NOT restored — ${String(e)}`);
+                    }
                 }
                 this.refresh();
                 break;
@@ -1770,8 +1777,7 @@ export class TasksPanel {
                     // failure means nothing was cleared. Said, not swallowed.
                     try { m.clearFinished(); } catch (e) {
                         void vscode.window.showErrorMessage(
-                            'Agent Farm: nothing was cleared — the archive could not be written. '
-                            + String(e));
+                            `Agent Farm: nothing was cleared — ${String(e)}`);
                     }
                 }
                 this.refresh();

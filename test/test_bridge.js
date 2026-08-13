@@ -2689,6 +2689,52 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 { project: 'Agent Farm', code: 'something I noticed' });
             ok('‼️ an uncoded capture is refused rather than tracked under a made-up handle',
                 !notACode.ok && /not a backlog code/.test(notACode.error));
+
+            // ---- X-36 (V2): the correction op, on the same pure module ----
+            //
+            // The shape an agent codes against: point at a round, hand over the
+            // words, and the ledger gains a RECORD rather than losing one.
+            const reopenTs = Date.now() - 60_000;
+            appendTrack(ledger, {
+                code: 'P-2', event: 'reopen', ts: reopenTs, by: 'panel',
+                prevText: 'ilk turda istenen buydu ve cümle burada…', prevCut: true
+            });
+            reg.register([{
+                op: 'projects.track.restore',
+                describe: 'give a round back the wording the old ceiling cut. args: project, code, round?/ts?, text?, fromBacklog?',
+                handler: a => {
+                    const code = argStr(a, 'code').toUpperCase();
+                    const sum = summarizeCode(code, readTrackFile(ledger));
+                    need(sum.rounds.length, `${code} has no recorded round to restore`);
+                    const target = typeof a.ts === 'number'
+                        ? sum.rounds.find(r => r.ts === a.ts)
+                        : sum.rounds[(typeof a.round === 'number' ? a.round : sum.rounds.length) - 1];
+                    need(target, 'no such round');
+                    need(!target.prevRestored, 'that round has already been restored');
+                    const text = String(a.text ?? '').replace(/\s+/g, ' ').trim();
+                    need(text, 'pass the words as `text`');
+                    appendTrack(ledger, {
+                        code, event: 'touch', ts: Date.now(), by: 'agent',
+                        restoresTs: target.ts, prevText: text,
+                        note: `restored the wording of round ${sum.rounds.indexOf(target) + 1}`
+                    });
+                    return { code, round: sum.rounds.indexOf(target) + 1, was: (target.prevText || '').length, now: text.length };
+                }
+            }]);
+            const whole = 'ilk turda istenen buydu ve cümle burada bitiyordu, hepsi bu.';
+            const fixed = await reg.dispatch('projects.track.restore',
+                { project: 'Agent Farm', code: 'P-2', round: 1, text: whole });
+            ok('projects.track.restore completes the round it points at',
+                fixed.ok && fixed.result.round === 1 && fixed.result.now > fixed.result.was);
+            const after = summarizeCode('P-2', readTrackFile(ledger));
+            ok('‼️ …by ADDING a record — every reader sees the whole wording',
+                after.rounds[0].prevText === whole && after.rounds[0].prevRestored === true);
+            ok('‼️ …and the reopen line itself was never rewritten: the ledger is append-only',
+                readTrackFile(ledger).filter(r => r.event === 'reopen' && r.ts === reopenTs)[0].prevCut === true);
+            const twice = await reg.dispatch('projects.track.restore',
+                { project: 'Agent Farm', code: 'P-2', round: 1, text: whole + ' (yine)' });
+            ok('…and it refuses to do it twice rather than piling corrections up',
+                !twice.ok && /already been restored/.test(twice.error));
         }
 
         // ---- and extension.ts really registers every one of them ----
@@ -2704,6 +2750,9 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             // U-56 — the child-side twin of gather.
             'projects.backlog.under',
             'projects.track', 'projects.tracks', 'projects.tracks.backfill',
+            // X-36 (V2) — a round whose wording the old ceiling cut can be given
+            // it back, as a correction record and never as an edit.
+            'projects.track.restore',
             // P-5 — the Track tab's ↻ button, and therefore an agent's too.
             'projects.backloglog',
             // B-2 — the fleet page can MAKE an agent, so the bridge can too.

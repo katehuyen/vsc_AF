@@ -162,7 +162,8 @@ import {
     tracksFolder, writeBrief, writeProjectDoc
 } from './core/projectDocs';
 import {
-    appendTrack, backfillFromHits, closingAttribution, closingStamp, parseBacklogLog, reconcileOutside,
+    appendTrack, backfillFromHits, closingAttribution, closingNoteRefusal, closingStamp,
+    parseBacklogLog, reconcileOutside,
     readTrackFile, renderBacklogLog, repairTurns, snapshotBacklog, summarizeCode, shortSession,
     trackedCodes, trackFileIn,
     TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TRACK_NOTE_MAX, TRACK_PREV_MAX, TrackDoubt, TrackEvent,
@@ -1604,6 +1605,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 followerWarnedAt = Date.now();
                 void vscode.window.showWarningMessage(
                     'Agent Farm: another window runs the task queue — changes made here are not saved. Manage tasks in that window.');
+            },
+            // ‼️ M-8 — the live list and the month archive fell out of step. The
+            // run is safe, so this is a warning; but it is a warning, not a line
+            // in a log nobody opens.
+            onArchiveDrift: (message) => {
+                void vscode.window.showWarningMessage(`Agent Farm: ${message}`);
             }
         }
     );
@@ -5808,15 +5815,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // two); the ceiling is generous and the FLOOR is what was
                 // missing. A human ticking the box on the panel is untouched:
                 // they are looking at the thing they just did.
+                //
+                // ‼️ P-14 (V2) — asked HERE as well as in `recordTrack`, and with
+                // the same sentence, because this door edits the document first:
+                // a refusal that arrived only at the ledger would leave the box
+                // ticked and the history empty. Same rule, one implementation.
                 const note = (optStr(args, 'note') ?? '').trim();
-                if (state === 'done' || state === 'cancelled') {
-                    need(note.length >= 15,
-                        `closing ${state === 'done' ? 'an item' : 'an item as cancelled'} needs a `
-                        + '`note`: one or two sentences saying what was done, how it was closed, and '
-                        + 'anything a reader should watch out for later. That note IS the answer to '
-                        + '"how was this solved" three months from now — every surface that shows a '
-                        + 'closure shows it, and it is the one part nothing else can reconstruct.');
-                }
+                const refusal = closingNoteRefusal({
+                    by: 'agent', event: state === 'open' ? 'reopen' : state as TrackEvent, note
+                });
+                need(!refusal, refusal ?? '');
                 let touched = ''; let code: string | null = null;
                 const out = editProjectDoc(folder, file, src => {
                     const res = setBacklogState(src, target, state);
@@ -6128,7 +6136,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.track',
-            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished), session? (only if you know your own id)',
+            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. ‼️ `note` is REQUIRED — and checked — when the event CLOSES the item (done or cancelled), exactly as projects.backlog.check requires it: the rule lives on the ledger, so no door into it can close an item without saying what was done. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished; required to close), session? (only if you know your own id)',
             handler: (args) => {
                 const { project, folder } = projectDocsFor(argStr(args, 'project'));
                 const code = argStr(args, 'code').toUpperCase();
@@ -6194,6 +6202,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!res.error, res.error ?? 'the backfill could not run');
                 return res.applied ? res
                     : { ...res, note: 'preview only — call again with apply: true to write these' };
+            }
+        },
+        {
+            op: 'projects.track.restore',
+            describe: '‼️ GIVE A ROUND BACK THE WORDS IT LOST. A reopen recorded before the ledger\'s wording ceiling was raised carries a `prevText` cut mid-sentence — the asking that produced the next round, ending on a preposition. This supplies the full text WITHOUT touching the record: the ledger is append-only, so the correction is its OWN record pointing at the reopen it completes (restoresTs), and every surface applies it on read and marks the round "recovered later from the file" so nobody mistakes recovered words for words captured at the time. Say which round by `round` (the number Backloglog prints beside it) or by `ts` (the reopen\'s exact timestamp — projects.backlog reports it on each earlierRounds entry). The words come from `text`, or from the item\'s CURRENT backlog line with `fromBacklog: true` — which is the usual case, because a round is lost precisely when nobody rewrote the line. Refused if that round already has its full wording, so it cannot be run twice by accident. args: project (id or name), code, round? or ts?, text?, fromBacklog?',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const code = argStr(args, 'code').toUpperCase();
+                need(BACKLOG_CODE.test(code), `"${code}" is not a backlog code — it looks like K-8 or P-5.3`);
+                const sum = summarizeCode(code, readTracks(folder));
+                need(sum.rounds.length, `${code} has no recorded round to restore — it has never been reopened with its wording taken.`);
+                const wantTs = typeof args.ts === 'number' ? args.ts : undefined;
+                const wantRound = typeof args.round === 'number' ? args.round : undefined;
+                const target = wantTs !== undefined
+                    ? sum.rounds.find(r => r.ts === wantTs)
+                    : sum.rounds[(wantRound ?? sum.rounds.length) - 1];
+                need(target, wantTs !== undefined
+                    ? `no reopen of ${code} was recorded at ts ${wantTs} — projects.backlog reports the ts of each round.`
+                    : `${code} has ${sum.rounds.length} recorded round(s); ${wantRound} is not one of them.`);
+                const round = sum.rounds.indexOf(target as TrackRecord) + 1;
+                need(!(target as TrackRecord).prevRestored,
+                    `round ${round} of ${code} has already been restored — the ledger is append-only, so a second correction would only add noise.`);
+                const explicit = optStr(args, 'text');
+                const text = (explicit || (args.fromBacklog === true
+                    ? backlogTextOf(folder, code) : '')).replace(/\s+/g, ' ').trim();
+                need(text, 'pass the words as `text`, or `fromBacklog: true` to take the item\'s current backlog line.');
+                const had = (target as TrackRecord).prevText ?? '';
+                need(text !== had,
+                    `round ${round} of ${code} already says exactly that — nothing to restore.`);
+                const { prevText, prevCut } = capPrev(text);
+                need(!prevCut, `those words are longer than the ledger keeps (${TRACK_PREV_MAX} characters) — the round cannot be restored whole from them.`);
+                const rec: TrackRecord = {
+                    code, event: 'touch', ts: Date.now(), by: 'agent',
+                    restoresTs: (target as TrackRecord).ts, prevText,
+                    note: `restored the wording of round ${round}`
+                        + `${explicit ? '' : ' from the item\'s current backlog line'}`
+                        + ` — the record written at the time was cut at ${had.length} characters.`
+                };
+                const wrote = appendTrack(trackLedgerOf(folder), rec);
+                need(wrote.ok, wrote.error ?? 'the correction could not be appended to the ledger');
+                refreshBacklogLog(project.id);
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, code, round,
+                    reopenedAt: localStamp((target as TrackRecord).ts),
+                    was: had.length, now: prevText.length,
+                    ledger: relDoc(folder, trackLedgerOf(folder)),
+                    note: 'the reopen record is untouched; this is a correction beside it, and every'
+                        + ' surface now shows the round as recovered rather than captured at the time.'
+                };
             }
         },
         {
@@ -10131,10 +10189,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 continue;
             }
             if (pick.act === 'save') {
+                // ‼️ A-11 (V2) — THE NEW-PROFILE DOOR OBEYS THE SAME RULE AS THE
+                // EDIT DOOR. `saveProfile` enforces one-name-one-profile by
+                // overwriting the row that owns the name, and this path never
+                // asked: typing an existing name into "Save this as a profile…"
+                // destroyed that whole setup with no warning and no undo, while
+                // the Edit flow beside it had grown two guards against exactly
+                // that. Said while typing (the box is where a name is still
+                // free to change), and again as a modal at the moment of
+                // commit, in the Edit flow's own words.
                 const name = await vscode.window.showInputBox({
-                    prompt: 'Profile name', ignoreFocusOut: true
+                    prompt: 'Profile name', ignoreFocusOut: true,
+                    validateInput: s => {
+                        if (!s.trim()) { return 'a profile needs a name'; }
+                        const other = profileNameClash(launchProfiles(), s, '');
+                        return other
+                            ? `"${other.name}" already exists — saving this replaces it (Replace on its own row edits it in place)`
+                            : undefined;
+                    }
                 });
                 if (!name?.trim()) { continue; }
+                const clash = profileNameClash(launchProfiles(), name, '');
+                if (clash) {
+                    const go = await vscode.window.showWarningMessage(
+                        `A profile is already called "${clash.name}".`,
+                        {
+                            modal: true,
+                            detail: `Saving under this name REPLACES it. The one that would go stores ${describeProfile(clash)}. Pick another name to keep both — or use Replace on its own row, which is what "save over this setup" is for.`
+                        },
+                        'Replace it');
+                    if (go !== 'Replace it') { continue; } // back to the launcher
+                }
                 // ‼️ From `merged`, so the profile keeps the ENGINE and the
                 // values inherited from the user's defaults — a profile that
                 // stored a model without the engine it belongs to was a setup
@@ -13023,7 +13108,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const backlogRounds = (folder: string): ((i: BacklogItem) => {
         round: number;
-        earlier: { at: string; text: string; guess?: boolean; cut?: boolean }[];
+        earlier: {
+            round: number; at: string; ts: number; text: string;
+            guess?: boolean; cut?: boolean; restored?: boolean;
+        }[];
     }) => {
         const records = readTracks(folder);
         const byCode = new Map<string, TrackSummary>();
@@ -13036,10 +13124,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Obsidian edit may be the NEW wording, and one that hit the
                 // ledger ceiling is incomplete — a reader deciding what was
                 // asked last time has to be able to see which of those it is.
-                earlier: (sum?.rounds ?? []).map(r => ({
-                    at: localStamp(r.ts), text: r.prevText ?? '',
+                earlier: (sum?.rounds ?? []).map((r, n) => ({
+                    round: n + 1,
+                    at: localStamp(r.ts), ts: r.ts, text: r.prevText ?? '',
                     ...(r.prevGuess ? { guess: true } : {}),
-                    ...(r.prevCut ? { cut: true } : {})
+                    ...(r.prevCut ? { cut: true } : {}),
+                    // ‼️ X-36 (V2) — recovered afterwards from the file rather
+                    // than captured at the moment. The words are right; when
+                    // they were taken is the part a reader must not guess at.
+                    ...(r.prevRestored ? { restored: true } : {})
                 }))
             };
         };
@@ -13142,12 +13235,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /**
      * ‼️ X-36 (reopened) — the last text every coded item was seen with, per
-     * project folder. In memory, for this window's lifetime only: it narrows
-     * the Obsidian race (see reconcileOutside) and is not a second record of
-     * what an item once said — that is the ledger's, and two answers to one
-     * question is how they start disagreeing.
+     * project folder. It narrows the Obsidian race (see reconcileOutside) and
+     * is not a second record of what an item once said — that is the ledger's,
+     * and two answers to one question is how they start disagreeing.
+     *
+     * ‼️ X-36 (V2) — AND IT OUTLIVES THE WINDOW, or it is not there when it is
+     * needed. Held only in memory, it was empty at exactly the moment the race
+     * is most likely: VS Code has just started, the vault has been open for
+     * hours, and the first thing that happens is somebody un-ticking a box in
+     * Obsidian and typing the new round straight over the old words. With no
+     * snapshot the reconciler could only offer the NEW text as the previous
+     * round (honestly, as `prevGuess`) — honest, and still a lost sentence.
+     *
+     * So it is written next to the other stores as a plain cache, keyed by
+     * project folder. It is a BASELINE FOR THE NEXT COMPARISON and nothing
+     * else: no surface reads it, no history is built from it, and losing the
+     * file costs one round's wording, never a record. That distinction is why
+     * it is here and not in the ledger — the ledger is append-only testimony,
+     * this is a scratch copy of what a file looked like.
      */
+    const BACKLOG_SEEN_FILE = path.join(context.globalStorageUri.fsPath, 'backlog-seen.json');
     const outsideSeen = new Map<string, Map<string, string>>();
+
+    const loadOutsideSeen = (): void => {
+        try {
+            const raw = JSON.parse(fs.readFileSync(BACKLOG_SEEN_FILE, 'utf8')) as
+                Record<string, Record<string, string>>;
+            for (const [folder, items] of Object.entries(raw ?? {})) {
+                if (!items || typeof items !== 'object') { continue; }
+                outsideSeen.set(folder, new Map(Object.entries(items)
+                    .filter(([, v]) => typeof v === 'string')));
+            }
+        } catch { /* first run, or unreadable — the baseline pass fills it in */ }
+    };
+
+    const saveOutsideSeen = (): void => {
+        try {
+            const out: Record<string, Record<string, string>> = {};
+            for (const [folder, items] of outsideSeen) { out[folder] = Object.fromEntries(items); }
+            fs.mkdirSync(path.dirname(BACKLOG_SEEN_FILE), { recursive: true });
+            fs.writeFileSync(BACKLOG_SEEN_FILE, JSON.stringify(out), 'utf8');
+        } catch { /* a cache we could not write costs one round's wording */ }
+    };
 
     /**
      * Rebuild `Backloglog.md` from the ledger and the backlog as it stands.
@@ -13177,6 +13306,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // pass has this pass's truth. See snapshotBacklog / TrackRecord.prevGuess.
         const missed = reconcileOutside(items, records, Date.now(), outsideSeen.get(folder));
         outsideSeen.set(folder, snapshotBacklog(items));
+        saveOutsideSeen();
+        // A project added since the last pass gets its watcher here — cheap,
+        // because arming is a no-op for every folder already covered.
+        armBacklogWatch();
         if (missed.length) {
             appendTrack(trackLedgerOf(folder), missed);
             records = records.concat(missed);
@@ -13197,6 +13330,84 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const written = writeProjectDoc(folder, rel, text, current.ok ? current.mtimeMs : undefined);
         return written.ok ? { file: made.file } : { error: written.error };
     };
+
+    /**
+     * ‼️ X-36 (V2) — SOMEBODY IS WATCHING THE BACKLOG FILE.
+     *
+     * `reconcileOutside` is the only thing that notices a box ticked or
+     * un-ticked in Obsidian, and it only ran when Agent Farm happened to write
+     * a track event, when the user pressed Rebuild the log, or when an op asked
+     * for it. So an edit made in the vault sat unrecorded until something else
+     * came along — and until it did, the round it opened did not exist on any
+     * surface the user looks at.
+     *
+     * One watcher per project folder, on the backlog's DIRECTORY (an editor
+     * that saves by rename would break a watch on the file itself), filtered to
+     * that one filename and debounced: Obsidian writes a file several times as
+     * it saves, and the log rebuild writes into the same folder.
+     */
+    const backlogWatchers = new Map<string, fs.FSWatcher>();
+    const backlogWatchTimers = new Map<string, NodeJS.Timeout>();
+
+    const armBacklogWatch = (): void => {
+        for (const project of projectStore.all()) {
+            const folder = (project.folder ?? '').trim();
+            if (!folder || backlogWatchers.has(folder) || !dirExists(folder)) { continue; }
+            let file: string | undefined;
+            try { file = scanRoles(folder).backlog; } catch { continue; }
+            if (!file) { continue; }
+            const base = path.basename(file);
+            try {
+                const watcher = fs.watch(path.dirname(file), (_event, name) => {
+                    if (name && path.basename(name.toString()) !== base) { return; }
+                    const running = backlogWatchTimers.get(folder);
+                    if (running) { clearTimeout(running); }
+                    backlogWatchTimers.set(folder, setTimeout(() => {
+                        backlogWatchTimers.delete(folder);
+                        try { refreshBacklogLog(project.id); } catch { /* the next edit retries */ }
+                    }, 1500));
+                });
+                backlogWatchers.set(folder, watcher);
+            } catch { /* no watch on this folder — the manual paths still work */ }
+        }
+    };
+
+    /**
+     * The baseline the whole snapshot depends on: what every coded item says
+     * RIGHT NOW, for any project the cache has never seen. Without it the first
+     * outside edit after a fresh install has nothing to compare against.
+     * Projects already in the cache keep the text from the last window — that
+     * copy is older, which is precisely what makes it the right answer for an
+     * edit made while VS Code was closed.
+     */
+    const baselineBacklogSeen = (): void => {
+        let added = false;
+        for (const project of projectStore.all()) {
+            const folder = (project.folder ?? '').trim();
+            if (!folder || outsideSeen.has(folder) || !dirExists(folder)) { continue; }
+            try {
+                const file = scanRoles(folder).backlog;
+                if (!file) { continue; }
+                const doc = readProjectDoc(folder, relDoc(folder, file));
+                if (!doc.ok) { continue; }
+                outsideSeen.set(folder, snapshotBacklog(parseBacklog(doc.text ?? '').items));
+                added = true;
+            } catch { /* unreadable folder — nothing to baseline */ }
+        }
+        if (added) { saveOutsideSeen(); }
+    };
+
+    loadOutsideSeen();
+    baselineBacklogSeen();
+    armBacklogWatch();
+    context.subscriptions.push({
+        dispose: () => {
+            for (const t of backlogWatchTimers.values()) { clearTimeout(t); }
+            backlogWatchTimers.clear();
+            for (const w of backlogWatchers.values()) { try { w.close(); } catch { /* gone */ } }
+            backlogWatchers.clear();
+        }
+    });
 
     /**
      * Record work on a backlog item, and let the record show everywhere it should.
@@ -13247,6 +13458,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         projectId: string; folder: string; code: string; event: TrackEvent;
         by: TrackSource; agent?: string; session?: string; note?: string; now?: number;
     }): TrackRecord => {
+        // ‼️ P-14 (V2) — THE CLOSING CONTRACT IS CHECKED WHERE THE RECORD IS
+        // WRITTEN. Every door into the ledger passes through here, so no op can
+        // be added later that closes an item without saying what it did — which
+        // is exactly how `projects.track` came to be a hole in a rule that
+        // `projects.backlog.check` was enforcing on its own.
+        const refusal = closingNoteRefusal({ by: o.by, event: o.event, note: o.note });
+        if (refusal) { throw new Error(refusal); }
         const now = o.now ?? Date.now();
         const who = attributeTrack({
             projectId: o.projectId, by: o.by, now,
@@ -16712,7 +16930,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // that silently did nothing.
             try { taskManager.deleteTask(node.task); } catch (e) {
                 void vscode.window.showErrorMessage(
-                    `Agent Farm: the run was NOT deleted — its archive could not be written. ${String(e)}`);
+                    `Agent Farm: the run was NOT deleted — ${String(e)}`);
             }
         }),
         vscode.commands.registerCommand('agentfarm.retryTask', (node?: TaskNode) => {
@@ -16739,8 +16957,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind === 'task') { taskManager.moveTask(node.task, 1); }
         }),
         vscode.commands.registerCommand('agentfarm.clearDoneTasks', () => {
-            const n = taskManager.clearFinished();
-            void vscode.window.showInformationMessage(`Agent Farm: removed ${n} finished task(s).`);
+            // ‼️ M-8 — the archive and the list are one transaction; if either
+            // half could not be written nothing was cleared, and that is said.
+            try {
+                const n = taskManager.clearFinished();
+                void vscode.window.showInformationMessage(`Agent Farm: removed ${n} finished task(s).`);
+            } catch (e) {
+                void vscode.window.showErrorMessage(
+                    `Agent Farm: nothing was cleared — ${String(e)}`);
+            }
         }),
         vscode.commands.registerCommand('agentfarm.revealTaskTerminal', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.revealTerminal(node.task); }

@@ -152,6 +152,23 @@ export interface FarmTask {
     /** Which retry this is. Absent / 0 = the original run. It is a FIELD and no
      *  longer a number parsed out of the title, which is what it was. */
     retryAttempt?: number;
+    /**
+     * ‼️ M-3 (reopened) — THE EARLIEST THIS QUEUED RUN MAY LAUNCH.
+     *
+     * A retry used to be a `setTimeout` holding a closure: nothing existed on
+     * the board for forty minutes, nothing was written down, and closing the
+     * window between the failure and the timer threw the retry away in silence
+     * — while the failed task's own record already said "retried". The default
+     * policy is six attempts forty minutes apart, so the ordinary case spans
+     * four hours of a window nobody promised to keep open.
+     *
+     * The retry is therefore a REAL QUEUED ROW from the moment it is decided,
+     * carrying the time it is allowed to start. It is in the store, so it
+     * survives a reload; it is on the board, so "what is it going to do about
+     * that failure" has a visible answer; and the 30-second pump is the timer,
+     * which is the one this extension already trusts with every other delay.
+     */
+    notBefore?: number;
 }
 
 /** One thing that happened to a task. `kind` is the verb; `note` is the one
@@ -677,6 +694,16 @@ export interface TaskManagerOptions {
     isRunner?: () => boolean;
     /** Called when a write was blocked in follower mode. */
     onFollowerWrite?: () => void;
+    /**
+     * ‼️ M-8 (V2) — THE ARCHIVE AND THE LIVE LIST DISAGREE, AND SOMEBODY IS TOLD.
+     * A destructive step whose LAST stage failed leaves the two copies out of
+     * step: Undo put the row back but the tombstone that takes it out of the
+     * month file could not be appended, so the history still shows a run that
+     * is sitting on the board. The run itself is safe — that is why this is a
+     * warning and not a throw — but a divergence nobody is told about is the
+     * silent failure the whole item is about.
+     */
+    onArchiveDrift?: (message: string) => void;
     /** Machine roots for portable stores: saved strings carry ${claudeDir} /
      *  ${globalStorage} / ${home} tokens instead of absolute machine paths,
      *  so the git-synced store works on every machine (see portablePaths). */
@@ -1040,23 +1067,25 @@ export class TaskManager implements vscode.Disposable {
      * The file is append-only, so taking it back is another line: a tombstone
      * carrying the id and the moment, written to the SAME month file the record
      * went to (`monthOf`, so the reader meets them in order and the last word
-     * is this one). Best-effort on purpose — the row is already back, and a
-     * failure here costs a stale line in a history view, never the run itself.
+     * is this one).
+     *
+     * ‼️ M-8 (V2) — IT THROWS, AND THE CALLER SAYS SO. It used to `console.warn`
+     * into a log nobody opens: the run was safe, but `tasks.history` went on
+     * showing a live row as deleted and the person who pressed Undo was told
+     * nothing. The throw is not fatal at either call site — one turns it into
+     * `onArchiveDrift`, the other adds it to the error it is already raising —
+     * but the divergence now reaches a human either way.
      */
     private appendUndelete(tasks: FarmTask[]): void {
         if (!tasks.length) { return; }
-        try {
-            fs.mkdirSync(this.historyDir, { recursive: true });
-            const byMonth = new Map<string, FarmTask[]>();
-            for (const t of tasks) {
-                (byMonth.get(monthOf(t)) ?? byMonth.set(monthOf(t), []).get(monthOf(t))!).push(t);
-            }
-            for (const [month, list] of byMonth) {
-                fs.appendFileSync(path.join(this.historyDir, `${month}.jsonl`),
-                    list.map(t => JSON.stringify({ id: t.id, undeleted: Date.now() })).join('\n') + '\n', 'utf8');
-            }
-        } catch (e) {
-            console.warn('[agent-farm] undo could not be filed in the task archive', e);
+        fs.mkdirSync(this.historyDir, { recursive: true });
+        const byMonth = new Map<string, FarmTask[]>();
+        for (const t of tasks) {
+            (byMonth.get(monthOf(t)) ?? byMonth.set(monthOf(t), []).get(monthOf(t))!).push(t);
+        }
+        for (const [month, list] of byMonth) {
+            fs.appendFileSync(path.join(this.historyDir, `${month}.jsonl`),
+                list.map(t => JSON.stringify({ id: t.id, undeleted: Date.now() })).join('\n') + '\n', 'utf8');
         }
     }
 
@@ -1146,6 +1175,71 @@ export class TaskManager implements vscode.Disposable {
         this.onDidChangeEmitter.fire();
     }
 
+    /**
+     * ‼️ M-8 (V2) — A DESTRUCTIVE STEP IS REFUSED AT THE DOOR, NOT AFTER IT.
+     *
+     * `save()` is the LAST thing a deletion does, and in a follower window it
+     * is the only thing that notices the window may not write. So the archive
+     * line had already been appended, the row had already left this window's
+     * memory and the output file had already been unlinked before anybody said
+     * "another window owns this list" — an ordering that produced exactly the
+     * split the item complains about: no row here, the row still in the
+     * runner's store, no output anywhere, and a history entry for a deletion
+     * that never happened.
+     *
+     * Every route that removes or restores a row asks this FIRST. The throw is
+     * the answer the caller shows; the toast still fires so the reason is the
+     * same sentence the other blocked writes give.
+     */
+    private assertRunner(what: string): void {
+        if (this.runner()) { return; }
+        this.opts.onFollowerWrite?.();
+        throw new Error(
+            `${what} can only be done in the window that runs the task queue — `
+            + 'this window mirrors that one and may not write the list.');
+    }
+
+    /**
+     * Write the store as one file, atomically, and THROW if it did not land.
+     *
+     * ‼️ M-8 (V2) — THE LIVE LIST IS PART OF THE TRANSACTION. Filing the row in
+     * the month archive was made the commit point, but the other half of a
+     * deletion — the list the row disappears from — still went through a
+     * catch that called storage best-effort. A read-only store, a full disk
+     * or a lock therefore gave the user a row that vanished from the screen,
+     * came back on the next window, and had no output file any more because
+     * that step ran regardless. Temp file + rename so a crash mid-write cannot
+     * truncate the store either.
+     */
+    private writeStore(tasks: FarmTask[]): void {
+        fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
+        // absolute machine paths leave as ${claudeDir}/${globalStorage}/${home}
+        // tokens — the git-synced store stays valid on every machine
+        const body = JSON.stringify(tokenizeDeep({
+            tasks,
+            schedules: this.schedules,
+            templates: this.templates,
+            workflows: this.workflows,
+            triggers: this.triggers,
+            automation: this.automation,
+            automationLog: this.automationLog
+        }, this.proots()), null, 2);
+        const tmp = `${this.storageFile}.tmp`;
+        try {
+            fs.writeFileSync(tmp, body, 'utf8');
+            fs.renameSync(tmp, this.storageFile);
+        } catch (e) {
+            try { fs.unlinkSync(tmp); } catch { /* never existed */ }
+            throw e;
+        }
+    }
+
+    /** What every write does once the bytes are down: trim, then repaint. */
+    private afterWrite(): void {
+        this.pruneOutputs();
+        this.onDidChangeEmitter.fire();
+    }
+
     private save(): void {
         if (!this.runner()) {
             // B11 follower: never write — the runner window owns the store. The
@@ -1174,20 +1268,9 @@ export class TaskManager implements vscode.Disposable {
                     this.tasks = this.tasks.filter(t => !drop.has(t.id));
                 } catch { /* keep them: over the cap beats gone */ }
             }
-            // absolute machine paths leave as ${claudeDir}/${globalStorage}/${home}
-            // tokens — the git-synced store stays valid on every machine
-            fs.writeFileSync(this.storageFile, JSON.stringify(tokenizeDeep({
-                tasks: this.tasks,
-                schedules: this.schedules,
-                templates: this.templates,
-                workflows: this.workflows,
-                triggers: this.triggers,
-                automation: this.automation,
-                automationLog: this.automationLog
-            }, this.proots()), null, 2), 'utf8');
-        } catch { /* storage is best-effort */ }
-        this.pruneOutputs();
-        this.onDidChangeEmitter.fire();
+            this.writeStore(this.tasks);
+        } catch { /* an ordinary save is best-effort; the destructive routes are not */ }
+        this.afterWrite();
     }
 
     // ---------- automation gate (core/automation.ts) ----------
@@ -1239,7 +1322,7 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
-            | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt'>>
+            | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -1276,7 +1359,11 @@ export class TaskManager implements vscode.Disposable {
                 : task.fromTrigger ? 'by a trigger'
                     : task.workflowId !== undefined ? `by a workflow (step ${(task.stepIndex ?? 0) + 1})`
                         : task.missionId ? 'by a mission'
-                            : 'by you');
+                            // ‼️ M-3 (reopened) — a retry says a retry made it.
+                            // It reads "by you" otherwise, about the one row on
+                            // the board nobody pressed anything to create.
+                            : task.retryAttempt ? `by the retry policy (attempt ${task.retryAttempt})`
+                                : 'by you');
         this.tasks.push(task);
         this.save();
         return task;
@@ -1289,6 +1376,18 @@ export class TaskManager implements vscode.Disposable {
 
     /** Why this task can't launch right now, or undefined if it can. */
     private launchBlock(task: FarmTask): string | undefined {
+        // ‼️ M-3 (reopened) — A RUN THAT IS WAITING FOR A CLOCK. First, because
+        // it is the cheapest test and because it outranks the others: a retry
+        // whose wait has not elapsed is not competing for a slot at all.
+        //
+        // The reason names the MOMENT and never the remaining minutes: the pump
+        // asks again every 30 seconds, and a reason that counted down would be
+        // a different string every time — which is what `startTask` reads to
+        // decide whether this is news worth writing on the record.
+        if (task.notBefore && Date.now() < task.notBefore) {
+            return `waiting until ${new Date(task.notBefore).toLocaleTimeString()}`
+                + (task.retryAttempt ? ` — retry ${task.retryAttempt}` : '');
+        }
         const maxGlobal = this.opts.maxConcurrent?.() ?? 2;
         const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 1;
         if (maxGlobal > 0 && this.runningCount() >= maxGlobal) { return `concurrency: ${maxGlobal} running`; }
@@ -1773,27 +1872,36 @@ export class TaskManager implements vscode.Disposable {
                     + `Policy: ${describeRetry(policy, fallback)}.\n`);
             }
         } catch { /* best-effort note */ }
-        // Same work, same dimensions, same project — and it fires minutes later,
-        // from a timer, in a window that may be showing something else entirely.
-        setTimeout(() => {
-            try {
-                const t = this.addTask(agent, nextTitle, prompt, mode, {
-                    projectId: task.projectId,
-                    ...(task.engine ? { engine: task.engine } : {}),
-                    ...(task.model ? { model: task.model } : {}),
-                    ...(task.effort ? { effort: task.effort } : {}),
-                    ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
-                    ...(task.cli ? { cli: task.cli } : {}),
-                    ...(task.workDir ? { workDir: task.workDir } : {}),
-                    ...(task.priority ? { priority: task.priority } : {}),
-                    ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
-                    ...(policy ? { retry: policy } : {}),
-                    retryOf: task.retryOf ?? task.id,
-                    retryAttempt: d.attempt
-                });
-                this.startTask(t);
-            } catch { /* ignore */ }
-        }, Math.max(60_000, d.delayMs));
+        // ‼️ M-3 (reopened) — THE RETRY IS ON THE BOARD NOW, NOT IN A CLOSURE.
+        //
+        // Same work, same dimensions, same project — created immediately, in
+        // the queue, carrying the moment it may start (`notBefore`). The pump
+        // launches it when that moment arrives, exactly as it launches anything
+        // else a ceiling was holding. What this buys, and a `setTimeout` never
+        // could: the row is in the store, so closing VS Code between the
+        // failure and the retry no longer throws it away; it is visible, so the
+        // answer to "what happens now" is a row that says when; and the
+        // decision to retry is recorded in the same save as the run it made.
+        try {
+            const t = this.addTask(agent, nextTitle, prompt, mode, {
+                projectId: task.projectId,
+                ...(task.engine ? { engine: task.engine } : {}),
+                ...(task.model ? { model: task.model } : {}),
+                ...(task.effort ? { effort: task.effort } : {}),
+                ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
+                ...(task.cli ? { cli: task.cli } : {}),
+                ...(task.workDir ? { workDir: task.workDir } : {}),
+                ...(task.priority ? { priority: task.priority } : {}),
+                ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
+                ...(policy ? { retry: policy } : {}),
+                retryOf: task.retryOf ?? task.id,
+                retryAttempt: d.attempt,
+                notBefore: Date.now() + Math.max(60_000, d.delayMs)
+            });
+            // Parks on the clock (see launchBlock) and the pump takes it from
+            // there; the park writes the "waiting until …" line on its record.
+            this.startTask(t);
+        } catch { /* ignore */ }
     }
 
     // ---------- verification (A2) ----------
@@ -1985,40 +2093,77 @@ export class TaskManager implements vscode.Disposable {
      * FIRST. This used to drop the row, then attempt an archive that swallowed
      * every error, then delete the output and save — so a full disk or a locked
      * month file produced exactly the visible result of a successful archive
-     * with none of the archive. The order is now: file it, and only then take
-     * it off the list and delete its output. If the append throws, nothing has
-     * happened yet and the throw reaches the caller, which shows it.
+     * with none of the archive.
+     *
+     * ‼️ M-8 (V2) — AND THE LIVE LIST IS INSIDE THE TRANSACTION TOO. Four
+     * stages, in the only order where a failure costs nothing:
+     *
+     *   1. refuse it outright in a follower window (`assertRunner`),
+     *   2. file the row in the month archive — nothing has moved yet,
+     *   3. persist the list WITHOUT it, atomically, and if that throws put a
+     *      tombstone back over step 2 so the archive does not claim a deletion
+     *      that did not happen,
+     *   4. only now change memory and delete the output file — the one step
+     *      that cannot be taken back is the last one.
      */
     deleteTask(task: FarmTask): FarmTask {
+        this.assertRunner('A run');
+        const next = this.tasks.filter(t => t.id !== task.id);
         this.appendHistory([task]);
-        this.tasks = this.tasks.filter(t => t.id !== task.id);
+        try {
+            this.writeStore(next);
+        } catch (e) {
+            let extra = '';
+            try { this.appendUndelete([task]); } catch (u) {
+                extra = ' The archive also still lists it as deleted — its tombstone could not be'
+                    + ` written either (${String(u)}).`;
+            }
+            throw new Error(`the task list could not be written (${String(e)}).${extra}`);
+        }
+        this.tasks = next;
         this.deleteOutput(task);
-        this.save();
+        this.afterWrite();
         return task;
     }
 
-    /** Put deleted rows back (UI undo). Ids still present are skipped, so a
-     *  double-press cannot duplicate a row. Returns how many came back. */
+    /**
+     * Put deleted rows back (UI undo). Ids still present are skipped, so a
+     * double-press cannot duplicate a row. Returns how many came back.
+     *
+     * ‼️ M-8 (V2) — the live list goes down FIRST, because that is the half the
+     * user is asking for; the tombstone follows and, if it cannot be written,
+     * says so through `onArchiveDrift` instead of a `console.warn`. The run is
+     * safe either way — what is broken is that `tasks.history` still shows it
+     * as deleted, and that is a sentence somebody has to read.
+     */
     restoreTasks(list: FarmTask[]): number {
-        let n = 0;
+        this.assertRunner('An undo');
         const back: FarmTask[] = [];
+        const next = [...this.tasks];
         for (const t of list) {
-            if (!t || typeof t.id !== 'string' || this.tasks.some(x => x.id === t.id)) { continue; }
+            if (!t || typeof t.id !== 'string' || next.some(x => x.id === t.id)) { continue; }
             // The output file was deleted with the row and is not coming back;
             // a row still offering an `output` button would be a dead button.
             const row: FarmTask = { ...t };
             delete row.outputFile;
-            this.tasks.push(row);
+            next.push(row);
             back.push(row);
-            n++;
         }
-        if (n) {
-            // ‼️ M-8 — and the archive is told, or it keeps a copy of a run that
-            // is sitting on the live list (see `appendUndelete`).
+        if (!back.length) { return 0; }
+        this.writeStore(next);
+        this.tasks = next;
+        // ‼️ M-8 — and the archive is told, or it keeps a copy of a run that
+        // is sitting on the live list (see `appendUndelete`).
+        try {
             this.appendUndelete(back);
-            this.save();
+        } catch (e) {
+            this.opts.onArchiveDrift?.(
+                `${back.length} restored run(s) are back on the board, but the task archive still lists`
+                + ` them as deleted — its tombstone could not be written (${String(e)}).`
+                + ' Task history will show them twice until it can.');
         }
-        return n;
+        this.afterWrite();
+        return back.length;
     }
 
     private deleteOutput(task: FarmTask): void {
@@ -2150,16 +2295,31 @@ export class TaskManager implements vscode.Disposable {
      * Same bargain as `deleteTask`: the append is the commit point, and a
      * failure here leaves the list exactly as it was rather than clearing rows
      * whose only other copy was the output file it was about to delete.
+     * ‼️ M-8 (V2) — and the same four stages, for the same reason: this clears
+     * many rows at once, so a store write that quietly failed here would take
+     * every one of their outputs with it.
      */
     clearFinished(): number {
+        this.assertRunner('Clearing finished runs');
         const finished = this.tasks.filter(t =>
             t.status !== 'queued' && t.status !== 'running');
         if (!finished.length) { return 0; }
-        this.appendHistory(finished);
-        for (const t of finished) { this.deleteOutput(t); }
-        this.tasks = this.tasks.filter(t =>
+        const next = this.tasks.filter(t =>
             t.status === 'queued' || t.status === 'running');
-        this.save();
+        this.appendHistory(finished);
+        try {
+            this.writeStore(next);
+        } catch (e) {
+            let extra = '';
+            try { this.appendUndelete(finished); } catch (u) {
+                extra = ' The archive also still lists them as deleted — the tombstones could not be'
+                    + ` written either (${String(u)}).`;
+            }
+            throw new Error(`the task list could not be written (${String(e)}).${extra}`);
+        }
+        this.tasks = next;
+        for (const t of finished) { this.deleteOutput(t); }
+        this.afterWrite();
         return finished.length;
     }
 

@@ -304,6 +304,144 @@ const mk = (name, opts) =>
     follower.dispose(); leader.dispose();
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ M-3 (reopened) — A RETRY IS A ROW ON THE BOARD, NOT A CLOSURE IN A TIMER.
+//
+// It was a `setTimeout` holding the whole decision: nothing existed anywhere
+// for forty minutes, and closing the window in between threw the retry away in
+// silence while the failed task's own record already said "retried". The
+// default policy spans four hours, so that was the ordinary case, not the edge.
+// ---------------------------------------------------------------------------
+{
+    const m = mk('retrywait', {});
+    const t = m.addTask(agent, 'düşecek', 'iş', 'headless', {
+        ignoreBudget: true, retry: { max: 2, delayMin: 5, when: 'any' }
+    });
+    t.status = 'running'; t.startedAt = Date.now();
+    m.finish(t, 'failed');
+
+    const again = m.tasks.find(x => x.retryOf === t.id);
+    check('‼️ M-3: the retry exists the moment the failure does — in the queue, on the board',
+        !!again && again.status === 'queued' && again.retryAttempt === 1);
+    check('…carrying the moment it may start, so the 30s pump is the timer',
+        !!again && again.notBefore > Date.now() && again.notBefore <= Date.now() + 5 * 60_000 + 1000);
+    check('…and it survives a reload, because it is in the store and not in a closure',
+        JSON.parse(fs.readFileSync(path.join(tmp, 'retrywait.json'), 'utf8'))
+            .tasks.some(x => x.retryOf === t.id && x.notBefore > 0));
+    check('‼️ …the row SAYS it is waiting, and says until when',
+        /^waiting until /.test(again.deferredReason || '') && again.autoStart === true);
+    check('…its record says a retry made it — nobody pressed anything',
+        /by the retry policy \(attempt 1\)/.test((again.events[0] || {}).note || ''));
+    check('…and the clock is what is holding it: nothing launched',
+        again.status === 'queued' && !m.tasks.some(x => x.status === 'running'));
+
+    // The clock, and only the clock — with the moment past, the run is free.
+    again.notBefore = Date.now() - 1000;
+    check('‼️ …and once the moment passes nothing holds it any more',
+        m.launchBlock(again) === undefined);
+    check('a run that never asked to wait is not held', m.launchBlock(t) === undefined);
+    m.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// M-8 (V2) — THE THREE WAYS A DELETION USED TO COME APART.
+//
+// Each of these is a real failure path with no test before: a follower window,
+// a store that cannot be written, and a tombstone that cannot be appended. They
+// are asserted on the FILES and the MEMORY together, because the whole
+// complaint is that those two stopped agreeing with each other.
+// ---------------------------------------------------------------------------
+
+// 1. the follower window is refused at the door
+{
+    let warned = 0;
+    const f = mk('fdel', { isRunner: () => false, onFollowerWrite: () => { warned++; } });
+    const t = f.addTask(agent, 'takipçi', 'iş', 'headless');
+    const outFile = path.join(tmp, 'fdel-out.md');
+    fs.writeFileSync(outFile, 'output');
+    t.outputFile = outFile;
+    t.status = 'done'; t.endedAt = Date.now();
+
+    // …from here, because making the task already tried (and was refused) a save
+    const before = warned;
+    let threw = '';
+    try { f.deleteTask(t); } catch (e) { threw = String(e); }
+    check('‼️ M-8: a follower window REFUSES the delete instead of half-doing it',
+        /runs the task queue/.test(threw));
+    check('…the row is still there', f.tasks.some(x => x.id === t.id));
+    check('‼️ …and the output file it used to delete BEFORE noticing is still there',
+        fs.existsSync(outFile));
+    check('…nothing was filed in the archive for a deletion that did not happen',
+        f.archivedTasks().filter(x => x.id === t.id).length === 0);
+    check('…and the user was told why, once', warned === before + 1);
+
+    let undo = '';
+    try { f.restoreTasks([t]); } catch (e) { undo = String(e); }
+    check('…an undo is refused the same way rather than looking like a dead button',
+        /runs the task queue/.test(undo));
+    f.dispose();
+}
+
+// 2. the store cannot be written — the archive is rolled back and NOTHING moves
+{
+    const store = path.join(tmp, 'wfail.json');
+    const m = mk('wfail', {});
+    const t = m.addTask(agent, 'yazılamaz', 'iş', 'headless');
+    const outFile = path.join(tmp, 'wfail-out.md');
+    fs.writeFileSync(outFile, 'output');
+    t.outputFile = outFile;
+    t.status = 'done'; t.endedAt = Date.now();
+
+    // A directory where the atomic write wants its temp file: writeFileSync
+    // fails, deterministically, on every platform.
+    fs.mkdirSync(store + '.tmp', { recursive: true });
+    let threw = '';
+    try { m.deleteTask(t); } catch (e) { threw = String(e); }
+    fs.rmSync(store + '.tmp', { recursive: true, force: true });
+
+    check('‼️ M-8: a store that cannot be written FAILS THE DELETE — it was swallowed',
+        /task list could not be written/.test(threw));
+    check('…the row is still in memory, so the screen and the disk still agree',
+        m.tasks.some(x => x.id === t.id));
+    check('‼️ …and its output survives, because the unlink is the LAST step now',
+        fs.existsSync(outFile));
+    check('‼️ …and the archive does not claim a deletion that never happened',
+        m.archivedTasks().filter(x => x.id === t.id).length === 0);
+
+    // and with the obstruction gone it goes through cleanly
+    const gone = m.deleteTask(m.tasks.find(x => x.id === t.id));
+    check('…the same press works once the disk does', gone.id === t.id
+        && !m.tasks.some(x => x.id === t.id)
+        && m.archivedTasks().filter(x => x.id === t.id).length === 1
+        && !fs.existsSync(outFile));
+    m.dispose();
+}
+
+// 3. undo puts the row back, but the tombstone cannot be written — and it SAYS so
+{
+    const drifts = [];
+    const m = mk('drift', { onArchiveDrift: msg => drifts.push(msg) });
+    const t = m.addTask(agent, 'geri al', 'iş', 'headless');
+    t.status = 'done'; t.endedAt = Date.now();
+    const removed = m.deleteTask(t);
+
+    const month = new Date(t.createdAt);
+    const file = path.join(m.historyDir,
+        `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}.jsonl`);
+    // The month file becomes a directory: the record is archived, the tombstone
+    // that would take it back cannot be appended.
+    fs.rmSync(file, { force: true });
+    fs.mkdirSync(file, { recursive: true });
+    const back = m.restoreTasks([removed]);
+    fs.rmSync(file, { recursive: true, force: true });
+
+    check('‼️ M-8: the run itself is safe — undo is not failed by a broken archive',
+        back === 1 && m.tasks.some(x => x.id === t.id));
+    check('‼️ …and the divergence is SAID, where it used to be a console.warn',
+        drifts.length === 1 && /still lists them as deleted/.test(drifts[0]));
+    m.dispose();
+}
+
 Module._load = origLoad;
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

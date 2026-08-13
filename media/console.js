@@ -2067,6 +2067,8 @@
     let unseen = 0;
     /** how many lines the last paint drew — the yardstick for "arrived" */
     let shownCount = 0;
+    /** everything the last `talkinner` render depended on (see paint) */
+    let lastTalkKey = '';
 
     function paintJump() {
         const btn = document.getElementById('c-jump');
@@ -2584,8 +2586,11 @@
                 </div>
             </div>
             <div id="c-snip"></div>`;
-        // A rebuild starts every slot over.
+        // A rebuild starts every slot over — including the conversation's own
+        // "nothing changed" key, or the new empty #talkinner would keep the old
+        // key and never be filled (see paint's talkKey).
         for (const k of Object.keys(written)) { delete written[k]; }
+        lastTalkKey = '';
 
         const text = document.getElementById('c-text');
         if (text) {
@@ -3106,7 +3111,39 @@
         const pinned = !talkEl || atBottom(talkEl);
 
         const shown = s ? visibleMessages(s.messages) : [];
-        const changed = slot('talkinner', talkHtml(s, shown));
+        /*
+         * ‼️ S-29 (reopened) — DO NOT REBUILD A CONVERSATION THAT DID NOT CHANGE.
+         *
+         * `talkHtml` renders EVERY line of the selected session — up to four
+         * hundred of them, each through `messageHtml` — and it ran on every
+         * single repaint. That is the right cost while a turn streams, because
+         * the last line really is growing; it is pure waste for the repaints
+         * that carry no new words at all, and those are exactly the ones a
+         * person is waiting on. End session flips a status; Remove from list
+         * takes a card off the shelf; both redrew the whole transcript before
+         * the panel could answer, and on a slow machine that is the seconds the
+         * user is counting.
+         *
+         * `slot` already skips the DOM write when the html is identical — but
+         * only AFTER the html has been built, which is the part that costs. The
+         * signature is everything the rendering depends on: which session, the
+         * filter, how many lines got through, and the tail (a streaming line
+         * grows in place, so its length is what moves). `permissionBox` rides
+         * in `talkHtml` too, so the parked question is part of it.
+         */
+        const last = shown.length ? shown[shown.length - 1] : null;
+        const talkKey = !s ? 'none' : [
+            DATA.selected, st.kinds === null || st.kinds === undefined ? '*' : String(st.kinds),
+            shown.length, (s.messages || []).length,
+            last ? last.role : '', last ? (last.text || '').length : 0,
+            last && last.tool ? last.tool.name : '',
+            s.pendingPermission ? JSON.stringify(s.pendingPermission) : '',
+            s.pendingAsk ? JSON.stringify(s.pendingAsk) : ''
+        ].join('|');
+        const changed = talkKey === lastTalkKey
+            ? false
+            : slot('talkinner', talkHtml(s, shown));
+        lastTalkKey = talkKey;
         if (changed) {
             if (pinned) {
                 unseen = 0;
