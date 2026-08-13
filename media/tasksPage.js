@@ -749,11 +749,35 @@
         const sel = (id, value, list) => `<select id="nt-${id}">${list.map(o =>
             `<option value="${C.esc(o[0])}"${o[0] === value ? ' selected' : ''}>${C.esc(o[1])}</option>`
         ).join('')}</select>`;
+        /**
+         * ‼️ M-3 (V3) — A POLICY THE RUN WILL NOT USE IS NOT OFFERED AS IF IT WILL.
+         *
+         * Automatic retry is a headless mechanism, and deliberately so: an
+         * interactive run has a person in front of it, and the process exiting
+         * says nothing reliable about whether the work failed — closing the
+         * window is the ordinary way to end one. `maybeScheduleRetry` therefore
+         * skips interactive runs entirely. The form still drew the picker for
+         * them, so the box collected a decision nothing would ever read.
+         *
+         * Shown rather than hidden, because the referent is the MODE box three
+         * rows up in the same form: a control that silently vanished would look
+         * like a bug, while a disabled one that says which field switched it off
+         * answers the question in place.
+         */
+        if (c.mode === 'interactive') {
+            return `<label class="ntf wide" title="${C.esc(
+                'Automatic retry applies to HEADLESS runs only. An interactive run opens a session with you in '
+                + 'front of it: the process exiting is how you normally end one, so "it failed" is not a fact the '
+                + 'extension can read from it, and a policy acting on that would relaunch sessions you closed on '
+                + 'purpose. Set Mode to headless above and this becomes editable.')}"><span>If it fails</span>
+                <select disabled><option>not used for an interactive run</option></select></label>`;
+        }
         const head = `<label class="ntf wide" title="${C.esc(
             'What happens when this run FAILS. "use my default" follows agentFarm.taskRetry, which is six '
             + 'attempts forty minutes apart and only when the Claude session limit was hit — i.e. when the '
             + 'work was never actually attempted. That default can change later and this run follows it; '
-            + '"never retry it" and "set it here" are decisions about THIS run and do not.')}"><span>If it fails</span>
+            + '"never retry it" and "set it here" are decisions about THIS run and do not. '
+            + 'Headless runs only — an interactive session has you in front of it.')}"><span>If it fails</span>
             ${sel('retrymode', c.retryMode, modes)}</label>`;
         if (c.retryMode !== 'custom') { return head; }
         return head + `
@@ -1481,7 +1505,11 @@
     /** The draft's three-state retry picker, as the one field the host stores.
      *  undefined = say nothing, so the user's default stays in charge. */
     function retryFromDraft(c) {
-        if (!c || c.retryMode === 'default') { return undefined; }
+        // M-3 (V3) — the picker is disabled for an interactive run, so a policy
+        // left in the draft from before the mode was switched is not stored on
+        // it either: a run carrying a rule nothing applies is the same lie in
+        // the read-only form and in `describeRetry`.
+        if (!c || c.retryMode === 'default' || c.mode === 'interactive') { return undefined; }
         if (c.retryMode === 'off') { return { max: 0 }; }
         const out = {
             max: Number(c.retryMax) || 0,
@@ -1526,6 +1554,31 @@
         running: ['running', 'go'], queued: ['queued', ''], parked: ['parked', 'warn'],
         done: ['done', 'ok'], failed: ['failed', 'stop'], cancelled: ['cancelled', '']
     };
+
+    /**
+     * ‼️ M-7 (V3) — WHY A RUN IS HELD IS A FACT ON THE ROW, NOT A HOVER.
+     *
+     * "Why does the task page only say parked?" — because it did. The badge was
+     * the whole visible answer and the reason lived in the status AFTip and in
+     * the timeline, so a user who did not hover read a yellow word and nothing
+     * else. The Plan tab had already been taught not to hide an overdue reason;
+     * the Runs tab kept the same mistake.
+     *
+     * Short here and whole in the tip, which is the standing rule for a narrow
+     * cell: the parenthetical figures ("$388.91 of $300.00") and the trailing
+     * clause are what the tip is for, the subject is what the cell is for.
+     */
+    function blockShort(s) {
+        let t = String(s || '').trim();
+        if (!t) { return ''; }
+        const paren = t.indexOf('(');
+        if (paren > 8) { t = t.slice(0, paren).trim(); }
+        if (t.length > 30) {
+            const dash = t.indexOf('—');
+            if (dash > 8) { t = t.slice(0, dash).trim(); }
+        }
+        return t.length > 34 ? t.slice(0, 33).trim() + '…' : t;
+    }
 
     function runRows(d) {
         const v = runView;
@@ -1679,16 +1732,20 @@
                   behind the triangle; "what did I actually ask it to do" is the
                   first question anybody has about a run, and the panel scrolls.
                   Clicking the title opens the form that MADE it, read-only. */''}
+            ${/* The hold reason used to be appended here as well. One subject per
+                  panel (docs/CONVENTIONS.md): the run's identity belongs to this
+                  cell, the reason it is not moving belongs to its status. */''}
             <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
-                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${r.detail ? ' · ' + C.esc(r.detail) : ''}</div>`,
+                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}</div>`,
             `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
             window.AFTip.lines([
                 r.prompt || '(no prompt)',
                 '\nClick the title to see the form this run was made with, filled in and read-only.'
             ]), 'mainw')}</td>
             ${/* THE STATUS IS THE DOOR TO THE RUN'S HISTORY — M-8. */''}
-            <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>${r.archived
-                ? '<div class="muted small">archived</div>' : ''}`,
+            <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>${r.detail
+                ? `<div class="muted small held">${C.esc(blockShort(r.detail))}</div>` : ''}${r.archived
+                    ? '<div class="muted small">archived</div>' : ''}`,
                 `${C.esc(st[0])}${r.archived ? ' · archived' : ''}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
                 window.AFTip.lines([
                     r.detail ? 'Held by: ' + r.detail + '\n' : '',
@@ -1998,6 +2055,13 @@
                 td.agent { min-width:6rem; }
                 td.acts .mini { margin-left:3px; }
                 td.state { text-align:center; }
+                /* ‼️ M-7 (V3) — the ceiling holding a run, written under its
+                   badge. Same warning colour as the badge so the two read as one
+                   statement, and allowed a second line: a reason that is cut to
+                   an ellipsis nobody can complete is the hiding this replaced. */
+                td.state .held { color:var(--vscode-editorWarning-foreground,#cca700);
+                    max-width:11rem; margin:2px auto 0; line-height:1.3;
+                    white-space:normal; overflow-wrap:anywhere; }
                 .rowtitle { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
                 /* ‼️ M-8 — wrapping a cell's contents in an AFTip makes the
                    WRAPPER the block child, so the column's own sizing has to
@@ -2235,7 +2299,7 @@
                 'debounceSec', 'cooldownSec', 'maxPerHour',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
                     byId('nt-' + id, 'input', () => readComposer()));
-            ['agent', 'mode', 'effort', 'permissionMode', 'project', 'cli',
+            ['agent', 'effort', 'permissionMode', 'project', 'cli',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which
@@ -2244,7 +2308,11 @@
             // Model box may offer while the model decides the Effort box's
             // levels. A field that only appears after a reload is a field
             // nobody finds.
-            ['every', 'ttype', 'act', 'guardKind'].forEach(id =>
+            // …and (M-3 V3) the MODE decides whether the retry picker has a
+            // referent at all: automatic retry is headless-only, so switching to
+            // interactive must disable it in place rather than leave a live box
+            // collecting a policy nothing will read.
+            ['every', 'ttype', 'act', 'guardKind', 'mode'].forEach(id =>
                 byId('nt-' + id, 'change', () => { readComposer(); render(); }));
             // ‼️ X-30 — the model redraws the Effort box AND settles what is in
             // it. Redrawing alone left the old word in the composer while the

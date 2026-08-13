@@ -142,13 +142,80 @@ const mk = (name, opts) =>
     m.startTask(sched);
     check('‼️ an UNATTENDED run that could not start puts it on the board',
         announced.length === 1 && /did not start/.test(announced[0].title));
-    check('…keyed on the task, so a 30-second pump cannot repeat it',
-        announced[0].key === 'task-parked:' + sched.id);
+    check('…keyed on the task AND the reason, so a 30-second pump cannot repeat it',
+        announced[0].key === 'task-parked:' + sched.id + ':daily budget spent');
     check('…and it says what to do about it, not only that it happened',
         /run even if the budget is spent/.test(announced[0].body)
         && /not waivable/.test(announced[0].body));
+    check('…at the level an unattended hold deserves', announced[0].level === 3);
     m.startTask(sched);
     check('…and it is said once', announced.length === 1);
+    m.dispose();
+}
+
+// ------------------------------------- M-7 (V3): the pump keeps the reason
+// current, and a CHANGED ceiling is news again
+{
+    const announced = [];
+    let block = 'concurrency: 2 running';
+    const m = mk('blockchange', {
+        quotaCheck: () => block, announce: n => announced.push(n),
+        isRunner: () => true
+    });
+    const t = m.addTask(agent, 'sabah13', 'raporu yaz', 'headless', { fromSchedule: 's9' });
+    m.startTask(t);
+    check('‼️ the first ceiling is on the record', t.deferredReason === 'concurrency: 2 running'
+        && t.events.filter(e => e.kind === 'parked').length === 1);
+    m.pump();
+    check('…and the pump does not repeat an unchanged one',
+        t.events.filter(e => e.kind === 'parked').length === 1 && announced.length === 1);
+    block = 'fleet daily budget spent ($388.91 of $300.00)';
+    m.pump();
+    check('‼️ …but a DIFFERENT ceiling replaces the reason on the row',
+        t.deferredReason === 'fleet daily budget spent ($388.91 of $300.00)');
+    check('…writes a second line on its record',
+        t.events.filter(e => e.kind === 'parked').length === 2);
+    check('…and is announced again, keyed on the new reason', announced.length === 2
+        && announced[1].key === 'task-parked:' + t.id + ':' + block);
+    m.dispose();
+}
+
+// ---------------------- M-3 (V3): the retry decision is ONE store write, and
+// its own clock is not announced as a ceiling
+{
+    const announced = [];
+    const m = mk('retryatomic', { announce: n => announced.push(n), isRunner: () => true });
+    let writes = 0;
+    const realWrite = m.writeStore.bind(m);
+    m.writeStore = t => { writes++; return realWrite(t); };
+    const t = m.addTask(agent, 'gece', 'iş', 'headless',
+        { retry: { max: 2, delayMin: 5, when: 'any' } });
+    t.status = 'failed'; t.endedAt = Date.now();
+    writes = 0;
+    announced.length = 0;
+    m.maybeScheduleRetry(t);
+    const row = m.tasks.find(x => x.retryOf === t.id);
+    check('‼️ the failed run and the retry it made land in ONE store write',
+        !!row && writes === 1);
+    check('…the original says it retried', t.events.some(e => e.kind === 'retried'));
+    check('…and the new row is parked on its own clock',
+        row.status === 'queued' && row.notBefore > Date.now()
+        && /^waiting until /.test(row.deferredReason));
+    check('‼️ …which is NOT announced as a run that could not start', !announced.length);
+    m.dispose();
+}
+
+// M-3 (V3): a retry the policy asked for but nothing could make says so
+{
+    const m = mk('retrynoagent', { isRunner: () => true });
+    const t = m.addTask(agent, 'gece', 'iş', 'headless',
+        { retry: { max: 2, delayMin: 5, when: 'any' } });
+    t.agentId = 'gone';
+    t.status = 'running';
+    m.finish(t, 'failed');
+    check('‼️ a retry that could not be made is written on the run, not swallowed',
+        t.events.some(e => e.kind === 'finished' && /not in the fleet any more/.test(e.note || '')));
+    check('…and no orphan row was created', !m.tasks.some(x => x.retryOf === t.id));
     m.dispose();
 }
 
@@ -439,6 +506,20 @@ const mk = (name, opts) =>
         back === 1 && m.tasks.some(x => x.id === t.id));
     check('‼️ …and the divergence is SAID, where it used to be a console.warn',
         drifts.length === 1 && /still lists them as deleted/.test(drifts[0]));
+
+    // ‼️ M-8 (V3) — …AND THEN IT IS FIXED. A locked month file is a moment, not
+    // a verdict, so the failed tombstone is queued and retried rather than left
+    // as a permanent divergence maintained by a warning nobody can act on.
+    check('the failed tombstone is kept, not thrown away',
+        m.archiveRepair.length === 1 && m.archiveRepair[0].id === t.id);
+    check('…and it survives a restart — a restart is often what clears the disk',
+        mk('drift').archiveRepair.length === 1);
+    m.pumpArchiveRepair();
+    check('‼️ …the retry writes it once the disk allows it', !m.archiveRepair.length);
+    check('…and the user is TOLD it healed, so the earlier warning is taken back',
+        drifts.length === 2 && /agrees with the board again/.test(drifts[1]));
+    check('…the archive really does list the row as live again',
+        m.archivedTasks().filter(x => x.id === t.id).length === 0);
     m.dispose();
 }
 

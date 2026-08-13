@@ -12,9 +12,11 @@
 // that most engine tests proved a string existed and nothing else, and this is
 // exactly the kind of bug a string test cannot see.
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const { EventEmitter } = require('events');
+const ROOT = path.resolve(__dirname, '..');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -190,6 +192,43 @@ async function s29() {
         host.dispose();
         ok('‼️ S-29: dispose still kills SYNCHRONOUSLY — the tick never comes there',
             reaps > before);
+    }
+
+    // ‼️ S-29 (V3) — THE OTHER HALF OF "ONE GESTURE, ONE REPAINT".
+    //
+    // The host was made the single authority above and then the right-click
+    // COMMANDS went on calling `ConsolePanel.refreshIfOpen()` after it, so the
+    // menu route still rebuilt the whole conversation twice for one click while
+    // the webview's own button rebuilt it once. The host test above cannot see
+    // that — it is a fact about the command wiring — so it is asserted on the
+    // source, which is the only place it exists.
+    {
+        const src = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+        const cmd = name => {
+            const at = src.indexOf(`registerCommand('agentfarm.${name}'`);
+            return at < 0 ? '' : src.slice(at, at + 1400);
+        };
+        for (const name of ['consoleEndSession', 'consoleEndAndRemove', 'consoleForgetSession']) {
+            const body = cmd(name).split('}),')[0];
+            ok(`‼️ S-29: ${name} leaves the repaint to the host — no second refresh`,
+                !!body && !/ConsolePanel\.refreshIfOpen/.test(body));
+        }
+    }
+
+    // ‼️ S-29 (V3) — AND "ended" IS VERIFIED RATHER THAN ASSERTED. The card goes
+    // grey before the kill on purpose; a kill that then failed left the row
+    // claiming a process that is still holding the session id, which is exactly
+    // the state where a later resume is refused with nothing on screen to say
+    // why.
+    {
+        // the CLI's own registry still names a live pid for this session
+        const host = new ConsoleHost(() => 'claude', () => 4242);
+        const id = host.start(init({ resume: 'S-9' }));
+        host.close(id);
+        await tick();
+        await new Promise(r => setTimeout(r, 4200));
+        ok('‼️ S-29: a process that did NOT die is written on the row, not hidden',
+            /did not stop/.test(host.get(id).exitReason || ''));
     }
 }
 

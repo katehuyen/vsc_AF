@@ -77,11 +77,25 @@ class MO {
 }
 const repaint = () => observers.forEach(o => o.cb());
 
+// U-57 gave the component a grace period on the way OUT, which is a duration —
+// so the clock is the test's, not the machine's. A test that slept 340ms to see
+// a timeout fire would be a test nobody runs.
+const timers = new Map();
+let timerSeq = 0;
+const setTimeoutStub = (fn) => { timers.set(++timerSeq, fn); return timerSeq; };
+const clearTimeoutStub = id => { timers.delete(id); };
+const runTimers = () => {
+    const due = Array.from(timers.values());
+    timers.clear();
+    due.forEach(fn => fn());
+};
+
 const windowStub = {};
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
-new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame', src)(
-    windowStub, documentStub, MO, fn => fn()          // run the frame at once: a
-);                                                    // test must not wait on paint
+new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
+    'setTimeout', 'clearTimeout', src)(
+        windowStub, documentStub, MO, fn => fn(),     // run the frame at once: a
+        setTimeoutStub, clearTimeoutStub);            // test must not wait on paint
 
 ok('the component still exports its two shapes',
     typeof windowStub.AFTip.wrap === 'function' && typeof windowStub.AFTip.cell === 'function');
@@ -151,12 +165,68 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     at[key(70, 70)] = six.w;
     fire('pointerover', { target: six.w, clientX: 70, clientY: 70 });
     fire('pointerout', { target: six.w, relatedTarget: null });
+    runTimers();
     const seven = mkTip();
     six.w.isConnected = false;
     at[key(70, 70)] = seven.w;
     repaint();
     ok('a wrapper the pointer had already left is not reopened by a repaint',
         !seven.w.classList.contains('af-on'));
+}
+
+// ---- U-57: the walk from the trigger INTO the panel ------------------------
+// The complaint, verbatim: "it is a scrollable tooltip but I cannot get to it
+// with the mouse, it closes at once." True wherever the panel does not touch its
+// trigger — which is every `tip-block` row, i.e. exactly the rows with enough to
+// say to need scrolling. Closing was instant, so the crossing was fatal.
+{
+    at = {};
+    const a = mkTip();
+    at[key(90, 90)] = a.w;
+    fire('pointerover', { target: a.w, clientX: 90, clientY: 90 });
+    fire('pointerout', { target: a.w, relatedTarget: null });
+    ok('‼️ leaving a wrapper HOLDS the panel open instead of closing it',
+        a.w.classList.contains('af-hold'));
+
+    // …and arriving inside it — the panel is a child of the wrapper — is the
+    // reader getting there, so the timer must not fire behind them.
+    fire('pointerover', { target: a.t, clientX: 95, clientY: 140 });
+    ok('…reaching the panel cancels the hold rather than closing under the pointer',
+        !a.w.classList.contains('af-hold'));
+    runTimers();
+    ok('…and the cancelled timer cannot come back to close it', !a.w.classList.contains('af-hold'));
+
+    // A hold is a grace period, not a second state: nothing arrives, it ends.
+    const b = mkTip();
+    at[key(120, 120)] = b.w;
+    fire('pointerover', { target: b.w, clientX: 120, clientY: 120 });
+    fire('pointerout', { target: b.w, relatedTarget: null });
+    ok('a panel nobody walked into is still held for the length of the walk',
+        b.w.classList.contains('af-hold'));
+    runTimers();
+    ok('‼️ …and then it closes — a hold that outlived the gesture would follow you around',
+        !b.w.classList.contains('af-hold'));
+
+    // Two panels open at once is the failure this guards against: moving from
+    // one row to the next must not leave the first one hanging over the second.
+    const c = mkTip(), e = mkTip();
+    at[key(150, 150)] = c.w; at[key(180, 180)] = e.w;
+    fire('pointerover', { target: c.w, clientX: 150, clientY: 150 });
+    fire('pointerout', { target: c.w, relatedTarget: null });
+    fire('pointerover', { target: e.w, clientX: 180, clientY: 180 });
+    ok('‼️ moving to another row closes the one you left AT ONCE — never two panels',
+        !c.w.classList.contains('af-hold') && !e.w.classList.contains('af-hold'));
+
+    // tip-free runs its own open/close timers (U-43); a second set here would
+    // fight them.
+    const f = mkTip();
+    f.w.cls.add('tip-free');
+    at[key(210, 210)] = f.w;
+    fire('pointerover', { target: f.w, clientX: 210, clientY: 210 });
+    fire('pointerout', { target: f.w, relatedTarget: null });
+    ok('a tip-free panel is left to its own placer and its own timers',
+        !f.w.classList.contains('af-hold'));
+    timers.clear();
 }
 
 // ---- K-18: it opens towards the middle, never towards the edge -------------
@@ -287,8 +357,12 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     ok('‼️ …including min-width, which BEATS max-width and would leave 280px standing',
         !!closed && /min-width:\s*0/.test(closed[1]) && /max-width:\s*0/.test(closed[1]));
     ok('…and it opens again for every state the component calls open',
-        !!closed && ['af-open', 'af-on', 'af-measure', ':hover']
+        !!closed && ['af-open', 'af-on', 'af-hold', 'af-measure', ':hover']
             .every(s => closed[0].includes(s)));
+    // U-57 — the grace period is worth nothing if the sheet still collapses the
+    // box the moment `:hover` goes.
+    ok('‼️ U-57 — common.css keeps a held panel visible while the pointer walks to it',
+        /\.af-tipw\.af-hold\s*>\s*\.af-tip\s*\{[^}]*visibility:\s*visible/.test(css));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

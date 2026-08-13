@@ -617,6 +617,10 @@ interface StoreShape {
     automation?: AutomationState;
     /** rolling fired/skipped decision log — the evidence that the gate works */
     automationLog?: AutomationEvent[];
+    /** ‼️ M-8 (V3) — archive tombstones a write could not put down yet, retried
+     *  on the pump's beat. Persisted because the failure it repairs is the disk
+     *  refusing writes, and a restart is often what clears it. */
+    archiveRepair?: { id: string; month: string }[];
 }
 
 export interface TaskManagerOptions {
@@ -720,7 +724,7 @@ export interface TaskManagerOptions {
      * wires this to the once-per-key notice path so a 30-second pump cannot
      * repeat itself; the manager never posts twice for the same key either.
      */
-    announce?: (n: { key: string; title: string; body: string }) => void;
+    announce?: (n: { key: string; title: string; body: string; level?: 1 | 2 | 3 }) => void;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -731,6 +735,11 @@ export class TaskManager implements vscode.Disposable {
     triggers: FarmTrigger[] = [];
     automation: AutomationState = {};
     automationLog: AutomationEvent[] = [];
+    /** ‼️ M-8 (V3) — tombstones that could not be written yet. See
+     *  `pumpArchiveRepair`: kept in the STORE because the failure this repairs
+     *  is "the disk refused a write", and a memory-only queue would be lost by
+     *  the very restart that clears the condition. */
+    archiveRepair: { id: string; month: string }[] = [];
     private terminals = new Map<string, vscode.Terminal>();      // taskId -> terminal
     private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
     private handoffs = new Map<string, Handoff>();               // workflowRunId -> last handoff
@@ -742,6 +751,10 @@ export class TaskManager implements vscode.Disposable {
         statuses: Map<number, TaskStatus>;
     }>();
     private timer: NodeJS.Timeout;
+    // ‼️ M-3 (V3) — see `inOneWrite`: how many nested batches are open, and
+    // whether anything inside them asked for a write.
+    private saveDepth = 0;
+    private saveDirty = false;
     private lastOutputsPrune = 0;
     private disposables: vscode.Disposable[] = [];
     private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
@@ -766,7 +779,12 @@ export class TaskManager implements vscode.Disposable {
             this.reattachQueue = [];
         }
         if (!this.runner()) { this.startFollowerWatch(); }
-        this.timer = setInterval(() => { this.tickSchedules(); this.pump(); }, 30_000);
+        this.timer = setInterval(() => {
+            this.tickSchedules(); this.pump(); this.pumpArchiveRepair();
+        }, 30_000);
+        // …and once now, so a window opened after the disk cleared heals at
+        // startup rather than 30 seconds into it.
+        if (this.archiveRepair.length) { setTimeout(() => this.pumpArchiveRepair(), 3_000); }
 
         this.disposables.push(vscode.window.onDidCloseTerminal(terminal => {
             for (const [taskId, t] of this.terminals) {
@@ -862,6 +880,14 @@ export class TaskManager implements vscode.Disposable {
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
             this.automation = json.automation && typeof json.automation === 'object' ? json.automation : {};
             this.automationLog = Array.isArray(json.automationLog) ? json.automationLog : [];
+            // M-8 (V3) — the tombstones a previous window could not write. It
+            // survives the restart on purpose: a restart is very often what
+            // clears whatever was holding the file.
+            this.archiveRepair = Array.isArray(json.archiveRepair)
+                ? (json.archiveRepair as { id?: unknown; month?: unknown }[])
+                    .filter(x => typeof x?.id === 'string' && typeof x?.month === 'string')
+                    .map(x => ({ id: x.id as string, month: x.month as string }))
+                : [];
             // ‼️ M-8 — a task that predates the event log gets one built from
             // its own fields (see `migrateTaskEvents`). Before the follower
             // return, because a follower window DRAWS these rows and would
@@ -1089,6 +1115,54 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
+    /**
+     * ‼️ M-8 (V3) — A TOMBSTONE THAT COULD NOT BE WRITTEN IS RETRIED, NOT
+     * ANNOUNCED AND FORGOTTEN.
+     *
+     * The two archive divergences are both real and both recoverable, and until
+     * now both ended at a warning: the user was told the live list and the
+     * archive disagree, and then nothing ever tried again. A locked month file
+     * or a full disk is a MOMENT, not a verdict — the write that failed at
+     * 03:00 succeeds at 03:01 — so the failed ids are kept and re-attempted on
+     * the pump's own beat, and the warning is withdrawn when they land.
+     *
+     * Kept in the store (`archiveRepair`), because the case this exists for is
+     * precisely the one where writing anything to disk was failing: an
+     * in-memory queue would be lost by the restart that fixed the problem. Only
+     * ids and their month travel; the record itself is already in the archive.
+     */
+    private pumpArchiveRepair(): void {
+        if (!this.archiveRepair.length || !this.runner()) { return; }
+        const still: { id: string; month: string }[] = [];
+        for (const item of this.archiveRepair) {
+            try {
+                fs.mkdirSync(this.historyDir, { recursive: true });
+                fs.appendFileSync(path.join(this.historyDir, `${item.month}.jsonl`),
+                    JSON.stringify({ id: item.id, undeleted: Date.now() }) + '\n', 'utf8');
+            } catch { still.push(item); }
+        }
+        if (still.length === this.archiveRepair.length) { return; }
+        const healed = this.archiveRepair.length - still.length;
+        this.archiveRepair = still;
+        this.save();
+        this.opts.onArchiveDrift?.(still.length
+            ? `${healed} archive tombstone(s) were written on a retry; ${still.length} still cannot be.`
+            // ‼️ The whole point of the queue: the sentence that told the user
+            // the two copies disagree is taken back by the thing that fixed it.
+            : 'The task archive agrees with the board again — the tombstone(s) that could not be'
+            + ' written earlier have been written. Nothing needs doing.');
+    }
+
+    /** Queue ids whose tombstone failed, so `pumpArchiveRepair` can try again. */
+    private queueArchiveRepair(tasks: FarmTask[]): void {
+        for (const t of tasks) {
+            const month = monthOf(t);
+            if (!this.archiveRepair.some(x => x.id === t.id && x.month === month)) {
+                this.archiveRepair.push({ id: t.id, month });
+            }
+        }
+    }
+
     /** Keep the outputs archive under the configured size cap (oldest first). */
     private pruneOutputs(): void {
         const capMB = this.opts.outputsMaxMB?.() ?? 200;
@@ -1222,7 +1296,8 @@ export class TaskManager implements vscode.Disposable {
             workflows: this.workflows,
             triggers: this.triggers,
             automation: this.automation,
-            automationLog: this.automationLog
+            automationLog: this.automationLog,
+            ...(this.archiveRepair.length ? { archiveRepair: this.archiveRepair } : {})
         }, this.proots()), null, 2);
         const tmp = `${this.storageFile}.tmp`;
         try {
@@ -1240,15 +1315,50 @@ export class TaskManager implements vscode.Disposable {
         this.onDidChangeEmitter.fire();
     }
 
-    private save(): void {
+    /**
+     * ‼️ M-3 (V3) — ONE DECISION IS ONE WRITE.
+     *
+     * Deciding to retry a failed run touches two rows: the run that failed
+     * (which now says "retried") and the new queued row that carries the work.
+     * Written as two `save()` calls those are two separate files on disk, and
+     * the window between them is a state that must never be readable — a task
+     * whose record promises a retry that does not exist. `inOneWrite` collapses
+     * every `save()` inside it into a single store write at the end, so the
+     * pair lands together or not at all, and one repaint follows instead of two.
+     *
+     * Returns whether the bytes reached the disk, which is the other half of
+     * the same problem: an ordinary save swallows its error by design, so the
+     * caller of a decision that MUST survive a restart has to be able to see
+     * that it did not.
+     */
+    private inOneWrite(fn: () => void, strict = false): boolean {
+        this.saveDepth++;
+        try {
+            fn();
+        } finally {
+            this.saveDepth--;
+        }
+        if (!this.saveDirty) { return true; }
+        this.saveDirty = false;
+        return this.save(strict);
+    }
+
+    private save(strict = false): boolean {
+        if (this.saveDepth > 0) {
+            // Inside `inOneWrite`: remember that something changed and let the
+            // outermost call put it down once.
+            this.saveDirty = true;
+            return true;
+        }
         if (!this.runner()) {
             // B11 follower: never write — the runner window owns the store. The
             // in-memory change is transient (the follower watcher restores disk
             // truth moments later); the host warns via onFollowerWrite.
             this.opts.onFollowerWrite?.();
             this.onDidChangeEmitter.fire();
-            return;
+            return true;
         }
+        let ok = true;
         try {
             fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
             if (this.tasks.length > MAX_TASKS) {
@@ -1269,8 +1379,19 @@ export class TaskManager implements vscode.Disposable {
                 } catch { /* keep them: over the cap beats gone */ }
             }
             this.writeStore(this.tasks);
-        } catch { /* an ordinary save is best-effort; the destructive routes are not */ }
+        } catch (e) {
+            // An ordinary save is best-effort; the destructive routes are not —
+            // and neither is a decision the caller asked to be sure about.
+            ok = false;
+            if (strict) {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: the task store could not be written — '
+                    + `${e instanceof Error ? e.message : String(e)}. `
+                    + 'The change is on screen but will not survive a restart.');
+            }
+        }
         this.afterWrite();
+        return ok;
     }
 
     // ---------- automation gate (core/automation.ts) ----------
@@ -1423,18 +1544,36 @@ export class TaskManager implements vscode.Disposable {
     startTask(task: FarmTask): boolean {
         const block = this.launchBlock(task);
         if (block) {
-            const first = task.deferredReason !== block;
             task.autoStart = true;
-            task.deferredReason = block;
-            // Only a CHANGE of reason is a new line: the pump retries every 30
-            // seconds and a log that wrote "still over budget" 120 times an hour
-            // would bury the transitions it exists to show.
-            if (first) { noteTaskEvent(task, 'parked', block); }
+            const changed = this.recordBlock(task, block);
             this.save();
-            if (first) { this.announceParked(task, block); }
+            if (changed) { this.announceParked(task, block); }
             return false;
         }
         return this.launch(task);
+    }
+
+    /**
+     * ‼️ M-7 (V3) — THE REASON A RUN IS HELD IS KEPT CURRENT, WHOEVER ASKS.
+     *
+     * A held task is asked about twice: once by `startTask`, when its time
+     * comes, and then every 30 seconds by the pump. Only the first path used to
+     * write anything, so a run parked on concurrency at 09:00 and still parked
+     * on the budget at 18:00 showed the morning's reason all day — including
+     * the retry whose wait had elapsed hours ago, still saying "waiting until
+     * [a time in the past]". The record, the row and the board now follow the
+     * ceiling that is actually holding it.
+     *
+     * Only a CHANGE is a new line: the pump asks 120 times an hour and a log
+     * that wrote "still over budget" every time would bury the transitions it
+     * exists to show. Returns whether this was a change, because that is also
+     * the test for whether it is worth telling anybody about.
+     */
+    private recordBlock(task: FarmTask, block: string): boolean {
+        if (task.deferredReason === block) { return false; }
+        task.deferredReason = block;
+        noteTaskEvent(task, 'parked', block);
+        return true;
     }
 
     /**
@@ -1449,10 +1588,26 @@ export class TaskManager implements vscode.Disposable {
      * own id so a 30-second pump cannot repeat it.
      */
     private announceParked(task: FarmTask, reason: string): void {
-        if (!task.fromSchedule && !task.fromTrigger && task.workflowId === undefined) { return; }
-        const source = task.fromSchedule ? 'schedule' : task.fromTrigger ? 'trigger' : 'workflow';
+        // ‼️ M-3 (V3) — ITS OWN CLOCK IS NOT A CEILING. A retry that says
+        // "waiting until 00:40" is doing exactly what the policy asked for;
+        // announcing that as "did not start" would make the mechanism working
+        // correctly look like a fault. What IS news is the ceiling it meets
+        // when that wait ends, and that arrives here as a changed reason.
+        if (task.notBefore && Date.now() < task.notBefore) { return; }
+        if (!task.fromSchedule && !task.fromTrigger
+            && task.workflowId === undefined && !task.retryAttempt) { return; }
+        const source = task.fromSchedule ? 'schedule' : task.fromTrigger ? 'trigger'
+            : task.workflowId !== undefined ? 'workflow' : 'retry policy';
         this.opts.announce?.({
-            key: `task-parked:${task.id}`,
+            // ‼️ M-7 (V3) — ONE KEY FOR ONE PARK, AND THE REASON IS PART OF IT.
+            // The farm-news scan announces the same event for tasks nobody is
+            // unattended about, and it used to use a DIFFERENT key — so a single
+            // park produced two notices that the "once" guard could not see were
+            // the same thing. Both sides build this string now. The reason is in
+            // it on purpose: a run held by concurrency this morning and by the
+            // budget tonight is two facts, and the second one is news again.
+            key: `task-parked:${task.id}:${reason}`,
+            level: 3,
             title: `"${task.title}" did not start — ${reason}`,
             body: [
                 `A ${source} started this task at the time it was set for, and it was held back before it could run.`,
@@ -1483,7 +1638,17 @@ export class TaskManager implements vscode.Disposable {
             .sort((a, b) => this.effectivePriority(b, now) - this.effectivePriority(a, now)
                 || a.createdAt - b.createdAt);
         for (const task of ready) {
-            if (this.launchBlock(task)) { continue; }
+            const block = this.launchBlock(task);
+            if (block) {
+                // ‼️ M-7/M-3 (V3) — the pump used to skip in silence, which is
+                // how a stale reason survived on the row. Same record, same
+                // announcement path as `startTask`; unchanged reasons are free.
+                if (this.recordBlock(task, block)) {
+                    this.save();
+                    this.announceParked(task, block);
+                }
+                continue;
+            }
             task.autoStart = false;
             task.deferredReason = undefined;
             this.launch(task);
@@ -1854,7 +2019,15 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const agent = this.getAgents().find(a => a.id === task.agentId);
-        if (!agent) { return; }
+        if (!agent) {
+            // ‼️ M-3 (V3) — AN UNMADE RETRY IS STILL AN ANSWER. This returned in
+            // silence: the policy said retry, the row said nothing, and the
+            // person asking "why did it not try again" had no line to read.
+            noteTaskEvent(task, 'finished',
+                `no retry — the agent "${task.agentName}" is not in the fleet any more`);
+            this.save();
+            return;
+        }
         const baseTitle = task.title.replace(/\s*\((?:limit-)?retry \d+\)\s*$/, '');
         const nextTitle = `${baseTitle} (retry ${d.attempt})`;
         const policy = task.retry;
@@ -1863,8 +2036,6 @@ export class TaskManager implements vscode.Disposable {
         // its own would arrive with nothing to refer to.
         const prompt = (policy?.prompt ?? fallback?.prompt ?? '').trim() || task.prompt;
         const mode = task.mode;
-        noteTaskEvent(task, 'retried', d.why);
-        this.save();
         try {
             if (task.outputFile) {
                 fs.appendFileSync(task.outputFile,
@@ -1882,25 +2053,45 @@ export class TaskManager implements vscode.Disposable {
         // failure and the retry no longer throws it away; it is visible, so the
         // answer to "what happens now" is a row that says when; and the
         // decision to retry is recorded in the same save as the run it made.
+        //
+        // ‼️ M-3 (V3) — AND "THE SAME SAVE" IS NOW LITERALLY ONE WRITE. The
+        // comment above claimed it while the code did two: the `retried` event
+        // went down in its own `save()`, `addTask` wrote again, and a crash
+        // between them left a failed run promising a retry that was never
+        // created. `inOneWrite` makes the pair one file; `strict` means a store
+        // that refuses the write says so out loud instead of leaving a row that
+        // exists only until the window closes.
         try {
-            const t = this.addTask(agent, nextTitle, prompt, mode, {
-                projectId: task.projectId,
-                ...(task.engine ? { engine: task.engine } : {}),
-                ...(task.model ? { model: task.model } : {}),
-                ...(task.effort ? { effort: task.effort } : {}),
-                ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
-                ...(task.cli ? { cli: task.cli } : {}),
-                ...(task.workDir ? { workDir: task.workDir } : {}),
-                ...(task.priority ? { priority: task.priority } : {}),
-                ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
-                ...(policy ? { retry: policy } : {}),
-                retryOf: task.retryOf ?? task.id,
-                retryAttempt: d.attempt,
-                notBefore: Date.now() + Math.max(60_000, d.delayMs)
-            });
-            // Parks on the clock (see launchBlock) and the pump takes it from
-            // there; the park writes the "waiting until …" line on its record.
-            this.startTask(t);
+            const wrote = this.inOneWrite(() => {
+                noteTaskEvent(task, 'retried', d.why);
+                const t = this.addTask(agent, nextTitle, prompt, mode, {
+                    projectId: task.projectId,
+                    ...(task.engine ? { engine: task.engine } : {}),
+                    ...(task.model ? { model: task.model } : {}),
+                    ...(task.effort ? { effort: task.effort } : {}),
+                    ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
+                    ...(task.cli ? { cli: task.cli } : {}),
+                    ...(task.workDir ? { workDir: task.workDir } : {}),
+                    ...(task.priority ? { priority: task.priority } : {}),
+                    ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
+                    ...(policy ? { retry: policy } : {}),
+                    retryOf: task.retryOf ?? task.id,
+                    retryAttempt: d.attempt,
+                    notBefore: Date.now() + Math.max(60_000, d.delayMs)
+                });
+                // Parks on the clock (see launchBlock) and the pump takes it
+                // from there; the park writes the "waiting until …" line on its
+                // record — inside this batch, so it is the same one write.
+                this.startTask(t);
+            }, true);
+            if (!wrote) {
+                // The row exists in memory and the pump will still run it in
+                // this window; what it will not do is come back after a
+                // restart. Said on the failed run's own record, where somebody
+                // reading "retried" needs to know it may be the only trace.
+                noteTaskEvent(task, 'retried',
+                    `the retry row could not be saved — it runs only while this window stays open`);
+            }
         } catch { /* ignore */ }
     }
 
@@ -2115,8 +2306,13 @@ export class TaskManager implements vscode.Disposable {
         } catch (e) {
             let extra = '';
             try { this.appendUndelete([task]); } catch (u) {
+                // M-8 (V3) — queued for the repair pump like every other failed
+                // tombstone; the sentence says it will be retried rather than
+                // leaving the user to wonder whether to do something.
+                this.queueArchiveRepair([task]);
+                try { this.writeStore(this.tasks); } catch { /* the disk is the problem */ }
                 extra = ' The archive also still lists it as deleted — its tombstone could not be'
-                    + ` written either (${String(u)}).`;
+                    + ` written either (${String(u)}); it is retried every 30 seconds.`;
             }
             throw new Error(`the task list could not be written (${String(e)}).${extra}`);
         }
@@ -2157,10 +2353,16 @@ export class TaskManager implements vscode.Disposable {
         try {
             this.appendUndelete(back);
         } catch (e) {
+            // ‼️ M-8 (V3) — and it is RETRIED (see pumpArchiveRepair): a locked
+            // month file is a moment, and a divergence nobody ever tries to heal
+            // is a permanent lie about the archive maintained by a warning.
+            this.queueArchiveRepair(back);
+            this.save();
             this.opts.onArchiveDrift?.(
                 `${back.length} restored run(s) are back on the board, but the task archive still lists`
                 + ` them as deleted — its tombstone could not be written (${String(e)}).`
-                + ' Task history will show them twice until it can.');
+                + ' Task history will show them twice until it can; it is retried every 30 seconds'
+                + ' and you will be told when it succeeds.');
         }
         this.afterWrite();
         return back.length;

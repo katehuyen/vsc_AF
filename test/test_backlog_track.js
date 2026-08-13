@@ -616,5 +616,32 @@ const RECORDS = [
     }
 }
 
+// ---- X-36 (V3): the CLOSED-WINDOW edit, which is what the cache is for ------
+//
+// The snapshot was made to survive the window, and then start-up never held it
+// against the file: it loaded the cache, baselined the projects it had never
+// seen, armed the watcher and compared nothing. So the exact case the
+// persistence exists for — VS Code closed, a box re-opened and rewritten in
+// Obsidian, VS Code opened again — still recorded no round.
+//
+// The comparison itself is `reconcileOutside` and is proved above; what is
+// asserted here is the WIRING, which lives inside activate() and has no seam a
+// unit test can reach. Two facts, both exact: the start-up path calls the
+// reconciler, and it is handed the list of folders that were just baselined so
+// a fresh install cannot invent a round by comparing a file with itself.
+{
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ X-36: start-up reconciles the persisted snapshot against the file on disk',
+        /reconcileBacklogOnStart\(baselineBacklogSeen\(\)\)/.test(src));
+    const fn = src.slice(src.indexOf('const reconcileBacklogOnStart'),
+        src.indexOf('loadOutsideSeen();'));
+    ok('…by calling the same rebuild every other door calls',
+        /refreshBacklogLog\(p\.id\)/.test(fn));
+    ok('‼️ …and a project baselined a moment ago is SKIPPED — its "previous" text is'
+        + ' the file itself, and comparing those would invent a round out of a fresh install',
+        /skip\.has\(folder\)/.test(fn));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

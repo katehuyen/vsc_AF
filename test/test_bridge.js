@@ -2735,6 +2735,32 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 { project: 'Agent Farm', code: 'P-2', round: 1, text: whole + ' (yine)' });
             ok('…and it refuses to do it twice rather than piling corrections up',
                 !twice.ok && /already been restored/.test(twice.error));
+
+            // ---- P-14 (V3): the same repair, for a CLOSING NOTE -------------
+            //
+            // The other text the ledger used to cut. A note written under the
+            // old 300-character ceiling ends mid-sentence, and it is the one
+            // line in this record a person reads three months later.
+            const closeTs = Date.now() - 30_000;
+            appendTrack(ledger, {
+                code: 'P-3', event: 'done', ts: closeTs, by: 'agent', session: '9c4d1f2a',
+                note: 'düzeltildi: arama artık büyük/küçük harfe takılmıyor ve'
+            });
+            const wholeNote = 'düzeltildi: arama artık büyük/küçük harfe takılmıyor ve '
+                + 'aynı normalizasyon filtrelerde de kullanılıyor; ileride yeni bir arama '
+                + 'yüzeyi eklenirse aynı yardımcıdan geçmesi gerekir.';
+            appendTrack(ledger, {
+                code: 'P-3', event: 'touch', ts: Date.now(), by: 'agent',
+                restoresTs: closeTs, restoresNote: true, note: wholeNote
+            });
+            const p3 = summarizeCode('P-3', readTrackFile(ledger));
+            ok('‼️ P-14: a closing note cut by the old ceiling is completed by a record beside it',
+                p3.closed.note === wholeNote && p3.closed.noteRestored === true);
+            ok('‼️ …and the closing record itself was never rewritten',
+                /^düzeltildi: arama artık büyük\/küçük harfe takılmıyor ve$/.test(
+                    readTrackFile(ledger).filter(r => r.event === 'done' && r.ts === closeTs)[0].note));
+            ok('…the session row reads the repaired note too, so the two cannot disagree',
+                p3.runs[0].events.some(e => e.note === wholeNote));
         }
 
         // ---- and extension.ts really registers every one of them ----
@@ -2753,6 +2779,9 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             // X-36 (V2) — a round whose wording the old ceiling cut can be given
             // it back, as a correction record and never as an edit.
             'projects.track.restore',
+            // P-14 (V3) — and the twin of it, for a closing note the old
+            // 300-character ceiling cut off mid-sentence.
+            'projects.track.note.restore',
             // P-5 — the Track tab's ↻ button, and therefore an agent's too.
             'projects.backloglog',
             // B-2 — the fleet page can MAKE an agent, so the bridge can too.

@@ -1287,6 +1287,32 @@ export class ConsoleHost {
             if (child) { killTree(child); }
             const pid = sid ? this.ownerPid(sid) : undefined;
             if (pid && pid !== child?.pid) { killPid(pid); }
+            /**
+             * ‼️ S-29 (V3) — "ended" IS A CLAIM ABOUT A PROCESS, SO IT IS CHECKED.
+             *
+             * The card turns grey BEFORE the kill on purpose: the button has to
+             * answer the moment it is pressed, and `taskkill` on this machine
+             * takes seconds. But that leaves the one thing the card must never
+             * do — say "ended" while the CLI is still running and still holding
+             * the session id, which is the state where a resume then fails with
+             * nothing on screen to explain it. So the kill is verified once, a
+             * beat later, and a survivor is written on the row instead of being
+             * left to the user to discover.
+             */
+            setTimeout(() => {
+                const still = sid ? this.ownerPid(sid) : undefined;
+                const alive = (child ? child.exitCode === null && child.signalCode === null : false)
+                    || (still !== undefined && still !== 0);
+                if (!alive) { return; }
+                const h2 = this.sessions.get(id);
+                if (!h2 || h2.state.status !== 'ended') { return; }
+                this.mutate(id, s => ({
+                    ...s,
+                    exitReason: `${s.exitReason ?? 'closed by you'}`
+                        + ' — ‼️ the process did not stop: it is still holding this session,'
+                        + ' so resuming it will be refused until it goes. Close it from Task Manager.'
+                }));
+            }, 4000);
         };
         // Say it first (unless the caller is about to say something louder),
         // then reap. See the note above: the reap spawns processes.

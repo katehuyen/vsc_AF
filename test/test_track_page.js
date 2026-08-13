@@ -215,8 +215,9 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     const r = run({ tabData: { track: rows } });
     const h = r.html();
 
+    // U-57 — the badge is the short form ("R3"); the long one opens the panel.
     ok('‼️ X-36 — a card on its third go says which round it is',
-        h.includes('class="pj-trk-round"') && h.includes('round 3'));
+        h.includes('class="pj-trk-round">R3<') && h.includes('Round 3 — this item has been asked for'));
     ok('…and carries what was asked each earlier time, dated',
         h.includes('Round 1 — asked') && h.includes('eşleşme büyük/küçük harfe takılıyor')
         && h.includes('ikinci kez'));

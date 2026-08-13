@@ -183,10 +183,23 @@ export interface TrackRecord {
      */
     restoresTs?: number;
     /**
+     * ‼️ P-14 (V3) — THE SAME CORRECTION, FOR A CLOSING NOTE.
+     *
+     * `restoresTs` alone completes a REOPEN's lost wording. A closing note
+     * written before `TRACK_NOTE_MAX` was raised is cut at 300 characters and
+     * ends mid-sentence, and that is the one line in this whole record a person
+     * reads three months later — so the same append-only repair has to reach
+     * it. This flag says which of the two fields the correction is about; the
+     * record it points at is untouched either way.
+     */
+    restoresNote?: true;
+    /**
      * Derived, never stored: `summarizeCode` sets it on the round it just
      * completed from a correction record. Serialization ignores it.
      */
     prevRestored?: boolean;
+    /** Derived, never stored: the twin of `prevRestored` for a closing note. */
+    noteRestored?: boolean;
 }
 
 /** The ledger's file name inside the tracks folder. */
@@ -257,6 +270,7 @@ export function serializeTrack(rec: TrackRecord): string {
     // `prevRestored` is derived by summarizeCode and never written: it is a
     // statement ABOUT a pair of records, not a fact either of them carries.
     if (typeof rec.restoresTs === 'number') { out.restoresTs = rec.restoresTs; }
+    if (rec.restoresNote) { out.restoresNote = true; }
     return JSON.stringify(out);
 }
 
@@ -293,7 +307,8 @@ export function parseTrack(text: string): TrackRecord[] {
             ...(o.prevCut === true ? { prevCut: true } : {}),
             ...(o.prevGuess === true ? { prevGuess: true } : {}),
             ...(isFinite(Number(o.restoresTs)) && Number(o.restoresTs) > 0
-                ? { restoresTs: Number(o.restoresTs) } : {})
+                ? { restoresTs: Number(o.restoresTs) } : {}),
+            ...(o.restoresNote === true ? { restoresNote: true as const } : {})
         });
     }
     out.sort((a, b) => a.ts - b.ts);
@@ -440,7 +455,25 @@ export function stateOfEvent(event: TrackEvent): BacklogState | undefined {
 
 /** Group one code's records into the shape the document and the page both draw. */
 export function summarizeCode(code: string, records: TrackRecord[]): TrackSummary {
-    const mine = records.filter(r => r.code === code).sort((a, b) => a.ts - b.ts);
+    const raw = records.filter(r => r.code === code).sort((a, b) => a.ts - b.ts);
+    // ‼️ P-14 (V3) — A REPAIRED CLOSING NOTE IS REPAIRED EVERYWHERE IT IS READ.
+    // The correction is applied here, before anything is grouped, so the run
+    // rows in Backloglog and the card's own closing line cannot disagree about
+    // what the note says. (The round repair below is applied later because it
+    // only ever concerns the `reopen` records the card draws as rounds.)
+    const noteFixes = new Map<number, TrackRecord>();
+    for (const r of raw) {
+        if (typeof r.restoresTs === 'number' && r.restoresNote && r.note) {
+            noteFixes.set(r.restoresTs, r);
+        }
+    }
+    const mine = noteFixes.size
+        ? raw.map(r => {
+            const fix = noteFixes.get(r.ts);
+            return fix?.note && CLOSING.includes(r.event)
+                ? { ...r, note: fix.note, noteRestored: true } : r;
+        })
+        : raw;
     const runs: TrackSessionRun[] = [];
     const loose: TrackRecord[] = [];
     for (const r of mine) {
@@ -469,7 +502,10 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     // The stored reopen is never touched; the round a reader sees is the pair.
     const fixes = new Map<number, TrackRecord>();
     for (const r of mine) {
-        if (typeof r.restoresTs === 'number' && r.prevText) { fixes.set(r.restoresTs, r); }
+        // A note correction is already applied above; this map is the round one.
+        if (typeof r.restoresTs === 'number' && !r.restoresNote && r.prevText) {
+            fixes.set(r.restoresTs, r);
+        }
     }
     const restore = (r: TrackRecord): TrackRecord => {
         const fix = fixes.get(r.ts);
@@ -507,6 +543,14 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
         rounds: reopened.filter(r => !!r.prevText),
         doubtful: mine.some(r => !!r.uncertain)
     };
+}
+
+/** ‼️ P-14 (V3) — said on the closing line in Backloglog too, for the same
+ *  reason it is said on the card: recovered words are right, but they are not a
+ *  record of the moment, and only the reader can decide what that is worth. */
+export function closingNoteSuffix(r: TrackRecord | undefined): string {
+    return r?.noteRestored
+        ? ' _(note recovered later — the one written at the time was cut)_' : '';
 }
 
 /** Every code the ledger knows about, in the order it first saw them. */
@@ -994,8 +1038,9 @@ const lastEventOf = (run: TrackSessionRun): string =>
     run.events[run.events.length - 1]?.event ?? 'touch';
 
 const noteOf = (events: TrackRecord[]): string => {
-    const notes = events.map(e => e.note).filter(Boolean);
-    return notes.length ? ` — ${notes[notes.length - 1]}` : '';
+    const withNote = events.filter(e => !!e.note);
+    const last = withNote[withNote.length - 1];
+    return last ? ` — ${last.note}${closingNoteSuffix(last)}` : '';
 };
 
 /** Where an item was closed — and whether that is the closing record's own

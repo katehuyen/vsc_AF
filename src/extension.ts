@@ -1514,7 +1514,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // work that did NOT happen at the time it was set for, which is more
             // than routine and less than an emergency — the run is not lost.
             announce: (n) => {
-                postNewsOnce(n.key, { title: n.title, body: n.body, level: 3, type: 'warning' });
+                const level = n.level ?? 3;
+                postNewsOnce(n.key, {
+                    title: n.title, body: n.body, level,
+                    type: level >= 3 ? 'warning' : 'update'
+                });
             },
             queueWorkCount: () => workQueueStore.list({ limit: 0 })
                 .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length,
@@ -6205,8 +6209,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.track.note.restore',
+            describe: '‼️ P-14 — GIVE A CLOSING NOTE BACK THE WORDS IT LOST. The twin of projects.track.restore, for the other cut text in the ledger: a closing note written while the ceiling was 300 characters ends mid-sentence, and that note is the ONE line in this record a person reads three months later ("what was done, how it closed, what to watch out for"). The stored `done`/`cancelled` record is never edited — the ledger is append-only — so this appends a correction beside it (restoresTs + restoresNote) and every surface applies it on read and marks the note recovered. By default it repairs the item\'s LAST closing; pass `ts` for an exact one. Refused unless the full note STARTS with the fragment recorded at the time, because a cut is a beginning (force: true when the stored fragment is itself wrong — the correction then says so). args: project (id or name), code, note, ts?, force?',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const code = argStr(args, 'code').toUpperCase();
+                need(BACKLOG_CODE.test(code), `"${code}" is not a backlog code — it looks like K-8 or P-5.3`);
+                const all = readTracks(folder).filter(r => r.code === code)
+                    .sort((a, b) => a.ts - b.ts);
+                const closings = all.filter(r => r.event === 'done' || r.event === 'cancelled');
+                need(closings.length, `${code} has no closing recorded — there is no note to restore.`);
+                const wantTs = typeof args.ts === 'number' ? args.ts : undefined;
+                const target = wantTs !== undefined
+                    ? closings.find(r => r.ts === wantTs)
+                    : closings[closings.length - 1];
+                need(target, `no closing of ${code} was recorded at ts ${wantTs}.`);
+                const t = target as TrackRecord;
+                need(!all.some(r => r.restoresNote && r.restoresTs === t.ts),
+                    `that closing of ${code} has already had its note restored — the ledger is append-only, so a second correction would only add noise.`);
+                const note = argStr(args, 'note').trim();
+                need(note.length >= 15,
+                    'a closing note is what was done, how it closed and what to watch out for — 15 characters is the floor.');
+                const had = (t.note ?? '').trim();
+                need(note !== had, `that closing of ${code} already says exactly that — nothing to restore.`);
+                const core = had.replace(/[…\s]+$/, '').replace(/\.{3}$/, '');
+                const forced = args.force === true;
+                need(!core || forced || note.startsWith(core),
+                    `those words do not continue the note actually recorded on that closing. It was CUT, `
+                    + `so the full note has to START with it: "${core.slice(0, 80)}…". `
+                    + 'Check you are repairing the right closing, or pass force: true if the stored fragment is itself wrong.');
+                const rec: TrackRecord = {
+                    code, event: 'touch', ts: Date.now(), by: 'agent',
+                    restoresTs: t.ts, restoresNote: true,
+                    note: capNote(note)
+                };
+                const wrote = appendTrack(trackLedgerOf(folder), rec);
+                need(wrote.ok, wrote.error ?? 'the correction could not be appended to the ledger');
+                refreshBacklogLog(project.id);
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, code,
+                    closedAt: localStamp(t.ts), event: t.event,
+                    was: had.length, now: rec.note?.length ?? 0,
+                    ledger: relDoc(folder, trackLedgerOf(folder)),
+                    note: 'the closing record is untouched; this is a correction beside it, and Track and'
+                        + ' Backloglog now show the note as recovered rather than captured at the time.'
+                };
+            }
+        },
+        {
             op: 'projects.track.restore',
-            describe: '‼️ GIVE A ROUND BACK THE WORDS IT LOST. A reopen recorded before the ledger\'s wording ceiling was raised carries a `prevText` cut mid-sentence — the asking that produced the next round, ending on a preposition. This supplies the full text WITHOUT touching the record: the ledger is append-only, so the correction is its OWN record pointing at the reopen it completes (restoresTs), and every surface applies it on read and marks the round "recovered later from the file" so nobody mistakes recovered words for words captured at the time. Say which round by `round` (the number Backloglog prints beside it) or by `ts` (the reopen\'s exact timestamp — projects.backlog reports it on each earlierRounds entry). The words come from `text`, or from the item\'s CURRENT backlog line with `fromBacklog: true` — which is the usual case, because a round is lost precisely when nobody rewrote the line. Refused if that round already has its full wording, so it cannot be run twice by accident. args: project (id or name), code, round? or ts?, text?, fromBacklog?',
+            describe: '‼️ GIVE A ROUND BACK THE WORDS IT LOST. A reopen recorded before the ledger\'s wording ceiling was raised carries a `prevText` cut mid-sentence — the asking that produced the next round, ending on a preposition. This supplies the full text WITHOUT touching the record: the ledger is append-only, so the correction is its OWN record pointing at the reopen it completes (restoresTs), and every surface applies it on read and marks the round "recovered later from the file" so nobody mistakes recovered words for words captured at the time. Say which round by `round` (the number Backloglog prints beside it) or by `ts` (the reopen\'s exact timestamp — projects.backlog reports it on each earlierRounds entry). The words come from `text`, or from the item\'s CURRENT backlog line with `fromBacklog: true` — which is the usual case, because a round is lost precisely when nobody rewrote the line. Refused if that round already has its full wording, so it cannot be run twice by accident, and refused if the words do not START with the fragment that was recorded at the time — a cut record is a beginning, so anything that does not continue it is a different text being filed as testimony (pass force: true only when the stored fragment is itself wrong; the correction then says so). args: project (id or name), code, round? or ts?, text?, fromBacklog?, force?',
             handler: (args) => {
                 const { project, folder } = projectDocsFor(argStr(args, 'project'));
                 const code = argStr(args, 'code').toUpperCase();
@@ -6231,6 +6284,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const had = (target as TrackRecord).prevText ?? '';
                 need(text !== had,
                     `round ${round} of ${code} already says exactly that — nothing to restore.`);
+                // ‼️ X-36 (V3) — A RESTORE IS A COMPLETION, NOT A REWRITE.
+                //
+                // Nothing checked that the words handed in had anything to do
+                // with the words being completed, so any text at all could be
+                // filed as "recovered" against a round — and it would then be
+                // shown as that round's own asking, in a ledger whose whole
+                // claim is that it is testimony. The record written at the time
+                // was CUT, which means what survives of it must be how the full
+                // text begins. That is a cheap and exact test, so it is made.
+                //
+                // `force` exists for the one honest exception — an old record
+                // whose stored fragment was itself mangled — and it says so in
+                // the correction's own note rather than passing silently.
+                const core = had.replace(/[…\s]+$/, '').replace(/\.{3}$/, '');
+                const forced = args.force === true;
+                need(!core || forced || text.startsWith(core),
+                    `those words do not continue what round ${round} of ${code} actually recorded. `
+                    + `The record was CUT, so the full text has to START with it: "${core.slice(0, 80)}…". `
+                    + 'Check you are restoring the right round, or pass force: true if the stored '
+                    + 'fragment is itself wrong (the correction will say so).');
                 const { prevText, prevCut } = capPrev(text);
                 need(!prevCut, `those words are longer than the ledger keeps (${TRACK_PREV_MAX} characters) — the round cannot be restored whole from them.`);
                 const rec: TrackRecord = {
@@ -6239,6 +6312,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     note: `restored the wording of round ${round}`
                         + `${explicit ? '' : ' from the item\'s current backlog line'}`
                         + ` — the record written at the time was cut at ${had.length} characters.`
+                        + (forced && core && !text.startsWith(core)
+                            ? ' ‼️ FORCED: these words do not continue the fragment that was recorded'
+                            + ' at the time, so they are a correction of it rather than its completion.'
+                            : '')
                 };
                 const wrote = appendTrack(trackLedgerOf(folder), rec);
                 need(wrote.ok, wrote.error ?? 'the correction could not be appended to the ledger');
@@ -7968,9 +8045,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (postNewsOnce(`budget:${today}:${ins.agentName}`, {
                     type: 'warning', level: 3,
                     title: `Budget exceeded — ${ins.agentName}`,
+                    // ‼️ M-7 (V3) — THIS LINE USED TO SAY THE OPPOSITE OF WHAT
+                    // THE CODE DOES. It read "nothing was stopped — the limit is
+                    // a warning line, not a brake", written when that was true.
+                    // The budget became a real brake (see `launchBlock`), and a
+                    // notice that denies the very thing holding a task back
+                    // sabotages the user's search for the reason: they read
+                    // "nothing was stopped" here and "did not start — fleet
+                    // daily budget spent" one row below.
                     body: `${ins.message}\n\nToday's spend has passed the daily limit set for **${ins.agentName}**. `
-                        + 'Nothing was stopped — the limit is a warning line, not a brake. '
-                        + 'Raise it in `agentFarm.budgets`, or look at what spent it on the Dashboard.',
+                        + 'The limit is a BRAKE: nothing already running was killed, but no new run '
+                        + 'launches until the day rolls over or the ceiling is raised. Held runs are not lost — '
+                        + 'they stay queued and start by themselves once it clears.\n\n'
+                        + 'To let one specific run through anyway, tick **run even if the budget is spent** on the '
+                        + 'task or on its schedule. Raise the ceiling in `agentFarm.budgets`, '
+                        + 'or look at what spent it on the Dashboard.',
                     tags: ['budget']
                 })) {
                     postForward('budget', `${ins.agentName} — ${ins.message}`);
@@ -7987,11 +8076,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         for (const t of taskManager.tasks) {
             if (t.status !== 'queued' || !t.autoStart || !t.deferredReason) { continue; }
-            postNewsOnce(`parked:${t.id}`, {
+            // Its own retry clock is not a ceiling — same rule as `announceParked`.
+            if (t.notBefore && Date.now() < t.notBefore) { continue; }
+            // ‼️ M-7 (V3) — THE SAME KEY THE MANAGER USES. This scan and
+            // `announceParked` are two sightings of ONE event; with two key
+            // shapes (`parked:<id>` here, `task-parked:<id>` there) the "once"
+            // guard treated them as different news and a single park produced
+            // two notices at two different levels. Whichever path sees it first
+            // posts it; the other is deduped. The manager's path fires at the
+            // moment of parking and only for runs nobody is watching, so a
+            // routine line here is what remains for a task the user made
+            // themselves, in front of the page it parked on.
+            const migrated = !t.events?.some(e => e.kind === 'parked' && !e.migrated);
+            postNewsOnce(`task-parked:${t.id}:${t.deferredReason}`, {
                 type: 'update', level: 1,
                 title: `Task parked — ${t.title}`,
                 body: `**${t.agentName}** · ${t.deferredReason}\n\n`
-                    + 'It starts by itself once the blocker clears; the Board has it if you want it sooner.',
+                    + 'It starts by itself once the blocker clears; the Board has it if you want it sooner.'
+                    + (migrated
+                        // The park happened under an older version, which had no
+                        // announcement at the moment it happened — so this line
+                        // is a reconstruction arriving late, not a live event.
+                        ? '\n\n_This hold was carried over from a version that did not announce it;'
+                        + ' the reason is the one recorded on the row, not one witnessed as it happened._'
+                        : ''),
                 tags: ['tasks']
             });
         }
@@ -13380,8 +13488,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * copy is older, which is precisely what makes it the right answer for an
      * edit made while VS Code was closed.
      */
-    const baselineBacklogSeen = (): void => {
+    const baselineBacklogSeen = (): string[] => {
         let added = false;
+        const fresh: string[] = [];
         for (const project of projectStore.all()) {
             const folder = (project.folder ?? '').trim();
             if (!folder || outsideSeen.has(folder) || !dirExists(folder)) { continue; }
@@ -13391,14 +13500,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const doc = readProjectDoc(folder, relDoc(folder, file));
                 if (!doc.ok) { continue; }
                 outsideSeen.set(folder, snapshotBacklog(parseBacklog(doc.text ?? '').items));
+                fresh.push(folder);
                 added = true;
             } catch { /* unreadable folder — nothing to baseline */ }
         }
         if (added) { saveOutsideSeen(); }
+        return fresh;
+    };
+
+    /**
+     * ‼️ X-36 (V3) — THE CLOSED-WINDOW EDIT, WHICH IS THE WHOLE POINT OF THE CACHE.
+     *
+     * Persisting the snapshot was only half the mechanism. Start-up loaded the
+     * cache, baselined the projects it had never seen, and armed the watcher —
+     * and then compared nothing. So the case the persistence exists for, the one
+     * the user actually lives in (VS Code closed, a box re-opened and rewritten
+     * in Obsidian, VS Code opened again), still recorded no round: the old
+     * wording sat in memory next to a file it was never held against, and the
+     * round only appeared if the file happened to be touched a SECOND time.
+     *
+     * So every project the cache already knew about gets one reconcile pass
+     * here. A project baselined a moment ago is deliberately skipped: its
+     * "previous" text is the file as it stands, and comparing a thing with
+     * itself would invent a round out of a fresh install.
+     *
+     * Deferred by a beat rather than run inline — it reads and may rewrite a
+     * document per project, and activation is not the place to do that.
+     */
+    const reconcileBacklogOnStart = (fresh: string[]): void => {
+        const skip = new Set(fresh);
+        const todo = projectStore.all().filter(p => {
+            const folder = (p.folder ?? '').trim();
+            return !!folder && !skip.has(folder) && outsideSeen.has(folder) && dirExists(folder);
+        });
+        if (!todo.length) { return; }
+        setTimeout(() => {
+            for (const p of todo) {
+                try { refreshBacklogLog(p.id); } catch { /* the watcher retries on the next edit */ }
+            }
+        }, 2000);
     };
 
     loadOutsideSeen();
-    baselineBacklogSeen();
+    reconcileBacklogOnStart(baselineBacklogSeen());
     armBacklogWatch();
     context.subscriptions.push({
         dispose: () => {
@@ -13850,6 +13994,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * is the closer's own, and the two are different things.
                  */
                 closedNote: closed?.note ?? '',
+                /** ‼️ P-14 (V3) — and whether that note is the one written at the
+                 *  time or one recovered afterwards for a record the old
+                 *  300-character ceiling had cut. The words are right either
+                 *  way; which of the two it is belongs to the reader. */
+                closedNoteRestored: closed?.noteRestored === true,
                 sessions: sum.runs.map(r => {
                     seen.add(r.session);
                     return {
@@ -16041,8 +16190,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!id) { return; }
             // Same as the composer's End session: the process stops, the row
             // stays (with everything that was said) until it is removed.
+            //
+            // ‼️ S-29 (V3) — AND THE HOST IS THE ONLY AUTHORITY ON THE REPAINT.
+            // `close`/`forget` already fire their own change and the panel is
+            // listening; the `refreshIfOpen()` that used to follow was a SECOND
+            // full rebuild of the page for one right-click. The Console's
+            // repaint regenerates the whole conversation, which is the
+            // expensive thing here — the webview's own End button never had
+            // this, so the same gesture cost twice as much from the menu.
             consoleHost.close(id);
-            ConsolePanel.refreshIfOpen();
         }),
 
         /**
@@ -16112,8 +16268,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.consoleEndAndRemove', (arg?: { hostId?: string }) => {
             const id = consoleRowId(arg);
             if (!id) { return; }
+            // One gesture, one repaint — see consoleEndSession above.
             consoleHost.forget(id);
-            ConsolePanel.refreshIfOpen();
         }),
 
         vscode.commands.registerCommand('agentfarm.consoleForgetSession', (arg?: { hostId?: string }) => {
@@ -16129,8 +16285,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             // the transcript stays on disk; this only takes the row off the panel
+            // (one gesture, one repaint — see consoleEndSession above)
             consoleHost.forget(id);
-            ConsolePanel.refreshIfOpen();
         }),
 
         // From a session row: pick that conversation back up INSIDE the panel.

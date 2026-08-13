@@ -1858,8 +1858,12 @@ function pickParent(r, code) {
     } : i));
     const r = run(d);
     const html = r.html();
+    // U-57 — SHORT ON THE ROW, LONG IN THE PANEL. A backlog row already carries
+    // six or seven badges; "round 3" spent a word's width on two characters.
     ok('‼️ a reopened item wears its round on its own backlog row',
-        /pj-trk-round">round 3</.test(html));
+        /pj-trk-round">R3</.test(html));
+    ok('…and the panel opens with the round said in full, so nothing has to be learnt',
+        html.includes('Round 3 — this item has been asked for'));
     ok('…the same badge the Track card uses — one fact, one appearance',
         html.indexOf('pj-trk-round') > 0);
     ok('‼️ …and the earlier askings are readable from the row, dated and whole',
@@ -1873,7 +1877,7 @@ function pickParent(r, code) {
     // Round 1 is every other row, and a badge on all of them is a column of
     // noise that teaches the reader to stop seeing the ones that matter.
     ok('‼️ an item nobody has reopened carries nothing at all',
-        (html.match(/pj-trk-round">round /g) || []).length === 1);
+        (html.match(/pj-trk-round">R/g) || []).length === 1);
 
     // A row reopened before the wording was ever kept must not pretend.
     const d2 = data();

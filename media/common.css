@@ -307,13 +307,21 @@ span.af-tipw { display: inline; }
    standing. It comes back the instant the wrapper is hovered — in the same
    style recalculation as the edge flip below, so the box never exists in the
    wrong place, not even for the 250ms the fade is waiting. */
-.af-tipw:not(:hover):not(.af-open):not(.af-on):not(.af-measure) > .af-tip {
+.af-tipw:not(:hover):not(.af-open):not(.af-on):not(.af-hold):not(.af-measure) > .af-tip {
     min-width: 0; max-width: 0; max-height: 0;
     padding: 0; border-width: 0; overflow: hidden;
 }
 /* the same beat the backlog's step menus use: sweeping a pointer down two
-   hundred rows must not flash a paragraph at every one. Closing is instant. */
+   hundred rows must not flash a paragraph at every one. */
 .af-tipw:not(.tip-free):hover > .af-tip, .af-tip:hover { visibility: visible; opacity: 1; transition-delay: .25s; }
+/* ‼️ U-57 — THE GRACE PERIOD FOR WALKING INTO THE PANEL (afTip.js).
+   Closing used to be instant, which is correct only while the panel touches its
+   trigger. `tip-block` — the layout the richest rows use — places the panel
+   against the ROW instead, so reaching it means crossing a strip that is not
+   part of the wrapper: `:hover` ends, the collapse rule above takes the box
+   away, and a scrollable panel becomes one nobody can scroll. This class holds
+   it open for the length of that walk. No delay: it is already open. */
+.af-tipw.af-hold > .af-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
 /* ‼️ U-43 — OUT OF THE BOX ENTIRELY. A trigger inside a scrolling menu cannot
    grow a panel: `overflow` clips it, and the pointer cannot reach what is left.
    `position:fixed` is the one thing an ancestor's overflow does not clip, so

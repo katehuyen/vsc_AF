@@ -191,8 +191,53 @@
             if (bridged) { bridged.classList.remove('af-on'); bridged = null; }
         };
 
+        /* --------------------------------------------------------------
+           ‼️ U-57 — A SCROLLABLE PANEL YOU CANNOT WALK INTO IS NOT SCROLLABLE.
+
+           The panel is a CHILD of the wrapper, so on the ordinary layout —
+           panel hanging directly under its trigger — `:hover` survives the trip
+           into it and everything works. `tip-block` breaks exactly that
+           assumption, and `tip-block` is what the rows with the most to say
+           use: the wrapper goes `position:static` and the panel is placed
+           against the ROW, so the pointer has to cross the rest of the row —
+           which is not part of the wrapper — to reach it. `:hover` is gone at
+           the first pixel of that crossing, the collapse rule takes the panel's
+           box away, and the reader is left chasing something that is not there.
+           The same happens with `af-up`/`af-left` whenever the flip lands the
+           panel somewhere the trigger does not touch.
+
+           So leaving a wrapper starts a GRACE PERIOD rather than closing it:
+           the panel keeps its box for the length of an ordinary hand movement,
+           and arriving inside it (or back on the trigger) cancels the timer.
+           Same duration as the `tip-free` walk, and for the same reason — this
+           is one gesture with one measurement, not two components.
+
+           It belongs here, once, rather than in the pages: every surface in the
+           extension hovers through this component, and a rule the caller has to
+           remember is a rule that is missing on the next table somebody writes.
+           -------------------------------------------------------------- */
+        /** The walk from the trigger to the panel. Below ~250ms the panel closes
+         *  under a normal hand; above ~500ms one you have finished with follows
+         *  you around. Same number as `FREE_CLOSE_MS` — same gesture. */
+        const HOLD_MS = 340;
+        let held = null, holdT = 0;
+        const release = () => {
+            holdT = 0;
+            if (held) { held.classList.remove('af-hold'); held = null; }
+        };
+        const cancelHold = w => {
+            if (holdT) { clearTimeout(holdT); holdT = 0; }
+            // A different panel is a different subject: it closes at once, or
+            // two of them overlap while one of them is stale.
+            if (held && held !== w) { held.classList.remove('af-hold'); held = null; }
+            if (held === w) { w.classList.remove('af-hold'); held = null; }
+        };
+
         doc.addEventListener('pointerover', function (e) {
             const w = closestW(e.target);
+            // Arriving anywhere inside the wrapper — the trigger again, or the
+            // panel the grace period was buying time to reach — ends the walk.
+            if (w) { cancelHold(w); }
             if (!w || w === over) { return; }
             over = w; atX = e.clientX; atY = e.clientY; scrolled = 0;
             // Which way it opens is decided now, while the open delay is still
@@ -214,6 +259,14 @@
             const w = closestW(e.target);
             if (w && w === over && !(e.relatedTarget && w.contains(e.relatedTarget))) {
                 over = null; drop();
+                // `tip-free` runs its own timers (below); giving it a second set
+                // here would fight them.
+                if (!w.classList.contains('tip-free')) {
+                    cancelHold(w);
+                    held = w;
+                    w.classList.add('af-hold');
+                    holdT = setTimeout(release, HOLD_MS);
+                }
             }
         }, true);
 

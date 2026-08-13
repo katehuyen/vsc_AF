@@ -4363,10 +4363,18 @@
         if (n < 2) { return ''; }
         const earlier = i.earlierRounds || [];
         return window.AFTip.wrap(
-            `<span class="pj-trk-round">round ${n}</span>`,
+            // ‼️ U-57 — "R3" ON THE ROW, "Round 3" IN THE PANEL. A backlog row
+            // is a narrow strip carrying six or seven badges; "round 3" spent
+            // the width of a word on a fact worth two characters. The general
+            // rule this is one case of (docs/CONVENTIONS.md): in a tight place
+            // the badge is the SHORTEST form that is still unambiguous, and the
+            // panel opens with the long form as its first line — so the reader
+            // never has to learn an abbreviation to use the page.
+            `<span class="pj-trk-round">R${n}</span>`,
             `${i.code || '📥'} · reopened ${n - 1} time(s) — this line is the LATEST asking`,
             window.AFTip.lines(earlier.length
                 ? [
+                    `Round ${n} — this item has been asked for ${n} time(s).`, '',
                     'What it said on the earlier rounds — kept for you, so the line '
                     + 'above can just be rewritten:', '',
                     ...earlier.map((r, k) => `Round ${k + 1} — asked ${r.at}`
@@ -4379,7 +4387,8 @@
                         + (r.restored ? ' (recovered later from the file — the wording taken at the time was cut)' : '')
                         + `:\n${r.text}\n`)
                 ]
-                : ['Reopened before the system kept the earlier wording, so what was '
+                : [`Round ${n} — this item has been asked for ${n} time(s).`, '',
+                    'Reopened before the system kept the earlier wording, so what was '
                     + 'asked the first time is not recorded.']),
             'tip-block');
     }
@@ -5514,12 +5523,17 @@
                       "why is this open again" had no answer anywhere. The
                       earlier wordings are in the panel, dated. */''}
                 ${row.round > 1 ? window.AFTip.wrap(
-            `<span class="pj-trk-round">round ${row.round}</span>`,
+            // U-57 — same badge, same shortening, same long first line as the
+            // backlog row: one fact, one appearance, wherever it is drawn.
+            `<span class="pj-trk-round">R${row.round}</span>`,
             `${row.code} · reopened ${row.round - 1} time(s)`,
-            window.AFTip.lines((row.rounds || []).length
-                ? (row.rounds || []).map((r, i) =>
-                    `Round ${i + 1} — asked ${window.AFTime.stamp(r.ts)}:\n${r.text}\n`)
-                : ['Reopened before this was recorded, so the earlier wording was not kept.']),
+            window.AFTip.lines([
+                `Round ${row.round} — this item has been asked for ${row.round} time(s).`, '',
+                ...((row.rounds || []).length
+                    ? (row.rounds || []).map((r, i) =>
+                        `Round ${i + 1} — asked ${window.AFTime.stamp(r.ts)}:\n${r.text}\n`)
+                    : ['Reopened before this was recorded, so the earlier wording was not kept.'])
+            ]),
             'tip-block') : ''}
                 ${trkStampHtml(row)}
                 <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
@@ -5540,8 +5554,17 @@
             ${row.closedNote ? window.AFTip.wrap(
             `<div class="pj-trk-close"><b>closed</b> ${C.esc(trkClip(row.closedNote, 220))}</div>`,
             `${row.code} · closed by ${C.esc(row.closedBy || '?')}`
-            + (row.closedTs ? ` · ${window.AFTime.stamp(row.closedTs)}` : ''),
-            row.closedNote.length > 220 ? row.closedNote : '', 'tip-block') : ''}
+            + (row.closedTs ? ` · ${window.AFTime.stamp(row.closedTs)}` : '')
+            // P-14 (V3) — a note recovered later is right, but it is not a
+            // record of the moment, and the reader is entitled to know which.
+            + (row.closedNoteRestored ? ' · recovered later' : ''),
+            window.AFTip.lines([
+                row.closedNoteRestored
+                    ? 'Recovered later: the note written at the time was cut by the old 300-character '
+                    + 'ceiling, and this is the full text supplied afterwards beside it. The closing '
+                    + 'record itself was not edited.\n' : '',
+                row.closedNote.length > 220 || row.closedNoteRestored ? row.closedNote : ''
+            ]), 'tip-block') : ''}
             ${row.note ? `<div class="pj-trk-note" title="${C.esc('Your own closing note, read out of Backloglog.md. This page never writes it — edit it there.')}">${C.esc(row.note)}</div>` : ''}
         </div>`;
     }
