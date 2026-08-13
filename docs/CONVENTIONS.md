@@ -27,6 +27,33 @@ A new surface is finished when it reads like that one, and not before.
 
 ---
 
+## The five names (U-55)
+
+‼️ **These principles have NAMES, and the names are the point.** They were being
+re-explained from scratch on every backlog item — "use the new scrollable
+tooltip", "put the short thing on the row and the long thing on hover", a
+paragraph each time — which is how a standing rule turns into a per-item request
+somebody has to remember to make. One word each, so a whole design instruction
+fits in a clause and so the user never has to ask for them again.
+
+| Name | Says | The rule |
+|---|---|---|
+| **AFTip** | *the panel* | Our own scrollable hover panel (`media/afTip.js`). Anything that is TEXT, or could grow into text, is an AFTip — never a native `title`. "Put an AFTip on it." |
+| **DENSITY** | *maximum information, minimum space, minimum clicks* | A fact the reader can see must not cost them a click. Ask of every element: "can they have this on hover?" The sessions table is the worked example. |
+| **SHORTHAND** | *short on the surface, whole in the panel* | In a narrow place — a badge, a cell, a chip — write the shortest unambiguous form and let the AFTip carry the meaning, opening with the long form as its first line. `R3` on the row, `Round 3 — …` in the panel. Never an abbreviation the reader has to learn. |
+| **MIRROR** | *a control says what is IN it before it says what it is for* | A `<select>` narrow enough to cut its own text puts its CURRENT value on the first line of its tooltip, then a blank line, then the standard description. Reading a box must never cost a click that could change it. |
+| **ONE SUBJECT** | *one fact, one panel* | An object carrying several hovers gives each one its own subject; no fact appears in two of them. A run's identity belongs to its title cell, the ceiling holding it to its status cell. |
+
+They are not five separate ideas: **DENSITY** is the principle, **AFTip** is the
+instrument, and **SHORTHAND**, **MIRROR** and **ONE SUBJECT** are the three
+places it is most often got wrong. Every one of them is applied WITHOUT BEING
+ASKED — a surface that makes the reader click for something a hover could have
+said is unfinished, and saying so is not a request the user should have to
+repeat. The human-facing copy of this page lives in the project folder
+(`Tasarım İlkeleri.md`).
+
+---
+
 ## Hover
 
 **A hover is the most valuable surface on a page** — the pointer is already
