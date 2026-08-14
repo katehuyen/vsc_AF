@@ -76,6 +76,20 @@ export interface TasksDeps {
     projects(): { id: string; name: string; icon?: string }[];
     activeProjectId(): string | undefined;
     /**
+     * ‼️ S-19 — THE CONVERSATIONS A TASK COULD ACTUALLY CONTINUE.
+     *
+     * Only genuinely resumable ones: a session with an id, on an engine with a
+     * measured headless-resume vocabulary. Offering a row that would be refused
+     * at launch is worse than offering none — the user picks it, the form
+     * accepts it, and the refusal arrives on a board they are not looking at.
+     * `busy` is the live-owner state at the moment the page was built; it is
+     * checked AGAIN at launch, because minutes pass in between.
+     */
+    resumableSessions?(): {
+        sessionId: string; title: string; agent: string; agentId: string;
+        engine: string; project: string; ts: number; busy: string; cwd: string;
+    }[];
+    /**
      * Production scenes a MEDIA workflow step can tie its assets to, as
      * `projectId` or `projectId/sceneId`. Optional because a farm with no
      * production manifest has none, and a picker with one dead entry is worse
@@ -680,6 +694,10 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
                 name: p.name, detail: p.headless ?? ''
             })),
             projects: deps.projects().map(p => ({ id: p.id, name: p.name, icon: p.icon ?? '' })),
+            // ‼️ S-19 — what "Resume existing" can offer. Empty is a real
+            // answer (a farm with no transcripts yet) and the form says so
+            // rather than drawing a picker with nothing in it.
+            resumable: deps.resumableSessions ? deps.resumableSessions() : [],
             // The window's own project — the form OPENS on it, because that is
             // what a task made here would have been stamped with anyway.
             activeProjectId: deps.activeProjectId() ?? ''
@@ -919,7 +937,18 @@ function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
         retryDelayMin: r.delayMin ?? 30,
         retryBackoff: r.backoff ?? 'same',
         retryWhen: r.when ?? 'limit',
-        retryPrompt: r.prompt ?? ''
+        retryPrompt: r.prompt ?? '',
+        // ‼️ M-10 — ABSENT COMES BACK AS AN EMPTY BOX, NOT AS A NUMBER. These
+        // three each mean "the strategy decides this one", and seeding them with
+        // a plausible default would turn every edit of an untouched policy into
+        // three decisions the user never made (the same trap `retryMode` avoids
+        // for the policy as a whole).
+        retryDelay2Min: r.delay2Min ?? '',
+        retryDelay3Min: r.delay3Min ?? '',
+        retryFormula: r.formula ?? '',
+        retryCapMin: r.capMin ?? '',
+        retryResetAware: !!r.resetAware,
+        retrySafetyMin: r.safetyBufferMin ?? 3
     };
 }
 
@@ -1588,7 +1617,11 @@ export class TasksPanel {
                 else if (msg.act === 'terminal') { m.revealTerminal(t); }
                 else if (msg.act === 'unpark' && t.status === 'queued' && t.autoStart) {
                     t.autoStart = false;
+                    // ‼️ M-11 — the blocker's code goes with the sentence. "Try
+                    // it now" ends the park EPISODE, so if the same ceiling
+                    // catches it again that is news a second time.
                     t.deferredReason = undefined;
+                    t.deferredCode = undefined;
                     m.startTask(t);
                 }
                 // The rest exist as commands on the sidebar tree and had no way
@@ -1737,6 +1770,44 @@ export class TasksPanel {
                     this.refresh();
                     break;
                 }
+                /**
+                 * ‼️ S-19 — CONTINUE THAT CONVERSATION, and resolve it against
+                 * the SAME list the picker was drawn from.
+                 *
+                 * The id is not taken on trust: a pasted one that nothing knows
+                 * would otherwise be handed to a CLI that ignores the flag and
+                 * opens a brand new conversation — a run that succeeds while
+                 * doing the opposite of what was asked. The engine and the
+                 * folder come from the session, never from the form's own
+                 * pickers, because the conversation already has both.
+                 */
+                const wantResume = str('conversation') === 'resume' ? str('resumeSessionId') : '';
+                let resumeExtra: Partial<FarmTask> = {};
+                if (str('conversation') === 'resume' && !wantResume) {
+                    this.say('Pick the conversation this run continues, or switch it back to a new session.');
+                    break;
+                }
+                if (wantResume) {
+                    const row = (this.deps.resumableSessions?.() ?? [])
+                        .find(s => s.sessionId === wantResume);
+                    if (!row) {
+                        this.say(`No resumable session with id "${wantResume}" — continuing a conversation `
+                            + 'that cannot be found would silently start a new one, so this is refused.');
+                        break;
+                    }
+                    if (mode !== 'headless') {
+                        this.say('Continuing a conversation is a headless run — an interactive task opens a '
+                            + 'terminal, where the session\'s own Resume does this properly.');
+                        break;
+                    }
+                    resumeExtra = {
+                        resumeSessionId: row.sessionId,
+                        resumedEngine: row.engine,
+                        resumedFrom: `${row.title} (#${row.sessionId.slice(0, 8)})`,
+                        engine: row.engine === 'claude' ? undefined : row.engine,
+                        ...(row.cwd ? { workDir: row.cwd } : {})
+                    };
+                }
                 const task = m.addTask(agent, title, prompt, mode, {
                     projectId: projectId || undefined,
                     ...(str('engine') ? { engine: str('engine') } : {}),
@@ -1751,7 +1822,10 @@ export class TasksPanel {
                     // M-3 — what happens if it fails (see core/retry.ts). Absent
                     // means the user's default, which is why it is not filled in
                     // with a resolved policy here.
-                    ...(normalizeRetry(t.retry) ? { retry: normalizeRetry(t.retry) as RetryPolicy } : {})
+                    ...(normalizeRetry(t.retry) ? { retry: normalizeRetry(t.retry) as RetryPolicy } : {}),
+                    // ‼️ S-19 — last, so the conversation's own engine and folder
+                    // beat whatever the form's pickers happened to be showing.
+                    ...resumeExtra
                 });
                 if (t.start === true) { m.startTask(task); }
                 void this.panel.webview.postMessage({

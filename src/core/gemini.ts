@@ -156,6 +156,10 @@ export interface GeminiRunInit {
     model?: string;
     permissionMode?: string;
     includeDirs?: string[];
+    /** ‼️ S-19 — the conversation this unattended run continues. `--resume <id>`
+     *  is an ordinary flag on this CLI (measurement 3), so unlike Codex the
+     *  headless shape needs no separate subcommand. */
+    resume?: string;
 }
 
 /**
@@ -174,6 +178,10 @@ export function geminiRunArgs(o: GeminiRunInit): string[] {
         '--output-format', 'json',
         ...geminiModelArgs(o.model),
         '--approval-mode', geminiApprovalFor(o.permissionMode),
+        // ‼️ S-19 — and the envelope still carries `session_id`, so a resumed
+        // run can be checked against the conversation it claimed to continue
+        // rather than trusted to have done so.
+        ...(String(o.resume ?? '').trim() ? ['--resume', String(o.resume).trim()] : []),
         ...includeArgs(o.includeDirs)
     ];
 }

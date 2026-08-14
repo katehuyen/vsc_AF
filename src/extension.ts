@@ -121,7 +121,7 @@ import {
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import {
     ENGINES, engineModeNote, engineNote, engineOf, enginePermissionSetting,
-    noTranscriptNote, runArgs
+    headlessResumeRefusal, noTranscriptNote, runArgs
 } from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
@@ -220,12 +220,13 @@ import {
 } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
-    FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules,
+    FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
-    describeRetry, normalizeRetry, RETRY_MAX_ATTEMPTS, RETRY_MAX_DELAY_MIN, RetryPolicy
+    describeRetry, normalizeRetry, RETRY_DEFAULT_SAFETY_MIN, RETRY_MAX_ATTEMPTS,
+    RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
@@ -1458,6 +1459,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return (p as Project).id;
     };
 
+    /**
+     * ‼️ S-19 — NOBODY OPENS A SECOND WRITER ON ONE TRANSCRIPT.
+     *
+     * The three ways a conversation can already be held, in the order they are
+     * cheapest to check. This is the SAME set of facts the Session Resume
+     * command warns about before it opens a second process (see
+     * `agentfarm.resumeSession`) — an unattended task has nobody to warn, so
+     * where that path asks, this one refuses and parks; the pump asks again
+     * every 30 seconds, so the run goes by itself when the holder lets go.
+     *
+     * One function, two readers: the manager's launch gate and the picker that
+     * draws the state on the row. Two implementations would eventually disagree,
+     * and the disagreement would read as "the form let me pick it".
+     */
+    const sessionBusyReason = (sessionId: string): string | undefined => {
+        if (!sessionId) { return undefined; }
+        const hosted = consoleHost.list().find(s => s.sessionId === sessionId
+            && s.status !== 'ended' && s.status !== 'error');
+        if (hosted) {
+            return `the Console is holding it${hosted.agentName ? ` for ${hosted.agentName}` : ''}`;
+        }
+        if (readElsewhere(sessionId)) {
+            return 'another VS Code window has it open in its Console';
+        }
+        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        if (owner) { return `${describeOwner(owner)} has it open`; }
+        // …and our own board: two resumed tasks on one conversation is the same
+        // two-authors problem with both authors being us.
+        const twin = (taskManager.tasks as FarmTask[]).find(t => t.status === 'running'
+            && t.resumeSessionId === sessionId);
+        if (twin) { return `the task "${twin.title}" is already writing to it`; }
+        return undefined;
+    };
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -1471,14 +1506,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // shipped default, which is the behaviour this extension has always
             // had (core/retry.ts, DEFAULT_RETRY).
             defaultRetry: () => normalizeRetry(cfg().get<unknown>('taskRetry')),
+            // ‼️ M-10 — WHEN THE WINDOW REOPENS, FROM THE ENGINE ITSELF. The
+            // matrix is the same one the status bar and `usage.engines` read, so
+            // a reset-aware retry and the indicator can never disagree about the
+            // hour. The FULLEST window with a future reset is the one that
+            // stopped the run: where a plan has two (5-hour and weekly), waiting
+            // for the near one and being refused again is the failure this is
+            // supposed to end.
+            limitResetAt: (engine) => {
+                const id = (engine || 'claude').trim().toLowerCase();
+                const row = engineUsageMatrix().find(e => e.id === id);
+                if (!row || row.state !== 'ok') { return undefined; }
+                const now = Date.now();
+                const future = row.bars.filter(b => b.resetsAt && b.resetsAt > now);
+                if (!future.length) { return undefined; }
+                return future.sort((a, b) => (b.percent - a.percent) || (a.resetsAt - b.resetsAt))[0].resetsAt;
+            },
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
+            // ‼️ M-11 — the percentage in the sentence moves with every turn the
+            // farm takes; `quota:5h` is the ceiling, and it is the same ceiling
+            // at 91% as it was at 90%.
             quotaCheck: () => {
                 const guard = cfg().get<number>('quotaGuardPercent', 0);
                 const pct = windowPct();
                 if (guard <= 0 || pct === undefined) { return undefined; }
-                return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
+                return pct >= guard
+                    ? { code: 'quota:5h', reason: `quota guard (${Math.round(pct)}% of 5h window)` }
+                    : undefined;
             },
             // The daily budget as a BRAKE. `agentFarm.budgets` used to raise an
             // insight and let the task start anyway; a ceiling you can walk
@@ -1491,18 +1547,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const spend = (agentId?: string) =>
                     (agentId ? index.forAgent(agentId) : index.all())
                         .reduce((sum, s) => sum + (s.daily[day]?.cost ?? 0), 0);
+                // ‼️ M-11 — THE CODE NAMES THE CEILING, THE SENTENCE QUOTES THE
+                // MONEY. `$388.91 of $300.00` is what the row must keep showing
+                // and is exactly what must not decide whether this is the same
+                // hold as thirty seconds ago; `budget:agent:<id>` and
+                // `budget:fleet` do that instead. The agent's ID rather than its
+                // name, so renaming an agent does not reopen its park.
                 const own = budgets[agentName];
+                const agentId = agents.find(a => a.name === agentName)?.id;
                 if (own && own > 0) {
-                    const cost = spend(agents.find(a => a.name === agentName)?.id);
+                    const cost = spend(agentId);
                     if (cost >= own) {
-                        return `daily budget spent (${agentName}: $${cost.toFixed(2)} of $${own.toFixed(2)})`;
+                        return {
+                            code: `budget:agent:${agentId || agentName}`,
+                            reason: `daily budget spent (${agentName}: $${cost.toFixed(2)} of $${own.toFixed(2)})`
+                        };
                     }
                 }
                 const fleet = budgets['*'];
                 if (fleet && fleet > 0) {
                     const cost = spend();
                     if (cost >= fleet) {
-                        return `fleet daily budget spent ($${cost.toFixed(2)} of $${fleet.toFixed(2)})`;
+                        return {
+                            code: 'budget:fleet',
+                            reason: `fleet daily budget spent ($${cost.toFixed(2)} of $${fleet.toFixed(2)})`
+                        };
                     }
                 }
                 return undefined;
@@ -1530,6 +1599,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // X-18 — a task naming an engine is checked against this machine
             // before it spawns, with the same sentence every other surface uses.
             engineRefusal: (engine) => engineRefusal(engineMatrix(), engine),
+            // ‼️ S-19 — the launch gate for a resumed run; see sessionBusyReason.
+            sessionBusy: (sessionId: string): string | undefined => sessionBusyReason(sessionId),
+            /** ‼️ S-19 — the conversation's meter, so a resumed run is charged
+             *  the DIFFERENCE and not the history. `byId` is the one resolver
+             *  that works on all four engines. */
+            sessionUsage: (sessionId) => {
+                const s = index.byId(sessionId);
+                if (!s) { return undefined; }
+                return { cost: s.cost ?? 0, tokens: totalTokens(s.usage) };
+            },
             // The project the task was CREATED under — not the active one now.
             // A queued task can start hours later, in a window that has moved on.
             activeProjectId: () => activeProjectId() || undefined,
@@ -1654,11 +1733,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // run had simply not been measured yet. `matchTaskSession` does the engine
     // filtering, which is also what keeps a Claude task off a Codex session
     // that merely overlapped it.
-    const costPending = new Map<string,
-        { agentId: string; engine?: string; startedAt: number; endedAt: number; tries: number }>();
+    const costPending = new Map<string, {
+        agentId: string; engine?: string; startedAt: number; endedAt: number; tries: number;
+        /** ‼️ S-19 — set when this run CONTINUED a conversation. */
+        resumeSessionId?: string; costBefore?: number; tokensBefore?: number;
+    }>();
     const tryAttachCosts = () => {
         if (!taskRunner) { return; }
         for (const [id, p] of costPending) {
+            // ‼️ S-19 — A RESUMED RUN IS MATCHED BY IDENTITY AND PRICED BY
+            // DIFFERENCE. `matchTaskSession` asks "which session started and
+            // ended inside this task's lifespan", which a conversation from last
+            // Tuesday can never satisfy — so a resumed task would stay priceless
+            // for ever. And the session's TOTAL is not this run's cost either:
+            // it is a week of somebody else's turns. The snapshot taken at the
+            // spawn is what makes the subtraction honest.
+            if (p.resumeSessionId) {
+                const s = index.byId(p.resumeSessionId);
+                // Wait for the transcript to have moved past the snapshot before
+                // writing a figure: a `0` posted because the file has not been
+                // re-read yet is indistinguishable from a turn that was free.
+                const after = s ? { cost: s.cost ?? 0, tokens: totalTokens(s.usage) } : undefined;
+                const moved = after && (after.cost > (p.costBefore ?? 0) || after.tokens > (p.tokensBefore ?? 0));
+                if (s && moved) {
+                    taskManager.setTaskCost(id,
+                        Math.max(0, after.cost - (p.costBefore ?? 0)),
+                        s.file,
+                        Math.max(0, after.tokens - (p.tokensBefore ?? 0)));
+                    costPending.delete(id);
+                } else if (++p.tries > 60 || Date.now() - p.endedAt > 15 * 60_000) {
+                    costPending.delete(id);
+                }
+                continue;
+            }
             const hit = matchTaskSession(p, index.forAgentWithExternal(p.agentId));
             if (hit) {
                 taskManager.setTaskCost(id, hit.cost, hit.file, totalTokens(hit.usage));
@@ -1676,7 +1783,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!costPending.has(t.id)) {
                 costPending.set(t.id, {
                     agentId: t.agentId, engine: t.engine,
-                    startedAt: t.startedAt, endedAt: t.endedAt, tries: 0
+                    startedAt: t.startedAt, endedAt: t.endedAt, tries: 0,
+                    ...(t.resumeSessionId ? {
+                        resumeSessionId: t.resumeSessionId,
+                        costBefore: t.resumeCostBefore ?? 0,
+                        tokensBefore: t.resumeTokensBefore ?? 0
+                    } : {})
                 });
             }
         }
@@ -3164,13 +3276,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'tasks.list',
             describe: 'Current task queue/board rows. Each row says which ENGINE it runs on and whether that '
                 + 'engine reports a price at all — a `costUSD` of 0 on a plan-billed engine is not a cheap '
-                + 'run, it is a run with no dollar figure to report (`tokens` is the measure there). args: none',
+                + 'run, it is a run with no dollar figure to report (`tokens` is the measure there). '
+                + '‼️ S-19 — `resume` is the conversation a row CONTINUES (null = it opened its own), and '
+                + 'its `costUSD` is then the difference this turn made rather than the conversation\'s '
+                + 'total. ‼️ M-11 — `heldBy` is the sentence a parked row shows (live figures and all) and '
+                + '`heldByCode` is the stable name of the ceiling behind it: poll the CODE to tell "still '
+                + 'the same hold" from "held by something else now". args: none',
             handler: () => taskManager.tasks.map(t => ({
                 id: t.id, title: t.title, agent: t.agentName, status: t.status,
                 mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD,
                 tokens: t.tokens ?? 0,
                 engine: t.engine ?? 'claude',
-                reportsCost: engineOf(t.engine).reportsCost
+                reportsCost: engineOf(t.engine).reportsCost,
+                resume: t.resumeSessionId ?? null,
+                resumedFrom: t.resumedFrom ?? null,
+                heldBy: t.deferredReason ?? null,
+                heldByCode: t.deferredCode ?? null,
+                parkEpisode: t.parkEpisode ?? 0
             }))
         },
         {
@@ -3213,16 +3335,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'protect the plan window and the machine. A task held by those is waiting, '
                 + 'not refused, and launches by itself when they clear), '
                 // ‼️ M-3 — WHAT HAPPENS IF IT FAILS, and it is not a boolean.
-                + 'retry? ({max, delayMin, backoff, when, prompt} — how many times to try AGAIN '
+                + 'retry? ({max, delayMin, delay2Min, delay3Min, backoff, formula, capMin, when, '
+                + 'resetAware, safetyBufferMin, prompt} — how many times to try AGAIN '
                 + '(0 = never, max ' + RETRY_MAX_ATTEMPTS + '), how many minutes before the first one '
-                + '(max ' + RETRY_MAX_DELAY_MIN + '), whether the wait stays the "same" or "double"s each '
-                + 'time, and for WHICH failures: "limit" = only when the Claude session limit was hit, '
-                + 'i.e. the work was never attempted — the shipped default — or "any" = any non-zero exit. '
+                + '(max ' + RETRY_MAX_DELAY_MIN + '), and — M-10 — the second and third one by one '
+                + '(`delay2Min`/`delay3Min`; omit either and the strategy decides that attempt, which is '
+                + 'what every policy written before them does). `backoff` is what retry 4 AND AFTER wait: '
+                + '"same" | "double" | "linear" (base × n) | "formula". A formula is written in `formula` '
+                + 'with `n` (which retry), `prev` (the wait before it) and `base` (delayMin), the operators '
+                + '+ - * / ^, brackets, min(a,b) and max(a,b) — e.g. "min(prev * 1.5, 120)". ‼️ IT IS '
+                + 'PARSED, NEVER EVALUATED AS CODE: anything outside that grammar is refused here, with the '
+                + 'reason. `capMin` is the longest any computed wait may become (the built-in 12-hour '
+                + 'ceiling still applies). For WHICH failures: "limit" = only when the session/usage limit '
+                + 'was hit, i.e. the work was never attempted — the shipped default — or "any" = any '
+                + 'non-zero exit. ‼️ `resetAware` (M-10): when the failure really was a limit, the FIRST '
+                + 'retry goes at the moment the window reopens — read from the engine\'s own published '
+                + 'usage data, or failing that from the "resets …" line the CLI printed — plus '
+                + '`safetyBufferMin` (default ' + RETRY_DEFAULT_SAFETY_MIN + '). Retries 2 and 3 keep their '
+                + 'own minutes and 4+ the strategy. If no reset time can be found the ordinary first wait '
+                + 'is used and the run\'s record SAYS so; it is never a silent guess. '
                 + '`prompt` REPLACES the original on every retry (a retry is a fresh headless run with no '
                 + 'memory of the last one, so "and this time do it properly" alone would arrive with '
                 + 'nothing to refer to); leave it out to send the same work again. OMIT `retry` entirely '
                 + 'to inherit the user\'s agentFarm.taskRetry, which is a different statement from '
-                + '{max: 0}. Read `retryPolicy` in the answer to see what it resolved to)',
+                + '{max: 0}. Read `retryPolicy` in the answer to see what it resolved to), '
+                // ‼️ S-19 — CONTINUE A CONVERSATION rather than open one.
+                + 'resume? (‼️ S-19 — a SESSION ID this run continues instead of starting a new '
+                + 'conversation. The engine really resumes that session/thread/conversation, so the context '
+                + 'and the transcript carry on in place; the run is still its own task row, task events, '
+                + 'archived output and cost. The id is resolved against the session index and the '
+                + 'conversation\'s OWN engine and folder are used — naming a different `engine` is refused '
+                + 'rather than silently obeyed, and an id nothing knows is refused rather than passed to a '
+                + 'CLI that would ignore it and start a new conversation. Headless only. If the session is '
+                + 'still held by a live Console card or CLI process the task PARKS with that as its visible '
+                + 'reason and launches by itself when the holder lets go — a second writer on one transcript '
+                + 'is never opened. Cost is the DIFFERENCE this turn made, not the conversation\'s total. '
+                + 'Read `resume` and `resumedFrom` in the answer, and `sessions.recent` / `sessions.find` for ids)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -3263,6 +3411,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         projectExtra = { projectId: p!.id };
                     }
                 }
+                /**
+                 * ‼️ S-19 — CONTINUE AN EXISTING CONVERSATION.
+                 *
+                 * The identity is RESOLVED here, against the session index, and
+                 * the engine, the folder and the agent come from the session
+                 * itself. An id nobody can find is refused: the alternative —
+                 * passing it through and letting the CLI ignore a flag it does
+                 * not understand — is a run that succeeds while starting a brand
+                 * new conversation, which is the exact silence this refuses.
+                 */
+                const resumeId = optStr(args, 'resume') || optStr(args, 'resumeSessionId');
+                let resumeExtra: Partial<FarmTask> = {};
+                if (resumeId) {
+                    const s = index.byId(resumeId);
+                    need(s, `no session with id "${resumeId}" — the index knows nothing with that id, and `
+                        + 'continuing a conversation that cannot be found would silently start a new one');
+                    const sEngine = (s!.source || 'claude').toLowerCase();
+                    // The task's engine is the SESSION's engine. Naming a
+                    // different one is a contradiction, not a preference: a
+                    // Codex thread handed to `claude --resume` is a new
+                    // conversation with an unrecognised id.
+                    need(!engine || engine === sEngine,
+                        `that conversation was had with ${sEngine}, so a task continuing it runs on ${sEngine} — `
+                        + `remove engine:"${engine}" or pick a ${engine} session`);
+                    const refused = headlessResumeRefusal(sEngine, cli);
+                    need(!refused, refused);
+                    need(optStr(args, 'mode') !== 'interactive',
+                        'continuing a conversation is a headless run — an interactive task opens a terminal, '
+                        + 'where the session Resume command does this properly');
+                    resumeExtra = {
+                        resumeSessionId: s!.sessionId,
+                        resumedEngine: sEngine,
+                        resumedFrom: `${s!.title || s!.agentName || 'session'} (#${String(s!.sessionId).slice(0, 8)})`,
+                        ...(s!.cwd ? { workDir: s!.cwd } : {})
+                    };
+                }
                 const task = taskManager.addTask(agent, argStr(args, 'title'), argStr(args, 'prompt'),
                     optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless', {
                         ...(projectExtra ?? {}),
@@ -3277,7 +3461,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // ‼️ M-3 — what happens if it fails, clamped by the same
                         // function the form uses. Absent leaves the user's own
                         // default in charge, which is not the same as {max:0}.
-                        ...(normalizeRetry(args.retry) ? { retry: normalizeRetry(args.retry) as RetryPolicy } : {})
+                        ...(normalizeRetry(args.retry) ? { retry: normalizeRetry(args.retry) as RetryPolicy } : {}),
+                        // ‼️ S-19 — LAST, so the session's own engine and folder
+                        // beat anything the caller stated about them.
+                        ...resumeExtra
                     });
                 // ‼️ M-7 — `startTask` ANSWERS, and the caller is told. It used
                 // to be called for its effect and the reply said `status` from
@@ -3290,6 +3477,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     started,
                     // …and when it did not, why, in the manager's own words.
                     heldBy: started ? null : (task.deferredReason ?? null),
+                    // ‼️ M-11 — …and the stable name of the ceiling behind that
+                    // sentence, so a caller polling a held run can tell "still
+                    // the same hold" from "held by something else now".
+                    heldByCode: started ? null : (task.deferredCode ?? null),
+                    // ‼️ S-19 — which conversation this run continues, echoed
+                    // back so a caller never has to trust that its id landed.
+                    resume: task.resumeSessionId ?? null,
+                    resumedFrom: task.resumedFrom ?? null,
                     agent: task.agentName, mode: task.mode,
                     engine: task.engine ?? 'claude',
                     // …and what that engine means for the figures this caller
@@ -6949,7 +7144,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // by reading "(limit-retry 3)" off the end of a title.
                     retryAttempt: task.retryAttempt ?? 0,
                     retryOf: task.retryOf ?? null,
+                    // ‼️ S-19 — WHICH CONVERSATION THIS RUN IS PART OF. The same
+                    // id `sessions.open` and the viewer's deep link take, so the
+                    // task leads to the transcript it actually continued.
+                    resume: task.resumeSessionId ?? null,
+                    resumedEngine: task.resumedEngine ?? null,
+                    resumedFrom: task.resumedFrom ?? null,
+                    // …and what the conversation had already cost before this
+                    // turn, so `costUSD` above is legible as a difference.
+                    resumeCostBefore: task.resumeCostBefore ?? null,
                     deferredReason: task.deferredReason ?? null,
+                    // ‼️ M-11 — …AND WHICH CEILING THAT SENTENCE IS ABOUT. The
+                    // reason quotes today's spend, so two readings of one budget
+                    // hold differ; `budget:fleet` does not. A caller deciding
+                    // "is this still the same hold?" reads THIS, and the park
+                    // episode tells it apart from the same ceiling catching the
+                    // run again after it was released.
+                    deferredCode: task.deferredCode ?? null,
+                    parkEpisode: task.parkEpisode ?? 0,
                     // ‼️ M-7/M-8 — the run's own record. `deferredReason` is the
                     // LAST reason only; this is every one of them, in order.
                     events: task.events ?? [],
@@ -8087,8 +8299,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // moment of parking and only for runs nobody is watching, so a
             // routine line here is what remains for a task the user made
             // themselves, in front of the page it parked on.
+            //
+            // ‼️ M-11 — and the key is built by `parkNoticeKey`, which keys on
+            // the park EPISODE and the blocker's stable code. Spelling it out
+            // here with `t.deferredReason` in it was the bug: the fleet budget
+            // reason carries today's spend, so every cent produced a "new" park.
             const migrated = !t.events?.some(e => e.kind === 'parked' && !e.migrated);
-            postNewsOnce(`task-parked:${t.id}:${t.deferredReason}`, {
+            postNewsOnce(parkNoticeKey(t), {
                 type: 'update', level: 1,
                 title: `Task parked — ${t.title}`,
                 body: `**${t.agentName}** · ${t.deferredReason}\n\n`
@@ -9112,6 +9329,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
         projects: () => projectStore.all().map(p => ({ id: p.id, name: p.name, icon: p.icon })),
         activeProjectId: () => activeProject()?.id,
+        /**
+         * ‼️ S-19 — THE CONVERSATIONS "RESUME EXISTING" MAY OFFER.
+         *
+         * The WIDE pool, because this is a record question and the record covers
+         * all four engines (X-35) — the Codex thread the user was in an hour ago
+         * is exactly the one they want to carry on. Filtered to what can really
+         * be resumed: an id to resume BY, and an engine with a measured headless
+         * resume. Newest first, capped, because this list rides on every repaint
+         * of the page and a farm has thousands of transcripts.
+         */
+        resumableSessions: () => index.allWithExternal()
+            .filter(s => s.sessionId && !headlessResumeRefusal(s.source))
+            .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))
+            .slice(0, 200)
+            .map(s => ({
+                sessionId: s.sessionId as string,
+                title: s.title || s.agentName || (s.sessionId as string).slice(0, 8),
+                agent: s.agentName ?? '',
+                agentId: s.agentId ?? '',
+                engine: s.source || 'claude',
+                project: (() => {
+                    const pid = sessionOwnProject(s);
+                    return pid ? (projectStore.get(pid)?.name ?? '') : '';
+                })(),
+                ts: s.mtime ?? 0,
+                // ‼️ A live owner is drawn on the row, so the user does not pick
+                // a conversation that will simply park. It is a snapshot: the
+                // launch checks it again, which is the check that counts.
+                busy: sessionBusyReason(s.sessionId as string) ?? '',
+                cwd: s.cwd ?? ''
+            })),
         // A media step can file the assets it produces under a production
         // scene. Flattened here — `projectId` on its own for the whole
         // production, `projectId/sceneId` for one scene of it.

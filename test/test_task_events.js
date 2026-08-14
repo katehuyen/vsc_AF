@@ -105,8 +105,10 @@ const mk = (name, opts) =>
     const m = mk('budget', { budgetCheck: () => 'daily budget spent (developer: $4.10 of $4.00)' });
     const normal = m.addTask(agent, 'normal', 'iş', 'headless');
     const waived = m.addTask(agent, 'mutlaka', 'iş', 'headless', { ignoreBudget: true });
+    // ‼️ M-11 — launchBlock answers with {code, reason}: the sentence for the
+    // reader, the code for the dedupe. See the block at the end of this file.
     check('the budget is a brake: a plain task stops at it',
-        /daily budget spent/.test(m.launchBlock(normal)));
+        /daily budget spent/.test(m.launchBlock(normal).reason));
     check('‼️ a task marked "run it whatever the budget says" walks through it',
         m.launchBlock(waived) === undefined);
     m.dispose();
@@ -115,7 +117,7 @@ const mk = (name, opts) =>
     // protect the MACHINE — neither is a number the user set about money
     const q = mk('quota', { quotaCheck: () => '5-hour quota guard', budgetCheck: () => 'budget' });
     check('…and the waiver is NARROW: the 5-hour quota guard still holds it',
-        q.launchBlock(q.addTask(agent, 'kota', 'iş', 'headless', { ignoreBudget: true }))
+        q.launchBlock(q.addTask(agent, 'kota', 'iş', 'headless', { ignoreBudget: true })).reason
         === '5-hour quota guard');
     q.dispose();
 
@@ -125,7 +127,7 @@ const mk = (name, opts) =>
         mode: 'headless', status: 'running', createdAt: Date.now()
     });
     check('…and so does this machine\'s own limit',
-        /concurrency/.test(c.launchBlock(c.addTask(agent, 'eş', 'iş', 'headless', { ignoreBudget: true }))));
+        /concurrency/.test(c.launchBlock(c.addTask(agent, 'eş', 'iş', 'headless', { ignoreBudget: true })).reason));
     c.dispose();
 }
 
@@ -142,8 +144,12 @@ const mk = (name, opts) =>
     m.startTask(sched);
     check('‼️ an UNATTENDED run that could not start puts it on the board',
         announced.length === 1 && /did not start/.test(announced[0].title));
-    check('…keyed on the task AND the reason, so a 30-second pump cannot repeat it',
-        announced[0].key === 'task-parked:' + sched.id + ':daily budget spent');
+    // ‼️ M-11 — the key is task : park EPISODE : blocker CODE. A check that
+    // returns a bare sentence (as this one does) is its own code, which is the
+    // pre-M-11 behaviour kept on purpose; the episode number is what tells a
+    // second park apart from the first.
+    check('…keyed on the task, the park and the blocker, so a 30-second pump cannot repeat it',
+        announced[0].key === 'task-parked:' + sched.id + ':1:daily budget spent');
     check('…and it says what to do about it, not only that it happened',
         /run even if the budget is spent/.test(announced[0].body)
         && /not waivable/.test(announced[0].body));
@@ -175,8 +181,74 @@ const mk = (name, opts) =>
         t.deferredReason === 'fleet daily budget spent ($388.91 of $300.00)');
     check('…writes a second line on its record',
         t.events.filter(e => e.kind === 'parked').length === 2);
-    check('…and is announced again, keyed on the new reason', announced.length === 2
-        && announced[1].key === 'task-parked:' + t.id + ':' + block);
+    check('…and is announced again, keyed on the new blocker', announced.length === 2
+        && announced[1].key === 'task-parked:' + t.id + ':1:' + block);
+    m.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ M-11 — THE DOLLAR FIGURE MOVES; THE PARK DOES NOT.
+//
+// 3.129.0 keyed the notice on `task-parked:<id>:<deferredReason>`, and the
+// fleet-budget reason quotes today's spend — "$388.91 of $300.00". Every cent
+// anything on the farm spent therefore produced a NEW key: a fresh level-3
+// notice and a fresh `parked` event, about one ceiling that had not moved.
+//
+// The three rules, in order: a moved figure is not news · a different KIND of
+// blocker is · and the same blocker after a release is news again, because that
+// is a second park and not a continuation of the first.
+// ---------------------------------------------------------------------------
+{
+    const announced = [];
+    let answer = { code: 'budget:fleet', reason: 'fleet daily budget spent ($388.91 of $300.00)' };
+    const m = mk('m11', {
+        quotaCheck: () => answer, announce: n => announced.push(n), isRunner: () => true
+    });
+    const t = m.addTask(agent, 'gece raporu', 'yaz', 'headless', { fromSchedule: 's9' });
+    m.startTask(t);
+    const parks = () => t.events.filter(e => e.kind === 'parked').length;
+    check('the first park is one event and one notice',
+        parks() === 1 && announced.length === 1);
+    check('‼️ …and the notice key carries the CODE, never the money',
+        announced[0].key === 'task-parked:' + t.id + ':1:budget:fleet'
+        && !/388/.test(announced[0].key));
+    check('…while the row shows the money', t.deferredReason === answer.reason);
+
+    // The figure ticks up — the exact case from the item.
+    answer = { code: 'budget:fleet', reason: 'fleet daily budget spent ($389.02 of $300.00)' };
+    m.pump();
+    check('‼️ $388.91 → $389.02 is NOT a new park event',
+        parks() === 1);
+    check('‼️ …and NOT a new notice', announced.length === 1);
+    check('…but the row and its hover follow the money',
+        t.deferredReason === 'fleet daily budget spent ($389.02 of $300.00)');
+    check('…and the blocker is still the blocker', t.deferredCode === 'budget:fleet');
+
+    // A different KIND of ceiling is a different fact.
+    answer = { code: 'concurrency:fleet', reason: 'concurrency: 2 running' };
+    m.pump();
+    check('‼️ concurrency after budget IS a second event and a second notice',
+        parks() === 2 && announced.length === 2
+        && announced[1].key === 'task-parked:' + t.id + ':1:concurrency:fleet');
+
+    // Released, then caught by the same ceiling again — a NEW park episode.
+    answer = undefined;
+    t.notBefore = Date.now() + 60_000;   // stop the pump from spawning a real process
+    m.pump();
+    t.notBefore = undefined;
+    check('a release clears both halves of the hold',
+        t.deferredCode === undefined || t.deferredCode.indexOf('wait:') === 0);
+    // Clear the clock-park the line above left behind, so the next block is the
+    // first of a genuinely new episode.
+    t.deferredCode = undefined; t.deferredReason = undefined;
+    const before = t.parkEpisode;
+    answer = { code: 'concurrency:fleet', reason: 'concurrency: 2 running' };
+    m.pump();
+    check('‼️ the SAME ceiling after a release is a new park episode',
+        t.parkEpisode === before + 1);
+    check('…so it is news again, under a key that says which park it is',
+        announced.length === 3
+        && announced[2].key === 'task-parked:' + t.id + ':' + t.parkEpisode + ':concurrency:fleet');
     m.dispose();
 }
 

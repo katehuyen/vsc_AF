@@ -2972,7 +2972,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // added the retry policy to it. A window that stops short does not fail
         // loudly — it silently stops seeing the handler, and every assertion
         // about the handler starts measuring an empty string.
-        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 12000);
+        // 20k rather than 12k: `tasks.add`'s contract grew when S-19 gave it a
+        // `resume` argument and M-10 gave its retry policy five more fields, and
+        // a window that no longer reaches the handler silently stops testing it.
+        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 20000);
 
         const sched = at('schedules.add');
         ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
@@ -3037,9 +3040,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /the user\\'s default \(agentFarm\.taskRetry\)/.test(bridge));
         ok('tasks.add takes it, clamped by the same function the form uses',
             /normalizeRetry\(args\.retry\)/.test(add));
+        // "the session/usage limit", not "the Claude session limit": M-10 taught
+        // `isLimitFailure` the other three engines' words, so a policy of
+        // when:"limit" is no longer a statement about Claude alone.
         ok('‼️ …and its contract says which failures it is about, and that omitting it '
             + 'is not the same as switching it off',
-            /only when the Claude session limit was hit/.test(add)
+            /only when the session\/usage limit was hit/.test(add)
             && /is a different statement from/.test(add));
         ok('…and the answer says what the policy resolved to today',
             /retryPolicy: describeRetry\(task\.retry/.test(add));

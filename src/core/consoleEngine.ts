@@ -351,6 +351,18 @@ export interface CodexRunInit {
     /** where the LAST message should be written, for a caller that wants the
      *  answer without the transcript around it (`-o`) */
     lastMessageFile?: string;
+    /**
+     * ‼️ S-19 — CONTINUE THIS CONVERSATION, in an unattended run.
+     *
+     * A headless task could only ever start a new one, so "carry on with what
+     * that session was doing" meant pasting the old output into a fresh prompt
+     * — a copy of the context, not the context. With this set the run resumes
+     * the real conversation on the engine's own terms, and every engine's terms
+     * are different enough that guessing would open a NEW session and look like
+     * it had worked. The vocabulary lives with each engine (here, `gemini.ts`,
+     * `agy.ts`); `runArgs` is the one dispatch, so a caller never chooses.
+     */
+    resume?: string;
 }
 
 /** The `-c key=value` pairs both shapes accept, in one place so a setting that
@@ -372,6 +384,23 @@ function codexConfig(o: { permissionMode?: string; effort?: string }): string[] 
  * Callers therefore pipe it — see `TaskManager.spawnHeadless`.
  */
 export function codexRunArgs(o: CodexRunInit): string[] {
+    // ‼️ S-19 — THE RESUME SHAPE IS A DIFFERENT COMMAND, NOT A FLAG. `exec
+    // resume <thread>` is a subcommand, and it REFUSES `-s` and `-C`
+    // (CODEX_RESUME_REFUSES, measured — exit 2). The sandbox therefore rides on
+    // `-c sandbox_mode=…`, which both shapes take, and the working directory is
+    // the spawned process's cwd instead of a flag. Written here rather than at
+    // the call site so a task, a workflow step and a bridge call cannot each
+    // invent their own version of that constraint.
+    const resume = String(o.resume ?? '').trim();
+    if (resume) {
+        return [
+            'exec', 'resume', resume, '--skip-git-repo-check',
+            ...codexConfig(o),
+            ...(o.model?.trim() ? ['-m', o.model.trim()] : []),
+            ...(o.lastMessageFile ? ['-o', `"${o.lastMessageFile}"`] : []),
+            '-'
+        ];
+    }
     return [
         'exec', '--skip-git-repo-check',
         ...codexConfig(o),
@@ -584,6 +613,49 @@ export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
         case 'codex': return codexRunArgs(o);
         case 'claude': return codexRunArgs(o);
         default: return unknownEngine(spec.id, 'runArgs');
+    }
+}
+
+/**
+ * ‼️ S-19 — HOW *CLAUDE* PICKS A CONVERSATION UP IN A HEADLESS RUN.
+ *
+ * Claude is the persistent engine, so it never goes through `runArgs` for a
+ * task: `TaskManager.spawnHeadless` builds its command as a STRING
+ * (`claude <flags> -p "<prompt>"`) because that is the shape the flags, the
+ * model policy and `--append-system-prompt-file` are all written in. Its resume
+ * vocabulary therefore has to live here too, beside the other three, or the one
+ * engine most tasks run on would be the one whose resume flag was typed inline
+ * at a call site.
+ *
+ * `--resume <id>` and then `-p` — the id first, because `-p`'s value is the
+ * prompt and anything after it is read as part of the run, not as a flag.
+ */
+export function claudeResumeArgs(sessionId: string): string[] {
+    const id = String(sessionId ?? '').trim();
+    return id ? ['--resume', id] : [];
+}
+
+/**
+ * ‼️ S-19 — CAN THIS RUN CONTINUE THAT CONVERSATION AT ALL? '' = yes; anything
+ * else is the sentence to refuse with.
+ *
+ * Silence is the failure this exists to prevent. An engine with no resume
+ * vocabulary handed a session id would simply ignore it and START A NEW
+ * CONVERSATION — the run would succeed, the archive would look right, and the
+ * context the user asked for would not be there. So an engine that cannot is
+ * refused BY NAME, before anything spawns.
+ */
+export function headlessResumeRefusal(engine: string | undefined, cli?: string): string {
+    if (String(cli ?? '').trim()) {
+        return 'a CLI profile runs a binary Agent Farm knows nothing about, so it has no conversation to '
+            + 'continue — clear the CLI profile, or start a new conversation instead';
+    }
+    const spec = engineOf(engine);
+    switch (spec.id) {
+        case 'claude': case 'codex': case 'gemini': case 'agy': return '';
+        default:
+            return `${spec.label} has no measured way to continue a conversation in an unattended run — `
+                + 'a session id would be ignored and a NEW conversation started, which is worse than a refusal';
     }
 }
 

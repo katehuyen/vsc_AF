@@ -8294,7 +8294,7 @@
         "agentFarm.taskRetry": {
           "type": "object",
           "default": {},
-          "markdownDescription": "What happens when a headless task FAILS, for every run that does not state its own policy. Leave it empty to keep the shipped behaviour: six attempts, forty minutes apart, and only when the Claude session limit was hit — i.e. when the work was never actually attempted.",
+          "markdownDescription": "What happens when a headless task FAILS, for every run that does not state its own policy. Leave it empty to keep the shipped behaviour: six attempts, forty minutes apart, and only when the Claude session limit was hit — i.e. when the work was never actually attempted. The first three waits can be set one by one (`delayMin`, `delay2Min`, `delay3Min`); retry 4 and after follow `backoff` (and `formula`). With `resetAware` on, a genuine limit failure waits for the window the engine says it reopens at, plus `safetyBufferMin`.",
           "properties": {
             "max": {
               "type": "number",
@@ -8306,19 +8306,56 @@
               "type": "number",
               "minimum": 1,
               "maximum": 1440,
-              "description": "Minutes to wait before the first retry."
+              "description": "Minutes to wait before the first retry. It is also 'base' in the formula below."
+            },
+            "delay2Min": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 1440,
+              "description": "Minutes before the SECOND retry. Leave it out and the strategy below decides that one too."
+            },
+            "delay3Min": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 1440,
+              "description": "Minutes before the THIRD retry. Leave it out and the strategy below decides that one too."
             },
             "backoff": {
               "type": "string",
               "enum": [
                 "same",
-                "double"
+                "double",
+                "linear",
+                "formula"
               ],
               "enumDescriptions": [
                 "Every retry waits the same number of minutes.",
-                "The wait doubles each time (capped at 12 hours) — the right shape against something that is busy rather than broken."
+                "The wait doubles each time (capped at 12 hours) — the right shape against something that is busy rather than broken.",
+                "base × n — a gentler ramp than doubling.",
+                "Your own arithmetic, in 'formula' below."
               ],
-              "description": "How the wait grows between attempts."
+              "description": "How the wait grows for retry 4 and after. The first three can be stated one by one above."
+            },
+            "formula": {
+              "type": "string",
+              "maxLength": 120,
+              "markdownDescription": "The wait for retry 4 and after, in minutes, when `backoff` is `formula`. Variables: `n` (which retry this is), `prev` (the wait before it), `base` (`delayMin`). Operators `+ - * / ^`, brackets, `min(a,b)` and `max(a,b)`. Example: `min(prev * 1.5, 120)`. ‼️ It is PARSED, never evaluated as code — anything outside this grammar is refused with the reason."
+            },
+            "capMin": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 720,
+              "description": "The longest any computed wait may become, in minutes. The built-in 12-hour ceiling applies on top of it."
+            },
+            "resetAware": {
+              "type": "boolean",
+              "description": "When the failure really was a usage/session limit, wait for the WINDOW rather than for a number: the first retry goes at the reset time the engine published (or printed) plus the safety buffer below. Retries 2 and 3 use their own minutes and 4+ the strategy."
+            },
+            "safetyBufferMin": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 240,
+              "description": "Minutes to add to the stated reset time before the first retry goes (default 3). The window reopening and the CLI agreeing that it has are not the same instant."
             },
             "when": {
               "type": "string",

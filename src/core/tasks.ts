@@ -9,8 +9,8 @@ import {
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
-    engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
-    enginePermissionSetting, runArgs, tuiArgs
+    claudeResumeArgs, engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
+    enginePermissionSetting, headlessResumeRefusal, runArgs, tuiArgs
 } from './consoleEngine';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
@@ -50,8 +50,33 @@ export interface FarmTask {
     verified?: 'pass' | 'fail';
     /** estimated cost of a media step (USD). */
     mediaCost?: number;
-    /** why a requested start is waiting (concurrency / quota). */
+    /** why a requested start is waiting (concurrency / quota) — the sentence a
+     *  PERSON reads, live figures and all. Never an identity: see `deferredCode`. */
     deferredReason?: string;
+    /**
+     * ‼️ M-11 — WHAT IS HOLDING IT, AS AN IDENTITY RATHER THAN AS A SENTENCE.
+     *
+     * `deferredReason` carries the money: "fleet daily budget spent ($388.91 of
+     * $300.00)". That figure moves every time anything on the farm spends a
+     * cent, so a system that decided "is this the same hold as a minute ago?" by
+     * comparing the sentence answered NO all evening — one level-3 notice and
+     * one `parked` event per cent, about a single budget ceiling that had not
+     * changed at all.
+     *
+     * So the two are separated. The blocker's CODE is stable while the ceiling
+     * is the same ceiling — `budget:fleet`, `budget:agent:<id>`, `quota:5h`,
+     * `concurrency:fleet`, `concurrency:agent:<id>` — and the sentence beside it
+     * is free to say whatever is true this second.
+     */
+    deferredCode?: string;
+    /**
+     * ‼️ M-11 — WHICH UNINTERRUPTED PARK THIS IS. A run held by the budget
+     * tonight, released, and held by the same budget tomorrow is TWO pieces of
+     * news; the code alone cannot tell them apart, because it is deliberately
+     * the same code. The counter goes up once per park, when a task that was
+     * running free is held, and never while it stays held.
+     */
+    parkEpisode?: number;
     /** start was requested; the pump launches it when capacity frees up. */
     autoStart?: boolean;
     /** J1: run in this directory instead of the agent folder (worktree runs). */
@@ -169,6 +194,103 @@ export interface FarmTask {
      * which is the one this extension already trusts with every other delay.
      */
     notBefore?: number;
+    /**
+     * ‼️ M-10 — AND WHY IT IS THAT MOMENT. "waiting until 05:33" is a fact with
+     * no author: it does not say whether the extension guessed forty minutes or
+     * read "resets 5:30am" off the engine's own usage data and added the user's
+     * three-minute cushion. The row and its hover show this sentence, so the
+     * answer is where the question is asked. Absent = an ordinary interval, and
+     * the row says only when.
+     */
+    notBeforeWhy?: string;
+    /**
+     * ‼️ S-19 — CONTINUE AN EXISTING CONVERSATION AS A TASK.
+     *
+     * A task could only ever open a new one. "Carry on with what that session
+     * was doing" therefore meant pasting its last output into a fresh prompt,
+     * which is a COPY of the context and not the context: no tool state, no
+     * files it had read, no memory of what it had already tried.
+     *
+     * This is the real thing — the engine resumes the actual session/thread/
+     * conversation id, so the transcript continues in place. The run is still a
+     * task in every other way (its own row, its own events, its own archived
+     * output and its own cost), which is the whole point: the conversation is
+     * shared, the bookkeeping is not.
+     *
+     * ‼️ IT IS ITS OWN FIELD, deliberately. It is not `retryOf` (that is a
+     * lineage between task rows, not between conversations), not the parent
+     * task, and above all not something parsed out of the title — which is
+     * exactly how the retry counter used to be carried, and exactly why it
+     * broke the day somebody renamed a task.
+     */
+    resumeSessionId?: string;
+    /** The engine the resumed conversation was HAD with, resolved from the
+     *  session index when the task was made. Kept so the launch cannot quietly
+     *  send a Codex thread to Claude if the task's engine is edited later. */
+    resumedEngine?: string;
+    /** A short human handle for the source session — its name and short id — so
+     *  the row, the archive header and `tasks.get` can say which conversation
+     *  this continued without a second lookup months later. */
+    resumedFrom?: string;
+    /** ‼️ S-19 — what the resumed session had already cost BEFORE this turn.
+     *  The task's own cost is the difference: charging it the conversation's
+     *  running total would bill one task for a week of somebody else's work. */
+    resumeCostBefore?: number;
+    resumeTokensBefore?: number;
+}
+
+/**
+ * ‼️ M-11 — A CEILING, SAID TWICE ON PURPOSE.
+ *
+ * `code` is WHICH ceiling and nothing else; `reason` is what a person reads.
+ * They are separate because only one of them may move without it being news:
+ * "$388.91 of $300.00" becomes "$389.02 of $300.00" while `budget:fleet` stays
+ * `budget:fleet`, and the row is supposed to show the first while the notice
+ * board hears nothing at all.
+ *
+ * The vocabulary is deliberately small and hierarchical — `<what>:<scope>` —
+ * so a reader of a stored task can tell a fleet budget from an agent one, and
+ * a concurrency hold from a budget hold, without parsing English.
+ */
+export interface LaunchBlock {
+    code: string;
+    reason: string;
+}
+
+/** A check that may hold a launch back. A bare string is still accepted — it
+ *  means "this ceiling, whatever it is called" and gets `code` = the sentence,
+ *  which is exactly the old behaviour for a host that has not been updated. */
+export type BlockAnswer = string | LaunchBlock | undefined;
+
+/** Read whatever a check returned as a block. */
+export function asLaunchBlock(v: BlockAnswer, fallbackCode?: string): LaunchBlock | undefined {
+    if (!v) { return undefined; }
+    if (typeof v === 'string') {
+        // ‼️ A BARE STRING IS ITS OWN IDENTITY — which is exactly the behaviour
+        // that existed before M-11, kept on purpose. A check that has not been
+        // taught to name its ceiling still gets "a new sentence is a new hold",
+        // so a host that says "concurrency: 2 running" this hour and "over
+        // budget" the next is still two pieces of news. The fallback code below
+        // is for the OBJECT form with the name left out; putting it here would
+        // silently merge two different ceilings into one.
+        const reason = v.trim();
+        return reason ? { code: reason, reason } : undefined;
+    }
+    const reason = String(v.reason ?? '').trim();
+    if (!reason) { return undefined; }
+    return { code: String(v.code ?? '').trim() || fallbackCode || reason, reason };
+}
+
+/**
+ * ‼️ M-11 — THE ONE KEY BOTH ANNOUNCERS BUILD.
+ *
+ * The manager announces a park and so does the farm-news scan in the host, and
+ * a "once per key" guard only works if they agree to the character. The key is
+ * the task, the EPISODE and the blocker's code — never the reason, which is the
+ * whole bug: a key with the live dollar figure in it is a new key every cent.
+ */
+export function parkNoticeKey(task: Pick<FarmTask, 'id' | 'parkEpisode' | 'deferredCode' | 'deferredReason'>): string {
+    return `task-parked:${task.id}:${task.parkEpisode ?? 1}:${task.deferredCode ?? task.deferredReason ?? ''}`;
 }
 
 /** One thing that happened to a task. `kind` is the verb; `note` is the one
@@ -631,10 +753,35 @@ export interface TaskManagerOptions {
      *  because it is a setting: a window that has been open for a week must
      *  honour what was changed on Tuesday. */
     defaultRetry?: () => RetryPolicy | undefined;
+    /**
+     * ‼️ M-10 — WHEN THIS ENGINE'S USAGE WINDOW REOPENS, epoch ms, from the
+     * engine's OWN published data rather than from its printed prose. It is the
+     * highest-priority source for a reset-aware first retry; undefined simply
+     * means "nothing published", and the decision falls to the output and then
+     * to the ordinary interval, saying which on the run's record.
+     */
+    limitResetAt?: (engine?: string) => number | undefined;
+    /**
+     * ‼️ S-19 — IS SOMETHING ELSE WRITING TO THAT CONVERSATION RIGHT NOW?
+     *
+     * Return a sentence naming the holder, or undefined when the session is
+     * free. Two processes appending to one transcript is not a race that
+     * resolves badly — it is a conversation with two authors, and neither of
+     * them can see what the other wrote. So a resumed task whose session is
+     * held PARKS, visibly, with the holder in the reason, and the pump launches
+     * it the moment the session is released.
+     */
+    sessionBusy?: (sessionId: string, engine?: string) => string | undefined;
+    /** ‼️ S-19 — what a session has cost and spent so far, for the delta a
+     *  resumed run is charged. Undefined = not indexed yet, and the task simply
+     *  starts from nothing rather than from a guess. */
+    sessionUsage?: (sessionId: string, engine?: string) => { cost: number; tokens: number } | undefined;
     maxConcurrent?: () => number;
     maxConcurrentPerAgent?: () => number;
-    /** Return a reason string to defer auto work (e.g. quota window nearly full), or undefined. */
-    quotaCheck?: () => string | undefined;
+    /** Return a reason to defer auto work (e.g. quota window nearly full), or
+     *  undefined. ‼️ M-11 — a `{code, reason}` pair is preferred over a bare
+     *  string: the code is what dedupes a park, the sentence is what is read. */
+    quotaCheck?: () => BlockAnswer;
     outputsMaxMB?: () => number;
     /** Secrets injected as environment variables into spawned tasks. The
      *  agent id lets the vault withhold secrets scoped to other agents. */
@@ -716,7 +863,7 @@ export interface TaskManagerOptions {
     queueWorkCount?: () => number;
     /** Today's API-equivalent spend for a budget check: agentName → USD, plus
      *  the fleet total under '*'. Undefined = no budget enforcement. */
-    budgetCheck?: (agentName: string) => string | undefined;
+    budgetCheck?: (agentName: string) => BlockAnswer;
     /**
      * ‼️ M-7 — PUT SOMETHING ON THE BOARD. The manager decides things nobody is
      * in the room for (a scheduled run held back by a ceiling), and a decision
@@ -1443,7 +1590,8 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
-            | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'>>
+            | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
+            | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -1495,8 +1643,14 @@ export class TaskManager implements vscode.Disposable {
             t.status === 'running' && (!agentId || t.agentId === agentId)).length;
     }
 
-    /** Why this task can't launch right now, or undefined if it can. */
-    private launchBlock(task: FarmTask): string | undefined {
+    /**
+     * Why this task can't launch right now, or undefined if it can.
+     *
+     * ‼️ M-11 — EVERY ANSWER CARRIES A CODE. The sentence is for the row and the
+     * notice; the code is the identity the dedupe is decided on, and it does not
+     * move when a figure inside the sentence does.
+     */
+    private launchBlock(task: FarmTask): LaunchBlock | undefined {
         // ‼️ M-3 (reopened) — A RUN THAT IS WAITING FOR A CLOCK. First, because
         // it is the cheapest test and because it outranks the others: a retry
         // whose wait has not elapsed is not competing for a slot at all.
@@ -1506,14 +1660,49 @@ export class TaskManager implements vscode.Disposable {
         // a different string every time — which is what `startTask` reads to
         // decide whether this is news worth writing on the record.
         if (task.notBefore && Date.now() < task.notBefore) {
-            return `waiting until ${new Date(task.notBefore).toLocaleTimeString()}`
-                + (task.retryAttempt ? ` — retry ${task.retryAttempt}` : '');
+            return {
+                // The moment is IN the code here, and deliberately: a retry
+                // whose wait is pushed out is a different wait, and the row's
+                // record should say so. It is not a live figure — it changes
+                // only when something re-decides the retry.
+                code: `wait:${task.notBefore}`,
+                reason: `waiting until ${new Date(task.notBefore).toLocaleTimeString()}`
+                    + (task.retryAttempt ? ` — retry ${task.retryAttempt}` : '')
+                    // ‼️ M-10 — and where that moment came from, when it was not
+                    // simply "n minutes from the failure".
+                    + (task.notBeforeWhy ? ` (${task.notBeforeWhy})` : '')
+            };
+        }
+        // ‼️ S-19 — A LIVE OWNER OUTRANKS EVERY OTHER CEILING, and is checked
+        // HERE rather than at the moment the user picked the session: minutes
+        // pass between choosing a conversation and a queued task reaching the
+        // front, and the Console can be opened on it in between. This is the
+        // last gate before a spawn, which is the only place the answer is
+        // still true.
+        if (task.resumeSessionId) {
+            const held = this.opts.sessionBusy?.(task.resumeSessionId, task.resumedEngine ?? task.engine);
+            if (held) {
+                return {
+                    // The code names the SESSION, not the holder: the run is
+                    // waiting for that conversation to be free, whoever happens
+                    // to have it, so a holder changing hands is not new news.
+                    code: `session:busy:${task.resumeSessionId}`,
+                    reason: `the conversation is open elsewhere — ${held}`
+                };
+            }
         }
         const maxGlobal = this.opts.maxConcurrent?.() ?? 2;
         const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 1;
-        if (maxGlobal > 0 && this.runningCount() >= maxGlobal) { return `concurrency: ${maxGlobal} running`; }
-        if (maxAgent > 0 && this.runningCount(task.agentId) >= maxAgent) { return `agent busy (${task.agentName})`; }
-        const quota = this.opts.quotaCheck?.();
+        if (maxGlobal > 0 && this.runningCount() >= maxGlobal) {
+            return { code: 'concurrency:fleet', reason: `concurrency: ${maxGlobal} running` };
+        }
+        if (maxAgent > 0 && this.runningCount(task.agentId) >= maxAgent) {
+            return {
+                code: `concurrency:agent:${task.agentId}`,
+                reason: `agent busy (${task.agentName})`
+            };
+        }
+        const quota = asLaunchBlock(this.opts.quotaCheck?.(), 'quota:5h');
         if (quota) { return quota; }
         // Budget is a BRAKE, not a notification: over the daily ceiling nothing
         // new launches. (It used to raise an insight and then start the task
@@ -1526,7 +1715,7 @@ export class TaskManager implements vscode.Disposable {
         // window and the machine, and neither is a number the user set about
         // this task. A run held by them is waiting, not refused.
         if (!task.ignoreBudget) {
-            const budget = this.opts.budgetCheck?.(task.agentName);
+            const budget = asLaunchBlock(this.opts.budgetCheck?.(task.agentName), 'budget:fleet');
             if (budget) { return budget; }
         }
         return undefined;
@@ -1545,9 +1734,9 @@ export class TaskManager implements vscode.Disposable {
         const block = this.launchBlock(task);
         if (block) {
             task.autoStart = true;
-            const changed = this.recordBlock(task, block);
+            const rec = this.recordBlock(task, block);
             this.save();
-            if (changed) { this.announceParked(task, block); }
+            if (rec.news) { this.announceParked(task, block); }
             return false;
         }
         return this.launch(task);
@@ -1566,14 +1755,35 @@ export class TaskManager implements vscode.Disposable {
      *
      * Only a CHANGE is a new line: the pump asks 120 times an hour and a log
      * that wrote "still over budget" every time would bury the transitions it
-     * exists to show. Returns whether this was a change, because that is also
-     * the test for whether it is worth telling anybody about.
+     * exists to show.
+     *
+     * ‼️ M-11 — AND "A CHANGE" IS A CHANGE OF CEILING, NOT OF WORDING. The
+     * reason used to be the whole identity, so `$388.91 of $300.00` ticking to
+     * `$389.02 of $300.00` was a new park: a `parked` event and a level-3 notice
+     * per cent spent anywhere on the farm, about one budget that had not moved.
+     * The two answers are now separate — `news` is "tell somebody" (the blocker
+     * itself changed, or this is a fresh park), `touched` is "write it down" (the
+     * sentence on the row moved, which the reader is entitled to see live).
      */
-    private recordBlock(task: FarmTask, block: string): boolean {
-        if (task.deferredReason === block) { return false; }
-        task.deferredReason = block;
-        noteTaskEvent(task, 'parked', block);
-        return true;
+    private recordBlock(task: FarmTask, block: LaunchBlock): { news: boolean; touched: boolean } {
+        // A task that was NOT parked a moment ago is beginning a new episode.
+        // That is what makes "held → released → held by the same ceiling again"
+        // two pieces of news while "held all evening" stays one.
+        const fresh = !task.deferredCode;
+        const news = fresh || task.deferredCode !== block.code;
+        if (fresh) { task.parkEpisode = (task.parkEpisode ?? 0) + 1; }
+        const touched = news || task.deferredReason !== block.reason;
+        task.deferredCode = block.code;
+        task.deferredReason = block.reason;
+        if (news) { noteTaskEvent(task, 'parked', block.reason); }
+        return { news, touched };
+    }
+
+    /** ‼️ M-11 — the hold is over. Both halves go together: a code left behind
+     *  would make the NEXT park look like a continuation of this one. */
+    private clearPark(task: FarmTask): void {
+        task.deferredReason = undefined;
+        task.deferredCode = undefined;
     }
 
     /**
@@ -1587,7 +1797,8 @@ export class TaskManager implements vscode.Disposable {
      * things, so that is where this goes — once per task, keyed on the task's
      * own id so a 30-second pump cannot repeat it.
      */
-    private announceParked(task: FarmTask, reason: string): void {
+    private announceParked(task: FarmTask, block: LaunchBlock): void {
+        const reason = block.reason;
         // ‼️ M-3 (V3) — ITS OWN CLOCK IS NOT A CEILING. A retry that says
         // "waiting until 00:40" is doing exactly what the policy asked for;
         // announcing that as "did not start" would make the mechanism working
@@ -1599,14 +1810,17 @@ export class TaskManager implements vscode.Disposable {
         const source = task.fromSchedule ? 'schedule' : task.fromTrigger ? 'trigger'
             : task.workflowId !== undefined ? 'workflow' : 'retry policy';
         this.opts.announce?.({
-            // ‼️ M-7 (V3) — ONE KEY FOR ONE PARK, AND THE REASON IS PART OF IT.
-            // The farm-news scan announces the same event for tasks nobody is
-            // unattended about, and it used to use a DIFFERENT key — so a single
-            // park produced two notices that the "once" guard could not see were
-            // the same thing. Both sides build this string now. The reason is in
-            // it on purpose: a run held by concurrency this morning and by the
-            // budget tonight is two facts, and the second one is news again.
-            key: `task-parked:${task.id}:${reason}`,
+            // ‼️ M-7 (V3) — ONE KEY FOR ONE PARK. The farm-news scan announces
+            // the same event for tasks nobody is unattended about, and it used
+            // to use a DIFFERENT key — so a single park produced two notices
+            // that the "once" guard could not see were the same thing. Both
+            // sides call `parkNoticeKey` now.
+            //
+            // ‼️ M-11 — and what is IN that key is the episode and the blocker's
+            // CODE, never the reason. A run held by concurrency this morning and
+            // by the budget tonight is still two facts (two codes); the same
+            // budget quoting a bigger number every thirty seconds is one.
+            key: parkNoticeKey(task),
             level: 3,
             title: `"${task.title}" did not start — ${reason}`,
             body: [
@@ -1643,14 +1857,16 @@ export class TaskManager implements vscode.Disposable {
                 // ‼️ M-7/M-3 (V3) — the pump used to skip in silence, which is
                 // how a stale reason survived on the row. Same record, same
                 // announcement path as `startTask`; unchanged reasons are free.
-                if (this.recordBlock(task, block)) {
-                    this.save();
-                    this.announceParked(task, block);
-                }
+                //
+                // ‼️ M-11 — a moved dollar figure is SAVED (the row shows what
+                // is true now) and not ANNOUNCED (it is the same ceiling).
+                const rec = this.recordBlock(task, block);
+                if (rec.touched) { this.save(); }
+                if (rec.news) { this.announceParked(task, block); }
                 continue;
             }
             task.autoStart = false;
-            task.deferredReason = undefined;
+            this.clearPark(task);
             this.launch(task);
         }
     }
@@ -1660,6 +1876,29 @@ export class TaskManager implements vscode.Disposable {
         if (!agent) {
             void vscode.window.showWarningMessage(`Agent Farm: agent for task "${task.title}" not found.`);
             return false;
+        }
+        // ‼️ S-19 — A CONVERSATION THIS RUN CANNOT CONTINUE IS A REFUSAL, NEVER
+        // A NEW ONE. Every engine here ignores an argument it has no flag for,
+        // so the failure mode without this is the worst kind: a run that
+        // succeeds, an archive that looks correct, and none of the context the
+        // user asked for. An interactive run is refused for a plainer reason —
+        // resume is a headless argument and the TUI path has its own.
+        if (task.resumeSessionId) {
+            const refused = task.mode !== 'headless'
+                ? 'continuing an existing conversation is a headless run — an interactive one opens the '
+                + 'session in a terminal, where the Console\'s own Resume does this properly'
+                : headlessResumeRefusal(task.resumedEngine ?? task.engine, task.cli);
+            if (refused) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${task.title}" did not start — ${refused}`);
+                task.status = 'failed';
+                task.endedAt = Date.now();
+                task.deferredReason = refused;
+                task.deferredCode = undefined;
+                noteTaskEvent(task, 'finished', `failed before it started — ${refused}`);
+                this.save();
+                return false;
+            }
         }
         // ‼️ The engine is checked before anything is spawned, and only when the
         // task actually names one — a CLI profile is a different mechanism with
@@ -1672,7 +1911,12 @@ export class TaskManager implements vscode.Disposable {
                     `Agent Farm: "${task.title}" did not start — ${refused}`);
                 task.status = 'failed';
                 task.endedAt = Date.now();
+                // Not a park: the run is over. The sentence stays as the row's
+                // explanation, the blocker CODE goes — a failed run holds no
+                // ceiling, and leaving one would make the next park of a rerun
+                // look like a continuation of this refusal (M-11).
                 task.deferredReason = refused;
+                task.deferredCode = undefined;
                 noteTaskEvent(task, 'finished', `failed before it started — ${refused}`);
                 this.save();
                 return false;
@@ -1680,9 +1924,19 @@ export class TaskManager implements vscode.Disposable {
         }
         task.status = 'running';
         task.startedAt = Date.now();
-        task.deferredReason = undefined;
+        this.clearPark(task);
+        // ‼️ S-19 — WHERE THE CONVERSATION'S METER STOOD BEFORE THIS TURN. Taken
+        // at the spawn and not at the finish, because the difference between the
+        // two readings is precisely what this run is responsible for. Without
+        // it, a task resuming a week-old session would be billed for the week.
+        if (task.resumeSessionId && task.resumeCostBefore === undefined) {
+            const before = this.opts.sessionUsage?.(task.resumeSessionId, task.resumedEngine ?? task.engine);
+            task.resumeCostBefore = before?.cost ?? 0;
+            task.resumeTokensBefore = before?.tokens ?? 0;
+        }
         noteTaskEvent(task, 'started', `${engineOf(task.engine).label} · ${task.mode}`
-            + (task.model ? ` · ${task.model}` : ''));
+            + (task.model ? ` · ${task.model}` : '')
+            + (task.resumeSessionId ? ` · resuming ${task.resumedFrom || task.resumeSessionId}` : ''));
         if (task.mode === 'headless') {
             this.spawnHeadless(task, agent);
         } else {
@@ -1795,6 +2049,15 @@ export class TaskManager implements vscode.Disposable {
             // the only record of the run, and "why does this output look nothing
             // like the others" has exactly one answer.
             (engine.id !== 'claude' ? `- Engine: ${engine.label}\n` : '') +
+            // ‼️ S-19 — AND WHICH CONVERSATION IT CONTINUED. The archive is the
+            // only record of the run months later, and "why does this answer
+            // assume things the prompt never said" has exactly one answer: it
+            // was not a fresh conversation. The full id, because that is what
+            // opens the transcript.
+            (task.resumeSessionId
+                ? `- Resumed conversation: ${task.resumeSessionId}`
+                + (task.resumedFrom ? ` (${task.resumedFrom})` : '') + '\n'
+                : '') +
             (profile ? `- CLI: ${profile.name}\n` : '') +
             (policy ? `- Model policy: ${policy.reason}\n` : '') +
             (perTurn && task.model ? `- Model: ${task.model}\n` : '') +
@@ -1867,6 +2130,18 @@ export class TaskManager implements vscode.Disposable {
         if (ctxFile && !ctxFile.includes('"') && !perTurn) {
             extra = (extra ? extra + ' ' : '') + `--append-system-prompt-file "${ctxFile}"`;
         }
+        // ‼️ S-19 — CLAUDE'S RESUME, ON CLAUDE'S PATH. The persistent engine's
+        // task command is a string, so its resume flag joins the other flags —
+        // from `claudeResumeArgs`, which is where the vocabulary lives, and NOT
+        // spelled inline here. It goes in `extra`, i.e. BEFORE `-p`: everything
+        // after `-p`'s value belongs to the prompt.
+        const resumeId = String(task.resumeSessionId ?? '').trim();
+        // Bare-word only — an id comes from an index, but a hand-edited store
+        // must not be able to push shell syntax through a string command line.
+        const safeResume = /^[\w.-]+$/.test(resumeId) ? resumeId : '';
+        if (safeResume && !profile && !perTurn) {
+            extra = claudeResumeArgs(safeResume).join(' ') + (extra ? ' ' + extra : '');
+        }
         // ‼️ ON A PER-TURN ENGINE THE PROMPT GOES DOWN A PIPE, NOT ONTO THE
         // COMMAND LINE — which is what lets it carry the project brief and its
         // own newlines. `codex` has no system-prompt flag at all (measured
@@ -1889,7 +2164,10 @@ export class TaskManager implements vscode.Disposable {
                 permissionMode: task.permissionMode,
                 // …and it must be told which folder it may see, or it answers
                 // about its own scratch workspace instead.
-                cwd: task.workDir ?? agent.dir
+                cwd: task.workDir ?? agent.dir,
+                // ‼️ S-19 — one field, and each engine's own adapter turns it
+                // into that engine's flag (`--conversation` here).
+                ...(safeResume ? { resume: safeResume } : {})
             })]
             : undefined;
         // A named CLI profile runs a DIFFERENT binary, which knows nothing about
@@ -1900,7 +2178,8 @@ export class TaskManager implements vscode.Disposable {
             : perTurn
                 ? [engine.exe, ...runArgs(engine.id, {
                     model: task.model, effort: task.effort,
-                    permissionMode: task.permissionMode
+                    permissionMode: task.permissionMode,
+                    ...(safeResume ? { resume: safeResume } : {})
                 })].join(' ')
                 : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
         const pipePrompt = perTurn && !argv;
@@ -2005,7 +2284,11 @@ export class TaskManager implements vscode.Disposable {
         try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* no output yet */ }
         const fallback = this.opts.defaultRetry?.();
         const d = retryDecision(task.retry, {
-            attempt: task.retryAttempt ?? 0, output: out, fallback
+            attempt: task.retryAttempt ?? 0, output: out, fallback,
+            now: Date.now(),
+            // ‼️ M-10 — the engine's own answer to "when does the window
+            // reopen", asked only here so the pure decision stays pure.
+            engineResetAt: this.opts.limitResetAt?.(task.engine)
         });
         if (!d.retry) {
             // ‼️ A retry that did NOT happen is the thing somebody comes looking
@@ -2075,9 +2358,33 @@ export class TaskManager implements vscode.Disposable {
                     ...(task.priority ? { priority: task.priority } : {}),
                     ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
                     ...(policy ? { retry: policy } : {}),
+                    // ‼️ S-19 — A RETRY OF A RESUMED TURN RESUMES THE SAME
+                    // CONVERSATION. The turn never happened (a limit refused it
+                    // before the engine read anything), so trying again means
+                    // trying THAT turn again — dropping the id here would have
+                    // the retry open a brand new conversation and answer a
+                    // prompt written for a context it no longer has.
+                    ...(task.resumeSessionId ? {
+                        resumeSessionId: task.resumeSessionId,
+                        ...(task.resumedEngine ? { resumedEngine: task.resumedEngine } : {}),
+                        ...(task.resumedFrom ? { resumedFrom: task.resumedFrom } : {})
+                    } : {}),
                     retryOf: task.retryOf ?? task.id,
                     retryAttempt: d.attempt,
-                    notBefore: Date.now() + Math.max(60_000, d.delayMs)
+                    // ‼️ M-10 — A RESET-AWARE RETRY CARRIES THE MOMENT ITSELF.
+                    // The ordinary path is "a minute from now at the earliest,
+                    // plus whatever the policy waits"; the reset path already
+                    // has an ABSOLUTE time worked out from the window the engine
+                    // published, and re-deriving it from a duration is how
+                    // 05:33 becomes 05:34 on the next read. The one-minute floor
+                    // stays on the ordinary path only, where it protects against
+                    // a policy of zero; a reset that has already passed is meant
+                    // to go as soon as the buffer allows.
+                    notBefore: d.notBefore ?? Date.now() + Math.max(60_000, d.delayMs),
+                    ...(d.notBefore
+                        ? { notBeforeWhy: `limit reset · ${d.resetSource === 'engine' ? 'the engine published it'
+                            : d.resetSource === 'output' ? 'read from the output' : 'no reset time — ordinary wait'}` }
+                        : {})
                 });
                 // Parks on the clock (see launchBlock) and the pump takes it
                 // from there; the park writes the "waiting until …" line on its

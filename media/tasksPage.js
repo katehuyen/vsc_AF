@@ -664,6 +664,18 @@
             retryMode: 'default',
             retryMax: 3, retryDelayMin: 30, retryBackoff: 'same',
             retryWhen: 'limit', retryPrompt: '',
+            // ‼️ M-10 — the second and third waits, the strategy for 4+ and the
+            // reset-aware first retry. Empty strings, not numbers: "" is "say
+            // nothing about it", which is a different statement from a value,
+            // and it is what keeps a policy that never touched these fields
+            // computing exactly what it computed before they existed.
+            retryDelay2Min: '', retryDelay3Min: '', retryFormula: '', retryCapMin: '',
+            retryResetAware: false, retrySafetyMin: 3,
+            // ‼️ S-19 — a new session, or the next turn of one that exists.
+            // 'new' is the default and always will be: a task that silently
+            // joined somebody else's conversation would be the worst kind of
+            // surprise, and "resume" is a thing you say out loud.
+            conversation: 'new', resumeSessionId: '', resumeFind: '',
             // schedule
             every: 'daily', time: '09:00', dow: 1, onceAt: '', missed: 'skip', enabled: true,
             // trigger
@@ -727,6 +739,115 @@
     }
 
     /**
+     * ‼️ S-19 — NEW SESSION, OR CARRY ON WITH AN EXISTING CONVERSATION.
+     *
+     * A task could only ever open a new one. "Carry on with what that session
+     * was doing" therefore meant pasting the last output into a fresh prompt —
+     * a COPY of the context, not the context. Here the engine really resumes
+     * the conversation, so the transcript continues in place while the run
+     * stays its own task row, its own output and its own cost.
+     *
+     * A two-state picker rather than a checkbox, because "Resume existing"
+     * changes what the rest of the form MEANS: the engine and the working
+     * folder come from the conversation, and the boxes above say so instead of
+     * looking editable and being overruled at launch. On a task only — a
+     * schedule sharing one conversation for ever is a lifecycle decision
+     * nobody has made yet, and it must not arrive as a side effect of this.
+     */
+    function conversationHtml(c) {
+        if (c.kind !== 'task') { return ''; }
+        const rows = (DATA.launch || {}).resumable || [];
+        const sel = (id, value, list) => `<select id="nt-${id}">${list.map(o =>
+            `<option value="${C.esc(o[0])}"${o[0] === value ? ' selected' : ''}>${C.esc(o[1])}</option>`
+        ).join('')}</select>`;
+        // Interactive: the same rule the host enforces, said where the box is.
+        if (c.mode === 'interactive') {
+            return `<label class="ntf wide" title="${C.esc(
+                'Continuing a conversation is a HEADLESS argument: the engine is asked to resume a session id '
+                + 'and answer once. An interactive task opens a terminal, and the session\'s own Resume (on the '
+                + 'Sessions page, or ⏵ in the Console) is the right door for that — it also warns you when '
+                + 'something else already has the conversation open. Set Mode to headless and this becomes '
+                + 'editable.')}"><span>Conversation</span>
+                <select disabled><option>a new session — interactive runs cannot resume here</option></select></label>`;
+        }
+        const head = `<label class="ntf wide" title="${C.esc(
+            'A new session starts with nothing but this prompt. "Continue an existing conversation" resumes a '
+            + 'real session/thread/conversation on its own engine: the context, the files it had read and the '
+            + 'transcript carry on in place, and this run is the next turn of it. It is still a task — its own '
+            + 'row, its own events, its own archived output — and its cost is what THIS turn added, not the '
+            + 'conversation\'s total. ‼️ If something else is holding the conversation (the Console, a CLI '
+            + 'process, another window) the task parks with that as its reason and starts by itself when the '
+            + 'holder lets go: two writers on one transcript is never opened.')}"><span>Conversation</span>
+            ${sel('conversation', c.conversation, [
+            ['new', 'a new session'],
+            ['resume', 'continue an existing conversation…']
+        ])}</label>`;
+        if (c.conversation !== 'resume') { return head; }
+        if (!rows.length) {
+            return head + `<div class="ntmsg warn">✖ There are no resumable conversations on this machine
+                yet — a session has to have been had, and indexed, before a task can continue it.</div>`;
+        }
+        // ‼️ THE SEARCH IS A FILTER OVER THE ROWS, NOT A SECOND LIST. Two
+        // hundred conversations is a scroll; the box narrows by anything the row
+        // says — its name, its agent, its project, its engine, and its ID, so
+        // somebody who has the id in front of them pastes it and lands on it.
+        //
+        // ‼️ AND IT IS THE FARM'S OWN QUERY GRAMMAR, not a lowercased substring:
+        // every box on every page understands `codex -done`, and one that did
+        // not would be the single place where what you know about searching here
+        // stops being true.
+        const q = window.AFQuery.compile(c.resumeFind || '');
+        const hits = rows.filter(r => q.empty
+            || q.test(r.title + ' ' + r.agent + ' ' + r.project + ' ' + r.engine + ' ' + r.sessionId));
+        const chosen = rows.find(r => r.sessionId === c.resumeSessionId);
+        const ago = (ts) => {
+            const m = Math.max(0, Math.round((Date.now() - (ts || 0)) / 60000));
+            return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
+        };
+        const opts = hits.slice(0, 60).map(r =>
+            `<option value="${C.esc(r.sessionId)}"${r.sessionId === c.resumeSessionId ? ' selected' : ''}>`
+            + C.esc(`${r.busy ? '● ' : ''}${r.title} · ${r.agent || '—'} · ${r.engine}`
+                + `${r.project ? ' · ' + r.project : ''} · ${ago(r.ts)} · #${r.sessionId.slice(0, 8)}`)
+            + '</option>').join('');
+        // ‼️ MIRROR — the picker is narrow and cuts its own text, so the whole
+        // truth about the chosen row (its full id, its owner, what this task
+        // will be) goes on the tip, current value first.
+        const tip = chosen
+            ? `${chosen.title} — ${chosen.engine}\n\n`
+            + `Full id: ${chosen.sessionId}\n`
+            + `Agent: ${chosen.agent || '—'}${chosen.project ? ' · Project: ' + chosen.project : ''}\n`
+            + `Last activity: ${ago(chosen.ts)}\n`
+            + `Working folder: ${chosen.cwd || '(the agent\'s own)'}\n\n`
+            + (chosen.busy
+                ? `‼️ HELD RIGHT NOW — ${chosen.busy}. The task will be created and will PARK with that as its `
+                + 'visible reason rather than opening a second writer on the transcript; it starts by itself '
+                + 'when the holder lets go.\n\n'
+                : '')
+            + 'This task will be the NEXT TURN of that conversation: same context, same transcript. It runs on '
+            + `${chosen.engine} and in that session's own folder, whatever the boxes above say — the `
+            + 'conversation already has both.'
+            : 'Pick the conversation this run continues. Type in the box above to narrow the list by name, '
+            + 'agent, project, engine or ID.';
+        return head + `
+            <label class="ntf wide" title="Narrows the list below by anything the row says — its name, its agent, its project, its engine, or its ID. Paste an ID here to find exactly one."><span>Find</span>
+                <input type="text" id="nt-resumefind" value="${C.esc(c.resumeFind || '')}"
+                    placeholder="name, agent, project, engine or a session id"></label>
+            ${window.AFTip.wrap(`<label class="ntf wide"><span>Continue</span>
+                <select id="nt-resumeid">
+                    <option value="">— pick a conversation —</option>
+                    ${opts}
+                </select></label>`,
+            chosen ? `${chosen.title} — ${chosen.engine}` : 'Which conversation this run continues',
+            tip, 'tip-block')}
+            <div class="ntf wide muted small">${C.esc(
+                `${hits.length} of ${rows.length} conversation${rows.length === 1 ? '' : 's'}`
+                + (hits.length > 60 ? ' — showing the 60 most recent matches; narrow it further to see the rest' : '')
+                + '. ● marks one something is holding right now.')}</div>
+            ${chosen && chosen.busy ? `<div class="ntmsg warn">● ${C.esc(chosen.busy)} — the task will
+                park with that reason instead of opening a second writer, and start when it is free.</div>` : ''}`;
+    }
+
+    /**
      * ‼️ M-3 — WHAT HAPPENS WHEN THIS RUN FAILS.
      *
      * The extension has always retried some failures; the numbers were written
@@ -780,17 +901,99 @@
             + 'Headless runs only — an interactive session has you in front of it.')}"><span>If it fails</span>
             ${sel('retrymode', c.retryMode, modes)}</label>`;
         if (c.retryMode !== 'custom') { return head; }
+        /**
+         * ‼️ M-10 — THE FIRST THREE WAITS ARE THREE BOXES, NOT A CURVE.
+         *
+         * "Try again in five minutes; if that fails give it twenty; if that
+         * fails leave it an hour" is what people actually want out of the first
+         * handful of attempts and it is not any curve at all. The second and
+         * third are EMPTY by default and say so in their placeholder: an empty
+         * box means "whatever the strategy below says", which is exactly how
+         * every policy written before these boxes existed still behaves.
+         */
+        const num = (id, key, min, max, ph) =>
+            `<input type="number" id="nt-${id}" min="${min}" max="${max}" step="1"
+                value="${C.esc(String(c[key] === undefined || c[key] === null ? '' : c[key]))}"
+                placeholder="${C.esc(ph || '')}">`;
+        const formulaErr = c.retryBackoff === 'formula' ? retryFormulaError(c.retryFormula || '') : '';
         return head + `
             <label class="ntf" title="How many times to try AGAIN after a failure. 0 means never."><span>Tries</span>
                 <input type="number" id="nt-retrymax" min="0" max="20" step="1" value="${C.esc(String(c.retryMax))}"></label>
-            <label class="ntf" title="Minutes to wait before the first retry."><span>First wait</span>
-                <input type="number" id="nt-retrydelay" min="1" max="1440" step="1" value="${C.esc(String(c.retryDelayMin))}"></label>
-            <label class="ntf" title="How the wait grows. Doubling is the right shape against something that is busy rather than broken — a fixed interval against a rate limit is how a retry policy becomes the problem. Capped at 12 hours."><span>Then</span>
-                ${sel('retrybackoff', c.retryBackoff, [['same', 'the same wait'], ['double', 'double it each time']])}</label>
+            <label class="ntf" title="Minutes to wait before the FIRST retry. It is also 'base' in the formula, so changing it moves the whole curve."><span>1st wait</span>
+                ${num('retrydelay', 'retryDelayMin', 1, 1440)}</label>
+            <label class="ntf" title="Minutes before the SECOND retry. Leave it empty and the strategy below decides this one too — which is what every policy did before this box existed."><span>2nd wait</span>
+                ${num('retrydelay2', 'retryDelay2Min', 1, 1440, 'as the strategy says')}</label>
+            <label class="ntf" title="Minutes before the THIRD retry. Leave it empty and the strategy below decides this one too."><span>3rd wait</span>
+                ${num('retrydelay3', 'retryDelay3Min', 1, 1440, 'as the strategy says')}</label>
+            <label class="ntf" title="What retry 4 and after wait. Doubling is the right shape against something that is busy rather than broken — a fixed interval against a rate limit is how a retry policy becomes the problem. 'your own formula' is for the case none of the three fits."><span>Retry 4+</span>
+                ${sel('retrybackoff', c.retryBackoff, [
+            ['same', 'the same wait'],
+            ['linear', 'base × n — a gentle ramp'],
+            ['double', 'double it each time'],
+            ['formula', 'your own formula…']
+        ])}</label>
+            ${c.retryBackoff === 'formula' ? `
+            <label class="ntf wide" title="${C.esc(
+            'The wait for retry 4 and after, in MINUTES. Variables: n (which retry this is), prev (the wait '
+            + 'before it) and base (the 1st wait above). Operators + - * / ^, brackets, min(a,b) and max(a,b). '
+            + '‼️ It is PARSED, never run as code: anything outside that grammar is refused here with the '
+            + 'reason, so a typo cannot become a run that waits until Thursday.')}"><span>Formula</span>
+                <input type="text" id="nt-retryformula" value="${C.esc(c.retryFormula || '')}"
+                    placeholder="min(prev * 1.5, 120)"></label>
+            ${formulaErr ? `<div class="ntmsg warn">✖ ${C.esc(formulaErr)}</div>` : ''}` : ''}
+            <label class="ntf" title="The longest any computed wait may become. The built-in 12-hour ceiling still applies on top of it; empty means the built-in one alone."><span>Never longer than</span>
+                ${num('retrycap', 'retryCapMin', 1, 720, '12 h')}</label>
             <label class="ntf" title="Which failures are worth trying again. A session limit means the work was never attempted and the limit clears by itself within hours; any other failure may well repeat."><span>On</span>
                 ${sel('retrywhen', c.retryWhen, [['limit', 'a session limit only'], ['any', 'any failure']])}</label>
+            <label class="ntf wide check" title="${C.esc(
+            'When the failure really WAS a usage/session limit, the engine has already said when the window '
+            + 'reopens — the Claude usage endpoint and Codex\'s own rate-limit block both publish the hour, and '
+            + 'the CLI prints it ("resets 5am"). With this on, the first retry goes at that moment plus the '
+            + 'buffer beside it instead of guessing a duration; retries 2 and 3 use their own minutes and 4+ '
+            + 'the strategy. If no reset time can be found the ordinary first wait is used and the run\'s record '
+            + 'says so — it is never a silent guess.')}">
+                <input type="checkbox" id="nt-retryresetaware"${c.retryResetAware ? ' checked' : ''}>
+                <span>Wait for the limit to reset (1st retry)</span></label>
+            ${c.retryResetAware ? `
+            <label class="ntf" title="Minutes added to the stated reset time before the first retry actually goes. The window reopening and the CLI agreeing that it has are not the same instant."><span>Safety buffer</span>
+                <input type="number" id="nt-retrysafety" min="0" max="240" step="1" value="${C.esc(String(c.retrySafetyMin))}"></label>` : ''}
             <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to."><span>Retry prompt</span>
                 <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>`;
+    }
+
+    /**
+     * ‼️ M-10 — THE SAME GRAMMAR THE HOST PARSES, SO THE FORM AND THE RUN AGREE.
+     *
+     * This is a validator only: it says whether the expression is one, never
+     * what it computes (the host owns that, in core/retry.ts, where the run
+     * actually happens). Keeping the two in step is the point of the shared
+     * vocabulary — a page that accepted `prev * rand()` and a host that refused
+     * it would put the refusal hours away from the person who typed it.
+     */
+    function retryFormulaError(src) {
+        const text = String(src || '').trim();
+        if (!text) { return 'the formula is empty — say what retry 4 and after should wait'; }
+        if (text.length > 120) { return 'the formula is longer than 120 characters — it is an expression, not a program'; }
+        const bad = text.replace(/\s|min|max|prev|base|[n0-9.+\-*/^(),]/g, '');
+        if (bad) {
+            return `"${bad[0]}" is not allowed here — use n, prev, base, numbers, + - * / ^, min(), max() and brackets`;
+        }
+        // Names that are not one of the four allowed words, e.g. `nn` or `foo`.
+        const word = /[a-z_][a-z_0-9]*/gi;
+        for (const m of text.match(word) || []) {
+            if (!['n', 'prev', 'base', 'min', 'max'].includes(m.toLowerCase())) {
+                return `"${m}" is not something a retry formula can use — the names are n, prev, base and the functions are min(), max()`;
+            }
+        }
+        let depth = 0;
+        for (const ch of text) {
+            if (ch === '(') { depth++; }
+            if (ch === ')') { depth--; }
+            if (depth < 0) { return 'a bracket is closed before it is opened'; }
+        }
+        if (depth) { return 'a bracket is never closed'; }
+        if (/[+\-*/^]\s*$/.test(text)) { return 'the formula stops in the middle — something is missing at the end'; }
+        return '';
     }
 
     /** One <select>, from a launch.ts choice list. `id:''` is always "leave it
@@ -1407,6 +1610,7 @@
                 <label class="ntf wide cbxf" title="The daily budget (Farm Settings → budgets) stops a run before it starts and keeps it queued until the ceiling clears — which for an unattended run can mean the whole day. Tick this and the budget is not consulted for this one. ‼️ It does NOT lift the 5-hour quota guard or the concurrency limits: those protect the plan window and this machine, they are not a number you set about money, and a run held by them is waiting rather than refused."><span>Budget</span>
                     <label class="cbx"><input type="checkbox" id="nt-ignorebudget"${c.ignoreBudget ? ' checked' : ''}>
                         run it even when the daily budget is spent</label></label>
+                ${conversationHtml(c)}
                 ${retryHtml(c)}` : ''}
             </div>
             ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
@@ -1456,6 +1660,16 @@
         v('retrymode', 'retryMode'); v('retrybackoff', 'retryBackoff');
         v('retrywhen', 'retryWhen'); v('retryprompt', 'retryPrompt');
         n('retrymax', 'retryMax'); n('retrydelay', 'retryDelayMin');
+        // ‼️ M-10 — READ AS TEXT, NOT AS NUMBERS. `n()` turns an empty box into
+        // 0, and 0 minutes is a policy ("wait no time at all") rather than the
+        // silence an empty box means. These stay strings until `retryFromDraft`
+        // decides whether the user said anything.
+        v('retrydelay2', 'retryDelay2Min'); v('retrydelay3', 'retryDelay3Min');
+        v('retryformula', 'retryFormula'); v('retrycap', 'retryCapMin');
+        b('retryresetaware', 'retryResetAware'); n('retrysafety', 'retrySafetyMin');
+        // ‼️ S-19 — which conversation, and the box that narrows the list.
+        v('conversation', 'conversation'); v('resumeid', 'resumeSessionId');
+        v('resumefind', 'resumeFind');
         // schedule
         v('every', 'every'); v('time', 'time'); v('onceAt', 'onceAt'); v('missed', 'missed');
         n('dow', 'dow');
@@ -1499,6 +1713,14 @@
         if (c.guardKind && c.guardKind !== 'queueHasWork' && !String(c.guardPath || '').trim()) {
             return 'That guard looks at a path — say which one, or take the guard off.';
         }
+        // ‼️ M-10 — A FORMULA IS REFUSED WHERE IT WAS TYPED. The host validates
+        // it again (it has to — the bridge can post one too), but a policy that
+        // only fails at 03:00, on the retry that was the whole point, is exactly
+        // the kind of silence this feature exists to remove.
+        if (c.retryMode === 'custom' && c.mode !== 'interactive' && c.retryBackoff === 'formula') {
+            const err = retryFormulaError(c.retryFormula || '');
+            if (err) { return 'The retry formula was refused — ' + err; }
+        }
         return '';
     }
 
@@ -1514,9 +1736,31 @@
         const out = {
             max: Number(c.retryMax) || 0,
             delayMin: Number(c.retryDelayMin) || 1,
-            backoff: c.retryBackoff === 'double' ? 'double' : 'same',
+            backoff: ['same', 'double', 'linear', 'formula'].indexOf(c.retryBackoff) >= 0
+                ? c.retryBackoff : 'same',
             when: c.retryWhen === 'any' ? 'any' : 'limit'
         };
+        // ‼️ M-10 — AN EMPTY BOX IS NOT A ZERO. Sending `delay2Min: 0` for a box
+        // nobody typed in would state a policy ("wait no time before the second
+        // one") the user never made; the field simply does not travel.
+        const opt = (v) => {
+            const s = String(v === undefined || v === null ? '' : v).trim();
+            if (!s) { return undefined; }
+            const num = Number(s);
+            return Number.isFinite(num) && num > 0 ? Math.round(num) : undefined;
+        };
+        const d2 = opt(c.retryDelay2Min); if (d2) { out.delay2Min = d2; }
+        const d3 = opt(c.retryDelay3Min); if (d3) { out.delay3Min = d3; }
+        const cap = opt(c.retryCapMin); if (cap) { out.capMin = cap; }
+        if (out.backoff === 'formula') {
+            const f = String(c.retryFormula || '').trim();
+            if (f) { out.formula = f; }
+        }
+        if (c.retryResetAware) {
+            out.resetAware = true;
+            const buf = Number(c.retrySafetyMin);
+            out.safetyBufferMin = Number.isFinite(buf) && buf >= 0 ? Math.round(buf) : 3;
+        }
         const p = String(c.retryPrompt || '').trim();
         if (p) { out.prompt = p; }
         return out;
@@ -2347,11 +2591,43 @@
             // ‼️ M-3 — the four numbers only exist while the picker says "set it
             // here", so this one repaints; everything under it just reads.
             byId('nt-retrymode', 'change', () => { readComposer(); render(); });
-            byId('nt-retrybackoff', 'change', () => readComposer());
+            // ‼️ M-10 — the Formula box and the safety buffer only exist for
+            // one value of the control above them, so these two repaint; the
+            // rest read. Same rule, one level down.
+            byId('nt-retrybackoff', 'change', () => { readComposer(); render(); });
+            byId('nt-retryresetaware', 'change', () => { readComposer(); render(); });
             byId('nt-retrywhen', 'change', () => readComposer());
             byId('nt-retrymax', 'input', () => readComposer());
             byId('nt-retrydelay', 'input', () => readComposer());
+            byId('nt-retrydelay2', 'input', () => readComposer());
+            byId('nt-retrydelay3', 'input', () => readComposer());
+            byId('nt-retrycap', 'input', () => readComposer());
+            byId('nt-retrysafety', 'input', () => readComposer());
+            /**
+             * ‼️ A BOX THAT REDRAWS THE PAGE AS YOU TYPE HAS TO GIVE THE CARET
+             * BACK. `render()` replaces the whole of `#app`, so the element under
+             * the cursor is a different element afterwards and the second
+             * keystroke lands nowhere. These two boxes need the repaint — one
+             * shows a refusal that has to clear as the expression is corrected,
+             * the other filters a list — so they restore focus themselves. The
+             * caret goes to the END because the value is redrawn from the draft,
+             * which is exactly where typing continues.
+             */
+            const typeAhead = (id) => byId(id, 'input', () => {
+                readComposer();
+                render();
+                const box = document.getElementById(id);
+                if (!box) { return; }
+                box.focus();
+                try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) { /* not a text box */ }
+            });
+            typeAhead('nt-retryformula');
             byId('nt-retryprompt', 'input', () => readComposer());
+            // ‼️ S-19 — the picker, the filter and the chosen row all change
+            // what is drawn below them, so all three repaint.
+            byId('nt-conversation', 'change', () => { readComposer(); render(); });
+            byId('nt-resumeid', 'change', () => { readComposer(); render(); });
+            typeAhead('nt-resumefind');
             // ‼️ M-7 — THE KIND CHANGES AND THE DRAFT SURVIVES. Everything typed
             // so far is read out of the boxes first, then the same object is
             // reopened under the new kind: `newDraft` merges the seed over the

@@ -197,6 +197,10 @@ export interface AgyRunInit {
     effort?: string;
     permissionMode?: string;
     cwd?: string;
+    /** ‼️ S-19 — the conversation this unattended run continues. This engine
+     *  calls it a CONVERSATION and takes `--conversation <id>` (measurement 4);
+     *  the JSON envelope reports `conversation_id` back. */
+    resume?: string;
 }
 
 /**
@@ -215,7 +219,8 @@ export function agyRunArgs(o: AgyRunInit): string[] {
         '--print-timeout', AGY_PRINT_TIMEOUT,
         ...(o.cwd ? ['--add-dir', o.cwd] : []),
         ...agyModelArgs(o.model, o.effort),
-        ...agyModeArgs(o.permissionMode)
+        ...agyModeArgs(o.permissionMode),
+        ...(String(o.resume ?? '').trim() ? ['--conversation', String(o.resume).trim()] : [])
     ];
 }
 

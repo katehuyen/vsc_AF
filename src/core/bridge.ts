@@ -21,7 +21,7 @@
  */
 
 import { ENGINES, engineTakesEffort } from './consoleEngine';
-import { describeRetry, normalizeRetry, RetryPolicy } from './retry';
+import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 
 export interface BridgeOpSpec {
     op: string;                       // e.g. "schedules.add"
@@ -223,6 +223,12 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     // it in the same words. Clamped here, once, by the same function the form
     // uses — the alternative is a bridge that can store a policy the UI would
     // have refused.
+    // ‼️ M-10 — A RETRY FORMULA IS REFUSED HERE, IN WORDS, RATHER THAN AT 03:00.
+    // `normalizeRetry` is deliberately total (it runs on stored policies and on
+    // settings files, where a throw would be a run that never happens), so the
+    // loud check is the caller's job — and a bridge call IS a caller who typed
+    // something. The same validator the form uses, so the two cannot disagree.
+    need(!retryRefusal(args.retry), retryRefusal(args.retry));
     const retry = normalizeRetry(args.retry);
     if (retry) { out.retry = retry; }
     return out;
