@@ -254,6 +254,9 @@ import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTi
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
+import {
+    InfraBridgeDeps, installService, registerInfraOps, removeService, serviceState
+} from './core/infraBridge';
 import { registerStudioOps } from './core/studioBridge';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
@@ -11073,6 +11076,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refresh: () => StudioPanel.refreshIfOpen()
     });
 
+    // ---------- B-8: the working infrastructure over the bridge ----------
+    // The live hooks, the headless service, the usage lap and the price of an
+    // unpriced model — four things the farm RUNS on that only a hand could
+    // touch, so "set this machine up" was the one instruction an agent could
+    // not carry out. schtasks is called with an argument vector and never a
+    // command line, and the two ops that change the machine plan first.
+    const infraDeps: InfraBridgeDeps = {
+        getAgents: () => agents,
+        userSettingsFile: () => userSettingsPath(claudeDir()),
+        livePort: () => cfg().get<number>('livePort', 8377),
+        storageDir: () => context.globalStorageUri.fsPath,
+        serviceSource: () => path.join(context.extensionPath, 'out', 'service', 'farmService.js'),
+        writeServiceConfig,
+        platform: () => process.platform,
+        runSchtasks: (argv) => new Promise((resolve) => {
+            cp.execFile('schtasks', argv, { windowsHide: true }, (err, stdout, stderr) => {
+                resolve({
+                    code: err ? ((err as cp.ExecFileException).code as number ?? 1) : 0,
+                    out: String(stdout ?? ''), err: String(stderr ?? err?.message ?? '')
+                });
+            });
+        }),
+        lapStart: () => context.globalState.get<number>(LAP_KEY, 0),
+        setLapStart: async (ts) => {
+            await context.globalState.update(LAP_KEY, ts);
+            statusBar.update();
+        },
+        pricingRules: () => cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING),
+        setPricingRules: async (rules) => {
+            // The SAME write the pricing editor makes — the config listener is
+            // what records the dated history entry, so a bridge change and a
+            // typed one leave the past priced identically.
+            await vscode.workspace.getConfiguration('agentFarm')
+                .update('pricing', rules, vscode.ConfigurationTarget.Global);
+        },
+        seenModels: () => [...new Set(index.allWithExternal().flatMap(s => s.models ?? []))].sort()
+    };
+    registerInfraOps(bridge, infraDeps);
+
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
     // streaming JSON channel. They deliberately outlive the panel tab (closing
@@ -19424,25 +19466,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'It goes idle automatically whenever VS Code is running.\n\nRequires node on PATH.',
                 { modal: true }, 'Install');
             if (choice !== 'Install') { return; }
+            // B-8 — the same core the bridge's service.install calls; the modal
+            // is the only part that belongs to the command.
             try {
-                const serviceDst = path.join(storage, 'farm-service.js');
-                fs.copyFileSync(serviceSrc, serviceDst);
-                writeServiceConfig();
-                const cmdFile = path.join(storage, 'farm-service.cmd');
-                fs.writeFileSync(cmdFile,
-                    `@echo off\r\nnode "${serviceDst}" --storage "${storage}" >> "${path.join(storage, 'farm-service.log')}" 2>&1\r\n`,
-                    'utf8');
-                cp.exec(`schtasks /create /tn "AgentFarmService" /sc onlogon /tr "\\"${cmdFile}\\"" /f`,
-                    { windowsHide: true }, (err) => {
-                        if (err) {
-                            void vscode.window.showErrorMessage(
-                                `Agent Farm: schtasks failed — ${String(err.message).slice(0, 200)}`);
-                            return;
-                        }
-                        cp.exec('schtasks /run /tn "AgentFarmService"', { windowsHide: true });
-                        void vscode.window.showInformationMessage(
-                            'Agent Farm: headless service installed and started ✓ — it sleeps while VS Code is open and takes over when you close it.');
-                    });
+                const done = await installService(infraDeps, { start: true });
+                if (done.error) {
+                    void vscode.window.showErrorMessage(
+                        `Agent Farm: schtasks failed — ${done.error.slice(0, 200)}`);
+                    return;
+                }
+                void vscode.window.showInformationMessage(done.installed
+                    ? 'Agent Farm: headless service installed and started ✓ — it sleeps while VS Code is open and takes over when you close it.'
+                    : 'Agent Farm: schtasks reported success but the task cannot be read back — check Task Scheduler.');
             } catch (e) {
                 void vscode.window.showErrorMessage(`Agent Farm: service install failed — ${String(e)}`);
             }
@@ -19453,13 +19488,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'Remove the Agent Farm headless service (scheduled task + running instance)?',
                 { modal: true }, 'Remove');
             if (choice !== 'Remove') { return; }
-            cp.exec('schtasks /end /tn "AgentFarmService"', { windowsHide: true }, () => {
-                cp.exec('schtasks /delete /tn "AgentFarmService" /f', { windowsHide: true }, (err) => {
-                    void (err
-                        ? vscode.window.showWarningMessage('Agent Farm: scheduled task not found (already removed?).')
-                        : vscode.window.showInformationMessage('Agent Farm: headless service removed.'));
-                });
-            });
+            const gone = await removeService(infraDeps);
+            void (gone.removed
+                ? vscode.window.showInformationMessage('Agent Farm: headless service removed.')
+                : vscode.window.showWarningMessage(gone.wasInstalled
+                    ? `Agent Farm: the scheduled task is still there — schtasks refused the delete${gone.detail ? ` (${gone.detail})` : ''}.`
+                    : 'Agent Farm: scheduled task not found (already removed?).'));
         }),
 
         // ---------- I1: instruction history + impact ----------
@@ -19738,28 +19772,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'you can also reference the script as %AGENT_FARM_HOOK% there.');
         }),
 
-        vscode.commands.registerCommand('agentfarm.farmServiceStatus', () => {
-            cp.exec('schtasks /query /tn "AgentFarmService" /fo LIST', { windowsHide: true }, (err, stdout) => {
-                if (err) {
-                    void vscode.window.showInformationMessage(
-                        'Agent Farm: headless service is NOT installed — run "Install Headless Service…" to keep schedules alive while VS Code is closed.');
-                    return;
-                }
-                const statusLine = String(stdout).split('\n').find(l => /Status|Durum/i.test(l))?.trim() ?? '';
-                let lastRun = '';
-                try {
-                    const lines = fs.readFileSync(serviceRunsFile, 'utf8').trim().split('\n');
-                    const last = JSON.parse(lines[lines.length - 1]) as { ts: number; kind: string };
-                    lastRun = ` · last log entry: ${last.kind} @ ${new Date(last.ts).toLocaleString()}`;
-                } catch { /* no log yet */ }
+        vscode.commands.registerCommand('agentfarm.farmServiceStatus', async () => {
+            // B-8 — the same read the bridge's service.status makes.
+            const { installed, detail } = await serviceState(infraDeps);
+            if (!installed) {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm service: installed (${statusLine || 'see Task Scheduler'})${lastRun}`,
-                    'Open Log').then(choice => {
-                        if (choice === 'Open Log' && fs.existsSync(serviceRunsFile)) {
-                            void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(serviceRunsFile));
-                        }
-                    });
-            });
+                    'Agent Farm: headless service is NOT installed — run "Install Headless Service…" to keep schedules alive while VS Code is closed.');
+                return;
+            }
+            const statusLine = detail.split('\n').find(l => /Status|Durum/i.test(l))?.trim() ?? '';
+            let lastRun = '';
+            try {
+                const lines = fs.readFileSync(serviceRunsFile, 'utf8').trim().split('\n');
+                const last = JSON.parse(lines[lines.length - 1]) as { ts: number; kind: string };
+                lastRun = ` · last log entry: ${last.kind} @ ${new Date(last.ts).toLocaleString()}`;
+            } catch { /* no log yet */ }
+            void vscode.window.showInformationMessage(
+                `Agent Farm service: installed (${statusLine || 'see Task Scheduler'})${lastRun}`,
+                'Open Log').then(choice => {
+                    if (choice === 'Open Log' && fs.existsSync(serviceRunsFile)) {
+                        void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(serviceRunsFile));
+                    }
+                });
         }),
 
         // ---------- F2: dispatcher test ----------
