@@ -1,0 +1,196 @@
+// Agent Farm — S-31: what Agent Farm STARTED, written down before it looks for it.
+//
+// ‼️ THE BUG THIS EXISTS FOR, AND WHY IT WAS INVISIBLE.
+//
+// `SessionIndex.assignAgent` decides whose session a transcript is by asking
+// where it ran: a cwd under the agent's own folder gets the agent's id, and
+// anything else gets none. With `includeUnmatchedProjects` off — the default —
+// a transcript with no agent is DROPPED from the index entirely. That is a fine
+// rule for a conversation somebody had in a random folder and a catastrophic
+// one for a run the farm started itself: an automation task whose `workDir` is
+// a code repo is, by that test, a stranger. It vanished from `sessions.find`,
+// from the Sessions page's Auto filter, from the Console's Resume list and from
+// every project and agent table, while its 3.2 MB transcript sat on disk.
+//
+// And it could not be repaired downstream, because the repair depended on the
+// thing that was missing: the launcher map is fed from a task's matched
+// transcript, the match runs over `forAgentWithExternal(agentId)`, and a dropped
+// session is in no agent's list. Binding needed a match; matching needed a
+// binding.
+//
+// A LaunchBinding breaks that circle by being written at the SPAWN, out of what
+// the launcher already knows — which agent, which project, which mechanism,
+// which engine, which folder, from when — and by being consulted BEFORE the
+// scope filter rather than after it. The farm never has to deduce that a run is
+// its own; it said so at the time.
+//
+// Pure node (no vscode import) — testable.
+
+/** How a binding found its session, in descending order of certainty. */
+export type BindingProof =
+    /** the id was known before the process started (a resumed conversation, or
+     *  an engine that lets its id be chosen) */
+    | 'declared'
+    /** the engine published its id while it ran and the adapter caught it */
+    | 'reported'
+    /** nothing published one, so engine + folder + lifespan named exactly one */
+    | 'matched';
+
+/**
+ * One run Agent Farm started, as it was known at the moment of the spawn.
+ *
+ * ‼️ `cwd` is the folder the process was actually spawned in — `task.workDir`
+ * where there is one and the agent's own folder otherwise. Writing the agent's
+ * folder for a run that happened somewhere else is the whole bug: the binding
+ * is evidence, and evidence has to be what was true.
+ */
+export interface LaunchBinding {
+    /** the run this is about — a task id; every mechanism produces a task */
+    taskId: string;
+    agentId: string;
+    agentName: string;
+    projectId?: string;
+    /** the mechanism a person would name: what STARTED it, not what it runs on */
+    kind: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
+    /** the schedule/trigger/workflow/mission's own id, where there is one */
+    launcherId?: string;
+    /** what a person calls it — the schedule's name, the task's title */
+    label: string;
+    /** empty/absent = claude, the same absence SessionInfo.source uses */
+    engine?: string;
+    cwd: string;
+    startedAt: number;
+    /** absent while the run is still going */
+    endedAt?: number;
+    /** known without deduction — see BindingProof */
+    sessionId?: string;
+    transcriptFile?: string;
+}
+
+/** The little a session has to be able to say to be tested against a binding. */
+export interface BindableSession {
+    sessionId: string;
+    file: string;
+    cwd?: string;
+    /** the engine, in SessionInfo's vocabulary; absent = claude */
+    source?: string;
+    firstTs: number;
+    lastTs: number;
+    isSidechain?: boolean;
+}
+
+/** The engine a run/session belongs to; absence means Claude on both sides. */
+const engineKey = (v: string | undefined): string => (v || 'claude').toLowerCase();
+
+/** Forward slashes, no trailing one, case-folded — Windows compares paths that
+ *  way and every path in this file arrives from a different writer. */
+export function normCwd(p: string | undefined): string {
+    const s = String(p ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+    return s.toLowerCase();
+}
+
+/** Is a session's folder inside (or equal to) the folder the run was spawned in? */
+function underCwd(sessionCwd: string | undefined, bindingCwd: string): boolean {
+    const s = normCwd(sessionCwd), b = normCwd(bindingCwd);
+    if (!s || !b) { return false; }
+    return s === b || s.startsWith(b + '/');
+}
+
+export interface BindingHit {
+    binding: LaunchBinding;
+    proof: BindingProof;
+}
+
+/**
+ * ‼️ AMBIGUITY IS AN ANSWER, NOT A COIN TOSS. Two runs of the same engine in the
+ * same folder overlapping in time genuinely cannot be told apart from the
+ * outside, and picking one would put a real transcript under the wrong task's
+ * name — which is worse than the gap, because a gap is visible and a wrong
+ * attribution is not. The candidates come back so a caller can record WHY it
+ * did not decide.
+ */
+export interface BindingAmbiguity {
+    candidates: LaunchBinding[];
+    why: string;
+}
+
+/**
+ * Which run produced this transcript.
+ *
+ * The order is the order of certainty: an id somebody wrote down beats an id
+ * deduced from the clock, always. `tolMs` absorbs the skew between the farm's
+ * own bookkeeping and the timestamps inside a transcript.
+ *
+ * `now` is passed in rather than read, because a binding with no `endedAt` is a
+ * run still going and its window has to end somewhere.
+ */
+export function bindSession(
+    session: BindableSession,
+    bindings: readonly LaunchBinding[],
+    now: number = Date.now(),
+    tolMs = 120_000
+): BindingHit | BindingAmbiguity | undefined {
+    if (!session || session.isSidechain) { return undefined; }
+    const id = String(session.sessionId ?? '').trim();
+
+    // 1. DECLARED — the id or the file was known before anything was deduced.
+    const declared = bindings.find(b =>
+        (!!b.sessionId && !!id && b.sessionId === id)
+        || (!!b.transcriptFile && !!session.file && normCwd(b.transcriptFile) === normCwd(session.file)));
+    if (declared) { return { binding: declared, proof: declared.sessionId === id ? 'declared' : 'reported' }; }
+
+    // 2. MATCHED — engine, folder and lifespan, and only when exactly one fits.
+    if (!session.firstTs) { return undefined; }
+    const want = engineKey(session.source);
+    const candidates = bindings.filter(b => {
+        if (engineKey(b.engine) !== want) { return false; }
+        // A binding that already owns a different transcript is spoken for.
+        if (b.sessionId && b.sessionId !== id) { return false; }
+        if (!underCwd(session.cwd, b.cwd)) { return false; }
+        const ended = b.endedAt ?? now;
+        return session.firstTs >= b.startedAt - tolMs
+            && session.firstTs <= ended + 15_000
+            && session.lastTs <= ended + tolMs;
+    });
+    if (candidates.length === 1) { return { binding: candidates[0], proof: 'matched' }; }
+    if (candidates.length > 1) {
+        return {
+            candidates,
+            why: `${candidates.length} runs of ${want} in ${session.cwd || 'that folder'} overlap this `
+                + 'transcript, so which one produced it cannot be told from the outside — '
+                + 'the run that publishes its own session id is the one that will claim it'
+        };
+    }
+    return undefined;
+}
+
+/** Narrowing helper — a hit carries a binding, an ambiguity carries candidates. */
+export function isBindingHit(r: BindingHit | BindingAmbiguity | undefined): r is BindingHit {
+    return !!r && 'binding' in r;
+}
+
+/**
+ * ‼️ WHAT A BINDING IS ALLOWED TO CHANGE ABOUT A SESSION, AND WHAT IT IS NOT.
+ *
+ * It supplies an OWNER where the path test found none — that is the whole
+ * repair. It never overrules a path match: an agent whose folder genuinely
+ * contains the transcript is a stronger statement than a run record, and a
+ * binding that could overwrite it would turn a bookkeeping slip into a session
+ * filed under the wrong agent. The launcher, though, is applied either way,
+ * because "which of our mechanisms started this" is a fact only the binding
+ * has.
+ */
+export function applyBinding<T extends {
+    agentId?: string; agentName?: string; projectId?: string;
+    launchedBy?: { kind: string; label: string };
+}>(info: T, hit: BindingHit): T {
+    if (!info.agentId) {
+        info.agentId = hit.binding.agentId;
+        info.agentName = hit.binding.agentName;
+    }
+    if (!info.projectId && hit.binding.projectId) { info.projectId = hit.binding.projectId; }
+    if (!info.launchedBy) {
+        info.launchedBy = { kind: hit.binding.kind, label: hit.binding.label };
+    }
+    return info;
+}

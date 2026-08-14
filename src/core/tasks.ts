@@ -1131,6 +1131,24 @@ export class TaskManager implements vscode.Disposable {
         return out;
     }
 
+    /**
+     * ‼️ S-31 — THE TRANSCRIPT, WITHOUT WAITING FOR A PRICE.
+     *
+     * `setTaskCost` is the cost path and it only ever runs inside a fifteen
+     * minute window after a run ends — so a run whose session was found later
+     * (a launch binding published on the next start-up, a transcript indexed
+     * after the fact) kept its figure blank AND its link, and the row went on
+     * saying there was nothing to open. This writes the link alone, is
+     * idempotent, and never touches a cost.
+     */
+    setTaskSession(taskId: string, sessionFile: string): boolean {
+        const t = this.tasks.find(x => x.id === taskId);
+        if (!t || !sessionFile || t.costSessionFile) { return false; }
+        t.costSessionFile = sessionFile;
+        this.save();
+        return true;
+    }
+
     /** Z4: attach the matched transcript's cost + tokens to a finished task (idempotent). */
     setTaskCost(taskId: string, costUSD: number, sessionFile: string, tokens?: number): void {
         const t = this.tasks.find(x => x.id === taskId);

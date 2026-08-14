@@ -105,6 +105,7 @@ import {
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
+import { LaunchBinding } from './core/launchBinding';
 import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
@@ -1795,6 +1796,102 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         tryAttachCosts();
     }));
     context.subscriptions.push(index.onDidUpdate(() => { if (costPending.size) { tryAttachCosts(); } }));
+
+    /**
+     * ‼️ S-31 — WHAT WE STARTED, SAID BEFORE WE GO LOOKING FOR IT.
+     *
+     * The session index drops a transcript whose folder is not under an agent's
+     * own directory, which is right for a stranger's conversation and wrong for
+     * a run this extension spawned in a code repo — and it was the second case
+     * that hid a 45-minute scheduled run, its 3.2 MB transcript and its six
+     * limit-retries from `sessions.find`, from Sessions → Auto and from the
+     * Console's Resume list at once.
+     *
+     * These are built out of the task store rather than kept in a second file:
+     * the rows are already persisted, already carry the agent, the project, the
+     * mechanism, the engine, the folder and the lifespan, and are already
+     * rewritten on every change. So a restart rebuilds every binding from the
+     * same evidence, and there is no second store to fall out of step.
+     *
+     * ‼️ It is published BEFORE the first `scanAll`, because the filter it
+     * repairs runs inside that scan.
+     */
+    const publishLaunchBindings = (): void => {
+        const out: LaunchBinding[] = [];
+        for (const t of taskManager.tasks) {
+            // Interactive runs open a terminal the user is sitting at; they are
+            // not the automation this repairs and they have no headless
+            // transcript of their own to claim.
+            if (t.mode !== 'headless' || !t.startedAt || !t.agentId) { continue; }
+            const agent = agents.find(a => a.id === t.agentId);
+            const cwd = t.workDir || agent?.dir;
+            if (!cwd) { continue; }
+            // ‼️ A RETRY IS THE SAME LAUNCHER'S WORK. `retryOf` carries the
+            // chain and `fromSchedule` does not travel down it, so a retry read
+            // on its own looks like something a person typed — which is exactly
+            // how six limit-retries of one scheduled run came out as six
+            // unrelated rows with no schedule name on any of them. The origin is
+            // walked, with a hop limit, because a store edited by hand must not
+            // be able to make this loop.
+            let origin = t;
+            for (let hop = 0; hop < 20 && origin.retryOf; hop++) {
+                const up = taskManager.tasks.find(x => x.id === origin.retryOf);
+                if (!up || up.id === origin.id) { break; }
+                origin = up;
+            }
+            const sched = origin.fromSchedule
+                ? taskManager.schedules.find(s => s.id === origin.fromSchedule) : undefined;
+            const trig = origin.fromTrigger
+                ? taskManager.triggers.find(x => x.id === origin.fromTrigger) : undefined;
+            const flow = origin.workflowId
+                ? taskManager.workflows.find(w => w.id === origin.workflowId) : undefined;
+            const kind: LaunchBinding['kind'] = origin.missionId ? 'mission'
+                : (sched || origin.fromSchedule) ? 'schedule'
+                    : (trig || origin.fromTrigger) ? 'trigger'
+                        : flow ? 'workflow' : 'task';
+            out.push({
+                taskId: t.id,
+                agentId: t.agentId,
+                agentName: t.agentName || t.agentId,
+                projectId: t.projectId ?? origin.projectId,
+                kind,
+                launcherId: origin.missionId || origin.fromSchedule
+                    || origin.fromTrigger || origin.workflowId,
+                label: sched?.title || trig?.title || flow?.title || t.title,
+                engine: t.engine,
+                cwd,
+                startedAt: t.startedAt,
+                endedAt: t.endedAt,
+                // ‼️ THE ONE ID THAT NEEDS NO DEDUCTION. A resumed run was told
+                // which conversation to continue, so its binding is DECLARED and
+                // beats every clock-based guess (S-19 → S-31).
+                sessionId: t.resumeSessionId,
+                // …and once the cost matcher has named the transcript, that is a
+                // recorded fact too — it survives the restart in the same row.
+                transcriptFile: t.costSessionFile
+            });
+        }
+        index.setLaunchBindings(out);
+    };
+    publishLaunchBindings();
+    context.subscriptions.push(taskManager.onDidChange(() => publishLaunchBindings()));
+    /**
+     * …and the answer travels back to the run record, which is where a person
+     * clicks through to a transcript from. Without this the repair stops at the
+     * Sessions page: the row would still say there is nothing to open.
+     *
+     * It cannot loop — `setTaskSession` writes only into an empty field, so the
+     * second pass finds nothing to do and `setLaunchBindings` returns early on
+     * an unchanged signature.
+     */
+    const reconcileBindings = (): void => {
+        let wrote = false;
+        for (const r of index.resolvedBindings()) {
+            if (taskManager.setTaskSession(r.taskId, r.file)) { wrote = true; }
+        }
+        if (wrote) { publishLaunchBindings(); }
+    };
+    context.subscriptions.push(index.onDidUpdate(() => reconcileBindings()));
 
     // F1: workflow runs cut by the last window close — offer to pick them up.
     // Not automatic: a resumed run can spend money/agent time, so the user decides.
@@ -4440,6 +4537,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         turns: s.userTurns, cost: Math.round(s.cost * 100) / 100,
                         tokens: totalTokens(s.usage), wTokens: Math.round(s.wTokens)
                     }));
+            }
+        },
+        {
+            op: 'sessions.bindings',
+            describe: '‼️ S-31 — WHICH RUN PRODUCED WHICH TRANSCRIPT, and where that answer is still missing. '
+                + 'Agent Farm writes a launch binding at the spawn of every headless task/schedule/trigger/'
+                + 'workflow/mission run — agent, project, mechanism, engine, working folder, lifespan — and the '
+                + 'session index applies it BEFORE the `includeUnmatchedProjects` scope filter, so a run whose '
+                + 'working folder is a code repo rather than its agent\'s own directory is no longer dropped. '
+                + 'This is the diagnostic for that: ask it when a run you know happened is not on Sessions → '
+                + 'Auto, not in sessions.find and not in the Console\'s Resume list. Each row is the binding plus '
+                + '`resolved` (the session id it claimed, null when none yet) and `proof`: "declared" (the id was '
+                + 'known before the process started — a resumed conversation), "reported" (the transcript was '
+                + 'named by the cost matcher) or "matched" (engine + folder + lifespan named exactly one). '
+                + '`doubts` lists transcripts more than one of our own runs could have written: those are '
+                + 'deliberately NOT attributed, because a guess files a real transcript under the wrong run for '
+                + 'ever. `droppedFiles` is how many transcripts the scope filter is currently holding out of the '
+                + 'index with no binding to rescue them. args: taskId? (one run), unresolved? (true = only the '
+                + 'bindings that have not claimed a transcript), limit? (default 50)',
+            handler: (args) => {
+                const want = optStr(args, 'taskId');
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 50;
+                const rep = index.launchBindingReport();
+                const rows = rep.bindings
+                    .filter(b => !want || b.taskId === want)
+                    .filter(b => args.unresolved !== true || !b.resolved)
+                    .slice(-limit)
+                    .reverse();
+                return {
+                    bindings: rows.map(b => ({
+                        taskId: b.taskId, kind: b.kind, label: b.label,
+                        agent: b.agentName, project: b.projectId ?? null,
+                        engine: b.engine || 'claude', cwd: b.cwd,
+                        startedAt: b.startedAt, endedAt: b.endedAt ?? null,
+                        resolved: b.resolved ?? null, proof: b.proof ?? null
+                    })),
+                    doubts: rep.doubts,
+                    droppedFiles: rep.droppedFiles,
+                    total: rep.bindings.length
+                };
             }
         },
         {

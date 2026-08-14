@@ -2,6 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import {
+    applyBinding, BindableSession, bindSession, isBindingHit, LaunchBinding, normCwd
+} from './launchBinding';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
@@ -111,6 +114,10 @@ export interface SessionInfo {
     source?: string;
     agentId?: string;
     agentName?: string;
+    /** ‼️ S-31 — the project the RUN that produced this was created under, from
+     *  its launch binding. Never deduced from the folder: a repo can belong to
+     *  several projects and a path is not a decision anybody made. */
+    projectId?: string;
     cwd?: string;
     title: string;
     /** Title derived from the transcript, kept so clearing a user rename can restore it. */
@@ -701,6 +708,15 @@ export class SessionIndex implements vscode.Disposable {
     private consoleIds = new Set<string>();
     /** Session id → the farm mechanism that started it — see setLaunchers. */
     private launchers = new Map<string, { kind: string; label: string }>();
+    /** ‼️ S-31 — the runs Agent Farm started, written at the spawn. */
+    private bindings: LaunchBinding[] = [];
+    /** Files the scope filter dropped, as little of them as a binding needs to
+     *  claim one later. Five fields, not the parsed session — this is a memo,
+     *  not a second index. */
+    private dropped = new Map<string, BindableSession & { depth: number; machine?: string }>();
+    /** ‼️ S-31 — transcripts that more than one of our own runs could have
+     *  produced. Keyed by file; a diagnostic, never a decision. */
+    private bindingDoubts = new Map<string, string>();
     /** Session display names from the CLI's registry (sessionId → -n name). */
     private cliNames = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
@@ -774,11 +790,22 @@ export class SessionIndex implements vscode.Disposable {
         this.applyTitle(info);
         this.applyMark(info);
         this.assignAgent(info);
+        // ‼️ S-31 — BEFORE THE SCOPE FILTER, NOT AFTER IT. The filter's question
+        // is "is this one of ours", and a run the farm started itself has
+        // already answered it in writing. Asked afterwards, the answer arrives
+        // for a session that has just been thrown away.
+        this.applyLaunchBinding(info);
         if (!info.agentId && !this.includeUnmatched()) {
-            // Keep it out of the index but remember nothing: farm-focused scope.
+            // Keep it out of the index — but REMEMBER the little it takes to
+            // test it again. A binding published after this scan (a task that
+            // starts in a minute, the one-time backfill, a window that opened
+            // before the store loaded) has to be able to rescue the file
+            // without a full re-walk of every projects folder on the machine.
+            this.rememberDropped(file, info, depth, machine);
             this.sessions.delete(file);
             return;
         }
+        this.dropped.delete(file);
         for (const ev of info.events) {
             ev.agentId = info.agentId;
             ev.agentName = info.agentName;
@@ -852,6 +879,124 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     /**
+     * ‼️ S-31 — DOES ONE OF OUR OWN RUNS CLAIM THIS TRANSCRIPT?
+     *
+     * The path test (`assignAgent`) has already run and may have found nothing,
+     * which is exactly the case this repairs: an automation task whose working
+     * folder is a code repo rather than its agent's own directory. A binding
+     * supplies the owner the path could not; it never overrules one the path
+     * DID find (see `applyBinding`).
+     */
+    private applyLaunchBinding(info: SessionInfo): void {
+        if (!this.bindings.length) { return; }
+        const r = bindSession(info, this.bindings, Date.now());
+        if (!r) { this.bindingDoubts.delete(info.file); return; }
+        if (!isBindingHit(r)) {
+            // Two of our own runs could have written this. Recording which, and
+            // saying so out loud, is the whole of the answer — a silent pick
+            // would file a real transcript under the wrong task for ever.
+            this.bindingDoubts.set(info.file, r.why);
+            return;
+        }
+        this.bindingDoubts.delete(info.file);
+        applyBinding(info, r);
+    }
+
+    /** The memo a dropped file leaves behind, so a later binding can claim it. */
+    private rememberDropped(
+        file: string, info: SessionInfo, depth: number, machine?: string
+    ): void {
+        this.dropped.set(file, {
+            sessionId: info.sessionId, file, cwd: info.cwd, source: info.source,
+            firstTs: info.firstTs, lastTs: info.lastTs, isSidechain: info.isSidechain,
+            depth, machine
+        });
+    }
+
+    /**
+     * ‼️ S-31 — THE RUNS AGENT FARM STARTED, AND THE ONE THING THEY REPAIR.
+     *
+     * Handed in from the task store, which is where they are already persisted:
+     * a restart rebuilds them from the same rows, so a binding outlives the
+     * window that made it without a second store to keep in step.
+     *
+     * Publishing them re-tests the files the scope filter dropped, because the
+     * usual order of events is precisely the wrong way round — the transcript
+     * is written while the run is going and indexed at once, and a binding that
+     * arrives a beat later would find nothing left to attach to.
+     */
+    setLaunchBindings(list: readonly LaunchBinding[]): void {
+        const next = (list ?? []).filter(b => b && b.taskId && b.agentId && b.cwd && b.startedAt > 0);
+        const sig = (b: LaunchBinding): string =>
+            `${b.taskId}:${b.agentId}:${normCwd(b.cwd)}:${b.engine || 'claude'}:`
+            + `${b.startedAt}:${b.endedAt ?? 0}:${b.sessionId ?? ''}:${b.kind}:${b.label}`;
+        const before = this.bindings.map(sig).join('|');
+        const after = next.map(sig).join('|');
+        if (before === after) { return; }
+        this.bindings = [...next];
+
+        // The files that were thrown away: any that one of these claims comes
+        // back, parsed properly this time.
+        let rescued = 0;
+        for (const memo of [...this.dropped.values()]) {
+            const r = bindSession(memo, this.bindings, Date.now());
+            if (!isBindingHit(r)) { continue; }
+            this.dropped.delete(memo.file);
+            if (fs.existsSync(memo.file)) {
+                this.indexFile(memo.file, memo.depth, memo.machine);
+                rescued++;
+            }
+        }
+        // …and the sessions already indexed learn who started them, which is
+        // what puts the schedule's name on the Origin column.
+        for (const info of this.sessions.values()) { this.applyLaunchBinding(info); }
+        for (const info of this.externalList) { this.applyLaunchBinding(info); }
+        void rescued;
+        this.onDidUpdateEmitter.fire();
+    }
+
+    /**
+     * ‼️ S-31 — WHICH TRANSCRIPT EACH RUN ENDED UP WITH.
+     *
+     * The run record is where a person clicks through to a transcript from, so
+     * the answer has to travel back: a session found only by the index is a
+     * session the Tasks row still cannot link to. Cheap by construction — one
+     * pass over the sessions rather than one pass per binding.
+     */
+    resolvedBindings(): { taskId: string; sessionId: string; file: string; proof: string }[] {
+        if (!this.bindings.length) { return []; }
+        const now = Date.now();
+        const out: { taskId: string; sessionId: string; file: string; proof: string }[] = [];
+        const taken = new Set<string>();
+        for (const s of [...this.sessions.values(), ...this.externalList]) {
+            const r = bindSession(s, this.bindings, now);
+            if (!isBindingHit(r) || taken.has(r.binding.taskId)) { continue; }
+            taken.add(r.binding.taskId);
+            out.push({ taskId: r.binding.taskId, sessionId: s.sessionId, file: s.file, proof: r.proof });
+        }
+        return out;
+    }
+
+    /** ‼️ S-31 — the bindings and what each one resolved to, for the bridge and
+     *  for a person asking why a run is not on the board. */
+    launchBindingReport(): {
+        bindings: (LaunchBinding & { resolved?: string; proof?: string })[];
+        doubts: { file: string; why: string }[];
+        droppedFiles: number;
+    } {
+        const byTask = new Map(this.resolvedBindings().map(r => [r.taskId, r]));
+        return {
+            bindings: this.bindings.map(b => ({
+                ...b,
+                resolved: byTask.get(b.taskId)?.sessionId,
+                proof: byTask.get(b.taskId)?.proof
+            })),
+            doubts: [...this.bindingDoubts].map(([file, why]) => ({ file, why })),
+            droppedFiles: this.dropped.size
+        };
+    }
+
+    /**
      * Which of Agent Farm's own mechanisms started which session.
      *
      * Fed from the run records that already name their transcript (a task's
@@ -912,6 +1057,11 @@ export class SessionIndex implements vscode.Disposable {
             info.agentId = undefined;
             info.agentName = undefined;
             this.assignAgent(info);
+            // ‼️ S-31 — re-discovering the agents must not un-own a run the farm
+            // started: the path test is redone from scratch here, so the binding
+            // has to be redone with it or a rescued session loses its owner the
+            // first time an agent folder changes.
+            this.applyLaunchBinding(info);
             for (const ev of info.events) {
                 ev.agentId = info.agentId;
                 ev.agentName = info.agentName;
@@ -984,6 +1134,12 @@ export class SessionIndex implements vscode.Disposable {
          * even when nothing on disk moved.
          */
         const include = this.includeUnmatched();
+        // ‼️ S-31 — AND THE SAME REPAIR ON THIS SIDE OF THE SPLIT. A Codex or
+        // Gemini task started by a schedule is dropped by exactly the same rule
+        // and for exactly the same wrong reason; a fix that only reached the
+        // claude parse would make the scope switch mean two different things
+        // again, which is the bug this filter was corrected for once already.
+        for (const s of sessions) { this.applyLaunchBinding(s); }
         const kept = sessions.filter(s => s.agentId || include);
         for (const s of kept) {
             if (!s.agentId && !s.agentName) {

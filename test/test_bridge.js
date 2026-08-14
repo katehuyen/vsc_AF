@@ -2977,6 +2977,29 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // a window that no longer reaches the handler silently stops testing it.
         const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 20000);
 
+        // ---------- S-31: which run produced which transcript ----------
+        // The op exists so a person (or an agent) who knows a run happened and
+        // cannot find its session has somewhere to ask. A diagnostic that is
+        // only reachable by reading the code is not one.
+        const bind = at('sessions.bindings');
+        ok('‼️ sessions.bindings is on the bridge, and its contract names the three proofs',
+            /declared/.test(bind) && /reported/.test(bind) && /matched/.test(bind));
+        ok('…and says what an unattributed transcript means rather than hiding it',
+            /doubts/.test(bind) && /guess files a real transcript under the wrong run/.test(bind));
+        ok('…and it READS the index rather than re-deriving the matching',
+            /index\.launchBindingReport\(\)/.test(bind));
+        ok('…filterable to one run and to the ones that have claimed nothing',
+            /b\.taskId === want/.test(bind) && /args\.unresolved !== true/.test(bind));
+        // ‼️ THE CHAIN, WHICH IS WHAT SIX ORPHANED RETRIES WERE ABOUT. A retry
+        // does not carry `fromSchedule`, so read on its own it looks like
+        // something a person typed — and the six limit-retries of one scheduled
+        // run each came out as an unrelated row with no schedule name on it.
+        ok('‼️ a retry inherits the launcher of the run it is a retry OF',
+            /for \(let hop = 0; hop < 20 && origin\.retryOf; hop\+\+\)/.test(src)
+            && /taskManager\.tasks\.find\(x => x\.id === origin\.retryOf\)/.test(src));
+        ok('…and the walk cannot loop on a hand-edited store',
+            /if \(!up \|\| up\.id === origin\.id\) \{ break; \}/.test(src));
+
         const sched = at('schedules.add');
         ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
         ok('…and its contract names them', /effort\?/.test(sched) && /permissionMode\?/.test(sched)
