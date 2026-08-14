@@ -24,7 +24,19 @@ import path from 'path';
 
 const CONTROL = process.argv.includes('--control');
 const MODEL = 'haiku';
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bypass-'));
+/**
+ * ‼️ THE WORKING FOLDER IS PART OF THE MEASUREMENT, not a detail.
+ *
+ * The reported prompts came from a session running in an agent's own folder,
+ * which has its own `.claude/settings.local.json`. A fresh temp directory has
+ * no settings at all, and a lane run there answers a different question: run it
+ * with `--cwd <the agent folder>` to ask the reported one.
+ */
+const cwdArg = process.argv.indexOf('--cwd');
+const dir = cwdArg > 0 && process.argv[cwdArg + 1]
+    ? process.argv[cwdArg + 1]
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'af-bypass-'));
+const OWN_DIR = dir.includes('af-bypass-');
 const outside = path.join(process.env.APPDATA || os.tmpdir(), 'Code', 'User',
     'globalStorage', 'muvusoft.agent-farm', 'bridge-smoke');
 fs.mkdirSync(outside, { recursive: true });
@@ -39,10 +51,13 @@ const RECIPE = `Run exactly this, in one Bash call, and then say only DONE:\n`
 const TRANSPORT = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
     '--verbose', '--permission-prompt-tool', 'stdio'];
 
-function lane(name, permFlags, autoAnswer) {
+function lane(name, permFlags, autoAnswer, env) {
     return new Promise(resolve => {
         const args = [...TRANSPORT, ...permFlags, '--model', MODEL];
-        const child = cp.spawn('claude', args, { cwd: dir, shell: true, windowsHide: true });
+        const child = cp.spawn('claude', args, {
+            cwd: dir, shell: true, windowsHide: true,
+            env: { ...process.env, ...(env || {}) }
+        });
         const seen = { asks: 0, tools: 0, result: '', error: '' };
         let buf = '';
         const timer = setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 180000);
@@ -110,6 +125,33 @@ report.push(a);
  * old launch bypasses too and the control has nothing to show. Skipped, with
  * the reason said out loud, rather than reported as a pass or a failure.
  */
+/**
+ * ‼️ LANES C AND D — THE CONSOLE'S OWN ENTRYPOINT, WHICH IS THE WHOLE ANSWER.
+ *
+ * Decoded out of the installed CLI, the settings branch is guarded by
+ *
+ *   function T$e(){ return entrypoint() === "claude-vscode"
+ *                   && !childSession && !claudecode }
+ *
+ * — so `permissions.defaultMode: "bypassPermissions"` in a settings file is
+ * only ever consulted for a session whose entrypoint is `claude-vscode`. An
+ * Agent Farm Console session is `sdk-cli` (that is what its own transcripts
+ * record), so that branch NEVER RAN for it: the user's settings said bypass,
+ * the card said bypass, and the process was resolved without the file being
+ * looked at. That is K-22, exactly, and it is why `--allow-…` could never have
+ * been enough here however permissive the settings were.
+ *
+ * These two lanes run the same argv with the Console's own entrypoint marker:
+ * C is the launch S-18 left behind, D is the one this release builds.
+ */
+const ENTRY = { CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' };
+const c = await lane('C · --allow- only, Console entrypoint (the OLD launch)',
+    ['--allow-dangerously-skip-permissions'], true, ENTRY);
+report.push(c);
+const d = await lane('D · --dangerously-skip-permissions, Console entrypoint (THIS release)',
+    ['--dangerously-skip-permissions'], false, ENTRY);
+report.push(d);
+
 let b;
 if (CONTROL) {
     let settingsMode = '';
@@ -131,7 +173,10 @@ if (CONTROL) {
 // Cleanup is a courtesy, never the result: on Windows the shell that ran the
 // turn can still hold the folder for a moment, and a smoke that reports EPERM
 // instead of its own finding is worse than a stray temp directory.
-try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* it will age out */ }
+// …and a folder the smoke did not create is never one it removes.
+if (OWN_DIR) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* it will age out */ }
+}
 try { fs.rmSync(path.join(outside, 'smoke.json')); } catch { /* the recipe removes it */ }
 
 console.log('\nK-22 process smoke — installed CLI, model ' + MODEL);
@@ -148,6 +193,12 @@ const ok = (n, c) => { console.log(`  ${c ? 'ok  ' : 'FAIL'} ${n}`); if (!c) { f
 console.log('');
 ok('‼️ enforced bypass asked for permission ZERO times', a.asks === 0);
 ok('…and the turn actually ran the command (a lane that did nothing proves nothing)', a.tools > 0);
+ok('‼️ K-22: with the CONSOLE\'S OWN entrypoint, enforced bypass still asks zero times',
+    d.asks === 0);
+ok('…and that lane really ran the command too', d.tools > 0);
+console.log(`\n  note · the old launch (lane C, --allow- only, Console entrypoint) asked ${c.asks} time(s).`
+    + '\n         The settings branch is guarded by entrypoint === "claude-vscode", so a Console'
+    + '\n         session never reached it — which is why only the enforcing flag settles this.');
 if (b) {
     ok('the control lane CAN see the bug — the old flag on its own still asks', b.asks > 0);
 }
