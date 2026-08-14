@@ -1527,12 +1527,12 @@ The same method works for every service: `ELEVENLABS_KEY`, `N8N_TOKEN`… — wh
 
 ## Engines {#engines}
 
-**Looking at this as "API keys" was the wrong way to look at it.** Two of the
-three engines are not paid for with a key but with a **subscription**: Claude
-Code on a Pro/Max plan, Codex on a ChatGPT plan. Both keep their own OAuth
-grant in their own file and never hand it to Agent Farm. The only one that
-really does want a key now is Gemini — its "sign in with Google" route was
-retired in June 2026. So this is not a key screen; it answers **four
+**Looking at this as "API keys" was the wrong way to look at it.** The four
+built-in engines do not share one sign-in or billing route: Claude Code uses a
+Pro/Max plan or an API key, Codex a ChatGPT plan or an API key, Gemini CLI its
+own Google sign-in or an API key, and Antigravity the app's Google sign-in with
+no separate key route. OAuth grants stay with the relevant CLI/app and are
+never handed to Agent Farm. So this is not a key screen; it answers **four
 questions** per engine:
 
 1. Is the CLI on this machine?
@@ -1543,6 +1543,12 @@ questions** per engine:
 No row stops at naming a state. An engine that is not installed is never told
 to sign in — the install command is on the row and **Install** is the primary
 button; the sign-in appears only once there is something to sign in to.
+
+The binding end-to-end procedure for adding another built-in engine is
+[`YENI-MOTOR-EKLEME-SOP.tr.md`](YENI-MOTOR-EKLEME-SOP.tr.md). Adding an id to
+an enum or picker is not an integration: transport, protocol, identity,
+resume, accounting, every run/read surface, the Bridge and a real two-turn
+acceptance must land together.
 
 **⚡ Test — the one thing disk cannot tell you.** Everything above is read off
 disk, and disk can say "signed in" while nothing works: on this machine

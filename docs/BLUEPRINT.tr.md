@@ -1570,12 +1570,13 @@ Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… —
 
 ## Motorlar {#engines}
 
-**Anahtar merkezli bakmak yanlış bakmaktı.** Üç motorun ikisi anahtarla değil
-**abonelikle** ödeniyor: Claude Code bir Pro/Max planıyla, Codex bir ChatGPT
-planıyla. İkisi de kendi OAuth grant'ini kendi dosyasında tutar ve Agent Farm'a
-hiç vermez. Gerçekten anahtar isteyen tek motor Gemini — "Google ile giriş"
-yolu Haziran 2026'da kapatıldığı için. Bu yüzden sayfa "API anahtarları"
-sayfası değil; motor başına **dört soruyu** yanıtlar:
+**Anahtar merkezli bakmak yanlış bakmaktı.** Dört yerleşik motorun giriş ve
+ödeme yolları aynı değil: Claude Code bir Pro/Max planı veya API key, Codex bir
+ChatGPT planı veya API key, Gemini CLI kendi Google girişi veya API key,
+Antigravity ise uygulamanın Google girişiyle çalışır ve ayrı bir key yolu
+sunmaz. OAuth grant'leri ilgili CLI/uygulamada kalır; Agent Farm'a verilmez.
+Bu yüzden sayfa "API anahtarları" sayfası değil; motor başına **dört soruyu**
+yanıtlar:
 
 1. CLI bu makinede var mı?
 2. Bu motor **nasıl** ödeniyor?
@@ -1585,6 +1586,12 @@ sayfası değil; motor başına **dört soruyu** yanıtlar:
 Hiçbir satır yalnızca durum söylemez. Kurulu olmayan bir motora "giriş yap"
 denmez — kurulum komutu satırdadır ve **Install** birincil düğmedir; giriş
 ancak girilecek bir şey varken çıkar.
+
+Yeni bir yerleşik motor eklenirken bağlayıcı uçtan uca prosedür:
+[`YENI-MOTOR-EKLEME-SOP.tr.md`](YENI-MOTOR-EKLEME-SOP.tr.md). Motoru bir enum’a
+veya seçiciye eklemek entegrasyon değildir; taşıma, protokol, kimlik, resume,
+ölçüm, bütün çalışma/okuma yüzeyleri, Bridge ve gerçek iki turlu kabul birlikte
+tamamlanır.
 
 **⚡ Test — diskin söylemediği tek şey.** Yukarıdaki her satır diskten okunur ve
 disk "giriş yapılmış" derken hiçbir şey çalışmıyor olabilir: bu makinede

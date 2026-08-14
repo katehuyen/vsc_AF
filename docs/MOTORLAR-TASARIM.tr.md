@@ -1,8 +1,9 @@
 # Motorlar — Claude dışı modellerin eklentide kullanımı (X-3)
 
-> Tasarım belgesi. Faz 1 uygulandı (3.97.0); Faz 2–4 yol haritasıdır ve
-> **yerleşim kararı kullanıcıya sorulmadan uygulanmayacaktır** (X-3 kaleminin
-> kendi şartı: "nereye ve nasıl konacağı önce kullanıcı ile konuşulacak").
+> Tasarım ve karar izi. Fazların bugünkü uygulaması Claude Code, Codex, Gemini
+> ve Antigravity’yi kapsar. **Beşinci veya sonraki bir motorun uygulama
+> prosedürü:** [`YENI-MOTOR-EKLEME-SOP.tr.md`](YENI-MOTOR-EKLEME-SOP.tr.md).
+> Yeni bir yerleşim veya davranış kararı kullanıcıya sorulmadan uygulanmaz.
 
 ## 1. Sorunun kendisi — yanlış zihinsel model
 
