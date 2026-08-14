@@ -1,10 +1,14 @@
 import * as fs from 'fs';
 import { AgentInfo } from './agents';
+import {
+    dailyCostHistory, detectCostAnomaly, heavyHitters, SessionCostRef, todayCost
+} from './anomaly';
 import { engineSpread } from './engines';
 import { Insight } from './health';
 import { totalTokens } from './pricing';
 import { SessionIndex, SessionInfo } from './sessions';
 import { FarmTask } from './tasks';
+import { TriggerStat } from './triggerstats';
 import { fmtTokens, fmtUSD } from './util';
 
 function pct(n: number): string {
@@ -233,6 +237,94 @@ export function buildOutputsDigest(
         lines.push('');
         lines.push('---');
         lines.push('');
+    }
+    return lines.join('\n');
+}
+
+/**
+ * B-9 — the cost anomaly report as a FUNCTION rather than a command body.
+ *
+ * It was built inline where it was shown, so the one document that answers
+ * "why was today expensive" could only be produced by a person opening a
+ * palette. The wording, the columns and the scope sentence are the command's,
+ * unchanged; what moved is where they live.
+ */
+/** A session as this report reads it: its per-day costs AND its totals. */
+export interface CostSession extends SessionCostRef {
+    daily: Record<string, { cost: number }>;
+}
+
+export interface CostReportInput {
+    now: number;
+    minUsd: number;
+    /** the X-35 sentence saying which engines these figures cover ('' = nothing to say) */
+    scopeNote: string;
+    fleet: CostSession[];
+    perAgent: { name: string; sessions: CostSession[] }[];
+}
+
+export function buildCostReport(input: CostReportInput): string {
+    const { now, minUsd } = input;
+    const lines: string[] = [];
+    lines.push('# Agent Farm — Cost Anomaly Report');
+    lines.push('');
+    lines.push(`Generated: ${new Date(now).toLocaleString()} · baseline: trailing 14 days (median + MAD)`);
+    if (input.scopeNote) {
+        lines.push('');
+        lines.push(`> **Scope.** ${input.scopeNote}`);
+    }
+    lines.push('');
+    lines.push('| Agent | Today | 14d median | Robust σ | Factor | Anomaly |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
+    const rowFor = (label: string, sessions: CostSession[]): void => {
+        const hist = dailyCostHistory(sessions, 14, now);
+        const today = todayCost(sessions, now);
+        const med = hist.slice().sort((a, b) => a - b)[Math.floor(hist.length / 2)] ?? 0;
+        const anomaly = detectCostAnomaly(hist, today, { minUsd });
+        lines.push(`| ${label} | ${fmtUSD(today)} | ${fmtUSD(med)} | `
+            + `${anomaly ? fmtUSD(anomaly.sigma) : '—'} | `
+            + `${anomaly ? anomaly.factor.toFixed(1) + 'x' : '—'} | ${anomaly ? '⚠ YES' : 'no'} |`);
+    };
+    rowFor('**fleet**', input.fleet);
+    for (const a of input.perAgent) { rowFor(a.name, a.sessions); }
+    lines.push('');
+    const hh = heavyHitters(input.fleet, 7 * 24 * 3600 * 1000, now);
+    lines.push('## Heavy hitters (last 7 days)');
+    lines.push('');
+    lines.push(hh.sessionCount
+        ? `**${hh.heavy.length} of ${hh.sessionCount} measured sessions (${hh.heavyCountPct}%) consume `
+        + `${hh.tokenSharePct}% of the measured tokens** (${fmtTokens(hh.totalTokens)} total, ${fmtUSD(hh.totalCost)}).`
+        : 'No measured sessions in the window.');
+    lines.push('');
+    for (const s of hh.heavy.slice(0, 10)) {
+        lines.push(`- ${s.agentName ?? '?'} — "${s.title}" · ${fmtTokens(s.tokens)} tok · `
+            + `${fmtUSD(s.cost)} · ${new Date(s.lastTs).toLocaleString()}`);
+    }
+    return lines.join('\n');
+}
+
+/** B-9 — trigger reliability, same move: the table lived in the command body. */
+export function buildTriggerReport(stats: TriggerStat[], now = Date.now()): string {
+    const lines: string[] = [];
+    lines.push('# Agent Farm — Trigger Reliability');
+    lines.push('');
+    lines.push(`Generated: ${new Date(now).toLocaleString()} · window: last 7 days`);
+    lines.push('');
+    lines.push('| Trigger | Armed | Fired (total) | 7d ✓/✗ | Median start delay | Last fired | Flags |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const s of stats) {
+        const delay = s.medianStartDelayMs !== undefined
+            ? (s.medianStartDelayMs < 90_000
+                ? Math.round(s.medianStartDelayMs / 1000) + 's'
+                : Math.round(s.medianStartDelayMs / 60_000) + 'm')
+            : '—';
+        const flags = [
+            s.neverFired ? 'never fired' : '',
+            s.alwaysFails ? '⚠ always fails' : ''
+        ].filter(Boolean).join(', ') || '—';
+        lines.push(`| ${s.title} | ${s.enabled ? 'yes' : 'no'} | ${s.fireCountTotal} | `
+            + `${s.ok7d}/${s.fail7d} | ${delay} | `
+            + `${s.lastFiredAt ? new Date(s.lastFiredAt).toLocaleString() : 'never'} | ${flags} |`);
     }
     return lines.join('\n');
 }

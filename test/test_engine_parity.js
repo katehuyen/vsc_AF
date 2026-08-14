@@ -558,8 +558,11 @@ function newIndex(includeUnmatched = true) {
     // dropped three engines. The sentence is the shared one, not a new wording.
     ok('‼️ the Cost Anomaly Report states its scope',
         /claudeOnlyScopeNote\(index\.external\(\), 'Every figure in this report'\)/.test(ext));
+    // B-9 moved the document itself into core/report.ts (buildCostReport); the
+    // scope sentence is still assembled in extension.ts, above.
+    const reportSrc = src('core/report.ts');
     ok('…and its heavy-hitter share no longer claims "all tokens"',
-        /of the measured tokens/.test(ext) && !/% of all tokens/.test(ext));
+        /of the measured tokens/.test(reportSrc) && !/% of all tokens/.test(reportSrc));
     // The Turns op advertises an engine filter naming all four engines; over a
     // claude-only pool, asking it for Codex returned "Codex did nothing".
     ok('‼️ turns.list reads the pool its own filter promises',

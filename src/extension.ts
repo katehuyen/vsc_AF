@@ -103,7 +103,9 @@ import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
 } from './core/prompts';
 import { QualityStore, sampleQuality } from './core/quality';
-import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
+import {
+    buildCostReport, buildDailyDigest, buildFleetReport, buildOutputsDigest, buildTriggerReport
+} from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
 import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
@@ -257,6 +259,7 @@ import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import {
     InfraBridgeDeps, installService, registerInfraOps, removeService, serviceState
 } from './core/infraBridge';
+import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
@@ -283,7 +286,9 @@ import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
-import { buildData as buildViewerData, SessionViewerPanel } from './panels/sessionViewer';
+import {
+    buildData as buildViewerData, runContextCapture, SessionViewerPanel
+} from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import { PlanUsageBar } from './views/planUsageBar';
@@ -2333,8 +2338,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
     let summaryBusy = false;
-    const runWeeklySummary = async (manual: boolean): Promise<void> => {
-        if (summaryBusy) { return; }
+    // B-9 — it returns the TEXT. The notification is one caller's ending, not
+    // the summary's, and the bridge op needs the words rather than a toast.
+    const runWeeklySummary = async (manual: boolean): Promise<string | undefined> => {
+        if (summaryBusy) { return undefined; }
         summaryBusy = true;
         try {
             const text = await generateWeeklySummary(
@@ -2344,7 +2351,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.window.showWarningMessage(
                         'Agent Farm: weekly summary failed — is the claude CLI on PATH?');
                 }
-                return;
+                return undefined;
             }
             const weekKey = isoWeek(new Date());
             await context.globalState.update('agentfarm.weeklySummaryKey', weekKey);
@@ -2362,6 +2369,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         void vscode.commands.executeCommand('agentfarm.openDashboard');
                     }
                 });
+            return text;
         } finally { summaryBusy = false; }
     };
 
@@ -2518,6 +2526,108 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })()
         });
     };
+    /**
+     * B-9 — what a schedule looks like OUTSIDE VS Code, as a function.
+     *
+     * ‼️ U-34 — THE SCRIPT RUNS THE ENGINE THE SCHEDULE WOULD RUN, NOT
+     * `claude`. This script is what fires when VS Code is closed, so a
+     * hard-coded `claude -p` quietly ran a DIFFERENT engine from the one the
+     * same schedule uses inside the farm — and on a machine without Claude
+     * installed it ran nothing at all, with the failure only visible in a log
+     * file nobody opens. The engine is the fleet default, which is what an
+     * unattended task gets.
+     *
+     * It writes the .cmd and RETURNS the schtasks line; registering the task is
+     * the user's own paste, from the command and from the bridge alike.
+     */
+    const scheduleExportFor = (schedule: FarmSchedule): {
+        cmdFile: string; script: string; schtasks: string; exe: string;
+    } => {
+        const agent = agents.find(a => a.id === schedule.agentId);
+        if (!agent) { throw new Error('the agent for this schedule was not found.'); }
+        const scriptsDir = path.join(context.globalStorageUri.fsPath, 'schtasks');
+        fs.mkdirSync(scriptsDir, { recursive: true });
+        const outDir = (taskManagerRef as TaskManager).outputsDir;
+        const logFile = path.join(outDir, `schtask-${schedule.id}.log`);
+        fs.mkdirSync(outDir, { recursive: true });
+        const cmdFile = path.join(scriptsDir, `af-${schedule.id}.cmd`);
+        const schedSpec = engineOf(launchDefaults().engine);
+        const schedCmd = schedSpec.id === 'claude'
+            ? `claude -p "${sanitizePrompt(schedule.prompt)}"`
+            : [schedSpec.exe, ...runArgs(schedSpec.id, { cwd: agent.dir }),
+                `"${sanitizePrompt(schedule.prompt)}"`].join(' ');
+        const script = `@echo off\r\n`
+            + `rem Agent Farm scheduled task: ${schedule.title} (${agent.name}) on ${schedSpec.label}\r\n`
+            + `cd /d "${agent.dir}"\r\n`
+            + `${schedCmd} >> "${logFile}" 2>&1\r\n`;
+        fs.writeFileSync(cmdFile, script, 'utf8');
+        const hm = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
+        const dowNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        let scPart: string;
+        if (schedule.kind === 'weekly') {
+            scPart = `/SC WEEKLY /D ${dowNames[schedule.dow ?? 0]} /ST ${hm}`;
+        } else if (schedule.kind === 'once') {
+            const d = new Date(schedule.onceAt ?? Date.now());
+            const sd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+            const st = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            scPart = `/SC ONCE /SD ${sd} /ST ${st}`;
+        } else {
+            scPart = `/SC DAILY /ST ${hm}`;
+        }
+        return {
+            cmdFile, script, exe: schedSpec.exe,
+            schtasks: `schtasks /Create /TN "AgentFarm\\${schedule.title.replace(/[\\/:*?"<>|]/g, '_')}" `
+                + `/TR "\\"${cmdFile}\\"" ${scPart} /F`
+        };
+    };
+
+    // B-9 — the spoken briefing as a function: the command and the bridge op
+    // both come here, so there is one TTS call and one folder rule.
+    const speakDigestNow = async (): Promise<{ ok: boolean; file?: string; error?: string }> => {
+        const model = cfg().get<string>('digestTtsModel', '');
+        const folder = expandEnvPath(cfg().get<string>('digestTtsFolder', '')) ||
+            expandEnvPath(cfg().get<string>('autoReportFolder', ''));
+        const key = vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY'));
+        return vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: generating spoken briefing…' },
+            () => speakText(buildDigestText(), model, key ? `Key ${key}` : '', folder,
+                { baseUrl: cfg().get<string>('mediaBaseUrl', '') || undefined }));
+    };
+
+    /**
+     * B-9 — the two reports that were built inside the command that showed
+     * them. The document is a function now; the command opens what it returns
+     * and the bridge returns it as content.
+     *
+     * ‼️ THE REPORT SAYS WHAT "fleet" COVERS (X-35): every figure is computed
+     * off Claude's transcript format, correctly so — a plan-billed engine
+     * states no price — and the scope sentence is the same one the Health
+     * findings use, from the same function.
+     */
+    const costReportText = (): string => buildCostReport({
+        now: Date.now(),
+        minUsd: cfg().get<number>('costAnomalyMinUsd', 1),
+        scopeNote: claudeOnlyScopeNote(index.external(), 'Every figure in this report'),
+        fleet: index.all().map(s => ({
+            file: s.file, title: s.title, agentName: s.agentName,
+            cost: s.cost, tokens: totalTokens(s.usage), lastTs: s.lastTs, daily: s.daily
+        })),
+        perAgent: agents.map(a => ({
+            name: a.name,
+            sessions: index.forAgent(a.id).map(s => ({
+                file: s.file, title: s.title, agentName: s.agentName,
+                cost: s.cost, tokens: totalTokens(s.usage), lastTs: s.lastTs, daily: s.daily
+            }))
+        }))
+    });
+
+    /** undefined when no trigger exists at all — an empty table is not a report. */
+    const triggerReportText = (): string | undefined => {
+        const m = taskManagerRef as TaskManager;
+        const stats = buildTriggerStats(m.triggers, m.tasks);
+        return stats.length ? buildTriggerReport(stats) : undefined;
+    };
+
     const sendDailyDigest = (manual: boolean): void => {
         const text = buildDigestText();
         const hasWebhook = !!cfg().get<string>('notifyWebhookUrl', '');
@@ -11115,6 +11225,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     registerInfraOps(bridge, infraDeps);
 
+    // ---------- B-9: reports, exports and session diagnosis ----------
+    // Every document this extension produces existed only as a thing to look
+    // at — an editor, a save dialog, a clipboard. These return the CONTENT, or
+    // write it atomically where the caller says, and always name the path.
+    registerReportOps(bridge, {
+        getAgents: () => agents,
+        fleetReport: (days) => buildFleetReport(agents, index, insights, days,
+            id => qualityStore.avgSince(id, days * 24 * 3600 * 1000)),
+        outputsDigest: (windowMs) => buildOutputsDigest((taskManagerRef as TaskManager).tasks, windowMs),
+        costReport: () => costReportText(),
+        triggerReport: () => triggerReportText(),
+        taskAnalytics: (days) => {
+            const windowMs = days * 24 * 3600 * 1000;
+            const records = allTaskRecords();
+            return {
+                agents: [...buildAgentTaskStats(records, { windowMs }).entries()]
+                    .map(([key, stats]) => ({ ...stats, agentId: key })),
+                families: buildTaskFamilies(records, { windowMs })
+            };
+        },
+        instructionReport: (agent) => buildImpactReport(agent.name, correlateVersions(
+            instrHistory.versions(agent.id),
+            qualityStore.scores.filter(q => q.agentId === agent.id),
+            index.forAgent(agent.id).map(s => ({ lastTs: s.lastTs, cost: s.cost })))),
+        // ‼️ EVERY ENGINE LEAVES THE BUILDING (X-35) — the same widened read the
+        // export command makes; a Codex session missing from Langfuse is absent,
+        // not "priced at zero".
+        otlp: (windowMs) => {
+            const since = Date.now() - windowMs;
+            return buildOtlpTraces(index.allWithExternal()
+                .filter(s => s.lastTs >= since)
+                .map(s => ({
+                    sessionId: s.sessionId, parentSessionId: s.parentSessionId,
+                    title: s.title, agentName: s.agentName,
+                    firstTs: s.firstTs, lastTs: s.lastTs, cost: s.cost, usage: s.usage,
+                    models: s.models, toolCalls: s.toolCalls, errors: s.errors,
+                    machine: s.machine, source: s.source
+                })));
+        },
+        schedules: () => (taskManagerRef as TaskManager).schedules,
+        scheduleExport: (s) => scheduleExportFor(s),
+        relayScriptSource: () => path.join(context.extensionPath, 'out', 'service', 'farmRelay.js'),
+        digestBody: () => buildDigestText(),
+        sendDigest: () => sendDailyDigest(true),
+        speakDigest: () => { void speakDigestNow(); },
+        weeklySummary: () => runWeeklySummary(true),
+        findSession: (id) => {
+            const s = index.allWithExternal().find(x => x.sessionId === id);
+            return s ? {
+                sessionId: s.sessionId, file: s.file, cwd: s.cwd, model: s.models[s.models.length - 1],
+                engine: s.source ?? 'claude', agentName: s.agentName, title: s.title
+            } : undefined;
+        },
+        isLive: (id) => live.sessions().some(s => s.sessionId === id),
+        captureContext: (s) => new Promise<{ ok: boolean; report?: unknown; error?: string }>(resolve =>
+            runContextCapture(s.file, s.cwd ?? '', s.model, r => resolve(r))),
+        defaultReportDir: () => expandEnvPath(cfg().get<string>('autoReportFolder', ''))
+            || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
+            || os.homedir()
+    });
+
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
     // streaming JSON channel. They deliberately outlive the panel tab (closing
@@ -18748,60 +18919,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 schedule = pick?.s;
             }
             if (!schedule) { return; }
-            const agent = agents.find(a => a.id === schedule.agentId);
-            if (!agent) {
-                void vscode.window.showWarningMessage('Agent Farm: agent for this schedule not found.');
+            let made: ReturnType<typeof scheduleExportFor>;
+            try { made = scheduleExportFor(schedule); }
+            catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${String(e instanceof Error ? e.message : e)}`);
                 return;
             }
-            const scriptsDir = path.join(context.globalStorageUri.fsPath, 'schtasks');
-            fs.mkdirSync(scriptsDir, { recursive: true });
-            const logFile = path.join(taskManager.outputsDir, `schtask-${schedule.id}.log`);
-            fs.mkdirSync(taskManager.outputsDir, { recursive: true });
-            const cmdFile = path.join(scriptsDir, `af-${schedule.id}.cmd`);
-            // ‼️ U-34 — THE SCRIPT RUNS THE ENGINE THE SCHEDULE WOULD RUN, NOT
-            // `claude`. This script is what fires when VS Code is closed, so a
-            // hard-coded `claude -p` quietly ran a DIFFERENT engine from the one
-            // the same schedule uses inside the farm — and on a machine without
-            // Claude installed it ran nothing at all, with the failure only
-            // visible in a log file nobody opens. The engine is the fleet
-            // default, which is what an unattended task gets.
-            const schedSpec = engineOf(launchDefaults().engine);
-            const schedCmd = schedSpec.id === 'claude'
-                ? `claude -p "${sanitizePrompt(schedule.prompt)}"`
-                : [schedSpec.exe, ...runArgs(schedSpec.id, { cwd: agent.dir }),
-                    `"${sanitizePrompt(schedule.prompt)}"`].join(' ');
-            fs.writeFileSync(cmdFile,
-                `@echo off\r\n` +
-                `rem Agent Farm scheduled task: ${schedule.title} (${agent.name}) on ${schedSpec.label}\r\n` +
-                `cd /d "${agent.dir}"\r\n` +
-                `${schedCmd} >> "${logFile}" 2>&1\r\n`,
-                'utf8');
-            const hm = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
-            const dowNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-            let scPart: string;
-            if (schedule.kind === 'weekly') {
-                scPart = `/SC WEEKLY /D ${dowNames[schedule.dow ?? 0]} /ST ${hm}`;
-            } else if (schedule.kind === 'once') {
-                const d = new Date(schedule.onceAt ?? Date.now());
-                const sd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                const st = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                scPart = `/SC ONCE /SD ${sd} /ST ${st}`;
-            } else {
-                scPart = `/SC DAILY /ST ${hm}`;
-            }
-            const schtasksCmd =
-                `schtasks /Create /TN "AgentFarm\\${schedule.title.replace(/[\\/:*?"<>|]/g, '_')}" ` +
-                `/TR "\\"${cmdFile}\\"" ${scPart} /F`;
-            await vscode.env.clipboard.writeText(schtasksCmd);
+            await vscode.env.clipboard.writeText(made.schtasks);
             const choice = await vscode.window.showInformationMessage(
                 `Agent Farm: script written and the schtasks command copied to clipboard. ` +
                 `Paste it into a terminal to register the Windows scheduled task ` +
                 `(runs even when VS Code is closed; output goes to the task log). ` +
-                `Note: '${schedSpec.exe}' must be on PATH for the scheduler — that is the engine `
+                `Note: '${made.exe}' must be on PATH for the scheduler — that is the engine `
                 + `this schedule runs on (agentFarm.launchDefaults.engine).`,
                 'Open script', 'Open log folder');
             if (choice === 'Open script') {
-                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cmdFile));
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(made.cmdFile));
             } else if (choice === 'Open log folder') {
                 void revealPath(taskManager.outputsDir);
             }
@@ -19325,66 +19458,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- G2: cost anomaly report ----------
 
         vscode.commands.registerCommand('agentfarm.costReport', async () => {
-            const now = Date.now();
-            const minUsd = cfg().get<number>('costAnomalyMinUsd', 1);
-            const lines: string[] = [];
-            lines.push('# Agent Farm — Cost Anomaly Report');
-            lines.push('');
-            lines.push(`Generated: ${new Date(now).toLocaleString()} · baseline: trailing 14 days (median + MAD)`);
-            /**
-             * ‼️ THE REPORT SAYS WHAT "fleet" COVERS (X-35).
-             *
-             * Every figure below is computed off Claude's transcript format and
-             * correctly so — a plan-billed engine states no price, and averaging
-             * its honest zero in would show the farm halving its spend the week
-             * it started using Codex. What was wrong was the LABEL: a document
-             * headed "fleet / all sessions / heavy hitters" that silently left
-             * three engines out, so a reader comparing it against the Sessions
-             * page found a smaller number and nothing to explain the gap. The
-             * sentence is the same one the Health findings use, from the same
-             * function — a wording invented per surface disagrees per surface.
-             */
-            const scopeNote = claudeOnlyScopeNote(index.external(), 'Every figure in this report');
-            if (scopeNote) {
-                lines.push('');
-                lines.push(`> **Scope.** ${scopeNote}`);
-            }
-            lines.push('');
-            lines.push('| Agent | Today | 14d median | Robust σ | Factor | Anomaly |');
-            lines.push('| --- | --- | --- | --- | --- | --- |');
-            const rowFor = (label: string, sessions: { daily: Record<string, { cost: number }> }[]) => {
-                const hist = dailyCostHistory(sessions, 14, now);
-                const today = todayCost(sessions, now);
-                const med = hist.slice().sort((a, b) => a - b)[Math.floor(hist.length / 2)] ?? 0;
-                const anomaly = detectCostAnomaly(hist, today, { minUsd });
-                lines.push(`| ${label} | ${fmtUSD(today)} | ${fmtUSD(med)} | ` +
-                    `${anomaly ? fmtUSD(anomaly.sigma) : '—'} | ` +
-                    `${anomaly ? anomaly.factor.toFixed(1) + 'x' : '—'} | ${anomaly ? '⚠ YES' : 'no'} |`);
-            };
-            rowFor('**fleet**', index.all());
-            for (const a of agents) { rowFor(a.name, index.forAgent(a.id)); }
-            lines.push('');
-            const hh = heavyHitters(index.all().map(s => ({
-                file: s.file,
-                title: s.title,
-                agentName: s.agentName,
-                cost: s.cost,
-                tokens: totalTokens(s.usage),
-                lastTs: s.lastTs
-            })), 7 * 24 * 3600 * 1000, now);
-            lines.push('## Heavy hitters (last 7 days)');
-            lines.push('');
-            lines.push(hh.sessionCount
-                ? `**${hh.heavy.length} of ${hh.sessionCount} measured sessions (${hh.heavyCountPct}%) consume ` +
-                  `${hh.tokenSharePct}% of the measured tokens** (${fmtTokens(hh.totalTokens)} total, ${fmtUSD(hh.totalCost)}).`
-                : 'No measured sessions in the window.');
-            lines.push('');
-            for (const s of hh.heavy.slice(0, 10)) {
-                lines.push(`- ${s.agentName ?? '?'} — "${s.title}" · ${fmtTokens(s.tokens)} tok · ` +
-                    `${fmtUSD(s.cost)} · ${new Date(s.lastTs).toLocaleString()}`);
-            }
+            // B-9 — buildCostReport is the document; this opens it.
             const doc = await vscode.workspace.openTextDocument({
-                content: lines.join('\n'), language: 'markdown'
+                content: costReportText(), language: 'markdown'
             });
             await vscode.window.showTextDocument(doc, { preview: true });
         }),
@@ -19418,35 +19494,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.runPulseNow', () => runPulse(true)),
 
         vscode.commands.registerCommand('agentfarm.triggerReport', async () => {
-            const stats = buildTriggerStats(taskManager.triggers, taskManager.tasks);
-            if (!stats.length) {
+            const md = triggerReportText();
+            if (!md) {
                 void vscode.window.showInformationMessage('Agent Farm: no triggers configured.');
                 return;
             }
-            const lines: string[] = [];
-            lines.push('# Agent Farm — Trigger Reliability');
-            lines.push('');
-            lines.push(`Generated: ${new Date().toLocaleString()} · window: last 7 days`);
-            lines.push('');
-            lines.push('| Trigger | Armed | Fired (total) | 7d ✓/✗ | Median start delay | Last fired | Flags |');
-            lines.push('| --- | --- | --- | --- | --- | --- | --- |');
-            for (const s of stats) {
-                const delay = s.medianStartDelayMs !== undefined
-                    ? (s.medianStartDelayMs < 90_000
-                        ? Math.round(s.medianStartDelayMs / 1000) + 's'
-                        : Math.round(s.medianStartDelayMs / 60_000) + 'm')
-                    : '—';
-                const flags = [
-                    s.neverFired ? 'never fired' : '',
-                    s.alwaysFails ? '⚠ always fails' : ''
-                ].filter(Boolean).join(', ') || '—';
-                lines.push(`| ${s.title} | ${s.enabled ? 'yes' : 'no'} | ${s.fireCountTotal} | ` +
-                    `${s.ok7d}/${s.fail7d} | ${delay} | ` +
-                    `${s.lastFiredAt ? new Date(s.lastFiredAt).toLocaleString() : 'never'} | ${flags} |`);
-            }
-            const doc = await vscode.workspace.openTextDocument({
-                content: lines.join('\n'), language: 'markdown'
-            });
+            const doc = await vscode.workspace.openTextDocument({ content: md, language: 'markdown' });
             await vscode.window.showTextDocument(doc, { preview: true });
         }),
 
@@ -19712,16 +19765,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- J6: spoken briefing (TTS) ----------
 
         vscode.commands.registerCommand('agentfarm.speakDigest', async () => {
-            const model = cfg().get<string>('digestTtsModel', '');
-            const folder = expandEnvPath(cfg().get<string>('digestTtsFolder', '')) ||
-                expandEnvPath(cfg().get<string>('autoReportFolder', ''));
-            const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
-            const key = vault.get(secretName);
-            const text = buildDigestText();
-            const result = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: generating spoken briefing…' },
-                () => speakText(text, model, key ? `Key ${key}` : '', folder,
-                    { baseUrl: cfg().get<string>('mediaBaseUrl', '') || undefined }));
+            const result = await speakDigestNow();
             if (!result.ok) {
                 void vscode.window.showWarningMessage(`Agent Farm: briefing failed — ${result.error}`);
                 return;
