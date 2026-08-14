@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.137.0 — Six of the eight bridge-parity items: the farm can now be set up, measured and tidied by instruction (2026-08-15)
+
+The rule in `_REF/agentfarm-dev.md` says that anything a person can trigger from a panel or the palette, and that an agent could reasonably be told to do, reaches the bridge in the same commit. B-3 is the programme that goes back and settles where that was not done. Six of its items ship here — **62 new operations** — and every one of them calls the same core function the page calls, because a bridge that grows a second implementation is a bridge that disagrees with the surface it copies.
+
+**B-4 — a run's whole life, not just its beginning.** Starting a task, finishing one by hand, releasing one a ceiling is holding, moving it in the queue, undoing a delete, picking a cut chain back up, running a finished mission again, dropping one from the history: eight gestures that existed only under a pointer.
+
+- **‼️ `tasks.start` is not `tasks.runNext`.** One starts the task where it stands; the other bumps it over every other queued task first. They were one op, which meant "start this" silently reordered the queue. And if a ceiling holds the launch, the answer is `started:false` with `heldBy` naming it — a caller told "started" about a run that never launched is the bug this exists to avoid.
+- **‼️ `tasks.unpark` ends the park EPISODE.** Releasing a held run and having the same ceiling catch it again is news a second time, not a silent second hold. The release itself moved into `TaskManager.unparkTask`, so the row's "retry start" button and the op are one implementation.
+- `tasks.move` takes an exact place in the queue (`to: 0` is next up), not just one step at a time — repeating a one-step move is how a queue ends up half sorted. `tasks.restore` brings a deleted run back from the month archive and says plainly that its **output file is not coming back**.
+- `missions.rerun` is cost-bearing and says so; `missions.run.delete` reports `specDeleted`, because "that run is gone" and "the mission is gone from the list" are different answers.
+
+**B-5 — findings, suggestions, quality and eval cases.** `insights.list` now carries each finding's **`key`**: a finding is re-derived on every scan, so its wording was never a handle. `insights.dismiss` hides one for a stated time — `days:0` is an error rather than quietly meaning forever — `insights.restore` un-hides, and `insights.delegate` folds several findings into **one** run, because five agents editing one file is not a fix. Instruction suggestions get list/scan/apply/dismiss, and `evals.delete` finally exists. The three that run a model refuse without `confirm:true`.
+
+**B-7 — the settings page, by instruction.** Twenty operations over Agent Farm's settings, the saved setting sets, Claude Code's own `settings.json`, the agent roots and the per-agent engine defaults.
+
+- **‼️ The SCHEMA is the allowlist** — the same model the page draws itself from, so a setting added tomorrow is writable with no extra code and an undeclared key is refused. Values go through the page's own validation.
+- **‼️ A credential-shaped value never comes back.** A key whose name ends in Key / Token / Password is masked; a key that holds a secret's *name* is not. The Secrets vault stays off the bridge.
+- **‼️ A setting set is a complete state, not an overlay** — applying one also resets every modified key it does not mention, and `dryRun` names every step before anything moves. On the Claude side there is deliberately **no raw-overwrite op**: only the catalogued lines, and a `settings.json` that is not valid JSON is refused rather than clobbered.
+
+**B-8 — the working infrastructure.** The live hooks (user and agent scope), the headless Windows service, the usage lap and the price of a model nobody priced.
+
+- **‼️ Anything that changes the machine PLANS first.** `service.install` called bare returns the exact scheduled-task name, every file it would write and the current state, and changes nothing; only `confirm:true` acts. `schtasks` is now called with an **argument vector rather than a command line**, so no path with a space or a quote in it can become a second command, and the result is verified by reading the task back.
+- **‼️ `pricing.rules` names the models this farm has really run that match no rule** — they are billed at $0, so a real spend reads as free and every cost figure above it is quietly wrong. `pricing.set` upserts one rule, compiles the regex before saving, and refuses a negative rate or an empty table.
+
+**B-9 — every document the extension produces.** The cost report opened an editor, the digest opened a save dialog, the OTLP export asked where to put it — so an agent told "work out why yesterday was expensive and write it up" could not reach a single one of them.
+
+- **One delivery contract:** the op returns the **content**. Pass `file` and it is written there through a temp-and-rename, and the answer **always names the path**, including when a default was chosen for you.
+- `sessions.context` captures a closed session's real per-category token table by running Claude's own local `/context` — it spends no tokens. Two refusals are deliberate: a **live** session is never touched (a second writer on one transcript), and a non-Claude engine is told so rather than guessed at.
+- `digest.daily` only *shows* the digest; `send` and `speak` are explicit. `reports.weekly` runs a model and refuses without `confirm:true`.
+
+**B-10 — a file the farm did not generate.** `studio.asset.register` files a hand-downloaded render or a clip made in another tool into the gallery. Every path is judged **before** a single sidecar is written, so a bad one in the middle registers nothing; a file already registered comes back in `alreadyKnown` rather than as an error.
+
+**Still open in B-3:** B-6 (memory maintenance and semantic operations) and B-11 (the permanent parity gate, which by design runs last). Tests: 157 files, 9577 assertions.
+
 ## 3.136.0 — The Console reads where you left it, what you left it on, and as far back as you like (2026-08-14)
 
 Four backlog items, all of them about the same complaint from different sides: the conversation panel losing track of the reader.
