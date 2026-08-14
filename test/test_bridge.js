@@ -775,6 +775,224 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('…and a live run is not deleted out from under itself', !delLive.ok && /cancel it first/.test(delLive.error));
     }
 
+    // ---------- B-5: insights, suggestions, quality and eval cases ----------
+    // A finding is RE-DERIVED on every scan, so its wording is not a handle —
+    // `insightKey` is, and every op here is aimed with it. The three that run a
+    // model or start a run refuse without confirm; the rest cost nothing.
+    {
+        const { insightKey } = require(path.join(__dirname, '..', 'out', 'core', 'insightops.js'));
+        const findings = [
+            { severity: 'warning', category: 'bigfile', agentId: 'a1', agentName: 'yazar', message: 'CLAUDE.md is 40 KB' },
+            { severity: 'info', category: 'unusedmcp', agentId: 'a1', agentName: 'yazar', message: 'MCP server "x" is unused' }
+        ];
+        const keys = findings.map(insightKey);
+        let hidden = {};
+        const delegated = [];
+        let scanned = 0, sampled = 0, pulsed = 0;
+        let suggestions = [
+            { id: 's1', agentId: 'a1', agentName: 'yazar', rule: 'Always answer in Turkish.', evidence: 'said 3x', status: 'open', createdAt: 1 },
+            { id: 's2', agentId: 'a1', agentName: 'yazar', rule: 'Never reformat the vault.', evidence: 'said 2x', status: 'applied', createdAt: 2 }
+        ];
+        let cases = [
+            { id: 'c1', agentId: 'a1', agentName: 'yazar', title: 'greets' },
+            { id: 'c2', agentId: 'a2', agentName: 'basit', title: 'other agent' }
+        ];
+        const byId = (id) => suggestions.find(s => s.id === id);
+
+        reg.register([
+            {
+                op: 'insights.dismiss',
+                describe: 'Hide a finding for a while, by its key. args: key, days? (default 7), forever?',
+                handler: (args) => {
+                    const key = argStr(args, 'key');
+                    const t = findings.find(i => insightKey(i) === key);
+                    need(t, `No current finding with key "${key}" — insights.list shows them with their keys.`);
+                    const forever = args.forever === true;
+                    const raw = args.days;
+                    const days = forever ? 0
+                        : (raw === undefined || raw === null || raw === '' ? 7 : Number(raw));
+                    need(forever || (Number.isFinite(days) && days > 0),
+                        '`days` is a positive number of days — or pass forever:true.');
+                    hidden[key] = { until: forever ? 0 : Date.now() + days * 86400000, label: t.message };
+                    return { key, forever, until: forever ? null : hidden[key].until };
+                }
+            },
+            {
+                op: 'insights.restore',
+                describe: 'Un-hide dismissed findings. args: key? · keys? · all?',
+                handler: (args) => {
+                    let wanted;
+                    if (args.all === true) { wanted = Object.keys(hidden); }
+                    else if (Array.isArray(args.keys)) { wanted = args.keys.map(String); }
+                    else { wanted = [argStr(args, 'key')]; }
+                    need(wanted.length, 'Nothing to restore — pass `key`, `keys` or all:true.');
+                    const restored = wanted.filter(k => k in hidden);
+                    const unknown = wanted.filter(k => !(k in hidden));
+                    for (const k of restored) { delete hidden[k]; }
+                    return { restored: restored.length, keys: restored, notDismissed: unknown, stillHidden: Object.keys(hidden).length };
+                }
+            },
+            {
+                op: 'insights.delegate',
+                describe: 'COST-BEARING — hand findings to an agent as one headless run. args: key?/keys?/all?, agent?, confirm',
+                handler: (args) => {
+                    need(args.confirm === true,
+                        'Delegating starts a real run, which costs money — pass confirm:true if that is meant.');
+                    let list;
+                    if (args.all === true) { list = findings.slice(); }
+                    else {
+                        const ks = Array.isArray(args.keys) ? args.keys.map(String) : [argStr(args, 'key')];
+                        list = ks.map(k => {
+                            const f = findings.find(i => insightKey(i) === k);
+                            need(f, `No current finding with key "${k}" — insights.list shows them.`);
+                            return f;
+                        });
+                    }
+                    delegated.push(list.length);
+                    return { taskId: 't-' + delegated.length, findings: list.length, keys: list.map(insightKey) };
+                }
+            },
+            {
+                op: 'suggestions.list',
+                describe: 'Instruction suggestions. args: agent?, state? (open|applied|dismissed, default open)',
+                handler: (args) => {
+                    const state = (optStr(args, 'state') || 'open').toLowerCase();
+                    need(['open', 'applied', 'dismissed'].includes(state),
+                        `state is open, applied or dismissed — not "${state}"`);
+                    const rows = suggestions.filter(s => s.status === state);
+                    return { state, total: rows.length, suggestions: rows };
+                }
+            },
+            {
+                op: 'suggestions.scan',
+                describe: 'COST-BEARING — a cheap model looks for repeated corrections. args: agent, confirm',
+                handler: (args) => {
+                    need(args.confirm === true,
+                        'Scanning runs a model, which costs money — pass confirm:true if that is meant.');
+                    scanned++;
+                    return { agent: argStr(args, 'agent'), added: 1 };
+                }
+            },
+            {
+                op: 'suggestions.apply',
+                describe: 'Append the rule to the agent\'s CLAUDE.md. args: id',
+                handler: (args) => {
+                    const s = byId(argStr(args, 'id'));
+                    need(s, `No suggestion "${argStr(args, 'id')}" — suggestions.list shows the open ones.`);
+                    need(s.status === 'open', `That suggestion is already ${s.status}.`);
+                    s.status = 'applied';
+                    return { id: s.id, rule: s.rule };
+                }
+            },
+            {
+                op: 'suggestions.dismiss',
+                describe: 'Turn a suggestion down; nothing is written. args: id',
+                handler: (args) => {
+                    const s = byId(argStr(args, 'id'));
+                    need(s, `No suggestion "${argStr(args, 'id')}" — suggestions.list shows the open ones.`);
+                    need(s.status === 'open', `That suggestion is already ${s.status}.`);
+                    s.status = 'dismissed';
+                    return { id: s.id };
+                }
+            },
+            {
+                op: 'quality.sample',
+                describe: 'COST-BEARING — score a sample of recent outputs now. args: confirm',
+                handler: (args) => {
+                    need(args.confirm === true,
+                        'Sampling runs a model, which costs money — pass confirm:true if that is meant.');
+                    sampled++;
+                    return { scores: sampled };
+                }
+            },
+            {
+                op: 'living.pulse',
+                describe: 'Run the Living checks now; costs nothing. args: none',
+                handler: () => { pulsed++; return { ran: true }; }
+            },
+            {
+                op: 'evals.delete',
+                describe: 'Remove a regression case; past run verdicts are untouched. args: id, agent?',
+                handler: (args) => {
+                    const id = argStr(args, 'id');
+                    const c = cases.find(x => x.id === id);
+                    need(c, `No eval case "${id}" — evals.list shows the current ones.`);
+                    if (optStr(args, 'agent')) {
+                        need(c.agentName === optStr(args, 'agent'),
+                            `Case "${id}" belongs to ${c.agentName}, not ${optStr(args, 'agent')}.`);
+                    }
+                    cases = cases.filter(x => x.id !== id);
+                    return { id, title: c.title, agent: c.agentName };
+                }
+            }
+        ]);
+        ok('B-5 ops appear in the catalog',
+            ['insights.dismiss', 'insights.restore', 'insights.delegate', 'suggestions.list',
+                'suggestions.scan', 'suggestions.apply', 'suggestions.dismiss', 'quality.sample',
+                'living.pulse', 'evals.delete'].every(op => reg.catalog().some(c => c.op === op)));
+
+        const d = await reg.dispatch('insights.dismiss', { key: keys[0], days: 1 });
+        ok('insights.dismiss hides a finding for a stated time',
+            d.ok && d.result.forever === false && d.result.until > Date.now());
+        ok('‼️ …and an omitted "forever" can never silently mean forever', d.result.until !== null);
+        const dForever = await reg.dispatch('insights.dismiss', { key: keys[1], forever: true });
+        ok('…while forever:true says so in the answer', dForever.ok && dForever.result.until === null);
+        const dGhost = await reg.dispatch('insights.dismiss', { key: 'made-up' });
+        ok('‼️ …and a key that names no current finding is refused — the wording is not an identity',
+            !dGhost.ok && /insights\.list/.test(dGhost.error));
+        const dBad = await reg.dispatch('insights.dismiss', { key: keys[0], days: 0 });
+        ok('…and a zero-day dismissal is refused rather than read as forever',
+            !dBad.ok && /positive number of days/.test(dBad.error));
+
+        const r1 = await reg.dispatch('insights.restore', { key: keys[0] });
+        ok('insights.restore brings one back', r1.ok && r1.result.restored === 1 && r1.result.stillHidden === 1);
+        const r2 = await reg.dispatch('insights.restore', { key: keys[0] });
+        ok('…and a key that was not hidden is reported, not failed',
+            r2.ok && r2.result.restored === 0 && r2.result.notDismissed.length === 1);
+        const rAll = await reg.dispatch('insights.restore', { all: true });
+        ok('…all:true clears the lot', rAll.ok && rAll.result.stillHidden === 0);
+
+        const delRefused = await reg.dispatch('insights.delegate', { key: keys[0] });
+        ok('‼️ insights.delegate starts a REAL run, so it refuses without confirm',
+            !delRefused.ok && /costs money/.test(delRefused.error));
+        const del = await reg.dispatch('insights.delegate', { all: true, confirm: true });
+        ok('‼️ …and several findings become ONE run, not one run each',
+            del.ok && del.result.findings === 2 && delegated.length === 1);
+
+        const sl = await reg.dispatch('suggestions.list', {});
+        ok('suggestions.list defaults to the open pile', sl.ok && sl.result.total === 1);
+        const slApplied = await reg.dispatch('suggestions.list', { state: 'applied' });
+        ok('…and can be asked for the settled ones', slApplied.ok && slApplied.result.total === 1);
+        const slBad = await reg.dispatch('suggestions.list', { state: 'maybe' });
+        ok('…an invented state lists the real ones', !slBad.ok && /open, applied or dismissed/.test(slBad.error));
+
+        const scanRefused = await reg.dispatch('suggestions.scan', { agent: 'yazar' });
+        ok('suggestions.scan runs a model, so it refuses without confirm',
+            !scanRefused.ok && /costs money/.test(scanRefused.error) && scanned === 0);
+        ok('…and with confirm it runs', (await reg.dispatch('suggestions.scan', { agent: 'yazar', confirm: true })).ok && scanned === 1);
+
+        const ap = await reg.dispatch('suggestions.apply', { id: 's1' });
+        ok('suggestions.apply writes the rule and settles it', ap.ok && byId('s1').status === 'applied');
+        const apTwice = await reg.dispatch('suggestions.apply', { id: 's1' });
+        ok('‼️ …and a rule cannot be applied twice', !apTwice.ok && /already applied/.test(apTwice.error));
+        const disSettled = await reg.dispatch('suggestions.dismiss', { id: 's2' });
+        ok('…nor a settled one dismissed', !disSettled.ok && /already applied/.test(disSettled.error));
+
+        const qRefused = await reg.dispatch('quality.sample', {});
+        ok('quality.sample refuses without confirm', !qRefused.ok && sampled === 0);
+        ok('…and scores when asked properly', (await reg.dispatch('quality.sample', { confirm: true })).ok && sampled === 1);
+        const pulse = await reg.dispatch('living.pulse', {});
+        ok('living.pulse costs nothing and needs no confirm', pulse.ok && pulsed === 1);
+
+        const ed = await reg.dispatch('evals.delete', { id: 'c1' });
+        ok('evals.delete removes a case', ed.ok && !cases.some(c => c.id === 'c1'));
+        const edGone = await reg.dispatch('evals.delete', { id: 'c1' });
+        ok('…an id that is not there is refused, not silently nothing', !edGone.ok && /No eval case/.test(edGone.error));
+        const edWrong = await reg.dispatch('evals.delete', { id: 'c2', agent: 'yazar' });
+        ok('‼️ …and a case belonging to another agent is named, not deleted',
+            !edWrong.ok && /belongs to basit/.test(edWrong.error) && cases.some(c => c.id === 'c2'));
+    }
+
     // ---------- §19.C: duties ops contract (the standing-vigilance system) ----------
     // Real compiled duties.js against a temp agent dir — proves the whole
     // watch→do lifecycle (add/list/update/togglePause/move/delete) is bridge-

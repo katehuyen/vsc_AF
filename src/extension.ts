@@ -214,7 +214,7 @@ import { getMe, sendMessage, TelegramPoller } from './core/telegram';
 import { generateToken, RunningWebServer, startWebServer, lanAddress } from './core/webserver';
 import { buildPortfolioRows } from './panels/portfolioPanel';
 import {
-    applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
+    applySuggestionToClaudeMd, collectUserMessages, scanCorrections, Suggestion, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
@@ -4263,10 +4263,116 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'insights.list',
-            describe: 'Current health & optimization findings. args: none',
+            describe: 'Current health & optimization findings. ‼️ Each carries its `key` — the identity that survives a rescan, because a finding is re-derived every time and its wording is not a handle. insights.dismiss and insights.delegate take that key. args: none',
             handler: () => insights.map(i => ({
+                key: insightKey(i),
                 severity: i.severity, category: i.category, agent: i.agentName, message: i.message
             }))
+        },
+        {
+            op: 'insights.dismissed',
+            describe: 'What is currently HIDDEN from insights.list, and until when — the pile that explains why a finding you expected is not there. `until: null` is hidden for good. An entry whose time has passed is gone from here by itself. args: none',
+            handler: () => {
+                const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+                const now = Date.now();
+                return Object.entries(dismissed)
+                    .filter(([, e]) => e.until === 0 || e.until > now)
+                    .map(([key, e]) => ({
+                        key, label: e.label,
+                        until: e.until === 0 ? null : e.until,
+                        forever: e.until === 0
+                    }));
+            }
+        },
+        {
+            op: 'insights.dismiss',
+            describe: '‼️ HIDE A FINDING FOR A WHILE — the answer to a true observation you have already decided about. `days` is how long (1 and 7 are what the menu offers); `forever:true` is the other end and is the only way to hide it for good, so an omitted `days` can never silently mean forever. Name the finding by its `key` from insights.list; the wording is not an identity. args: key, days? (default 7), forever?',
+            handler: async (args) => {
+                const key = argStr(args, 'key');
+                const target = insights.find(i => insightKey(i) === key);
+                need(target, `No current finding with key "${key}" — insights.list shows them with their keys.`);
+                const forever = args.forever === true;
+                // Read `days` RAW: a 0 that reached this through a string helper
+                // would fall back to the default, and "hide it for zero days"
+                // must be an error rather than quietly become a week.
+                const raw = args.days;
+                const days = forever ? 0
+                    : (raw === undefined || raw === null || raw === '' ? 7 : Number(raw));
+                need(forever || (Number.isFinite(days) && days > 0),
+                    '`days` is a positive number of days — or pass forever:true.');
+                const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+                const t = target as Insight;
+                dismissed[key] = {
+                    until: forever ? 0 : Date.now() + days * 24 * 3600 * 1000,
+                    label: `[${t.agentName} · ${t.category}] ${t.message.slice(0, 80)}`
+                };
+                await context.globalState.update(DISMISS_KEY, dismissed);
+                refreshInsights();
+                return {
+                    key, forever, until: forever ? null : dismissed[key].until,
+                    note: forever ? 'Hidden for good — insights.restore brings it back.'
+                        : `Hidden until ${new Date(dismissed[key].until).toISOString()}.`
+                };
+            }
+        },
+        {
+            op: 'insights.restore',
+            describe: 'Un-hide dismissed findings: one `key`, several `keys`, or `all:true` for the lot. A key that was not hidden is reported rather than failing, so this is safe to repeat. args: key? · keys? (array) · all?',
+            handler: async (args) => {
+                const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+                const held = Object.keys(dismissed);
+                let wanted: string[];
+                if (args.all === true) { wanted = held; }
+                else if (Array.isArray(args.keys)) { wanted = (args.keys as unknown[]).map(String); }
+                else { wanted = [argStr(args, 'key')]; }
+                need(wanted.length, 'Nothing to restore — pass `key`, `keys` or all:true.');
+                const restored = wanted.filter(k => k in dismissed);
+                const unknown = wanted.filter(k => !(k in dismissed));
+                for (const k of restored) { delete dismissed[k]; }
+                if (restored.length) {
+                    await context.globalState.update(DISMISS_KEY, dismissed);
+                    refreshInsights();
+                }
+                return {
+                    restored: restored.length, keys: restored, notDismissed: unknown,
+                    stillHidden: Object.keys(dismissed).length,
+                    note: restored.length
+                        ? `${restored.length} finding(s) are visible again.`
+                        : 'None of those were hidden — nothing changed.'
+                };
+            }
+        },
+        {
+            op: 'insights.delegate',
+            describe: '‼️ COST-BEARING — hand findings to an agent as a real headless run, the same task the Insights view creates. One `key`, several `keys`, or `all:true` for everything currently open; they are folded into ONE prompt, because five separate runs on five findings in the same file is five agents editing one file. The agent defaults to the one the first finding is about. args: key? · keys? · all? · agent? (name|id), confirm (true — required)',
+            handler: (args) => {
+                need(args.confirm === true,
+                    'Delegating starts a real run, which costs money — pass confirm:true if that is meant.');
+                let list: Insight[];
+                if (args.all === true) { list = insights.slice(); }
+                else {
+                    const keys = Array.isArray(args.keys)
+                        ? (args.keys as unknown[]).map(String) : [argStr(args, 'key')];
+                    list = keys.map(k => {
+                        const found = insights.find(i => insightKey(i) === k);
+                        need(found, `No current finding with key "${k}" — insights.list shows them.`);
+                        return found as Insight;
+                    });
+                }
+                need(list.length, 'There are no findings to delegate.');
+                const ref = optStr(args, 'agent');
+                const agent = ref ? findAgent(ref)
+                    : agents.find(a => a.id === list[0].agentId) ?? agents[0];
+                need(agent, 'No agent to delegate to — agents.list shows the farm.');
+                const task = taskManager.addTask(agent as AgentInfo,
+                    delegationTitle(list), buildDelegationPrompt(list), 'headless');
+                for (const i of list) { noteInsightAction(i, 'delegate'); }
+                return {
+                    taskId: task.id, title: task.title, agent: (agent as AgentInfo).name,
+                    findings: list.length, keys: list.map(i => insightKey(i)),
+                    note: `${list.length} finding(s) handed to ${(agent as AgentInfo).name} as one run — tasks.get { id } follows it.`
+                };
+            }
         },
         {
             op: 'triggers.list',
@@ -7233,6 +7339,124 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * looking at the modal.
      */
     bridge.register([
+        {
+            op: 'suggestions.list',
+            describe: 'Instruction suggestions — rules the farm noticed you having to REPEAT to an agent, proposed as lines for its CLAUDE.md. `state` is open (the pile to work through), applied or dismissed. Each carries the evidence it was drawn from, because a rule with no evidence is somebody\'s opinion. args: agent? (name|id), state? (open|applied|dismissed, default open)',
+            handler: (args) => {
+                const ref = optStr(args, 'agent');
+                const agentId = ref ? findAgent(ref).id : '';
+                const state = (optStr(args, 'state') || 'open').toLowerCase();
+                need(['open', 'applied', 'dismissed'].includes(state),
+                    `state is open, applied or dismissed — not "${state}"`);
+                const rows = suggestionStore.suggestions
+                    .filter(s => (!agentId || s.agentId === agentId) && s.status === state);
+                return {
+                    state, total: rows.length,
+                    suggestions: rows.map(s => ({
+                        id: s.id, agent: s.agentName, rule: s.rule,
+                        evidence: s.evidence ?? '', createdAt: s.createdAt ?? null
+                    }))
+                };
+            }
+        },
+        {
+            op: 'suggestions.scan',
+            describe: '‼️ COST-BEARING — a cheap model reads one agent\'s recent corrections looking for the same thing being said twice. It produces SUGGESTIONS, never a change: what it finds lands in suggestions.list for suggestions.apply to act on. Refuses without confirm. args: agent (name|id), confirm (true — required)',
+            handler: async (args) => {
+                need(args.confirm === true,
+                    'Scanning runs a model, which costs money — pass confirm:true if that is meant.');
+                const agent = findAgent(argStr(args, 'agent'));
+                const added = await scanAgentSuggestions(agent);
+                refreshInsights();
+                return {
+                    agent: agent.name, added,
+                    open: suggestionStore.open().filter(s => s.agentId === agent.id).length,
+                    note: added
+                        ? `${added} new suggestion(s) — suggestions.list shows them.`
+                        : 'No repeated correction patterns found (it needs a few follow-up messages in recent sessions).'
+                };
+            }
+        },
+        {
+            op: 'suggestions.apply',
+            describe: '‼️ WRITES TO THE AGENT\'S CLAUDE.md — the suggested rule is appended under the "Learned rules (Agent Farm)" heading, which is the one section of that file this extension owns. Everything the user wrote stays where it is. A suggestion that is not open is refused, so a rule cannot be applied twice. args: id',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = suggestionStore.byId(id);
+                need(s, `No suggestion "${id}" — suggestions.list shows the open ones.`);
+                need((s as Suggestion).status === 'open',
+                    `That suggestion is already ${(s as Suggestion).status}.`);
+                const agent = agents.find(a => a.id === (s as Suggestion).agentId);
+                need(agent?.claudeMdPath,
+                    `${(s as Suggestion).agentName} has no CLAUDE.md to write to.`);
+                need(applySuggestionToClaudeMd((agent as AgentInfo).claudeMdPath as string, (s as Suggestion).rule),
+                    'The CLAUDE.md could not be written — check that it exists and is not read-only.');
+                suggestionStore.setStatus(id, 'applied');
+                refreshInsights();
+                return {
+                    id, agent: (agent as AgentInfo).name, rule: (s as Suggestion).rule,
+                    file: (agent as AgentInfo).claudeMdPath,
+                    note: `Added to ${(agent as AgentInfo).name}'s CLAUDE.md under "Learned rules (Agent Farm)".`
+                };
+            }
+        },
+        {
+            op: 'suggestions.dismiss',
+            describe: 'Turn a suggestion down. It leaves the open pile and is not proposed again; nothing is written to any file. args: id',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = suggestionStore.byId(id);
+                need(s, `No suggestion "${id}" — suggestions.list shows the open ones.`);
+                need((s as Suggestion).status === 'open',
+                    `That suggestion is already ${(s as Suggestion).status}.`);
+                suggestionStore.setStatus(id, 'dismissed');
+                refreshInsights();
+                return { id, agent: (s as Suggestion).agentName, note: 'Dismissed — it will not be proposed again.' };
+            }
+        },
+        {
+            op: 'quality.sample',
+            describe: '‼️ COST-BEARING — a cheap model scores a sample of recent outputs, which is what the quality figures on the fleet card and in the reports are made of. It normally runs on its own schedule; this is the "score it now" gesture. Refuses without confirm. args: confirm (true — required)',
+            handler: async (args) => {
+                need(args.confirm === true,
+                    'Sampling runs a model, which costs money — pass confirm:true if that is meant.');
+                await runQualitySample(true);
+                return {
+                    scores: qualityStore.scores.length,
+                    note: 'Sampled — the new scores are in the fleet figures and in reports.fleet.'
+                };
+            }
+        },
+        {
+            op: 'living.pulse',
+            describe: 'Run the Living checks NOW rather than waiting for the beat. Each check is a precondition where TRUE means "needs attention" — the diary that should be written, the inbox that should be empty — so this is the "is the farm still serving its purpose" read, not a farm-health one. It costs nothing: the checks are files on this disk. args: none',
+            handler: async () => {
+                await runPulse(true);
+                return { ran: true, note: 'Living checks ran — living.checks shows what they say now.' };
+            }
+        },
+        {
+            op: 'evals.delete',
+            describe: 'Remove a regression case. The runs that already used it keep their verdicts — this only stops it being replayed. An id that does not exist, or belongs to a different agent than the one named, is refused rather than silently deleting nothing. args: id, agent? (name|id — the case must belong to it)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const c = evalStore.cases.find(x => x.id === id);
+                need(c, `No eval case "${id}" — evals.list shows the current ones.`);
+                const ref = optStr(args, 'agent');
+                if (ref) {
+                    const a = findAgent(ref);
+                    need(c?.agentId === a.id,
+                        `Case "${id}" belongs to ${c?.agentName}, not ${a.name}.`);
+                }
+                evalStore.deleteCase(id);
+                EvalsPanel.refreshIfOpen();
+                return {
+                    id, title: c?.title ?? null, agent: c?.agentName ?? null,
+                    remaining: evalStore.cases.filter(x => x.agentId === c?.agentId).length,
+                    note: `Deleted — past run verdicts are untouched.`
+                };
+            }
+        },
         {
             op: 'evals.list',
             describe: "An agent's regression cases. args: agent? (name|id — omit for every agent)",
