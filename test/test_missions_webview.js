@@ -573,6 +573,28 @@ ok('Collapse all folds the whole list', detailCount() === 0);
         html().includes('data-run="run1"') && !html().includes('data-run="runF"'));
     getEl('f-clear').listeners.click();
     ok('Clear resets every filter', html().includes('data-run="run1"') && html().includes('data-run="runF"'));
+
+    // ---------- U-52: the status axis's own words ----------
+    // Seven chips, and nobody reads them as seven. "Which of these need me?" is
+    // the question this page exists to answer and it used to cost two presses
+    // out of seven, with knowing which two.
+    ok('the status row offers its named subsets',
+        html().includes('id="fg-needsyou"') && html().includes('id="fg-live"')
+        && html().includes('id="fg-over"') && html().includes('id="fg-none"'));
+    getEl('fg-needsyou').listeners.click();
+    ok('‼️ U-52 — Waiting on you is every run stopped on your answer, in one press',
+        html().includes('data-run="run1"') && !html().includes('data-run="runF"'));
+    getEl('fg-over').listeners.click();
+    ok('‼️ U-52 — …and Finished is everything that is over, however it ended',
+        html().includes('data-run="runF"') && !html().includes('data-run="run1"'));
+    ok('…a group REPLACES the selection rather than adding to it',
+        html().includes('1/2 runs'));
+    getEl('fg-live').listeners.click();
+    ok('Still going is the complement of it', html().includes('data-run="run1"')
+        && !html().includes('data-run="runF"'));
+    getEl('fg-none').listeners.click();
+    ok('…and Clear puts every status back',
+        html().includes('data-run="run1"') && html().includes('data-run="runF"'));
     const fromEl = getEl('f-from');
     fromEl.value = '2100-01-01';
     fromEl.listeners.change();

@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.136.0 — The Console reads where you left it, what you left it on, and as far back as you like (2026-08-14)
+
+Four backlog items, all of them about the same complaint from different sides: the conversation panel losing track of the reader.
+
+**K-19 — the new-line badge and the reading position, on the rare turn where they went.** Reported as *occasional*, and that is exactly what the cause looks like. `unseen` was counted as the growth in the number of ROWS, which is right for almost everything the Console draws — a tool call, its result, the closing figures — and wrong for the one case where it matters most: a long answer streams into the SAME message object, so the row count never moves and the badge stayed hidden while paragraphs piled up below the fold. That case is now measured as well as counted, and only when the row count did not move, so the ordinary path is untouched down to the arithmetic.
+
+- **‼️ …and the reading position is now GUARANTEED rather than assumed.** `talkinner` is rewritten whole on every repaint, and leaving `scrollTop` alone preserves the view only while the pixels above the fold stay the same pixels — true almost always, which is why this almost always worked. Every row now publishes its message id (`data-mid`), so the row at the top of the viewport is found again after the write and put back on the same pixel. **In the ordinary repaint the drift is zero and no scroll is written at all**: it is a guarantee laid over a rule that was already right, not a replacement for it.
+- `test/test_console_tail.js` drives the real page against a real viewport — row heights, a clamped `scrollTop`, an anchor measured in pixels — because every string assertion in this repo passes just as happily on a page that has thrown the reader two hundred lines up.
+
+**K-21 — `show` belongs to the card, not to the panel.** Two sessions side by side are two different readings: one you are following line by line, one you only want the dialogue of. The filter was a single panel-wide value, so pressing a card silently re-filtered it to whatever the last card had been left on — and the lines that vanished looked like lines that had never arrived. Each session now keeps its own; a card that has never been filtered starts from the panel's standing default, and a card taken off the shelf takes its filter with it.
+
+**K-23 — the part of the conversation above the scrollback ceiling is readable from the panel.** A resume rebuilds the last 150 rows (600 at the outside) so a forty-megabyte transcript cannot stall the panel. Everything older was in the file and nowhere else — the Console had had the conversation and was the one surface that would not show it. The head row now carries **`↑ load 200 older`**, and pressing it walks up the thread a chunk at a time.
+
+- **‼️ It cannot draw the same turn twice, by construction.** Every scrollback row is named by its POSITION in the transcript, so two reads of an append-only file agree on every row below the tail and an overlap is an id collision to skip. Each chunk states which reading of the file it came from.
+- **‼️ And it does not move you.** The boundary marker is excluded from the reading anchor above, so the chunk lands behind it and the line you were on stays under your eye.
+- **The one case it refuses.** Only the tail of a huge transcript is parsed, so there a row's position is its place in *that* tail and the next read would number it differently — the handle is not offered, and the sentence stands as it did. Reading costs nothing either way: the file is on this disk and no token is spent.
+- On the bridge: **`console.older`** — same read, answering `{ added, older, snapshot }`.
+
+**U-52 (closing) — the named subsets, on the one control that was still spelt out a press at a time.** The sweep in 3.122.3 gave every multi-pick box in the extension the subsets its list has a word for. Missions' status row is the same question in a different control: seven chips that nobody reads as seven. It now carries **Waiting on you · Still going · Finished · Clear** beside them — and "which of these need me?" is one press instead of two out of seven, with knowing which two.
+
 ## 3.135.1 — K-22, measured against the CLI itself rather than its documentation (2026-08-14)
 
 The process smoke for 3.135.0 was run against the installed CLI, and reading the binary to explain its answer corrected two things in the release that had just shipped.

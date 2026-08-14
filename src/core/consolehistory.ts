@@ -31,6 +31,17 @@ export const HISTORY_MAX = 150;
 export const HISTORY_CEILING = 600;
 
 /**
+ * ‼️ K-23 — HOW MANY ROWS ONE "load older" BRINGS BACK.
+ *
+ * The point is that a reader can WALK UP a long conversation, so a chunk is a
+ * screenful or two of scrolling rather than the rest of the file: an
+ * eleven-hundred-message thread comes back in pieces the panel draws at once,
+ * and the reader stops as soon as they have found what they came for. It costs
+ * nothing but layout — the transcript is on this disk and no token is spent.
+ */
+export const OLDER_CHUNK = 200;
+
+/**
  * ‼️ S-30 — THE LAST COMPLETED TURN IS NOT SUBJECT TO THE ROW BUDGET.
  *
  * The backfill used to be `slice(-150)` and 150 counts TOOL rows: on a
@@ -53,7 +64,35 @@ export function historyWindow<T>(
     max = HISTORY_MAX,
     ceiling = HISTORY_CEILING
 ): T[] {
-    if (items.length <= max) { return items.slice(); }
+    return historyWindowIndices(items, startsTurn, max, ceiling).map(i => items[i]);
+}
+
+/**
+ * ‼️ K-23 — THE SAME WINDOW, AS POSITIONS IN THE WHOLE TRANSCRIPT.
+ *
+ * The rows the window keeps have to be nameable in the file they came from, not
+ * just in the slice: "load the part above this" is a question about the
+ * transcript, and answering it from a slice means counting backwards from a
+ * number nobody kept. So the window is computed once, here, as indices — the
+ * row ids are built from them, and a later read can say exactly which positions
+ * are already on the card and which are not. Two reads of an append-only file
+ * agree on every index below the tail, which is what makes the chunks fit
+ * together instead of drawing the same turn twice.
+ *
+ * `historyWindow` is this function plus a map, so there is one rule and not two.
+ */
+export function historyWindowIndices<T>(
+    items: T[],
+    startsTurn: (m: T) => boolean,
+    max = HISTORY_MAX,
+    ceiling = HISTORY_CEILING
+): number[] {
+    const all = (from: number): number[] => {
+        const out: number[] = [];
+        for (let i = from; i < items.length; i++) { out.push(i); }
+        return out;
+    };
+    if (items.length <= max) { return all(0); }
     let opened = -1;
     for (let i = items.length - 1; i >= 0; i--) {
         if (startsTurn(items[i])) { opened = i; break; }
@@ -62,8 +101,8 @@ export function historyWindow<T>(
     if (opened >= 0 && opened < start) {
         start = Math.max(opened, items.length - ceiling);
     }
-    const kept = items.slice(start);
-    if (opened >= 0 && opened < start) { kept.unshift(items[opened]); }
+    const kept = all(start);
+    if (opened >= 0 && opened < start) { kept.unshift(opened); }
     return kept;
 }
 
@@ -95,6 +134,52 @@ export function transcriptHistory(
     lines: string[], opts?: { max?: number; now?: number }
 ): ConsoleMessage[] {
     const max = opts?.max ?? HISTORY_MAX;
+    const { rows: out, partial } = transcriptMessages(lines, opts);
+    if (!out.length) { return out; }
+    // Keep the END of the conversation — where you left off is what you came
+    // back for. Anything cut is still in the transcript, and the row says so.
+    // The last turn's own prompt comes with it whatever the budget (S-30).
+    const at = historyWindowIndices(out, m => m.role === 'user' && !!m.text?.trim(), max);
+    const kept = at.map(i => out[i]);
+    const dropped = out.length - kept.length;
+    const head: ConsoleMessage[] = [{
+        id: 'h0', ts: kept[0].ts, role: 'system',
+        text: partial
+            ? '↑ earlier messages are in the transcript — "Open transcript" has the whole session.'
+            : dropped
+                ? `↑ ${dropped} older message(s) are in the transcript — "Open transcript" has the whole session.`
+                : '↑ the start of this session',
+        /**
+         * ‼️ K-23 — AND IT IS ONLY OFFERED WHEN IT CAN BE HONOURED.
+         *
+         * Only the tail of a huge transcript is parsed (SCAN_LINES), so on a
+         * partial read a row's position is its place in THAT tail — and the
+         * next read, of a file that has grown, would number the same message
+         * differently. Loading a chunk against shifted positions is exactly the
+         * duplicated conversation this whole scheme exists to prevent, so on a
+         * partial read the sentence stands on its own and "Open transcript" is
+         * the way through. Whole reads — which is what a session of a few
+         * thousand lines is — carry the handle.
+         */
+        ...(dropped && !partial ? { more: { older: dropped, chunk: OLDER_CHUNK } } : {})
+    }];
+    const tail: ConsoleMessage[] = [{
+        id: 'h-end', ts: kept[kept.length - 1].ts, role: 'system',
+        text: '— read back from the transcript · resumed here —'
+    }];
+    return [...head, ...kept, ...tail];
+}
+
+/**
+ * The transcript's lines as rows, WITHOUT the window — every message the parse
+ * found, each named by its absolute place in the file (K-23).
+ *
+ * `partial` says the read only reached the tail of the file, which is what
+ * makes those positions untrustworthy across two reads; see the head row above.
+ */
+export function transcriptMessages(
+    lines: string[], opts?: { now?: number }
+): { rows: ConsoleMessage[]; partial: boolean } {
     const now = opts?.now ?? Date.now();
     const out: ConsoleMessage[] = [];
     let n = 0;
@@ -163,23 +248,5 @@ export function transcriptHistory(
         // summaries, system lines, thinking blocks: not conversation
     }
 
-    if (!out.length) { return out; }
-    // Keep the END of the conversation — where you left off is what you came
-    // back for. Anything cut is still in the transcript, and the row says so.
-    // The last turn's own prompt comes with it whatever the budget (S-30).
-    const kept = historyWindow(out, m => m.role === 'user' && !!m.text?.trim(), max);
-    const dropped = out.length - kept.length;
-    const head: ConsoleMessage[] = [{
-        id: 'h0', ts: kept[0].ts, role: 'system',
-        text: partial
-            ? '↑ earlier messages are in the transcript — "Open transcript" has the whole session.'
-            : dropped
-                ? `↑ ${dropped} older message(s) are in the transcript — "Open transcript" has the whole session.`
-                : '↑ the start of this session'
-    }];
-    const tail: ConsoleMessage[] = [{
-        id: 'h-end', ts: kept[kept.length - 1].ts, role: 'system',
-        text: '— read back from the transcript · resumed here —'
-    }];
-    return [...head, ...kept, ...tail];
+    return { rows: out, partial };
 }

@@ -68,8 +68,20 @@
         // files hung on the message being written — paths only, never payload;
         // the bytes are read in the extension at send time (see loadAttachments)
         attach: [],
-        // which kinds of line the conversation shows; null = everything
+        /**
+         * Which kinds of line the conversation shows; null = everything.
+         *
+         * ‼️ K-21 — THIS IS THE STARTING POINT, NOT THE SETTING. What `show` is
+         * set to belongs to the CARD, not to the panel: two sessions side by
+         * side are two different readings — one you are following line by line,
+         * one you only want the dialogue of — and a single shared value meant
+         * pressing a card silently re-filtered it to whatever the last card was
+         * left on. `kindsBy` is each session's own answer; this is what a
+         * session that has never been given one starts from.
+         */
         kinds: null,
+        /** sessionId → that card's own `show`, once it has been set (K-21) */
+        kindsBy: {},
         /**
          * How tall the writing box was dragged, as a css length ('220px').
          *
@@ -98,6 +110,7 @@
     }, saved.afConsole);
     st.rq = Object.assign(EMPTY_RQ(), st.rq);
     st.order = Object.assign(ORDER_DEFAULT(), st.order);
+    if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
@@ -381,6 +394,14 @@
         .msg.tool .body { font-size:11px; opacity:.85; font-family:var(--vscode-editor-font-family, monospace); }
         .msg.err .body { color:var(--vscode-errorForeground); }
         .msg.sys .body { font-size:11px; opacity:.7; font-style:italic; }
+        /* ‼️ K-23 — the way further back, IN the row that says there is one.
+           That row is faded italic commentary; an action wearing the same
+           clothes reads as part of the sentence, so the button keeps its own
+           weight and upright face inside it. */
+        .msg.sys .older { font-size:10px; font-style:normal; opacity:1;
+            padding:1px 8px; border-radius:10px; margin-left:2px; white-space:nowrap; }
+        .msg.sys .older[disabled] { opacity:.5; }
+        .msg.sys .af-tipw { display:inline-block; vertical-align:baseline; }
         .msg.res .body { font-size:11px; opacity:.7; border-top:1px dashed var(--vscode-widget-border,#4443); padding-top:5px; }
         .filechip { display:inline-block; font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
             cursor:pointer; border:1px solid var(--vscode-widget-border,#4444); }
@@ -1122,18 +1143,92 @@
         { v: 'ask', t: '❓ Questions · your answers', is: m => m.role === 'ask' }
     ];
 
-    /** st.kinds: null = everything (and a kind added later is included). */
+    /**
+     * ‼️ K-21 — `show` IS THE CARD'S, AND ONLY THE CARD'S.
+     *
+     * A card that has never been filtered starts from `st.kinds` (the panel's
+     * standing default, and the value an older install already had). The moment
+     * one is set on a card it is written under that card's id and nothing else
+     * moves — pressing another card cannot change what this one shows, which
+     * was the whole complaint.
+     */
+    function kindsOf(id) {
+        const by = st.kindsBy || {};
+        return id && Object.prototype.hasOwnProperty.call(by, id) ? by[id] : st.kinds;
+    }
+    /** The selected card's own answer — what the picker draws and the filter uses. */
+    const kindsNow = () => kindsOf(DATA.selected);
+
+    /** Forget the cards that are no longer on the shelf (K-21). */
+    function pruneKinds() {
+        const by = st.kindsBy || {};
+        const keys = Object.keys(by);
+        if (!keys.length) { return; }
+        const alive = {};
+        (DATA.sessions || []).forEach(s => { alive[s.id] = true; });
+        let cut = false;
+        keys.forEach(k => { if (!alive[k]) { delete by[k]; cut = true; } });
+        if (cut) { save(); }
+    }
+
+    /** null = everything (and a kind added later is included). */
     function visibleMessages(list) {
-        if (st.kinds === null || st.kinds === undefined) { return list || []; }
-        const on = KINDS.filter(k => st.kinds.indexOf(k.v) >= 0);
+        const kinds = kindsNow();
+        if (kinds === null || kinds === undefined) { return list || []; }
+        const on = KINDS.filter(k => kinds.indexOf(k.v) >= 0);
         return (list || []).filter(m => on.some(k => k.is(m)));
     }
 
+    /**
+     * ‼️ K-19 — EVERY ROW CARRIES ITS MESSAGE ID, AND THAT IS WHAT THE READING
+     * POSITION IS ANCHORED TO.
+     *
+     * `talkinner` is rewritten whole on every repaint, so every node a reader
+     * was looking at is destroyed and rebuilt. Keeping `scrollTop` untouched
+     * preserves the view only while nothing ABOVE the fold changes height —
+     * true almost always, which is why this almost always worked, and why the
+     * times it did not looked random. An id on the row turns that assumption
+     * into something measurable: find the row again, put it back on the same
+     * pixel (see readAnchor). It is also the handle the older-scrollback loader
+     * needs, because prepending rows moves every index but no id.
+     */
+    /**
+     * ‼️ K-23 — THE HEAD ROW STOPPED BEING A DEAD END.
+     *
+     * "↑ 940 older message(s) are in the transcript" was a true sentence and a
+     * closed door: the only way through it was to open the raw file in an
+     * editor and lose the panel's reading of it entirely. The file is on this
+     * disk and showing more of it spends nothing — the cost is layout, which is
+     * why it arrives a chunk at a time rather than all at once.
+     *
+     * The button says how many it will bring, because "load older" alone leaves
+     * the reader guessing whether one press is enough; the panel carries the
+     * rest, including WHICH reading of the file the count came from, so two
+     * pieces that do not belong together can be seen not to.
+     */
+    function olderHtml(m) {
+        const more = m && m.more;
+        if (!more || !(more.older > 0)) { return ''; }
+        // The chunk size is the READER's, not this page's — one constant, in
+        // the module that owns the window (core/consolehistory.ts).
+        const chunk = more.chunk > 0 ? more.chunk : more.older;
+        const take = Math.min(more.older, chunk);
+        const btn = `<button class="secondary older" data-older="1">↑ load ${take} older</button>`;
+        return ' ' + window.AFTip.wrap(btn,
+            `${more.older} message(s) still above this line`,
+            'Reads them back off the transcript on disk — display only, nothing is sent anywhere and'
+            + ` no token is spent. They arrive ${chunk} at a time so the panel stays quick; press again`
+            + ' to keep going, and where you are reading does not move.'
+            + (more.stamp ? `\n\nSnapshot: ${more.stamp} — every piece says which reading of the file it came from.` : ''),
+            'tip-free');
+    }
+
     function messageHtml(m) {
+        const mid = ` data-mid="${C.esc(m.id || '')}"`;
         if (m.role === 'user') {
             // ↯ — said INTO the turn above it, which was already running: it is
             // not the question that reply was answering.
-            return `<div class="msg user${m.steer ? ' steer' : ''}"${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg user${m.steer ? ' steer' : ''}"${mid}${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         // ‼️ EVERY STEP ROW SAYS WHAT KIND OF STEP IT IS AND WHAT IT COST.
         // The conversation used to show only WHAT happened: a file read off
@@ -1154,7 +1249,7 @@
                 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>`
                 : '');
         if (m.role === 'agent') {
-            return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
+            return `<div class="msg"${mid}><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
         }
         if (m.role === 'tool') {
             if (m.tool) {
@@ -1162,12 +1257,12 @@
                     ? `<span class="filechip" data-open="${C.esc(m.tool.file)}" title="Open this file">✎ open</span>
                        <span class="filechip" data-diff="${C.esc(m.tool.file)}" title="Diff it against git HEAD">vs HEAD</span>`
                     : '';
-                return `<div class="msg tool"><span class="who">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
+                return `<div class="msg tool"${mid}><span class="who">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
             }
             // An error keeps ⚠ in the gutter rather than the kind chip: `↩ tool
             // result` is true of every result row and says nothing about this
             // one, while "it failed" is the only thing worth a glyph here.
-            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : C.stepChip(m.kind)}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg tool${m.isError ? ' err' : ''}"${mid}><span class="who">${m.isError ? '⚠' : C.stepChip(m.kind)}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         // The record of a question and of what you said back. The CARD above the
         // composer is where you answer; this is the transcript's memory of it,
@@ -1177,13 +1272,16 @@
             const text = a
                 ? `asked: ${a.detail || a.tool}`
                 : `you: ${m.answer || ''}`;
-            return `<div class="msg ask"><span class="who">${a ? '❓' : '↩'}</span><div class="body">${C.esc(text)}</div></div>`;
+            return `<div class="msg ask"${mid}><span class="who">${a ? '❓' : '↩'}</span><div class="body">${C.esc(text)}</div></div>`;
         }
         if (m.role === 'system') {
-            return `<div class="msg sys"><span class="who"></span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            // `data-top` marks the scrollback BOUNDARY rather than conversation:
+            // it is pinned to the front of the list, so it is the one row that
+            // says nothing about how far the rows moved (see readAnchor).
+            return `<div class="msg sys"${mid}${m.more ? ' data-top="1"' : ''}><span class="who"></span><div class="body">${C.esc(m.text || '')}${olderHtml(m)}</div></div>`;
         }
         if (m.role === 'error') {
-            return `<div class="msg err"><span class="who">error</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg err"${mid}><span class="who">error</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         // The line that closes a turn: how long it took, what it spent, what it
         // cost. A turn is the unit you think in — "was that worth it?" was
@@ -1205,7 +1303,7 @@
                 : spend(m.cost, m.tokens));
         }
         if (!bits.length) { return ''; }
-        return `<div class="msg res"><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
+        return `<div class="msg res"${mid}><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
     }
 
     /**
@@ -2091,8 +2189,95 @@
     let unseen = 0;
     /** how many lines the last paint drew — the yardstick for "arrived" */
     let shownCount = 0;
+    /**
+     * ‼️ K-19 — …AND WHAT THE LAST ROW HELD, because a streamed answer does not
+     * arrive as new rows.
+     *
+     * The count of rows is the right yardstick for almost everything the
+     * Console shows: a tool call, its result, a turn's closing figures and the
+     * next question are each their own object, so `shown.length` moves and the
+     * badge appears. An agent writing a long answer is the exception — the text
+     * is appended to the SAME message, the row count never moves, and the badge
+     * stayed hidden while the reader watched paragraphs pile up below them.
+     * That is why this was reported as rare rather than as broken.
+     *
+     * So the tail is measured as well as counted, and only when the row count
+     * did not move — the common path is untouched, down to the arithmetic.
+     */
+    let tailKey = '';
+    let tailLines = 0;
     /** everything the last `talkinner` render depended on (see paint) */
     let lastTalkKey = '';
+
+    /** How many lines a row draws. A tool call is one row whatever it holds. */
+    function lineUnits(m) {
+        if (!m) { return 0; }
+        if (m.role === 'tool' && m.tool) { return 1; }
+        const t = m.text || '';
+        let n = 1;
+        for (let i = 0; i < t.length; i++) { if (t.charCodeAt(i) === 10) { n++; } }
+        return n;
+    }
+
+    /** Which row the tail is, so growth is only credited to the SAME one. */
+    const tailIdOf = m => (m ? String(m.id || '') + '|' + m.role : '');
+
+    /**
+     * ‼️ K-19 — WHERE THE READER IS LOOKING, AS A ROW AND A PIXEL.
+     *
+     * Taken before `talkinner` is rewritten and put back after. Both halves are
+     * deliberately cheap and deliberately timid: the row is found by its
+     * message id (`data-mid`), and if the row is gone, or the page has no
+     * layout to measure — the test shim, a hidden panel — nothing happens and
+     * the old behaviour of simply leaving `scrollTop` alone stands.
+     *
+     * The restore writes `scrollTop` ONLY when the row actually moved. In the
+     * ordinary repaint the drift is zero and this costs two measurements and no
+     * scroll at all, which is the point: it is a guarantee laid over a rule
+     * that was already right, not a replacement for it.
+     */
+    function readAnchor(talkEl) {
+        if (!talkEl || typeof talkEl.getBoundingClientRect !== 'function') { return null; }
+        const inner = document.getElementById('talkinner');
+        const kids = inner && inner.children ? inner.children : null;
+        if (!kids || !kids.length) { return null; }
+        const top = talkEl.getBoundingClientRect().top;
+        for (let i = 0; i < kids.length; i++) {
+            const k = kids[i];
+            if (typeof k.getBoundingClientRect !== 'function') { return null; }
+            const r = k.getBoundingClientRect();
+            // the first row that has not been scrolled entirely past
+            if (r.bottom > top + 1) {
+                // ‼️ K-23 — …but never the boundary marker. It is pinned to the
+                // front of the list, so when an older chunk lands BEHIND it the
+                // marker has not moved a pixel while everything the reader was
+                // actually reading has — anchoring on it would leave them
+                // staring at the oldest line of the piece they just fetched.
+                if (k.dataset && k.dataset.top) { continue; }
+                const mid = k.dataset ? k.dataset.mid : '';
+                return mid ? { mid: mid, off: r.top - top } : null;
+            }
+        }
+        return null;
+    }
+
+    function restoreAnchor(talkEl, a) {
+        if (!a || !talkEl || typeof talkEl.getBoundingClientRect !== 'function') { return; }
+        const inner = document.getElementById('talkinner');
+        if (!inner || typeof inner.querySelector !== 'function') { return; }
+        let row = null;
+        try { row = inner.querySelector(`[data-mid="${cssEsc(a.mid)}"]`); } catch (e) { return; }
+        if (!row || typeof row.getBoundingClientRect !== 'function') { return; }
+        const drift = (row.getBoundingClientRect().top - talkEl.getBoundingClientRect().top) - a.off;
+        if (!drift || Math.abs(drift) < 1) { return; }
+        talkEl.scrollTop += drift;
+    }
+
+    function cssEsc(s) {
+        const str = String(s === undefined || s === null ? '' : s);
+        if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') { return CSS.escape(str); }
+        return str.replace(/[^a-zA-Z0-9_-]/g, ch => '\\' + ch);
+    }
 
     function paintJump() {
         const btn = document.getElementById('c-jump');
@@ -2112,6 +2297,8 @@
     function resetTail() {
         unseen = 0;
         shownCount = -1;   // the next paint is a baseline, not "new lines"
+        tailKey = '';
+        tailLines = 0;
         jumpToEnd();
     }
 
@@ -2552,7 +2739,7 @@
                     // allLabel is what follows "show: " — repeating the word
                     // here is how the button came to read "show: show: …"
                     id: 'c-kinds', label: 'show', allLabel: 'everything',
-                    options: KINDS, selected: st.kinds,
+                    options: KINDS, selected: kindsNow(),
                     // ‼️ THE ONE SUBSET THIS LIST HAS A WORD FOR. Seven kinds of
                     // line exist, and the reading a person keeps coming back to
                     // is the conversation itself — what was asked and what was
@@ -2562,7 +2749,8 @@
                         id: 'dialog', label: 'Dialog', values: ['agent', 'user'],
                         title: 'Just the conversation — you and the agent. Tool calls, results, system lines and questions are hidden.'
                     }],
-                    title: 'Which kinds of line the conversation shows'
+                    title: 'Which kinds of line the conversation shows. '
+                        + 'This belongs to THIS session card — the next card keeps its own.'
                 })}
                 <span class="grow"></span>
                 <span id="c-live"></span>
@@ -2711,7 +2899,9 @@
             window.AFFilter.wireMulti({
                 id: 'c-kinds',
                 onChange: picked => {
-                    st.kinds = picked;
+                    // K-21 — written under the card, never over the default.
+                    if (DATA.selected) { st.kindsBy[DATA.selected] = picked; }
+                    else { st.kinds = picked; }
                     save();
                     paint();
                     // a filter change is the reader's own move: land at the tail,
@@ -3164,28 +3354,42 @@
          */
         const last = shown.length ? shown[shown.length - 1] : null;
         const talkKey = !s ? 'none' : [
-            DATA.selected, st.kinds === null || st.kinds === undefined ? '*' : String(st.kinds),
+            DATA.selected, kindsNow() === null || kindsNow() === undefined ? '*' : String(kindsNow()),
             shown.length, (s.messages || []).length,
             last ? last.role : '', last ? (last.text || '').length : 0,
             last && last.tool ? last.tool.name : '',
             s.pendingPermission ? JSON.stringify(s.pendingPermission) : '',
             s.pendingAsk ? JSON.stringify(s.pendingAsk) : ''
         ].join('|');
+        // Taken while the OLD rows are still on screen, and only when there is
+        // a reading position to lose — see readAnchor.
+        const anchor = pinned ? null : readAnchor(talkEl);
         const changed = talkKey === lastTalkKey
             ? false
             : slot('talkinner', talkHtml(s, shown));
         lastTalkKey = talkKey;
+        const nowTailKey = tailIdOf(last);
+        const nowTailLines = lineUnits(last);
         if (changed) {
             if (pinned) {
                 unseen = 0;
                 if (talkEl) { talkEl.scrollTop = talkEl.scrollHeight; }
-            } else if (shownCount >= 0 && shown.length > shownCount) {
+            } else {
                 // Only what the filter LET THROUGH counts as a new line: lines
                 // you have filtered out are not news you are missing.
-                unseen += shown.length - shownCount;
+                if (shownCount >= 0 && shown.length > shownCount) {
+                    unseen += shown.length - shownCount;
+                } else if (shownCount >= 0 && shown.length === shownCount
+                    && nowTailKey && nowTailKey === tailKey && nowTailLines > tailLines) {
+                    // ‼️ K-19 — the streamed answer: same row, more of it.
+                    unseen += nowTailLines - tailLines;
+                }
+                restoreAnchor(talkEl, anchor);
             }
         }
         shownCount = shown.length;
+        tailKey = nowTailKey;
+        tailLines = nowTailLines;
         paintJump();
 
         const hidden = s ? (s.messages || []).length - shown.length : 0;
@@ -3210,6 +3414,15 @@
                 b.addEventListener('click', () => vscode.postMessage({
                     type: 'permissionMode', id: DATA.selected, mode: b.dataset.grant, retry: true
                 })));
+            // ‼️ K-23 — and the head row's way further back. Wired HERE, with
+            // the rest of the conversation's controls, because the row it sits
+            // on is rewritten by the same write (see the note on ctxAttr).
+            document.querySelectorAll('[data-older]').forEach(b =>
+                b.addEventListener('click', () => {
+                    b.disabled = true;
+                    b.textContent = '↑ reading…';
+                    vscode.postMessage({ type: 'loadOlder', id: DATA.selected });
+                }));
         }
 
         // The parked question, between the conversation and the composer — its
@@ -3683,7 +3896,11 @@
             const wasOn = DATA.selected;
             DATA = ev.data.data;
             // A different conversation is not "new lines in this one".
-            if (DATA.selected !== wasOn) { shownCount = -1; unseen = 0; }
+            if (DATA.selected !== wasOn) { shownCount = -1; unseen = 0; tailKey = ''; tailLines = 0; }
+            // K-21 — a card taken off the shelf takes its `show` with it. The
+            // host sends the WHOLE hosted list every time, so anything not in it
+            // is a session that will never be looked at again.
+            pruneKinds();
             // opened from an agent row: preselect that agent in the composer
             if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
             applyComposerSeed();

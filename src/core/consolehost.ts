@@ -1333,6 +1333,33 @@ export class ConsoleHost {
     }
 
     /**
+     * ‼️ K-23 — AN OLDER PIECE OF THE TRANSCRIPT, IN FRONT OF WHAT IS ALREADY
+     * THERE.
+     *
+     * The one rule that matters is the one S-30 states for resumeMessages: the
+     * same turn read twice is a duplicated conversation. Here it is enforced by
+     * IDENTITY rather than by choosing a winner — every scrollback row is named
+     * by its position in the file, so a row this card already holds is simply
+     * not added. The head row (`xh-start` / `h0`) is not content; it is the
+     * marker that says how much is still above, and the caller's new one
+     * replaces it.
+     *
+     * Returns how many rows were really added, so a caller can tell "there was
+     * nothing left" from "it worked".
+     */
+    prependHistory(id: string, head: ConsoleMessage, rows: ConsoleMessage[]): number {
+        const h = this.sessions.get(id);
+        if (!h) { return 0; }
+        const seen = new Set(h.state.messages.map(m => m.id));
+        const add = rows.filter(m => !seen.has(m.id));
+        if (!add.length) { return 0; }
+        const body = h.state.messages.filter(m => m.id !== head.id);
+        h.state = { ...h.state, messages: [head, ...add, ...body] };
+        this.fire(id);
+        return add.length;
+    }
+
+    /**
      * End one session's process — the whole tree.
      *
      * `shell: true` means the child we hold is the shell wrapper, not `claude`

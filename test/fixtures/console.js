@@ -44,6 +44,14 @@ const ENGINES = [
 ];
 
 const msgs = () => ([
+    // ‼️ K-23 — the scrollback BOUNDARY, which is what a resumed long session
+    // actually opens on. It has to be in the picture: the row is faded italic
+    // commentary and the action inside it must not read as part of the sentence.
+    {
+        id: 'xh-start', ts: NOW - 95000, role: 'system',
+        text: '↑ 940 older message(s) are in the transcript — "Open transcript" has the whole session.',
+        more: { older: 940, chunk: 200, stamp: '4.1 MB · 10 Aug 14:02' }
+    },
     { id: 'm1', ts: NOW - 90000, role: 'user', text: 'Read note.txt and tell me what is in it.' },
     {
         id: 'm2', ts: NOW - 84000, role: 'tool', kind: 'local',

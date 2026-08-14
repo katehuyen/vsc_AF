@@ -369,6 +369,9 @@ const html = allHtml;
 
 // ---------- the line filter ----------
 {
+    // ‼️ K-21 — `show` is kept under the CARD it was set on, not panel-wide, so
+    // this is where the saved choice lives now. The selected session here is cs1.
+    const savedKinds = () => (state.afConsole && state.afConsole.kindsBy || {}).cs1;
     talk().scrollTop = talk().scrollHeight;
     push(data(CONVO.slice()));
     ok('everything is shown by default',
@@ -387,9 +390,8 @@ const html = allHtml;
         push(data(CONVO.slice()));
         return !html().includes('file body');
     })());
-    ok('…and it survives a reload (webview state)',
-        state.afConsole && Array.isArray(state.afConsole.kinds)
-        && state.afConsole.kinds.join(',') === 'user');
+    ok('…and it survives a reload (webview state), under its own card',
+        Array.isArray(savedKinds()) && savedKinds().join(',') === 'user');
 
     afms.toggle('c-kinds', 'error', true);
     ok('a second kind adds its lines back',
@@ -398,7 +400,7 @@ const html = allHtml;
 
     afms.selectAll('c-kinds');
     ok('Select all means no filter at all — a kind added later is in',
-        state.afConsole.kinds === null && html().includes('file body'));
+        savedKinds() === null && html().includes('file body'));
 
     afms.clear('c-kinds');
     ok('Clear is an honest empty view, not a reset',
@@ -411,12 +413,12 @@ const html = allHtml;
         afms.presets('c-kinds').join(',') === 'dialog');
     afms.preset('c-kinds', 'dialog');
     ok('…and it leaves exactly you and the agent showing',
-        state.afConsole.kinds.slice().sort().join(',') === 'agent,user');
+        savedKinds().slice().sort().join(',') === 'agent,user');
 
     // …and the per-row version of the same idea: the NAME means "only this".
     afms.clickName('c-kinds', 'user');
     ok('clicking a kind\'s name shows only that kind',
-        state.afConsole.kinds.join(',') === 'user'
+        savedKinds().join(',') === 'user'
         && html().includes('read the report') && !html().includes('file body'));
     afms.selectAll('c-kinds');
 }

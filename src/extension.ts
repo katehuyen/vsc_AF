@@ -239,11 +239,15 @@ import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
-import { historyWindow, transcriptHistory } from './core/consolehistory';
+import {
+    historyWindow, historyWindowIndices, OLDER_CHUNK, transcriptHistory, transcriptMessages
+} from './core/consolehistory';
 import { MAX_TRANSCRIPT_BYTES, readSettled, snapshotLabel } from './core/transcriptRead';
-import { parseCliViewer } from './core/cliViewer';
+import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
-import { carriedTotals, ConsoleMessage, PERMISSION_MODES_LIVE } from './core/consoleproto';
+import {
+    carriedTotals, ConsoleMessage, OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
+} from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -5204,6 +5208,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(ok, 'no such live console session');
                 ConsolePanel.refreshIfOpen();
                 return { id, mode, sent: true, note: 'the CLI answers on the wire — read permissionMode back to see what it accepted' };
+            }
+        },
+        {
+            op: 'console.older',
+            describe: 'K-23 — read FURTHER BACK in a hosted session\'s scrollback. A resume rebuilds the last few hundred rows only, so anything above that was readable in the raw transcript alone; this puts the next chunk (200 rows) in front of what the card holds and can be called again to keep walking upwards. Display only: the transcript is a file on this disk, nothing is sent to any engine and no token is spent. Every row is named by its position in the file, so a chunk can never repeat a turn already on screen. Answers { added, older } — `older` is how many are still above after this one, so zero means the start of the session is now on the card. args: id (the hosted session, from console.sessions)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const seat = consoleHost.get(id);
+                need(!!seat, `no hosted session "${id}" — console.sessions lists them`);
+                need(!!seat?.sessionId, 'that session has no engine session id yet, so it has no transcript to read back');
+                const have = (seat?.messages ?? [])
+                    .map(m => transcriptPos(m.id)).filter(n => n >= 0);
+                const got = consoleOlderHistory(seat!.sessionId!, have);
+                if (got.reason !== undefined) {
+                    return { id, added: 0, older: 0, note: got.reason || 'the start of this session is already on the card' };
+                }
+                const added = consoleHost.prependHistory(id, got.head, got.rows);
+                ConsolePanel.refreshIfOpen();
+                return { id, added, older: got.head.more?.older ?? 0, snapshot: got.head.more?.stamp ?? null };
             }
         },
         {
@@ -11253,6 +11276,126 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * `--resume`. A transcript that cannot be read is simply no history: the
      * session still resumes, it just opens empty as it used to.
      */
+    /**
+     * One parsed transcript row as the Console draws it, NAMED BY ITS POSITION
+     * in the file (K-23).
+     *
+     * The id is the whole mechanism: the same message read twice gets the same
+     * `xh<n>`, so a chunk fetched later can be dropped in front of what the card
+     * already holds and any overlap between the two reads is an id collision to
+     * skip rather than a turn drawn twice.
+     */
+    const externalRow = (m: CliViewMessage, i: number): ConsoleMessage => {
+        if (m.role === 'assistant') {
+            return { id: `xh${i}`, ts: m.ts, role: 'agent', text: m.text, kind: m.kind };
+        }
+        if (m.role === 'tool') {
+            return {
+                id: `xh${i}`, ts: m.ts, role: 'tool', kind: m.kind,
+                tool: {
+                    name: m.tool || 'tool',
+                    detail: (m.input || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+                }
+            };
+        }
+        if (m.role === 'toolResult') {
+            return { id: `xh${i}`, ts: m.ts, role: 'tool', text: m.text, isError: m.isError };
+        }
+        return {
+            id: `xh${i}`, ts: m.ts,
+            role: m.role === 'user' ? 'user' : 'system', text: m.text
+        };
+    };
+
+    /**
+     * The row that opens a partial scrollback — and, when there is more above
+     * it, the handle that opens it (K-23).
+     *
+     * It says the same sentence it always did, because "Open transcript" is
+     * still the way to read the file as a file; what is new is that the panel
+     * no longer has to be left as the only place the conversation is NOT
+     * readable. `more` is what the page turns into an action.
+     */
+    const headRow = (ts: number, older: number, stamp: string, id = 'xh-start'): ConsoleMessage => ({
+        id, ts, role: 'system',
+        text: older > 0
+            ? `↑ ${older} older message(s) are in the transcript — "Open transcript" has the whole session.`
+            : '↑ the start of this session',
+        ...(older > 0 ? { more: { older, stamp, chunk: OLDER_CHUNK } } : {})
+    });
+
+    /**
+     * ‼️ K-23 — THE PART OF THE TRANSCRIPT ABOVE WHAT THE CARD IS HOLDING.
+     *
+     * `have` is the set of positions already drawn, read off the row ids the
+     * card carries. The chunk returned is the highest run of missing positions
+     * below them, so repeated calls walk the conversation upwards and every
+     * call is a strict addition — nothing already on screen is in it.
+     *
+     * The read is a fresh snapshot of the same file, which is the honest thing
+     * on a session that is still being written: a transcript only ever grows at
+     * the end, so every position below the tail means the same message it did
+     * on the first read. The stamp says which reading each chunk came from, and
+     * travels on the head row with it.
+     */
+    const consoleOlderHistory = (
+        sessionId: string, have: number[]
+    ): OlderHistory => {
+        const row = [...index.all(), ...index.external()].find(s => s.sessionId === sessionId);
+        if (!row?.file) {
+            return { reason: 'Agent Farm has no transcript file for this session, so there is nothing more to read back here.' };
+        }
+        let snap;
+        try { snap = readSettled(row.file); } catch (e) {
+            return { reason: `The transcript could not be read (${String((e as Error)?.message ?? e)}).` };
+        }
+        const stamp = snapshotLabel(snap);
+        if (snap.tooBig) {
+            return {
+                reason: `This transcript is ${stamp} — larger than the `
+                    + `${Math.round(MAX_TRANSCRIPT_BYTES / (1024 * 1024))} MB this reads at once. `
+                    + '"Open transcript" opens the file itself.'
+            };
+        }
+        const raw = snap.raw ?? '';
+        // Both readers name a row by its absolute place in the file, so the
+        // chunking below is the same arithmetic either way — only the parse and
+        // the id prefix differ (see transcriptPos).
+        const external = parseCliViewer(raw, row.file, pricing);
+        let all: ConsoleMessage[];
+        let headId = 'xh-start';
+        if (external) {
+            all = external.messages.map((m, i) => externalRow(m, i));
+        } else {
+            headId = 'h0';
+            const native = transcriptMessages(raw.split('\n'));
+            if (native.partial) {
+                return {
+                    reason: 'Only the tail of this transcript is read here, so an older piece could not be'
+                        + ' lined up with what is on screen without risking a repeated turn.'
+                        + ' "Open transcript" opens the whole file.'
+                };
+            }
+            all = native.rows;
+        }
+        if (!all.length) {
+            return { reason: `This transcript (${stamp}) was read but held no conversation to show.` };
+        }
+        const held = new Set(have.filter(n => Number.isInteger(n) && n >= 0 && n < all.length));
+        // The topmost position the card holds; everything this looks for is
+        // BELOW it, because up is the direction a reader scrolls.
+        const top = held.size ? Math.min(...held) : all.length;
+        let end = -1;
+        for (let i = top - 1; i >= 0; i--) { if (!held.has(i)) { end = i; break; } }
+        if (end < 0) { return { reason: '' }; }        // the start is already on screen
+        const start = Math.max(0, end - OLDER_CHUNK + 1);
+        const rows: ConsoleMessage[] = [];
+        for (let i = start; i <= end; i++) { if (!held.has(i)) { rows.push(all[i]); } }
+        if (!rows.length) { return { reason: '' }; }
+        const older = Math.max(0, all.length - held.size - rows.length);
+        return { rows, head: headRow(rows[0].ts, older, stamp, headId) };
+    };
+
     const consoleHistory = (sessionId: string): ConsoleMessage[] => {
         /**
          * ‼️ S-30 — A BLANK SCROLLBACK IS NEVER THE ANSWER, AND NEVER SILENT.
@@ -11327,41 +11470,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ S-30 — the turn the reader just finished comes back whole, even
             // when 150 rows of tool traffic would have swallowed it. `turnStart`
             // is the parser's own mark for "this is where a turn opens".
-            const window = historyWindow(external.messages,
+            //
+            // ‼️ K-23 — and the window is taken as POSITIONS in the file, so
+            // every row can say where in the transcript it came from. That is
+            // what `xh<n>` means from here on, and what lets the part above this
+            // window be fetched later without redrawing a line of it.
+            const at = historyWindowIndices(external.messages,
                 m => m.turnStart === true || m.role === 'user');
-            const kept = window.map((m, i): ConsoleMessage => {
-                if (m.role === 'assistant') {
-                    return { id: `xh${i}`, ts: m.ts, role: 'agent', text: m.text, kind: m.kind };
-                }
-                if (m.role === 'tool') {
-                    return {
-                        id: `xh${i}`, ts: m.ts, role: 'tool', kind: m.kind,
-                        tool: {
-                            name: m.tool || 'tool',
-                            detail: (m.input || '').replace(/\s+/g, ' ').trim().slice(0, 180)
-                        }
-                    };
-                }
-                if (m.role === 'toolResult') {
-                    return { id: `xh${i}`, ts: m.ts, role: 'tool', text: m.text, isError: m.isError };
-                }
-                return {
-                    id: `xh${i}`, ts: m.ts,
-                    role: m.role === 'user' ? 'user' : 'system', text: m.text
-                };
-            });
+            const kept = at.map(i => externalRow(external.messages[i], i));
             if (!kept.length) {
                 return note(`This session's transcript (${stamp}) was read but held no conversation`
                     + ' to show — it is still on disk, and "Open transcript" opens it as it is.'
                     + ' The engine is resumed by its id, so its own context is intact.');
             }
             return [
-                {
-                    id: 'xh-start', ts: kept[0].ts, role: 'system',
-                    text: external.messages.length > kept.length
-                        ? `↑ ${external.messages.length - kept.length} older message(s) are in the transcript — "Open transcript" has the whole session.`
-                        : '↑ the start of this session'
-                },
+                headRow(kept[0].ts, external.messages.length - kept.length, stamp),
                 ...kept,
                 ...settling,
                 {
@@ -11442,6 +11565,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchDefaults: () => launchDefaults(),
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
+        olderHistory: consoleOlderHistory,
         lastWindow: () => lastWindow,
         forgetLastWindow,
         // …declared just below; the panel only ever calls them from a message

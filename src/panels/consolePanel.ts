@@ -5,8 +5,8 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost, describeAttachment, looksLikeUri, safeAttachmentName } from '../core/consolehost';
 import {
-    Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS, PERMISSION_MODES_LIVE,
-    sessionAllowRule
+    Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, OlderHistory,
+    PERMISSION_GRANTS, PERMISSION_MODES_LIVE, sessionAllowRule, transcriptPos
 } from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
@@ -108,6 +108,18 @@ export interface ConsoleDeps {
     /** the conversation a session already had, off its transcript — display
      *  only, so a resume opens where you left off instead of on a blank page */
     history(sessionId: string): ConsoleMessage[];
+    /**
+     * ‼️ K-23 — the piece of the transcript ABOVE what the card is holding.
+     *
+     * The resume window stops at a few hundred rows so a huge transcript cannot
+     * stall the panel, and everything older used to be reachable only by opening
+     * the file in an editor — a conversation the Console had, in a place the
+     * Console would not show. `have` is the positions already drawn, read off
+     * the row ids, so what comes back is a strict addition and the same turn is
+     * never drawn twice. Reading is free: the file is on this disk and no token
+     * is spent (see core/consolehistory.ts).
+     */
+    olderHistory(sessionId: string, have: number[]): OlderHistory;
     /**
      * The sessions the PREVIOUS window was hosting when it went away.
      *
@@ -1193,6 +1205,29 @@ export class ConsolePanel {
                 void this.panel.webview.postMessage({
                     type: 'promptSnippets', ...this.deps.promptSnippets()
                 });
+                break;
+            }
+            // ‼️ K-23 — READING FURTHER BACK IS A READ, AND NOTHING ELSE.
+            // No process is touched, no token is spent and the session is not
+            // disturbed: the transcript is a file on this disk and this puts
+            // more of it on the card. The positions already drawn are read off
+            // the rows themselves, so what comes back cannot overlap them.
+            case 'loadOlder': {
+                const id = str('id');
+                const seat = host.get(id);
+                if (!seat?.sessionId) { break; }
+                const have = seat.messages
+                    .map(m => transcriptPos(m.id))
+                    .filter(n => n >= 0);
+                const got = this.deps.olderHistory(seat.sessionId, have);
+                if (got.reason !== undefined) {
+                    // an empty reason is "you are at the start" — a fact, not
+                    // something to open a dialog about
+                    if (got.reason) { void vscode.window.showInformationMessage(`Agent Farm: ${got.reason}`); }
+                    break;
+                }
+                host.prependHistory(id, got.head, got.rows);
+                this.refresh();
                 break;
             }
             case 'close':

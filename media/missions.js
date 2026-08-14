@@ -387,6 +387,38 @@
     // ---- filtering: same criteria as the sorts — selections + min/max ranges ----
     const RUN_STATUSES = ['running', 'waiting-approval', 'waiting-user', 'paused', 'done', 'failed', 'cancelled'];
     const VERDICTS = ['success', 'partial', 'failed'];
+    /**
+     * ‼️ U-52 — THE NAMED SUBSETS OF THE STATUS AXIS, on the one control in the
+     * extension where they were still spelt out a chip at a time.
+     *
+     * Seven statuses, and nobody reads them as seven: they are three questions.
+     * "Which of these need me?" is the one this page exists to answer, and
+     * asking it meant pressing two chips out of seven and knowing which two —
+     * a run waiting for an approval and a run waiting for an answer are the
+     * same fact to the person who has to do something about it.
+     *
+     * These sit beside the chips rather than inside a picker because the chips
+     * ARE the control here; the bar is the same as everywhere else (see
+     * test/test_presets.js): a subset gets a name only if somebody would say it
+     * out loud and it is worth more than one press.
+     */
+    const STATUS_GROUPS = [
+        {
+            id: 'needsyou', label: 'Waiting on you',
+            values: ['waiting-approval', 'waiting-user'],
+            title: 'The runs that have stopped and cannot go on until you answer or approve.'
+        },
+        {
+            id: 'live', label: 'Still going',
+            values: ['running', 'waiting-approval', 'waiting-user', 'paused'],
+            title: 'Everything that has not finished — working, waiting on you, or held.'
+        },
+        {
+            id: 'over', label: 'Finished',
+            values: ['done', 'failed', 'cancelled'],
+            title: 'Everything that is over, however it ended.'
+        }
+    ];
     /** value getters the range filters run over (duration in minutes). */
     const RANGE_KEYS = [
         { id: 'tokens', label: 'Tokens', get: r => runTokens(r) },
@@ -459,7 +491,10 @@
         }).join('');
         return `<div class="fltpanel">
             <div class="fltrow"><span class="muted small">Status:</span>
-                ${RUN_STATUSES.map(s => selChip('fs-' + s, STATUS_LABEL[s] || s, filters.status.indexOf(s) >= 0)).join(' ')}</div>
+                ${RUN_STATUSES.map(s => selChip('fs-' + s, STATUS_LABEL[s] || s, filters.status.indexOf(s) >= 0)).join(' ')}
+                <span class="fltgroups">${STATUS_GROUPS.map(g =>
+                    `<a id="fg-${g.id}" role="button" tabindex="0" title="${C.esc(g.title)}">${C.esc(g.label)}</a>`).join(' · ')}
+                    · <a id="fg-none" role="button" tabindex="0" title="Clear the status filter — every status is listed again.">Clear</a></span></div>
             <div class="fltrow"><span class="muted small">Verdict:</span>
                 ${VERDICTS.map(v => selChip('fv-' + v, v, filters.verdict.indexOf(v) >= 0)).join(' ')}
                 ${window.AFFilter.multi({
@@ -818,6 +853,13 @@
                 .fltpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
                     padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
                 .fltrow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+                /* U-52 — the named subsets of the row they sit at the end of.
+                   Links, not chips: a chip is a value that can be on, and these
+                   are gestures that SET the values — drawing them the same
+                   would be a fourth kind of thing pretending to be a status. */
+                .fltgroups { font-size:11px; opacity:.75; margin-left:4px; }
+                .fltgroups a { color:var(--vscode-textLink-foreground); cursor:pointer; }
+                .fltgroups a:hover { text-decoration:underline; }
                 .fltrange { font-size:11px; display:flex; gap:3px; align-items:center; white-space:nowrap; }
                 .fltrange input[type=number] { width:64px; padding:1px 4px; }
                 .fltrange input[type=date] { padding:1px 4px; }
@@ -939,6 +981,15 @@
                 if (i >= 0) { filters.status.splice(i, 1); } else { filters.status.push(s); }
                 applyFlt();
             }));
+            // U-52 — the same axis, said in one press. A group REPLACES the
+            // selection rather than adding to it: "waiting on you" is a
+            // question, not another chip, and leaving the last pick underneath
+            // it would answer a different one.
+            STATUS_GROUPS.forEach(g => wire('fg-' + g.id, () => {
+                filters.status = g.values.slice();
+                applyFlt();
+            }));
+            wire('fg-none', () => { filters.status = []; applyFlt(); });
             VERDICTS.forEach(v => wire('fv-' + v, () => {
                 const i = filters.verdict.indexOf(v);
                 if (i >= 0) { filters.verdict.splice(i, 1); } else { filters.verdict.push(v); }

@@ -220,6 +220,50 @@ export interface ConsoleMessage {
     stepTokens?: number;
     /** …and the same step against the plan limit (see QUOTA_WEIGHTS). */
     stepWTokens?: number;
+    /**
+     * ‼️ K-23 — THIS ROW IS THE TOP OF A PARTIAL SCROLLBACK, AND IT CAN BE
+     * OPENED.
+     *
+     * The resume window stops at a few hundred rows so a forty-megabyte
+     * transcript cannot stall the panel; everything older was readable only by
+     * opening the file in an editor. It is already on this disk and costs no
+     * token to show, so the head row carries what is still above it and the
+     * panel draws an action beside the sentence.
+     *
+     * `stamp` is which reading of the file the count came from — every chunk
+     * says it, so two pieces that do not belong together are visible as such
+     * rather than silently interleaved.
+     */
+    more?: { older: number; stamp?: string; chunk?: number };
+}
+
+/**
+ * ‼️ K-23 — WHERE IN THE TRANSCRIPT A SCROLLBACK ROW CAME FROM, or -1 when the
+ * row is not one (a live line, a note, the head marker).
+ *
+ * Two readers write these ids and they count differently, which is history
+ * rather than design: the parsed-CLI path names rows `xh<position>` from zero,
+ * and the native reader has always numbered its pushes `h<n>` from one. Both
+ * are the row's absolute place in the file, so both are usable — the offset is
+ * decoded here, once, instead of in each caller.
+ */
+/**
+ * What "load older" came back with (K-23): the chunk and the head row that
+ * replaces the old marker, or a sentence saying why there is nothing.
+ *
+ * ‼️ An EMPTY reason means "you are already at the start" — a fact, not a
+ * failure, and nothing to interrupt the reader with. Every other reason is
+ * something they can act on ("Open transcript"), which is why this is a
+ * sentence and not a boolean.
+ */
+export type OlderHistory =
+    | { rows: ConsoleMessage[]; head: ConsoleMessage; reason?: undefined }
+    | { reason: string; rows?: undefined; head?: undefined };
+
+export function transcriptPos(id: string): number {
+    const m = /^(x?)h(\d+)$/.exec(id ?? '');
+    if (!m) { return -1; }
+    return m[1] ? Number(m[2]) : Number(m[2]) - 1;
 }
 
 export interface ConsoleSessionState {
