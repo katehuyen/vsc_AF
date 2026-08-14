@@ -193,5 +193,27 @@ const headAt = (older) => ({
     ok('a card that does not exist is not a crash', host.prependHistory('nope', headAt(1), chunk(0, 1)) === 0);
 }
 
+// ---------------------------------------------------------------------------
+// …and the same read is on the bridge, because that is the rule for every new
+// thing a user can press (_REF/agentfarm-dev.md): the op calls the same
+// function the panel calls, in the same commit.
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const media = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+
+    ok('the panel button asks for it by name', /type: 'loadOlder'/.test(media));
+    ok('…the panel answers that message', /case 'loadOlder'/.test(panel));
+    ok('‼️ …and an agent can do the same thing over the bridge',
+        ext.includes("op: 'console.older'"));
+    ok('…through the SAME reader the panel uses, not a second one',
+        /consoleOlderHistory\(seat!\.sessionId!, have\)/.test(ext)
+        && /olderHistory: consoleOlderHistory/.test(ext));
+    ok('…and its description says what it answers with',
+        /Answers \{ added, older \}/.test(ext));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
