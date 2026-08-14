@@ -186,6 +186,50 @@ check('resume: missing workflow warns, does not throw', warnMsgs.length === warn
     pm.dispose();
 }
 
+// ---- B-4: an exact place in the queue, and releasing a held run ----
+// Both gestures existed only under a pointer: the tree moved a row one step and
+// the page released a park inline, so neither could be asked for by instruction.
+{
+    const mstore = path.join(tmp, 'farm-tasks-move.json');
+    const mm = new TaskManager(mstore, agents, () => false, () => '', { quotaCheck: () => 'test hold' });
+    const a = mm.addTask(agent, 'A', 'a', 'headless');
+    const b = mm.addTask(agent, 'B', 'b', 'headless');
+    const c = mm.addTask(agent, 'C', 'c', 'headless');
+    const d = mm.addTask(agent, 'D', 'd', 'headless');
+    const queue = () => mm.tasks.filter(t => t.status === 'queued').map(t => t.title).join('');
+
+    check('move: the queue starts in the order it was filled', queue() === 'ABCD');
+    check('move: to an exact place, and it reports where it landed', mm.moveTaskTo(d, 1) === 1 && queue() === 'ADBC');
+    check('move: a place past the end means last, not an error', mm.moveTaskTo(a, 99) === 3 && queue() === 'DBCA');
+    check('move: a negative place means first', mm.moveTaskTo(c, -5) === 0 && queue() === 'CDBA');
+    check('move: the same place is a no-op', mm.moveTaskTo(c, 0) === 0 && queue() === 'CDBA');
+    // ‼️ the one-step move is the SAME code now — the tree and the bridge
+    // cannot drift into two orderings.
+    mm.moveTask(b, -1);
+    check('move: one step up is the same reorder', queue() === 'CBDA');
+    mm.moveTask(c, -1);
+    check('move: …and it stops at the top instead of wrapping', queue() === 'CBDA');
+    b.status = 'running';
+    check('move: a row that is no longer queued has no place', mm.moveTaskTo(b, 0) === -1);
+    b.status = 'queued';
+
+    // A held run: quotaCheck holds every launch, so this is the real park path.
+    const held = mm.addTask(agent, 'HELD', 'h', 'headless');
+    mm.startTask(held);
+    check('park: a ceiling holds the launch and says which', held.status === 'queued'
+        && held.autoStart === true && !!held.deferredCode);
+    const episode = held.parkEpisode;
+    const started = mm.unparkTask(held);
+    check('unpark: it does not claim to have started when the ceiling is still there', started === false);
+    check('‼️ unpark: the episode ENDS, so the same ceiling catching it again is news again',
+        held.parkEpisode === episode + 1);
+    check('unpark: and the row carries the current reason, not a stale one', !!held.deferredReason);
+    held.status = 'done';
+    check('unpark: a task that is not queued is left alone', mm.unparkTask(held) === false);
+
+    mm.dispose();
+}
+
 mgr.dispose();
 mgr2.dispose();
 Module._load = origLoad;

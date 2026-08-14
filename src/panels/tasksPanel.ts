@@ -1630,14 +1630,10 @@ export class TasksPanel {
                 else if (msg.act === 'rerun' && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
                 else if (msg.act === 'next' && t.status === 'queued') { m.runTaskNext(t); }
                 else if (msg.act === 'terminal') { m.revealTerminal(t); }
+                // B-4 — the release itself lives in the manager now, so the
+                // bridge's `tasks.unpark` and this button are one implementation.
                 else if (msg.act === 'unpark' && t.status === 'queued' && t.autoStart) {
-                    t.autoStart = false;
-                    // ‼️ M-11 — the blocker's code goes with the sentence. "Try
-                    // it now" ends the park EPISODE, so if the same ceiling
-                    // catches it again that is news a second time.
-                    t.deferredReason = undefined;
-                    t.deferredCode = undefined;
-                    m.startTask(t);
+                    m.unparkTask(t);
                 }
                 // The rest exist as commands on the sidebar tree and had no way
                 // in from this page until the row grew a menu. Each one calls

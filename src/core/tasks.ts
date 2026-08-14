@@ -2925,14 +2925,61 @@ export class TaskManager implements vscode.Disposable {
     }
 
     moveTask(task: FarmTask, dir: -1 | 1): void {
-        const siblings = this.tasks.filter(t => t.agentId === task.agentId && t.status === 'queued');
+        const siblings = this.queuedSiblings(task);
         const i = siblings.indexOf(task);
         const j = i + dir;
         if (i < 0 || j < 0 || j >= siblings.length) { return; }
-        const a = this.tasks.indexOf(siblings[i]);
-        const b = this.tasks.indexOf(siblings[j]);
-        [this.tasks[a], this.tasks[b]] = [this.tasks[b], this.tasks[a]];
+        this.moveTaskTo(task, j);
+    }
+
+    /** The queued rows this task competes with — its agent's, in board order. */
+    private queuedSiblings(task: FarmTask): FarmTask[] {
+        return this.tasks.filter(t => t.agentId === task.agentId && t.status === 'queued');
+    }
+
+    /**
+     * B-4 — move a queued task to an EXACT place in its agent's queue (0 = next
+     * up). One step at a time is the tree's gesture; "third from the top" is
+     * what somebody reordering a whole queue actually means, and repeating a
+     * one-step move to get there is how a queue ends up half sorted.
+     *
+     * A position past the end means "last" rather than an error — the caller is
+     * told where it landed. Only the SLOTS the queued siblings already occupy
+     * are rewritten, so running and finished rows interleaved between them do
+     * not move.
+     */
+    moveTaskTo(task: FarmTask, index: number): number {
+        const siblings = this.queuedSiblings(task);
+        const from = siblings.indexOf(task);
+        if (from < 0) { return -1; }
+        const to = Math.max(0, Math.min(siblings.length - 1, Math.trunc(index)));
+        if (to === from) { return from; }
+        const slots = siblings.map(s => this.tasks.indexOf(s));
+        const order = siblings.slice();
+        order.splice(from, 1);
+        order.splice(to, 0, task);
+        slots.forEach((slot, i) => { this.tasks[slot] = order[i]; });
         this.save();
+        return to;
+    }
+
+    /**
+     * B-4 — end a park EPISODE by hand and ask for the launch again ("retry
+     * start" on the row). The page did this inline, so the only way to release
+     * a run a budget ceiling was holding was to be sitting in front of it.
+     *
+     * Returns whether it actually launched: a ceiling that is still there parks
+     * it straight back, and a caller told "started" would be lied to.
+     */
+    unparkTask(task: FarmTask): boolean {
+        if (task.status !== 'queued') { return false; }
+        task.autoStart = false;
+        // ‼️ M-11 — the blocker's code goes with the sentence. Ending the
+        // episode is what makes the SAME ceiling catching it again news a
+        // second time.
+        task.deferredReason = undefined;
+        task.deferredCode = undefined;
+        return this.startTask(task);
     }
 
     /** Bump a queued task above every other queued task and request its start (launches next as capacity frees). */

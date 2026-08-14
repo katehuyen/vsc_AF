@@ -539,6 +539,242 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('tasks.clearFinished reports the removed count', cf.ok && cf.result.removed === 2);
     }
 
+    // ---------- B-4: task and mission LIFECYCLE parity ----------
+    // Everything the tree and the page could do to a run that the bridge could
+    // not: start it where it stands (runNext reorders, which is a different
+    // gesture), release a run a ceiling is holding, finish a live one by hand,
+    // reorder the queue, put a deleted row back, pick a cut chain up, and start
+    // a finished mission over or drop it from the history. Same handler shapes
+    // extension.ts registers — the guards are what these prove.
+    {
+        const board = [
+            { id: 'q1', status: 'queued', title: 'first', agentId: 'a1', agentName: 'dev' },
+            { id: 'q2', status: 'queued', title: 'second', agentId: 'a1', agentName: 'dev' },
+            { id: 'q3', status: 'queued', title: 'third', agentId: 'a1', agentName: 'dev', autoStart: true, deferredReason: 'over budget ($12 of $10)' },
+            { id: 'q4', status: 'queued', title: 'fourth', agentId: 'a1', agentName: 'dev' },
+            { id: 'r1', status: 'running', title: 'live', agentId: 'a1', agentName: 'dev' },
+            { id: 'f1', status: 'failed', title: 'step 2/3', agentId: 'a1', agentName: 'dev', workflowId: 'w1', stepIndex: 1, workflowRunId: 'run1' },
+            { id: 'f2', status: 'failed', title: 'standalone', agentId: 'a1', agentName: 'dev' }
+        ];
+        const archived = [{ id: 'gone1', status: 'done', title: 'the deleted one' }];
+        const m2 = {
+            tasks: board,
+            workflows: [{ id: 'w1', title: 'the chain', steps: [{}, {}, {}] }],
+            archivedMonths: ['2026-07', '2026-08'],
+            archivedTasks: () => archived,
+            restored: [], resumed: [], moved: null, launch: true,
+            startTask(t) { if (this.launch) { t.status = 'running'; return true; } t.autoStart = true; t.deferredReason = 'over budget ($12 of $10)'; return false; },
+            unparkTask(t) { t.deferredReason = undefined; return this.startTask(t); },
+            completeTask(t) { t.status = 'done'; t.endedAt = 1234; },
+            moveTaskTo(t, i) { this.moved = { id: t.id, i }; return Math.max(0, Math.min(2, i)); },
+            restoreTasks(list) { this.restored.push(...list.map(t => t.id)); return list.length; },
+            resumeWorkflowFromTask(t) { this.resumed.push(t.id); }
+        };
+        const specs = [{ id: 's1', title: 'the mission', limits: { maxCostUSD: 5 } }];
+        let runs = [
+            { id: 'm1', specId: 's1', status: 'done' },
+            { id: 'm2', specId: 's1', status: 'running' },
+            { id: 'm3', specId: 's2', status: 'failed' }
+        ];
+        const store = {
+            get runs() { return runs; }, set runs(v) { runs = v; },
+            specs, spec: (id) => specs.find(s => s.id === id) || (id === 's2' ? { id: 's2', title: 'the lonely one', limits: { maxCostUSD: 2 } } : undefined),
+            run: (id) => runs.find(r => r.id === id)
+        };
+        const started = [];
+        const findTask = (args) => {
+            const t = m2.tasks.find(x => x.id === argStr(args, 'id'));
+            need(t, 'Task not found — tasks.list shows current ids.');
+            return t;
+        };
+        reg.register([
+            {
+                op: 'tasks.start',
+                describe: 'Start this queued task where it is (not tasks.runNext, which reorders the queue). A ceiling parks it instead: started:false with heldBy. args: id',
+                handler: (args) => {
+                    const t = findTask(args);
+                    need(t.status === 'queued', `Task is ${t.status} — only a queued task can be started.`);
+                    const s = m2.startTask(t);
+                    return { id: t.id, status: t.status, started: s, heldBy: s ? null : (t.deferredReason ?? 'a launch ceiling') };
+                }
+            },
+            {
+                op: 'tasks.unpark',
+                describe: 'Release a run a ceiling is holding and ask for the launch again. args: id',
+                handler: (args) => {
+                    const t = findTask(args);
+                    need(t.status === 'queued', `Task is ${t.status} — only a queued task can be held.`);
+                    need(t.autoStart, 'That task is not held by anything — tasks.start starts it.');
+                    const wasHeldBy = t.deferredReason ?? null;
+                    const s = m2.unparkTask(t);
+                    return { id: t.id, wasHeldBy, started: s, heldBy: s ? null : (t.deferredReason ?? 'a launch ceiling') };
+                }
+            },
+            {
+                op: 'tasks.complete',
+                describe: 'Mark a RUNNING task done by hand. args: id',
+                handler: (args) => {
+                    const t = findTask(args);
+                    need(t.status === 'running', `Task is ${t.status} — only a running task can be completed by hand.`);
+                    m2.completeTask(t);
+                    return { id: t.id, status: t.status, endedAt: t.endedAt ?? null };
+                }
+            },
+            {
+                op: 'tasks.move',
+                describe: 'Reorder the queue: `to` (0-based) or `dir` ("up"|"down"). args: id, to?, dir?',
+                handler: (args) => {
+                    const t = findTask(args);
+                    need(t.status === 'queued', `Task is ${t.status} — only a queued task has a place in the queue.`);
+                    const dir = optStr(args, 'dir').toLowerCase();
+                    const hasTo = args.to !== undefined && args.to !== null && args.to !== '';
+                    need(hasTo || dir, 'Say where: `to` (0-based place) or `dir` ("up"|"down").');
+                    need(!(hasTo && dir), 'Pass `to` or `dir`, not both.');
+                    const siblings = m2.tasks.filter(x => x.agentId === t.agentId && x.status === 'queued');
+                    const from = siblings.indexOf(t);
+                    let target;
+                    if (hasTo) {
+                        need(Number.isFinite(Number(args.to)), '`to` is a number — 0 is next up.');
+                        target = Math.trunc(Number(args.to));
+                    } else {
+                        need(dir === 'up' || dir === 'down', `dir is "up" or "down" — not "${dir}"`);
+                        target = from + (dir === 'up' ? -1 : 1);
+                        need(target >= 0 && target < siblings.length,
+                            dir === 'up' ? 'It is already first in its queue.' : 'It is already last in its queue.');
+                    }
+                    return { id: t.id, from, to: m2.moveTaskTo(t, target), queued: siblings.length };
+                }
+            },
+            {
+                op: 'tasks.restore',
+                describe: 'Put a deleted run back on the board from the month archive (its output file does not come back). args: id, month?',
+                handler: (args) => {
+                    const id = argStr(args, 'id');
+                    need(!m2.tasks.some(t => t.id === id), 'That run is already on the board — tasks.list shows it.');
+                    const month = optStr(args, 'month');
+                    need(!month || /^\d{4}-\d{2}$/.test(month), 'month is "YYYY-MM" — omit it to search all of them.');
+                    const months = month ? [month] : m2.archivedMonths.slice().reverse();
+                    need(months.length, 'Nothing has been archived yet — there is no run to restore.');
+                    const row = m2.archivedTasks(months).find(t => t.id === id);
+                    need(row, `No run "${id}" in any archived month — tasks.history lists what is there.`);
+                    return { restored: m2.restoreTasks([row]), id, title: row.title, outputFile: null };
+                }
+            },
+            {
+                op: 'workflows.resume',
+                describe: 'Pick a cut chain back up at the step that broke, in the same run. args: taskId',
+                handler: (args) => {
+                    const t = m2.tasks.find(x => x.id === argStr(args, 'taskId'));
+                    need(t, 'Task not found — tasks.list shows current ids.');
+                    need(t.workflowId && t.stepIndex !== undefined,
+                        `"${t.title}" is not a workflow step — it belongs to no chain to resume.`);
+                    const w = m2.workflows.find(x => x.id === t.workflowId);
+                    need(w, `The workflow "${t.title}" belonged to no longer exists.`);
+                    need(t.stepIndex < w.steps.length,
+                        `Step ${t.stepIndex + 1} no longer exists in "${w.title}" — the workflow was edited since this run.`);
+                    m2.resumeWorkflowFromTask(t);
+                    return { workflow: w.title, step: t.stepIndex + 1, steps: w.steps.length, fromTask: t.id };
+                }
+            },
+            {
+                op: 'missions.rerun',
+                describe: 'Run a FINISHED mission again — same goal, team and limits, as a new run. COST-BEARING. args: id',
+                handler: (args) => {
+                    const r = store.run(argStr(args, 'id'));
+                    need(r, 'Run not found — missions.list shows current ids.');
+                    need(['done', 'failed', 'cancelled'].includes(r.status),
+                        `Run is ${r.status} — only a finished run can be started over (missions.resume continues a live one).`);
+                    const spec = store.spec(r.specId);
+                    need(spec, 'The mission spec this run came from no longer exists — there is nothing to repeat.');
+                    const fresh = { id: 'new-' + r.id, specId: spec.id, status: 'running' };
+                    store.runs = [...store.runs, fresh];
+                    started.push(fresh.id);
+                    return { id: fresh.id, from: r.id, title: spec.title, maxCostUSD: spec.limits.maxCostUSD };
+                }
+            },
+            {
+                op: 'missions.run.delete',
+                describe: 'Drop a FINISHED mission run from the history; the spec goes with its last run. args: id',
+                handler: (args) => {
+                    const r = store.run(argStr(args, 'id'));
+                    need(r, 'Run not found — missions.list shows current ids.');
+                    need(['done', 'failed', 'cancelled'].includes(r.status),
+                        `Run is ${r.status} — cancel it first (missions.cancel); a live run is not deleted out from under itself.`);
+                    const spec = store.spec(r.specId);
+                    store.runs = store.runs.filter(x => x.id !== r.id);
+                    const specDeleted = !!spec && !store.runs.some(x => x.specId === spec.id);
+                    return { id: r.id, title: spec?.title ?? r.id, specDeleted };
+                }
+            }
+        ]);
+        ok('B-4 lifecycle ops appear in the catalog',
+            ['tasks.start', 'tasks.unpark', 'tasks.complete', 'tasks.move', 'tasks.restore',
+                'workflows.resume', 'missions.rerun', 'missions.run.delete']
+                .every(op => reg.catalog().some(c => c.op === op)));
+
+        const st = await reg.dispatch('tasks.start', { id: 'q1' });
+        ok('tasks.start starts a queued task where it stands', st.ok && st.result.started === true);
+        const stDone = await reg.dispatch('tasks.start', { id: 'f2' });
+        ok('…and refuses anything that is not queued', !stDone.ok && /only a queued task/i.test(stDone.error));
+        m2.launch = false;
+        const stHeld = await reg.dispatch('tasks.start', { id: 'q2' });
+        ok('‼️ a ceiling means started:false with the reason, never a silent "started"',
+            stHeld.ok && stHeld.result.started === false && /over budget/.test(stHeld.result.heldBy));
+
+        const up = await reg.dispatch('tasks.unpark', { id: 'q3' });
+        ok('tasks.unpark reports what WAS holding it and whether it got away',
+            up.ok && /over budget/.test(up.result.wasHeldBy) && up.result.started === false);
+        const upFree = await reg.dispatch('tasks.unpark', { id: 'q4' });
+        ok('…and a task nothing is holding is refused, not "unparked"',
+            !upFree.ok && /not held by anything/.test(upFree.error));
+
+        const done = await reg.dispatch('tasks.complete', { id: 'r1' });
+        ok('tasks.complete finishes a running task by hand', done.ok && done.result.status === 'done');
+        const doneAgain = await reg.dispatch('tasks.complete', { id: 'r1' });
+        ok('…and a finished one cannot be completed twice', !doneAgain.ok && /only a running task/i.test(doneAgain.error));
+
+        const mv = await reg.dispatch('tasks.move', { id: 'q3', to: 0 });
+        ok('tasks.move takes an exact place', mv.ok && m2.moved.i === 0 && mv.result.to === 0);
+        const mvDir = await reg.dispatch('tasks.move', { id: 'q3', dir: 'up' });
+        ok('…or one step', mvDir.ok);
+        const mvTop = await reg.dispatch('tasks.move', { id: 'q2', dir: 'up' });
+        ok('…which says so at the top instead of pretending', !mvTop.ok && /already first/.test(mvTop.error));
+        const mvBoth = await reg.dispatch('tasks.move', { id: 'q3', to: 1, dir: 'up' });
+        ok('…and "to" with "dir" is a contradiction, not a guess', !mvBoth.ok && /not both/.test(mvBoth.error));
+        const mvNone = await reg.dispatch('tasks.move', { id: 'q3' });
+        ok('…and saying neither is refused', !mvNone.ok && /Say where/.test(mvNone.error));
+
+        const rest = await reg.dispatch('tasks.restore', { id: 'gone1' });
+        ok('tasks.restore brings a deleted run back from the archive',
+            rest.ok && rest.result.restored === 1 && m2.restored.includes('gone1'));
+        ok('‼️ …and never claims the output file came back too', rest.result.outputFile === null);
+        const restLive = await reg.dispatch('tasks.restore', { id: 'q1' });
+        ok('…a row already on the board is refused, not duplicated',
+            !restLive.ok && /already on the board/.test(restLive.error));
+        const restNone = await reg.dispatch('tasks.restore', { id: 'never' });
+        ok('…and an id in no archive is named honestly', !restNone.ok && /in any archived month/.test(restNone.error));
+
+        const res = await reg.dispatch('workflows.resume', { taskId: 'f1' });
+        ok('workflows.resume re-enters the chain at the step that broke',
+            res.ok && res.result.step === 2 && m2.resumed.includes('f1'));
+        const resPlain = await reg.dispatch('workflows.resume', { taskId: 'f2' });
+        ok('…and a task belonging to no chain is refused', !resPlain.ok && /not a workflow step/.test(resPlain.error));
+
+        const rr2 = await reg.dispatch('missions.rerun', { id: 'm1' });
+        ok('missions.rerun starts the same spec as a NEW run',
+            rr2.ok && rr2.result.id !== 'm1' && rr2.result.maxCostUSD === 5 && started.length === 1);
+        const rrLive2 = await reg.dispatch('missions.rerun', { id: 'm2' });
+        ok('…and a live run is resumed, not re-run', !rrLive2.ok && /missions\.resume/.test(rrLive2.error));
+
+        const del = await reg.dispatch('missions.run.delete', { id: 'm1' });
+        ok('missions.run.delete drops a finished run', del.ok && !store.run('m1'));
+        ok('…and says the spec SURVIVED while another run of it does', del.result.specDeleted === false);
+        const delLast = await reg.dispatch('missions.run.delete', { id: 'm3' });
+        ok('‼️ …but says so when the last run took the mission with it', delLast.ok && delLast.result.specDeleted === true);
+        const delLive = await reg.dispatch('missions.run.delete', { id: 'm2' });
+        ok('…and a live run is not deleted out from under itself', !delLive.ok && /cancel it first/.test(delLive.error));
+    }
+
     // ---------- §19.C: duties ops contract (the standing-vigilance system) ----------
     // Real compiled duties.js against a temp agent dir — proves the whole
     // watch→do lifecycle (add/list/update/togglePause/move/delete) is bridge-

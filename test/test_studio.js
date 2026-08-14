@@ -305,6 +305,54 @@ const production = (scenes) => ({
     ok('…and the export then has nothing to place',
         !(await reg.dispatch('studio.export', { project: projectId })).ok);
 
+    // ---- B-10: a file the farm did not generate, filed by hand ----
+    //
+    // "Register asset" lived behind a file picker only, so an agent could
+    // produce nothing an agent could then file. Every path is judged before a
+    // single sidecar is written.
+    const drop = path.join(root, 'drop');
+    fs.mkdirSync(drop, { recursive: true });
+    const png = path.join(drop, 'hand.png');
+    const mp4 = path.join(drop, 'hand.mp4');
+    const txt = path.join(drop, 'notes.txt');
+    fs.writeFileSync(png, 'x'); fs.writeFileSync(mp4, 'x'); fs.writeFileSync(txt, 'x');
+
+    const one = await reg.dispatch('studio.asset.register',
+        { files: png, project: projectId, scene: sceneId, prompt: 'made in another tool' });
+    ok('studio.asset.register files a local file as an asset',
+        one.ok && one.result.registered === 1 && one.result.assets[0].kind === 'image');
+    const extMeta = JSON.parse(fs.readFileSync(
+        path.join(outputs, one.result.assets[0].taskId + '.media.json'), 'utf8'));
+    ok('…through the SAME sidecar store the gallery reads',
+        extMeta.model === 'external' && extMeta.projectId === projectId
+        && extMeta.sceneId === sceneId && extMeta.input === 'made in another tool');
+    ok('…and it is external, so nothing offers to re-run it',
+        /^external/.test(extMeta.source));
+
+    const dup = await reg.dispatch('studio.asset.register', { files: png });
+    ok('‼️ a file already registered is reported, not registered twice',
+        dup.ok && dup.result.registered === 0 && dup.result.skipped === 1);
+
+    const many = await reg.dispatch('studio.asset.register', { files: [mp4, mp4] });
+    ok('a batch registers each file once, even repeated inside one call',
+        many.ok && many.result.registered === 1 && many.result.skipped === 1);
+
+    const missing = await reg.dispatch('studio.asset.register',
+        { files: [png, path.join(drop, 'nope.png')] });
+    ok('a path that is not there names the path', !missing.ok && /No file at/.test(missing.error));
+    const notMedia = await reg.dispatch('studio.asset.register', { files: txt });
+    ok('…and a file the gallery cannot read is refused', !notMedia.ok && /not a media file/.test(notMedia.error));
+    const wrongKind = await reg.dispatch('studio.asset.register',
+        { files: mp4, mediaKind: 'image' });
+    ok('mediaKind is a claim that is checked', !wrongKind.ok && /is video, not image/.test(wrongKind.error));
+    const orphanScene = await reg.dispatch('studio.asset.register',
+        { files: png, scene: sceneId });
+    ok('a scene with no production is refused', !orphanScene.ok && /belongs to a production/.test(orphanScene.error));
+    const beforeBad = fs.readdirSync(outputs).length;
+    await reg.dispatch('studio.asset.register', { files: [txt, mp4] });
+    ok('‼️ …and a refused batch writes NOTHING, not the good half',
+        fs.readdirSync(outputs).length === beforeBad);
+
     fs.rmSync(root, { recursive: true, force: true });
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

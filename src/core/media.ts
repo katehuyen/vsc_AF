@@ -330,7 +330,7 @@ export function registeredAssetPaths(outputsDir: string): Set<string> {
 export function registerExternalAsset(
     outputsDir: string,
     filePath: string,
-    opts: { title?: string; projectId?: string; sceneId?: string; source?: string } = {},
+    opts: { title?: string; projectId?: string; sceneId?: string; source?: string; input?: string } = {},
     known?: Set<string>
 ): MediaMeta | undefined {
     const abs = path.resolve(filePath);
@@ -343,7 +343,10 @@ export function registerExternalAsset(
         taskId: 'ext-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
         title: opts.title ?? path.basename(abs),
         model: 'external',
-        input: '',
+        // Nothing generated it, so there is no payload — but a caller who KNOWS
+        // what it was made from (the prompt it was produced with elsewhere) can
+        // say so, and the gallery then reads it exactly like a generated one.
+        input: opts.input ?? '',
         assetFiles: [abs],
         estCost: 0,
         ts,

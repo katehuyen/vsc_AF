@@ -2,7 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
-import { injectMediaFeedback, MediaMeta, readMediaMetas, updateMediaMeta } from './media';
+import {
+    assetKind, injectMediaFeedback, MEDIA_EXTS, MediaMeta, readMediaMetas, registerExternalAsset,
+    registeredAssetPaths, updateMediaMeta
+} from './media';
 import { buildEdl, buildFcpXml, pickSequenceAssets } from './premiere';
 import {
     DiscoveredProduction, discoverProductions, newProduction, PRODUCTION_FILENAME, sceneMatrix,
@@ -32,6 +35,8 @@ export interface StudioBridgeDeps {
     /** the one that actually starts a generation — TaskManager.runMediaAdhoc */
     runMedia(title: string, model: string, input: string,
         opts?: { projectId?: string; sceneId?: string }): void;
+    /** repaint an open Studio — the panel's own path, so a bridge write shows. */
+    refresh?(): void;
 }
 
 /** Every production this farm can see, with the file it came out of. */
@@ -183,6 +188,78 @@ export function registerStudioOps(bridge: BridgeRegistry, deps: StudioBridgeDeps
                 return {
                     taskId, project: found.production.title, scene: sceneId || null,
                     note: `Assigned to ${found.production.title}${sceneId ? ' · ' + sceneId : ''}.`
+                };
+            }
+        },
+        {
+            op: 'studio.asset.register',
+            describe: '‼️ PUT A FILE THE FARM DID NOT GENERATE INTO THE GALLERY — a render downloaded by hand, a frame made in another tool, a clip that arrived by mail. Until now this existed only behind a file picker, so an agent could produce nothing an agent could then file. `files` is one path or an array of them; every path is checked BEFORE anything is written, so a bad one in the middle registers nothing. A file already registered is reported in `alreadyKnown`, not an error — re-running the same call is safe. The asset is external: it can be assigned, triaged and exported like any other, but it has no input to re-run. args: files (path or array), project? (id or title), scene? (id, needs project), title? (one file only), prompt? (what it was made from elsewhere), mediaKind? (image|video|audio — refuses anything else), source? (default external:bridge)',
+            handler: (args) => {
+                const raw = args.files ?? args.file;
+                const list = (Array.isArray(raw) ? raw.map(String) : String(raw ?? '').split(/\r?\n/))
+                    .map(x => x.trim()).filter(Boolean);
+                need(list.length, 'Nothing to register — `files` is one path or an array of them.');
+                const kind = optStr(args, 'mediaKind').toLowerCase();
+                need(!kind || ['image', 'video', 'audio'].includes(kind),
+                    `mediaKind is image, video or audio — not "${kind}"`);
+                const title = optStr(args, 'title');
+                need(!title || list.length === 1,
+                    '`title` names ONE asset — with several files each keeps its own filename.');
+
+                const projectRef = optStr(args, 'project');
+                const sceneId = optStr(args, 'scene');
+                let found: DiscoveredProduction | undefined;
+                if (projectRef) {
+                    found = findProduction(projectRef);
+                    need(!sceneId || found.production.scenes.some(s => s.id === sceneId),
+                        `"${sceneId}" is not a scene in ${found.production.title} — studio.productions lists them.`);
+                } else {
+                    need(!sceneId, 'A scene belongs to a production — pass `project` as well.');
+                }
+
+                // Every path is judged before a single sidecar is written: a
+                // half-done registration is worse than a refused one, because
+                // the caller cannot tell which half happened.
+                const abs = list.map(f => path.resolve(f));
+                for (const f of abs) {
+                    let isFile = false;
+                    try { isFile = fs.statSync(f).isFile(); } catch { /* missing */ }
+                    need(isFile, `No file at ${f}.`);
+                    const ext = path.extname(f).slice(1).toLowerCase();
+                    need(MEDIA_EXTS.includes(ext),
+                        `${path.basename(f)} is not a media file — the gallery reads ${MEDIA_EXTS.join(', ')}.`);
+                    need(!kind || assetKind(f) === kind,
+                        `${path.basename(f)} is ${assetKind(f)}, not ${kind}.`);
+                }
+
+                const outputs = deps.outputsDir();
+                // One registry read for the whole batch — and it is what makes
+                // the SAME file passed twice in one call collapse to one asset.
+                const known = registeredAssetPaths(outputs);
+                const registered: { taskId: string; title: string; file: string; kind: string }[] = [];
+                const alreadyKnown: string[] = [];
+                for (const f of abs) {
+                    const meta = registerExternalAsset(outputs, f, {
+                        title: title || undefined,
+                        projectId: found?.production.id,
+                        sceneId: sceneId || undefined,
+                        source: optStr(args, 'source') || 'external:bridge',
+                        input: optStr(args, 'prompt') || undefined
+                    }, known);
+                    if (meta) {
+                        registered.push({
+                            taskId: meta.taskId, title: meta.title, file: f, kind: assetKind(f)
+                        });
+                    } else { alreadyKnown.push(f); }
+                }
+                deps.refresh?.();
+                return {
+                    registered: registered.length, assets: registered,
+                    skipped: alreadyKnown.length, alreadyKnown,
+                    project: found?.production.title ?? null, scene: sceneId || null,
+                    note: `${registered.length} asset(s) registered`
+                        + (alreadyKnown.length ? `, ${alreadyKnown.length} already known` : '')
+                        + (found ? ` — filed against ${found.production.title}` : '') + '.'
                 };
             }
         },

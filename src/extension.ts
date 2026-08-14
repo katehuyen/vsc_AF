@@ -3122,6 +3122,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         missionChanged();
     };
 
+    // ---------- B-4: the two ends of a run's life, in one implementation ----
+    // Both used to live inside the tree command, behind a modal, so a mission
+    // could be started over the bridge and then never asked again or tidied
+    // away from it. The modal stays where it belongs — in the command.
+
+    /** Run the SAME spec again as a fresh run. Returns the new run. */
+    const rerunMissionRun = (run: MissionRun): MissionRun | undefined => {
+        const spec = missionStore.spec(run.specId);
+        if (!spec) { return undefined; }
+        const rerun: MissionRun = {
+            id: newMissionId(), specId: spec.id, status: 'running',
+            rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
+        };
+        missionStore.runs.push(rerun);
+        missionChanged();
+        launchMission(spec, rerun);
+        return rerun;
+    };
+
+    /**
+     * Drop a finished run from the history. The spec goes with it once its LAST
+     * run does — a spec with no runs is an orphan nothing can reach — and the
+     * caller is told, because "the mission is gone from the list" and "that one
+     * run is gone" are different outcomes. Archived task outputs stay.
+     */
+    const deleteMissionRun = (run: MissionRun): { specDeleted: boolean } => {
+        const spec = missionStore.spec(run.specId);
+        missionStore.runs = missionStore.runs.filter(r => r.id !== run.id);
+        const specDeleted = !!spec && !missionStore.runs.some(r => r.specId === spec.id);
+        if (specDeleted && spec) {
+            missionStore.specs = missionStore.specs.filter(s => s.id !== spec.id);
+        }
+        missionChanged();
+        return { specDeleted };
+    };
+
     const createMission = (input: Record<string, unknown>): string | undefined => {
         const goal = String(input.goal ?? '').trim();
         if (!goal) { return 'Goal is required.'; }
@@ -3795,6 +3831,112 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'tasks.start',
+            describe: '‼️ START THIS QUEUED TASK, WHERE IT IS — the exact gesture the ▶ on the row makes, and NOT tasks.runNext, which reorders the whole queue to do it. If a ceiling (concurrency, budget, a retry\'s wait) holds it back it is parked instead: `started:false` with `heldBy` saying which one, because a caller told "started" about a run that never launched is the bug this op exists to avoid. args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                need(task.status === 'queued', `Task is ${task.status} — only a queued task can be started.`);
+                const started = taskManager.startTask(task);
+                return {
+                    id: task.id, status: task.status, started,
+                    heldBy: started ? null : (task.deferredReason ?? 'a launch ceiling')
+                };
+            }
+        },
+        {
+            op: 'tasks.unpark',
+            describe: '‼️ RELEASE A RUN A CEILING IS HOLDING and ask for the launch again — the row\'s "retry start". This ENDS the park episode, so if the same ceiling catches it again that is fresh news rather than a silent second hold; `started:false` with `heldBy` is exactly that outcome. A queued task that is not held is refused, so this can never be mistaken for a plain start (tasks.start) or for jumping the queue (tasks.runNext). args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                need(task.status === 'queued', `Task is ${task.status} — only a queued task can be held.`);
+                need(task.autoStart, 'That task is not held by anything — tasks.start starts it.');
+                const heldBy = task.deferredReason ?? null;
+                const started = taskManager.unparkTask(task);
+                return {
+                    id: task.id, status: task.status, wasHeldBy: heldBy, started,
+                    heldBy: started ? null : (task.deferredReason ?? 'a launch ceiling'),
+                    note: started ? 'Released and launched.'
+                        : `Released, and the ceiling caught it again — ${task.deferredReason ?? 'unknown'}.`
+                };
+            }
+        },
+        {
+            op: 'tasks.complete',
+            describe: 'Mark a RUNNING task done by hand — the ✓ on the row. The process is stopped and the run is filed as `done`, which is the difference from tasks.cancel: this is "it has finished the work, whatever the CLI is still doing", not "abandon it". Only a running task can be completed; anything else is already final. args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                need(task.status === 'running',
+                    `Task is ${task.status} — only a running task can be completed by hand.`);
+                taskManager.completeTask(task);
+                return { id: task.id, status: task.status, endedAt: task.endedAt ?? null };
+            }
+        },
+        {
+            op: 'tasks.move',
+            describe: 'Reorder the queue: `to` is an exact 0-based place among that agent\'s QUEUED tasks (0 = next up), `dir` is one step ("up"|"down"). A place past the end means last rather than an error — the answer says where it landed. This is order only and starts nothing; the running and finished rows between them do not move. args: id, to? (0-based), dir? (up|down)',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                need(task.status === 'queued', `Task is ${task.status} — only a queued task has a place in the queue.`);
+                const dir = optStr(args, 'dir').toLowerCase();
+                const hasTo = args.to !== undefined && args.to !== null && args.to !== '';
+                need(hasTo || dir, 'Say where: `to` (0-based place) or `dir` ("up"|"down").');
+                need(!(hasTo && dir), 'Pass `to` or `dir`, not both.');
+                const siblings = taskManager.tasks.filter(x =>
+                    x.agentId === task.agentId && x.status === 'queued');
+                const from = siblings.indexOf(task);
+                let target: number;
+                if (hasTo) {
+                    need(Number.isFinite(Number(args.to)), '`to` is a number — 0 is next up.');
+                    target = Math.trunc(Number(args.to));
+                } else {
+                    need(dir === 'up' || dir === 'down', `dir is "up" or "down" — not "${dir}"`);
+                    target = from + (dir === 'up' ? -1 : 1);
+                    need(target >= 0 && target < siblings.length,
+                        dir === 'up' ? 'It is already first in its queue.' : 'It is already last in its queue.');
+                }
+                const landed = taskManager.moveTaskTo(task, target);
+                return {
+                    id: task.id, agent: task.agentName, from, to: landed,
+                    queued: siblings.length,
+                    note: `${task.title} is #${landed + 1} of ${siblings.length} in ${task.agentName}'s queue.`
+                };
+            }
+        },
+        {
+            op: 'tasks.restore',
+            describe: '‼️ PUT A DELETED RUN BACK ON THE BOARD — the Undo behind the ✕, which until now expired with the panel that offered it. The row comes back from the month archive exactly as it was filed, minus its OUTPUT file, which the delete removed and nothing can return; the archive is told it is live again so tasks.history stops listing it as deleted. An id already on the board is reported as such, not duplicated, so calling this twice is safe. args: id, month? ("YYYY-MM" — omit to search every archived month, newest first)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                need(!taskManager.tasks.some(t => t.id === id),
+                    'That run is already on the board — tasks.list shows it.');
+                const month = optStr(args, 'month');
+                need(!month || /^\d{4}-\d{2}$/.test(month), 'month is "YYYY-MM" — omit it to search all of them.');
+                const months = month ? [month] : taskManager.archivedMonths.slice().reverse();
+                need(months.length, 'Nothing has been archived yet — there is no run to restore.');
+                const row = taskManager.archivedTasks(months).find(t => t.id === id);
+                need(row, month
+                    ? `No run "${id}" archived in ${month} — tasks.history { month } lists what is there.`
+                    : `No run "${id}" in any archived month — tasks.history lists what is there.`);
+                const back = taskManager.restoreTasks([row as FarmTask]);
+                return {
+                    restored: back, id, title: (row as FarmTask).title,
+                    status: (row as FarmTask).status,
+                    outputFile: null,
+                    note: back
+                        ? `"${(row as FarmTask).title}" is back on the board — its output file is not, it was deleted with the row.`
+                        : 'Nothing changed — it is already on the board.'
+                };
+            }
+        },
+        {
             op: 'tasks.clearFinished',
             describe: 'Clear all finished (done/failed/cancelled) tasks from the board — history is archived first, output files are deleted. args: none',
             handler: () => ({ removed: taskManager.clearFinished() })
@@ -3874,6 +4016,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(w, 'Workflow not found — workflows.list shows current ones.');
                 taskManager.runWorkflow(w as FarmWorkflow);
                 return { started: (w as FarmWorkflow).title };
+            }
+        },
+        {
+            op: 'workflows.resume',
+            describe: '‼️ PICK A CUT CHAIN BACK UP AT THE STEP THAT BROKE — the answer to a workflow whose middle step failed or was interrupted, which otherwise means re-running the whole chain from step 1. Name the STEP\'S OWN task (tasks.list → the row with a workflow on it): the run re-enters at that step with the previous step\'s output rebuilt as its handoff, in the SAME run, so everything the chain already produced is kept. args: taskId',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'taskId'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                need(task.workflowId && task.stepIndex !== undefined,
+                    `"${task.title}" is not a workflow step — it belongs to no chain to resume.`);
+                const w = taskManager.workflows.find(x => x.id === task.workflowId);
+                need(w, `The workflow "${task.title}" belonged to no longer exists.`);
+                need((task.stepIndex as number) < (w as FarmWorkflow).steps.length,
+                    `Step ${(task.stepIndex as number) + 1} no longer exists in "${(w as FarmWorkflow).title}" — the workflow was edited since this run.`);
+                taskManager.resumeWorkflowFromTask(task);
+                return {
+                    workflow: (w as FarmWorkflow).title, step: (task.stepIndex as number) + 1,
+                    steps: (w as FarmWorkflow).steps.length,
+                    runId: task.workflowRunId ?? null, fromTask: task.id,
+                    note: `Resuming "${(w as FarmWorkflow).title}" from step ${(task.stepIndex as number) + 1}.`
+                };
             }
         },
         {
@@ -7739,6 +7903,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 approvalQueue.settle(apId as string, args.ok !== false);
                 return { id: runId, approved: args.ok !== false };
             }
+        },
+        {
+            op: 'missions.rerun',
+            describe: '‼️ RUN A FINISHED MISSION AGAIN — same goal, same team, same limits, as a NEW run with its own id, so the first run\'s rounds and ledger stay readable beside it. This is the "it failed halfway, run it again" gesture; it is not missions.resume, which continues the run you already have. COST-BEARING: it spends up to the spec\'s maxCostUSD again, so call it only when the user has asked for it. args: id (a finished run — missions.list shows them)',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                need(r.status === 'done' || r.status === 'failed' || r.status === 'cancelled',
+                    `Run is ${r.status} — only a finished run can be started over (missions.resume continues a live one).`);
+                const spec = missionStore.spec(r.specId);
+                need(spec, 'The mission spec this run came from no longer exists — there is nothing to repeat.');
+                const fresh = rerunMissionRun(r);
+                need(fresh, 'The mission could not be started again.');
+                return {
+                    id: (fresh as MissionRun).id, from: runId,
+                    title: (spec as MissionSpec).title,
+                    status: (fresh as MissionRun).status,
+                    maxCostUSD: (spec as MissionSpec).limits.maxCostUSD,
+                    note: `"${(spec as MissionSpec).title}" started again — missions.status { id } follows it.`
+                };
+            }
+        },
+        {
+            op: 'missions.run.delete',
+            describe: 'Drop a FINISHED mission run from the history. Archived task outputs stay on disk; what goes is the run\'s row, its rounds and its ledger. ‼️ Deleting the LAST run of a spec takes the spec with it — a mission nothing can reach — and `specDeleted` says whether that happened, because "that run is gone" and "the mission is gone from the list" are different answers. There is no undo. args: id',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                need(r.status === 'done' || r.status === 'failed' || r.status === 'cancelled',
+                    `Run is ${r.status} — cancel it first (missions.cancel); a live run is not deleted out from under itself.`);
+                const title = missionStore.spec(r.specId)?.title ?? runId;
+                const { specDeleted } = deleteMissionRun(r);
+                return {
+                    id: runId, title, specDeleted,
+                    note: specDeleted
+                        ? `"${title}" is gone from the list — that was its last run.`
+                        : `That run is gone; "${title}" still has others.`
+                };
+            }
         }
     ]);
 
@@ -8389,13 +8596,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Run mission "${spec.title}" again? Same goal, team and limits (max $${spec.limits.maxCostUSD}).`,
                 { modal: true }, 'Run again');
             if (pick !== 'Run again') { return; }
-            const rerun: MissionRun = {
-                id: newMissionId(), specId: spec.id, status: 'running',
-                rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
-            };
-            missionStore.runs.push(rerun);
-            missionChanged();
-            launchMission(spec, rerun);
+            rerunMissionRun(run);
         }),
         vscode.commands.registerCommand('agentfarm.missionDelete', async (node?: MissionNode) => {
             const run = missionNodeRun(node);
@@ -8405,11 +8606,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Delete mission run "${spec?.title ?? run.id}" from the history? Archived task outputs stay.`,
                 { modal: true }, 'Delete');
             if (pick !== 'Delete') { return; }
-            missionStore.runs = missionStore.runs.filter(r => r.id !== run.id);
-            if (spec && !missionStore.runs.some(r => r.specId === spec.id)) {
-                missionStore.specs = missionStore.specs.filter(s => s.id !== spec.id);
-            }
-            missionChanged();
+            deleteMissionRun(run);
         }),
         vscode.commands.registerCommand('agentfarm.missionStepOutput', (node?: MissionNode) => {
             const file = node?.kind === 'step' ? node.step.outputFile : undefined;
@@ -10872,7 +11069,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         outputsDir: () => (taskManagerRef as TaskManager).outputsDir,
         runMedia: (title, model, input, opts) =>
-            (taskManagerRef as TaskManager).runMediaAdhoc(title, model, input, opts)
+            (taskManagerRef as TaskManager).runMediaAdhoc(title, model, input, opts),
+        refresh: () => StudioPanel.refreshIfOpen()
     });
 
     // ---------- DALGA 1: the Console's session host ----------
