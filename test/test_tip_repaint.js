@@ -51,9 +51,10 @@ function mkEl(cls) {
 }
 
 /** A wrapper with its panel inside it, the shape `AFTip.cell`/`wrap` produce. */
-function mkTip() {
+function mkTip(shown) {
     const w = mkEl('af-tipw');
     const t = mkEl('af-tip');
+    t.shown = shown === true;
     t.parent = w;
     w.children.push(t);
     return { w: w, t: t };
@@ -90,7 +91,9 @@ const runTimers = () => {
     due.forEach(fn => fn());
 };
 
-const windowStub = {};
+const windowStub = {
+    getComputedStyle: el => ({ visibility: el.shown ? 'visible' : 'hidden' })
+};
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
 new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
     'setTimeout', 'clearTimeout', src)(
@@ -181,7 +184,14 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
 // say to need scrolling. Closing was instant, so the crossing was fatal.
 {
     at = {};
-    const a = mkTip();
+    const quick = mkTip();
+    at[key(80, 80)] = quick.w;
+    fire('pointerover', { target: quick.w, clientX: 80, clientY: 80 });
+    fire('pointerout', { target: quick.w, relatedTarget: null });
+    ok('a quick flyover does not bypass the opening delay on the way out',
+        !quick.w.classList.contains('af-hold'));
+
+    const a = mkTip(true);
     at[key(90, 90)] = a.w;
     fire('pointerover', { target: a.w, clientX: 90, clientY: 90 });
     fire('pointerout', { target: a.w, relatedTarget: null });
@@ -197,7 +207,7 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     ok('…and the cancelled timer cannot come back to close it', !a.w.classList.contains('af-hold'));
 
     // A hold is a grace period, not a second state: nothing arrives, it ends.
-    const b = mkTip();
+    const b = mkTip(true);
     at[key(120, 120)] = b.w;
     fire('pointerover', { target: b.w, clientX: 120, clientY: 120 });
     fire('pointerout', { target: b.w, relatedTarget: null });
@@ -209,7 +219,7 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
 
     // Two panels open at once is the failure this guards against: moving from
     // one row to the next must not leave the first one hanging over the second.
-    const c = mkTip(), e = mkTip();
+    const c = mkTip(true), e = mkTip();
     at[key(150, 150)] = c.w; at[key(180, 180)] = e.w;
     fire('pointerover', { target: c.w, clientX: 150, clientY: 150 });
     fire('pointerout', { target: c.w, relatedTarget: null });

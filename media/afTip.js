@@ -232,6 +232,14 @@
             if (held && held !== w) { held.classList.remove('af-hold'); held = null; }
             if (held === w) { w.classList.remove('af-hold'); held = null; }
         };
+        /** A hold preserves a panel the reader has already opened; it must not
+         *  become a second, instant way to open one. During the normal 250 ms
+         *  hover delay the panel's computed visibility is still hidden. */
+        const isShown = w => {
+            const tip = w.querySelector('.af-tip');
+            return !!tip && typeof window.getComputedStyle === 'function'
+                && window.getComputedStyle(tip).visibility === 'visible';
+        };
 
         doc.addEventListener('pointerover', function (e) {
             const w = closestW(e.target);
@@ -261,7 +269,7 @@
                 over = null; drop();
                 // `tip-free` runs its own timers (below); giving it a second set
                 // here would fight them.
-                if (!w.classList.contains('tip-free')) {
+                if (!w.classList.contains('tip-free') && isShown(w)) {
                     cancelHold(w);
                     held = w;
                     w.classList.add('af-hold');
