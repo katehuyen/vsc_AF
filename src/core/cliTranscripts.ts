@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { StringDecoder } from 'string_decoder';
 import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
 import { conversationTitle, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
@@ -20,7 +21,18 @@ import { ConsoleMessage, ConsoleSessionState } from './consoleproto';
  */
 
 const SCAN_DAYS = 90;
+/**
+ * Whole-file ceiling — for the sources whose format is ONE json document and
+ * therefore cannot be read a line at a time (a gemini chat file, the Console's
+ * own snapshot). Above it the session is reported UNREAD, never dropped.
+ */
 const MAX_FILE_BYTES = 24 * 1024 * 1024;
+/**
+ * Line-streamed ceiling. A JSONL transcript is read a chunk at a time, so its
+ * size never becomes this process's memory — this is the runaway guard for a
+ * file that is no longer a transcript, not a working limit.
+ */
+const MAX_STREAM_BYTES = 512 * 1024 * 1024;
 const MAX_WALK_DEPTH = 6;
 
 function listFiles(root: string, exts: string[], cutoffMs: number): string[] {
@@ -70,11 +82,81 @@ class FileCache {
     }
 }
 
-function readCapped(file: string): string | undefined {
+/**
+ * ‼️ S-32 — A TRANSCRIPT TOO LARGE TO READ IS NOT A SESSION THAT NEVER HAPPENED.
+ *
+ * The read used to answer `undefined` for a file over the ceiling, and every
+ * parser here reads `undefined` as "not a session": the row left the external
+ * list altogether and took the Sessions table, the cost totals, the project
+ * match, Console's resume scrollback and search with it — with no line on any
+ * surface saying why. It was not theoretical. Measured on the S-30 report: one
+ * ordinary Codex rollout was 13,970,211 bytes, 58% of the ceiling, so the drop
+ * was one long session away.
+ *
+ * Two answers, and the FORMAT decides which — not taste:
+ * - a JSONL transcript is read a chunk at a time (`streamLines`), so the file's
+ *   size never becomes this process's memory and every figure is real;
+ * - a format that is one JSON document has to be held whole (`readWhole`), so
+ *   above the ceiling the session is reported UNREAD: identity, file and time
+ *   are real, every figure stays at an honest zero, and `scanLimit` is the mark
+ *   the surfaces draw instead of letting the row look like a session that did
+ *   nothing.
+ *
+ * `undefined` from either of these still means what it always meant — the file
+ * could not be opened at all.
+ */
+interface ReadOutcome {
+    /** What the file measured, in bytes. */
+    bytes: number;
+    /** Set when the file is over the ceiling — the ceiling it passed. */
+    over?: number;
+}
+
+/** Feed a file's lines to `onLine` without ever holding the file in memory. */
+function streamLines(file: string, onLine: (line: string) => void): ReadOutcome | undefined {
+    let bytes = 0;
+    try { bytes = fs.statSync(file).size; } catch { return undefined; }
+    if (bytes > MAX_STREAM_BYTES) { return { bytes, over: MAX_STREAM_BYTES }; }
+    let fd: number;
+    try { fd = fs.openSync(file, 'r'); } catch { return undefined; }
     try {
-        if (fs.statSync(file).size > MAX_FILE_BYTES) { return undefined; }
-        return fs.readFileSync(file, 'utf8');
-    } catch { return undefined; }
+        const buf = Buffer.allocUnsafe(1024 * 1024);
+        // a multi-byte character can straddle two chunks — the decoder holds
+        // the tail rather than handing back a replacement character
+        const decoder = new StringDecoder('utf8');
+        let carry = '';
+        for (;;) {
+            const n = fs.readSync(fd, buf, 0, buf.length, null);
+            if (n <= 0) { break; }
+            const parts = (carry + decoder.write(buf.subarray(0, n))).split('\n');
+            carry = parts.pop() ?? '';
+            for (const p of parts) { onLine(p); }
+        }
+        carry += decoder.end();
+        if (carry) { onLine(carry); }
+        return { bytes };
+    } catch { return undefined; } finally {
+        try { fs.closeSync(fd); } catch { /* already gone */ }
+    }
+}
+
+/** The whole file, for a format that only means something whole. */
+function readWhole(file: string): (ReadOutcome & { text?: string }) | undefined {
+    let bytes = 0;
+    try { bytes = fs.statSync(file).size; } catch { return undefined; }
+    if (bytes > MAX_FILE_BYTES) { return { bytes, over: MAX_FILE_BYTES }; }
+    try { return { bytes, text: fs.readFileSync(file, 'utf8') }; } catch { return undefined; }
+}
+
+/** The row a file too large to read still deserves: who it is, where it is,
+ *  when it was last touched — and the mark that says its figures were not read
+ *  rather than measured at zero. */
+function unreadInfo(file: string, sessionId: string, source: string, read: ReadOutcome): SessionInfo {
+    let mtime = Date.now();
+    try { mtime = fs.statSync(file).mtimeMs; } catch { /* it was there a moment ago */ }
+    const info = blankInfo(file, sessionId, source, mtime);
+    info.scanLimit = { bytes: read.bytes, limit: read.over ?? MAX_FILE_BYTES };
+    return info;
 }
 
 function scanWithCache(
@@ -219,9 +301,9 @@ export function codexPromptTitle(value: string): string {
 
 function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
     pricing: () => PricingEngine): SessionInfo | undefined {
-    const raw = readCapped(file);
-    if (!raw) { return undefined; }
-    const info = blankInfo(file, path.basename(file, '.jsonl'), 'codex', fs.statSync(file).mtimeMs);
+    let mtime = 0;
+    try { mtime = fs.statSync(file).mtimeMs; } catch { return undefined; }
+    const info = blankInfo(file, path.basename(file, '.jsonl'), 'codex', mtime);
     let cumulative: CodexTokenTotals | undefined;
     // ‼️ What the window HELD at the end, as opposed to what the thread SPENT
     // over its life. Both are on the same line and only one of them is a
@@ -258,10 +340,13 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     };
     const turnNow = () => (info.turns.length ? info.turns[info.turns.length - 1] : undefined);
 
-    for (const lineText of raw.split('\n')) {
-        if (!lineText.trim()) { continue; }
+    // ‼️ S-32 — read a chunk at a time, never whole. A rollout grows with the
+    // conversation and the file's size must not decide whether the session
+    // exists; nothing here holds more than the line it is looking at.
+    const read = streamLines(file, lineText => {
+        if (!lineText.trim()) { return; }
         let line: CodexLine;
-        try { line = JSON.parse(lineText) as CodexLine; } catch { continue; }
+        try { line = JSON.parse(lineText) as CodexLine; } catch { return; }
         const ts = line.timestamp ? Date.parse(line.timestamp) : NaN;
         if (!Number.isNaN(ts)) {
             if (!firstTs) { firstTs = ts; }
@@ -271,7 +356,7 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
             if (open && ts > open.ts) { open.ms = ts - open.ts; }
         }
         const p = line.payload;
-        if (!p) { continue; }
+        if (!p) { return; }
         if (line.type === 'session_meta') {
             const sid = p.session_id ?? p.id;
             if (typeof sid === 'string' && sid) { info.sessionId = sid; }
@@ -331,7 +416,9 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
             const open = turnNow();
             if (open) { open.thinking++; open.steps++; }
         }
-    }
+    });
+    if (!read) { return undefined; }
+    if (read.over) { return unreadInfo(file, path.basename(file, '.jsonl'), 'codex', read); }
 
     // A rollout with no usage and no prompts is noise (probe/empty session).
     if (!cumulative && info.userTurns === 0) { return undefined; }
@@ -430,8 +517,15 @@ function parseGeminiFile(
     agentForHash: (hash: string) => { agentId?: string; agentName?: string },
     pricing: () => PricingEngine
 ): SessionInfo | undefined {
-    const raw = readCapped(file);
-    if (!raw?.trim()) { return undefined; }
+    // A gemini chat file is EITHER one json document or a run of records, and
+    // which it is only becomes clear once it is whole — so this one is read
+    // whole, and the ceiling is answered with a marked row rather than silence.
+    const read = readWhole(file);
+    if (!read) { return undefined; }
+    const ext0 = path.extname(file);
+    if (read.over) { return unreadInfo(file, path.basename(file, ext0), 'gemini', read); }
+    const raw = read.text ?? '';
+    if (!raw.trim()) { return undefined; }
     const mtime = fs.statSync(file).mtimeMs;
     const ext = path.extname(file);
     const info = blankInfo(file, path.basename(file, ext), 'gemini', mtime);
@@ -639,9 +733,10 @@ function parseFarmConsoleFile(
     file: string,
     resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string }
 ): SessionInfo | undefined {
-    const raw = readCapped(file);
-    if (!raw) { return undefined; }
-    const snap = readFarmConsoleTranscript(raw);
+    const read = readWhole(file);
+    if (!read) { return undefined; }
+    if (read.over) { return unreadInfo(file, path.basename(file, '.json'), 'agy', read); }
+    const snap = readFarmConsoleTranscript(read.text ?? '');
     if (!snap) { return undefined; }
     const info = blankInfo(file, snap.sessionId, snap.engine, snap.lastTs || snap.startedAt);
     info.cwd = snap.cwd;

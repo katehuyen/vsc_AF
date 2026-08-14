@@ -240,6 +240,7 @@ import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { historyWindow, transcriptHistory } from './core/consolehistory';
+import { MAX_TRANSCRIPT_BYTES, readSettled, snapshotLabel } from './core/transcriptRead';
 import { parseCliViewer } from './core/cliViewer';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import { carriedTotals, ConsoleMessage, PERMISSION_MODES_LIVE } from './core/consoleproto';
@@ -4544,13 +4545,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     tags: s.tags ?? [],
                     cwd: s.cwd ?? null,
                     firstTs: s.firstTs, lastTs: s.lastTs,
-                    turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
+                    turns: s.userTurns, cost: Math.round(s.cost * 100) / 100,
+                    // S-32 — set when the transcript is past the scan's read
+                    // ceiling: identity and time are real, every figure is an
+                    // unread zero. Null on a session that was read.
+                    scanLimit: s.scanLimit ?? null
                 }));
             }
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero.',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -4577,7 +4582,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // the origin column now decides on (see sessionOrigin).
                         launchedBy: s.launchedBy ?? null,
                         turns: s.userTurns, cost: Math.round(s.cost * 100) / 100,
-                        tokens: totalTokens(s.usage), wTokens: Math.round(s.wTokens)
+                        tokens: totalTokens(s.usage), wTokens: Math.round(s.wTokens),
+                        // ‼️ S-32 — a zero that was NEVER MEASURED says so. The
+                        // transcript is past the scan's read ceiling, so this
+                        // row is identity and time only; reading its figures as
+                        // "this session did nothing" is the mistake this field
+                        // exists to prevent.
+                        scanLimit: s.scanLimit ?? null
                     }));
             }
         },
@@ -11278,9 +11289,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }];
         }
         try {
-            const raw = fs.readFileSync(file, 'utf8');
+            /**
+             * ‼️ S-30 — the snapshot is taken when the file has stopped moving,
+             * and it says which snapshot it is. `readSettled` stats either side
+             * of the read: a file that grew underneath it is re-read, and one
+             * that is still growing after that is REPORTED as still being
+             * written rather than drawn as a conversation with a hole in it.
+             */
+            const snap = readSettled(file);
+            const stamp = snapshotLabel(snap);
+            if (snap.tooBig) {
+                return note(`This session's transcript is ${stamp} — larger than the`
+                    + ` ${Math.round(MAX_TRANSCRIPT_BYTES / (1024 * 1024))} MB this reads at once, so the`
+                    + ' scrollback above was not rebuilt. Nothing is lost: "Open transcript" opens the'
+                    + ' file itself, and the engine is resumed by its id, so it still remembers the'
+                    + ' conversation.');
+            }
+            /** The one row that says the file was moving under the read. */
+            const settling: ConsoleMessage[] = snap.moving ? [{
+                id: 'xh-settling', ts: Date.now(), role: 'system',
+                text: `The transcript was still being written when this snapshot was taken (${stamp}),`
+                    + ' so the last line or two of it may not be here yet — Resume is ready either way.'
+                    + ' Nothing is lost: the engine is resumed by its id, and "Open transcript" reads'
+                    + ' the file as it stands now.'
+            }] : [];
+            const raw = snap.raw ?? '';
             const external = parseCliViewer(raw, file, pricing);
-            if (!external) { return transcriptHistory(raw.split('\n')); }
+            if (!external) { return [...transcriptHistory(raw.split('\n')), ...settling]; }
             // ‼️ S-30 — the turn the reader just finished comes back whole, even
             // when 150 rows of tool traffic would have swallowed it. `turnStart`
             // is the parser's own mark for "this is where a turn opens".
@@ -11308,8 +11343,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 };
             });
             if (!kept.length) {
-                return note('This session\'s transcript was read but held no conversation to'
-                    + ' show — it is still on disk, and "Open transcript" opens it as it is.'
+                return note(`This session's transcript (${stamp}) was read but held no conversation`
+                    + ' to show — it is still on disk, and "Open transcript" opens it as it is.'
                     + ' The engine is resumed by its id, so its own context is intact.');
             }
             return [
@@ -11320,9 +11355,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : '↑ the start of this session'
                 },
                 ...kept,
+                ...settling,
                 {
+                    // ‼️ S-30 — WHICH snapshot this scrollback is. The same label
+                    // names the file everywhere it is read, so a reader can hold
+                    // this against the transcript open in the editor instead of
+                    // taking "read back from the transcript" on trust.
                     id: 'xh-end', ts: kept[kept.length - 1].ts, role: 'system',
-                    text: '— read back from the transcript · resumed here —'
+                    text: `— read back from the transcript · snapshot ${stamp} · resumed here —`
                 }
             ];
         } catch (e) {

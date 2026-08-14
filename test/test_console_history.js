@@ -227,6 +227,77 @@ for (const engine of ['claude', 'codex']) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ S-30 (4) — THE SNAPSHOT IS TAKEN WHEN THE FILE HAS STOPPED MOVING
+//
+// The read that rebuilds a scrollback used to be one unlocked glance at a file
+// the engine had finished writing seconds ago. Land it mid-flush and what comes
+// back is a few lines short — and the missing lines are the closing turn, which
+// is the one the reader came back for. Nothing could tell that apart from a
+// short conversation. `readSettled` stats either side of the read: equal on
+// both sides means nothing moved under it; still moving after the bounded
+// retries is a FACT the surface says out loud.
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const os = require('os');
+    const {
+        readSettled, snapshotLabel, MAX_TRANSCRIPT_BYTES, SETTLE_ATTEMPTS
+    } = require(path.join(__dirname, '..', 'out', 'core', 'transcriptRead.js'));
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-s30-'));
+    const quiet = path.join(dir, 'quiet.jsonl');
+    fs.writeFileSync(quiet, 'line one\nline two\n', 'utf8');
+
+    const snap = readSettled(quiet);
+    ok('a file nobody is writing reads whole', snap.raw === 'line one\nline two\n');
+    ok('…and is not reported as moving', !snap.moving && !snap.tooBig);
+    ok('…and names itself by what it measured',
+        snap.bytes === fs.statSync(quiet).size && snap.mtimeMs > 0);
+    ok('the snapshot label carries size and time', /KB|MB/.test(snapshotLabel(snap))
+        && snapshotLabel(snap).includes('@'));
+
+    // a file that grows UNDER the read — the reported failure's shape
+    const busy = path.join(dir, 'busy.jsonl');
+    fs.writeFileSync(busy, 'first\n', 'utf8');
+    const realRead = fs.readFileSync;
+    let reads = 0;
+    fs.readFileSync = function (f, enc) {
+        const out = realRead.call(fs, f, enc);
+        if (f === busy) { reads++; fs.appendFileSync(busy, `still writing ${reads}\n`); }
+        return out;
+    };
+    const moved = readSettled(busy);
+    fs.readFileSync = realRead;
+    ok('‼️ S-30: a transcript still being written is REPORTED, not drawn as a gap',
+        moved.moving === true);
+    ok('…after a bounded number of attempts, never a loop', reads === SETTLE_ATTEMPTS);
+    ok('…and what it did read is still handed back, not thrown away',
+        typeof moved.raw === 'string' && moved.raw.startsWith('first'));
+
+    // and the runaway file: nothing is read, and the caller is told why
+    const realStat = fs.statSync;
+    fs.statSync = function (f) {
+        const st = realStat.call(fs, f);
+        if (f === quiet) { return { size: MAX_TRANSCRIPT_BYTES + 1, mtimeMs: st.mtimeMs }; }
+        return st;
+    };
+    const huge = readSettled(quiet);
+    fs.statSync = realStat;
+    ok('‼️ S-30/S-32: a transcript past the read ceiling says so instead of reading it',
+        huge.tooBig === true && huge.raw === undefined && huge.bytes > MAX_TRANSCRIPT_BYTES);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    // the wiring: the Console's own read goes through the protocol and reports
+    // the snapshot it used (the closure itself is not reachable from here)
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('the Console rebuilds its scrollback through the settled read',
+        /const snap = readSettled\(file\)/.test(ext));
+    ok('…and the scrollback names the snapshot it was built from',
+        /snapshot \$\{stamp\}/.test(ext));
+}
+
 cp.spawn = realSpawn;
 cp.exec = realExec;
 cp.execSync = realExecSync;

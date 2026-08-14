@@ -32,7 +32,18 @@ const data = () => ({
         row(1, { engine: '', models: ['claude-opus-5'] }),
         row(2, { engine: 'codex', models: ['gpt-5.6-sol'] }),
         row(3, { engine: 'agy', models: ['gemini-3.5-flash'] }),
-        row(4, { engine: 'gemini', models: ['gemini-2.5-pro'] })
+        row(4, { engine: 'gemini', models: ['gemini-2.5-pro'] }),
+        // ‼️ S-32 — the row whose transcript was too large to read. Its figures
+        // are unread zeros, so the badge has to be visible enough that nobody
+        // takes the row for a session that ran and did nothing.
+        row(5, {
+            engine: 'codex', models: ['gpt-5.6-sol'],
+            title: 'Oturum 5 — transcript tarama sınırının üstünde',
+            turns: 0, toolCalls: 0, tokens: 0, wTokens: 0, ctx: 0, cost: 0,
+            files: 0, apiCalls: 0, durationMin: 0,
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            scanLimit: { bytes: 31_457_280, limit: 24 * 1024 * 1024 }
+        })
     ],
     sessionTableN: 200
 });

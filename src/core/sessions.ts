@@ -202,6 +202,17 @@ export interface SessionInfo {
      * `label` is what a person calls it — the schedule's name, the task's title.
      */
     launchedBy?: { kind: string; label: string };
+    /**
+     * ‼️ S-32 — THE SCAN COULD NOT READ THIS TRANSCRIPT IN FULL.
+     *
+     * Present only on a session whose file is over the read ceiling
+     * (`bytes` measured, `limit` passed). Its identity, its file and its time
+     * are real; every figure on the row is an UNREAD zero rather than a
+     * measured one, and the surfaces say so — the alternative, which is what
+     * used to happen, is that the session vanished from the index entirely and
+     * nothing anywhere said why. Absent on every session that was read.
+     */
+    scanLimit?: { bytes: number; limit: number };
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];

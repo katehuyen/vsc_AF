@@ -168,6 +168,10 @@ export function sessionRowPool(
         ctxWindow: windowOf(s),
         cost: s.cost,
         sidechain: s.isSidechain,
+        // ‼️ S-32 — the row exists BECAUSE the transcript could not be read, and
+        // says so. Every figure above it is an unread zero, so the table marks
+        // the row rather than letting it pass for a session that did nothing.
+        scanLimit: s.scanLimit ?? null,
         // 🧑 your own dialog vs 🤖 an automation run — the table's default scope
         origin: sessionOrigin(s),
         // shelf marks: pinned rows sort first and survive every top-N cut

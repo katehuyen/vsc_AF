@@ -502,6 +502,22 @@
 
         const dot = r => r.active ? '<span class="dot on" title="Active now"></span> ' : '';
         const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
+        /** ‼️ S-32 — the row whose figures were NOT READ. A transcript over the
+         *  scan ceiling used to drop the whole session out of the index; it is
+         *  listed now, so the one thing it must never look like is a session
+         *  that ran and did nothing. Figures only in the native title.
+         *
+         *  It rides on the TITLE cell in every embedding, unlike `sub` which
+         *  follows the identity column: the Agent column is the narrowest on
+         *  the page and a second badge there cuts the agent's own name. */
+        const mb = n => `${Math.round(n / 1048576 * 10) / 10} MB`;
+        const unreadBadge = r => (r.scanLimit
+            ? ` <span class="badge warn" title="Transcript ${mb(r.scanLimit.bytes)} · scan limit ${mb(r.scanLimit.limit)}">unread</span>`
+            : '');
+        /** …and the same fact in words, for the panels that explain a zero. */
+        const unreadLine = r => (r.scanLimit
+            ? `transcript ${mb(r.scanLimit.bytes)}, above the ${mb(r.scanLimit.limit)} scan limit`
+            : '');
         const tagChips = r => (r.tags || []).map(t => `<span class="stag">${C.esc(t)}</span>`).join('');
         // ⎋ interrupt: only on rows that are actually running — Esc is typed
         // into that session's terminal, which stops the turn, not the session
@@ -640,6 +656,9 @@
                 line('Tool calls', r.toolCalls || 0)
             ],
             tokens: r => [
+                // ‼️ S-32 — a zero that was never measured says so FIRST, before
+                // the reader takes the rest of the panel for figures.
+                line('Not read', unreadLine(r)),
                 line('Raw total', C.fmtTok(r.tokens || 0)),
                 line('Weighted (plan)', C.fmtTok(r.wTokens || 0)),
                 line('Weight ratio', r.tokens ? `${round1((r.wTokens || 0) / r.tokens)}×` : ''),
@@ -674,6 +693,7 @@
                 line('State', r.active ? 'running' : 'idle')
             ],
             cost: r => [
+                line('Not read', unreadLine(r)),
                 line('API-equivalent', C.fmtUSD(r.cost || 0)),
                 line('Per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
                 line('Per API call', per(r.cost, r.apiCalls, n => C.fmtUSD(n))),
@@ -707,6 +727,7 @@
                 const prompt = String(r.firstPrompt || '');
                 const facts = [
                     line('Session', r.sessionId),
+                    line('Transcript not read', unreadLine(r)),
                     line('Agent', r.agent),
                     line('Project', r.project),
                     line('Started as', r.cliName && r.cliName !== r.title ? r.cliName : ''),
@@ -746,7 +767,7 @@
             engine: '<th title="Which CLI ran the session: Claude · Codex · Gemini · Antigravity">Engine</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
-            title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests">Title</th>',
+            title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',
             when: '<th class="num" title="Time since the session was last active">When</th>',
             duration: '<th class="num" title="First turn to last, in wall clock">Duration</th>',
             turns: '<th class="num" title="Prompts sent. One turn = one thing asked for; it takes many API calls">Turns</th>',
@@ -774,8 +795,8 @@
             title: r => {
                 const b = TIPBOX.title(r);
                 const inner = '<span class="cellline">' + (hasAgentCol
-                    ? `<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}`
-                    : `${dot(r)}<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}`)
+                    ? `<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}${unreadBadge(r)}`
+                    : `${dot(r)}<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}${subBadge(r)}${unreadBadge(r)}${termBtn(r)}${stopBtn(r)}`)
                     + '</span>';
                 return window.AFTip.cell('', '', inner, b.head, b.body);
             },

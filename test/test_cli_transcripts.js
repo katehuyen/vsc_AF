@@ -215,6 +215,106 @@ check('dedupe: the readable Farm transcript replaces Antigravity metadata-only r
     dedupeExternal([agyMeta, farmRows[0]]).length === 1
     && dedupeExternal([agyMeta, farmRows[0]])[0].file === farmFile);
 
+// ---------------------------------------------------------------------------
+// ‼️ S-32 — A TRANSCRIPT TOO LARGE TO READ IS NOT A SESSION THAT NEVER HAPPENED
+//
+// The read used to answer `undefined` above 24 MB, and every parser here reads
+// `undefined` as "not a session": the row left the external list entirely and
+// took the Sessions table, the cost totals, the project match, Console's resume
+// scrollback and search with it — silently. Measured on the S-30 report: an
+// ordinary Codex rollout was 13,970,211 bytes, 58% of that ceiling.
+//
+// A JSONL rollout is streamed now, so its size decides nothing; a format that
+// is one JSON document still has a ceiling, and above it the session is listed
+// UNREAD (identity real, figures an honest zero, `scanLimit` set) rather than
+// dropped.
+// ---------------------------------------------------------------------------
+{
+    const bigHome = path.join(tmp, '.codex-big');
+    const bigDay = path.join(bigHome, 'sessions', '2026', '08', '14');
+    fs.mkdirSync(bigDay, { recursive: true });
+    const bigFile = path.join(bigDay, 'rollout-2026-08-14T09-00-00-big.jsonl');
+    const head = [
+        { timestamp: '2026-08-14T09:00:00.000Z', type: 'session_meta', payload: { session_id: 'sess-huge-1', cwd: 'D:\\agents\\kurgucu', cli_version: '0.136.0' } },
+        { timestamp: '2026-08-14T09:00:01.000Z', type: 'turn_context', payload: { model: 'gpt-5.2-codex' } },
+        { timestamp: '2026-08-14T09:00:02.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'uzun oturumu tara' } }
+    ].map(x => JSON.stringify(x)).join('\n') + '\n';
+    fs.writeFileSync(bigFile, head, 'utf8');
+    // ~26 MB of ordinary tool traffic — past the old ceiling, written in
+    // megabyte blocks so the fixture costs a second rather than a minute.
+    const filler = JSON.stringify({
+        timestamp: '2026-08-14T09:00:03.000Z', type: 'response_item',
+        payload: { type: 'function_call', name: 'shell', arguments: 'x'.repeat(4000) }
+    }) + '\n';
+    const block = filler.repeat(Math.ceil((1024 * 1024) / filler.length));
+    for (let i = 0; i < 26; i++) { fs.appendFileSync(bigFile, block, 'utf8'); }
+    fs.appendFileSync(bigFile, [
+        { timestamp: '2026-08-14T09:05:00.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'bitti' } },
+        { timestamp: '2026-08-14T09:05:01.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', last_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5, total_tokens: 15 }, total_token_usage: { input_tokens: 900, cached_input_tokens: 100, output_tokens: 50, total_tokens: 950 } } } }
+    ].map(x => JSON.stringify(x)).join('\n') + '\n', 'utf8');
+    const bigBytes = fs.statSync(bigFile).size;
+    check('S-32 fixture is genuinely past the old 24 MB ceiling', bigBytes > 24 * 1024 * 1024);
+
+    const bigRows = codexSessionsSource(() => bigHome, resolveAgent, () => pricing, 0).scan();
+    check('‼️ S-32: a rollout over 24 MB is still a session', bigRows.length === 1);
+    const big = bigRows[0];
+    check('S-32: its identity is read, not guessed', big && big.sessionId === 'sess-huge-1');
+    check('‼️ S-32: and its figures are REAL — streaming reads the whole file',
+        big && big.usage.input === 800 && big.usage.cacheRead === 100
+        && big.usage.output === 50 && big.userTurns === 1 && big.assistantMsgs === 1);
+    check('S-32: the streamed rollout carries no unread mark', big && !big.scanLimit);
+    check('S-32: every tool line in the 26 MB body was counted',
+        big && big.toolCalls > 6000 && big.tools.shell === big.toolCalls);
+    check('S-32: cost is priced off the streamed totals', big && big.cost > 0);
+}
+
+// ---- a multi-byte character must not be torn by a chunk boundary ----
+// The stream reads 1 MiB at a time; 'ş' is two bytes and lands across a
+// boundary sooner or later. A decoder that hands back a replacement character
+// there would corrupt prompts and titles in a way no string test would notice.
+{
+    const utfHome = path.join(tmp, '.codex-utf');
+    const utfDay = path.join(utfHome, 'sessions', '2026', '08', '14');
+    fs.mkdirSync(utfDay, { recursive: true });
+    const prompt = 'ışığın önündeki şeyleri ölç ' + 'ğüşıöçĞÜŞİÖÇ'.repeat(400);
+    const lines = [JSON.stringify({ timestamp: '2026-08-14T10:00:00.000Z', type: 'session_meta', payload: { session_id: 'sess-utf-1', cwd: 'D:\\agents\\kurgucu' } })];
+    for (let i = 0; i < 400; i++) {
+        lines.push(JSON.stringify({ timestamp: '2026-08-14T10:00:01.000Z', type: 'event_msg', payload: { type: 'user_message', message: prompt } }));
+    }
+    lines.push(JSON.stringify({ timestamp: '2026-08-14T10:01:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.2-codex', total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 1, total_tokens: 11 } } } }));
+    fs.writeFileSync(path.join(utfDay, 'rollout-utf.jsonl'), lines.join('\n') + '\n', 'utf8');
+    const utfRows = codexSessionsSource(() => utfHome, resolveAgent, () => pricing, 0).scan();
+    const u = utfRows[0];
+    check('S-32: a chunked read keeps every prompt whole', u && u.userTurns === 400);
+    check('‼️ S-32: no multi-byte character is torn across a 1 MiB boundary',
+        u && u.turns.every(t => t.label && !t.label.includes('\uFFFD'))
+        && u.turns.every(t => t.label.startsWith('ışığın önündeki şeyleri ölç')));
+}
+
+// ---- the format that must be held whole: listed unread, never dropped ----
+{
+    const overDir = path.join(tmp, 'farm-console-over');
+    fs.mkdirSync(overDir, { recursive: true });
+    const overFile = path.join(overDir, 'agy-too-big.json');
+    fs.writeFileSync(overFile, '{"format":"agent-farm-console-v1","engine":"agy","sessionId":"agy-too-big","messages":[', 'utf8');
+    const pad = '"x'.repeat(1) + 'y'.repeat(1024 * 1024) + '",';
+    for (let i = 0; i < 25; i++) { fs.appendFileSync(overFile, pad, 'utf8'); }
+    check('the whole-file fixture is past the 24 MB ceiling',
+        fs.statSync(overFile).size > 24 * 1024 * 1024);
+    const overRows = farmConsoleSessionsSource(() => overDir, resolveAgent, 0).scan();
+    check('‼️ S-32: a whole-file transcript over the ceiling is LISTED, not dropped',
+        overRows.length === 1 && overRows[0].sessionId === 'agy-too-big');
+    const o = overRows[0];
+    check('S-32: …and marked as unread, with the figures that decided it',
+        o.scanLimit && o.scanLimit.bytes > 24 * 1024 * 1024
+        && o.scanLimit.limit === 24 * 1024 * 1024);
+    check('S-32: an unread row does not invent figures (cost totals stay honest)',
+        o.cost === 0 && o.usage.input === 0 && o.usage.output === 0
+        && o.userTurns === 0 && o.toolCalls === 0);
+    check('S-32: an unread row still points at its file, so it can be opened',
+        o.file === overFile && o.lastTs > 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 Module._load = origLoad;
 process.exit(fail ? 1 : 0);
