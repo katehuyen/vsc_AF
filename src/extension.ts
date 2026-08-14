@@ -239,7 +239,7 @@ import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
-import { transcriptHistory } from './core/consolehistory';
+import { historyWindow, transcriptHistory } from './core/consolehistory';
 import { parseCliViewer } from './core/cliViewer';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import { carriedTotals, ConsoleMessage, PERMISSION_MODES_LIVE } from './core/consoleproto';
@@ -11235,6 +11235,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * session still resumes, it just opens empty as it used to.
      */
     const consoleHistory = (sessionId: string): ConsoleMessage[] => {
+        /**
+         * ‼️ S-30 — A BLANK SCROLLBACK IS NEVER THE ANSWER, AND NEVER SILENT.
+         *
+         * Every failure on this path used to return `[]`, which the panel draws
+         * as "there was no conversation" — indistinguishable from data loss, and
+         * that is exactly how it was reported. Each one now says which of the
+         * three things happened, because they need different answers from the
+         * reader: the index does not know this id yet, the file could not be
+         * read, or it was read and held nothing.
+         *
+         * The conversation itself is never at risk here: the engine restores its
+         * own context from the id, and the card keeps what it already had
+         * (ConsoleHost.start). This function only rebuilds the scrollback.
+         */
+        const note = (text: string): ConsoleMessage[] => [{
+            id: 'xh-note', ts: Date.now(), role: 'system', text
+        }];
         const row = [...index.all(), ...index.external()].find(s => s.sessionId === sessionId);
         const file = row?.file;
         if (!file) {
@@ -11246,7 +11263,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * apparently gone. The engine keeps the context — the CLI is
              * resumed by id — so the row says exactly that instead of nothing.
              */
-            if (!row) { return []; }
+            if (!row) {
+                return note('Agent Farm does not have this session in its index yet, so the'
+                    + ' scrollback could not be rebuilt — the transcript may not have been'
+                    + ' scanned yet, or it may sit outside what the scan reads. Nothing is'
+                    + ' lost: the engine is resumed by its id and still remembers the'
+                    + ' conversation, and everything already on this card stays.');
+            }
             return [{
                 id: 'xh-none', ts: row.lastTs || Date.now(), role: 'system',
                 text: noTranscriptNote(row.source)
@@ -11258,7 +11281,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const raw = fs.readFileSync(file, 'utf8');
             const external = parseCliViewer(raw, file, pricing);
             if (!external) { return transcriptHistory(raw.split('\n')); }
-            const kept = external.messages.slice(-150).map((m, i): ConsoleMessage => {
+            // ‼️ S-30 — the turn the reader just finished comes back whole, even
+            // when 150 rows of tool traffic would have swallowed it. `turnStart`
+            // is the parser's own mark for "this is where a turn opens".
+            const window = historyWindow(external.messages,
+                m => m.turnStart === true || m.role === 'user');
+            const kept = window.map((m, i): ConsoleMessage => {
                 if (m.role === 'assistant') {
                     return { id: `xh${i}`, ts: m.ts, role: 'agent', text: m.text, kind: m.kind };
                 }
@@ -11279,7 +11307,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     role: m.role === 'user' ? 'user' : 'system', text: m.text
                 };
             });
-            if (!kept.length) { return []; }
+            if (!kept.length) {
+                return note('This session\'s transcript was read but held no conversation to'
+                    + ' show — it is still on disk, and "Open transcript" opens it as it is.'
+                    + ' The engine is resumed by its id, so its own context is intact.');
+            }
             return [
                 {
                     id: 'xh-start', ts: kept[0].ts, role: 'system',
@@ -11293,7 +11325,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     text: '— read back from the transcript · resumed here —'
                 }
             ];
-        } catch { return []; }
+        } catch (e) {
+            // A transcript that cannot be read is a fact about THIS window's
+            // reading of a file, never about the conversation — say so with the
+            // reason, rather than drawing an empty session (S-30).
+            return note(`This session's transcript could not be read back here (${String((e as Error)?.message ?? e)}).`
+                + ' The file itself is untouched and "Open transcript" still opens it; the'
+                + ' engine is resumed by its id, so the conversation carries on from where'
+                + ' it was.');
+        }
     };
     /**
      * The prompt snippets file, read and parsed — or an honest reason why not.

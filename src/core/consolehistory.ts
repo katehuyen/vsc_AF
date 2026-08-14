@@ -23,6 +23,50 @@ import { ConsoleMessage, shortArg, WRITE_TOOLS } from './consoleproto';
  *  Whatever is older stays one click away in the transcript viewer. */
 export const HISTORY_MAX = 150;
 
+/** The furthest back the rule below is allowed to reach for a turn's opening
+ *  line. A single turn CAN be longer than this (measured: 1 127 messages over
+ *  13 turns on one Codex thread, ~87 a turn, and a tool-heavy one runs far past
+ *  that) — past this ceiling the opening line is carried in on its own instead
+ *  of dragging the whole turn with it. */
+export const HISTORY_CEILING = 600;
+
+/**
+ * ‼️ S-30 — THE LAST COMPLETED TURN IS NOT SUBJECT TO THE ROW BUDGET.
+ *
+ * The backfill used to be `slice(-150)` and 150 counts TOOL rows: on a
+ * tool-heavy engine one turn fills the whole window on its own, so the last
+ * thing the user typed and the answer they came back for could both be cut —
+ * from a transcript that has them. Measured on the reported session: 1 127
+ * messages, and the last 150 of them span two turns of thirteen.
+ *
+ * So the budget is a floor, not a ceiling: the window starts at whichever is
+ * EARLIER, the last `max` messages or the opening line of the turn in progress.
+ * A turn longer than `ceiling` does not drag its whole body in — its opening
+ * line rides at the front of the window, because "what did I ask?" is the half
+ * of the exchange the reader cannot reconstruct from anything else.
+ *
+ * Nothing changes when the last turn already fits, which is the ordinary case.
+ */
+export function historyWindow<T>(
+    items: T[],
+    startsTurn: (m: T) => boolean,
+    max = HISTORY_MAX,
+    ceiling = HISTORY_CEILING
+): T[] {
+    if (items.length <= max) { return items.slice(); }
+    let opened = -1;
+    for (let i = items.length - 1; i >= 0; i--) {
+        if (startsTurn(items[i])) { opened = i; break; }
+    }
+    let start = items.length - max;
+    if (opened >= 0 && opened < start) {
+        start = Math.max(opened, items.length - ceiling);
+    }
+    const kept = items.slice(start);
+    if (opened >= 0 && opened < start) { kept.unshift(items[opened]); }
+    return kept;
+}
+
 /** Tool results are a preview here, exactly as they are in the live stream. */
 const RESULT_PREVIEW = 400;
 
@@ -122,7 +166,8 @@ export function transcriptHistory(
     if (!out.length) { return out; }
     // Keep the END of the conversation — where you left off is what you came
     // back for. Anything cut is still in the transcript, and the row says so.
-    const kept = out.slice(-max);
+    // The last turn's own prompt comes with it whatever the budget (S-30).
+    const kept = historyWindow(out, m => m.role === 'user' && !!m.text?.trim(), max);
     const dropped = out.length - kept.length;
     const head: ConsoleMessage[] = [{
         id: 'h0', ts: kept[0].ts, role: 'system',

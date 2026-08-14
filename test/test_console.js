@@ -707,8 +707,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /^↑ earlier messages are in the transcript/.test(tail[0].text));
 
     const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    // S-30 — what goes in is `carriedMessages`: the transcript read OR what the
+    // card was already showing, whichever is richer (ConsoleHost.resumeMessages,
+    // driven for real in test_console_history.js). Still messages, still never
+    // stdin — that half of the contract is what this line guards.
     ok('the history is seeded as MESSAGES, never written to stdin (it costs nothing)',
-        /messages: init\.history/.test(host) && !/write\(id, [^)]*history/.test(host));
+        /messages: carriedMessages/.test(host) && !/write\(id, [^)]*history/.test(host));
     const panel2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     const ext2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('both ways of resuming into the Console carry it',

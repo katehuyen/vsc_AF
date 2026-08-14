@@ -379,17 +379,42 @@ export class ConsoleHost {
         return undefined;
     }
 
+    /**
+     * ‼️ S-30 — WHAT IS ALREADY ON THE CARD IS NEVER TRADED FOR WHAT DISK SAYS.
+     *
+     * A resume rebuilds the scrollback from the transcript, and that read has
+     * several honest ways to come back short: the index may not know the id yet,
+     * the file may be unreadable, the parse may hold a fraction of what the card
+     * watched happen live. The seat's own messages were the ground truth for
+     * everything the reader had just seen — dropping them and taking whatever
+     * the file gave back is how "End session, then Resume" printed an empty
+     * conversation for a session whose transcript was complete.
+     *
+     * So the richer of the two wins. They are never merged: the same turn read
+     * twice from two sources is a duplicated conversation, which is the failure
+     * this rule exists to avoid on the other side.
+     */
+    private resumeMessages(
+        prior: ConsoleMessage[], history: ConsoleMessage[] | undefined
+    ): ConsoleMessage[] | undefined {
+        const read = history ?? [];
+        if (read.length >= prior.length) { return read.length ? read : undefined; }
+        return prior.length ? prior : undefined;
+    }
+
     /** Start a hosted session. Returns our id; the CLI's own id arrives later. */
     start(init: HostedSessionInit): string {
         const seat = init.resume ? this.seatFor(init.resume) : undefined;
         if (seat?.live) { return seat.id; }
         const id = seat ? seat.id : `cs${++this.seq}-${Date.now().toString(36)}`;
+        // …and what that card was SHOWING outlives the record of its process.
+        const prior = seat ? this.sessions.get(seat.id)?.state.messages ?? [] : [];
         // The grey card's process is long gone; what is dropped here is the
         // record of it, a line before the new one takes the same seat.
         if (seat) { this.sessions.delete(seat.id); }
         const projectId = init.projectId ?? this.activeProjectId();
         const engine = engineOf(init.engine);
-        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId); }
+        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, prior); }
         const args = hostArgs({ ...init, projectContextFile: this.projectContextFile(projectId) });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
@@ -409,11 +434,12 @@ export class ConsoleHost {
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
         });
+        // The earlier conversation goes in as messages, nothing more: it is
+        // never written to stdin, so it costs nothing and the model's own
+        // context comes from --resume, not from here.
+        const carriedMessages = this.resumeMessages(prior, init.history);
         const hosted: Hosted = {
-            // The earlier conversation goes in as messages, nothing more: it is
-            // never written to stdin, so it costs nothing and the model's own
-            // context comes from --resume, not from here.
-            state: init.history?.length ? { ...base, messages: init.history } : base,
+            state: carriedMessages ? { ...base, messages: carriedMessages } : base,
             child, engine, buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
@@ -479,7 +505,8 @@ export class ConsoleHost {
      * machines underneath it.
      */
     private startPerTurn(
-        id: string, engine: EngineTransport, init: HostedSessionInit, projectId: string | undefined
+        id: string, engine: EngineTransport, init: HostedSessionInit, projectId: string | undefined,
+        prior: ConsoleMessage[] = []
     ): string {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
@@ -490,9 +517,13 @@ export class ConsoleHost {
             resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
+        // ‼️ S-30 — and the same rule here, which is the side the report came
+        // from: the per-turn engines are the ones with no process between turns,
+        // so this is the path "End session → Resume" takes on Codex.
+        const carriedMessages = this.resumeMessages(prior, init.history);
         const hosted: Hosted = {
             state: {
-                ...(init.history?.length ? { ...base, messages: init.history } : base),
+                ...(carriedMessages ? { ...base, messages: carriedMessages } : base),
                 // Nothing is starting and nothing is running: it is ready.
                 status: 'idle',
                 engine: engine.id
