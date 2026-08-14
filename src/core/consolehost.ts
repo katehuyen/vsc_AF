@@ -16,6 +16,7 @@
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
@@ -26,9 +27,13 @@ import {
 } from './consoleEngine';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
-    CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, editQueued, hostArgs,
-    IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued, userMessageLine
+    CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, drainAutoAnswer, editQueued,
+    hostArgs, IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued,
+    userMessageLine
 } from './consoleproto';
+import {
+    BYPASS, EffectivePermission, permissionLayerPaths, resolveEffectivePermission
+} from './permissionmode';
 
 /**
  * What a path IS, as far as attaching goes.
@@ -402,6 +407,64 @@ export class ConsoleHost {
         return prior.length ? prior : undefined;
     }
 
+    /**
+     * ‼️ K-22 — what this session's permission control ACTUALLY means, read off
+     * Claude's own settings layers rather than assumed from the picker.
+     *
+     * The layers and their precedence belong to `permissionmode.ts`; this only
+     * hands it the files. A layer that is absent, unreadable or not valid JSON
+     * is simply an absent layer — a broken project settings file must not stop
+     * somebody starting a session.
+     */
+    private resolvePermission(requested: string, cwd: string): EffectivePermission {
+        const home = os.homedir();
+        const layers = permissionLayerPaths(cwd || '', home).map(l => {
+            try { return { ...l, text: fs.readFileSync(l.file, 'utf8') }; } catch { return l; }
+        });
+        return resolveEffectivePermission(requested, layers);
+    }
+
+    /**
+     * ‼️ K-22 — BYPASS WAS ASKED FOR AND CANNOT BE ENFORCED, SO NOTHING STARTS.
+     *
+     * The tempting alternative is to start the session in the ordinary asking
+     * mode and let the user find out when a window opens. That is precisely the
+     * state the user's decision forbids: a card that says bypass and a process
+     * that asks. The session appears, in error, saying which policy refused it
+     * and where that policy lives — a thing they can act on.
+     */
+    private refusePermissionMismatch(
+        id: string, init: HostedSessionInit, projectId: string | undefined,
+        prior: ConsoleMessage[], permission: EffectivePermission
+    ): string {
+        const now = Date.now();
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            now, sessionId: init.resume, projectId, resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        const blocked = permission.blocked;
+        const text = `This session was not started. It asked for ${BYPASS}`
+            + `${permission.requested ? '' : ' (Default resolves to it through ' + permission.settingsFile + ')'}`
+            + `, and that cannot be enforced here: ${blocked?.why} — ${blocked?.file}.`
+            + ' Agent Farm will not run a session labelled bypass that would then stop and ask you for'
+            + ' permission. Change that policy, or start this session in a mode you actually want.';
+        this.sessions.set(id, {
+            state: {
+                ...base,
+                messages: [...prior, { id: `perm-${now.toString(36)}`, ts: now, role: 'error', text }],
+                status: 'error',
+                exitReason: 'bypass was requested and could not be enforced',
+                enforcedPermissionMode: '',
+                permissionWhy: permission.why
+            },
+            engine: engineOf(init.engine), buffer: '', reqSeq: 0
+        });
+        this.fire(id);
+        return id;
+    }
+
     /** Start a hosted session. Returns our id; the CLI's own id arrives later. */
     start(init: HostedSessionInit): string {
         const seat = init.resume ? this.seatFor(init.resume) : undefined;
@@ -415,7 +478,24 @@ export class ConsoleHost {
         const projectId = init.projectId ?? this.activeProjectId();
         const engine = engineOf(init.engine);
         if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, prior); }
-        const args = hostArgs({ ...init, projectContextFile: this.projectContextFile(projectId) });
+        /**
+         * ‼️ K-22 — WHAT THIS SESSION WILL REALLY BE IN, decided before it runs.
+         *
+         * The launcher's choice is a request; Claude's own settings can turn
+         * `Default` into bypass; a managed policy can forbid bypass outright.
+         * Resolving all three here means the flags, the card and the reducer's
+         * auto-answer all follow ONE answer instead of three guesses.
+         */
+        const permission = this.resolvePermission(init.permissionMode ?? '', init.cwd);
+        if (permission.blocked) {
+            // A session that would wear a label it cannot honour is not started.
+            // Downgrading it to "asks" silently is the exact state the user
+            // rejected: bypass on the card, a permission window on the screen.
+            return this.refusePermissionMismatch(id, init, projectId, prior, permission);
+        }
+        const args = hostArgs({
+            ...init, permission, projectContextFile: this.projectContextFile(projectId)
+        });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
         // flag values come from fixed vocabularies (launch.ts).
@@ -434,6 +514,10 @@ export class ConsoleHost {
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
         });
+        // K-22 — the enforced mode is a FACT about the flags just built, kept
+        // beside the request rather than instead of it.
+        base.enforcedPermissionMode = permission.effective;
+        base.permissionWhy = permission.why;
         // The earlier conversation goes in as messages, nothing more: it is
         // never written to stdin, so it costs nothing and the model's own
         // context comes from --resume, not from here.
@@ -886,6 +970,15 @@ export class ConsoleHost {
                     const rr = reduceEvent(h.state, ev, now);
                     h.state = rr.state;
                     changed = changed || rr.changed;
+                    // ‼️ K-22 — a bypassed session answers its own permission
+                    // request. The reducer built the answer; only the host can
+                    // put it on the wire, and it must go out on the same pass
+                    // or the turn waits on a window nobody will ever see.
+                    const auto = drainAutoAnswer(h.state);
+                    if (auto.line) {
+                        h.state = auto.state;
+                        this.write(id, auto.line);
+                    }
                     // The engine SAID the turn is finished. Remembered because
                     // the process's own exit can no longer be read as the end
                     // (see the note below) and something has to tell an ordinary

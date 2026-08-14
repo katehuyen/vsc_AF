@@ -430,6 +430,15 @@ export class ConsolePanel {
                 wTokens: Math.round(s.wTokens ?? 0),
                 model: s.model ?? '', effort: s.effort ?? '',
                 permissionMode: s.permissionMode,
+                // ‼️ K-22 — what the process is REALLY in, beside what was asked
+                // for. They are different facts and showing only the request is
+                // how a card came to say bypass while every tool call asked.
+                enforcedPermissionMode: s.enforcedPermissionMode ?? '',
+                permissionWhy: s.permissionWhy ?? '',
+                // …and how many permission requests a bypassed session had to
+                // answer on its own — above zero means the CLI asked when it
+                // should not have, which is worth showing rather than hiding.
+                bypassAutoApproved: s.bypassAutoApproved ?? 0,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
                 // the working strip counts from here
                 turnStartedAt: s.turnStartedAt ?? 0,

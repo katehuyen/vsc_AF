@@ -64,6 +64,7 @@
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
 
+import { BYPASS, bypassVerdict, EffectivePermission, permissionFlags } from './permissionmode';
 import { addUsage, contextAfter, emptyUsage, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
 import { StepKind, stepKindForTool } from './stepkind';
@@ -516,6 +517,36 @@ export interface ConsoleSessionState {
      * levels.
      */
     applied?: { model: string; effort: string };
+    /**
+     * ‼️ K-22 — WHAT THE PROCESS IS ACTUALLY IN, as opposed to what was asked.
+     *
+     * `permissionMode` above is the REQUEST. This is what the launch enforced,
+     * decided before the spawn from the flags plus Claude's own settings layers
+     * (core/permissionmode.ts). They are separate state because they were being
+     * confused, and confusing them is what let a card say bypass while the
+     * process asked for permission on every tool call.
+     */
+    enforcedPermissionMode?: string;
+    /** One line saying where that answer came from — the card's tooltip. */
+    permissionWhy?: string;
+    /**
+     * How many permission requests this bypassed session answered ON ITS OWN.
+     *
+     * A process in enforced bypass is not supposed to send one at all, so a
+     * number above zero is evidence of a CLI regression rather than ordinary
+     * traffic — and it is kept for exactly that, because the user must never
+     * see the window it would otherwise have opened.
+     */
+    bypassAutoApproved?: number;
+    /**
+     * A control response the HOST must write, produced by the reducer.
+     *
+     * The reducer is pure and cannot talk to the process; a bypassed session
+     * answering its own permission request has to say something back or the
+     * turn hangs for ever. So the answer is built here and drained by the host
+     * on the next pass (see `drainAutoAnswer`).
+     */
+    autoAnswer?: { requestId: string; line: string };
 }
 
 /**
@@ -554,29 +585,36 @@ export const PERMISSION_GRANTS: { mode: string; label: string; detail: string }[
  */
 export function hostArgs(o: {
     model?: string; effort?: string; permissionMode?: string; resume?: string;
+    /**
+     * ‼️ K-22 — the RESOLVED permission decision, when the caller has one.
+     *
+     * `permissionMode` alone is only what was ASKED for, and asking is what the
+     * bug was: a session requested as bypass used to be launched with a flag
+     * that merely permits bypass to be chosen later, so the process ran in the
+     * ordinary asking mode behind a card that said bypass. The decision object
+     * knows whether bypass is actually being enforced, and the flags follow it
+     * (core/permissionmode.ts). Absent = the pre-decision behaviour, which is
+     * what a caller that never touches bypass wants.
+     */
+    permission?: EffectivePermission;
     /** the project context file — see projectContext.ts */
     projectContextFile?: string;
 }): string[] {
+    // The permission flags are ONE decision, made in one place — see
+    // permissionFlags for why `--allow-…` is never allowed to stand in for
+    // `--dangerously-skip-permissions`. `launch` rides with the transport
+    // flags, `mode` keeps its old place at the end of the line.
+    const asked = (o.permissionMode ?? '').trim();
+    const perm = permissionFlags(o.permission ?? {
+        requested: asked, fromSettings: '', settingsFile: '',
+        effective: asked, bypass: false, why: ''
+    });
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-        '--permission-prompt-tool', 'stdio',
-        // ‼️ THIS FLAG GRANTS NOTHING. It makes the panel's own bypass control
-        // POSSIBLE, which is a different thing — the CLI's help says it in as
-        // many words: "Enable bypassing all permission checks as an option,
-        // without it being enabled by default."
-        //
-        // Measured against the installed CLI (2.1.226): a hosted session
-        // started without it answers `set_permission_mode: bypassPermissions`
-        // with
-        //   error "Cannot set permission mode to bypassPermissions because the
-        //   session was not launched with --dangerously-skip-permissions"
-        // …so the ⚠ entry in the permissions picker and the "⚠ Allow
-        // everything" button in the refusal box were both dead controls: the
-        // panel offered them, the CLI refused them, and nobody was told.
-        '--allow-dangerously-skip-permissions'];
+        '--permission-prompt-tool', 'stdio', ...perm.launch];
     if (o.resume) { args.push('--resume', o.resume); }
     if (o.model?.trim()) { args.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { args.push('--effort', o.effort.trim()); }
-    if (o.permissionMode?.trim()) { args.push('--permission-mode', o.permissionMode.trim()); }
+    args.push(...perm.mode);
     // ‼️ THE PROJECT CONTEXT GOES ON EVERY SPAWN, INCLUDING RESUMES.
     // Measured (test/smoke_project_context.mjs): an appended system prompt does
     // NOT survive `--resume` — a session seeded with it, resumed without it,
@@ -636,6 +674,20 @@ export function controlLine(requestId: string, subtype: string, extra: Record<st
  * whatever `updatedInput` says, which is how an AskUserQuestion is answered
  * (the same input with `answers` filled in) rather than merely permitted.
  */
+/**
+ * Take the reducer's own answer off the state, for the host to write.
+ *
+ * ‼️ K-22 — the reducer is pure and cannot talk to the process, but a bypassed
+ * session that answers its own permission request MUST say something back or
+ * the turn waits for ever on a window nobody is ever going to see.
+ */
+export function drainAutoAnswer(
+    state: ConsoleSessionState
+): { state: ConsoleSessionState; line?: string } {
+    if (!state.autoAnswer) { return { state }; }
+    return { state: { ...state, autoAnswer: undefined }, line: state.autoAnswer.line };
+}
+
 export function askAnswerLine(
     requestId: string, verdict: {
         behavior: 'allow'; updatedInput: Record<string, unknown>;
@@ -1080,6 +1132,47 @@ export function reduceEvent(
             ts: now
         };
         if (!ask.requestId) { return { state, changed: false }; }
+        /**
+         * ‼️ K-22 — A SESSION IN ENFORCED BYPASS DOES NOT OPEN A WINDOW.
+         *
+         * A bypassed process is not supposed to send `can_use_tool` at all, so
+         * arriving here is a CLI regression — and the user's decision covers
+         * the regression too: "whatever happens, do not ask me". The request is
+         * settled here, silently, and counted as the evidence it is.
+         *
+         * The one shape that is settled the OTHER way is the catastrophic one
+         * (see bypassVerdict): "never ask me" is not "delete my home directory
+         * while I am not looking". It is denied, said out loud, and handed back
+         * to the agent as an ordinary tool error.
+         */
+        if (state.enforcedPermissionMode === BYPASS) {
+            const verdict = bypassVerdict(tool, input, questions.length > 0);
+            if (verdict.kind !== 'ask') {
+                const allow = verdict.kind === 'allow';
+                const line = allow
+                    ? askAnswerLine(ask.requestId, { behavior: 'allow', updatedInput: input })
+                    : askAnswerLine(ask.requestId, {
+                        behavior: 'deny',
+                        message: `Refused by Agent Farm: ${verdict.why}. This session runs in bypass, which`
+                            + ' approves everything else without asking — this one shape it refuses instead,'
+                            + ' because "never ask me" is not consent to it.'
+                    });
+                return {
+                    state: {
+                        ...state, lastTs: now,
+                        autoAnswer: { requestId: ask.requestId, line },
+                        bypassAutoApproved: (state.bypassAutoApproved ?? 0) + (allow ? 1 : 0),
+                        messages: allow ? state.messages : [...state.messages, {
+                            id: nextId(), ts: now, role: 'error',
+                            text: `⛔ ${tool} was refused automatically — ${verdict.why}.`
+                                + ' Bypass approves everything else without asking; the agent was told'
+                                + ' this one was denied and can carry on.'
+                        }]
+                    },
+                    changed: true
+                };
+            }
+        }
         return {
             state: {
                 ...state, lastTs: now, pendingAsk: ask,

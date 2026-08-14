@@ -177,7 +177,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         // start and resume alike, because it is not inherited across --resume
         // (measured: test/smoke_project_context.mjs).
         ok('…and the same spawn asks for that project\'s context file',
-            /hostArgs\(\{ \.\.\.init, projectContextFile: this\.projectContextFile\(projectId\) \}\)/.test(host));
+            /hostArgs\(\{[\s\S]{0,120}projectContextFile: this\.projectContextFile\(projectId\)[\s\S]{0,20}\}\)/.test(host));
+        // ‼️ K-22 — and the SAME spawn carries the resolved permission decision,
+        // not the raw picker value: the flag that enforces bypass is chosen
+        // from this, and choosing it anywhere else is how a card came to say
+        // bypass while the process asked on every tool call.
+        ok('‼️ K-22: the spawn is given the RESOLVED permission, not the request',
+            /const permission = this\.resolvePermission\(init\.permissionMode \?\? '', init\.cwd\)/.test(host)
+            && /hostArgs\(\{[\s\S]{0,120}permission,/.test(host));
     }
     ok('…the model and the permission mode it really started in',
         s.model === 'claude-haiku-4-5' && s.permissionMode === 'manual');

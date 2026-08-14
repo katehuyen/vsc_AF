@@ -985,6 +985,24 @@
     /** A value nobody set is said as the thing that will decide it — never as a
      *  bare "Default", which is a word with no referent (CONVENTIONS.md). */
     const orDefault = (v, who) => v || ('Default — ' + who + ' decides');
+    /**
+     * ‼️ K-22 — WHAT THE SESSION IS IN, not what somebody asked for.
+     *
+     * The picker's value is a REQUEST; Claude's own settings can turn "Default"
+     * into bypassPermissions, and a card that reported only the request showed
+     * an empty Default on a session that was auto-approving everything. So the
+     * enforced mode leads, the reason follows, and the request appears only
+     * when it differs from what actually happened.
+     */
+    const permissionLine = s => {
+        const enforced = s.enforcedPermissionMode || '';
+        const asked = s.permissionMode || '';
+        if (!enforced) { return orDefault(asked, 'the CLI'); }
+        const head = enforced === 'bypassPermissions'
+            ? 'bypassPermissions — enforced, nothing will stop and ask you'
+            : enforced;
+        return head + (enforced !== asked && s.permissionWhy ? ` (${s.permissionWhy})` : '');
+    };
     /** A figure per something, dropped when the denominator is not worth
      *  dividing by (a session with one turn has no average). */
     const perTurn = (n, turns) => (turns > 1 && n > 0 ? n / turns : 0);
@@ -1000,7 +1018,13 @@
             'Engine: ' + (s.engineLabel || window.AFEngine.label(s.engine)),
             'Model: ' + orDefault(s.turnModel || s.model, 'the CLI'),
             'Effort: ' + orDefault(s.turnEffort || s.effort, 'the model'),
-            'Permissions: ' + orDefault(s.permissionMode, 'the CLI'),
+            // ‼️ K-22 — the ENFORCED mode, because that is the one the session
+            // will actually behave as. The request is shown beside it only when
+            // the two differ, which is the case a reader has to be able to see.
+            'Permissions: ' + permissionLine(s),
+            s.bypassAutoApproved
+                ? `Answered for you: ${s.bypassAutoApproved} permission request(s) the CLI sent anyway`
+                : '',
             'Folder: ' + (s.cwd || '—'),
             'Project: ' + (s.projectName
                 ? `${s.projectIcon || '◧'} ${s.projectName} — it was told about it before you typed`
@@ -2500,9 +2524,16 @@
         const effortTip = live
             ? 'How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.'
             : 'How hard it thinks per turn — passed to the NEXT turn as model_reasoning_effort. There is no running process to ask.';
-        const permTip = live
+        // ‼️ K-22 — MIRROR: the box is too narrow to say what it is really in,
+        // so the tooltip opens with the ENFORCED mode. A picker sitting on
+        // "Default" while the process auto-approves everything is the exact
+        // state that made "bypass" untrustworthy.
+        const permNow = s && s.enforcedPermissionMode && s.enforcedPermissionMode !== s.permissionMode
+            ? `In force: ${s.enforcedPermissionMode}${s.permissionWhy ? ` — ${s.permissionWhy}` : ''}. `
+            : '';
+        const permTip = permNow + (live
             ? 'What it may do without asking — applied live. Fewer rows than the start picker on purpose: a running session can only be moved to modes the CLI accepts mid-conversation, and it says so out loud when it refuses one.'
-            : 'What the NEXT turn may do. ‼️ This engine cannot stop and ask, so the mode becomes a SANDBOX chosen up front: "Default" means read-only here — the only honest thing an engine with nobody to ask can do — and acceptEdits means it may write inside the folder without asking.';
+            : 'What the NEXT turn may do. ‼️ This engine cannot stop and ask, so the mode becomes a SANDBOX chosen up front: "Default" means read-only here — the only honest thing an engine with nobody to ask can do — and acceptEdits means it may write inside the folder without asking.');
         const controls = s
             ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
                     ${C.esc(s.agentName)}
