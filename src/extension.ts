@@ -75,7 +75,16 @@ import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
 import { EngineUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
-import { AgentEngineDefaults, resolveDefault, storedDefault } from './core/agentDefaults';
+import {
+    AgentEngineDefaults, resolveDefault, storedDefault, withAgentDefault
+} from './core/agentDefaults';
+import {
+    CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
+} from './core/claudesettings';
+import {
+    buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile
+} from './core/settingsops';
+import { registerSettingsOps } from './core/settingsBridge';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -11508,6 +11517,79 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         defaultReportDir: () => expandEnvPath(cfg().get<string>('autoReportFolder', ''))
             || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
             || os.homedir()
+    });
+
+    // ---------- B-7: fleet and settings management ----------
+    // The settings page was the last place where "set it up" meant "sit in
+    // front of it". The SCHEMA is the allowlist — the same one the page draws
+    // itself from — so a setting added tomorrow is writable over the bridge
+    // with no extra code, and a key the manifest does not declare is refused.
+    const settingsSchema = (): Record<string, never> => {
+        const pkg = context.extension.packageJSON as {
+            contributes?: {
+                configuration?: { properties?: Record<string, never> } | { properties?: Record<string, never> }[];
+            };
+        };
+        const conf = pkg.contributes?.configuration;
+        if (Array.isArray(conf)) { return Object.assign({}, ...conf.map(c => c.properties ?? {})); }
+        return conf?.properties ?? {};
+    };
+    const settingsCategories = (): SettingsCategory[] => buildSettingsModel(
+        settingsSchema(), (key) => vscode.workspace.getConfiguration().get(key));
+    const readClaudeSettings = (): { json: Record<string, unknown>; parseError?: string } => {
+        const file = userSettingsPath(claudeDir());
+        if (!fs.existsSync(file)) { return { json: {} }; }
+        try {
+            const v = validateRawClaudeSettings(fs.readFileSync(file, 'utf8'));
+            return v.ok ? { json: v.json as Record<string, unknown> } : { json: {}, parseError: v.error };
+        } catch (e) { return { json: {}, parseError: String(e) }; }
+    };
+
+    registerSettingsOps(bridge, {
+        getAgents: () => agents,
+        categories: settingsCategories,
+        writeSetting: async (key, value) => {
+            await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
+        },
+        readSetting: (key, fallback) => vscode.workspace.getConfiguration().get(key, fallback),
+        getProfiles: () => context.globalState.get<SettingsProfile[]>('agentfarm.settingsProfiles', []),
+        setProfiles: async (list) => { await context.globalState.update('agentfarm.settingsProfiles', list); },
+        applyPlan: (profile) => profileApplyPlan(profile, settingsCategories()),
+        claudeCatalog: () => CC_CATALOG,
+        claudeSettingsFile: () => userSettingsPath(claudeDir()),
+        readClaude: readClaudeSettings,
+        writeClaude: (json) => {
+            const file = userSettingsPath(claudeDir());
+            try {
+                fs.mkdirSync(path.dirname(file), { recursive: true });
+                fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n', 'utf8');
+                return undefined;
+            } catch (e) { return String((e as Error).message); }
+        },
+        claudePatch: (json, p, value) => patchClaudeSettings(json, p, value),
+        claudeCoerce: (item, value) => coerceClaudeValue(item, value),
+        claudeRead: (json, p) => readPath(json, p),
+        agentFolders: () => scanRoots(
+            cfg().get<string[]>('agentRoots', []),
+            cfg().get<string[]>('excludeAgentDirs', [])
+        ).reports.map(r => ({
+            root: r.root,
+            candidates: r.candidates.map(c => ({ dir: c.dir, name: c.name, excluded: c.excluded }))
+        })),
+        engineIds: () => engineMatrix().map(e => String(e.id)),
+        writeAgentDefault: async (dir, engine, patch) => {
+            const conf = vscode.workspace.getConfiguration();
+            const store = conf.get<AgentEngineDefaults>('agentFarm.agentEngineDefaults', {}) ?? {};
+            await conf.update('agentFarm.agentEngineDefaults',
+                withAgentDefault(store, dir, engine as EngineId, patch),
+                vscode.ConfigurationTarget.Global);
+        },
+        exportPack: (agent, file) => {
+            const { pack, warnings } = buildAgentPack(agent, taskManagerRef as TaskManager);
+            writeAgentPack(file, pack);
+            return { warnings, files: pack.files.length };
+        },
+        normPath
     });
 
     // ---------- DALGA 1: the Console's session host ----------
