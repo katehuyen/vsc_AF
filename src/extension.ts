@@ -220,7 +220,8 @@ import {
     parseBridgeRequest
 } from './core/bridge';
 import {
-    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
+    archivedOutputBody, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
+    FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
@@ -1888,6 +1889,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         let wrote = false;
         for (const r of index.resolvedBindings()) {
             if (taskManager.setTaskSession(r.taskId, r.file)) { wrote = true; }
+            // ‼️ M-12 — AND WHAT THAT TRANSCRIPT SAYS THE RUN MANAGED TO DO.
+            // This is the evidence the failure classification is made of, and
+            // it is why "nothing was attempted" could never be corrected before
+            // S-31: the run had no transcript to be judged against. Assistant
+            // messages and tool calls only — TIME IS NOT PROGRESS, because a run
+            // can sit for forty minutes waiting on a lock and attempt nothing.
+            const s = index.byId(r.sessionId);
+            if (s && taskManager.setRunProgress(r.taskId, {
+                sessionId: r.sessionId, file: r.file,
+                assistantSteps: s.assistantMsgs ?? 0,
+                toolCalls: s.toolCalls ?? 0
+            })) { wrote = true; }
         }
         if (wrote) { publishLaunchBindings(); }
     };
@@ -3389,7 +3402,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 resumedFrom: t.resumedFrom ?? null,
                 heldBy: t.deferredReason ?? null,
                 heldByCode: t.deferredCode ?? null,
-                parkEpisode: t.parkEpisode ?? 0
+                parkEpisode: t.parkEpisode ?? 0,
+                // ‼️ M-12 — A `failed` ROW IS NOT ONE ANSWER. "It never started"
+                // and "it worked for 45 minutes and was cut off" have opposite
+                // consequences for whoever reads this, and the second one used
+                // to be reported as the first.
+                failurePhase: t.failurePhase ?? null,
+                didWork: t.failurePhase === 'interrupted' ? describeFailurePhase(t) : null,
+                // ‼️ S-31 — the conversation this run PRODUCED, which is what
+                // opens its transcript. Different from `resume`, which is the
+                // conversation it was told to continue.
+                runSession: t.runSessionId ?? null,
+                // ‼️ M-10 — a continuation is not a repeat; the chain says which.
+                continuationOf: t.continuationOf ?? null
             }))
         },
         {
@@ -3454,7 +3479,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'is used and the run\'s record SAYS so; it is never a silent guess. '
                 + '`prompt` REPLACES the original on every retry (a retry is a fresh headless run with no '
                 + 'memory of the last one, so "and this time do it properly" alone would arrive with '
-                + 'nothing to refer to); leave it out to send the same work again. OMIT `retry` entirely '
+                + 'nothing to refer to); leave it out to send the same work again. '
+                // ‼️ M-10 — the other half: what a retry IS.
+                + '‼️ `behavior` (M-10): "simple" (the default, and what every policy written before this '
+                + 'field means) = a retry is a FRESH run with the original prompt. "smart" = a retry after '
+                + 'a run that HAD ALREADY DONE WORK is a CONTINUATION: it waits for the window, resumes '
+                + 'that run\'s own session (the same machinery as `resume`) and sends `continuationPrompt` '
+                + 'as the next turn instead of the original work — because an engine with no memory told to '
+                + 'redo 45 minutes it cannot see will redo them. Which of the two happens is decided by '
+                + 'M-12\'s `failurePhase` on the run that failed, never guessed: "not-started" retries '
+                + 'normally, "interrupted" continues, and "unknown" (no transcript bound yet — see '
+                + 'sessions.bindings) obeys `unknownProgressFallback`: "park" (default; the retry is '
+                + 'created and visibly HELD until the evidence lands, then remade into the right shape), '
+                + '"simple", "stop" or "ask". `continuationPrompt` / `continuationPrompt2` / '
+                + '`continuationPromptLater` are the words for the 1st, 2nd and 3rd-and-after pick-up; '
+                + 'empty uses the documented default. Placeholders: {taskTitle} {attempt} {failureReason} '
+                + '{resetAt} {progressSummary} — an unknown one is left in the text rather than blanked. '
+                + '‼️ smart continuation covers only the attempts of ONE logical run: a schedule\'s next '
+                + 'ordinary firing never inherits a conversation. OMIT `retry` entirely '
                 + 'to inherit the user\'s agentFarm.taskRetry, which is a different statement from '
                 + '{max: 0}. Read `retryPolicy` in the answer to see what it resolved to), '
                 // ‼️ S-19 — CONTINUE A CONVERSATION rather than open one.
@@ -7291,6 +7333,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // …and what the conversation had already cost before this
                     // turn, so `costUSD` above is legible as a difference.
                     resumeCostBefore: task.resumeCostBefore ?? null,
+                    // ‼️ M-12 — WHAT IT MANAGED BEFORE IT FAILED, and the
+                    // evidence behind that sentence rather than the sentence
+                    // alone. `not-started` is the ONLY value that means "nothing
+                    // was attempted"; `unknown` means no transcript is bound to
+                    // this run yet (ask sessions.bindings) and is never to be
+                    // read as "nothing happened".
+                    failurePhase: task.failurePhase ?? null,
+                    failureSummary: task.status === 'failed' ? describeFailurePhase(task) : null,
+                    progress: task.progress ?? null,
+                    // ‼️ S-31 — the conversation this run PRODUCED. `sessions.open`
+                    // takes it, and it is what makes the transcript reachable
+                    // from the row for a run that was never priced.
+                    runSession: task.runSessionId ?? null,
+                    // ‼️ M-10 — this run picked the previous one back up in its
+                    // own conversation rather than starting the work again.
+                    continuationOf: task.continuationOf ?? null,
+                    resetAt: task.resetAt ?? null,
                     deferredReason: task.deferredReason ?? null,
                     // ‼️ M-11 — …AND WHICH CEILING THAT SENTENCE IS ABOUT. The
                     // reason quotes today's spend, so two readings of one budget

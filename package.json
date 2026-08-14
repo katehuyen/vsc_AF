@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini and Antigravity: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.131.0",
+  "version": "3.132.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8372,6 +8372,46 @@
             "prompt": {
               "type": "string",
               "description": "Sent INSTEAD of the original prompt on a retry. Leave empty to send the same work again. A retry is a fresh headless run with no memory of the last one, so a prompt here has to stand on its own."
+            },
+            "behavior": {
+              "type": "string",
+              "enum": [
+                "simple",
+                "smart"
+              ],
+              "enumDescriptions": [
+                "A retry is a FRESH run: the original prompt (or the one above) into a new conversation. The default, and what every policy written before this field means.",
+                "A retry after a run that had ALREADY DONE WORK is a CONTINUATION: wait for the window, resume that run's own session, and send the continuation prompt as the next turn."
+              ],
+              "markdownDescription": "‼️ What a retry IS. `smart` decides between the two off what the failed run's own transcript proves it managed to do — it never guesses: a run that started nothing is retried normally, a run that was CUT OFF is resumed. A run whose transcript is not bound yet obeys `unknownProgressFallback`."
+            },
+            "continuationPrompt": {
+              "type": "string",
+              "markdownDescription": "The words sent when picking work back up (`behavior: smart`). It goes as the NEXT TURN of that run's own conversation, so it can be short — everything the run knew is still in front of it. Empty uses the built-in default (\"carry on, read the transcript and the working folder first, do not redo finished work\"). Placeholders: `{taskTitle}` `{attempt}` `{failureReason}` `{resetAt}` `{progressSummary}`; an unknown one is left in the text rather than blanked."
+            },
+            "continuationPrompt2": {
+              "type": "string",
+              "description": "The SECOND pick-up, when picking up twice needs different words from picking up once. Empty falls back to continuationPrompt."
+            },
+            "continuationPromptLater": {
+              "type": "string",
+              "description": "The third pick-up and every one after it. Empty falls back to continuationPrompt2, then continuationPrompt."
+            },
+            "unknownProgressFallback": {
+              "type": "string",
+              "enum": [
+                "park",
+                "simple",
+                "stop",
+                "ask"
+              ],
+              "enumDescriptions": [
+                "Create the retry and HOLD it visibly until the evidence lands, then remake it into the right shape. The default.",
+                "Treat it as an ordinary retry and send the original prompt.",
+                "Do not retry at all.",
+                "Hold it and put the question to you."
+              ],
+              "markdownDescription": "‼️ What `smart` does when nobody can yet say whether the failed run had done any work. The one thing that must not happen is the original prompt going out as if the run had been idle — which is why the default HOLDS rather than guessing."
             }
           },
           "additionalProperties": false

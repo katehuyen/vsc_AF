@@ -958,7 +958,50 @@
             <label class="ntf thin" title="Minutes added to the stated reset time before the first retry actually goes. The window reopening and the CLI agreeing that it has are not the same instant."><span>Safety buffer</span>
                 <input type="number" id="nt-retrysafety" min="0" max="240" step="1" value="${C.esc(String(c.retrySafetyMin))}"></label>` : ''}
             <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to."><span>Retry prompt</span>
-                <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>`;
+                <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>
+            ${/**
+              * ‼️ M-10 — WHAT A RETRY *IS*, WHICH IS THE OTHER HALF OF THE POLICY.
+              *
+              * Everything above answers WHEN. This answers what gets sent, and
+              * the two are independent: a run can wait perfectly for the window
+              * and still throw away forty-five minutes by resending the original
+              * prompt into a conversation that cannot remember them.
+              */''}
+            <label class="ntf wide" title="${C.esc(
+            'Simple: a retry is a FRESH run — the original prompt (or the one above) into a new '
+            + 'conversation. That is right when the failure was outside the work: the CLI refused to '
+            + 'start, a lock was held, the window was spent before anything began.\n\n'
+            + 'Smart: a retry after a run that had ALREADY DONE WORK is a CONTINUATION. It waits for the '
+            + 'window, resumes THAT RUN\'S OWN conversation and sends the continuation prompt as the next '
+            + 'turn. ‼️ Which of the two happens is decided by what the failed run\'s transcript proves, '
+            + 'never guessed — and a run whose transcript is not bound yet is HELD rather than repeated.')
+        }"><span>What a retry is</span>
+                ${sel('retrybehavior', c.retryBehavior || 'simple', [
+            ['simple', 'a fresh run — send the work again'],
+            ['smart', 'continue it — pick up where it was cut off']
+        ])}</label>
+            ${(c.retryBehavior === 'smart') ? `
+            <label class="ntf wide" title="${C.esc(
+            'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '
+            + 'run knew is still in front of it. Empty uses the built-in default: "carry on from where '
+            + 'you stopped, read the transcript and the working folder first, and finish the ORIGINAL '
+            + 'task without redoing work that is already done." Placeholders: {taskTitle}, {attempt}, '
+            + '{failureReason}, {resetAt}, {progressSummary} — an unknown one is left in the text rather '
+            + 'than silently blanked.')}"><span>Continuation prompt</span>
+                <input type="text" id="nt-continuationprompt" value="${C.esc(c.retryContinuation || '')}"
+                    placeholder="(optional) — empty uses the built-in “carry on, don’t redo” wording"></label>
+            <label class="ntf wide" title="${C.esc(
+            'What happens when nobody can yet say whether the failed run had done any work — its '
+            + 'transcript has not been bound to it (ask sessions.bindings). The one outcome that must '
+            + 'not happen is the original prompt going out as if the run had been idle, which is why '
+            + 'the default HOLDS the retry until the evidence lands and then remakes it into the right '
+            + 'shape.')}"><span>If it cannot tell</span>
+                ${sel('unknownfallback', c.retryUnknown || 'park', [
+            ['park', 'hold it until we know — then continue or retry'],
+            ['simple', 'treat it as an ordinary retry'],
+            ['ask', 'hold it and ask me'],
+            ['stop', 'do not retry at all']
+        ])}</label>` : ''}`;
     }
 
     /**
@@ -1666,6 +1709,9 @@
         // decides whether the user said anything.
         v('retrydelay2', 'retryDelay2Min'); v('retrydelay3', 'retryDelay3Min');
         v('retryformula', 'retryFormula'); v('retrycap', 'retryCapMin');
+        // ‼️ M-10 — what a retry IS, and what to do when that cannot be told.
+        v('retrybehavior', 'retryBehavior'); v('continuationprompt', 'retryContinuation');
+        v('unknownfallback', 'retryUnknown');
         b('retryresetaware', 'retryResetAware'); n('retrysafety', 'retrySafetyMin');
         // ‼️ S-19 — which conversation, and the box that narrows the list.
         v('conversation', 'conversation'); v('resumeid', 'resumeSessionId');
@@ -1763,6 +1809,16 @@
         }
         const p = String(c.retryPrompt || '').trim();
         if (p) { out.prompt = p; }
+        // ‼️ M-10 — SMART IS OPT-IN AND ONLY THE WORD TURNS IT ON. The host's
+        // normalizer applies exactly the same rule, so a policy cannot mean one
+        // thing in the form and another in the run.
+        if (c.retryBehavior === 'smart') {
+            out.behavior = 'smart';
+            const cp = String(c.retryContinuation || '').trim();
+            if (cp) { out.continuationPrompt = cp; }
+            const fb = String(c.retryUnknown || '').trim();
+            if (fb && fb !== 'park') { out.unknownProgressFallback = fb; }
+        }
         return out;
     }
 
@@ -1987,12 +2043,26 @@
                 '\nClick the title to see the form this run was made with, filled in and read-only.'
             ]), 'mainw')}</td>
             ${/* THE STATUS IS THE DOOR TO THE RUN'S HISTORY — M-8. */''}
+            ${/**
+               * ‼️ M-12 — A `failed` BADGE IS NOT ONE ANSWER. A run that never
+               * started and a run that worked for 45 minutes and was cut off
+               * are opposite facts with opposite consequences, and the page said
+               * `failed` to both — while the row's own stderr line ("the session
+               * limit was hit, so nothing was attempted") actively denied the
+               * 3.2 MB transcript sitting beside it. The phase goes UNDER the
+               * badge, in the cell, because a fact nobody hovers over is a fact
+               * the board does not carry.
+               */''}
             <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>${r.detail
-                ? `<div class="muted small held">${C.esc(blockShort(r.detail))}</div>` : ''}${r.archived
+                ? `<div class="muted small held">${C.esc(blockShort(r.detail))}</div>` : ''}${r.didWork
+                    ? `<div class="muted small held">${C.esc(blockShort(r.didWork))}</div>` : ''}${r.archived
                     ? '<div class="muted small">archived</div>' : ''}`,
                 `${C.esc(st[0])}${r.archived ? ' · archived' : ''}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
                 window.AFTip.lines([
                     r.detail ? 'Held by: ' + r.detail + '\n' : '',
+                    r.didWork ? 'What it managed: ' + r.didWork
+                        + '\n‼️ This run was CUT OFF, not untouched — read its transcript before sending '
+                        + 'the same work again.\n' : '',
                     r.archived
                         ? 'This run is no longer on the list — it was deleted, cleared, or aged '
                         + 'out past the cap, and this is its filed copy. Nothing here can be '
@@ -2600,6 +2670,8 @@
             // rest read. Same rule, one level down.
             byId('nt-retrybackoff', 'change', () => { readComposer(); render(); });
             byId('nt-retryresetaware', 'change', () => { readComposer(); render(); });
+            byId('nt-retrybehavior', 'change', () => { readComposer(); render(); });
+            byId('nt-unknownfallback', 'change', () => readComposer());
             byId('nt-retrywhen', 'change', () => readComposer());
             byId('nt-retrymax', 'input', () => readComposer());
             byId('nt-retrydelay', 'input', () => readComposer());

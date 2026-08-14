@@ -9,7 +9,8 @@ import { NeedItem } from '../core/needs';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { EngineModels } from '../core/models';
 import {
-    FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
+    describeFailurePhase, FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow,
+    MissedPolicy, newId,
     RunDimensions, ScheduleKind, scheduleDue, TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
@@ -200,6 +201,12 @@ interface RunRow {
      * as an unlabelled "open session" button. The id is drawn, and it opens.
      */
     sessionId: string;
+    /**
+     * ‼️ M-12 — "45 min of work · 269 tool call(s) · the run was CUT OFF, not
+     * untouched", or empty. Empty is not "it did nothing": it is "this is not a
+     * finding" — the run succeeded, or nothing has been bound to it yet.
+     */
+    didWork: string;
     /**
      * ‼️ M-9 — THIS ROW HAS LEFT THE BOARD. It comes from the monthly archive
      * rather than the live list: everything it says is still true and nothing
@@ -574,7 +581,15 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             // `<sessionId>.jsonl`, so the column costs nothing to fill and the
             // reader gets the one string they can match against a Console card,
             // a swim lane or a log line.
-            sessionId: sessionIdOf(t.costSessionFile),
+            sessionId: sessionIdOf(t.costSessionFile) || (t.runSessionId ?? ''),
+            // ‼️ M-12 — WHAT A FAILED RUN MANAGED BEFORE IT FAILED. Only stated
+            // when it is a FINDING: `interrupted` is the case the board was
+            // actively wrong about, and it is the one that changes what a reader
+            // should do next (open the transcript, do not resend the work).
+            // `unknown` and `not-started` are not drawn as claims on the row —
+            // the first is an absence of evidence, the second is what the badge
+            // already implies.
+            didWork: t.failurePhase === 'interrupted' ? describeFailurePhase(t) : '',
             events: t.events ?? [],
             setup: runSetup(t, schedTitles, trigTitles, wfTitles),
             seed: taskSeed(t),

@@ -311,6 +311,16 @@ const variants = () => ([
                 'nt-retryresetaware': true, 'nt-retrysafety': '3'
             });
             drive(r, draft, 'nt-retryresetaware');
+            // ‼️ M-10 (second half) — WHAT a retry is, as opposed to WHEN. The
+            // continuation prompt and the "if it cannot tell" picker are drawn
+            // by this state and by nothing else, so a picture of the block in
+            // `simple` shows neither of the controls the item is about.
+            Object.assign(draft, {
+                'nt-retrybehavior': 'smart',
+                'nt-continuationprompt': 'Kaldığın yerden devam et — {progressSummary}',
+                'nt-unknownfallback': 'park'
+            });
+            drive(r, draft, 'nt-retrybehavior');
         }
     },
     // ‼️ S-19 — the form when the run continues a conversation instead of

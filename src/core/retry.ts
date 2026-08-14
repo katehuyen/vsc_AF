@@ -47,7 +47,60 @@ export type RetryBackoff = 'same' | 'double' | 'linear' | 'formula';
 /** Which failures are worth trying again. */
 export type RetryWhen = 'any' | 'limit';
 
+/** ‼️ M-10 — a retry is a fresh run (`simple`) or a continuation of the one that
+ *  was cut off (`smart`). Absent means `simple`, for every policy ever written. */
+export type RetryBehavior = 'simple' | 'smart';
+
+/** ‼️ M-10 — what `smart` does when it cannot tell whether work happened. */
+export type UnknownProgressFallback = 'park' | 'simple' | 'stop' | 'ask';
+
 export interface RetryPolicy {
+    /**
+     * ‼️ M-10 — WHAT A RETRY *IS*, WHICH IS TWO DIFFERENT THINGS.
+     *
+     * `simple` (the default, and what every policy written before this field
+     * means) — a retry is a FRESH run: the original prompt, or `prompt` below,
+     * sent into a new conversation with no memory of the last one. Right when
+     * the failure was outside the work: the CLI refused to start, a lock was
+     * held, the window was spent before anything began.
+     *
+     * `smart` — a retry after a run that had ALREADY DONE WORK is not a repeat,
+     * it is a continuation. Sending the original prompt again would tell an
+     * engine with no memory to redo forty-five minutes it cannot see. So this
+     * mode reads M-12's `phase`: work that never started is retried normally,
+     * and work that was CUT OFF is resumed — the same session, S-19's resume,
+     * with `continuationPrompt` as the next turn.
+     *
+     * ‼️ It is opt-in and no migration turns it on. A policy that says nothing
+     * is `simple`, for ever.
+     */
+    behavior?: RetryBehavior;
+    /**
+     * ‼️ M-10 — WHAT TO SAY WHEN PICKING WORK BACK UP, as opposed to starting it.
+     *
+     * Sent as the NEXT TURN of the run's own conversation, so it may be short —
+     * everything the run knew is still in front of it. Empty uses the
+     * documented default. Placeholders: {taskTitle}, {attempt}, {failureReason},
+     * {resetAt}, {progressSummary}.
+     */
+    continuationPrompt?: string;
+    /** The 2nd continuation, when picking up twice needs different words from
+     *  picking up once. Absent = `continuationPrompt`. */
+    continuationPrompt2?: string;
+    /** The 3rd and every one after it. Absent = `continuationPrompt2`, then
+     *  `continuationPrompt`. */
+    continuationPromptLater?: string;
+    /**
+     * ‼️ M-10 — WHAT TO DO WHEN NOBODY CAN SAY WHETHER WORK HAPPENED.
+     *
+     * `phase: 'unknown'` is a real state (the transcript is not bound yet, or
+     * the engine published nothing), and the one thing that must NOT follow it
+     * is blindly resending the original prompt as if the run had been idle.
+     * `park` — hold it visibly and say why (the default). `simple` — treat it
+     * as an ordinary retry. `stop` — do not retry at all. `ask` — hold it and
+     * put the question to the user.
+     */
+    unknownProgressFallback?: UnknownProgressFallback;
     /** How many times to try AGAIN after a failure. 0 (or absent) = never. */
     max?: number;
     /** Minutes to wait before the FIRST retry — and the `base` every strategy
@@ -150,6 +203,10 @@ export const RETRY_DEFAULT_SAFETY_MIN = 3;
 export const RETRY_MAX_SAFETY_MIN = 240;
 /** A formula is an expression, not a program. */
 export const RETRY_FORMULA_MAX_CHARS = 120;
+/** ‼️ M-10 — a continuation prompt is an instruction, not a brief: the run it
+ *  goes to already has the whole conversation in front of it. Generous enough
+ *  for a paragraph and short enough that nobody pastes the original task in. */
+export const RETRY_PROMPT_MAX_CHARS = 2000;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
@@ -418,6 +475,19 @@ export function normalizeRetry(raw: unknown): RetryPolicy | undefined {
     if (buf !== undefined) { out.safetyBufferMin = buf; }
     const p = typeof o.prompt === 'string' ? o.prompt.trim() : '';
     if (p) { out.prompt = p; }
+    // ‼️ M-10 — SMART IS OPT-IN AND ONLY THE WORD "smart" TURNS IT ON. Anything
+    // else — absent, misspelt, `true`, a number — is `simple`, so a store or a
+    // bridge caller cannot half-say it and get a run resuming a conversation
+    // nobody asked it to resume.
+    if (o.behavior === 'smart') { out.behavior = 'smart'; }
+    for (const k of ['continuationPrompt', 'continuationPrompt2', 'continuationPromptLater'] as const) {
+        const v = typeof o[k] === 'string' ? (o[k] as string).trim() : '';
+        if (v) { out[k] = v.slice(0, RETRY_PROMPT_MAX_CHARS); }
+    }
+    if (o.unknownProgressFallback === 'park' || o.unknownProgressFallback === 'simple'
+        || o.unknownProgressFallback === 'stop' || o.unknownProgressFallback === 'ask') {
+        out.unknownProgressFallback = o.unknownProgressFallback;
+    }
     return Object.keys(out).length ? out : undefined;
 }
 
@@ -448,7 +518,51 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
     if (a.resetAware ?? b.resetAware) { out.resetAware = true; }
     const prompt = (a.prompt ?? b.prompt ?? '').trim();
     if (prompt) { out.prompt = prompt; }
+    // ‼️ M-10 — the continuation half falls through the same way, and `behavior`
+    // is INHERITED rather than defaulted-on: a run that says nothing gets the
+    // user's own setting, and a user who has said nothing gets `simple`.
+    const behavior = a.behavior ?? b.behavior;
+    if (behavior === 'smart') { out.behavior = 'smart'; }
+    for (const k of ['continuationPrompt', 'continuationPrompt2', 'continuationPromptLater'] as const) {
+        const v = (a[k] ?? b[k] ?? '').trim();
+        if (v) { out[k] = v; }
+    }
+    const fb = a.unknownProgressFallback ?? b.unknownProgressFallback;
+    if (fb) { out.unknownProgressFallback = fb; }
     return out;
+}
+
+/**
+ * ‼️ M-10 — THE DEFAULT WORDS FOR PICKING WORK BACK UP.
+ *
+ * Deliberately not a sentence about Agent Farm and deliberately not in Turkish
+ * or English by policy: it is the shortest true instruction to an engine that
+ * is looking at its own half-finished work, and the user overwrites it with
+ * whatever they like. It says READ FIRST, because the failure this whole
+ * mechanism exists for is a run being told to redo work it cannot see.
+ */
+export const DEFAULT_CONTINUATION_PROMPT =
+    'Carry on from where you stopped. Read the transcript above and the current state of the working '
+    + 'folder first, then finish the ORIGINAL task without redoing work that is already done.';
+
+/** Which continuation text this attempt uses, falling back one step at a time. */
+export function continuationPromptFor(p: RetryPolicy, attempt: number): string {
+    const one = (p.continuationPrompt ?? '').trim();
+    const two = (p.continuationPrompt2 ?? '').trim();
+    const later = (p.continuationPromptLater ?? '').trim();
+    if (attempt >= 3) { return later || two || one || DEFAULT_CONTINUATION_PROMPT; }
+    if (attempt === 2) { return two || one || DEFAULT_CONTINUATION_PROMPT; }
+    return one || DEFAULT_CONTINUATION_PROMPT;
+}
+
+/**
+ * The placeholders, filled. ‼️ An unknown `{name}` is LEFT ALONE rather than
+ * blanked: a typo that silently deletes half a sentence is worse than one a
+ * person can see in the prompt the run is about to be given.
+ */
+export function fillContinuation(text: string, vars: Record<string, string>): string {
+    return String(text ?? '').replace(/\{(\w+)\}/g, (whole, name: string) =>
+        (Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : whole));
 }
 
 /**
@@ -465,6 +579,97 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
 export function isLimitFailure(output: string): boolean {
     return /hit your session limit|session limit[^.]*reset|usage limit reached|rate.?limit(ed)? (reached|exceeded)|quota exceeded|resource_exhausted|429 |too many requests/i
         .test(String(output ?? ''));
+}
+
+/**
+ * ‼️ M-12 — WHAT A FAILED RUN ACTUALLY DID BEFORE IT FAILED.
+ *
+ * `isLimitFailure` answers "was this the plan window", and the code used to
+ * treat that as the whole answer: the moment the regex matched, the run was
+ * described as one where *nothing was attempted*. For the failure it was
+ * written about — the CLI refusing a run outright — that is true. For a run
+ * that worked for 45 minutes, edited thirteen files and met the limit on the
+ * way out, it is the opposite of the truth, and it is the sentence the user
+ * was shown about exactly that run.
+ *
+ * `claude -p` prints the RESULT, not the working: if the limit arrives before
+ * the final message, the output file holds the limit sentence and nothing else.
+ * So the output can never be the evidence. The transcript is — which S-31 made
+ * reachable by binding a run to its own session.
+ *
+ * ‼️ TIME IS NOT PROGRESS. A run can sit for forty minutes waiting on a lock
+ * and attempt nothing. Only assistant/tool activity counts.
+ */
+export type FailurePhase =
+    /** the engine never started a turn — the one phase that may say "nothing was attempted" */
+    | 'not-started'
+    /** the transcript shows real work: assistant text, tool use, tool results */
+    | 'interrupted'
+    /** no session bound yet, or the engine published nothing to judge by */
+    | 'unknown';
+
+/** What a run's own transcript says it managed to do. Absent = not known yet. */
+export interface RunProgress {
+    /** assistant messages in this run's transcript */
+    assistantSteps?: number;
+    /** tool calls in it */
+    toolCalls?: number;
+    /** how long the process was up, in ms — REPORTED, never used as evidence */
+    elapsedMs?: number;
+}
+
+export interface FailureVerdict {
+    phase: FailurePhase;
+    /** was the failure the plan/usage window, in any engine's words */
+    limit: boolean;
+    /** one line for the row, the event and the output file */
+    why: string;
+}
+
+/**
+ * Classify a failed run. `progress` absent means the transcript has not been
+ * found yet — which is `unknown`, not `not-started`: the two are different
+ * statements and only one of them may be made without evidence.
+ */
+export function classifyFailure(o: {
+    output?: string;
+    progress?: RunProgress;
+}): FailureVerdict {
+    const limit = isLimitFailure(o.output ?? '');
+    const p = o.progress;
+    const mins = (ms?: number): string =>
+        ms && ms > 0 ? `${Math.max(1, Math.round(ms / 60000))} min` : '';
+    if (!p || (p.assistantSteps === undefined && p.toolCalls === undefined)) {
+        return {
+            phase: 'unknown', limit,
+            why: limit
+                ? 'the session limit was hit — whether any work had started is not known yet, '
+                + 'because this run has no transcript bound to it'
+                : 'it failed — whether any work had started is not known yet, '
+                + 'because this run has no transcript bound to it'
+        };
+    }
+    const steps = (p.assistantSteps ?? 0) + (p.toolCalls ?? 0);
+    if (steps > 0) {
+        const did = [
+            p.assistantSteps ? `${p.assistantSteps} assistant step${p.assistantSteps === 1 ? '' : 's'}` : '',
+            p.toolCalls ? `${p.toolCalls} tool call${p.toolCalls === 1 ? '' : 's'}` : ''
+        ].filter(Boolean).join(' · ');
+        const ran = mins(p.elapsedMs);
+        return {
+            phase: 'interrupted', limit,
+            why: limit
+                ? `${ran ? ran + ' of work — ' : ''}${did} — and then the session limit cut it off. `
+                + 'The work was NOT untouched: read the transcript before sending it again'
+                : `${ran ? ran + ' of work — ' : ''}${did} — and then it failed part-way through`
+        };
+    }
+    return {
+        phase: 'not-started', limit,
+        why: limit
+            ? 'the session limit was hit before any work started, so nothing was attempted'
+            : 'it failed before any work started'
+    };
 }
 
 /** The effective ceiling for one policy — the user's, under the built-in one. */
@@ -714,6 +919,27 @@ export interface RetryDecision {
     notBefore?: number;
     /** Where that moment came from, when there is one. */
     resetSource?: ResetSource;
+    /** ‼️ M-12 — what the failed run actually managed to do, so the row and the
+     *  event stop guessing the flattering half. */
+    phase?: FailurePhase;
+    /**
+     * ‼️ M-10 — THIS RETRY CONTINUES THE RUN'S OWN CONVERSATION.
+     *
+     * True only in `smart` behaviour and only for work that was CUT OFF. The
+     * caller resumes that session (S-19) and sends `promptTemplate` as the next
+     * turn; it must NOT send the original prompt, which would ask an engine
+     * with no memory to redo what it cannot see.
+     */
+    continueRun?: boolean;
+    /** The continuation text, with its placeholders still in it — the caller
+     *  owns the run and therefore owns the values. */
+    promptTemplate?: string;
+    /**
+     * ‼️ M-10 — the retry exists but must NOT start yet, because nobody can say
+     * whether work happened. `park` holds it visibly; `ask` holds it and puts
+     * the question to the user. Never a silent repeat of the original prompt.
+     */
+    hold?: 'park' | 'ask';
     /** Said in words, because it goes on the task's own record and in its
      *  output file — "attempt 2 of 6" alone never explains a retry that did NOT
      *  happen, and that is the case somebody comes looking for. */
@@ -735,18 +961,63 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
     now?: number;
     /** ‼️ M-10 — what the ENGINE says about its own window, if anything. */
     engineResetAt?: number;
+    /** ‼️ M-12 — what the run's own transcript says it managed to do. Absent =
+     *  not known, which is a THIRD answer and not a quiet "nothing". */
+    progress?: RunProgress;
 }): RetryDecision {
     const p = resolveRetry(policy, o.fallback);
     const attempt = Math.max(0, Math.round(o.attempt)) + 1;
-    const no = (why: string): RetryDecision => ({ retry: false, delayMs: 0, attempt, why });
+    // ‼️ M-12 — the verdict is reached BEFORE any early return, because "what
+    // did this run manage to do" is a fact about the run and not about whether
+    // there is a retry left. A row that is out of retries is exactly the one
+    // somebody opens to ask what happened.
+    const verdict = classifyFailure({ output: o.output, progress: o.progress });
+    const no = (why: string): RetryDecision =>
+        ({ retry: false, delayMs: 0, attempt, why, phase: verdict.phase });
     if (p.max <= 0) { return no('retry is off for this run'); }
     if (attempt > p.max) { return no(`out of retries — ${p.max} already used`); }
-    const wasLimit = isLimitFailure(o.output ?? '');
+    const wasLimit = verdict.limit;
     if (p.when === 'limit' && !wasLimit) {
         return no('the failure was not a session limit, and this run only retries those');
     }
     const wait = retryWaitMin(p, attempt);
     const now = o.now ?? Date.now();
+
+    /**
+     * ‼️ M-10 — SMART CONTINUE, DECIDED OFF M-12'S EVIDENCE AND NOTHING ELSE.
+     *
+     * Three phases, three different right answers, and the whole value of the
+     * mode is that it never guesses between them:
+     *   not-started → an ordinary retry; the original prompt is still correct.
+     *   interrupted → resume the SAME conversation and say "carry on".
+     *   unknown     → hold. The one thing that must not happen is the original
+     *                 prompt going out as if the run had been idle.
+     */
+    const smart = p.behavior === 'smart';
+    let continueRun = false;
+    let promptTemplate: string | undefined;
+    let hold: 'park' | 'ask' | undefined;
+    if (smart) {
+        if (verdict.phase === 'interrupted') {
+            continueRun = true;
+            promptTemplate = continuationPromptFor(p, attempt);
+        } else if (verdict.phase === 'unknown') {
+            const fb = p.unknownProgressFallback ?? 'park';
+            if (fb === 'stop') {
+                return no('smart continue is on and nothing can say whether this run had already done '
+                    + 'work — it is not retried, because resending the original prompt could repeat '
+                    + 'work that is already done');
+            }
+            if (fb !== 'simple') { hold = fb; }
+        }
+    }
+    const held = (d: RetryDecision): RetryDecision => hold
+        ? {
+            ...d, hold,
+            why: `${d.why} — held: smart continue cannot yet tell whether this run had already done work`
+            + (hold === 'ask' ? ', and you asked to be the one who decides' : '')
+        }
+        : d;
 
     // ‼️ M-10 — RESET-AWARE OVERRIDES THE FIRST RETRY AND ONLY THE FIRST, and
     // only when the failure really was a limit. Attempts 2 and 3 have their own
@@ -757,21 +1028,29 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
             now, engineResetAt: o.engineResetAt, output: o.output,
             safetyBufferMin: p.safetyBufferMin, fallbackMin: wait
         });
-        return {
+        return held({
             retry: true,
             delayMs: Math.max(0, plan.at - now),
             attempt,
             notBefore: plan.at,
             resetSource: plan.source,
-            why: `${plan.why} — retry ${attempt} of ${p.max}`
-        };
+            phase: verdict.phase,
+            continueRun, promptTemplate,
+            why: `${verdict.why} — ${plan.why} — ${continueRun ? 'continue' : 'retry'} `
+                + `${attempt} of ${p.max}`
+        });
     }
-    return {
-        retry: true, delayMs: wait * 60_000, attempt,
-        why: p.when === 'limit'
-            ? `the session limit was hit, so nothing was attempted — retry ${attempt} of ${p.max} in ${wait} min`
-            : `retry ${attempt} of ${p.max} in ${wait} min`
-    };
+    return held({
+        retry: true, delayMs: wait * 60_000, attempt, phase: verdict.phase,
+        continueRun, promptTemplate,
+        // ‼️ M-12 — WHAT THE RUN DID, NOT WHAT THE REGEX MATCHED. This said
+        // "nothing was attempted" the instant `isLimitFailure` was true, so the
+        // one run it was most wrong about — 45 minutes of work stopped by the
+        // limit on the way out — was described to the user as a run that never
+        // started. The phrase now comes from the evidence, and where there is
+        // none it says THAT rather than assuming the flattering half.
+        why: `${verdict.why} — ${continueRun ? 'continue' : 'retry'} ${attempt} of ${p.max} in ${wait} min`
+    });
 }
 
 /**

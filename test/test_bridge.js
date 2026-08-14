@@ -3000,6 +3000,34 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('…and the walk cannot loop on a hand-edited store',
             /if \(!up \|\| up\.id === origin\.id\) \{ break; \}/.test(src));
 
+        // ---------- M-12 + M-10: what a run managed, and what a retry IS ------
+        // Both belong on the wire because both change what a CALLER should do
+        // next: an agent polling `tasks.list` and seeing `failed` used to have
+        // no way to tell "it never started" from "it was cut off half-way", and
+        // resending the work is right for one and destructive for the other.
+        const list = at('tasks.list');
+        ok('‼️ tasks.list separates a run that never started from one that was cut off',
+            /failurePhase: t\.failurePhase \?\? null/.test(list)
+            && /didWork: t\.failurePhase === 'interrupted'/.test(list));
+        ok('…and gives the conversation the run PRODUCED, not only the one it continued',
+            /runSession: t\.runSessionId \?\? null/.test(list)
+            && /continuationOf: t\.continuationOf \?\? null/.test(list));
+        const get2 = at('tasks.get');
+        ok('‼️ tasks.get carries the evidence, not only the verdict',
+            /progress: task\.progress \?\? null/.test(get2)
+            && /failureSummary: task\.status === 'failed'/.test(get2));
+        ok('…and its contract says "unknown" is not "nothing happened"',
+            /never to be\s*\/\/\s*read as "nothing happened"/.test(get2)
+            || /is never to be read as "nothing happened"/.test(get2.replace(/\s+/g, ' ')));
+        const addC = at('tasks.add');
+        ok('‼️ tasks.add\'s contract states the two behaviours and what decides between them',
+            /"simple" \(the default/.test(addC) && /"smart" = a retry after/.test(addC)
+            && /M-12\\'s `failurePhase`/.test(addC));
+        ok('…and that an unbound transcript is HELD rather than repeated',
+            /unknownProgressFallback/.test(addC) && /visibly HELD until the evidence lands/.test(addC));
+        ok('…and that a schedule\'s next ordinary firing never inherits a conversation',
+            /never inherits a conversation/.test(addC));
+
         const sched = at('schedules.add');
         ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
         ok('…and its contract names them', /effort\?/.test(sched) && /permissionMode\?/.test(sched)

@@ -18,7 +18,10 @@ import {
 } from './media';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
-import { describeRetry, normalizeRetry, RetryPolicy, retryDecision } from './retry';
+import {
+    classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, normalizeRetry,
+    resolveRetry, RetryPolicy, retryDecision, RunProgress
+} from './retry';
 import { archiveMonths, readArchive } from './taskstats';
 import { extractJson, sanitizePrompt } from './util';
 
@@ -134,6 +137,24 @@ export interface FarmTask {
     tokens?: number;
     /** Z4: the transcript the cost came from (opens in the session viewer). */
     costSessionFile?: string;
+    /**
+     * ‼️ S-31/M-12 — THE SESSION THIS RUN ITSELF PRODUCED, as opposed to the one
+     * it was told to continue (`resumeSessionId`). Written from the launch
+     * binding, so it survives a restart and is there before any cost is.
+     */
+    runSessionId?: string;
+    /** ‼️ M-12 — what the run managed to do before it failed. Absent on a run
+     *  that has not failed, and `unknown` until its transcript is bound. */
+    failurePhase?: FailurePhase;
+    /** ‼️ M-12 — the evidence behind `failurePhase`, in the row's own words. */
+    progress?: RunProgress;
+    /** ‼️ M-10 — the moment the engine said its window reopens, kept so the row
+     *  can say WHY it is waiting rather than only how long. */
+    resetAt?: number;
+    /** ‼️ M-10 — this run is a CONTINUATION of the attempt before it, not a
+     *  repeat: it resumed that conversation and was given the continuation
+     *  prompt instead of the original work. */
+    continuationOf?: string;
     /**
      * ‼️ M-7/M-8 — WHAT HAPPENED TO THIS TASK, IN ORDER.
      *
@@ -289,6 +310,42 @@ export function asLaunchBlock(v: BlockAnswer, fallbackCode?: string): LaunchBloc
  * the task, the EPISODE and the blocker's code — never the reason, which is the
  * whole bug: a key with the live dollar figure in it is a new key every cent.
  */
+/**
+ * ‼️ M-12 — ONE SENTENCE, EVERYWHERE. The Tasks row, the tooltip, the task event
+ * and `tasks.get` all have to say the same thing about a failed run, or the
+ * board contradicts itself about the same fact — which is how "nothing was
+ * attempted" survived beside a 3.2 MB transcript in the first place.
+ *
+ * Short by design: the row has a cell, not a paragraph. The transcript link and
+ * the output archive are the depth, and both are on the row already.
+ */
+export function describeFailurePhase(
+    t: Pick<FarmTask, 'failurePhase' | 'progress' | 'startedAt' | 'endedAt'>
+): string {
+    const mins = t.startedAt && t.endedAt
+        ? Math.max(1, Math.round((t.endedAt - t.startedAt) / 60000)) : 0;
+    const ran = mins ? `${mins} min` : '';
+    const steps = (t.progress?.assistantSteps ?? 0) + (t.progress?.toolCalls ?? 0);
+    switch (t.failurePhase) {
+        case 'interrupted': {
+            const did = [
+                t.progress?.assistantSteps ? `${t.progress.assistantSteps} step(s)` : '',
+                t.progress?.toolCalls ? `${t.progress.toolCalls} tool call(s)` : ''
+            ].filter(Boolean).join(' · ');
+            return `${ran ? ran + ' of work' : 'work done'}${did ? ' · ' + did : ''}`
+                + ' · the run was CUT OFF, not untouched';
+        }
+        case 'not-started':
+            return 'nothing was attempted — it failed before any work started';
+        case 'unknown':
+            return ran
+                ? `${ran} elapsed · no transcript bound yet, so what it managed is not known`
+                : 'no transcript bound yet, so what it managed is not known';
+        default:
+            return steps ? `${steps} step(s)` : '';
+    }
+}
+
 export function parkNoticeKey(task: Pick<FarmTask, 'id' | 'parkEpisode' | 'deferredCode' | 'deferredReason'>): string {
     return `task-parked:${task.id}:${task.parkEpisode ?? 1}:${task.deferredCode ?? task.deferredReason ?? ''}`;
 }
@@ -1146,6 +1203,99 @@ export class TaskManager implements vscode.Disposable {
         if (!t || !sessionFile || t.costSessionFile) { return false; }
         t.costSessionFile = sessionFile;
         this.save();
+        return true;
+    }
+
+    /**
+     * ‼️ M-12 — WHAT THE RUN'S OWN TRANSCRIPT SAYS IT DID, AND THE CLASS THAT
+     * FOLLOWS FROM IT.
+     *
+     * Called when a launch binding resolves (S-31), which is often minutes or a
+     * restart after the run ended. That is the whole point: a failure is first
+     * recorded as `unknown` — an honest "no evidence yet" — and upgraded to
+     * `not-started` or `interrupted` the moment there is any. The upgrade never
+     * runs backwards: evidence only ever arrives.
+     *
+     * Returns true when something changed, so the caller can avoid a save loop.
+     */
+    setRunProgress(taskId: string, p: {
+        sessionId?: string; file?: string; assistantSteps?: number; toolCalls?: number;
+    }): boolean {
+        const t = this.tasks.find(x => x.id === taskId);
+        if (!t) { return false; }
+        let changed = false;
+        if (p.sessionId && t.runSessionId !== p.sessionId) { t.runSessionId = p.sessionId; changed = true; }
+        if (p.file && !t.costSessionFile) { t.costSessionFile = p.file; changed = true; }
+        const next: RunProgress = {
+            assistantSteps: p.assistantSteps, toolCalls: p.toolCalls,
+            elapsedMs: t.startedAt && t.endedAt ? t.endedAt - t.startedAt : undefined
+        };
+        const before = JSON.stringify(t.progress ?? {});
+        if (JSON.stringify(next) !== before) { t.progress = next; changed = true; }
+        // Only a FAILED run has a phase — "what did it manage before it failed"
+        // is not a question about a run that finished.
+        if (t.status === 'failed') {
+            let out = '';
+            try { if (t.outputFile) { out = fs.readFileSync(t.outputFile, 'utf8'); } } catch { /* gone */ }
+            const phase = classifyFailure({ output: out, progress: next }).phase;
+            if (t.failurePhase !== phase) {
+                t.failurePhase = phase;
+                noteTaskEvent(t, 'finished', `what it managed: ${describeFailurePhase(t)}`);
+                if (this.releaseHeld(t)) { /* the successor was waiting on exactly this */ }
+                changed = true;
+            }
+        }
+        if (changed) { this.save(); }
+        return changed;
+    }
+
+    /**
+     * ‼️ M-10 — THE HELD CONTINUATION, RELEASED BY THE ANSWER IT WAS WAITING FOR.
+     *
+     * A `smart` retry created while the phase was `unknown` is parked rather
+     * than launched, because the alternative is resending the original prompt
+     * over work that may already be done. When the evidence lands, the question
+     * it was holding for has an answer — and the retry is not merely unparked,
+     * it is REMADE into the right shape: a continuation of that conversation if
+     * work was cut off, an ordinary retry if none had started.
+     *
+     * The successor is identified by lineage and attempt number together, which
+     * is exact: one run has at most one attempt n+1 in its own chain.
+     */
+    private releaseHeld(prev: FarmTask): boolean {
+        const lineage = prev.retryOf ?? prev.id;
+        const want = (prev.retryAttempt ?? 0) + 1;
+        const held = this.tasks.find(t =>
+            t.status === 'queued' && String(t.deferredCode ?? '').startsWith('progress:')
+            && (t.retryOf ?? t.id) === lineage && (t.retryAttempt ?? 0) === want);
+        if (!held) { return false; }
+        // `ask` is the user's own hold — the evidence arriving does not take
+        // their decision away from them.
+        if (held.deferredCode === 'progress:ask') { return false; }
+        const p = resolveRetry(held.retry, this.opts.defaultRetry?.());
+        const resumeId = (prev.runSessionId ?? '').trim();
+        if (prev.failurePhase === 'interrupted' && p.behavior === 'smart' && resumeId) {
+            held.resumeSessionId = resumeId;
+            if (prev.engine) { held.resumedEngine = prev.engine; }
+            held.resumedFrom = prev.title;
+            held.continuationOf = prev.id;
+            held.title = held.title.replace(/\(retry (\d+)\)\s*$/, '(continue $1)');
+            held.prompt = fillContinuation(
+                continuationPromptFor(p, held.retryAttempt ?? 1), {
+                taskTitle: prev.title.replace(/\s*\((?:limit-)?(?:retry|continue) \d+\)\s*$/, ''),
+                attempt: String(held.retryAttempt ?? 1),
+                failureReason: describeFailurePhase(prev),
+                resetAt: held.resetAt ? new Date(held.resetAt).toLocaleString() : 'unknown',
+                progressSummary: describeFailurePhase(prev)
+            });
+            noteTaskEvent(held, 'parked',
+                `released — the run it follows DID work (${describeFailurePhase(prev)}), so this is a `
+                + `continuation of its own conversation rather than a repeat of the original prompt`);
+        } else {
+            noteTaskEvent(held, 'parked',
+                `released — the run it follows started no work, so the original prompt is correct`);
+        }
+        this.clearPark(held);
         return true;
     }
 
@@ -2249,8 +2399,19 @@ export class TaskManager implements vscode.Disposable {
     private finish(task: FarmTask, status: TaskStatus): void {
         task.status = status;
         task.endedAt = Date.now();
+        // ‼️ M-12 — THE CLASS IS RECORDED THE MOMENT THE RUN ENDS, and at this
+        // moment the honest answer is usually `unknown`: the transcript is on
+        // disk but nothing has bound it to this run yet. That is a real state
+        // and it is written down as one — `setRunProgress` upgrades it when the
+        // binding lands (S-31), which may be minutes or a restart later.
+        if (status === 'failed') {
+            let out = '';
+            try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* none */ }
+            task.failurePhase = classifyFailure({ output: out, progress: task.progress }).phase;
+        }
         noteTaskEvent(task, 'finished', status + (task.startedAt
-            ? ` after ${Math.max(1, Math.round((task.endedAt - task.startedAt) / 60000))} min` : ''));
+            ? ` after ${Math.max(1, Math.round((task.endedAt - task.startedAt) / 60000))} min` : '')
+            + (status === 'failed' ? ` — ${describeFailurePhase(task)}` : ''));
         this.save();
         this.pump();
         if (status === 'failed') { this.maybeScheduleRetry(task); }
@@ -2306,8 +2467,12 @@ export class TaskManager implements vscode.Disposable {
             now: Date.now(),
             // ‼️ M-10 — the engine's own answer to "when does the window
             // reopen", asked only here so the pure decision stays pure.
-            engineResetAt: this.opts.limitResetAt?.(task.engine)
+            engineResetAt: this.opts.limitResetAt?.(task.engine),
+            // ‼️ M-12 — and what this run's own transcript says it managed, so
+            // "nothing was attempted" is a finding rather than an assumption.
+            progress: task.progress
         });
+        if (d.phase) { task.failurePhase = d.phase; }
         if (!d.retry) {
             // ‼️ A retry that did NOT happen is the thing somebody comes looking
             // for, and the old rule was silent about it. One line, on the task's
@@ -2329,13 +2494,44 @@ export class TaskManager implements vscode.Disposable {
             this.save();
             return;
         }
-        const baseTitle = task.title.replace(/\s*\((?:limit-)?retry \d+\)\s*$/, '');
-        const nextTitle = `${baseTitle} (retry ${d.attempt})`;
+        const baseTitle = task.title.replace(/\s*\((?:limit-)?(?:retry|continue) \d+\)\s*$/, '');
         const policy = task.retry;
+        /**
+         * ‼️ M-10 — A CONTINUATION IS NOT A RETRY, AND THE ROW SAYS SO.
+         *
+         * `continueRun` is only ever true when M-12 found real work in this
+         * run's own transcript. Then three things change together and none of
+         * them may change alone: the words sent are the CONTINUATION prompt,
+         * the conversation resumed is THIS run's own session, and the row is
+         * labelled `continue` so the board does not read as the same work being
+         * attempted from scratch seven times.
+         *
+         * ‼️ AND IT NEEDS A SESSION TO CONTINUE. `runSessionId` comes from the
+         * launch binding; without one there is nothing to resume, and opening a
+         * NEW conversation with a prompt that says "carry on from where you
+         * stopped" would be the worst of both — so it falls back to an ordinary
+         * retry of the original work and says so on the record.
+         */
+        const resumeId = (task.runSessionId ?? '').trim();
+        const continuing = d.continueRun === true && !!resumeId;
+        if (d.continueRun && !resumeId) {
+            noteTaskEvent(task, 'retried',
+                'smart continue wanted to resume this run\'s own conversation and no session is bound to it '
+                + '(see sessions.bindings) — falling back to an ordinary retry of the original work');
+        }
+        const nextTitle = `${baseTitle} (${continuing ? 'continue' : 'retry'} ${d.attempt})`;
         // The prompt is REPLACED, never appended: a retry is a fresh headless run
         // with no memory of the last one, so "and this time do it properly" on
         // its own would arrive with nothing to refer to.
-        const prompt = (policy?.prompt ?? fallback?.prompt ?? '').trim() || task.prompt;
+        const prompt = continuing
+            ? fillContinuation(d.promptTemplate ?? '', {
+                taskTitle: baseTitle,
+                attempt: String(d.attempt),
+                failureReason: describeFailurePhase(task),
+                resetAt: d.notBefore ? new Date(d.notBefore).toLocaleString() : 'unknown',
+                progressSummary: describeFailurePhase(task)
+            })
+            : (policy?.prompt ?? fallback?.prompt ?? '').trim() || task.prompt;
         const mode = task.mode;
         try {
             if (task.outputFile) {
@@ -2382,7 +2578,16 @@ export class TaskManager implements vscode.Disposable {
                     // trying THAT turn again — dropping the id here would have
                     // the retry open a brand new conversation and answer a
                     // prompt written for a context it no longer has.
-                    ...(task.resumeSessionId ? {
+                    // ‼️ M-10 — …AND A CONTINUATION RESUMES THE CONVERSATION THIS
+                    // RUN ITSELF HAD, which is a different id from the one it
+                    // was told to continue. The continuation wins, because the
+                    // work to be picked up is in THIS run's transcript.
+                    ...(continuing ? {
+                        resumeSessionId: resumeId,
+                        ...(task.engine ? { resumedEngine: task.engine } : {}),
+                        resumedFrom: baseTitle,
+                        continuationOf: task.id
+                    } : task.resumeSessionId ? {
                         resumeSessionId: task.resumeSessionId,
                         ...(task.resumedEngine ? { resumedEngine: task.resumedEngine } : {}),
                         ...(task.resumedFrom ? { resumedFrom: task.resumedFrom } : {})
@@ -2400,10 +2605,30 @@ export class TaskManager implements vscode.Disposable {
                     // to go as soon as the buffer allows.
                     notBefore: d.notBefore ?? Date.now() + Math.max(60_000, d.delayMs),
                     ...(d.notBefore
-                        ? { notBeforeWhy: `limit reset · ${d.resetSource === 'engine' ? 'the engine published it'
-                            : d.resetSource === 'output' ? 'read from the output' : 'no reset time — ordinary wait'}` }
+                        ? {
+                            resetAt: d.notBefore,
+                            notBeforeWhy: `limit reset · ${d.resetSource === 'engine' ? 'the engine published it'
+                                : d.resetSource === 'output' ? 'read from the output' : 'no reset time — ordinary wait'}`
+                        }
                         : {})
                 });
+                // ‼️ M-10 — HELD BECAUSE NOBODY CAN SAY WHETHER WORK HAPPENED.
+                // The row exists and is visible, and it is NOT launched: the one
+                // outcome this mode exists to prevent is the original prompt
+                // going out as if the run had been idle. The park clears itself
+                // when the binding lands and `setRunProgress` answers the
+                // question — or when the user answers it.
+                if (d.hold) {
+                    t.deferredCode = `progress:${d.hold === 'ask' ? 'ask' : 'unknown'}`;
+                    t.deferredReason = d.hold === 'ask'
+                        ? 'waiting for you — smart continue cannot tell whether the run it follows had '
+                        + 'already done work, and you asked to decide'
+                        : 'waiting for evidence — smart continue cannot yet tell whether the run it '
+                        + 'follows had already done work, so the original prompt is not being resent';
+                    t.parkEpisode = (t.parkEpisode ?? 0) + 1;
+                    noteTaskEvent(t, 'parked', t.deferredReason);
+                    return;
+                }
                 // Parks on the clock (see launchBlock) and the pump takes it
                 // from there; the park writes the "waiting until …" line on its
                 // record — inside this batch, so it is the same one write.
