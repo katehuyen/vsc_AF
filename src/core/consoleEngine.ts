@@ -650,13 +650,21 @@ export function headlessResumeRefusal(engine: string | undefined, cli?: string):
         return 'a CLI profile runs a binary Agent Farm knows nothing about, so it has no conversation to '
             + 'continue — clear the CLI profile, or start a new conversation instead';
     }
-    const spec = engineOf(engine);
-    switch (spec.id) {
-        case 'claude': case 'codex': case 'gemini': case 'agy': return '';
-        default:
-            return `${spec.label} has no measured way to continue a conversation in an unattended run — `
-                + 'a session id would be ignored and a NEW conversation started, which is worse than a refusal';
+    // ‼️ `engineOf` FALLS BACK TO CLAUDE, which is right everywhere else and is
+    // exactly the silence this function exists to prevent: an id nobody has
+    // measured would inherit Claude's `--resume`, be handed to a binary that
+    // does not know the flag, and start a new conversation. An unknown name is
+    // therefore refused UNDER THE NAME THAT WAS ASKED FOR, not under Claude's.
+    const named = String(engine ?? '').trim();
+    const known = !named || Object.prototype.hasOwnProperty.call(ENGINES, named.toLowerCase());
+    if (known) {
+        switch (engineOf(engine).id) {
+            case 'claude': case 'codex': case 'gemini': case 'agy': return '';
+        }
     }
+    const label = known ? engineOf(engine).label : named;
+    return `${label} has no measured way to continue a conversation in an unattended run — `
+        + 'a session id would be ignored and a NEW conversation started, which is worse than a refusal';
 }
 
 /** …and for the interactive command a person is about to watch in a terminal. */

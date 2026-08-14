@@ -945,17 +945,17 @@
                 ${num('retrycap', 'retryCapMin', 1, 720, '12 h')}</label>
             <label class="ntf" title="Which failures are worth trying again. A session limit means the work was never attempted and the limit clears by itself within hours; any other failure may well repeat."><span>On</span>
                 ${sel('retrywhen', c.retryWhen, [['limit', 'a session limit only'], ['any', 'any failure']])}</label>
-            <label class="ntf wide check" title="${C.esc(
+            <label class="ntf wide cbxf" title="${C.esc(
             'When the failure really WAS a usage/session limit, the engine has already said when the window '
             + 'reopens — the Claude usage endpoint and Codex\'s own rate-limit block both publish the hour, and '
             + 'the CLI prints it ("resets 5am"). With this on, the first retry goes at that moment plus the '
             + 'buffer beside it instead of guessing a duration; retries 2 and 3 use their own minutes and 4+ '
             + 'the strategy. If no reset time can be found the ordinary first wait is used and the run\'s record '
-            + 'says so — it is never a silent guess.')}">
-                <input type="checkbox" id="nt-retryresetaware"${c.retryResetAware ? ' checked' : ''}>
-                <span>Wait for the limit to reset (1st retry)</span></label>
+            + 'says so — it is never a silent guess.')}"><span>Limit reset</span>
+                <label class="cbx"><input type="checkbox" id="nt-retryresetaware"${c.retryResetAware ? ' checked' : ''}>
+                    wait for the window to reopen instead of guessing (1st retry)</label></label>
             ${c.retryResetAware ? `
-            <label class="ntf" title="Minutes added to the stated reset time before the first retry actually goes. The window reopening and the CLI agreeing that it has are not the same instant."><span>Safety buffer</span>
+            <label class="ntf thin" title="Minutes added to the stated reset time before the first retry actually goes. The window reopening and the CLI agreeing that it has are not the same instant."><span>Safety buffer</span>
                 <input type="number" id="nt-retrysafety" min="0" max="240" step="1" value="${C.esc(String(c.retrySafetyMin))}"></label>` : ''}
             <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to."><span>Retry prompt</span>
                 <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>`;
@@ -2228,6 +2228,10 @@
                 .ntgrid { display:flex; flex-wrap:wrap; gap:8px 10px; margin:8px 0; }
                 .ntf { display:flex; flex-direction:column; gap:3px; flex:1 1 150px; min-width:140px; font-size:11px; }
                 .ntf.wide { flex:1 1 100%; }
+                /* ‼️ A BOX THE SIZE OF WHAT GOES IN IT. An ordinary field grows
+                   to fill its row, which is right for a prompt and absurd for a
+                   two-digit number alone on a line — a 1400px input holding 3. */
+                .ntf.thin { flex:0 0 170px; }
                 .ntf > span { opacity:.75; }
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }

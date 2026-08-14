@@ -262,6 +262,26 @@ const planData = () => {
     });
 };
 
+/**
+ * ‼️ THE COMPOSER IS READ OFF THE PAGE ON EVERY CHANGE, AND THE SHIM PARSES ONLY
+ * OPENING TAGS. A `<select>` that has just been redrawn therefore reports no
+ * value (the choice lives on its `<option selected>`, which the shim does not
+ * read) and a second change would blank everything the first one set. So the
+ * whole draft is re-applied to the FRESH elements before each event: the page
+ * reads the state we mean, redraws from it, and the picture is of a form a
+ * person could actually have filled in.
+ */
+const drive = (r, draft, fireId) => {
+    const el = (id) => r.query('#' + id)[0];
+    Object.keys(draft).forEach(id => {
+        const e = el(id);
+        if (!e) { return; }
+        if (typeof draft[id] === 'boolean') { e.checked = draft[id]; } else { e.value = draft[id]; }
+    });
+    const target = el(fireId);
+    if (target) { target.fire('change'); }
+};
+
 const variants = () => ([
     { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() },
     { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() },
@@ -272,14 +292,68 @@ const variants = () => ([
         id: 'tasks-retry', label: 'Tasks → the New-task form, with a retry policy set',
         data: data(),
         act: (r) => {
-            const open = (id) => r.query('#' + id)[0];
-            open('nt-open').click();
-            const p = open('nt-prompt');
-            p.value = 'gece taraması — dosyaları filele';
-            p.fire('input');
-            const mode = open('nt-retrymode');
-            mode.value = 'custom';
-            mode.fire('change');
+            r.query('#nt-open')[0].click();
+            // ‼️ M-10 — the boxes that exist ONLY in this state: the three named
+            // waits, the strategy for 4+, the formula it opens, and the reset
+            // buffer behind the tick. A picture of the block shut would show
+            // none of the controls the item is about.
+            const draft = {
+                'nt-prompt': 'gece taraması — dosyaları filele',
+                'nt-retrymode': 'custom', 'nt-retrymax': '6', 'nt-retrydelay': '30'
+            };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, {
+                'nt-retrydelay2': '45', 'nt-retrydelay3': '90', 'nt-retrybackoff': 'formula'
+            });
+            drive(r, draft, 'nt-retrybackoff');
+            Object.assign(draft, {
+                'nt-retryformula': 'min(prev * 1.5, 120)', 'nt-retrycap': '240',
+                'nt-retryresetaware': true, 'nt-retrysafety': '3'
+            });
+            drive(r, draft, 'nt-retryresetaware');
+        }
+    },
+    // ‼️ S-19 — the form when the run continues a conversation instead of
+    // opening one. The picker, its search box, the count line and the held-row
+    // warning are all drawn by this state and by nothing else.
+    {
+        id: 'tasks-resume',
+        label: 'Tasks → the New-task form, continuing an existing conversation',
+        data: Object.assign(data(), {
+            launch: {
+                resumable: [
+                    {
+                        sessionId: '190e5baf-e937-4bc9-a83f-8a26d7248c89', title: 'gece görevi — M-10/M-11/S-19',
+                        agent: 'developer', agentId: 'developer', engine: 'claude',
+                        project: 'Agent Farm', ts: Date.now() - 41 * 60000, busy: '',
+                        cwd: 'D:/zone/dev/git/miropharm/vsc_AgentFarm'
+                    },
+                    {
+                        sessionId: '9c22ab41-0f2d-4a11-9a3e-71c0d5b2e004', title: 'AGENT_AREA dosyalama turu',
+                        agent: 'manager', agentId: 'manager', engine: 'claude',
+                        project: '', ts: Date.now() - 3 * 3600000,
+                        busy: 'the Console has this conversation open', cwd: ''
+                    },
+                    {
+                        sessionId: '019ff43f-77c1-4d90-8a55-2b6631c0a7de', title: 'rollout ayrıştırıcısını yeniden yaz',
+                        agent: 'developer', agentId: 'developer', engine: 'codex',
+                        project: 'Agent Farm', ts: Date.now() - 26 * 3600000, busy: '', cwd: ''
+                    }
+                ]
+            }
+        }),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = {
+                'nt-prompt': 'kaldığın yerden devam et — yapılmış işi tekrarlama',
+                'nt-conversation': 'resume'
+            };
+            drive(r, draft, 'nt-conversation');
+            // The held row on purpose: the ●, the warning line under the picker
+            // and the tip that says the task will PARK rather than open a second
+            // writer are the whole safety half of the item.
+            draft['nt-resumeid'] = '9c22ab41-0f2d-4a11-9a3e-71c0d5b2e004';
+            drive(r, draft, 'nt-resumeid');
         }
     }
 ]);

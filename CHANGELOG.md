@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.130.0 — A task can continue a conversation, and a retry can wait for the window rather than guess at it (2026-08-14)
+
+The run that wrote most of this hit the session limit halfway through and its own six retries — forty minutes apart, blind — ran out seven minutes before the window reopened. That is the shape of the two items below: one is about WHICH conversation a run happens in, the other about WHEN a failed one is tried again.
+
+**S-19 — a task can be the next turn of a conversation instead of a new one.** "Carry on with what you were doing" used to mean pasting the last output into a fresh prompt, which is a copy of the context and not the context. The New-task form now has a **Conversation** picker: *a new session*, or *continue an existing conversation…* — and the second opens a searchable list of the conversations that genuinely can be resumed, narrowed by the farm's own query grammar over name, agent, project, engine and id. The engine really resumes it, so the transcript and everything it had read carry on in place, while the run stays its own task row, its own events and its own archived output.
+
+- **Each engine's own vocabulary, from one place.** `--resume <id>` before `-p` on Claude; `codex exec resume <thread>` as a SUBCOMMAND, without the arguments resume refuses and with the sandbox moved onto `-c`; Gemini's own `--resume`; and Antigravity, which calls it a `--conversation`. One builder, so a run and the Console cannot drift apart about what resuming means.
+- **An engine that cannot is refused BY NAME.** Handing a session id to a CLI with no resume vocabulary would not fail — it would quietly start a NEW conversation, succeed, and archive something that looks right. So a CLI profile, an interactive task and an engine nobody has measured are all refused before anything spawns, each saying which door to use instead.
+- **Two writers on one transcript are never opened.** If the Console, a terminal or another task is holding the conversation, the run is created and **parks** with that as its visible reason, then starts by itself when the holder lets go. The row is marked ● in the picker before it is chosen, and the question is asked AGAIN at launch, because minutes pass in between.
+- **A resumed run is priced by difference.** The conversation's total is not the task's cost; what this turn added is. On the bridge in the same commit: `tasks.add` takes `resume`, `tasks.get`/`list` give it back, and a retry of a resumed run keeps the same conversation rather than silently opening a fresh one.
+
+**M-10 (the half about WHEN) — three named waits, a strategy for the rest, and a retry that reads the reset hour.** The old policy was one interval and "same or double", so the answer to "when will it try again" was a single number applied to every attempt.
+
+- **The first three waits are three boxes**, not a curve — "five minutes; then twenty; then an hour" is what people actually want out of the first handful of attempts and it is not any curve at all. The 2nd and 3rd are empty by default and say so, which is exactly how every policy written before them still behaves.
+- **Retry 4 and after is a strategy:** the same wait, `base × n`, doubling, or **your own formula** in `n` (which retry), `prev` (the wait before it) and `base`, with `+ - * / ^`, brackets, `min()` and `max()`. ‼️ It is PARSED, never evaluated as code: anything outside that grammar is refused in the form, with the reason, next to the person who typed it.
+- **‼️ A limit failure waits for the window, not for a number.** With *Limit reset* ticked, a genuine usage/session limit reads the hour the engine itself publishes — the usage endpoint, the rate-limit block, or the "resets …" line the CLI printed — and the retry goes at that moment plus a safety buffer you set. If no reset time can be found the ordinary wait is used and **the run's record says so**; it is never a silent guess.
+- The same fields on the bridge (`retry: {delay2Min, delay3Min, backoff, formula, capMin, resetAware, safetyBufferMin}`), validated by the one function the form uses, and `when: "limit"` now means the session/usage limit on any of the four engines rather than Claude's wording alone.
+
+**M-11 — the same hold, at a different number, is the same news.** The budget reason quotes today's spend ("$388.91 of $300.00"), and the notice key was built out of that sentence — so every cent of drift re-announced one unbroken park as a fresh event. What is SHOWN and what IDENTIFIES are now two things: the row and its tooltip keep the live figure, while dedupe works off a stable blocker code (`budget:fleet`, `concurrency:fleet`, `session:busy:<id>`) plus a park-episode number. A ceiling that genuinely changes is a new event; a release followed by the same ceiling later is a new episode and is announced again.
+
+**And the reset-aware tick was drawn wrong.** It asked for a `check` class that does not exist, so the box floated free of its own label — caught in the page render, which is what the render exists for, and put on the same footing as every other checkbox in that form.
+
 ## 3.129.0 — The reason a run is held is written where you are looking, and a tooltip you can walk into (2026-08-14)
 
 The V3 audit of 3.128.0 went through six items edge by edge and found every one of them right in the middle and wrong at the rim. This is the rim.
