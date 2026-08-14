@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.135.1 — K-22, measured against the CLI itself rather than its documentation (2026-08-14)
+
+The process smoke for 3.135.0 was run against the installed CLI, and reading the binary to explain its answer corrected two things in the release that had just shipped.
+
+- **‼️ The policy key was being read at the wrong path, and in the wrong place.** The CLI's own resolution is `n.permissions?.disableBypassPermissionsMode === "disable"` over the **merged** settings — so it is nested under `permissions`, not a top-level key, and it counts from whichever layer states it, not only the managed file. 3.135.0 checked a top-level key in the managed file alone: a policy the CLI obeys would have passed straight through it, which is the exact shape of the bug this item is about.
+- **`--allow-dangerously-skip-permissions` turns out to be enough for a settings bypass** — `if (s || t.allowDangerouslySkipPermissions) f.push(v)` — which is why the smoke's negative-control lane could not reproduce the old behaviour on a machine whose `~/.claude/settings.json` already says `permissions.defaultMode: "bypassPermissions"`. The control now says that in words and skips, rather than reporting a pass it did not earn. It changes nothing about the fix: `--dangerously-skip-permissions` short-circuits at the top of that function and does not depend on the settings branch resolving at all.
+- **`test/smoke_bypass.mjs`** — the process smoke, on the installed CLI, running the exact recipe from the report (a Git Bash compound with a variable assignment, a redirect into `%APPDATA%\…\bridge` outside the working directory, then wait/read/remove). **Measured: `can_use_tool` 0, one tool call, on the argv the Console now builds.** haiku, one turn, per the test-model policy.
+- One thing no file on this machine can answer, so it is written down instead: the CLI can also disable bypass from a remote feature gate (`tengu_disable_bypass_permissions_mode`). If that fires, the process starts in `default` behind a bypass label — and the auto-answer above is what keeps the contract anyway.
+
 ## 3.135.0 — "Bypass" on the card now means bypass in the process (2026-08-14)
 
 **K-22 — a session labelled bypassPermissions that then stopped and asked.** The user's decision on this is a contract, not a preference: bypass means *whatever happens, do not ask me*. It was not being kept, and the cause was one flag standing in for another. S-18 (3.93.0) added `--allow-dangerously-skip-permissions` to the hosted launch — a flag whose own help says it "enables bypassing all permission checks **as an option**, without it being enabled by default". It permits bypass to be chosen later; it does not apply it. Measured on the reported session (`1963cc5a`, Claude 2.1.232): settings, the first native user event and the Console state all said `bypassPermissions`, while the process argv held only `--permission-prompt-tool stdio --allow-dangerously-skip-permissions`, and ordinary Bridge Bash calls went on producing `can_use_tool`.

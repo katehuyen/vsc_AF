@@ -22,11 +22,18 @@
  *   - FROM SETTINGS — what Claude's own layers make `Default` mean;
  *   - ENFORCED — the mode the flags actually put the process in.
  *
- * A managed policy can forbid bypass outright (`disableBypassPermissionsMode`),
- * and Claude honours that only from the managed file. When it does, bypass is
- * NOT quietly downgraded to asking: a session that would carry a bypass label
- * it cannot honour is refused before it starts, because the alternative is
- * exactly the "says bypass, then asks" state the user rejected.
+ * A policy can forbid bypass outright (`permissions.disableBypassPermissionsMode`).
+ * When it does, bypass is NOT quietly downgraded to asking here — the CLI's own
+ * answer is to fall back to `default` with a warning, which is precisely the
+ * "says bypass, then asks" state the user rejected. A session that would carry
+ * a label it cannot honour is refused before it starts instead.
+ *
+ * ‼️ ONE THING THIS CANNOT SEE, and it is written down rather than pretended
+ * away: the CLI also disables bypass from a remote feature gate
+ * (`tengu_disable_bypass_permissions_mode`), which is not in any file on this
+ * machine. If that ever fires, the process starts in `default` behind a bypass
+ * label — and the reducer's auto-answer (consoleproto.ts) is what keeps the
+ * contract anyway: the requests arrive and the user still never sees one.
  *
  * Pure: it is given the settings files' text and answers. Reading them off disk
  * is `permissionLayerPaths` + the caller's own fs.
@@ -117,11 +124,24 @@ export function resolveEffectivePermission(
             const m = modeIn(json);
             if (m) { fromSettings = m; settingsFile = layer.file; }
         }
-        // ‼️ Only the MANAGED file can forbid bypass — Claude ignores this key
-        // anywhere else, and honouring it here would refuse a session the CLI
-        // would have run perfectly well.
-        if (layer.id === 'managed' && String(json['disableBypassPermissionsMode'] ?? '') === 'disable') {
-            blocked = { file: layer.file, why: 'managed policy sets disableBypassPermissionsMode: "disable"' };
+        // ‼️ THE KEY AND ITS PATH ARE MEASURED, NOT GUESSED.
+        //
+        // Read out of the installed CLI (2026-08-14 build) rather than taken
+        // from documentation: `c = n.permissions?.disableBypassPermissionsMode
+        // === "disable"`, where `n` is the MERGED settings — so it is
+        // `permissions.disableBypassPermissionsMode`, not a top-level key, and
+        // it is honoured from whichever layer the merge took it from, not only
+        // the managed file. Checking the wrong path would have let a policy the
+        // CLI obeys pass silently, which is the shape of this whole item.
+        if (!blocked) {
+            const perms = json['permissions'] as Record<string, unknown> | undefined;
+            if (String(perms?.['disableBypassPermissionsMode'] ?? '') === 'disable') {
+                blocked = {
+                    file: layer.file,
+                    why: 'permissions.disableBypassPermissionsMode is "disable"'
+                        + (layer.id === 'managed' ? ' in the managed policy' : ` in the ${layer.id} settings`)
+                };
+            }
         }
     }
     const effective = want || fromSettings;

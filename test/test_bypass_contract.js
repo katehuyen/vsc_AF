@@ -83,25 +83,37 @@ const LOCAL = 'D:\\repo\\.claude\\settings.local.json';
     ok('…and is passed as --permission-mode, as it always was',
         permissionFlags(asked).mode.join(' ') === '--permission-mode plan');
 
-    // ‼️ policy: bypass wanted, bypass forbidden → the session is NOT started
+    // ‼️ policy: bypass wanted, bypass forbidden → the session is NOT started.
+    //
+    // The key and its PATH are read out of the installed CLI, not out of
+    // documentation: `n.permissions?.disableBypassPermissionsMode === "disable"`
+    // over the MERGED settings. So it is nested under `permissions`, and it
+    // counts from whichever layer states it.
     const blocked = resolveEffectivePermission(BYPASS, [
-        layer('managed', MANAGED, { disableBypassPermissionsMode: 'disable' }),
+        layer('managed', MANAGED, { permissions: { disableBypassPermissionsMode: 'disable' } }),
         layer('user', USER, {})
     ]);
-    ok('‼️ K-22: a managed policy that forbids bypass blocks it',
+    ok('‼️ K-22: a policy that forbids bypass blocks it',
         blocked.blocked !== undefined && blocked.bypass === false);
     ok('…and names the file, so it is something a person can act on',
         blocked.blocked.file === MANAGED && /disableBypassPermissionsMode/.test(blocked.blocked.why));
 
-    // …and the same key anywhere else is not policy and is ignored, or every
-    // project could quietly disable a decision the user made for themselves
-    const notPolicy = resolveEffectivePermission(BYPASS, [
+    const projectPolicy = resolveEffectivePermission(BYPASS, [
         layer('managed', MANAGED, undefined),
-        layer('project', PROJECT, { disableBypassPermissionsMode: 'disable' }),
+        layer('project', PROJECT, { permissions: { disableBypassPermissionsMode: 'disable' } }),
         layer('user', USER, {})
     ]);
-    ok('the policy key is honoured ONLY in the managed file',
-        notPolicy.blocked === undefined && notPolicy.bypass === true);
+    ok('‼️ …from a non-managed layer too, because that is what the CLI does',
+        projectPolicy.blocked !== undefined && projectPolicy.bypass === false);
+
+    // …and the top-level spelling is NOT the key the CLI reads: honouring it
+    // would refuse sessions the CLI would have run perfectly well.
+    const wrongPath = resolveEffectivePermission(BYPASS, [
+        layer('managed', MANAGED, { disableBypassPermissionsMode: 'disable' }),
+        layer('user', USER, {})
+    ]);
+    ok('the top-level spelling is not the key — the CLI reads permissions.*',
+        wrongPath.blocked === undefined && wrongPath.bypass === true);
 
     const broken = resolveEffectivePermission('', [
         { id: 'project', file: PROJECT, text: '{ this is not json' },
@@ -276,7 +288,7 @@ const LOCAL = 'D:\\repo\\.claude\\settings.local.json';
     const managedDir = path.join(tmp, 'ProgramData');
     fs.mkdirSync(path.join(managedDir, 'ClaudeCode'), { recursive: true });
     fs.writeFileSync(path.join(managedDir, 'ClaudeCode', 'managed-settings.json'),
-        JSON.stringify({ disableBypassPermissionsMode: 'disable' }), 'utf8');
+        JSON.stringify({ permissions: { disableBypassPermissionsMode: 'disable' } }), 'utf8');
     const realProgramData = process.env.PROGRAMDATA;
     process.env.PROGRAMDATA = managedDir;
     lastArgs = null;
