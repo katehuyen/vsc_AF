@@ -32,26 +32,41 @@ const byName = new Map(manifest.entries.map(e => [e.capability, e]));
 
 let applied = 0;
 const unknown = [];
-for (const [capability, raw] of Object.entries(decisions)) {
-    const entry = byName.get(capability);
-    if (!entry) { unknown.push(capability); continue; }
+/** `#act` applies to every capability whose page action has that name. */
+const targets = (key) => key.startsWith('#')
+    ? manifest.entries.filter(e => e.capability.endsWith(key))
+    : (byName.has(key) ? [byName.get(key)] : []);
+
+for (const [key, raw] of Object.entries(decisions)) {
+    const hits = targets(key);
+    if (!hits.length) { unknown.push(key); continue; }
     const [code, extra] = String(raw).split('|');
-    delete entry.ops; delete entry.exempt; delete entry.core; delete entry.fronts;
-    if (code.startsWith('op:')) {
-        entry.ops = code.slice(3).split(',').map(s => s.trim()).filter(Boolean);
-    } else if (REASONS[code]) {
-        const [kind, why] = REASONS[code];
-        entry.exempt = { kind, why };
-        if (extra) { entry.fronts = extra; }
-    } else {
-        unknown.push(`${capability} (unknown code "${code}")`);
-        continue;
+    for (const entry of hits) {
+        delete entry.ops; delete entry.exempt; delete entry.core;
+        delete entry.fronts; delete entry.gap;
+        if (code.startsWith('op:')) {
+            entry.ops = code.slice(3).split(',').map(s => s.trim()).filter(Boolean);
+        } else if (code.startsWith('gap:')) {
+            entry.gap = { why: code.slice(4).trim() };
+        } else if (REASONS[code]) {
+            const [kind, why] = REASONS[code];
+            entry.exempt = { kind, why };
+            // `nav-open|despite:…` overrules the code's own reading of the
+            // handler, in a sentence somebody can disagree with.
+            if (extra && extra.startsWith('despite:')) {
+                entry.exempt.despite = extra.slice(8).trim();
+            } else if (extra) { entry.fronts = extra; }
+        } else {
+            unknown.push(`${key} (unknown code "${code}")`);
+            continue;
+        }
+        applied++;
     }
-    applied++;
 }
 
 manifest.entries.sort((a, b) => a.capability.localeCompare(b.capability));
+manifest.gapBudget = manifest.entries.filter(e => e.gap).length;
 fs.writeFileSync(FILE, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-const open = manifest.entries.filter(e => !e.exempt && !(e.ops || []).length);
-console.log(`${applied} decision(s) applied · ${open.length} still open`);
+const open = manifest.entries.filter(e => !e.exempt && !e.gap && !(e.ops || []).length);
+console.log(`${applied} decision(s) applied · ${open.length} still open · ${manifest.gapBudget} recorded gap(s)`);
 for (const u of unknown) { console.log('  ? ' + u); }

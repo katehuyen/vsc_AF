@@ -224,6 +224,39 @@ does has to know about this, and no page should re-invent it.
 
 ---
 
+## The parity gate
+
+**Every user-triggerable action is recorded in `parity.manifest.json`, and the
+build fails if a new one is not.** `test/test_parity.js` reads the three places
+a capability can be declared — `contributes.commands`, the right-click
+catalogue, and the `case '…':` arms of the panels' message handlers — and
+checks each against the manifest, where it carries its UI doors and **either**
+the bridge op(s) that do the same thing **or** a reasoned exemption. This is
+the rule in `_REF/agentfarm-dev.md` with a machine behind it: B-3 closed 62
+gaps found by a hand scan, and a hand scan rots the day it finishes.
+
+- **`node test/test_parity.js`** audits (and runs in `npm test` and
+  `npm run package`). **`--fix`** re-derives the manifest from the real
+  commands, keeping every decision that is still about something that exists.
+  **`node tools/parity_suggest.js`** answers "then which op *would* have
+  matched?" while you are filling one in.
+- **An exemption is one of five kinds** and nothing else: `navigation`,
+  `visual`, `file-picker`, `secrets`, `human-only`. "We will do it later" is
+  refused by name — an unfinished capability belongs in the backlog.
+- **The shared core is DERIVED, not declared.** A mapped capability passes only
+  if its handler and its op share a real symbol — a core function, a wired
+  dependency, a manager method. An op that reimplements what the page does has
+  nothing in common with it, and that is the failure this gate exists for.
+- **`gap` is the honest third answer:** on the UI, not on the bridge, with a
+  sentence saying what the missing op would have to do. `gapBudget` is a
+  ratchet — lower it when you close one; raising it is a line in a diff with
+  your name on it.
+- A right-click item is a second **door**, not a second capability (it is
+  either a command drawn again or a relay to the page's own handler), and
+  `test_ctxmenu_reach.js` is what proves those relays land.
+
+---
+
 ## Looking at it
 
 **A selected control must remain selected after the pointer leaves it.** Hover

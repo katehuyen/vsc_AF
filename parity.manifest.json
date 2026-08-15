@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "gapBudget": 40,
   "entries": [
     {
       "capability": "abTest",
@@ -80,9 +81,6 @@
       "ops": [
         "workflows.add",
         "workflows.step.update"
-      ],
-      "core": [
-        "WorkflowStep"
       ]
     },
     {
@@ -100,6 +98,9 @@
       "ui": [
         "cmd:agentfarm.addSessionFolderToProject",
         "ctx:agentfarm.addSessionFolderToProject"
+      ],
+      "ops": [
+        "projects.set"
       ]
     },
     {
@@ -146,118 +147,116 @@
       "capability": "agentDetail.ts#af-browse",
       "ui": [
         "page:agentDetail.ts#af-browse"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "agentDetail.ts#afnav",
       "ui": [
-        "page:agentDetail.ts#afnav",
-        "page:airtablePanel.ts#afnav",
-        "page:capabilities.ts#afnav",
-        "page:consolePanel.ts#afnav",
-        "page:dashboard.ts#afnav",
-        "page:enginesPanel.ts#afnav",
-        "page:evalsPanel.ts#afnav",
-        "page:livingPanel.ts#afnav",
-        "page:memoryGraph.ts#afnav",
-        "page:missionsPanel.ts#afnav",
-        "page:noticesPanel.ts#afnav",
-        "page:portfolioPanel.ts#afnav",
-        "page:projectsPanel.ts#afnav",
-        "page:queuePanel.ts#afnav",
-        "page:searchPanel.ts#afnav",
-        "page:secretsPanel.ts#afnav",
-        "page:sessionsPanel.ts#afnav",
-        "page:sessionViewer.ts#afnav",
-        "page:settingsPanel.ts#afnav",
-        "page:studioPanel.ts#afnav",
-        "page:taskAnalyticsPanel.ts#afnav",
-        "page:tasksPanel.ts#afnav",
-        "page:timeline.ts#afnav",
-        "page:toolboxPanel.ts#afnav",
-        "page:turnsPanel.ts#afnav",
-        "ctx:stOpen"
-      ]
+        "page:agentDetail.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "agentDetail.ts#consoleSession",
       "ui": [
         "page:agentDetail.ts#consoleSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#continueSession",
       "ui": [
         "page:agentDetail.ts#continueSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#duty-act",
       "ui": [
         "page:agentDetail.ts#duty-act"
+      ],
+      "ops": [
+        "duties.togglePause",
+        "duties.delete",
+        "duties.move"
       ]
     },
     {
       "capability": "agentDetail.ts#duty-save",
       "ui": [
         "page:agentDetail.ts#duty-save"
+      ],
+      "ops": [
+        "duties.add",
+        "duties.update"
       ]
     },
     {
       "capability": "agentDetail.ts#focusTerminal",
       "ui": [
         "page:agentDetail.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "agentDetail.ts#interruptSession",
       "ui": [
         "page:agentDetail.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
       ]
     },
     {
       "capability": "agentDetail.ts#launchSession",
       "ui": [
         "page:agentDetail.ts#launchSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#memCard",
       "ui": [
-        "ctx:memCopyTo",
-        "ctx:memDistil",
-        "ctx:memCopyPath"
-      ]
+        "page:agentDetail.ts#memCard"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#openDashboard",
       "ui": [
         "page:agentDetail.ts#openDashboard"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#openFile",
       "ui": [
-        "page:agentDetail.ts#openFile",
-        "page:consolePanel.ts#openFile",
-        "page:dashboard.ts#openAgent",
-        "page:missionsPanel.ts#openFile",
-        "page:missionsPanel.ts#openAgent",
-        "page:portfolioPanel.ts#openAgent",
-        "page:queuePanel.ts#openFile",
-        "page:searchPanel.ts#openFile",
-        "page:sessionViewer.ts#openAgent",
-        "page:settingsPanel.ts#openAgent",
-        "page:studioPanel.ts#openFile",
-        "ctx:msStepOpen",
-        "ctx:msStepOut",
-        "page:queuePanel.ts#setUrgency",
-        "page:queuePanel.ts#handoff",
-        "page:queuePanel.ts#openNotice",
-        "ctx:qOpen",
-        "page:queuePanel.ts#drop",
-        "ctx:qFold",
-        "ctx:qNotice"
+        "page:agentDetail.ts#openFile"
       ],
       "exempt": {
         "kind": "navigation",
@@ -267,32 +266,7 @@
     {
       "capability": "agentDetail.ts#openGuide",
       "ui": [
-        "page:agentDetail.ts#openGuide",
-        "page:airtablePanel.ts#openGuide",
-        "page:capabilities.ts#openGuide",
-        "page:consolePanel.ts#openGuide",
-        "page:dashboard.ts#openGuide",
-        "page:evalsPanel.ts#openGuide",
-        "page:livingPanel.ts#openGuide",
-        "page:memoryGraph.ts#openGuide",
-        "page:missionsPanel.ts#openGuide",
-        "page:portfolioPanel.ts#openGuide",
-        "page:searchPanel.ts#openGuide",
-        "page:sessionsPanel.ts#openGuide",
-        "page:sessionViewer.ts#openGuide",
-        "page:settingsPanel.ts#openGuide",
-        "page:studioPanel.ts#openGuide",
-        "page:taskAnalyticsPanel.ts#openGuide",
-        "page:tasksPanel.ts#openGuide",
-        "page:timeline.ts#openGuide",
-        "page:toolboxPanel.ts#openGuide",
-        "page:turnsPanel.ts#openGuide",
-        "ctx:insOpen",
-        "ctx:insGuide",
-        "ctx:dutyEdit",
-        "ctx:dutyTo",
-        "ctx:dutyPause",
-        "ctx:dutyDel"
+        "page:agentDetail.ts#openGuide"
       ],
       "exempt": {
         "kind": "navigation",
@@ -302,63 +276,61 @@
     {
       "capability": "agentDetail.ts#openMemoryGraph",
       "ui": [
-        "page:agentDetail.ts#openMemoryGraph",
-        "page:agentDetail.ts#memCard",
-        "ctx:memOpen",
-        "ctx:memGraph"
-      ]
+        "page:agentDetail.ts#openMemoryGraph"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#openSession",
       "ui": [
-        "page:agentDetail.ts#openSession",
-        "page:dashboard.ts#openSession",
-        "page:missionsPanel.ts#openSession",
-        "page:projectsPanel.ts#openSession",
-        "page:searchPanel.ts#openSession",
-        "page:sessionsPanel.ts#openSession",
-        "page:timeline.ts#openSession",
-        "page:turnsPanel.ts#openSession",
-        "ctx:msnPlanner",
-        "ctx:msnAnswer",
-        "ctx:tnOpen"
-      ]
+        "page:agentDetail.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#openTimeline",
       "ui": [
         "page:agentDetail.ts#openTimeline"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "agentDetail.ts#pinSession",
       "ui": [
         "page:agentDetail.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
       ]
     },
     {
       "capability": "agentDetail.ts#refresh",
       "ui": [
         "page:agentDetail.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "agentDetail.ts#reveal",
       "ui": [
-        "page:agentDetail.ts#reveal",
-        "page:airtablePanel.ts#reveal",
-        "page:capabilities.ts#open",
-        "page:memoryGraph.ts#open",
-        "page:portfolioPanel.ts#reveal",
-        "page:toolboxPanel.ts#open",
-        "page:toolboxPanel.ts#reveal",
-        "ctx:tbOpen",
-        "ctx:tbReveal",
-        "page:airtablePanel.ts#set",
-        "page:settingsPanel.ts#set",
-        "ctx:atDefault",
-        "ctx:atReveal"
-      ]
+        "page:agentDetail.ts#reveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "agentDetail.ts#savePricing",
@@ -367,40 +339,65 @@
       ],
       "ops": [
         "pricing.set"
-      ],
-      "core": [
-        "PriceRule"
       ]
     },
     {
       "capability": "agentDetail.ts#sessionTurns",
       "ui": [
         "page:agentDetail.ts#sessionTurns"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "agentDetail.ts#setTableN",
       "ui": [
         "page:agentDetail.ts#setTableN"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "agentDetail.ts#startSession",
       "ui": [
         "page:agentDetail.ts#startSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "airtablePanel.ts#add-media",
       "ui": [
         "page:airtablePanel.ts#add-media"
-      ]
+      ],
+      "gap": {
+        "why": "On the bridge as airtable.config.set, but the page writes the roots through its own store loader instead. Bring the two onto one core before this counts as covered."
+      }
     },
     {
       "capability": "airtablePanel.ts#add-root",
       "ui": [
         "page:airtablePanel.ts#add-root"
-      ]
+      ],
+      "gap": {
+        "why": "On the bridge as airtable.config.set, but the page writes the roots through its own store loader instead. Bring the two onto one core before this counts as covered."
+      }
+    },
+    {
+      "capability": "airtablePanel.ts#afnav",
+      "ui": [
+        "page:airtablePanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "airtablePanel.ts#open-config",
@@ -410,10 +407,6 @@
       "ops": [
         "airtable.config.get",
         "service.install"
-      ],
-      "core": [
-        "loadStore",
-        "storageDir"
       ]
     },
     {
@@ -427,16 +420,33 @@
       }
     },
     {
+      "capability": "airtablePanel.ts#openGuide",
+      "ui": [
+        "page:airtablePanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "airtablePanel.ts#probe-tools",
       "ui": [
         "page:airtablePanel.ts#probe-tools"
+      ],
+      "ops": [
+        "toolbox.mcptools"
       ]
     },
     {
       "capability": "airtablePanel.ts#refresh",
       "ui": [
         "page:airtablePanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "airtablePanel.ts#register",
@@ -447,24 +457,43 @@
         "airtable.register",
         "airtable.status",
         "service.install"
-      ],
-      "core": [
-        "extVersion",
-        "registerMcp",
-        "stageMcpServer",
-        "storageDir"
       ]
     },
     {
       "capability": "airtablePanel.ts#remove-media",
       "ui": [
         "page:airtablePanel.ts#remove-media"
-      ]
+      ],
+      "gap": {
+        "why": "On the bridge as airtable.config.set, but the page removes through its own store loader instead. Bring the two onto one core before this counts as covered."
+      }
     },
     {
       "capability": "airtablePanel.ts#remove-root",
       "ui": [
         "page:airtablePanel.ts#remove-root"
+      ],
+      "gap": {
+        "why": "On the bridge as airtable.config.set, but the page removes through its own store loader instead. Bring the two onto one core before this counts as covered."
+      }
+    },
+    {
+      "capability": "airtablePanel.ts#reveal",
+      "ui": [
+        "page:airtablePanel.ts#reveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "airtablePanel.ts#set",
+      "ui": [
+        "page:airtablePanel.ts#set"
+      ],
+      "ops": [
+        "airtable.config.set"
       ]
     },
     {
@@ -474,9 +503,6 @@
       ],
       "ops": [
         "airtable.unregister"
-      ],
-      "core": [
-        "unregisterMcp"
       ]
     },
     {
@@ -486,9 +512,6 @@
       ],
       "ops": [
         "memory.merge.apply"
-      ],
-      "core": [
-        "applyMergedContent"
       ]
     },
     {
@@ -498,9 +521,6 @@
       ],
       "ops": [
         "memory.archive"
-      ],
-      "core": [
-        "archiveMemoryFile"
       ]
     },
     {
@@ -511,11 +531,6 @@
       "ops": [
         "projects.archive",
         "projects.create"
-      ],
-      "core": [
-        "ProjectStatus",
-        "planArchive",
-        "planRestore"
       ]
     },
     {
@@ -555,9 +570,6 @@
       ],
       "ops": [
         "duties.update"
-      ],
-      "core": [
-        "Duty"
       ]
     },
     {
@@ -565,21 +577,28 @@
       "ui": [
         "cmd:agentfarm.backlogAdd"
       ],
-      "ops": [
-        "projects.backlog.add"
-      ]
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "browsePackGallery",
       "ui": [
         "cmd:agentfarm.browsePackGallery"
-      ]
+      ],
+      "gap": {
+        "why": "An op that lists the configured pack-gallery repos and installs a pack from one. The page can; an agent asked to add that agent from the gallery cannot."
+      }
     },
     {
       "capability": "buildSemanticIndex",
       "ui": [
         "cmd:agentfarm.buildSemanticIndex"
-      ]
+      ],
+      "gap": {
+        "why": "memory.semantic.build indexes MEMORY; the TRANSCRIPT index behind search has no build op, so an agent cannot warm the search it is about to use."
+      }
     },
     {
       "capability": "cancelTask",
@@ -591,17 +610,22 @@
       ]
     },
     {
+      "capability": "capabilities.ts#afnav",
+      "ui": [
+        "page:capabilities.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "capabilities.ts#copyDuty",
       "ui": [
         "page:capabilities.ts#copyDuty"
       ],
       "ops": [
         "duties.add"
-      ],
-      "core": [
-        "CLAUDE_MD_SNIPPET",
-        "addDuty",
-        "claudeMdReferencesDuties"
       ]
     },
     {
@@ -611,9 +635,6 @@
       ],
       "ops": [
         "toolbox.enable"
-      ],
-      "core": [
-        "readAgentMcpServers"
       ]
     },
     {
@@ -623,32 +644,56 @@
       ],
       "ops": [
         "memory.copy"
-      ],
-      "core": [
-        "copyMemoryFileTo"
       ]
     },
     {
       "capability": "capabilities.ts#copySkill",
       "ui": [
         "page:capabilities.ts#copySkill"
+      ],
+      "ops": [
+        "toolbox.copy"
       ]
+    },
+    {
+      "capability": "capabilities.ts#open",
+      "ui": [
+        "page:capabilities.ts#open"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "capabilities.ts#openGuide",
+      "ui": [
+        "page:capabilities.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "capabilities.ts#openTaskHistory",
       "ui": [
-        "page:capabilities.ts#openTaskHistory",
-        "ctx:capOpen",
-        "ctx:capTasks",
-        "ctx:capRowOpen",
-        "ctx:capRowTasks"
-      ]
+        "page:capabilities.ts#openTaskHistory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "capabilities.ts#refresh",
       "ui": [
         "page:capabilities.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "clearDoneTasks",
@@ -683,9 +728,9 @@
       "ui": [
         "cmd:agentfarm.configureDocOpen"
       ],
-      "ops": [
-        "docopen.set"
-      ]
+      "gap": {
+        "why": "docopen.set exists, but the command runs its own quick-pick chain and writes the setting itself rather than through the op's core. One of the two has to give."
+      }
     },
     {
       "capability": "configureLivingChecks",
@@ -760,20 +805,33 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#afnav",
+      "ui": [
+        "page:consolePanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "consolePanel.ts#askAnswer",
       "ui": [
-        "ctx:cqEdit",
-        "ctx:cqCopy",
-        "ctx:caAllow",
-        "ctx:caDeny",
-        "ctx:caSkip"
+        "page:consolePanel.ts#askAnswer"
+      ],
+      "ops": [
+        "console.answer"
       ]
     },
     {
       "capability": "consolePanel.ts#attachDrop",
       "ui": [
         "page:consolePanel.ts#attachDrop"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "consolePanel.ts#attachNothing",
@@ -789,7 +847,11 @@
       "capability": "consolePanel.ts#attachPick",
       "ui": [
         "page:consolePanel.ts#attachPick"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "consolePanel.ts#attachTooMany",
@@ -805,36 +867,55 @@
       "capability": "consolePanel.ts#attachUris",
       "ui": [
         "page:consolePanel.ts#attachUris"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "consolePanel.ts#clearQueue",
       "ui": [
         "page:consolePanel.ts#clearQueue"
+      ],
+      "ops": [
+        "console.queue"
       ]
     },
     {
       "capability": "consolePanel.ts#close",
       "ui": [
         "page:consolePanel.ts#close"
+      ],
+      "ops": [
+        "console.close"
       ]
     },
     {
       "capability": "consolePanel.ts#forget",
       "ui": [
         "page:consolePanel.ts#forget"
+      ],
+      "ops": [
+        "console.close"
       ]
     },
     {
       "capability": "consolePanel.ts#forgetLastWindow",
       "ui": [
         "page:consolePanel.ts#forgetLastWindow"
-      ]
+      ],
+      "gap": {
+        "why": "An op to drop a session's remembered terminal window binding. Small, but a stuck binding can only be cleared by hand today."
+      }
     },
     {
       "capability": "consolePanel.ts#interrupt",
       "ui": [
         "page:consolePanel.ts#interrupt"
+      ],
+      "ops": [
+        "console.interrupt"
       ]
     },
     {
@@ -844,16 +925,37 @@
       ],
       "ops": [
         "console.older"
-      ],
-      "core": [
-        "transcriptPos"
       ]
+    },
+    {
+      "capability": "consolePanel.ts#openFile",
+      "ui": [
+        "page:consolePanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#openGuide",
+      "ui": [
+        "page:consolePanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "consolePanel.ts#openPromptSnippets",
       "ui": [
         "page:consolePanel.ts#openPromptSnippets"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "consolePanel.ts#openTranscript",
@@ -864,44 +966,64 @@
         "notices.post",
         "queue.stamp",
         "ui.ctxmenu"
-      ],
-      "core": [
-        "host"
       ]
     },
     {
       "capability": "consolePanel.ts#permissionMode",
       "ui": [
         "page:consolePanel.ts#permissionMode"
+      ],
+      "ops": [
+        "console.permissionMode"
       ]
     },
     {
       "capability": "consolePanel.ts#pickPromptSnippets",
       "ui": [
         "page:consolePanel.ts#pickPromptSnippets"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "consolePanel.ts#promptSnippets",
       "ui": [
         "page:consolePanel.ts#promptSnippets"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#queueSend",
+      "ui": [
+        "page:consolePanel.ts#queueSend"
+      ],
+      "ops": [
+        "console.queue"
       ]
     },
     {
       "capability": "consolePanel.ts#queueTake",
       "ui": [
-        "page:consolePanel.ts#queueTake",
-        "page:consolePanel.ts#queueSend",
-        "page:consolePanel.ts#askAnswer",
-        "ctx:cqNow",
-        "ctx:cqDrop"
+        "page:consolePanel.ts#queueTake"
+      ],
+      "ops": [
+        "console.queue"
       ]
     },
     {
       "capability": "consolePanel.ts#refresh",
       "ui": [
         "page:consolePanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "consolePanel.ts#resume",
@@ -909,56 +1031,75 @@
         "page:consolePanel.ts#resume"
       ],
       "ops": [
-        "agents.defaults",
-        "console.start",
-        "sessions.start"
-      ],
-      "core": [
-        "carriedTotals",
-        "launchDefaults"
+        "console.start"
       ]
     },
     {
       "capability": "consolePanel.ts#resumeQuery",
       "ui": [
         "page:consolePanel.ts#resumeQuery"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "consolePanel.ts#select",
       "ui": [
         "page:consolePanel.ts#select"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "consolePanel.ts#send",
       "ui": [
         "page:consolePanel.ts#send"
+      ],
+      "ops": [
+        "console.send"
       ]
     },
     {
       "capability": "consolePanel.ts#setEffort",
       "ui": [
         "page:consolePanel.ts#setEffort"
+      ],
+      "ops": [
+        "console.setEffort"
       ]
     },
     {
       "capability": "consolePanel.ts#setEngine",
       "ui": [
         "page:consolePanel.ts#setEngine"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "consolePanel.ts#setModel",
       "ui": [
         "page:consolePanel.ts#setModel"
+      ],
+      "ops": [
+        "console.setModel"
       ]
     },
     {
       "capability": "consolePanel.ts#setProject",
       "ui": [
         "page:consolePanel.ts#setProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "consolePanel.ts#start",
@@ -970,17 +1111,17 @@
         "console.start",
         "sessions.start",
         "tasks.add"
-      ],
-      "core": [
-        "engineRefusal",
-        "launchDefaults"
       ]
     },
     {
       "capability": "consolePanel.ts#unpinAgent",
       "ui": [
         "page:consolePanel.ts#unpinAgent"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "consoleResumeSession",
@@ -990,9 +1131,6 @@
       ],
       "ops": [
         "console.start"
-      ],
-      "core": [
-        "carriedTotals"
       ]
     },
     {
@@ -1003,9 +1141,6 @@
       ],
       "ops": [
         "launch.profile.set"
-      ],
-      "core": [
-        "RunSurface"
       ]
     },
     {
@@ -1078,9 +1213,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -1091,9 +1223,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -1104,9 +1233,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -1129,1393 +1255,189 @@
       ]
     },
     {
-      "capability": "ctx:anExport",
-      "ui": [
-        "ctx:anExport"
-      ]
-    },
-    {
-      "capability": "ctx:anReset",
-      "ui": [
-        "ctx:anReset"
-      ]
-    },
-    {
-      "capability": "ctx:asAssign",
-      "ui": [
-        "ctx:asAssign"
-      ]
-    },
-    {
-      "capability": "ctx:asCopyInput",
-      "ui": [
-        "ctx:asCopyInput"
-      ]
-    },
-    {
-      "capability": "ctx:asCopyModel",
-      "ui": [
-        "ctx:asCopyModel"
-      ]
-    },
-    {
-      "capability": "ctx:asCopyPath",
-      "ui": [
-        "ctx:asCopyPath"
-      ]
-    },
-    {
-      "capability": "ctx:asDrop",
-      "ui": [
-        "ctx:asDrop"
-      ]
-    },
-    {
-      "capability": "ctx:asFeedback",
-      "ui": [
-        "ctx:asFeedback"
-      ]
-    },
-    {
-      "capability": "ctx:asKeep",
-      "ui": [
-        "ctx:asKeep"
-      ]
-    },
-    {
-      "capability": "ctx:asOpen",
-      "ui": [
-        "ctx:asOpen"
-      ]
-    },
-    {
-      "capability": "ctx:asRerun",
-      "ui": [
-        "ctx:asRerun"
-      ]
-    },
-    {
-      "capability": "ctx:asVary",
-      "ui": [
-        "ctx:asVary"
-      ]
-    },
-    {
-      "capability": "ctx:atCopyDir",
-      "ui": [
-        "ctx:atCopyDir"
-      ]
-    },
-    {
-      "capability": "ctx:atCopyName",
-      "ui": [
-        "ctx:atCopyName"
-      ]
-    },
-    {
-      "capability": "ctx:backlogEdit",
-      "ui": [
-        "ctx:backlogEdit"
-      ]
-    },
-    {
-      "capability": "ctx:backlogFile",
-      "ui": [
-        "ctx:backlogFile"
-      ]
-    },
-    {
-      "capability": "ctx:backlogGo",
-      "ui": [
-        "ctx:backlogGo"
-      ]
-    },
-    {
-      "capability": "ctx:blCopyBoth",
-      "ui": [
-        "ctx:blCopyBoth"
-      ]
-    },
-    {
-      "capability": "ctx:blCopyCode",
-      "ui": [
-        "ctx:blCopyCode"
-      ]
-    },
-    {
-      "capability": "ctx:blCopyText",
-      "ui": [
-        "ctx:blCopyText"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortL",
-      "ui": [
-        "ctx:blEffortL"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortM",
-      "ui": [
-        "ctx:blEffortM"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortNone",
-      "ui": [
-        "ctx:blEffortNone"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortS",
-      "ui": [
-        "ctx:blEffortS"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortXL",
-      "ui": [
-        "ctx:blEffortXL"
-      ]
-    },
-    {
-      "capability": "ctx:blEffortXS",
-      "ui": [
-        "ctx:blEffortXS"
-      ]
-    },
-    {
-      "capability": "ctx:blGoCustom",
-      "ui": [
-        "ctx:blGoCustom"
-      ]
-    },
-    {
-      "capability": "ctx:blGoObsidian",
-      "ui": [
-        "ctx:blGoObsidian"
-      ]
-    },
-    {
-      "capability": "ctx:blGoPreview",
-      "ui": [
-        "ctx:blGoPreview"
-      ]
-    },
-    {
-      "capability": "ctx:blGoVscode",
-      "ui": [
-        "ctx:blGoVscode"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveBottom",
-      "ui": [
-        "ctx:blMoveBottom"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveDown1",
-      "ui": [
-        "ctx:blMoveDown1"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveDown5",
-      "ui": [
-        "ctx:blMoveDown5"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveTop",
-      "ui": [
-        "ctx:blMoveTop"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveUp1",
-      "ui": [
-        "ctx:blMoveUp1"
-      ]
-    },
-    {
-      "capability": "ctx:blMoveUp5",
-      "ui": [
-        "ctx:blMoveUp5"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioHigh",
-      "ui": [
-        "ctx:blPrioHigh"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioHighest",
-      "ui": [
-        "ctx:blPrioHighest"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioLow",
-      "ui": [
-        "ctx:blPrioLow"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioLowest",
-      "ui": [
-        "ctx:blPrioLowest"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioMedium",
-      "ui": [
-        "ctx:blPrioMedium"
-      ]
-    },
-    {
-      "capability": "ctx:blPrioNormal",
-      "ui": [
-        "ctx:blPrioNormal"
-      ]
-    },
-    {
-      "capability": "ctx:blStateCancelled",
-      "ui": [
-        "ctx:blStateCancelled"
-      ]
-    },
-    {
-      "capability": "ctx:blStateDoing",
-      "ui": [
-        "ctx:blStateDoing"
-      ]
-    },
-    {
-      "capability": "ctx:blStateDone",
-      "ui": [
-        "ctx:blStateDone"
-      ]
-    },
-    {
-      "capability": "ctx:blStateOpen",
-      "ui": [
-        "ctx:blStateOpen"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeBug",
-      "ui": [
-        "ctx:blTypeBug"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeChore",
-      "ui": [
-        "ctx:blTypeChore"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeDebt",
-      "ui": [
-        "ctx:blTypeDebt"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeDoc",
-      "ui": [
-        "ctx:blTypeDoc"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeFeat",
-      "ui": [
-        "ctx:blTypeFeat"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeIdea",
-      "ui": [
-        "ctx:blTypeIdea"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeNone",
-      "ui": [
-        "ctx:blTypeNone"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeResearch",
-      "ui": [
-        "ctx:blTypeResearch"
-      ]
-    },
-    {
-      "capability": "ctx:blTypeUx",
-      "ui": [
-        "ctx:blTypeUx"
-      ]
-    },
-    {
-      "capability": "ctx:caCopy",
-      "ui": [
-        "ctx:caCopy"
-      ]
-    },
-    {
-      "capability": "ctx:capCopy",
-      "ui": [
-        "ctx:capCopy"
-      ]
-    },
-    {
-      "capability": "ctx:capPath",
-      "ui": [
-        "ctx:capPath"
-      ]
-    },
-    {
-      "capability": "ctx:capRowName",
-      "ui": [
-        "ctx:capRowName"
-      ]
-    },
-    {
-      "capability": "ctx:dhCopyNew",
-      "ui": [
-        "ctx:dhCopyNew"
-      ]
-    },
-    {
-      "capability": "ctx:dhCopyOld",
-      "ui": [
-        "ctx:dhCopyOld"
-      ]
-    },
-    {
-      "capability": "ctx:docCopyFull",
-      "ui": [
-        "ctx:docCopyFull"
-      ]
-    },
-    {
-      "capability": "ctx:docCopyPath",
-      "ui": [
-        "ctx:docCopyPath"
-      ]
-    },
-    {
-      "capability": "ctx:docOpenCustom",
-      "ui": [
-        "ctx:docOpenCustom"
-      ]
-    },
-    {
-      "capability": "ctx:docOpenObsidian",
-      "ui": [
-        "ctx:docOpenObsidian"
-      ]
-    },
-    {
-      "capability": "ctx:docOpenPreview",
-      "ui": [
-        "ctx:docOpenPreview"
-      ]
-    },
-    {
-      "capability": "ctx:docOpenVscode",
-      "ui": [
-        "ctx:docOpenVscode"
-      ]
-    },
-    {
-      "capability": "ctx:dutyCopy",
-      "ui": [
-        "ctx:dutyCopy"
-      ]
-    },
-    {
-      "capability": "ctx:dutyOpen",
-      "ui": [
-        "ctx:dutyOpen"
-      ]
-    },
-    {
-      "capability": "ctx:evCopyInput",
-      "ui": [
-        "ctx:evCopyInput"
-      ]
-    },
-    {
-      "capability": "ctx:evCopyTitle",
-      "ui": [
-        "ctx:evCopyTitle"
-      ]
-    },
-    {
-      "capability": "ctx:feedCopy",
-      "ui": [
-        "ctx:feedCopy"
-      ]
-    },
-    {
-      "capability": "ctx:feedHide",
-      "ui": [
-        "ctx:feedHide"
-      ]
-    },
-    {
-      "capability": "ctx:feedOnly",
-      "ui": [
-        "ctx:feedOnly"
-      ]
-    },
-    {
-      "capability": "ctx:insCopy",
-      "ui": [
-        "ctx:insCopy"
-      ]
-    },
-    {
-      "capability": "ctx:lvCopy",
-      "ui": [
-        "ctx:lvCopy"
-      ]
-    },
-    {
-      "capability": "ctx:msCopyGoal",
-      "ui": [
-        "ctx:msCopyGoal"
-      ]
-    },
-    {
-      "capability": "ctx:msCopyId",
-      "ui": [
-        "ctx:msCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:msCopyLedger",
-      "ui": [
-        "ctx:msCopyLedger"
-      ]
-    },
-    {
-      "capability": "ctx:msCopyVerdict",
-      "ui": [
-        "ctx:msCopyVerdict"
-      ]
-    },
-    {
-      "capability": "ctx:msnCancel",
-      "ui": [
-        "ctx:msnCancel"
-      ]
-    },
-    {
-      "capability": "ctx:msnPause",
-      "ui": [
-        "ctx:msnPause"
-      ]
-    },
-    {
-      "capability": "ctx:msnResume",
-      "ui": [
-        "ctx:msnResume"
-      ]
-    },
-    {
-      "capability": "ctx:msnUnpause",
-      "ui": [
-        "ctx:msnUnpause"
-      ]
-    },
-    {
-      "capability": "ctx:msRoundClose",
-      "ui": [
-        "ctx:msRoundClose"
-      ]
-    },
-    {
-      "capability": "ctx:msRoundCopy",
-      "ui": [
-        "ctx:msRoundCopy"
-      ]
-    },
-    {
-      "capability": "ctx:msRoundOnly",
-      "ui": [
-        "ctx:msRoundOnly"
-      ]
-    },
-    {
-      "capability": "ctx:msRoundOpen",
-      "ui": [
-        "ctx:msRoundOpen"
-      ]
-    },
-    {
-      "capability": "ctx:mstCopyOutput",
-      "ui": [
-        "ctx:mstCopyOutput"
-      ]
-    },
-    {
-      "capability": "ctx:mstCopyPrompt",
-      "ui": [
-        "ctx:mstCopyPrompt"
-      ]
-    },
-    {
-      "capability": "ctx:mstCopyTitle",
-      "ui": [
-        "ctx:mstCopyTitle"
-      ]
-    },
-    {
-      "capability": "ctx:msTeamCopy",
-      "ui": [
-        "ctx:msTeamCopy"
-      ]
-    },
-    {
-      "capability": "ctx:ndClear",
-      "ui": [
-        "ctx:ndClear"
-      ]
-    },
-    {
-      "capability": "ctx:ndCopy",
-      "ui": [
-        "ctx:ndCopy"
-      ]
-    },
-    {
-      "capability": "ctx:ntAnswer",
-      "ui": [
-        "ctx:ntAnswer"
-      ]
-    },
-    {
-      "capability": "ctx:ntCopyBody",
-      "ui": [
-        "ctx:ntCopyBody"
-      ]
-    },
-    {
-      "capability": "ctx:ntCopyId",
-      "ui": [
-        "ctx:ntCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:ntCopyTitle",
-      "ui": [
-        "ctx:ntCopyTitle"
-      ]
-    },
-    {
-      "capability": "ctx:ntOnlyAgent",
-      "ui": [
-        "ctx:ntOnlyAgent"
-      ]
-    },
-    {
-      "capability": "ctx:ntOnlyLevel",
-      "ui": [
-        "ctx:ntOnlyLevel"
-      ]
-    },
-    {
-      "capability": "ctx:ntOnlyType",
-      "ui": [
-        "ctx:ntOnlyType"
-      ]
-    },
-    {
-      "capability": "ctx:ntOrig",
-      "ui": [
-        "ctx:ntOrig"
-      ]
-    },
-    {
-      "capability": "ctx:ntPin",
-      "ui": [
-        "ctx:ntPin"
-      ]
-    },
-    {
-      "capability": "ctx:ntQueue",
-      "ui": [
-        "ctx:ntQueue"
-      ]
-    },
-    {
-      "capability": "ctx:ntRead",
-      "ui": [
-        "ctx:ntRead"
-      ]
-    },
-    {
-      "capability": "ctx:ntStars0",
-      "ui": [
-        "ctx:ntStars0"
-      ]
-    },
-    {
-      "capability": "ctx:ntStars1",
-      "ui": [
-        "ctx:ntStars1"
-      ]
-    },
-    {
-      "capability": "ctx:ntStars2",
-      "ui": [
-        "ctx:ntStars2"
-      ]
-    },
-    {
-      "capability": "ctx:ntStars3",
-      "ui": [
-        "ctx:ntStars3"
-      ]
-    },
-    {
-      "capability": "ctx:ntUnpin",
-      "ui": [
-        "ctx:ntUnpin"
-      ]
-    },
-    {
-      "capability": "ctx:ntUnread",
-      "ui": [
-        "ctx:ntUnread"
-      ]
-    },
-    {
-      "capability": "ctx:planCopyId",
-      "ui": [
-        "ctx:planCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:planCopyText",
-      "ui": [
-        "ctx:planCopyText"
-      ]
-    },
-    {
-      "capability": "ctx:planDetail",
-      "ui": [
-        "ctx:planDetail"
-      ]
-    },
-    {
-      "capability": "ctx:planOpenCustom",
-      "ui": [
-        "ctx:planOpenCustom"
-      ]
-    },
-    {
-      "capability": "ctx:planOpenObsidian",
-      "ui": [
-        "ctx:planOpenObsidian"
-      ]
-    },
-    {
-      "capability": "ctx:planOpenPreview",
-      "ui": [
-        "ctx:planOpenPreview"
-      ]
-    },
-    {
-      "capability": "ctx:planOpenVscode",
-      "ui": [
-        "ctx:planOpenVscode"
-      ]
-    },
-    {
-      "capability": "ctx:planTick",
-      "ui": [
-        "ctx:planTick"
-      ]
-    },
-    {
-      "capability": "ctx:planUntick",
-      "ui": [
-        "ctx:planUntick"
-      ]
-    },
-    {
-      "capability": "ctx:plCopyId",
-      "ui": [
-        "ctx:plCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:plCopyPrompt",
-      "ui": [
-        "ctx:plCopyPrompt"
-      ]
-    },
-    {
-      "capability": "ctx:plCopyTitle",
-      "ui": [
-        "ctx:plCopyTitle"
-      ]
-    },
-    {
-      "capability": "ctx:plCopyWhen",
-      "ui": [
-        "ctx:plCopyWhen"
-      ]
-    },
-    {
-      "capability": "ctx:projBacklog",
-      "ui": [
-        "ctx:projBacklog"
-      ]
-    },
-    {
-      "capability": "ctx:projCopyFolder",
-      "ui": [
-        "ctx:projCopyFolder"
-      ]
-    },
-    {
-      "capability": "ctx:projCopyId",
-      "ui": [
-        "ctx:projCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:projCopyName",
-      "ui": [
-        "ctx:projCopyName"
-      ]
-    },
-    {
-      "capability": "ctx:projSettings",
-      "ui": [
-        "ctx:projSettings"
-      ]
-    },
-    {
-      "capability": "ctx:puCopy",
-      "ui": [
-        "ctx:puCopy"
-      ]
-    },
-    {
-      "capability": "ctx:pvCopy",
-      "ui": [
-        "ctx:pvCopy"
-      ]
-    },
-    {
-      "capability": "ctx:pvSetting",
-      "ui": [
-        "ctx:pvSetting"
-      ]
-    },
-    {
-      "capability": "ctx:pvVault",
-      "ui": [
-        "ctx:pvVault"
-      ]
-    },
-    {
-      "capability": "ctx:qAnswerFile",
-      "ui": [
-        "ctx:qAnswerFile"
-      ]
-    },
-    {
-      "capability": "ctx:qCopyId",
-      "ui": [
-        "ctx:qCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:qCopyText",
-      "ui": [
-        "ctx:qCopyText"
-      ]
-    },
-    {
-      "capability": "ctx:qlCopy",
-      "ui": [
-        "ctx:qlCopy"
-      ]
-    },
-    {
-      "capability": "ctx:qlDropHide",
-      "ui": [
-        "ctx:qlDropHide"
-      ]
-    },
-    {
-      "capability": "ctx:qlDropShow",
-      "ui": [
-        "ctx:qlDropShow"
-      ]
-    },
-    {
-      "capability": "ctx:qReport",
-      "ui": [
-        "ctx:qReport"
-      ]
-    },
-    {
-      "capability": "ctx:qUrgNormal",
-      "ui": [
-        "ctx:qUrgNormal"
-      ]
-    },
-    {
-      "capability": "ctx:qUrgSoon",
-      "ui": [
-        "ctx:qUrgSoon"
-      ]
-    },
-    {
-      "capability": "ctx:qUrgUrgent",
-      "ui": [
-        "ctx:qUrgUrgent"
-      ]
-    },
-    {
-      "capability": "ctx:rtCopy",
-      "ui": [
-        "ctx:rtCopy"
-      ]
-    },
-    {
-      "capability": "ctx:runAgain",
-      "ui": [
-        "ctx:runAgain"
-      ]
-    },
-    {
-      "capability": "ctx:runDown",
-      "ui": [
-        "ctx:runDown"
-      ]
-    },
-    {
-      "capability": "ctx:runNext",
-      "ui": [
-        "ctx:runNext"
-      ]
-    },
-    {
-      "capability": "ctx:runRetryEdit",
-      "ui": [
-        "ctx:runRetryEdit"
-      ]
-    },
-    {
-      "capability": "ctx:runSource",
-      "ui": [
-        "ctx:runSource"
-      ]
-    },
-    {
-      "capability": "ctx:runStart",
-      "ui": [
-        "ctx:runStart"
-      ]
-    },
-    {
-      "capability": "ctx:runUnpark",
-      "ui": [
-        "ctx:runUnpark"
-      ]
-    },
-    {
-      "capability": "ctx:runUp",
-      "ui": [
-        "ctx:runUp"
-      ]
-    },
-    {
-      "capability": "ctx:scAssets",
-      "ui": [
-        "ctx:scAssets"
-      ]
-    },
-    {
-      "capability": "ctx:scCopyId",
-      "ui": [
-        "ctx:scCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:scCopyName",
-      "ui": [
-        "ctx:scCopyName"
-      ]
-    },
-    {
-      "capability": "ctx:scCopyRef",
-      "ui": [
-        "ctx:scCopyRef"
-      ]
-    },
-    {
-      "capability": "ctx:scDelete",
-      "ui": [
-        "ctx:scDelete"
-      ]
-    },
-    {
-      "capability": "ctx:scDesc",
-      "ui": [
-        "ctx:scDesc"
-      ]
-    },
-    {
-      "capability": "ctx:scNext",
-      "ui": [
-        "ctx:scNext"
-      ]
-    },
-    {
-      "capability": "ctx:scScope",
-      "ui": [
-        "ctx:scScope"
-      ]
-    },
-    {
-      "capability": "ctx:scStatusApproved",
-      "ui": [
-        "ctx:scStatusApproved"
-      ]
-    },
-    {
-      "capability": "ctx:scStatusDraft",
-      "ui": [
-        "ctx:scStatusDraft"
-      ]
-    },
-    {
-      "capability": "ctx:scStatusGenerating",
-      "ui": [
-        "ctx:scStatusGenerating"
-      ]
-    },
-    {
-      "capability": "ctx:scStatusReview",
-      "ui": [
-        "ctx:scStatusReview"
-      ]
-    },
-    {
-      "capability": "ctx:scValue",
-      "ui": [
-        "ctx:scValue"
-      ]
-    },
-    {
-      "capability": "ctx:shCopyContext",
-      "ui": [
-        "ctx:shCopyContext"
-      ]
-    },
-    {
-      "capability": "ctx:shCopyLine",
-      "ui": [
-        "ctx:shCopyLine"
-      ]
-    },
-    {
-      "capability": "ctx:shOnlyAgent",
-      "ui": [
-        "ctx:shOnlyAgent"
-      ]
-    },
-    {
-      "capability": "ctx:shOnlySession",
-      "ui": [
-        "ctx:shOnlySession"
-      ]
-    },
-    {
-      "capability": "ctx:shOpen",
-      "ui": [
-        "ctx:shOpen"
-      ]
-    },
-    {
-      "capability": "ctx:stCopyKey",
-      "ui": [
-        "ctx:stCopyKey"
-      ]
-    },
-    {
-      "capability": "ctx:stCopyVal",
-      "ui": [
-        "ctx:stCopyVal"
-      ]
-    },
-    {
-      "capability": "ctx:stCopyValue",
-      "ui": [
-        "ctx:stCopyValue"
-      ]
-    },
-    {
-      "capability": "ctx:tbCopyInvoke",
-      "ui": [
-        "ctx:tbCopyInvoke"
-      ]
-    },
-    {
-      "capability": "ctx:tbCopyName",
-      "ui": [
-        "ctx:tbCopyName"
-      ]
-    },
-    {
-      "capability": "ctx:tbCopyPath",
-      "ui": [
-        "ctx:tbCopyPath"
-      ]
-    },
-    {
-      "capability": "ctx:tbMcpOff",
-      "ui": [
-        "ctx:tbMcpOff"
-      ]
-    },
-    {
-      "capability": "ctx:tbMcpOn",
-      "ui": [
-        "ctx:tbMcpOn"
-      ]
-    },
-    {
-      "capability": "ctx:tbPlugOff",
-      "ui": [
-        "ctx:tbPlugOff"
-      ]
-    },
-    {
-      "capability": "ctx:tbPlugOn",
-      "ui": [
-        "ctx:tbPlugOn"
-      ]
-    },
-    {
-      "capability": "ctx:tbTools",
-      "ui": [
-        "ctx:tbTools"
-      ]
-    },
-    {
-      "capability": "ctx:tkCopyId",
-      "ui": [
-        "ctx:tkCopyId"
-      ]
-    },
-    {
-      "capability": "ctx:tkCopyOutput",
-      "ui": [
-        "ctx:tkCopyOutput"
-      ]
-    },
-    {
-      "capability": "ctx:tkCopyPrompt",
-      "ui": [
-        "ctx:tkCopyPrompt"
-      ]
-    },
-    {
-      "capability": "ctx:tkCopyTitle",
-      "ui": [
-        "ctx:tkCopyTitle"
-      ]
-    },
-    {
-      "capability": "ctx:tnCopyAll",
-      "ui": [
-        "ctx:tnCopyAll"
-      ]
-    },
-    {
-      "capability": "ctx:tnCopyAnswer",
-      "ui": [
-        "ctx:tnCopyAnswer"
-      ]
-    },
-    {
-      "capability": "ctx:tnCopyPrompt",
-      "ui": [
-        "ctx:tnCopyPrompt"
-      ]
-    },
-    {
-      "capability": "ctx:tnCopyWhere",
-      "ui": [
-        "ctx:tnCopyWhere"
-      ]
-    },
-    {
-      "capability": "ctx:tnFold",
-      "ui": [
-        "ctx:tnFold"
-      ]
-    },
-    {
-      "capability": "ctx:trackBacklog",
-      "ui": [
-        "ctx:trackBacklog"
-      ]
-    },
-    {
-      "capability": "ctx:trackFillOne",
-      "ui": [
-        "ctx:trackFillOne"
-      ]
-    },
-    {
-      "capability": "ctx:trackOnly",
-      "ui": [
-        "ctx:trackOnly"
-      ]
-    },
-    {
-      "capability": "ctx:trackRecord",
-      "ui": [
-        "ctx:trackRecord"
-      ]
-    },
-    {
-      "capability": "ctx:trkCopyCode",
-      "ui": [
-        "ctx:trkCopyCode"
-      ]
-    },
-    {
-      "capability": "ctx:trkCopyReport",
-      "ui": [
-        "ctx:trkCopyReport"
-      ]
-    },
-    {
-      "capability": "ctx:trkCopySessions",
-      "ui": [
-        "ctx:trkCopySessions"
-      ]
-    },
-    {
-      "capability": "ctx:trkCopyStamp",
-      "ui": [
-        "ctx:trkCopyStamp"
-      ]
-    },
-    {
-      "capability": "ctx:vsCopyResult",
-      "ui": [
-        "ctx:vsCopyResult"
-      ]
-    },
-    {
-      "capability": "ctx:vsCopyText",
-      "ui": [
-        "ctx:vsCopyText"
-      ]
-    },
-    {
-      "capability": "ctx:vsCopyTool",
-      "ui": [
-        "ctx:vsCopyTool"
-      ]
-    },
-    {
-      "capability": "ctx:vsOnlyKind",
-      "ui": [
-        "ctx:vsOnlyKind"
-      ]
-    },
-    {
-      "capability": "ctx:vtCopyAll",
-      "ui": [
-        "ctx:vtCopyAll"
-      ]
-    },
-    {
-      "capability": "ctx:vtCopyAnswer",
-      "ui": [
-        "ctx:vtCopyAnswer"
-      ]
-    },
-    {
-      "capability": "ctx:vtCopyPrompt",
-      "ui": [
-        "ctx:vtCopyPrompt"
-      ]
-    },
-    {
-      "capability": "ctx:vtExportOff",
-      "ui": [
-        "ctx:vtExportOff"
-      ]
-    },
-    {
-      "capability": "ctx:vtExportOn",
-      "ui": [
-        "ctx:vtExportOn"
-      ]
-    },
-    {
-      "capability": "ctx:vtExportOnly",
-      "ui": [
-        "ctx:vtExportOnly"
-      ]
-    },
-    {
-      "capability": "ctx:vtFold",
-      "ui": [
-        "ctx:vtFold"
-      ]
-    },
-    {
-      "capability": "ctx:vtJump",
-      "ui": [
-        "ctx:vtJump"
-      ]
-    },
-    {
-      "capability": "ctx:vtOnly",
-      "ui": [
-        "ctx:vtOnly"
-      ]
-    },
-    {
-      "capability": "ctx:vtUnfold",
-      "ui": [
-        "ctx:vtUnfold"
-      ]
-    },
-    {
-      "capability": "ctx:wfStepCopy",
-      "ui": [
-        "ctx:wfStepCopy"
-      ]
-    },
-    {
-      "capability": "ctx:wfStepDown",
-      "ui": [
-        "ctx:wfStepDown"
-      ]
-    },
-    {
-      "capability": "ctx:wfStepUp",
-      "ui": [
-        "ctx:wfStepUp"
-      ]
+      "capability": "dashboard.ts#afnav",
+      "ui": [
+        "page:dashboard.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "dashboard.ts#compareWindow",
       "ui": [
         "page:dashboard.ts#compareWindow"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "dashboard.ts#focusTerminal",
       "ui": [
         "page:dashboard.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "dashboard.ts#headerAction",
       "ui": [
         "page:dashboard.ts#headerAction"
+      ],
+      "ops": [
+        "constitution.sync"
       ]
     },
     {
       "capability": "dashboard.ts#interruptSession",
       "ui": [
         "page:dashboard.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
       ]
     },
     {
       "capability": "dashboard.ts#manageProjects",
       "ui": [
         "page:dashboard.ts#manageProjects"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "dashboard.ts#openAgent",
       "ui": [
-        "ctx:msStepAgent",
-        "page:missionsPanel.ts#consoleAgent",
-        "ctx:msTeamOpen",
-        "ctx:ndAgent"
-      ]
+        "page:dashboard.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "dashboard.ts#openFarmSettings",
       "ui": [
         "page:dashboard.ts#openFarmSettings"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "dashboard.ts#openGuide",
+      "ui": [
+        "page:dashboard.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "dashboard.ts#openSearch",
       "ui": [
         "page:dashboard.ts#openSearch"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "dashboard.ts#openSession",
+      "ui": [
+        "page:dashboard.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "dashboard.ts#openTimeline",
       "ui": [
         "page:dashboard.ts#openTimeline"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "dashboard.ts#pinSession",
       "ui": [
         "page:dashboard.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
       ]
     },
     {
       "capability": "dashboard.ts#planUsage",
       "ui": [
         "page:dashboard.ts#planUsage"
+      ],
+      "ops": [
+        "usage.plan"
       ]
     },
     {
       "capability": "dashboard.ts#refresh",
       "ui": [
         "page:dashboard.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "dashboard.ts#sessionTurns",
       "ui": [
         "page:dashboard.ts#sessionTurns"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "dashboard.ts#setTableN",
       "ui": [
         "page:dashboard.ts#setTableN"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "dashboard.ts#setUsageEngine",
       "ui": [
         "page:dashboard.ts#setUsageEngine"
+      ],
+      "ops": [
+        "usage.engines"
       ]
     },
     {
       "capability": "dashboard.ts#startSession",
       "ui": [
         "page:dashboard.ts#startSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "dashboard.ts#statusAction",
@@ -2535,11 +1457,6 @@
       "ops": [
         "insights.delegate",
         "insights.dismiss"
-      ],
-      "core": [
-        "Insight",
-        "buildDelegationPrompt",
-        "delegationTitle"
       ]
     },
     {
@@ -2549,9 +1466,6 @@
       ],
       "ops": [
         "duties.delete"
-      ],
-      "core": [
-        "deleteDuty"
       ]
     },
     {
@@ -2623,9 +1537,9 @@
       "ui": [
         "cmd:agentfarm.disableMcpServer"
       ],
-      "ops": [
-        "toolbox.enable"
-      ]
+      "gap": {
+        "why": "toolbox.enable exists, but the command toggles the server through its own local helper rather than the op's core path."
+      }
     },
     {
       "capability": "dismissInsight",
@@ -2638,11 +1552,6 @@
         "insights.dismissed",
         "insights.list",
         "insights.restore"
-      ],
-      "core": [
-        "DismissEntry",
-        "Insight",
-        "insightKey"
       ]
     },
     {
@@ -2655,11 +1564,6 @@
         "sessions.dismiss",
         "sessions.files",
         "sessions.live"
-      ],
-      "core": [
-        "SessionInfo",
-        "readCliSessions",
-        "sessionsDir"
       ]
     },
     {
@@ -2738,9 +1642,9 @@
       "ui": [
         "cmd:agentfarm.enableMcpServer"
       ],
-      "ops": [
-        "toolbox.enable"
-      ]
+      "gap": {
+        "why": "toolbox.enable exists, but the command toggles the server through its own local helper rather than the op's core path."
+      }
     },
     {
       "capability": "endSession",
@@ -2750,46 +1654,86 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
+    },
+    {
+      "capability": "enginesPanel.ts#afnav",
+      "ui": [
+        "page:enginesPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "enginesPanel.ts#engineCommand",
       "ui": [
         "page:enginesPanel.ts#engineCommand"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "enginesPanel.ts#engineDocs",
       "ui": [
         "page:enginesPanel.ts#engineDocs"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "enginesPanel.ts#engineKey",
       "ui": [
         "page:enginesPanel.ts#engineKey"
-      ]
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
     },
     {
       "capability": "enginesPanel.ts#engineTest",
       "ui": [
         "page:enginesPanel.ts#engineTest"
+      ],
+      "ops": [
+        "engines.test"
       ]
     },
     {
       "capability": "enginesPanel.ts#refresh",
       "ui": [
         "page:enginesPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "evalsPanel.ts#af-browse",
       "ui": [
         "page:evalsPanel.ts#af-browse"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
+    },
+    {
+      "capability": "evalsPanel.ts#afnav",
+      "ui": [
+        "page:evalsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "evalsPanel.ts#ev-ab",
@@ -2800,41 +1744,65 @@
         "agents.exclude",
         "agents.roots.remove",
         "memory.distill"
-      ],
-      "core": [
-        "candidates"
       ]
     },
     {
       "capability": "evalsPanel.ts#ev-agent",
       "ui": [
         "page:evalsPanel.ts#ev-agent"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "evalsPanel.ts#ev-case-delete",
       "ui": [
-        "page:evalsPanel.ts#ev-case-delete",
-        "ctx:evDelete"
+        "page:evalsPanel.ts#ev-case-delete"
+      ],
+      "ops": [
+        "evals.delete"
       ]
     },
     {
       "capability": "evalsPanel.ts#ev-case-save",
       "ui": [
         "page:evalsPanel.ts#ev-case-save"
+      ],
+      "ops": [
+        "evals.add"
       ]
     },
     {
       "capability": "evalsPanel.ts#ev-run",
       "ui": [
         "page:evalsPanel.ts#ev-run"
-      ]
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "Documented as needing a person: the run exists to be judged by one, and a bridge caller would only be automating the judgement away."
+      }
+    },
+    {
+      "capability": "evalsPanel.ts#openGuide",
+      "ui": [
+        "page:evalsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "evalsPanel.ts#refresh",
       "ui": [
         "page:evalsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "exportAgentPack",
@@ -2853,9 +1821,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "ENGINE_LABELS"
       ]
     },
     {
@@ -2865,9 +1830,6 @@
       ],
       "ops": [
         "constitution.sync"
-      ],
-      "core": [
-        "expandEnvPath"
       ]
     },
     {
@@ -2902,9 +1864,9 @@
       "ui": [
         "cmd:agentfarm.exportSequence"
       ],
-      "ops": [
-        "studio.export"
-      ]
+      "gap": {
+        "why": "studio.export exists, but the command builds the sequence through its own local path; the two do not meet at one function."
+      }
     },
     {
       "capability": "farmServiceStatus",
@@ -2922,9 +1884,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -2944,9 +1903,6 @@
       "ops": [
         "insights.delegate",
         "insights.dismiss"
-      ],
-      "core": [
-        "Insight"
       ]
     },
     {
@@ -2967,9 +1923,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -2979,9 +1932,6 @@
       ],
       "ops": [
         "constitution.sync"
-      ],
-      "core": [
-        "expandEnvPath"
       ]
     },
     {
@@ -2989,9 +1939,9 @@
       "ui": [
         "cmd:agentfarm.importAgentPackInto"
       ],
-      "ops": [
-        "agents.pack.import"
-      ]
+      "gap": {
+        "why": "agents.pack.import exists, but this entry point applies the pack through its own local installer rather than the op's core."
+      }
     },
     {
       "capability": "insightHistory",
@@ -3004,11 +1954,6 @@
         "insights.dismiss",
         "insights.history",
         "insights.list"
-      ],
-      "core": [
-        "describeRecord",
-        "insightKey",
-        "summarizeInsightHistory"
       ]
     },
     {
@@ -3018,9 +1963,6 @@
       ],
       "ops": [
         "service.install"
-      ],
-      "core": [
-        "installService"
       ]
     },
     {
@@ -3030,9 +1972,6 @@
       ],
       "ops": [
         "hooks.install"
-      ],
-      "core": [
-        "installHooksInto"
       ]
     },
     {
@@ -3052,9 +1991,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -3085,9 +2021,6 @@
       ],
       "ops": [
         "launch.profile.set"
-      ],
-      "core": [
-        "RunSurface"
       ]
     },
     {
@@ -3104,19 +2037,35 @@
       "capability": "livingPanel.ts#af-browse",
       "ui": [
         "page:livingPanel.ts#af-browse"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
+    },
+    {
+      "capability": "livingPanel.ts#afnav",
+      "ui": [
+        "page:livingPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "livingPanel.ts#checks-save",
       "ui": [
         "page:livingPanel.ts#checks-save"
+      ],
+      "ops": [
+        "living.check.add"
       ]
     },
     {
       "capability": "livingPanel.ts#goto",
       "ui": [
-        "page:livingPanel.ts#goto",
-        "ctx:lvGo"
+        "page:livingPanel.ts#goto"
       ],
       "exempt": {
         "kind": "navigation",
@@ -3124,16 +2073,34 @@
       }
     },
     {
+      "capability": "livingPanel.ts#openGuide",
+      "ui": [
+        "page:livingPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "livingPanel.ts#openSettingsJson",
       "ui": [
         "page:livingPanel.ts#openSettingsJson"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "livingPanel.ts#refresh",
       "ui": [
         "page:livingPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "manageProjects",
@@ -3146,27 +2113,50 @@
       }
     },
     {
+      "capability": "memoryGraph.ts#afnav",
+      "ui": [
+        "page:memoryGraph.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "memoryGraph.ts#mem-ask",
       "ui": [
         "page:memoryGraph.ts#mem-ask"
+      ],
+      "ops": [
+        "memory.ask"
       ]
     },
     {
       "capability": "memoryGraph.ts#mem-distill",
       "ui": [
         "page:memoryGraph.ts#mem-distill"
+      ],
+      "ops": [
+        "memory.distill"
       ]
     },
     {
       "capability": "memoryGraph.ts#mem-fix",
       "ui": [
         "page:memoryGraph.ts#mem-fix"
+      ],
+      "ops": [
+        "memory.index.fix"
       ]
     },
     {
       "capability": "memoryGraph.ts#mem-save",
       "ui": [
         "page:memoryGraph.ts#mem-save"
+      ],
+      "ops": [
+        "memory.add",
+        "memory.copy"
       ]
     },
     {
@@ -3178,26 +2168,46 @@
         "memory.archive",
         "memory.copy",
         "memory.distill"
-      ],
-      "core": [
-        "copyMemoryFileTo",
-        "resolveMemoryFile"
       ]
+    },
+    {
+      "capability": "memoryGraph.ts#open",
+      "ui": [
+        "page:memoryGraph.ts#open"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "memoryGraph.ts#openGuide",
+      "ui": [
+        "page:memoryGraph.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "memoryGraph.ts#refresh",
       "ui": [
         "page:memoryGraph.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "missionAnswer",
       "ui": [
         "cmd:agentfarm.missionAnswer"
       ],
-      "ops": [
-        "missions.answer"
-      ]
+      "gap": {
+        "why": "missions.answer exists, but the command answers through a local host helper rather than the op's core path."
+      }
     },
     {
       "capability": "missionApprove",
@@ -3263,112 +2273,159 @@
       ]
     },
     {
+      "capability": "missionsPanel.ts#afnav",
+      "ui": [
+        "page:missionsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "missionsPanel.ts#answer",
       "ui": [
         "page:missionsPanel.ts#answer"
+      ],
+      "ops": [
+        "missions.answer"
       ]
     },
     {
       "capability": "missionsPanel.ts#approve",
       "ui": [
-        "ctx:msnApprove"
+        "page:missionsPanel.ts#approve"
       ],
-      "ops": [
-        "missions.rerun",
-        "studio.rerun",
-        "tasks.rerun"
-      ],
-      "core": [
-        "rerun"
-      ]
+      "gap": {
+        "why": "missions.approve exists, but the page settles the approval through its own deps callback rather than the op's core path."
+      }
     },
     {
       "capability": "missionsPanel.ts#consoleAgent",
       "ui": [
-        "ctx:msTeamTalk"
-      ]
+        "page:missionsPanel.ts#consoleAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "missionsPanel.ts#control",
       "ui": [
-        "page:missionsPanel.ts#control",
-        "page:missionsPanel.ts#approve",
-        "page:missionsPanel.ts#reject",
-        "page:missionsPanel.ts#rerun",
-        "page:missionsPanel.ts#delete",
-        "page:projectsPanel.ts#delete",
-        "page:secretsPanel.ts#delete",
-        "page:studioPanel.ts#rerun",
-        "page:tasksPanel.ts#delete",
-        "page:tasksPanel.ts#approve",
-        "ctx:msnOpen",
-        "ctx:msnFold"
+        "page:missionsPanel.ts#control"
       ],
       "ops": [
         "console.interrupt",
         "missions.start"
-      ],
-      "core": [
-        "control"
       ]
     },
     {
       "capability": "missionsPanel.ts#create",
       "ui": [
         "page:missionsPanel.ts#create"
+      ],
+      "ops": [
+        "missions.start"
       ]
     },
     {
       "capability": "missionsPanel.ts#delete",
       "ui": [
-        "ctx:msnDelete"
-      ]
+        "page:missionsPanel.ts#delete"
+      ],
+      "gap": {
+        "why": "missions.run.delete exists, but the page deletes through its own deps callback rather than the op's core path."
+      }
+    },
+    {
+      "capability": "missionsPanel.ts#openAgent",
+      "ui": [
+        "page:missionsPanel.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "missionsPanel.ts#openFile",
+      "ui": [
+        "page:missionsPanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "missionsPanel.ts#openGuide",
+      "ui": [
+        "page:missionsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "missionsPanel.ts#openSession",
+      "ui": [
+        "page:missionsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "missionsPanel.ts#pickFolder",
       "ui": [
         "page:missionsPanel.ts#pickFolder"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "missionsPanel.ts#refresh",
       "ui": [
         "page:missionsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "missionsPanel.ts#reject",
       "ui": [
-        "ctx:msnReject"
+        "page:missionsPanel.ts#reject"
       ],
       "ops": [
-        "missions.rerun",
-        "studio.rerun",
-        "tasks.rerun"
-      ],
-      "core": [
-        "rerun"
+        "console.interrupt",
+        "missions.start"
       ]
     },
     {
       "capability": "missionsPanel.ts#rerun",
       "ui": [
-        "ctx:msnRerun"
+        "page:missionsPanel.ts#rerun"
       ],
       "ops": [
-        "missions.rerun",
-        "studio.rerun",
-        "tasks.rerun"
-      ],
-      "core": [
-        "rerun"
+        "missions.rerun"
       ]
     },
     {
       "capability": "missionsPanel.ts#tail",
       "ui": [
         "page:missionsPanel.ts#tail"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "missionStepOutput",
@@ -3387,9 +2444,6 @@
       ],
       "ops": [
         "duties.move"
-      ],
-      "core": [
-        "moveDuty"
       ]
     },
     {
@@ -3399,9 +2453,6 @@
       ],
       "ops": [
         "duties.move"
-      ],
-      "core": [
-        "moveDuty"
       ]
     },
     {
@@ -3473,139 +2524,228 @@
       }
     },
     {
+      "capability": "noticesPanel.ts#afnav",
+      "ui": [
+        "page:noticesPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "noticesPanel.ts#answer",
       "ui": [
         "page:noticesPanel.ts#answer"
+      ],
+      "ops": [
+        "missions.answer"
       ]
     },
     {
       "capability": "noticesPanel.ts#clearRead",
       "ui": [
         "page:noticesPanel.ts#clearRead"
+      ],
+      "ops": [
+        "notices.dismiss"
       ]
     },
     {
       "capability": "noticesPanel.ts#configureDocOpen",
       "ui": [
         "page:noticesPanel.ts#configureDocOpen"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "noticesPanel.ts#convertToQueue",
       "ui": [
         "page:noticesPanel.ts#convertToQueue"
+      ],
+      "ops": [
+        "queue.fromNotice"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#decline",
+      "ui": [
+        "page:noticesPanel.ts#decline"
+      ],
+      "ops": [
+        "notices.dismiss"
       ]
     },
     {
       "capability": "noticesPanel.ts#dismiss",
       "ui": [
-        "page:noticesPanel.ts#dismiss",
-        "ctx:ntReport",
-        "ctx:ntExport",
-        "ctx:ntDismiss",
-        "ctx:ntDelete"
+        "page:noticesPanel.ts#dismiss"
+      ],
+      "ops": [
+        "notices.dismiss"
       ]
     },
     {
       "capability": "noticesPanel.ts#dismissMany",
       "ui": [
         "page:noticesPanel.ts#dismissMany"
+      ],
+      "ops": [
+        "notices.dismiss"
       ]
     },
     {
       "capability": "noticesPanel.ts#edit",
       "ui": [
         "page:noticesPanel.ts#edit"
-      ]
+      ],
+      "gap": {
+        "why": "notices.* can post, read, dismiss and resolve but not EDIT the body of a notice already on the board."
+      }
     },
     {
       "capability": "noticesPanel.ts#exportChoose",
       "ui": [
         "page:noticesPanel.ts#exportChoose"
-      ]
+      ],
+      "gap": {
+        "why": "Exporting the notices view as a document has no op; reports.* covers sessions and costs, not the board."
+      }
+    },
+    {
+      "capability": "noticesPanel.ts#exportOne",
+      "ui": [
+        "page:noticesPanel.ts#exportOne"
+      ],
+      "gap": {
+        "why": "Writing one notice out as a document has no op. notices.read returns the text but nothing files it."
+      }
     },
     {
       "capability": "noticesPanel.ts#handoffNotice",
       "ui": [
-        "ctx:ntEdit",
-        "ctx:ntDecline",
-        "ctx:ntHand"
+        "page:noticesPanel.ts#handoffNotice"
       ],
       "ops": [
-        "missions.answer",
-        "notices.resolve"
-      ],
-      "core": [
-        "decline"
+        "queue.fromNotice"
       ]
     },
     {
       "capability": "noticesPanel.ts#markAllRead",
       "ui": [
         "page:noticesPanel.ts#markAllRead"
+      ],
+      "ops": [
+        "notices.read"
       ]
     },
     {
       "capability": "noticesPanel.ts#markRead",
       "ui": [
-        "page:noticesPanel.ts#markRead",
-        "page:noticesPanel.ts#pin",
-        "page:noticesPanel.ts#setStars",
-        "page:noticesPanel.ts#handoffNotice",
-        "page:noticesPanel.ts#decline",
-        "page:noticesPanel.ts#exportOne",
-        "ctx:ntOpen",
-        "page:noticesPanel.ts#openReport",
-        "ctx:ntFold"
+        "page:noticesPanel.ts#markRead"
+      ],
+      "ops": [
+        "notices.read"
       ]
     },
     {
       "capability": "noticesPanel.ts#markReadMany",
       "ui": [
         "page:noticesPanel.ts#markReadMany"
+      ],
+      "ops": [
+        "notices.read"
       ]
     },
     {
       "capability": "noticesPanel.ts#openExternal",
       "ui": [
-        "page:noticesPanel.ts#openExternal",
-        "page:queuePanel.ts#openExternal",
-        "page:toolboxPanel.ts#openExternal",
-        "page:toolboxPanel.ts#skillScope",
-        "ctx:tbHome",
-        "ctx:tbProbe",
-        "ctx:tbMcpEdit"
-      ]
+        "page:noticesPanel.ts#openExternal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "noticesPanel.ts#openProject",
       "ui": [
         "page:noticesPanel.ts#openProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "noticesPanel.ts#openQueueItem",
       "ui": [
         "page:noticesPanel.ts#openQueueItem"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "noticesPanel.ts#openReport",
+      "ui": [
+        "page:noticesPanel.ts#openReport"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "noticesPanel.ts#pin",
+      "ui": [
+        "page:noticesPanel.ts#pin"
+      ],
+      "gap": {
+        "why": "Pinning a notice to the top of the board has no op. An agent can post but cannot say keep this one visible."
+      }
     },
     {
       "capability": "noticesPanel.ts#refresh",
       "ui": [
         "page:noticesPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "noticesPanel.ts#setProject",
       "ui": [
         "page:noticesPanel.ts#setProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "noticesPanel.ts#setStars",
+      "ui": [
+        "page:noticesPanel.ts#setStars"
+      ],
+      "gap": {
+        "why": "The star rating a notice carries is settable only on the page; there is no op to score one."
+      }
     },
     {
       "capability": "noticesPanel.ts#undo",
       "ui": [
         "page:noticesPanel.ts#undo"
-      ]
+      ],
+      "gap": {
+        "why": "The board's undo of a bulk dismiss has no op, so a mistaken notices.dismiss cannot be taken back over the bridge."
+      }
     },
     {
       "capability": "openAgentDetail",
@@ -3693,25 +2833,41 @@
       "capability": "openDoc.ts#custom",
       "ui": [
         "page:openDoc.ts#custom"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "openDoc.ts#obsidian",
       "ui": [
         "page:openDoc.ts#obsidian"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "openDoc.ts#preview",
       "ui": [
         "page:openDoc.ts#preview"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "openDoc.ts#vscode",
       "ui": [
         "page:openDoc.ts#vscode"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "openDuties",
@@ -3731,7 +2887,8 @@
       ],
       "exempt": {
         "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op.",
+        "despite": "It writes the BEFORE side of a diff into a scratch file so the editor has something to compare against, then opens the pair. Nothing of the user's is changed."
       }
     },
     {
@@ -3772,10 +2929,6 @@
       "ops": [
         "constitution.sync",
         "docopen.get"
-      ],
-      "core": [
-        "DOC_OPEN_MODES",
-        "scanRoots"
       ]
     },
     {
@@ -3792,7 +2945,10 @@
       "capability": "openForecast",
       "ui": [
         "cmd:agentfarm.openForecast"
-      ]
+      ],
+      "gap": {
+        "why": "The schedule forecast (what will fire, when, and what it will cost) is computed for the page only; no op returns it."
+      }
     },
     {
       "capability": "openGallery",
@@ -3944,9 +3100,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -4054,7 +3207,10 @@
       "capability": "openWebView",
       "ui": [
         "cmd:agentfarm.openWebView"
-      ]
+      ],
+      "gap": {
+        "why": "Turning the phone-facing web view on, choosing its binding and minting its token is panel-only. It opens a port, so an op needs a confirm-shaped contract like service.install."
+      }
     },
     {
       "capability": "pauseAutomations",
@@ -4075,11 +3231,6 @@
       "ops": [
         "sessions.files",
         "sessions.pin"
-      ],
-      "core": [
-        "SessionInfo",
-        "isPinned",
-        "togglePin"
       ]
     },
     {
@@ -4093,40 +3244,93 @@
       ]
     },
     {
+      "capability": "portfolioPanel.ts#afnav",
+      "ui": [
+        "page:portfolioPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "portfolioPanel.ts#agent-new",
       "ui": [
         "page:portfolioPanel.ts#agent-new"
       ],
       "ops": [
         "agents.pack.import"
-      ],
-      "core": [
-        "importPack"
       ]
     },
     {
       "capability": "portfolioPanel.ts#assignProject",
       "ui": [
         "page:portfolioPanel.ts#assignProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "portfolioPanel.ts#manageProjects",
       "ui": [
         "page:portfolioPanel.ts#manageProjects"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "portfolioPanel.ts#openAgent",
+      "ui": [
+        "page:portfolioPanel.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "portfolioPanel.ts#openGuide",
+      "ui": [
+        "page:portfolioPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "portfolioPanel.ts#refresh",
       "ui": [
         "page:portfolioPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "portfolioPanel.ts#reveal",
+      "ui": [
+        "page:portfolioPanel.ts#reveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "portfolioPanel.ts#startSession",
       "ui": [
         "page:portfolioPanel.ts#startSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectFromSession",
@@ -4149,15 +3353,31 @@
       ]
     },
     {
+      "capability": "projectsPanel.ts#afnav",
+      "ui": [
+        "page:projectsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "projectsPanel.ts#applyBackfill",
       "ui": [
         "page:projectsPanel.ts#applyBackfill"
-      ]
+      ],
+      "gap": {
+        "why": "projects.tracks.backfill exists, but the page applies the chosen rows through its own deps path rather than the op's core."
+      }
     },
     {
       "capability": "projectsPanel.ts#archive",
       "ui": [
         "page:projectsPanel.ts#archive"
+      ],
+      "ops": [
+        "projects.archive"
       ]
     },
     {
@@ -4167,98 +3387,153 @@
       ],
       "ops": [
         "projects.backlog.add"
-      ],
-      "core": [
-        "backlogAdd"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogArchive",
       "ui": [
         "page:projectsPanel.ts#backlogArchive"
+      ],
+      "ops": [
+        "projects.backlog.archive"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogCode",
       "ui": [
         "page:projectsPanel.ts#backlogCode"
+      ],
+      "ops": [
+        "projects.backlog.code"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogGather",
       "ui": [
-        "page:projectsPanel.ts#backlogGather",
-        "ctx:backlogTrack",
-        "page:projectsPanel.ts#backlogJoinParent",
-        "ctx:backlogGather"
+        "page:projectsPanel.ts#backlogGather"
+      ],
+      "ops": [
+        "projects.backlog.gather"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogHold",
+      "ui": [
+        "page:projectsPanel.ts#backlogHold"
+      ],
+      "ops": [
+        "projects.backlog.hold"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogJoinParent",
       "ui": [
-        "ctx:backlogJoinParent"
+        "page:projectsPanel.ts#backlogJoinParent"
+      ],
+      "ops": [
+        "projects.backlog.under"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogMove",
       "ui": [
         "page:projectsPanel.ts#backlogMove"
+      ],
+      "ops": [
+        "projects.backlog.move"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogOpenItem",
       "ui": [
-        "page:projectsPanel.ts#backlogOpenItem",
-        "ctx:trackOpen"
+        "page:projectsPanel.ts#backlogOpenItem"
+      ],
+      "ops": [
+        "projects.backlog.open"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogQueue",
       "ui": [
         "page:projectsPanel.ts#backlogQueue"
+      ],
+      "ops": [
+        "projects.backlog.queue"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogReorder",
       "ui": [
         "page:projectsPanel.ts#backlogReorder"
+      ],
+      "ops": [
+        "projects.backlog.reorder"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogSet",
       "ui": [
         "page:projectsPanel.ts#backlogSet"
+      ],
+      "ops": [
+        "projects.backlog.set"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogState",
       "ui": [
         "page:projectsPanel.ts#backlogState"
+      ],
+      "ops": [
+        "projects.backlog.check"
       ]
     },
     {
       "capability": "projectsPanel.ts#backlogTidy",
       "ui": [
         "page:projectsPanel.ts#backlogTidy"
+      ],
+      "ops": [
+        "projects.backlog.tidy"
       ]
     },
     {
       "capability": "projectsPanel.ts#browseFolder",
       "ui": [
         "page:projectsPanel.ts#browseFolder"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "projectsPanel.ts#create",
       "ui": [
         "page:projectsPanel.ts#create"
+      ],
+      "ops": [
+        "projects.create"
       ]
+    },
+    {
+      "capability": "projectsPanel.ts#delete",
+      "ui": [
+        "page:projectsPanel.ts#delete"
+      ],
+      "gap": {
+        "why": "Deleting a project from the page does not meet projects.archive at a shared function; the two are separate implementations of one act."
+      }
     },
     {
       "capability": "projectsPanel.ts#focusTerminal",
       "ui": [
         "page:projectsPanel.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "projectsPanel.ts#handover",
@@ -4269,121 +3544,202 @@
         "projects.get",
         "projects.handover",
         "search.transcripts"
-      ],
-      "core": [
-        "handover"
       ]
     },
     {
       "capability": "projectsPanel.ts#interruptSession",
       "ui": [
         "page:projectsPanel.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
       ]
     },
     {
       "capability": "projectsPanel.ts#mission",
       "ui": [
         "page:projectsPanel.ts#mission"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#newDoc",
       "ui": [
         "page:projectsPanel.ts#newDoc"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#newSchedule",
       "ui": [
         "page:projectsPanel.ts#newSchedule"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#newTask",
       "ui": [
         "page:projectsPanel.ts#newTask"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#newTrigger",
       "ui": [
         "page:projectsPanel.ts#newTrigger"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#notice",
       "ui": [
         "page:projectsPanel.ts#notice"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#openDoc",
       "ui": [
         "page:projectsPanel.ts#openDoc"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#openLink",
       "ui": [
-        "page:projectsPanel.ts#openLink",
-        "ctx:projReveal",
-        "ctx:feedOpen"
-      ]
+        "page:projectsPanel.ts#openLink"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "projectsPanel.ts#openSession",
+      "ui": [
+        "page:projectsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "projectsPanel.ts#openSessions",
+      "ui": [
+        "page:projectsPanel.ts#openSessions"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#openWorkRow",
       "ui": [
         "page:projectsPanel.ts#openWorkRow"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#pickFolder",
       "ui": [
         "page:projectsPanel.ts#pickFolder"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "projectsPanel.ts#pinSession",
       "ui": [
         "page:projectsPanel.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
       ]
     },
     {
       "capability": "projectsPanel.ts#planAdd",
       "ui": [
         "page:projectsPanel.ts#planAdd"
+      ],
+      "ops": [
+        "projects.plan.add"
       ]
     },
     {
       "capability": "projectsPanel.ts#planCheck",
       "ui": [
         "page:projectsPanel.ts#planCheck"
+      ],
+      "ops": [
+        "projects.plan.check"
       ]
     },
     {
       "capability": "projectsPanel.ts#queue",
       "ui": [
         "page:projectsPanel.ts#queue"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#queueAdd",
       "ui": [
-        "page:projectsPanel.ts#queueAdd",
-        "ctx:backlogQueue"
-      ]
+        "page:projectsPanel.ts#queueAdd"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#recreateFolder",
       "ui": [
         "page:projectsPanel.ts#recreateFolder"
+      ],
+      "ops": [
+        "projects.create"
       ]
     },
     {
       "capability": "projectsPanel.ts#refresh",
       "ui": [
         "page:projectsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "projectsPanel.ts#rescan",
@@ -4393,92 +3749,123 @@
       "ops": [
         "insights.list",
         "projects.rescan"
-      ],
-      "core": [
-        "rescan"
       ]
     },
     {
       "capability": "projectsPanel.ts#revealFolder",
       "ui": [
-        "page:projectsPanel.ts#revealFolder",
-        "page:timeline.ts#revealFolder",
-        "ctx:projSessions",
-        "ctx:projActive",
-        "ctx:projInactive"
-      ]
+        "page:projectsPanel.ts#revealFolder"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "projectsPanel.ts#save",
       "ui": [
         "page:projectsPanel.ts#save"
+      ],
+      "ops": [
+        "projects.set"
       ]
     },
     {
       "capability": "projectsPanel.ts#savePeople",
       "ui": [
         "page:projectsPanel.ts#savePeople"
+      ],
+      "ops": [
+        "projects.people.set"
       ]
     },
     {
       "capability": "projectsPanel.ts#saveTemplate",
       "ui": [
         "page:projectsPanel.ts#saveTemplate"
+      ],
+      "ops": [
+        "projects.template.save"
       ]
     },
     {
       "capability": "projectsPanel.ts#schedule",
       "ui": [
         "page:projectsPanel.ts#schedule"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#selectDoc",
       "ui": [
-        "page:projectsPanel.ts#selectDoc",
-        "ctx:planOpen",
-        "page:settingsPanel.ts#docOpenSet",
-        "ctx:docOpen",
-        "ctx:docShow"
-      ]
+        "page:projectsPanel.ts#selectDoc"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "projectsPanel.ts#sessionTurns",
       "ui": [
         "page:projectsPanel.ts#sessionTurns"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "projectsPanel.ts#setActive",
       "ui": [
-        "page:projectsPanel.ts#setActive",
-        "page:projectsPanel.ts#openSessions",
-        "ctx:projOpen"
+        "page:projectsPanel.ts#setActive"
+      ],
+      "ops": [
+        "projects.set"
       ]
     },
     {
       "capability": "projectsPanel.ts#setTableN",
       "ui": [
         "page:projectsPanel.ts#setTableN"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "projectsPanel.ts#startSession",
       "ui": [
         "page:projectsPanel.ts#startSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#suggestFolder",
       "ui": [
         "page:projectsPanel.ts#suggestFolder"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "projectsPanel.ts#task",
       "ui": [
         "page:projectsPanel.ts#task"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#taskAction",
@@ -4488,41 +3875,54 @@
       "ops": [
         "tasks.cancel",
         "tasks.rerun"
-      ],
-      "core": [
-        "cancelTask",
-        "retryTask"
       ]
     },
     {
       "capability": "projectsPanel.ts#trackBackfill",
       "ui": [
         "page:projectsPanel.ts#trackBackfill"
+      ],
+      "ops": [
+        "projects.tracks.backfill"
       ]
     },
     {
       "capability": "projectsPanel.ts#trackRebuild",
       "ui": [
         "page:projectsPanel.ts#trackRebuild"
-      ]
+      ],
+      "gap": {
+        "why": "Rebuilding a project's track history from its sessions is a page-only path; no op shares its core."
+      }
     },
     {
       "capability": "projectsPanel.ts#trackRecord",
       "ui": [
         "page:projectsPanel.ts#trackRecord"
+      ],
+      "ops": [
+        "projects.track"
       ]
     },
     {
       "capability": "projectsPanel.ts#trigger",
       "ui": [
         "page:projectsPanel.ts#trigger"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "projectsPanel.ts#view",
       "ui": [
         "page:projectsPanel.ts#view"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "queueAdd",
@@ -4538,94 +3938,147 @@
       "capability": "queuePanel.ts#add",
       "ui": [
         "page:queuePanel.ts#add"
+      ],
+      "ops": [
+        "queue.add"
       ]
+    },
+    {
+      "capability": "queuePanel.ts#afnav",
+      "ui": [
+        "page:queuePanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "queuePanel.ts#answer",
       "ui": [
         "page:queuePanel.ts#answer"
+      ],
+      "ops": [
+        "missions.answer"
       ]
     },
     {
       "capability": "queuePanel.ts#configureDocOpen",
       "ui": [
         "page:queuePanel.ts#configureDocOpen"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "queuePanel.ts#drop",
       "ui": [
-        "ctx:qHand",
-        "ctx:qDrop"
+        "page:queuePanel.ts#drop"
       ],
-      "ops": [
-        "workflows.resume"
-      ],
-      "core": [
-        "handoff"
-      ]
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "queuePanel.ts#edit",
       "ui": [
         "page:queuePanel.ts#edit"
+      ],
+      "ops": [
+        "queue.edit"
       ]
+    },
+    {
+      "capability": "queuePanel.ts#handoff",
+      "ui": [
+        "page:queuePanel.ts#handoff"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "queuePanel.ts#openExternal",
+      "ui": [
+        "page:queuePanel.ts#openExternal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "queuePanel.ts#openFile",
+      "ui": [
+        "page:queuePanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "queuePanel.ts#openNotice",
+      "ui": [
+        "page:queuePanel.ts#openNotice"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "queuePanel.ts#openProject",
       "ui": [
         "page:queuePanel.ts#openProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "queuePanel.ts#refresh",
       "ui": [
         "page:queuePanel.ts#refresh"
       ],
-      "ops": [
-        "projects.backlog.open"
-      ],
-      "core": [
-        "openDoc"
-      ]
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "queuePanel.ts#remove",
       "ui": [
-        "page:queuePanel.ts#remove",
-        "page:toolboxPanel.ts#remove",
-        "ctx:qAnswer",
-        "ctx:qEdit"
-      ]
-    },
-    {
-      "capability": "queuePanel.ts#remove",
-      "ui": [
-        "ctx:qRemove",
-        "page:toolboxPanel.ts#probe",
-        "page:toolboxPanel.ts#togglePlugin",
-        "page:toolboxPanel.ts#toggleMcp",
-        "ctx:tbRemove"
+        "page:queuePanel.ts#remove"
       ],
       "ops": [
-        "living.check.add",
-        "living.checks",
-        "projects.backlog",
-        "toolbox.enable",
-        "toolbox.mcptools"
-      ],
-      "core": [
-        "probe",
-        "setPluginEnabled",
-        "setServerDisabled",
-        "warn"
+        "queue.remove"
       ]
     },
     {
       "capability": "queuePanel.ts#setProject",
       "ui": [
         "page:queuePanel.ts#setProject"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "queuePanel.ts#setUrgency",
+      "ui": [
+        "page:queuePanel.ts#setUrgency"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "quickMenu",
@@ -4664,9 +4117,6 @@
       ],
       "ops": [
         "studio.asset.register"
-      ],
-      "core": [
-        "registerExternalAsset"
       ]
     },
     {
@@ -4676,9 +4126,6 @@
       ],
       "ops": [
         "service.remove"
-      ],
-      "core": [
-        "removeService"
       ]
     },
     {
@@ -4688,9 +4135,6 @@
       ],
       "ops": [
         "hooks.remove"
-      ],
-      "core": [
-        "removeHooksFrom"
       ]
     },
     {
@@ -4707,9 +4151,9 @@
       "ui": [
         "cmd:agentfarm.removeSkill"
       ],
-      "ops": [
-        "toolbox.remove"
-      ]
+      "gap": {
+        "why": "toolbox.remove exists, but the command removes the folder itself rather than through the op's core path."
+      }
     },
     {
       "capability": "renameSession",
@@ -4719,9 +4163,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -4750,9 +4191,6 @@
       ],
       "ops": [
         "projects.rescan"
-      ],
-      "core": [
-        "scanProjectsRoot"
       ]
     },
     {
@@ -4765,9 +4203,6 @@
         "insights.dismiss",
         "insights.dismissed",
         "insights.restore"
-      ],
-      "core": [
-        "DismissEntry"
       ]
     },
     {
@@ -4790,12 +4225,6 @@
         "sessions.dismiss",
         "sessions.files",
         "sessions.live"
-      ],
-      "core": [
-        "SessionInfo",
-        "carriedTotals",
-        "ownerOf",
-        "readCliSessions"
       ]
     },
     {
@@ -4810,15 +4239,6 @@
         "sessions.live",
         "sessions.start",
         "tasks.add"
-      ],
-      "core": [
-        "ENGINE_LABELS",
-        "LaunchOptions",
-        "SessionInfo",
-        "engineRefusal",
-        "ownerOf",
-        "readCliSessions",
-        "withDefaults"
       ]
     },
     {
@@ -4868,9 +4288,6 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
     },
     {
@@ -4927,7 +4344,10 @@
       "capability": "runParallel",
       "ui": [
         "cmd:agentfarm.runParallel"
-      ]
+      ],
+      "gap": {
+        "why": "Fanning one prompt out over N git worktrees has no op, so an agent cannot set up the parallel run it is often asked to compare."
+      }
     },
     {
       "capability": "runPulseNow",
@@ -4991,9 +4411,6 @@
       "ops": [
         "projects.get",
         "projects.template.save"
-      ],
-      "core": [
-        "scanRoles"
       ]
     },
     {
@@ -5013,9 +4430,6 @@
       ],
       "ops": [
         "memory.contradictions"
-      ],
-      "core": [
-        "scanContradictions"
       ]
     },
     {
@@ -5028,28 +4442,84 @@
       ]
     },
     {
+      "capability": "searchPanel.ts#afnav",
+      "ui": [
+        "page:searchPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "searchPanel.ts#buildIndex",
       "ui": [
         "page:searchPanel.ts#buildIndex"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "searchPanel.ts#findSession",
       "ui": [
         "page:searchPanel.ts#findSession"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "searchPanel.ts#openFarmSettings",
       "ui": [
         "page:searchPanel.ts#openFarmSettings"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "searchPanel.ts#openFile",
+      "ui": [
+        "page:searchPanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "searchPanel.ts#openGuide",
+      "ui": [
+        "page:searchPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "searchPanel.ts#openSession",
+      "ui": [
+        "page:searchPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "searchPanel.ts#openTimeline",
       "ui": [
         "page:searchPanel.ts#openTimeline"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "searchPanel.ts#search",
@@ -5058,13 +4528,6 @@
       ],
       "ops": [
         "search.transcripts"
-      ],
-      "core": [
-        "isSearchRole",
-        "parseForeign",
-        "searchLiveEvents",
-        "searchMemory",
-        "searchTranscripts"
       ]
     },
     {
@@ -5074,23 +4537,47 @@
       ],
       "ops": [
         "search.transcripts"
-      ],
-      "core": [
-        "parseCliViewer",
-        "searchTranscripts"
       ]
+    },
+    {
+      "capability": "secretsPanel.ts#afnav",
+      "ui": [
+        "page:secretsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "secretsPanel.ts#delete",
+      "ui": [
+        "page:secretsPanel.ts#delete"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
     },
     {
       "capability": "secretsPanel.ts#refresh",
       "ui": [
         "page:secretsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "secretsPanel.ts#sec-save",
       "ui": [
         "page:secretsPanel.ts#sec-save"
-      ]
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
     },
     {
       "capability": "sendDigestNow",
@@ -5108,47 +4595,95 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "ENGINE_LABELS",
-        "SessionInfo"
       ]
+    },
+    {
+      "capability": "sessionsPanel.ts#afnav",
+      "ui": [
+        "page:sessionsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "sessionsPanel.ts#focusTerminal",
       "ui": [
         "page:sessionsPanel.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "sessionsPanel.ts#interruptSession",
       "ui": [
         "page:sessionsPanel.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
       ]
+    },
+    {
+      "capability": "sessionsPanel.ts#openGuide",
+      "ui": [
+        "page:sessionsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#openSession",
+      "ui": [
+        "page:sessionsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "sessionsPanel.ts#pinSession",
       "ui": [
         "page:sessionsPanel.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
       ]
     },
     {
       "capability": "sessionsPanel.ts#refresh",
       "ui": [
         "page:sessionsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "sessionsPanel.ts#sessionTurns",
       "ui": [
         "page:sessionsPanel.ts#sessionTurns"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "sessionsPanel.ts#setTableN",
       "ui": [
         "page:sessionsPanel.ts#setTableN"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "sessionToQueue",
@@ -5158,57 +4693,104 @@
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "SessionInfo"
       ]
+    },
+    {
+      "capability": "sessionViewer.ts#afnav",
+      "ui": [
+        "page:sessionViewer.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "sessionViewer.ts#copyStep",
       "ui": [
         "page:sessionViewer.ts#copyStep"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies a value to the clipboard — nothing is read that an agent could not read directly, and nothing is changed."
+      }
     },
     {
       "capability": "sessionViewer.ts#ctxCapture",
       "ui": [
         "page:sessionViewer.ts#ctxCapture"
+      ],
+      "ops": [
+        "sessions.context"
       ]
     },
     {
       "capability": "sessionViewer.ts#exportChoose",
       "ui": [
         "page:sessionViewer.ts#exportChoose"
-      ]
+      ],
+      "gap": {
+        "why": "The session viewer's Export MD has no op; sessions.page returns turns but nothing produces the document the page writes."
+      }
     },
     {
       "capability": "sessionViewer.ts#exportMd",
       "ui": [
         "page:sessionViewer.ts#exportMd"
-      ]
+      ],
+      "gap": {
+        "why": "Same as the viewer's export chooser: the assembled Markdown of a transcript is only reachable from the page."
+      }
     },
     {
       "capability": "sessionViewer.ts#focusTerminal",
       "ui": [
         "page:sessionViewer.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionViewer.ts#openAgent",
+      "ui": [
+        "page:sessionViewer.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "sessionViewer.ts#openDashboard",
       "ui": [
         "page:sessionViewer.ts#openDashboard"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "sessionViewer.ts#openEditedFile",
       "ui": [
-        "page:sessionViewer.ts#openEditedFile",
-        "ctx:vsFile",
-        "page:sessionViewer.ts#revealFile",
-        "ctx:vfOpen",
-        "ctx:vfCopy",
-        "ctx:dhOpen"
-      ]
+        "page:sessionViewer.ts#openEditedFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "sessionViewer.ts#openGuide",
+      "ui": [
+        "page:sessionViewer.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "sessionViewer.ts#openRaw",
@@ -5224,59 +4806,85 @@
       "capability": "sessionViewer.ts#openTimeline",
       "ui": [
         "page:sessionViewer.ts#openTimeline"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "sessionViewer.ts#pinSession",
       "ui": [
         "page:sessionViewer.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
       ]
     },
     {
       "capability": "sessionViewer.ts#refresh",
       "ui": [
         "page:sessionViewer.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "sessionViewer.ts#renameSession",
       "ui": [
         "page:sessionViewer.ts#renameSession"
+      ],
+      "ops": [
+        "sessions.rename"
       ]
     },
     {
       "capability": "sessionViewer.ts#resume",
       "ui": [
         "page:sessionViewer.ts#resume"
+      ],
+      "ops": [
+        "console.start"
       ]
     },
     {
       "capability": "sessionViewer.ts#resumeConsole",
       "ui": [
         "page:sessionViewer.ts#resumeConsole"
+      ],
+      "ops": [
+        "console.start"
       ]
+    },
+    {
+      "capability": "sessionViewer.ts#revealFile",
+      "ui": [
+        "page:sessionViewer.ts#revealFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "sessionViewer.ts#sessionFileEdits",
       "ui": [
-        "page:sessionViewer.ts#sessionFileEdits",
-        "ctx:vfDiff",
-        "ctx:vfHunks",
-        "ctx:vfReveal"
+        "page:sessionViewer.ts#sessionFileEdits"
       ],
       "ops": [
         "sessions.files"
-      ],
-      "core": [
-        "collectEdits",
-        "groupByFile"
       ]
     },
     {
       "capability": "setActiveProject",
       "ui": [
         "cmd:agentfarm.setActiveProject"
-      ]
+      ],
+      "gap": {
+        "why": "Which project is ACTIVE is workspace state the page sets; projects.current reads it, nothing writes it."
+      }
     },
     {
       "capability": "setQuietHours",
@@ -5299,9 +4907,22 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#afnav",
+      "ui": [
+        "page:settingsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "settingsPanel.ts#agentDefaultsEngine",
       "ui": [
         "page:settingsPanel.ts#agentDefaultsEngine"
+      ],
+      "ops": [
+        "agents.defaults.set"
       ]
     },
     {
@@ -5312,21 +4933,24 @@
       "ops": [
         "agents.exclude",
         "agents.roots.remove"
-      ],
-      "core": [
-        "agentFolders"
       ]
     },
     {
       "capability": "settingsPanel.ts#agentExclude",
       "ui": [
         "page:settingsPanel.ts#agentExclude"
+      ],
+      "ops": [
+        "agents.exclude"
       ]
     },
     {
       "capability": "settingsPanel.ts#agentInclude",
       "ui": [
         "page:settingsPanel.ts#agentInclude"
+      ],
+      "ops": [
+        "agents.include"
       ]
     },
     {
@@ -5337,27 +4961,34 @@
       "ops": [
         "agents.exclude",
         "agents.roots.remove"
-      ],
-      "core": [
-        "agentFolders"
       ]
     },
     {
       "capability": "settingsPanel.ts#applyProfile",
       "ui": [
         "page:settingsPanel.ts#applyProfile"
+      ],
+      "ops": [
+        "settings.sets.apply"
       ]
     },
     {
       "capability": "settingsPanel.ts#browse",
       "ui": [
         "page:settingsPanel.ts#browse"
-      ]
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
     },
     {
       "capability": "settingsPanel.ts#ccClear",
       "ui": [
         "page:settingsPanel.ts#ccClear"
+      ],
+      "ops": [
+        "claude.settings.clear"
       ]
     },
     {
@@ -5369,21 +5000,24 @@
         "claude.settings",
         "claude.settings.clear",
         "claude.settings.set"
-      ],
-      "core": [
-        "claudeSettingsFile"
       ]
     },
     {
       "capability": "settingsPanel.ts#ccRaw",
       "ui": [
         "page:settingsPanel.ts#ccRaw"
+      ],
+      "ops": [
+        "claude.settings.set"
       ]
     },
     {
       "capability": "settingsPanel.ts#ccSet",
       "ui": [
         "page:settingsPanel.ts#ccSet"
+      ],
+      "ops": [
+        "claude.settings.set"
       ]
     },
     {
@@ -5395,16 +5029,26 @@
         "settings.sets.delete",
         "settings.sets.import",
         "settings.sets.save"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#docOpenSet",
+      "ui": [
+        "page:settingsPanel.ts#docOpenSet"
       ],
-      "core": [
-        "setProfiles"
+      "ops": [
+        "docopen.set"
       ]
     },
     {
       "capability": "settingsPanel.ts#engineCommand",
       "ui": [
         "page:settingsPanel.ts#engineCommand"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "settingsPanel.ts#engineDocs",
@@ -5413,19 +5057,26 @@
       ],
       "exempt": {
         "kind": "navigation",
-        "why": "Handler only openExternal — it moves the eye and changes nothing."
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
     },
     {
       "capability": "settingsPanel.ts#engineKey",
       "ui": [
         "page:settingsPanel.ts#engineKey"
-      ]
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
     },
     {
       "capability": "settingsPanel.ts#exportProfiles",
       "ui": [
         "page:settingsPanel.ts#exportProfiles"
+      ],
+      "ops": [
+        "settings.sets.export"
       ]
     },
     {
@@ -5438,25 +5089,47 @@
         "settings.sets.delete",
         "settings.sets.import",
         "settings.sets.save"
-      ],
-      "core": [
-        "SettingsProfile",
-        "parseImportedProfiles",
-        "setProfiles"
       ]
+    },
+    {
+      "capability": "settingsPanel.ts#openAgent",
+      "ui": [
+        "page:settingsPanel.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "settingsPanel.ts#openEngines",
       "ui": [
         "page:settingsPanel.ts#openEngines"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#openGuide",
+      "ui": [
+        "page:settingsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "settingsPanel.ts#openSettingsUi",
       "ui": [
-        "page:settingsPanel.ts#openSettingsUi",
-        "ctx:stOpenUi"
-      ]
+        "page:settingsPanel.ts#openSettingsUi"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "settingsPanel.ts#promptsOpen",
@@ -5475,16 +5148,17 @@
       ],
       "ops": [
         "prompts.setFile"
-      ],
-      "core": [
-        "setPromptSnippetsFile"
       ]
     },
     {
       "capability": "settingsPanel.ts#promptsReload",
       "ui": [
         "page:settingsPanel.ts#promptsReload"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "settingsPanel.ts#promptsUseDefault",
@@ -5493,40 +5167,64 @@
       ],
       "ops": [
         "prompts.setFile"
-      ],
-      "core": [
-        "setPromptSnippetsFile"
       ]
     },
     {
       "capability": "settingsPanel.ts#refresh",
       "ui": [
         "page:settingsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "settingsPanel.ts#reset",
       "ui": [
-        "page:settingsPanel.ts#reset",
-        "ctx:stReset"
+        "page:settingsPanel.ts#reset"
+      ],
+      "ops": [
+        "settings.reset"
       ]
     },
     {
       "capability": "settingsPanel.ts#rootAdd",
       "ui": [
-        "page:settingsPanel.ts#rootAdd",
-        "page:settingsPanel.ts#rootRemove",
-        "page:settingsPanel.ts#rootReveal",
-        "ctx:rtReveal",
-        "ctx:rtAdd",
-        "ctx:rtRemove"
-      ]
+        "page:settingsPanel.ts#rootAdd"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "settingsPanel.ts#rootCleanDupes",
       "ui": [
         "page:settingsPanel.ts#rootCleanDupes"
+      ],
+      "ops": [
+        "agents.roots.clean"
       ]
+    },
+    {
+      "capability": "settingsPanel.ts#rootRemove",
+      "ui": [
+        "page:settingsPanel.ts#rootRemove"
+      ],
+      "ops": [
+        "agents.roots.remove"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#rootReveal",
+      "ui": [
+        "page:settingsPanel.ts#rootReveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "settingsPanel.ts#saveProfile",
@@ -5537,16 +5235,25 @@
         "settings.sets.delete",
         "settings.sets.import",
         "settings.sets.save"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#set",
+      "ui": [
+        "page:settingsPanel.ts#set"
       ],
-      "core": [
-        "setProfiles"
+      "ops": [
+        "settings.set"
       ]
     },
     {
       "capability": "setupExample",
       "ui": [
         "cmd:agentfarm.setupExample"
-      ]
+      ],
+      "gap": {
+        "why": "The guided first-run example (an agent, a task and a schedule seeded together) is a page walk-through with no op behind it."
+      }
     },
     {
       "capability": "setUsageEngine",
@@ -5564,15 +5271,15 @@
       ],
       "ops": [
         "toolbox.copy"
-      ],
-      "core": [
-        "moveSkillScope"
       ]
     },
     {
       "capability": "speakDigest",
       "ui": [
         "cmd:agentfarm.speakDigest"
+      ],
+      "ops": [
+        "digest.daily"
       ]
     },
     {
@@ -5582,9 +5289,6 @@
       ],
       "ops": [
         "launch.profile.set"
-      ],
-      "core": [
-        "RunSurface"
       ]
     },
     {
@@ -5594,9 +5298,6 @@
       ],
       "ops": [
         "tasks.add"
-      ],
-      "core": [
-        "CliProfile"
       ]
     },
     {
@@ -5609,46 +5310,110 @@
       ]
     },
     {
+      "capability": "studioPanel.ts#afnav",
+      "ui": [
+        "page:studioPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "studioPanel.ts#feedback",
       "ui": [
         "page:studioPanel.ts#feedback"
+      ],
+      "ops": [
+        "studio.rerun"
       ]
     },
     {
       "capability": "studioPanel.ts#generate",
       "ui": [
         "page:studioPanel.ts#generate"
+      ],
+      "ops": [
+        "tasks.add"
       ]
     },
     {
       "capability": "studioPanel.ts#openAsset",
       "ui": [
         "page:studioPanel.ts#openAsset"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "studioPanel.ts#openFile",
+      "ui": [
+        "page:studioPanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "studioPanel.ts#openGuide",
+      "ui": [
+        "page:studioPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
     },
     {
       "capability": "studioPanel.ts#openSettings",
       "ui": [
         "page:studioPanel.ts#openSettings"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "studioPanel.ts#project",
       "ui": [
         "page:studioPanel.ts#project"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "studioPanel.ts#refresh",
       "ui": [
         "page:studioPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "studioPanel.ts#registerAsset",
       "ui": [
         "page:studioPanel.ts#registerAsset"
+      ],
+      "ops": [
+        "studio.asset.register"
       ]
+    },
+    {
+      "capability": "studioPanel.ts#rerun",
+      "ui": [
+        "page:studioPanel.ts#rerun"
+      ],
+      "gap": {
+        "why": "studio.rerun exists, but the page's own rerun does not reach it through a shared function."
+      }
     },
     {
       "capability": "studioPanel.ts#setSceneStatus",
@@ -5658,25 +5423,26 @@
       "ops": [
         "studio.production.new",
         "studio.scene.status"
-      ],
-      "core": [
-        "SCENE_STATUSES",
-        "SceneStatus",
-        "setSceneStatus",
-        "writeProduction"
       ]
     },
     {
       "capability": "studioPanel.ts#studio-save",
       "ui": [
         "page:studioPanel.ts#studio-save"
+      ],
+      "ops": [
+        "studio.production.new"
       ]
     },
     {
       "capability": "studioPanel.ts#tab",
       "ui": [
         "page:studioPanel.ts#tab"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "studioPanel.ts#triageDecision",
@@ -5686,15 +5452,15 @@
       "ops": [
         "studio.assign",
         "studio.triage"
-      ],
-      "core": [
-        "updateMediaMeta"
       ]
     },
     {
       "capability": "studioPanel.ts#vary",
       "ui": [
         "page:studioPanel.ts#vary"
+      ],
+      "ops": [
+        "studio.rerun"
       ]
     },
     {
@@ -5706,11 +5472,6 @@
       "ops": [
         "agents.sync",
         "constitution.sync"
-      ],
-      "core": [
-        "antigravityStatus",
-        "syncCodexExtras",
-        "syncToAntigravity"
       ]
     },
     {
@@ -5721,12 +5482,6 @@
       "ops": [
         "agents.sync",
         "constitution.sync"
-      ],
-      "core": [
-        "antigravityStatus",
-        "scanRoots",
-        "syncCodexExtras",
-        "syncToAntigravity"
       ]
     },
     {
@@ -5748,214 +5503,366 @@
       "ops": [
         "sessions.files",
         "sessions.tag"
-      ],
-      "core": [
-        "SessionInfo",
-        "parseTags",
-        "setTags",
-        "tagsOf"
       ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#afnav",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "taskAnalyticsPanel.ts#export-md",
       "ui": [
         "page:taskAnalyticsPanel.ts#export-md"
-      ]
+      ],
+      "gap": {
+        "why": "reports.tasks returns the figures, but the analytics page's own Markdown export is not on the bridge."
+      }
     },
     {
       "capability": "taskAnalyticsPanel.ts#open-forecast",
       "ui": [
         "page:taskAnalyticsPanel.ts#open-forecast"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "taskAnalyticsPanel.ts#open-history",
       "ui": [
-        "page:taskAnalyticsPanel.ts#open-history",
-        "page:tasksPanel.ts#wfstep",
-        "page:tasksPanel.ts#open-history",
-        "ctx:planRun",
-        "ctx:planOn",
-        "ctx:planOff",
-        "ctx:planEdit",
-        "ctx:planExport",
-        "ctx:planHistory",
-        "ctx:planDelete"
-      ]
+        "page:taskAnalyticsPanel.ts#open-history"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "taskAnalyticsPanel.ts#open-tasks",
       "ui": [
         "page:taskAnalyticsPanel.ts#open-tasks"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#openGuide",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op.",
+        "despite": "The guide is materialised from the extension's own bundled source before it is opened. It writes no state of the user's."
+      }
     },
     {
       "capability": "taskAnalyticsPanel.ts#refresh",
       "ui": [
         "page:taskAnalyticsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "taskDown",
       "ui": [
         "cmd:agentfarm.taskDown"
       ],
+      "gap": {
+        "why": "tasks.move exists, but the command calls the manager directly with an offset while the op resolves a position; they are two implementations of one act."
+      }
+    },
+    {
+      "capability": "tasksPanel.ts#afnav",
+      "ui": [
+        "page:tasksPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "tasksPanel.ts#approve",
+      "ui": [
+        "page:tasksPanel.ts#approve"
+      ],
       "ops": [
-        "tasks.move"
+        "missions.approve"
       ]
     },
     {
       "capability": "tasksPanel.ts#bulk",
       "ui": [
         "page:tasksPanel.ts#bulk"
+      ],
+      "ops": [
+        "automations.bulk"
       ]
     },
     {
       "capability": "tasksPanel.ts#cancel-queued",
       "ui": [
         "page:tasksPanel.ts#cancel-queued"
+      ],
+      "ops": [
+        "tasks.cancel"
       ]
     },
     {
       "capability": "tasksPanel.ts#chooser-pick",
       "ui": [
         "page:tasksPanel.ts#chooser-pick"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "tasksPanel.ts#clear-finished",
       "ui": [
         "page:tasksPanel.ts#clear-finished"
+      ],
+      "ops": [
+        "tasks.clearFinished"
       ]
     },
     {
       "capability": "tasksPanel.ts#command",
       "ui": [
         "page:tasksPanel.ts#command"
+      ],
+      "ops": [
+        "tasks.add"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#delete",
+      "ui": [
+        "page:tasksPanel.ts#delete"
+      ],
+      "ops": [
+        "tasks.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#down",
       "ui": [
         "page:tasksPanel.ts#down"
+      ],
+      "ops": [
+        "workflows.step.move"
       ]
     },
     {
       "capability": "tasksPanel.ts#edit",
       "ui": [
         "page:tasksPanel.ts#edit"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#export-md",
       "ui": [
         "page:tasksPanel.ts#export-md"
-      ]
+      ],
+      "gap": {
+        "why": "The runs table's Markdown export has no op. tasks.list returns rows, not the document the page writes."
+      }
     },
     {
       "capability": "tasksPanel.ts#gate",
       "ui": [
         "page:tasksPanel.ts#gate"
+      ],
+      "ops": [
+        "automations.pause",
+        "automations.quietHours"
       ]
     },
     {
       "capability": "tasksPanel.ts#open-analytics",
       "ui": [
         "page:tasksPanel.ts#open-analytics"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "tasksPanel.ts#open-history",
+      "ui": [
+        "page:tasksPanel.ts#open-history"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#open-needs",
       "ui": [
         "page:tasksPanel.ts#open-needs"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#open-output",
       "ui": [
-        "page:tasksPanel.ts#open-output",
-        "page:tasksPanel.ts#open-transcript",
-        "ctx:runOutput",
-        "ctx:runTerminal",
-        "ctx:runDetail",
-        "ctx:runClone",
-        "ctx:runResumeWf",
-        "ctx:runTemplate",
-        "ctx:runCancel",
-        "ctx:runDelete"
-      ]
+        "page:tasksPanel.ts#open-output"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#open-transcript",
       "ui": [
-        "ctx:runTranscript"
-      ]
+        "page:tasksPanel.ts#open-transcript"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "tasksPanel.ts#openGuide",
+      "ui": [
+        "page:tasksPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op.",
+        "despite": "The guide is materialised from the extension's own bundled source before it is opened. It writes no state of the user's."
+      }
     },
     {
       "capability": "tasksPanel.ts#plan",
       "ui": [
         "page:tasksPanel.ts#plan"
+      ],
+      "ops": [
+        "workflows.delete",
+        "templates.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#plan-add",
       "ui": [
         "page:tasksPanel.ts#plan-add"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#plan-save",
       "ui": [
         "page:tasksPanel.ts#plan-save"
+      ],
+      "ops": [
+        "schedules.edit",
+        "triggers.edit",
+        "workflows.update"
       ]
     },
     {
       "capability": "tasksPanel.ts#refresh",
       "ui": [
         "page:tasksPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "tasksPanel.ts#runs-archive",
       "ui": [
         "page:tasksPanel.ts#runs-archive"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "tasksPanel.ts#schedule:delete",
       "ui": [
         "page:tasksPanel.ts#schedule:delete"
+      ],
+      "ops": [
+        "schedules.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#schedule:edit",
       "ui": [
         "page:tasksPanel.ts#schedule:edit"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#schedule:export",
       "ui": [
         "page:tasksPanel.ts#schedule:export"
+      ],
+      "ops": [
+        "export.schedule"
       ]
     },
     {
       "capability": "tasksPanel.ts#schedule:run",
       "ui": [
         "page:tasksPanel.ts#schedule:run"
+      ],
+      "ops": [
+        "schedules.runNow"
       ]
     },
     {
       "capability": "tasksPanel.ts#schedule:toggle",
       "ui": [
         "page:tasksPanel.ts#schedule:toggle"
+      ],
+      "ops": [
+        "schedules.toggle"
       ]
     },
     {
       "capability": "tasksPanel.ts#task",
       "ui": [
         "page:tasksPanel.ts#task"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#task-add",
@@ -5977,91 +5884,127 @@
         "tasks.add",
         "tasks.rerun",
         "triggers.add"
-      ],
-      "core": [
-        "RetryPolicy",
-        "TaskMode",
-        "normalizeRetry"
       ]
     },
     {
       "capability": "tasksPanel.ts#task-undo",
       "ui": [
         "page:tasksPanel.ts#task-undo"
+      ],
+      "ops": [
+        "tasks.restore"
       ]
     },
     {
       "capability": "tasksPanel.ts#template:delete",
       "ui": [
         "page:tasksPanel.ts#template:delete"
+      ],
+      "ops": [
+        "templates.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#template:edit",
       "ui": [
         "page:tasksPanel.ts#template:edit"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#template:run",
       "ui": [
         "page:tasksPanel.ts#template:run"
+      ],
+      "ops": [
+        "templates.run"
       ]
     },
     {
       "capability": "tasksPanel.ts#trigger:delete",
       "ui": [
         "page:tasksPanel.ts#trigger:delete"
+      ],
+      "ops": [
+        "triggers.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#trigger:edit",
       "ui": [
         "page:tasksPanel.ts#trigger:edit"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#trigger:run",
       "ui": [
         "page:tasksPanel.ts#trigger:run"
+      ],
+      "ops": [
+        "triggers.fire"
       ]
     },
     {
       "capability": "tasksPanel.ts#trigger:toggle",
       "ui": [
         "page:tasksPanel.ts#trigger:toggle"
+      ],
+      "ops": [
+        "triggers.toggle"
       ]
     },
     {
       "capability": "tasksPanel.ts#up",
       "ui": [
         "page:tasksPanel.ts#up"
+      ],
+      "ops": [
+        "workflows.step.move"
       ]
     },
     {
       "capability": "tasksPanel.ts#wfstep",
       "ui": [
-        "ctx:planRuns",
-        "ctx:wfStepEdit",
-        "ctx:wfStepDelete"
+        "page:tasksPanel.ts#wfstep"
+      ],
+      "ops": [
+        "workflows.delete",
+        "workflows.resume"
       ]
     },
     {
       "capability": "tasksPanel.ts#workflow:delete",
       "ui": [
         "page:tasksPanel.ts#workflow:delete"
+      ],
+      "ops": [
+        "workflows.delete"
       ]
     },
     {
       "capability": "tasksPanel.ts#workflow:edit",
       "ui": [
         "page:tasksPanel.ts#workflow:edit"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "tasksPanel.ts#workflow:run",
       "ui": [
         "page:tasksPanel.ts#workflow:run"
+      ],
+      "ops": [
+        "workflows.run"
       ]
     },
     {
@@ -6069,93 +6012,181 @@
       "ui": [
         "cmd:agentfarm.taskUp"
       ],
-      "ops": [
-        "tasks.move"
-      ]
+      "gap": {
+        "why": "tasks.move exists, but the command calls the manager directly with an offset while the op resolves a position; they are two implementations of one act."
+      }
     },
     {
       "capability": "terminalRenderFix",
       "ui": [
         "cmd:agentfarm.terminalRenderFix"
-      ]
+      ],
+      "gap": {
+        "why": "Repairs the user's terminal.integrated rendering settings. settings.set is deliberately fenced to the agentFarm schema, so this needs its own narrow allowlisted op."
+      }
     },
     {
       "capability": "testDispatch",
       "ui": [
         "cmd:agentfarm.testDispatch"
-      ]
+      ],
+      "gap": {
+        "why": "Asking the dispatcher which agent a piece of work would route to produces an answer an agent would want; today it is an input box on the page."
+      }
+    },
+    {
+      "capability": "timeline.ts#afnav",
+      "ui": [
+        "page:timeline.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "timeline.ts#clearGone",
       "ui": [
         "page:timeline.ts#clearGone"
+      ],
+      "ops": [
+        "sessions.dismiss"
       ]
     },
     {
       "capability": "timeline.ts#dismissSession",
       "ui": [
         "page:timeline.ts#dismissSession"
+      ],
+      "ops": [
+        "sessions.dismiss"
       ]
     },
     {
       "capability": "timeline.ts#endSession",
       "ui": [
         "page:timeline.ts#endSession"
+      ],
+      "ops": [
+        "sessions.end"
       ]
     },
     {
       "capability": "timeline.ts#focusTerminal",
       "ui": [
         "page:timeline.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "timeline.ts#history",
       "ui": [
         "page:timeline.ts#history"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "timeline.ts#installHooks",
       "ui": [
         "page:timeline.ts#installHooks"
+      ],
+      "ops": [
+        "hooks.install"
       ]
     },
     {
       "capability": "timeline.ts#interruptSession",
       "ui": [
         "page:timeline.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
       ]
     },
     {
       "capability": "timeline.ts#openDashboard",
       "ui": [
         "page:timeline.ts#openDashboard"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "timeline.ts#openGuide",
+      "ui": [
+        "page:timeline.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "timeline.ts#openSession",
+      "ui": [
+        "page:timeline.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "timeline.ts#refresh",
       "ui": [
         "page:timeline.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "timeline.ts#renameSession",
       "ui": [
         "page:timeline.ts#renameSession"
+      ],
+      "ops": [
+        "sessions.rename"
       ]
+    },
+    {
+      "capability": "timeline.ts#revealFolder",
+      "ui": [
+        "page:timeline.ts#revealFolder"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "timeline.ts#setSessionTurnActions",
       "ui": [
         "page:timeline.ts#setSessionTurnActions"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "timeline.ts#setTurnActions",
       "ui": [
         "page:timeline.ts#setTurnActions"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "toggleDuty",
@@ -6164,9 +6195,6 @@
       ],
       "ops": [
         "duties.togglePause"
-      ],
-      "core": [
-        "togglePauseDuty"
       ]
     },
     {
@@ -6188,40 +6216,138 @@
       ]
     },
     {
+      "capability": "toolboxPanel.ts#afnav",
+      "ui": [
+        "page:toolboxPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "toolboxPanel.ts#mcp-def",
       "ui": [
         "page:toolboxPanel.ts#mcp-def"
+      ],
+      "ops": [
+        "toolbox.inspect"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#open",
+      "ui": [
+        "page:toolboxPanel.ts#open"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "toolboxPanel.ts#openExternal",
+      "ui": [
+        "page:toolboxPanel.ts#openExternal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "toolboxPanel.ts#openGuide",
+      "ui": [
+        "page:toolboxPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "toolboxPanel.ts#probe",
+      "ui": [
+        "page:toolboxPanel.ts#probe"
+      ],
+      "ops": [
+        "living.check.add",
+        "living.checks",
+        "projects.backlog",
+        "toolbox.enable",
+        "toolbox.mcptools"
       ]
     },
     {
       "capability": "toolboxPanel.ts#refresh",
       "ui": [
         "page:toolboxPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "toolboxPanel.ts#remove",
+      "ui": [
+        "page:toolboxPanel.ts#remove"
+      ],
+      "ops": [
+        "queue.remove"
       ]
+    },
+    {
+      "capability": "toolboxPanel.ts#reveal",
+      "ui": [
+        "page:toolboxPanel.ts#reveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "toolboxPanel.ts#skillScope",
       "ui": [
-        "ctx:tbCopyAgent",
-        "ctx:tbScope"
+        "page:toolboxPanel.ts#skillScope"
+      ],
+      "ops": [
+        "toolbox.copy"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#toggleMcp",
+      "ui": [
+        "page:toolboxPanel.ts#toggleMcp"
       ],
       "ops": [
         "living.check.add",
         "living.checks",
         "projects.backlog",
-        "toolbox.copy",
-        "toolbox.enable"
+        "toolbox.enable",
+        "toolbox.mcptools"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#togglePlugin",
+      "ui": [
+        "page:toolboxPanel.ts#togglePlugin"
       ],
-      "core": [
-        "readAgentMcpServers",
-        "skillNode",
-        "warn"
+      "ops": [
+        "living.check.add",
+        "living.checks",
+        "projects.backlog",
+        "toolbox.enable",
+        "toolbox.mcptools"
       ]
     },
     {
       "capability": "toolboxPanel.ts#tool-save",
       "ui": [
         "page:toolboxPanel.ts#tool-save"
+      ],
+      "ops": [
+        "toolbox.install"
       ]
     },
     {
@@ -6234,28 +6360,73 @@
       ]
     },
     {
+      "capability": "turnsPanel.ts#afnav",
+      "ui": [
+        "page:turnsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
       "capability": "turnsPanel.ts#exportChoose",
       "ui": [
         "page:turnsPanel.ts#exportChoose"
-      ]
+      ],
+      "gap": {
+        "why": "The turns table's Markdown export has no op; turns.list returns the rows but not the document."
+      }
     },
     {
       "capability": "turnsPanel.ts#focusTerminal",
       "ui": [
         "page:turnsPanel.ts#focusTerminal"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "turnsPanel.ts#openGuide",
+      "ui": [
+        "page:turnsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "turnsPanel.ts#openSession",
+      "ui": [
+        "page:turnsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
     },
     {
       "capability": "turnsPanel.ts#refresh",
       "ui": [
         "page:turnsPanel.ts#refresh"
-      ]
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
     },
     {
       "capability": "turnsPanel.ts#turnDetail",
       "ui": [
         "page:turnsPanel.ts#turnDetail"
-      ]
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
     },
     {
       "capability": "weeklySummaryNow",

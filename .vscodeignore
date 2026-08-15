@@ -12,3 +12,6 @@ dist/render/**
 docs/info/**
 VERSION_4_27/**
 VERSION_4_35/**
+tools/**
+parity.manifest.json
+par.out

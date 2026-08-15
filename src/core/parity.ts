@@ -74,7 +74,13 @@ export interface ParityEntry {
      * the one that matters.
      */
     core?: string[];
-    exempt?: { kind: ExemptKind; why: string };
+    /**
+     * `despite` answers the code when the code is wrong: a handler that writes
+     * a scratch file it then opens is still navigation, and saying so in a
+     * sentence is the difference between overruling the gate and hiding from
+     * it. Without it, a write in a navigation-exempt handler fails the build.
+     */
+    exempt?: { kind: ExemptKind; why: string; despite?: string };
     /**
      * ‼️ A DOOR THAT ONLY OPENS THE ROOM SAYS WHICH ROOM. Most commands in
      * this extension do not do the thing — they open the page with the right
@@ -84,10 +90,22 @@ export interface ParityEntry {
      * renamed this door stops being explained.
      */
     fronts?: string;
+    /**
+     * ‼️ AN OPEN GAP, NAMED. Not an exemption — the opposite of one: this
+     * capability SHOULD be on the bridge and is not. It is written down rather
+     * than exempted so that the number of them is a figure somebody can read,
+     * and `gapBudget` makes that figure a ratchet: it may shrink, never grow.
+     * A new capability cannot be dropped in here to make the build pass,
+     * because the budget would have to be raised in the same commit and that
+     * is a line in a diff with somebody's name on it.
+     */
+    gap?: { why: string };
 }
 
 export interface ParityManifest {
     version: number;
+    /** The most gaps this build is allowed to carry. Lower it, never raise it. */
+    gapBudget: number;
     entries: ParityEntry[];
 }
 
@@ -371,10 +389,13 @@ export interface Classification {
  * weak evidence teaches people to route around it.
  */
 export function contradictsNavigation(body: string): string[] {
-    const scratch = /tmpdir\(\)/.test(body);
     return STATEFUL.filter(s => {
+        // Weak evidence: as often "remember which section was collapsed" as a
+        // real record.
         if (s === 'globalState.update' || s === 'workspaceState.update') { return false; }
-        if (scratch && /Sync$/.test(s.replace('(', ''))) { return false; }
+        // Launching the user's chosen viewer is how a document is OPENED on
+        // Windows. A spawned process is not, by itself, a change of state.
+        if (s === 'spawn(' || s === 'execFile' || s === 'cp.exec(') { return false; }
         return body.includes(s);
     });
 }
@@ -583,6 +604,20 @@ export function auditParity(manifest: ParityManifest, world: ParityWorld): Parit
     // ---- every capability answers the question
     for (const entry of manifest.entries) {
         const ops = entry.ops ?? [];
+        if (entry.gap) {
+            if (ops.length || entry.exempt) {
+                problems.push({
+                    kind: 'bad-exemption', subject: entry.capability,
+                    detail: 'recorded as an open gap AND answered — a gap is what is left when neither answer is true'
+                });
+            } else if ((entry.gap.why ?? '').trim().length < 12) {
+                problems.push({
+                    kind: 'bad-exemption', subject: entry.capability,
+                    detail: 'a gap says what the missing op would have to do — that sentence is the next person\'s brief'
+                });
+            }
+            continue;
+        }
         if (!ops.length && !entry.exempt) {
             problems.push({
                 kind: 'no-answer', subject: entry.capability,
@@ -644,7 +679,7 @@ export function auditParity(manifest: ParityManifest, world: ParityWorld): Parit
                     const action = uiById.get(id);
                     if (!action) { continue; }
                     const hits = contradictsNavigation(action.body);
-                    if (hits.length) {
+                    if (hits.length && (entry.exempt.despite ?? '').trim().length < 12) {
                         problems.push({
                             kind: 'wrong-exemption', subject: entry.capability,
                             detail: `${id} is exempt as ${entry.exempt.kind}, but its handler calls ${hits.slice(0, 3).join(', ')}`
@@ -716,17 +751,17 @@ export function auditParity(manifest: ParityManifest, world: ParityWorld): Parit
 
 /** A one-line count for the test's summary — no hard-coded totals anywhere. */
 export function parityCoverage(manifest: ParityManifest): {
-    capabilities: number; mapped: number; exempt: number; doors: number;
+    capabilities: number; mapped: number; exempt: number; gaps: number; doors: number;
     byExemption: Record<string, number>;
 } {
     const byExemption: Record<string, number> = {};
-    let mapped = 0, exempt = 0, doors = 0;
+    let mapped = 0, exempt = 0, gaps = 0, doors = 0;
     for (const e of manifest.entries) {
         doors += e.ui.length;
-        if (e.exempt) {
+        if (e.gap) { gaps++; } else if (e.exempt) {
             exempt++;
             byExemption[e.exempt.kind] = (byExemption[e.exempt.kind] ?? 0) + 1;
         } else if (e.ops?.length) { mapped++; }
     }
-    return { capabilities: manifest.entries.length, mapped, exempt, doors, byExemption };
+    return { capabilities: manifest.entries.length, mapped, exempt, gaps, doors, byExemption };
 }

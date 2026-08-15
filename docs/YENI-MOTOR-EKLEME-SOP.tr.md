@@ -361,14 +361,17 @@ ediyorsa ikisi toplanmaz.
 | cwd → ajan | Yol eşleme yöntemi; hash varsa nasıl doğrulanıyor? |
 | Proje | Launch stamp’i ile index satırı nasıl uzlaşıyor? |
 | Token/turn/tool | Transcript bunları dürüstçe sağlayabiliyor mu? |
-| Live hook | Motor kendi hook’unu yayınlıyor mu; yoksa host/launcher lifecycle’ı mı aynalanacak? |
+| Live hook | Motor kendi hook’unu yayınlıyor mu; yoksa host/launcher lifecycle’ı mı aynalanacak; hook payload dosya yolu taşımıyorsa Live Timeline için dosya kayıttan nasıl çözümlenecek? |
 | Dosya yok | Gerçekten henüz mi yok, yoksa motor okunabilir transcript hiç üretmiyor mu? |
 | Tarama sınırı | Yaş, boyut, derinlik, cache ve parse hatası kullanıcıya nasıl yansır? |
 
 Transcript okunamıyorsa motor yine bir oturum kaynağı olabilir: CLI’ın index’i,
 metadata DB’si veya Agent Farm’ın hosted kopyası kullanılabilir. Ancak Session
 Viewer “henüz yazılmadı” dememelidir; motorun neden okunabilir transcript
-vermediğini `noTranscriptNote()` üzerinden açıklar.
+vermediğini `noTranscriptNote()` üzerinden açıklar. Canlı akışta (`LiveMonitor`)
+Claude dışındaki motorların hook payload’unda `transcript_path` gelmediği için,
+Timeline üzerindeki swim lane ve işaret tıklamalarının dosya yolunu `SessionIndex`
+kaydından (`row?.file`) alacağı unutulmamalıdır.
 
 ### Ajan çalışma alanı: talimat, anayasa, memory, duty, skill ve MCP
 
@@ -799,6 +802,20 @@ Launcher, gerçek id henüz yokken geçici bir kimlik açabilir; gerçek id geli
 - start zamanı, sayaç, history, project stamp ve terminal binding korunur;
 - duplicate satır doğmaz.
 
+#### Timeline ve Swim Lane transcript yolu bağlantısı
+
+Claude oturumlarında her Live hook olayı doğrudan `transcript_path` taşır; oysa
+diğer motorlar sayfaya `mirrorConsoleToLive` üzerinden thread id ve cwd ile
+gelir, yani ham olayların üzerinde dosya yolu yoktur. Timeline paneli
+(`src/panels/timeline.ts` `buildData`) oturumun diskteki dosyasını
+`s.transcriptPath || row?.file` ile `SessionIndex` kaydından tamamlar ve webview
+(`media/timeline.js`) kulvarın dosyasını (`fileOf(f) => f || lane.file`) araç
+çubuklarına ve işaretlere aktarır. Böylece swim lane üzerindeki bir işarete veya
+segmente tıklandığında ilgili transcript dosyası ve satırı açılır. Henüz disk
+taraması rollout/chat dosyasını görmediyse (ör. Codex/Gemini oturumu sürerken)
+ölü bağlantı yerine link çizilmez; anında yazan motorlarda (`agy`) ise doğrudan
+çalışır.
+
 Resume/continue öncesi sahiplik kontrol edilir. Canlı bir process aynı konuşmayı
 tutuyorsa ikinci yazar sessizce başlatılmaz. Agent Farm’ın kendi Console süreciyse
 önce güvenle kapatıp gerçek exit beklenebilir; dış terminalse kullanıcıya odaklanma
@@ -885,7 +902,7 @@ Aşağıdaki yüzeyler tek tek denetlenir.
 | Turns | Motorun turn satırları, detay, export ve open eylemi aynı geniş havuzu okur |
 | Session Viewer | Okunabilir transcript doğru parser’la açılır; okunamazsa doğru gerekçe |
 | Search | Text/Regex için bütün okunabilir motorlar; Meaning kapsamı dürüst; parse kesintisi görünür |
-| Timeline / Live | Dış terminal ve hosted run görünür; geçici id gerçek id ile uzlaşır |
+| Timeline / Live | Dış terminal ve hosted run görünür; geçici id gerçek id ile uzlaşır; swim lane ve işaret (tick/mark) tıklaması transcript dosyasını ve satırını açar (hook payload dosya taşımıyorsa SessionIndex kaydından çözümlenir) |
 | Dashboard | Oturum listeleri geniş; motor-özel analitik dar ise scope notu |
 | Agent detail | Ajanın oturum listesi geniş; health/cost ölçümleri kapsamını söyler |
 | Agent sync / Insights | Yeni motorun talimat hattı, anayasa ve generated dosya drift’i görünür |
@@ -1256,6 +1273,20 @@ Agent Farm’ın kendi açtığı dış terminaller çalışırken hiçbir lane 
 Sonuç: launcher geçici kimlikle lifecycle açar; transcript gerçek id verince aynı
 kaydı yerinde uzlaştırır.
 
+### “Live Timeline swim lane ve işaret tıklamasını yalnız Claude için düşünmek (X-41 ihmali)”
+
+Claude hook payload’unda her olay doğrudan `transcript_path` taşırken, diğer
+motorlar Live/Timeline sayfasına Console aynasından (`mirrorConsoleToLive`)
+thread id ve cwd ile gelir; olayların üzerinde dosya yolu bulunmaz. Host
+(`src/panels/timeline.ts` `buildData`) birleşiminde
+`transcriptPath: s.transcriptPath || row?.file` yapılmadığında ve webview
+tarafında (`media/timeline.js`) araç çubukları ile işaretlere kulvarın dosyası
+(`fileOf(f) => f || lane.file`) aktarılmadığında, Claude dışındaki bütün
+motorlarda Timeline çizgisine ve işaretlerine tıklamak sessizce hiçbir şey
+yapmaz (`data-file=""`). Çözüm: hook payload’unda dosya yolu yoksa
+`SessionIndex` (`allWithExternal()`) kaydındaki dosya yolu kulvara ve
+işaretlerine verilir; kayıt henüz taranmadıysa ölü link yerine link çizilmez.
+
 ### “Yeşil test paketi entegrasyonun kanıtıdır”
 
 8.308 yeşil kontrolle birlikte 23 doğrulanmış çok-motor açığı vardı. Çoğu test
@@ -1454,7 +1485,7 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 - [ ] Memory/duty/skill/MCP uyumluluğu ve gerçek ajan kimliği turu eklendi.
 - [ ] Usage/kota ve billing/cost source ayrımı eklendi.
 - [ ] Transcript/source/viewer parser ve gerçek kimlik resolver’ları eklendi.
-- [ ] Live geçici kimlik → gerçek kimlik uzlaşması ve sahiplik güvenliği eklendi.
+- [ ] Live geçici kimlik → gerçek kimlik uzlaşması, sahiplik güvenliği ve Timeline swim lane/işaret tıklaması için transcript dosya yolu çözümlemesi (hook payload yoksa SessionIndex kaydından tamamlama) eklendi.
 
 ### Çalıştırma kapıları
 
@@ -1479,7 +1510,7 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 - [ ] Turns + detail + export.
 - [ ] Session Viewer.
 - [ ] Search.
-- [ ] Timeline / Live.
+- [ ] Timeline / Live (swim lane, tool bar ve mark tıklamaları doğru transcript dosyası ve satırını açıyor; taranmamışsa ölü link yok).
 - [ ] Dashboard.
 - [ ] Agent detail ve Portfolio.
 - [ ] Project page/tree/work/timeline.

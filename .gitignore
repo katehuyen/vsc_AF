@@ -4,3 +4,4 @@ out/
 # what test/render_page.js and test/shoot_page.js draw — a looking glass, not a
 # record. The fixtures ARE kept (test/fixtures/); the pictures are regenerated.
 dist/render/
+par.out

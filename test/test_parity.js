@@ -58,45 +58,24 @@ for (const [rel, src] of sources) {
 // a page act is the only place that act is reachable from a tree row. Each
 // item becomes a door of its own, carrying the body of whatever it runs, so
 // the manifest has to account for it like any other.
-const MEDIA_DIR = path.join(ROOT, 'media');
-const mediaSrc = new Map(fs.readdirSync(MEDIA_DIR).filter(f => f.endsWith('.js'))
-    .map(f => [f, read(path.join(MEDIA_DIR, f))]));
-
 /**
- * ‼️ A RIGHT-CLICK ACT IS HANDLED IN THE PAGE, NOT IN THE PANEL. `AFCtx.listen`
- * hands the act to the page's own script, which does the work or posts a
- * message back — and THAT message is the panel `case` the manifest already
- * knows about. Following the act through media/*.js is what makes a menu item
- * the same capability as the button beside it instead of a 328th orphan.
+ * ‼️ A RIGHT-CLICK ITEM IS A SECOND DOOR, NOT A SECOND CAPABILITY.
+ *
+ * Every item in the catalogue is either an existing host command — in which
+ * case it is that command, drawn again — or an `id`+`act` relay handed to the
+ * page that drew the row, which runs the same function its own button runs
+ * (core/ctxmenu.ts says so, and `test_ctxmenu_reach.js` proves every published
+ * section really has handlers). So a command-backed item is recorded as
+ * another door on that command's capability, and a relay is covered by the
+ * page action it relays to. Treating the 327 of them as capabilities of their
+ * own would fill this manifest with menu entries and hide the actual surface.
  */
-function actPosts(act) {
-    const types = new Set();
-    // `blState:done` is dispatched on the `blState:` PREFIX in the page — the
-    // value after the colon is the argument, not a second handler.
-    const needles = act.includes(':') ? [act, act.split(':')[0] + ':'] : [act];
-    for (const needle of needles) {
-        for (const src of mediaSrc.values()) {
-            let at = src.indexOf(`'${needle}`);
-            while (at >= 0) {
-                for (const m of src.slice(at, at + 700).matchAll(/type:\s*'([^']+)'/g)) { types.add(m[1]); }
-                at = src.indexOf(`'${needle}`, at + 1);
-            }
-        }
-        if (types.size) { break; }
-    }
-    return [...types];
-}
-
 for (const item of CTX.CTX_ITEMS) {
-    const id = `ctx:${item.command || item.id}`;
+    if (!item.command) { continue; }
+    const id = `ctx:${item.command}`;
     if (ui.some(u => u.id === id)) { continue; }
-    const target = item.command
-        ? ui.filter(u => u.id === `cmd:${item.command}`)
-        : ui.filter(u => u.kind === 'page' && actPosts(item.act).some(t => u.id.endsWith(`#${t}`)));
-    ui.push({
-        id, kind: 'ctx', file: 'core/ctxmenu.ts',
-        body: target.map(t => t.body).join('\n')
-    });
+    const target = ui.find(u => u.id === `cmd:${item.command}`);
+    ui.push({ id, kind: 'ctx', file: 'core/ctxmenu.ts', body: target ? target.body : '' });
 }
 
 const ops = P.discoverOps([...sources.entries()]
@@ -116,10 +95,45 @@ const sourceFor = (action) => sourceOf(action.file);
 // file, and a thousand handlers asking for the same dozen keys is the
 // difference between two seconds and five minutes.
 const keyCache = new Map();
-const wire = (body) => {
+/**
+ * ‼️ A HANDLER IS ALMOST NEVER THE WHOLE STORY. `case 'mem-ask': await
+ * this.ask(msg.query)` says nothing about where it ends up; the panel's own
+ * `ask()` calls `deps.askMemory`, and the host wired that to the function the
+ * op calls. Three hops, and the parity is only visible after all three — so
+ * each side is expanded once, in place: its own text, plus the panel methods
+ * it delegates to, plus whatever the host gave the deps keys those use.
+ */
+const methodBodies = (file) => {
+    const src = sourceOf(file);
+    let map = keyCache.get('§m§' + file);
+    if (!map) {
+        map = new Map();
+        for (const m of src.matchAll(/(?:private|public|protected)?\s*(?:async\s+)?([a-zA-Z_$][\w$]*)\s*\([^)]*\)\s*:\s*[^{;]*\{/g)) {
+            map.set(m[1], P.balanced ? '' : '');
+            const open = src.indexOf('{', m.index + m[0].length - 1);
+            map.set(m[1], src.slice(open, Math.min(src.length, open + 2500)));
+        }
+        keyCache.set('§m§' + file, map);
+    }
+    return map;
+};
+const wire = (body, file) => {
     let out = body;
+    if (file && file.endsWith('.ts') && file !== 'extension.ts') {
+        const methods = methodBodies(file);
+        for (const m of body.matchAll(/\bthis\.([A-Za-z_$][\w$]*)\s*\(/g)) {
+            const b = methods.get(m[1]);
+            if (b) { out += '\n' + b; }
+        }
+    }
+    // A page button that runs a command IS that command — follow it, or the
+    // button and the op that share a manager look like strangers.
+    for (const m of body.matchAll(/(?:executeCommand|\brun)\(\s*'(agentfarm\.[\w.]+)'/g)) {
+        const cmd = ui.find(u => u.id === `cmd:${m[1]}`);
+        if (cmd) { out += '\n' + cmd.body; }
+    }
     const seen = new Set();
-    for (const m of body.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) {
+    for (const m of out.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) {
         if (seen.has(m[1])) { continue; }
         seen.add(m[1]);
         if (!keyCache.has(m[1])) { keyCache.set(m[1], P.valueOfKey(hostSrc, m[1]).join('\n')); }
@@ -127,8 +141,8 @@ const wire = (body) => {
     }
     return out;
 };
-for (const a of ui) { a.wired = wire(a.body); }
-for (const o of ops) { o.wired = wire(o.body); }
+for (const a of ui) { a.wired = wire(a.body, a.file); }
+for (const o of ops) { o.wired = wire(o.body, o.file); }
 
 const vocabCache = new Map();
 const vocabularyOf = (action) => {
@@ -163,17 +177,29 @@ function ctxGroups() {
             groups.get(key).add(`ctx:${item.command}`);
             continue;
         }
-        if (!item.id || !item.act) { continue; }
-        const posts = actPosts(item.act);
-        const doors = ui.filter(u => u.kind === 'page' && posts.some(t => u.id.endsWith(`#${t}`)))
-            .map(u => u.id);
-        if (!doors.length) { continue; }
-        const key = doors[0];
-        if (!groups.has(key)) { groups.set(key, new Set(doors)); }
-        for (const d of doors) { groups.get(key).add(d); }
-        groups.get(key).add(`ctx:${item.id}`);
+        // A relay item has no door of its own — see the note above.
     }
     return groups;
+}
+
+// ---------------------------------------------------------------- --suggest
+// Which ops actually share a function with a given capability. Used while a
+// manifest is being filled in — the gate says "nothing links these two", and
+// this says what would have.
+if (process.argv.includes('--suggest')) {
+    const manifest = JSON.parse(read(MANIFEST_FILE));
+    const wanted = (process.env.AF_PARITY_SUGGEST || '').split(',').filter(Boolean);
+    for (const name of wanted) {
+        const entry = manifest.entries.find(e => e.capability === name);
+        if (!entry) { console.log(`${name}: not in the manifest`); continue; }
+        const actions = entry.ui.map(id => ui.find(u => u.id === id)).filter(Boolean);
+        const vocab = new Set();
+        for (const a of actions) { for (const s of vocabularyOf(a)) { vocab.add(s); } }
+        const hits = P.suggestMapping(actions.map(a => a.wired ?? a.body), vocab, ops, 4);
+        console.log(`${name}  [now: ${(entry.ops || []).join(',') || '-'}]  ->  `
+            + (hits ? `${hits.ops.join(',')}  via ${hits.core.slice(0, 4).join(',')}` : 'nothing shares a symbol'));
+    }
+    process.exit(0);
 }
 
 // ---------------------------------------------------------------- --fix
@@ -194,7 +220,11 @@ if (process.argv.includes('--fix')) {
         for (const d of live) { seen.add(d); }
         const kept = live.map(d => decided.get(d)).find(Boolean);
         if (kept) {
-            entries.push({ ...kept, capability: kept.capability, ui: live });
+            // ‼️ The DECISION is kept; the NAME is recomputed. A capability is
+            // named after its doors, so carrying an old name forward is how
+            // twenty-five different pages all came to be called after the
+            // first one that happened to own a `case 'afnav'`.
+            entries.push({ ...kept, capability, ui: live });
             return;
         }
         // A new door: propose only what the code PROVES, and leave the rest
@@ -219,8 +249,10 @@ if (process.argv.includes('--fix')) {
         // panel's deps, where the host wired the page's button to the very
         // function the op calls.
         for (const a of actions) { for (const s of vocabularyOf(a)) { vocab.add(s); } }
+        // Only the OPS are proposed. `core` is derived by the audit on every
+        // run, so writing a guess of it here would just be a stale pin.
         const guess = P.suggestMapping(actions.map(a => a.body), vocab, ops);
-        entries.push(guess ? { capability, ui: live, ...guess } : { capability, ui: live });
+        entries.push(guess ? { capability, ui: live, ops: guess.ops } : { capability, ui: live });
     };
 
     for (const [key, set] of groups) {
@@ -233,8 +265,15 @@ if (process.argv.includes('--fix')) {
         emit(action.id.replace(/^(cmd|page):/, '').replace('agentfarm.', ''), [action.id]);
     }
     entries.sort((a, b) => a.capability.localeCompare(b.capability));
-    fs.writeFileSync(MANIFEST_FILE,
-        JSON.stringify({ version: before.version || 1, entries }, null, 2) + '\n', 'utf8');
+    // ‼️ The budget SURVIVES a rewrite. A --fix that dropped it would reset
+    // the ratchet to whatever today happens to be, which is the one thing a
+    // ratchet must never do.
+    fs.writeFileSync(MANIFEST_FILE, JSON.stringify({
+        version: before.version || 1,
+        gapBudget: typeof before.gapBudget === 'number'
+            ? before.gapBudget : entries.filter(e => e.gap).length,
+        entries
+    }, null, 2) + '\n', 'utf8');
     const undecided = entries.filter(e => !e.exempt && !(e.ops || []).length);
     console.log(`parity.manifest.json rewritten — ${entries.length} capabilities, `
         + `${undecided.length} still waiting for a decision.`);
@@ -300,9 +339,21 @@ for (const [kind, label] of Object.entries(LABEL)) {
 }
 
 const cover = P.parityCoverage(manifest);
+
+// ‼️ THE RATCHET. A gap is an honest record of something the UI can do and the
+// bridge cannot; the budget is what stops it becoming a place to put things.
+// It may be lowered — that is the point — and raising it is a line in a diff
+// with somebody's name on it, not something a build does quietly.
+ok(`‼️ the recorded gaps do not outgrow the budget (${cover.gaps}/${manifest.gapBudget})`,
+    cover.gaps <= manifest.gapBudget);
+if (cover.gaps < manifest.gapBudget) {
+    console.log(`    · ${manifest.gapBudget - cover.gaps} gap(s) closed — lower gapBudget to ${cover.gaps} to keep them closed.`);
+}
+
 console.log(`  ${cover.capabilities} capabilities · ${cover.doors} UI doors · `
     + `${cover.mapped} on the bridge · ${cover.exempt} exempt (`
-    + Object.entries(cover.byExemption).map(([k, n]) => `${k} ${n}`).join(', ') + ')');
+    + Object.entries(cover.byExemption).map(([k, n]) => `${k} ${n}`).join(', ') + ')'
+    + ` · ${cover.gaps} open gap(s)`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
