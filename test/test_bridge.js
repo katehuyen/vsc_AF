@@ -1888,6 +1888,65 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('missions.cancel refuses an already-finished run', !cancelAgain.ok && /already done/.test(cancelAgain.error));
     }
 
+    // ---------- S-33: the two OpenCode history ops, and the one that is absent ----------
+    // ‼️ THIS ENGINE'S HISTORY IS THE ONLY ONE THAT COSTS A PROCESS. Every other
+    // source reads a file the engine left behind; OpenCode keeps its
+    // conversations in SQLite and publishes `session list` / `export`, so an
+    // agent asked "what did I do in OpenCode yesterday?" needs a way to say
+    // "read it NOW" rather than waiting for a deliberately slow beat.
+    {
+        let harvested = 0;
+        reg.register({
+            op: 'sessions.opencodeSync',
+            describe: 'Read OpenCode\'s own history back into the sessions tables. args: force? (default true)',
+            handler: (args) => {
+                const force = typeof args.force === 'boolean' ? args.force : true;
+                harvested++;
+                return { ran: force || harvested === 1, roots: 2, listed: 6, exported: force ? 1 : 0, failed: 0 };
+            }
+        });
+        ok('sessions.opencodeSync is in the catalog', reg.catalog().some(c => c.op === 'sessions.opencodeSync'));
+        const r = await reg.dispatch('sessions.opencodeSync', {});
+        ok('an agent asking for it gets a real harvest by default',
+            r.ok && r.result.ran === true && r.result.exported === 1);
+        const soft = await reg.dispatch('sessions.opencodeSync', { force: false });
+        ok('…and can ask for the polite version, which the quiet floor may refuse',
+            soft.ok && soft.result.exported === 0);
+
+        reg.register({
+            op: 'sessions.opencodeExport',
+            describe: 'One OpenCode conversation as the engine\'s own export document. args: sessionId, sanitize?, fresh?',
+            handler: (args) => {
+                const id = argStr(args, 'sessionId');
+                need(/^ses_[0-9a-zA-Z]+$/.test(id), 'sessionId must be an OpenCode conversation id (ses_…)');
+                return { sessionId: id, sanitized: args.sanitize === true, source: args.fresh ? 'cli' : 'cache' };
+            }
+        });
+        const bad = await reg.dispatch('sessions.opencodeExport', { sessionId: 'rollout-2026' });
+        ok('‼️ an id from another engine is refused by name, not exported as nothing',
+            !bad.ok && /ses_/.test(bad.error));
+        const cached = await reg.dispatch('sessions.opencodeExport', { sessionId: 'ses_abc' });
+        ok('the cached read is the default — no spawn for a document already on disk',
+            cached.ok && cached.result.source === 'cache' && cached.result.sanitized === false);
+        const clean = await reg.dispatch('sessions.opencodeExport', { sessionId: 'ses_abc', sanitize: true });
+        ok('…and the redacted form says so on the row it returns', clean.ok && clean.result.sanitized === true);
+
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const sync = src.slice(src.indexOf("op: 'sessions.opencodeSync'"), src.indexOf("op: 'sessions.opencodeExport'"));
+        ok('extension.ts registers the sync op and says why it is not automatic',
+            /force\?/.test(sync) && /cwd-scoped/.test(sync) && /harvestOpencode\(force\)/.test(sync));
+        const exp = src.slice(src.indexOf("op: 'sessions.opencodeExport'"), src.indexOf("op: 'sessions.pin'"));
+        ok('…and the export op states the sanitize contract in the engine\'s own terms',
+            /--sanitize/.test(exp) && /OPENCODE_SESSION_ID\.test/.test(exp));
+        ok('‼️ …and says out loud that deleting a conversation is NOT on the bridge',
+            /no delete op/.test(exp) && /human-only/.test(exp));
+        // The rule the parity gate enforces, asserted here too because it is a
+        // SECURITY boundary and not a bookkeeping one: an agent must not be able
+        // to destroy the user's conversations through a request file.
+        ok('no bridge op deletes an OpenCode conversation',
+            !/op: 'sessions\.opencodeDelete/.test(src));
+    }
+
     // ---------- §19.C: sessions.recent origin scope ----------
     // The Sessions tables let the user separate their own dialogs from the
     // farm's automation runs; the same distinction has to be reachable as data,

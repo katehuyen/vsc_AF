@@ -185,7 +185,8 @@ tur 2: { inputTokens:   36, outputTokens: 13,                    cachedReadToken
 |---|---|
 | Depo | `~/.local/share/opencode/opencode.db` (+ `-wal`, `-shm`) — **SQLite** |
 | Dosya biçimi | Okunabilir transcript **yok**; `readableTranscript: false` |
-| Okunabilir yüzey | `opencode session list` ve `opencode export <id>` (JSON) |
+| Okunabilir yüzey | `opencode session list --format json` (`-n <N>` ile sınırlanabilir) ve `opencode export <id>` (`--sanitize` ile redakteli) |
+| ‼️ Listenin kapsamı | **cwd'ye bağlı.** Depoda 6 oturum döndü, bir klasör ötede (`ajanlar/developer`) **hiçbir şey**. Yani aktif klasörü taramak "geçmiş" değil, "bir projenin geçmişi" demektir |
 | Gerçek id | `info.id` — `ses_…` |
 | Başlık | İlk gerçek kullanıcı prompt’undan türetiliyor (`NONCE değeri yazma`); henüz konuşulmamış oturum `New session - <ISO>` |
 | Proje eşlemesi | `info.projectID` (hash) + `info.directory` (gerçek yol) |
@@ -193,10 +194,27 @@ tur 2: { inputTokens:   36, outputTokens: 13,                    cachedReadToken
 | Token | `info.tokens` **konuşma kümülatifi** (6196+36=6232 ile doğrulandı, `total` alanı yok); mesaj başına `message.info.tokens` `total` taşır |
 | Live hook | Motor kendi hook’unu yayımlamıyor → host/launcher lifecycle’ı aynalanır; Timeline dosya yolunu `SessionIndex` satırından alır (SOP’nin X-41 notu) |
 
-> ### ‼️ Tuzak 3 — `opencode export` JSON’unun ÜSTÜNE bir cümle basar
-> stdout’un ilk satırı `Exporting session: ses_…`. `JSON.parse(stdout)` sağlam bir
-> export’ta bile fırlatır; hata “geçmiş boş” diye aylar sonra keşfedilir.
-> Okuyucu: `opencodeExportJson()`.
+> ### ‼️ Tuzak 3 — `opencode export` JSON’unun yanına bir cümle basar
+> `Exporting session: ses_…` satırı **stderr’a** gidiyor (S-33 ölçümü; stdout’un
+> ilk baytı `{`). Okuyucular yine de ilk `{` / `[` işaretine kadar atlıyor —
+> satırı stdout’a taşıyan bir sürüm sessizce “geçmiş boş” demesin diye.
+> Okuyucular: `opencodeExportJson()`, `opencodeExport()`, `opencodeListJson()`.
+
+### Ölçülen parça sözlüğü (`export` → `messages[].parts[]`)
+
+| Tip | Ne taşır |
+|---|---|
+| `text` | `text` + `time.start/end` — hem kullanıcı hem asistan |
+| `reasoning` | ‼️ **metniyle birlikte.** Codex rollout’unda yalnız sayı vardır, burada modelin kendi cümleleri var → görüntüleyicide çizilir, sayıya indirgenmez |
+| `tool` | `tool` (ad) + `callID` + `state { status, input, output \| error, metadata, time }`. ‼️ **Argüman ve sonuç bir kat aşağıda**; hata `status: 'error'` ile adlandırılır, metinde “error” aranmaz |
+| `step-start` / `step-finish` | Model çağrısı sınırı; `step-finish` `tokens` + `cost` taşır |
+| `file` | Ek. **Ölçülmedi** (ölçüm turlarında ek gönderilmedi) — alanlar protokolden, hepsi opsiyonel okunuyor |
+| bilinmeyen | `kind: 'other'` + kendi `type`’ı ile geçer, düşürülmez |
+
+Ayrıca ölçüldü: **parçası olmayan mesaj gerçek bir mesajdır** (iptal edilmiş bir
+turda boş `parts` görüldü) ve altı oturumun üçü hiç konuşulmamış
+(`New session - <ISO>` başlığı, sıfır mesaj) — bunlar silinmez, “boş” diye
+işaretlenir.
 
 ## 7. Ajan çalışma alanı (ayrıntı X-39’a aittir)
 
@@ -256,6 +274,37 @@ Dosyalar: `src/core/opencodeacp.ts` (runtime, enjekte edilen spawn üzerinde saf
 `test/test_opencodeacp.js` · `test/test_opencodeproto.js` ·
 `test/test_console_opencode.js` (kabul listesi).
 
+## 8c. S-33 — geçmiş, resume ve transkript (uygulandı)
+
+Temel gerilim: `SessionSource.scan()` **her panel çiziminde** çalışır, bu motorun
+geçmişi ise **yalnız süreç açarak** okunabilir. İkisi bir arada olamaz.
+
+| Karar | Değer | Gerekçe |
+|---|---|---|
+| İki yarım bir **dosyayla** ayrılır | Hasatçı kendi yavaş saatinde CLI'yi çalıştırır, her konuşmanın `export`'unu bir önbellek klasörüne yazar; kaynak o klasörü okur | Aksi hâlde her çizimde ajan klasörü başına bir spawn — i7-2600K'da kabul edilemez |
+| Önbellekteki dosya | **Motorun kendi belgesi, değiştirilmeden** | Üç ay sonra biri onu CLI'ye karşı tutabilsin; bizim okumamız mı motorun çıktısı mı değişti, görülebilsin |
+| Tazelik kuralı | `row.updated > dosyanın mtime'ı` ise yeniden export | Biz listelemenin hemen ardından yazıyoruz, yani damgamız her zaman motorunkinden sonradır; ikisi de aynı makinede epoch ms |
+| Tarama kökleri | Açık workspace + kayıtlı ajan kökleri + **listelerin kendi adlandırdığı klasörler** | Liste cwd'ye bağlı; öğrenilen klasör olmadan kullanıcının kendi terminalindeki proje sonsuza dek görünmez |
+| Ritim | İlk hasat aktivasyondan **20 sn** sonra, sonra 10 dk'da bir; hasatçının kendi tabanı **5 dk** | Açılışta beş spawn bu makinede fark edilir |
+| Kullanıcı tetikli refresh | `agentfarm.opencodeRefreshHistory` — tabanı **yok sayar**, ne yaptığını sayıyla söyler | Belki hiçbir şey yapmayan bir düğme, düğme olmamasından kötüdür |
+| Eşzamanlılık | 2 | Bu arka plan işi; kullanıcı aynı makinede çalışıyor |
+| İlk koşu tavanı | Pas başına **12 export**, en yeniden başlayarak | Uzun geçmiş peş peşe paslarda yakalanır, aranan sıra da budur |
+| `readableTranscript` | **`false` kalır** | Alan "motor transcript bırakıyor mu" diye sorar; bırakmıyor. Önbellekteki dosya **bizim** |
+| `SessionInfo.file` | Önbelleklenen export | Böylece Sessions tabloları, görüntüleyici, Console resume scrollback'i ve K-23'ün "daha eskisini yükle" hattı **tek satır ek kod olmadan** çalışır |
+| `reasoning` | Görüntüleyicide **çizilir** (`kind: 'think'`), sayıya indirgenmez | Codex rollout'unda metin yoktur, burada vardır |
+| Maliyet | Motorun kendi `cost`'u (`costSource: 'cli'`); fiyat kuralı uygulanmaz | Ücretsiz modelde 0 **gerçek** sıfırdır, eksik kural değil |
+| Ctx hücresi | Son asistan mesajının kendi `tokens.total`'ı | Konuşma kümülatifi değil — X-43'ün hatası |
+| Export yüzeyi | **İki ayrı seçenek**, farkı yazılı: tam JSON · `--sanitize` ile redakteli | Tek düğme kullanıcıyı kör seçime zorlar; neyin redakte edildiğine **motor** karar verir, Agent Farm değil |
+| Silme | Ayrı komut, modal onay, **köprüde YOK** (parity: `human-only`) | Kart End/Remove motorun kaydına dokunmaz; bir ajanın kullanıcının konuşmalarını silebilmesi bu uzantının sunduğu bir yetenek değildir |
+| İkinci yazar | Console tarafında `ConsoleHost.seatFor` zaten canlı koltuğu geri veriyor; koltuğu olmayan yollar için `opencodeWriterRefusal()` | Dışarıdaki rastgele TUI'nin sahipliği **tahmin edilmez**; bilinmeyen sahip "boş" diye okunmaz |
+
+Dosyalar: `src/core/opencodehistory.ts` (saf: okuyucular + planlayıcı) ·
+`src/core/opencodeharvest.ts` (enjekte edilen CLI üzerinde hasatçı + `nodeOpencodeCli`) ·
+`cliTranscripts.ts` → `opencodeSessionsSource` · `cliViewer.ts` → `parseOpencode` ·
+`extension.ts` (üç komut, iki bridge op'u, ritim) ·
+`test/test_opencodehistory.js` · `test/test_opencode_sessions.js` ·
+`test/test_opencodeharvest.js`.
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi
@@ -302,5 +351,16 @@ Dosyalar: `src/core/opencodeacp.ts` (runtime, enjekte edilen spawn üzerinde saf
   runtime restart + `session/load` · End/Remove ayrımı · hiçbir kartın sahip
   olmadığı süreci öldürmemesi. **Gerçek binary'ye karşı tekrarı X-40'a aittir**
   (belirsizlik 2, 3, 5, 6).
+- **S-33 kabulü (tamam, **gerçek** belgeler üzerinde):** Bu turun fixture'ları
+  sahte değil — bu makinenin altı gerçek oturumunun `session list --format json`
+  ve `export` çıktıları. `test/test_opencodehistory.js` (56) · `test_opencode_sessions.js`
+  (33) · `test_opencodeharvest.js` (16). Kalemin kabul listesi karşılığı:
+  CLI'de oluşturulan oturum listede belirir (kaynak + hasatçı) · görüntüleyici iki
+  turu ve `tool`/`reasoning` parçalarını gösterir · ACP `session/load` geçmişi
+  replay eder ve nonce'ı hatırlar (K-25'te ölçüldü) · terminal ve Console aynı
+  `ses_` id'sini sürdürür (`tuiArgs` → `-s`) · bozuk/yabancı/boş export fail-soft
+  ve işaretli kalır. **Gerçek binary'de kalan tek boşluk:** 24 MB'ı aşan bir
+  export'un `scanLimit` yolu (S-32 kuralı koddadır, o boyutta gerçek bir belge
+  yoktu) — X-40'ta üretilebilir.
 - **Sonraki çocuklar bu sözleşmeyi veri kabul eder** ve değiştirmek isterlerse
   önce bu belgeyi yeni bir ölçümle günceller.

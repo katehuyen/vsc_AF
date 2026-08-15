@@ -3213,6 +3213,34 @@
       }
     },
     {
+      "capability": "opencodeDeleteSession",
+      "ui": [
+        "cmd:agentfarm.opencodeDeleteSession"
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
+      }
+    },
+    {
+      "capability": "opencodeExportSession",
+      "ui": [
+        "cmd:agentfarm.opencodeExportSession"
+      ],
+      "ops": [
+        "sessions.opencodeExport"
+      ]
+    },
+    {
+      "capability": "opencodeRefreshHistory",
+      "ui": [
+        "cmd:agentfarm.opencodeRefreshHistory"
+      ],
+      "ops": [
+        "sessions.opencodeSync"
+      ]
+    },
+    {
       "capability": "pauseAutomations",
       "ui": [
         "cmd:agentfarm.pauseAutomations"

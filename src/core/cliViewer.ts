@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { codexPromptTitle, codexUserText, readFarmConsoleTranscript } from './cliTranscripts';
+import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
 import { conversationTitle } from './sessions';
 import { StepKind, stepKindForTool } from './stepkind';
@@ -29,7 +30,7 @@ export interface CliViewTurn {
 }
 
 export interface ParsedCliViewer {
-    engine: 'codex' | 'gemini' | 'agy';
+    engine: 'codex' | 'gemini' | 'agy' | 'opencode';
     sessionId: string;
     title: string;
     cwd: string;
@@ -501,8 +502,150 @@ function parseGemini(raw: string, file: string, pricing: PricingEngine): ParsedC
     };
 }
 
+/**
+ * S-33 — an OpenCode conversation, out of the export the harvester cached.
+ *
+ * ‼️ REASONING IS DRAWN HERE, NOT COUNTED AND DROPPED. The Codex reader treats a
+ * `reasoning` item as a tally (`thinking++`) because a Codex rollout carries no
+ * text for it. OpenCode's export DOES — measured: a `reasoning` part with the
+ * model's own words and its own start/end times. Turning that into a number
+ * would be throwing away the half of the answer that explains the other half,
+ * and the backlog item asks for these parts by name.
+ *
+ * ‼️ AND THE TOKENS ARE PER MESSAGE, NOT CUMULATIVE. `info.tokens` on the
+ * document is the conversation's running total; `message.info.tokens.total` is
+ * that one turn's. Measured: turn 2 came back with input 36 against turn 1's
+ * 6196, so a running total would have to go DOWN — which is what proves it is
+ * not one. No delta is subtracted; doing what the Codex reader correctly does
+ * would report every turn but the first as costing nothing.
+ */
+function parseOpencode(raw: string): ParsedCliViewer | undefined {
+    const doc = opencodeExport(raw);
+    if (!doc) { return undefined; }
+    const messages: CliViewMessage[] = [];
+    const turns: Record<number, TurnAcc> = {};
+    const prompts: Record<number, string> = {};
+    const started: Record<number, number> = {};
+    const turnModels: Record<number, Set<string>> = {};
+    const attrs: Record<number, Record<string, string>> = {};
+    const usage = emptyUsage();
+    const models = new Set<string>();
+    let turn = 0, toolCalls = 0, errors = 0, wTokens = 0, ctxTokens = 0, ctxTs = 0;
+    let firstTs = doc.created, lastTs = doc.updated;
+
+    for (const m of doc.messages) {
+        const model = m.model || doc.model;
+        if (model) { models.add(model); }
+        if (m.ts) { if (!firstTs) { firstTs = m.ts; } lastTs = Math.max(lastTs, m.endTs ?? m.ts); }
+        if (m.role === 'user') {
+            const text = m.parts.filter(p => p.kind === 'text' && p.text?.trim())
+                .map(p => p.text as string).join('\n').trim();
+            // An attachment-only message is still the user speaking; it opens a
+            // turn with the file's name rather than vanishing.
+            const files = m.parts.filter(p => p.kind === 'file');
+            const opening = text || files.map(p => p.filename || p.text || 'attachment').join(', ');
+            if (!opening) { continue; }
+            turn++;
+            prompts[turn] = opening;
+            started[turn] = m.ts;
+            turns[turn] = blankTurn();
+            if (model) { turnModels[turn] = new Set([model]); }
+            if (m.agent || doc.agent) { attrs[turn] = { agent: m.agent || doc.agent }; }
+            messages.push({ role: 'user', ts: m.ts, text: opening, turn, turnStart: true });
+            for (const p of files) {
+                messages.push({
+                    role: 'system', ts: p.ts ?? m.ts, turn,
+                    text: `attached: ${p.filename || p.text || 'file'}${p.mime ? ` (${p.mime})` : ''}`
+                });
+            }
+            continue;
+        }
+        const acc = turn ? (turns[turn] ?? (turns[turn] = blankTurn())) : undefined;
+        if (turn && model) { (turnModels[turn] ?? (turnModels[turn] = new Set())).add(model); }
+        for (const p of m.parts) {
+            const ts = p.ts ?? m.ts;
+            if (p.kind === 'reasoning') {
+                messages.push({ role: 'assistant', ts, text: p.text, model, kind: 'think', turn: turn || undefined });
+                if (acc) { acc.steps++; acc.thinking++; }
+                continue;
+            }
+            if (p.kind === 'text') {
+                messages.push({ role: 'assistant', ts, text: p.text, model, kind: 'say', turn: turn || undefined });
+                if (acc) { acc.steps++; }
+                continue;
+            }
+            if (p.kind === 'tool') {
+                const name = p.tool || 'tool';
+                toolCalls++;
+                messages.push({
+                    role: 'tool', ts, tool: name, input: clipTool(asText(p.input ?? {})),
+                    kind: stepKindForTool(name), turn: turn || undefined
+                });
+                if (acc) { acc.steps++; }
+                if (p.isError) { errors++; }
+                // A call still running when the export was taken has a status
+                // and no output — say which it was instead of drawing a blank
+                // result that reads as "it returned nothing".
+                const body = p.output || (p.status && p.status !== 'completed'
+                    ? `(${p.status})` : '');
+                if (body) {
+                    messages.push({
+                        role: 'toolResult', ts: p.endTs ?? ts, text: clipTool(body),
+                        tool: name, isError: p.isError, kind: 'result', turn: turn || undefined
+                    });
+                }
+                continue;
+            }
+            if (p.kind === 'step-finish' && acc) { acc.apiCalls++; }
+        }
+        if (m.tokens) {
+            const u: Usage = {
+                // reasoning is NOT inside output on this engine — see the file
+                // header of `opencodehistory.ts` for the arithmetic.
+                input: m.tokens.input, output: m.tokens.output + m.tokens.reasoning,
+                cacheWrite: m.tokens.cacheWrite, cacheRead: m.tokens.cacheRead
+            };
+            addUsage(usage, u);
+            const w = model ? weightedTokens(model, u) : totalTokens(u);
+            wTokens += w;
+            if (acc) {
+                acc.tokens += m.tokens.total; acc.wTokens += w;
+                acc.endCtx = m.tokens.total; acc.endTs = m.endTs ?? m.ts;
+            }
+            ctxTokens = m.tokens.total;
+            ctxTs = m.endTs ?? m.ts;
+        }
+        // ‼️ THE ENGINE PUBLISHES ITS OWN DOLLARS, so the per-turn figure is the
+        // one it stated (`costSource: 'cli'`); a free model's 0 is a real zero.
+        if (acc && typeof m.cost === 'number') { acc.cost += m.cost; }
+        // A turn the engine cut says so — otherwise a short answer and an
+        // aborted one look identical in the table.
+        if (turn && m.finish && m.finish !== 'stop') {
+            messages.push({
+                role: 'system', ts: m.endTs ?? m.ts, turn,
+                text: `— the engine ended this turn: ${m.finish} —`
+            });
+        }
+    }
+    const table = finishTurns(messages, turns, prompts, started, turnModels, attrs);
+    return {
+        engine: 'opencode', sessionId: doc.id,
+        title: opencodeTitle(doc, conversationTitle),
+        cwd: doc.directory, permissionMode: doc.agent, firstTs, lastTs,
+        models: [...models], usage, totalTokens: totalTokens(usage),
+        totalWTokens: Math.round(wTokens), cost: doc.cost, errors, toolCalls,
+        context: { tokens: ctxTokens, ts: ctxTs, model: doc.model },
+        turnCount: table.length, turnTotals: turns, turns: table, messages
+    };
+}
+
 /** Parse a foreign CLI transcript into the Session Viewer vocabulary. Claude
  * files return undefined and continue through the existing, richer parser. */
 export function parseCliViewer(raw: string, file: string, pricing: PricingEngine): ParsedCliViewer | undefined {
-    return parseFarmConsole(raw) ?? parseCodex(raw, file, pricing) ?? parseGemini(raw, file, pricing);
+    // Order is by how positively each reader identifies its own document, not by
+    // age: the Console snapshot and the OpenCode export both carry a marker
+    // nothing else writes (`format` / a `ses_` id), so neither can steal a file
+    // from the two readers below them, which recognise their formats by shape.
+    return parseFarmConsole(raw) ?? parseOpencode(raw)
+        ?? parseCodex(raw, file, pricing) ?? parseGemini(raw, file, pricing);
 }

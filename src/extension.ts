@@ -20,8 +20,13 @@ import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
 import {
     agySessionsSource, codexSessionsSource, farmConsoleSessionsSource,
-    farmConsoleTranscript, geminiSessionsSource
+    farmConsoleTranscript, geminiSessionsSource, opencodeSessionsSource
 } from './core/cliTranscripts';
+import {
+    HarvestResult, nodeOpencodeCli, OpencodeHarvester
+} from './core/opencodeharvest';
+import { OPENCODE_SESSION_ID } from './core/opencode';
+import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
@@ -1217,9 +1222,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => expandEnvPath(cfg().get<string>('agyHome', '').trim())
             || path.join(os.homedir(), '.gemini', 'antigravity-cli'),
         resolveAgentByCwd);
+    /**
+     * ‼️ S-33 — THE FIFTH ENGINE, WHOSE HISTORY IS NOT A FILE.
+     *
+     * OpenCode keeps its conversations in SQLite and publishes two commands that
+     * read them (`session list`, `export`). A `SessionSource.scan()` runs on
+     * every repaint, so it cannot spawn — the harvester below runs on its own
+     * slow clock and writes each conversation's export, unedited, into this
+     * directory; the source then reads it as cheaply as any other transcript.
+     *
+     * And the listing is cwd-SCOPED (measured): run one folder away from the
+     * project it answers with nothing. Scanning only the active workspace would
+     * therefore make everything the user did in a terminal invisible, so the
+     * walk is the agents' own roots, the open workspace folders, and — as they
+     * are learned — the directories the listings themselves name.
+     */
+    const opencodeExportDir = path.join(context.globalStorageUri.fsPath, 'opencode-exports');
+    const opencodeSource = opencodeSessionsSource(
+        () => opencodeExportDir, resolveAgentByCwd, () => pricing);
+    const opencodeHarvester = new OpencodeHarvester({
+        dir: () => opencodeExportDir,
+        roots: () => [
+            ...(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
+            ...agents.map(a => a.dir)
+        ],
+        cli: nodeOpencodeCli(),
+        // The engine has to be on this machine at all; `engineMatrix` is the one
+        // place that knows, and it is what the Engines page and the bridge read.
+        enabled: () => cfg().get<boolean>('opencodeHistory', true) !== false
+    });
     const refreshExternalSessions = () =>
         index.setExternal(buildExternalSessions(
-            [externalSessionSource, codexSource, geminiSource, agySource, farmConsoleSource]));
+            [externalSessionSource, codexSource, geminiSource, agySource,
+                opencodeSource, farmConsoleSource]));
+    /**
+     * One harvest, then the table. `force` is the user's own refresh and skips
+     * the quiet floor; the automatic caller does not, so a busy window does not
+     * turn into a spawn every fifteen seconds.
+     */
+    const harvestOpencode = async (force = false): Promise<HarvestResult> => {
+        const r = await opencodeHarvester.harvest(force);
+        if (r.ran && (r.exported || force)) { refreshExternalSessions(); }
+        return r;
+    };
+    /**
+     * Which OpenCode conversation a command is about — from the row it was
+     * invoked on, or from a list if it was invoked from the palette.
+     *
+     * ‼️ The list is what the HARVEST found, not what OpenCode has: a
+     * conversation nobody has read back yet is not offered, because offering an
+     * id we have never seen would put a guess in a delete dialog.
+     */
+    const pickOpencodeSession = async (
+        arg: unknown, title: string
+    ): Promise<{ sessionId: string; title: string; cwd?: string } | undefined> => {
+        const rows = index.external()
+            .filter(s => s.source === 'opencode' && s.sessionId)
+            .sort((a, b) => b.lastTs - a.lastTs);
+        const fromArg = (arg && typeof arg === 'object'
+            ? String((arg as { sessionId?: unknown }).sessionId ?? '') : String(arg ?? '')).trim();
+        if (fromArg) {
+            const hit = rows.find(s => s.sessionId === fromArg);
+            return hit
+                ? { sessionId: hit.sessionId, title: hit.title, cwd: hit.cwd }
+                : { sessionId: fromArg, title: fromArg };
+        }
+        if (!rows.length) {
+            void vscode.window.showInformationMessage(
+                'Agent Farm: no OpenCode conversation has been read back yet. '
+                + '"Refresh OpenCode History" reads them from the CLI.');
+            return undefined;
+        }
+        const picked = await vscode.window.showQuickPick(
+            rows.map(s => ({
+                label: s.title,
+                description: s.sessionId,
+                detail: `${new Date(s.lastTs).toLocaleString()} · ${s.userTurns} turn(s)`
+                    + (s.cwd ? ` · ${s.cwd}` : ''),
+                row: s
+            })),
+            { title, placeHolder: 'Conversation', matchOnDescription: true, matchOnDetail: true });
+        return picked
+            ? { sessionId: picked.row.sessionId, title: picked.row.title, cwd: picked.row.cwd }
+            : undefined;
+    };
     refreshExternalSessions();
     let externalSessTimer: NodeJS.Timeout | undefined;
     context.subscriptions.push(live.onDidUpdate(() => {
@@ -1233,6 +1319,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // only fires when the content signature actually changed.
     const externalInterval = setInterval(refreshExternalSessions, 60_000);
     context.subscriptions.push({ dispose: () => clearInterval(externalInterval) });
+    /**
+     * ‼️ S-33 — AND THE ONE SOURCE THAT COSTS A PROCESS GETS ITS OWN, SLOWER
+     * BEAT. The harvester's own floor (HARVEST_MIN_MS) is what actually paces
+     * it; this interval only offers it the chance, so the two numbers can differ
+     * without a spawn storm. The first harvest is deferred past activation:
+     * five `opencode` spawns during startup is exactly the kind of thing this
+     * machine notices.
+     */
+    const opencodeFirst = setTimeout(() => { void harvestOpencode(); }, 20_000);
+    const opencodeInterval = setInterval(() => { void harvestOpencode(); }, 10 * 60_000);
+    context.subscriptions.push({ dispose: () => { clearTimeout(opencodeFirst); clearInterval(opencodeInterval); } });
 
     // A session started with a name (`claude -n …`, what the launcher passes)
     // carries that name ONLY in the CLI's own live registry — it is never
@@ -5166,6 +5263,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const sessionId = argStr(args, 'sessionId');
                 const title = await applySessionTitle(sessionId, optStr(args, 'name'));
                 return { sessionId, title: title || null };
+            }
+        },
+        {
+            op: 'sessions.opencodeSync',
+            describe: 'Read OpenCode\'s own history back into the sessions tables — the same refresh the "Refresh OpenCode History" command runs. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this SPAWNS its CLI (`session list --format json` in each known folder, then `export` for whatever has moved) and caches each export; it is the only history source here that costs a process, which is why it has a slow automatic beat and this op. The listing is cwd-scoped, so folders matter: the walk is the open workspace, every registered agent root, and any directory a previous listing named. Reads only — nothing is written to OpenCode\'s store. args: force? (default true — ignore the quiet floor between automatic harvests)',
+            handler: async (args) => {
+                const force = typeof args.force === 'boolean' ? args.force : true;
+                const r = await harvestOpencode(force);
+                return {
+                    ran: r.ran, roots: r.roots, listed: r.listed,
+                    exported: r.exported, failed: r.failed,
+                    ...(r.error ? { error: r.error } : {}),
+                    inTable: index.external().filter(s => s.source === 'opencode').length
+                };
+            }
+        },
+        {
+            op: 'sessions.opencodeExport',
+            describe: 'One OpenCode conversation as the engine\'s own export document: {info, messages[]} with the user/assistant messages and their text, reasoning, tool and step parts. `sanitize: true` asks OpenCode to redact the transcript and the file data inside it — the engine decides what counts as sensitive, not Agent Farm. Taking the export does NOT change or resume the conversation. Answers from the cached read by default; `fresh: true` spawns the CLI for it. There is deliberately no delete op — removing a conversation from OpenCode\'s store is a human-only action in the command palette. args: sessionId, sanitize? (default false, implies fresh), fresh? (default false)',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                need(OPENCODE_SESSION_ID.test(sessionId),
+                    'sessionId must be an OpenCode conversation id (ses_…)');
+                const sanitize = args.sanitize === true;
+                const row = index.external().find(s => s.sessionId === sessionId);
+                const cached = path.join(opencodeExportDir, `${sessionId}.json`);
+                if (!sanitize && args.fresh !== true && fs.existsSync(cached)) {
+                    const doc = opencodeExport(fs.readFileSync(cached, 'utf8'));
+                    need(!!doc, 'the cached export could not be read — pass fresh: true to take a new one');
+                    return {
+                        sessionId, sanitized: false, source: 'cache', file: cached,
+                        empty: opencodeSessionIsEmpty(doc!), doc
+                    };
+                }
+                const r = await nodeOpencodeCli().run(
+                    ['export', sessionId, ...(sanitize ? ['--sanitize'] : [])],
+                    row?.cwd ?? '', 60_000);
+                const doc = opencodeExport(r.stdout);
+                need(!!doc, `OpenCode returned no export for ${sessionId}${r.error ? ` — ${r.error}` : ''}`);
+                return {
+                    sessionId, sanitized: sanitize, source: 'cli',
+                    empty: opencodeSessionIsEmpty(doc!), doc
+                };
             }
         },
         {
@@ -17665,6 +17805,127 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await chooseActiveProject();
         }),
 
+        /**
+         * ‼️ S-33 — THE REFRESH THE HARVESTER'S OWN CLOCK CANNOT BE (backlog:
+         * "60 sn+ imza cache'i ve kullanıcı tetiklemeli refresh").
+         *
+         * Everything else here appears on its own; this engine's history costs a
+         * process per folder, so its automatic beat is deliberately slow. When
+         * somebody has just finished a conversation in a terminal and wants to
+         * see it NOW, waiting ten minutes is the wrong answer — and a button
+         * that might quietly do nothing is worse than none, so this one ignores
+         * the quiet floor and reports what it actually did.
+         */
+        vscode.commands.registerCommand('agentfarm.opencodeRefreshHistory', async () => {
+            const r = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Window, title: 'Agent Farm: reading OpenCode history…' },
+                () => harvestOpencode(true));
+            if (r.error) {
+                void vscode.window.showWarningMessage(`Agent Farm: OpenCode history could not be read — ${r.error}`);
+                return;
+            }
+            const total = index.external().filter(s => s.source === 'opencode').length;
+            void vscode.window.showInformationMessage(
+                `Agent Farm: OpenCode — ${r.listed} conversation(s) across ${r.roots} folder(s), `
+                + `${r.exported} newly read, ${total} in the sessions table`
+                + (r.failed ? ` · ${r.failed} call(s) failed` : ''));
+        }),
+        /**
+         * ‼️ TWO EXPORTS, AND THE DIFFERENCE IS SAID OUT LOUD.
+         *
+         * OpenCode's own `export --sanitize` redacts the transcript and the file
+         * contents inside it. A single "Export" button would make the user
+         * choose blind between a document that is complete and one that is safe
+         * to send somebody — so the choice is the first thing this asks, with
+         * what each one means written beside it.
+         *
+         * The export is a READ: it does not touch the conversation, does not
+         * resume it and does not change what any other surface will show.
+         */
+        vscode.commands.registerCommand('agentfarm.opencodeExportSession', async (arg?: unknown) => {
+            const picked = await pickOpencodeSession(arg, 'Export which OpenCode conversation?');
+            if (!picked) { return; }
+            const how = await vscode.window.showQuickPick([
+                {
+                    label: '$(json) Full JSON', form: 'full',
+                    description: 'everything the engine has',
+                    detail: 'The complete document: every message, every tool call and its whole output, '
+                        + 'including any file contents that were read. For your own machine.'
+                },
+                {
+                    label: '$(shield) Redacted (--sanitize)', form: 'sanitized',
+                    description: 'safe to hand to somebody else',
+                    detail: 'OpenCode\'s own redaction of the transcript and of the file data inside it. '
+                        + 'It is the engine that decides what counts as sensitive, not Agent Farm — read it before you send it.'
+                }
+            ], { title: `Export ${picked.sessionId}`, placeHolder: 'Which form of the export?' });
+            if (!how) { return; }
+            const suffix = how.form === 'sanitized' ? '-sanitized' : '';
+            const target = await vscode.window.showSaveDialog({
+                title: 'Save the OpenCode export',
+                defaultUri: vscode.Uri.file(path.join(
+                    os.homedir(), `${picked.sessionId}${suffix}.json`)),
+                filters: { JSON: ['json'] }
+            });
+            if (!target) { return; }
+            const args = ['export', picked.sessionId, ...(how.form === 'sanitized' ? ['--sanitize'] : [])];
+            const r = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Window, title: 'Agent Farm: exporting…' },
+                () => nodeOpencodeCli().run(args, picked.cwd ?? '', 60_000));
+            const start = r.stdout.indexOf('{');
+            if (r.error || start < 0) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: OpenCode could not export ${picked.sessionId} — ${r.error || 'it printed no document'}`);
+                return;
+            }
+            try { fs.writeFileSync(target.fsPath, r.stdout.slice(start), 'utf8'); }
+            catch (e) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: the export could not be written — ${String((e as Error)?.message ?? e)}`);
+                return;
+            }
+            void vscode.window.showTextDocument(target, { preview: false });
+        }),
+        /**
+         * ‼️ THE ONLY THING IN THIS INTEGRATION THAT DESTROYS ANYTHING — and it
+         * is a command of its own for exactly that reason (backlog: "Card
+         * End/Remove OpenCode kaydını silmesin; underlying session delete yalnız
+         * ayrı, açık onaylı eylem olabilir").
+         *
+         * Ending a Console card, removing it, closing VS Code: none of them
+         * reach OpenCode's store. This does, it says so in the modal, and it is
+         * NOT on the bridge — an agent deleting the user's conversations is not
+         * a capability this extension offers (parity: human-only).
+         */
+        vscode.commands.registerCommand('agentfarm.opencodeDeleteSession', async (arg?: unknown) => {
+            const picked = await pickOpencodeSession(arg, 'Delete which OpenCode conversation — permanently?');
+            if (!picked) { return; }
+            const answer = await vscode.window.showWarningMessage(
+                `Delete the OpenCode conversation ${picked.sessionId} from the engine's own store?`,
+                {
+                    modal: true,
+                    detail: `"${picked.title}"\n\n`
+                        + 'This runs `opencode session delete` — the conversation is gone from OpenCode '
+                        + 'itself, not just from Agent Farm, and it cannot be resumed or exported '
+                        + 'afterwards. Ending or removing a Console card does none of this.'
+                },
+                'Delete it');
+            if (answer !== 'Delete it') { return; }
+            const r = await nodeOpencodeCli().run(
+                ['session', 'delete', picked.sessionId], picked.cwd ?? '', 60_000);
+            if (r.error) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: OpenCode refused to delete ${picked.sessionId} — ${r.error}`);
+                return;
+            }
+            // Our cached read of a conversation that no longer exists is not a
+            // record, it is a ghost row in the sessions table.
+            try { fs.unlinkSync(path.join(opencodeExportDir, `${picked.sessionId}.json`)); }
+            catch { /* it may never have been cached */ }
+            refreshExternalSessions();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: OpenCode conversation ${picked.sessionId} deleted.`);
+        }),
         vscode.commands.registerCommand('agentfarm.rescanProjects', async () => {
             const root = projectsRoot();
             if (!root) {
@@ -18593,7 +18854,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // subcommand — EngineTransport.resumeInTerminal). Where the
                     // engine cannot, the Console can, and saying so beats
                     // silently starting a fresh conversation on the wrong CLI.
-                    if (latest && !engine.readableTranscript) {
+                    // ‼️ S-33 — …but OpenCode is NOT in that group, and putting it
+                    // there would break the one rule the item states by name:
+                    // `-c` is only for when the user asked for "the last one".
+                    // This engine leaves no transcript either, yet the row here
+                    // carries its real `ses_…` id — so it resumes BY ID on the
+                    // path below, which is also what makes the terminal and the
+                    // Console continue the same conversation instead of two.
+                    if (latest && !engine.readableTranscript && engine.id !== 'opencode') {
                         startClaudeSession(agent, { engine: engine.id, continueLast: true });
                         return;
                     }

@@ -6,6 +6,7 @@ import {
     emptyImportManifest, EXTERNAL_IMPORT_MARK, EXTERNAL_IMPORT_TURN, ExternalImportManifest,
     ImportMarks, importManifestReader, resolveProvenance
 } from './externalImports';
+import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
 import { conversationTitle, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
@@ -912,6 +913,103 @@ export function agySessionsSource(
             return cache = out;
         }
     };
+}
+
+// ---------------------------------------------------------------------------
+// OpenCode — the cached exports the harvester writes (S-33)
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ THE ONE SOURCE HERE WHOSE FILES ARE OURS.
+ *
+ * Every other adaptor in this module reads a file the engine wrote. OpenCode
+ * writes none — its conversations are SQLite and the only readable surfaces are
+ * `session list` and `export`, both of which cost a process (A-16). A
+ * `SessionSource.scan()` runs on every repaint, so shelling out from here would
+ * put a spawn per agent folder behind the Sessions table on a machine that
+ * cannot afford it.
+ *
+ * So `opencodeharvest.ts` runs the CLI on its own slow clock and writes each
+ * conversation's export, UNEDITED, into a cache directory; this reads that
+ * directory exactly as cheaply as it reads a Codex rollout. The file being the
+ * engine's own document is what keeps it honest: it can be held against the CLI.
+ *
+ * `file` therefore points at OUR copy, not at something OpenCode maintains —
+ * which is why `ENGINES.opencode.readableTranscript` stays FALSE. That field
+ * answers "does the engine leave a transcript", and it does not.
+ */
+function parseOpencodeFile(
+    file: string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    pricing: () => PricingEngine
+): SessionInfo | undefined {
+    const read = readWhole(file);
+    if (!read) { return undefined; }
+    // ‼️ AN EXPORT TOO LARGE TO HOLD IS STILL A SESSION (S-32's rule, and the
+    // backlog item asks for it by name). The id is the file's own name, so the
+    // row keeps its identity, its file and its time while every figure stays an
+    // honest zero behind the `scanLimit` mark.
+    if (read.over) { return unreadInfo(file, path.basename(file, '.json'), 'opencode', read); }
+    const doc = opencodeExport(read.text ?? '');
+    if (!doc) { return undefined; }
+    const info = blankInfo(file, doc.id, 'opencode', doc.updated || doc.created);
+    info.cwd = doc.directory;
+    info.firstTs = doc.created || doc.updated;
+    info.lastTs = doc.updated || doc.created;
+    info.mtime = info.lastTs;
+    info.models = doc.model ? [doc.model] : [];
+    // ‼️ `reasoning` IS NOT INSIDE `output` ON THIS ENGINE — arithmetic, not
+    // opinion: 6196 + 13 + 63 + 1920 = the engine's own total of 8192. Codex is
+    // the opposite way round and cost this codebase a bug (X-35), so the sum is
+    // written out here rather than left to whoever reads it next.
+    info.usage.input = doc.tokens.input;
+    info.usage.output = doc.tokens.output + doc.tokens.reasoning;
+    info.usage.cacheRead = doc.tokens.cacheRead;
+    info.usage.cacheWrite = doc.tokens.cacheWrite;
+    info.wTokens = doc.model ? weightedTokens(doc.model, info.usage) : 0;
+    // ‼️ THE ENGINE STATES ITS OWN DOLLARS (`costSource: 'cli'`), so no pricing
+    // rule is applied and a free model's 0 is a real zero rather than a missing
+    // rule. `pricing` is taken for the signature every source here shares and
+    // deliberately not used to overwrite a figure the engine published.
+    void pricing;
+    info.cost = doc.cost;
+    for (const m of doc.messages) {
+        if (m.role === 'user') {
+            if (m.parts.some(p => p.kind === 'text' && p.text?.trim())) { info.userTurns++; }
+            continue;
+        }
+        if (m.parts.some(p => p.kind === 'text' && p.text?.trim())) { info.assistantMsgs++; }
+        for (const p of m.parts) {
+            if (p.kind !== 'tool') { continue; }
+            info.toolCalls++;
+            const name = p.tool || 'tool';
+            info.tools[name] = (info.tools[name] ?? 0) + 1;
+            if (p.isError) { info.errors++; }
+        }
+    }
+    // The window's occupancy after the last call — the last assistant message's
+    // own total, which is what every other Ctx cell in this codebase means.
+    const lastSpend = [...doc.messages].reverse().find(m => m.role === 'assistant' && m.tokens);
+    if (lastSpend?.tokens?.total) { info.lastCtxTokens = lastSpend.tokens.total; }
+    info.title = info.autoTitle = truncate(
+        opencodeTitle(doc, text => conversationTitle(text)), 120);
+    // The conversation's own folder is the attribution, exactly as it is for
+    // every other engine — `info.directory` in the export, measured real.
+    const who = resolveAgent(doc.directory);
+    if (who.agentId) { info.agentId = who.agentId; }
+    if (who.agentName) { info.agentName = who.agentName; }
+    return info;
+}
+
+export function opencodeSessionsSource(
+    root: () => string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    pricing: () => PricingEngine,
+    cacheMs = 5_000
+): SessionSource {
+    return scanWithCache(
+        'opencode', () => { const d = root(); return d ? [d] : []; }, ['.json'],
+        file => parseOpencodeFile(file, resolveAgent, pricing), cacheMs);
 }
 
 /** `2026-06-26T21:45:33.9462384+07:00` — more decimals than Date.parse takes,

@@ -499,6 +499,24 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "agentfarm.opencodeRefreshHistory",
+        "title": "Refresh OpenCode History (read its CLI now instead of waiting for the slow beat)",
+        "category": "Agent Farm",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentfarm.opencodeExportSession",
+        "title": "Export OpenCode Conversation (full JSON, or redacted with --sanitize)",
+        "category": "Agent Farm",
+        "icon": "$(json)"
+      },
+      {
+        "command": "agentfarm.opencodeDeleteSession",
+        "title": "Delete OpenCode Conversation (permanently, from the engine's own store)",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
         "command": "agentfarm.projectHandover",
         "title": "Write Project Handover (the letter to whoever picks this up in three months)",
         "category": "Agent Farm",
@@ -8470,6 +8488,12 @@
           "type": "string",
           "default": "",
           "description": "Antigravity CLI home whose conversation index feeds the external-session history. Its own transcripts are protobuf inside per-conversation SQLite files and are not read; the index gives the title, the time and the workspace. Empty = ~/.gemini/antigravity-cli."
+        },
+        "agentFarm.opencodeHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Read OpenCode's own history into the sessions tables. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this is the one history source that has to run its CLI (`session list`, then `export` for whatever has moved) — on a slow beat, in the background, never while a panel draws. Turn it off and OpenCode conversations simply stop appearing; nothing else changes and nothing is deleted.",
+          "order": 41
         },
         "agentFarm.mediaBaseUrl": {
           "type": "string",

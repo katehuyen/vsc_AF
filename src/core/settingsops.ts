@@ -94,7 +94,10 @@ const CATEGORY_OF: Record<string, string> = {
     embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
     embeddingsSecret: 'search', semanticMaxSessions: 'search',
     // multi-CLI
-    cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', agyHome: 'cli', relayFeeds: 'cli',
+    cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', agyHome: 'cli',
+    // ‼️ NOT a path like the three above: OpenCode publishes no transcript file,
+    // so what this switches is whether its CLI is RUN to read the history at all.
+    opencodeHistory: 'cli', relayFeeds: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
