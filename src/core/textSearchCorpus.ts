@@ -41,7 +41,7 @@ import { execFile } from 'child_process';
 import {
     ALL_ROLES, ParseForeign, SearchOptions, SearchRecord, SearchResult, SearchRole,
     SearchableSession, buildMatcher, buildRecords, emptyResult, finishResult,
-    orderSessions, readTranscript, scanLimits, scanSession, transcriptSignature
+    orderSessions, readTranscript, scanLimits, scanSession, storedRoles, transcriptSignature
 } from './search';
 import { CompiledQuery, queryPrefilter } from './query';
 
@@ -324,13 +324,21 @@ export class TextSearchService {
         return true;
     }
 
-    /** The selected roles, back in the order the transcript had them — which is
-     *  the order the hits and the per-file preview cap depend on. */
+    /**
+     * The selected roles, back in the order the transcript had them — which is
+     * the order the hits and the per-file preview cap depend on.
+     *
+     * ‼️ S-36 — THE SELECTION IS TRANSLATED TO THE SHARDS THAT EXIST. `automation`
+     * is a reading of a `user` record, not a fourth thing on disk, so asking for
+     * it by name would look for `<key>.automation.tsv` and silently find
+     * nothing — a filter that returns zero because of its own spelling. The
+     * reducer does the real filtering per session (`displayRole`).
+     */
     private recordsOf(
         e: Entry, roles: SearchRole[], matcher: CompiledQuery, block: boolean
     ): SearchRecord[] | undefined {
         const parts: SearchRecord[] = [];
-        for (const role of roles) {
+        for (const role of storedRoles(roles)) {
             const info = e.r?.[role];
             if (!info) { continue; }
             if (!this.readShardCandidates(info, role, matcher, block, e.sig, parts)) { return undefined; }

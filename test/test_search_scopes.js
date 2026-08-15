@@ -74,7 +74,9 @@ const TS = (m) => Date.parse(T(m));
         && r6b.hits[0].speaker === 'dev' && r6b.hits[0].turn === 1);
     ok('…and the delegation preset is two kinds, not one',
         S.DELEGATION_ROLES.join(',') === 'delegator,handler'
-        && S.DIALOG_ROLES.join(',') === 'user,assistant');
+        // S-36 — the conversation is three kinds now: what a PERSON wrote, what a
+        // PROGRAM wrote on the same input channel, and the agent's reply.
+        && S.DIALOG_ROLES.join(',') === 'user,automation,assistant');
 
     // time window = turn scope: restrict to turn 2's window (ts 5..6)
     const r7 = S.searchTranscripts(sessions, 'the', { tsFrom: TS(5), tsTo: TS(6), maxPerFile: 10 });
@@ -345,26 +347,30 @@ const go = r => r.els.go.fire('click');
 
     go(r);
     ok('a search carries the dialog kinds',
-        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
 
     // ‼️ THE FIX U-42 ASKED FOR: two kinds at once, by the obvious gesture.
     r.query('[data-role="tool"]')[0].fire('click');
     ok('‼️ a plain click ADDS a kind — two are searchable at once',
-        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","tool","user"]');
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","tool","user"]');
     r.query('[data-role="tool"]')[0].fire('click');
     ok('…and clicking it again takes it away',
-        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
     r.query('[data-role="user"]')[0].fire('click', { ctrlKey: true });
     ok('…Ctrl/⌘-click still means ONLY that one',
         JSON.stringify(lastSearch(r).roles) === '["user"]');
     r.query('[data-role="user"]')[0].fire('click');
     ok('…and the scope can never empty into "matches nothing"',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
+    // ‼️ S-36 — the one press that means "only what a person actually wrote".
+    r.query('[data-preset="human"]')[0].fire('click');
+    ok('the People-only preset drops the generated prompts',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","user"]');
     r.query('[data-preset="delegation"]')[0].fire('click');
     ok('the Delegation preset is one press',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["delegator","handler"]');
     r.query('[data-preset="all"]')[0].fire('click');
-    ok('…and Everything is all six', lastSearch(r).roles.length === 6);
+    ok('…and Everything is all seven', lastSearch(r).roles.length === 7);
     r.query('[data-source="events"]')[0].fire('click');
     ok('a source chip toggles the source', lastSearch(r).events === false && lastSearch(r).memory === true);
 }
@@ -550,7 +556,16 @@ const go = r => r.els.go.fire('click');
     ok('a delegation hit keeps the Delegator term', out.includes('>delegator<'));
     ok('a handler hit keeps the Handler term', out.includes('>handler<'));
     ok('the summary separates found matches from shown previews',
-        out.includes('<b>11</b>matches') && out.includes('<b>8</b>previews'));
+        out.includes('<b>13</b>matches') && out.includes('<b>10</b>previews'));
+    // ‼️ U-63 — the fixture now holds the row that was reported as a duplicate.
+    // A group must be identifiable WITHOUT opening it: short id, author glyph.
+    ok('a session group carries its own short id, not just an engine and a name',
+        out.includes('>#4d361981') && out.includes('>#019f79a0'));
+    ok('…and an imported copy carries the import mark and an unverified author',
+        out.includes('⇄') && out.includes('Imported — author unverified'));
+    // ‼️ S-36 — a generated prompt is not the word "You".
+    ok('a generated prompt is signed by the mechanism that wrote it',
+        out.includes('Mission prompt · dashboard-Missions') && !out.includes('>you · dashboard'));
     ok('memory and event sections still stand apart',
         out.includes('Memory notes') && out.includes('Orphaned events'));
 

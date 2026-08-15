@@ -2,6 +2,10 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
+import {
+    emptyImportManifest, EXTERNAL_IMPORT_MARK, EXTERNAL_IMPORT_TURN, ExternalImportManifest,
+    ImportMarks, importManifestReader, resolveProvenance
+} from './externalImports';
 import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
 import { conversationTitle, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
@@ -220,10 +224,16 @@ interface CodexLine {
     payload?: {
         // session_meta
         session_id?: string; id?: string; cwd?: string; cli_version?: string;
+        /** X-44 — which client wrote the rollout ("Codex Desktop", "codex", …).
+         *  Evidence about the STORAGE side only: a native Desktop thread and an
+         *  imported one say the same word, so it never decides provenance. */
+        originator?: string;
         // turn_context
         model?: string;
         // event_msg
         type?: string; message?: string;
+        /** `external-import-turn-1` on a converted rollout (X-44). */
+        turn_id?: string;
         info?: {
             model?: string;
             total_token_usage?: CodexTokenTotals;
@@ -300,10 +310,12 @@ export function codexPromptTitle(value: string): string {
 }
 
 function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
-    pricing: () => PricingEngine): SessionInfo | undefined {
+    pricing: () => PricingEngine, imports?: () => ExternalImportManifest): SessionInfo | undefined {
     let mtime = 0;
     try { mtime = fs.statSync(file).mtimeMs; } catch { return undefined; }
     const info = blankInfo(file, path.basename(file, '.jsonl'), 'codex', mtime);
+    // X-44 — what the file itself says about being a copy of another agent's run.
+    const marks: ImportMarks = { marked: false };
     let cumulative: CodexTokenTotals | undefined;
     // ‼️ What the window HELD at the end, as opposed to what the thread SPENT
     // over its life. Both are on the same line and only one of them is a
@@ -345,6 +357,7 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     // exists; nothing here holds more than the line it is looking at.
     const read = streamLines(file, lineText => {
         if (!lineText.trim()) { return; }
+        if (!marks.marked && lineText.includes(EXTERNAL_IMPORT_MARK)) { marks.marked = true; }
         let line: CodexLine;
         try { line = JSON.parse(lineText) as CodexLine; } catch { return; }
         const ts = line.timestamp ? Date.parse(line.timestamp) : NaN;
@@ -362,9 +375,11 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
             if (typeof sid === 'string' && sid) { info.sessionId = sid; }
             if (typeof p.cwd === 'string') { info.cwd = p.cwd; }
             if (typeof p.cli_version === 'string') { info.version = p.cli_version; }
+            if (typeof p.originator === 'string') { marks.originator = p.originator; }
         } else if (line.type === 'turn_context') {
             if (typeof p.model === 'string' && p.model) { models.add(p.model); lastModel = p.model; }
         } else if (line.type === 'event_msg') {
+            if (typeof p.turn_id === 'string' && EXTERNAL_IMPORT_TURN.test(p.turn_id)) { marks.marked = true; }
             if (p.type === 'user_message' && typeof p.message === 'string') {
                 info.userTurns++;
                 const named = codexPromptTitle(p.message);
@@ -446,7 +461,32 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     const agent = resolveAgent(info.cwd);
     info.agentId = agent.agentId;
     info.agentName = agent.agentName;
+    applyCodexProvenance(info, marks, imports?.());
     return info;
+}
+
+/**
+ * ‼️ X-44 — WHERE THE FILE LIVES STOPS DECIDING WHO RAN IT.
+ *
+ * Everything a rollout can prove about itself, written onto the row: the format
+ * it is stored in (always codex, we just read it), the engine that produced the
+ * work (from the import manifest, or unnamed), and the canonical id of the run
+ * — which is the SOURCE's id on an import, so the copy and the original land on
+ * one key and the work is counted once. `sessionId` is untouched: resume and
+ * "open the imported copy" address the thread that is really on disk.
+ */
+function applyCodexProvenance(
+    info: SessionInfo, marks: ImportMarks, manifest?: ExternalImportManifest
+): void {
+    const r = resolveProvenance(info.sessionId, 'codex', manifest ?? emptyImportManifest(), marks);
+    info.provenance = r.provenance;
+    info.storageEngine = r.storageEngine;
+    if (r.producerEngine) { info.producerEngine = r.producerEngine; }
+    info.canonicalSessionId = r.canonicalSessionId ?? info.sessionId;
+    if (r.sourceSessionId) { info.sourceSessionId = r.sourceSessionId; }
+    if (r.sourcePath) { info.sourcePath = r.sourcePath; }
+    if (r.importedThreadId) { info.importedThreadId = r.importedThreadId; }
+    if (r.importedAt) { info.importedAt = r.importedAt; }
 }
 
 export function codexSessionsSource(
@@ -455,6 +495,8 @@ export function codexSessionsSource(
     pricing: () => PricingEngine,
     cacheMs = 60_000
 ): SessionSource {
+    // One manifest read per change, shared by every rollout in the scan.
+    const imports = importManifestReader(codexHome, cacheMs);
     return scanWithCache(
         'codex',
         () => {
@@ -462,7 +504,7 @@ export function codexSessionsSource(
             return home ? [path.join(home, 'sessions'), path.join(home, 'archived_sessions')] : [];
         },
         ['.jsonl'],
-        file => parseCodexFile(file, resolveAgent, pricing),
+        file => parseCodexFile(file, resolveAgent, pricing, imports),
         cacheMs
     );
 }

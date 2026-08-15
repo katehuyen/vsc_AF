@@ -12,15 +12,71 @@ export interface SearchableSession {
     isSidechain?: boolean;
     /** Resolved from this session, never inferred from its agent's default. */
     project?: string;
+    /**
+     * ‼️ S-36 — who wrote this session's `user`-channel messages. Derived once
+     * from the session's recorded launcher/entrypoint (`userAuthorOf`), because
+     * the transcript line itself cannot tell a person from a generated prompt.
+     * Absent = not stated by the caller, and treated as human.
+     */
+    author?: 'human' | 'automation' | 'unknown';
+    /** The label a surface prints instead of "You" — 'Mission prompt', … */
+    authorLabel?: string;
+    /** Mechanism behind an automated prompt, when Agent Farm recorded one. */
+    automationSource?: string;
+    /** The launcher's own name (the mission's, the schedule's). */
+    launcher?: string;
+    /** X-44 — 'native' | 'imported' | 'imported-unknown-source'. */
+    provenance?: string;
+    /** X-44 — the engine that DID the work, which `engine` above may not be. */
+    producer?: string;
+    /** X-44 — the id of the run; equals `sessionId` unless this is a copy. */
+    canonicalSessionId?: string;
 }
 
-export type SearchRole = 'user' | 'assistant' | 'delegator' | 'handler' | 'tool' | 'toolResult';
-export const DIALOG_ROLES: SearchRole[] = ['user', 'assistant'];
+/**
+ * ‼️ S-36 — `automation` IS A ROLE THE READER CHOOSES, NOT ONE THE FILE STORES.
+ *
+ * The transcript has one input channel and calls it `user`. Which of those
+ * messages a PERSON wrote is a fact about the session, not about the line, so
+ * the split happens at scan time (`displayRole`) against the session's author.
+ * The corpus keeps storing them under `user` — see `storedRoles`, which is what
+ * stops a shard being looked for under a name nothing ever wrote.
+ */
+export type SearchRole =
+    'user' | 'automation' | 'assistant' | 'delegator' | 'handler' | 'tool' | 'toolResult';
+export const DIALOG_ROLES: SearchRole[] = ['user', 'automation', 'assistant'];
 export const DELEGATION_ROLES: SearchRole[] = ['delegator', 'handler'];
-export const ALL_ROLES: SearchRole[] = ['user', 'assistant', 'delegator', 'handler', 'tool', 'toolResult'];
+export const ALL_ROLES: SearchRole[] = [
+    'user', 'automation', 'assistant', 'delegator', 'handler', 'tool', 'toolResult'
+];
 
 export function isSearchRole(v: unknown): v is SearchRole {
     return typeof v === 'string' && (ALL_ROLES as string[]).includes(v);
+}
+
+/** The role a record is FILED under on disk — `automation` lives in `user`. */
+export function storedRoleOf(role: SearchRole): SearchRole {
+    return role === 'automation' ? 'user' : role;
+}
+
+/** The shards a selection has to read, de-duplicated, in the selection's order. */
+export function storedRoles(roles: SearchRole[]): SearchRole[] {
+    const out: SearchRole[] = [];
+    for (const r of roles) {
+        const s = storedRoleOf(r);
+        if (!out.includes(s)) { out.push(s); }
+    }
+    return out;
+}
+
+/**
+ * The role a hit is SHOWN and FILTERED under. Only the input channel moves, and
+ * only on a session whose author is not a person — a delegator/handler lane is
+ * already a different axis and is left alone.
+ */
+export function displayRole(role: SearchRole, s: Pick<SearchableSession, 'author'>): SearchRole {
+    if (role !== 'user') { return role; }
+    return s.author === 'automation' || s.author === 'unknown' ? 'automation' : 'user';
 }
 
 export interface ForeignMessage {
@@ -51,6 +107,14 @@ export interface SearchHit {
     sessionTs?: number;
     project?: string;
     speaker?: string;
+    /** S-36 / U-63 — the group header's identity and provenance, on the hit so a
+     *  webview never has to go back to the host to tell two sessions apart. */
+    author?: 'human' | 'automation' | 'unknown';
+    authorLabel?: string;
+    launcher?: string;
+    provenance?: string;
+    producer?: string;
+    canonicalSessionId?: string;
     before: string;
     match: string;
     after: string;
@@ -352,11 +416,29 @@ export function orderSessions(
 ): SearchableSession[] {
     const fileSet = opts.files?.length ? new Set(opts.files) : null;
     const agentSet = opts.agentNames ? new Set(opts.agentNames) : null;
-    return sessions
+    const ordered = sessions
         .filter(s => (!opts.agentName || s.agentName === opts.agentName)
             && (!agentSet || agentSet.has(s.agentName ?? ''))
             && (!fileSet || fileSet.has(s.file)))
         .sort((a, b) => b.mtime - a.mtime);
+    /**
+     * ‼️ U-63 — UNIQUE ON THE RUN, NOT ON THE FILE. A Claude transcript and the
+     * Codex copy of it are two paths and one conversation: scanning both put
+     * the same words in the results twice, under two group headings, and
+     * doubled `sessionsMatched` under the box. The index already holds the copy
+     * aside (X-44 `linkImports`), and this is the same rule at the engine's own
+     * door, for the callers that hand in a list of their own. The FIRST row for
+     * a key wins, and the list is newest-first, so the survivor is the freshest
+     * record of the run rather than whichever path sorted earlier.
+     */
+    const keys = new Set<string>();
+    return ordered.filter(s => {
+        const key = s.canonicalSessionId || s.sessionId;
+        if (!key) { return true; }
+        if (keys.has(key)) { return false; }
+        keys.add(key);
+        return true;
+    });
 }
 
 /**
@@ -375,9 +457,24 @@ export function scanSession(
 ): void {
     let found = 0;
     let shown = 0;
+    /**
+     * ‼️ U-63 — THE SAME RECORD REACHING THE REDUCER TWICE IS ONE HIT.
+     *
+     * A shard can be read alongside a direct parse, and an imported rollout can
+     * state the same event on two lines (`event_msg user_message` and its
+     * `response_item` twin). Identity is the record's own PLACE in the
+     * transcript — role, turn, timestamp and its text — not its snippet: two
+     * turns in which the user really did type the same word are two different
+     * places and stay two hits, which blind text dedupe would have thrown away.
+     */
+    const seen = new Set<string>();
     for (const m of records) {
-        if (!lim.roles.has(m.role) || !m.text) { continue; }
+        const role = displayRole(m.role, s);
+        if (!lim.roles.has(role) || !m.text) { continue; }
         if ((lim.tsFrom && m.ts && m.ts < lim.tsFrom) || (lim.tsTo && m.ts && m.ts > lim.tsTo)) { continue; }
+        const identity = `${m.role}|${m.turn}|${m.ts}|${m.tool ?? ''}|${m.text.length}|${m.text.slice(0, 120)}`;
+        if (seen.has(identity)) { continue; }
+        seen.add(identity);
         const part = snip(m.text, matcher);
         if (!part) { continue; }
         found++;
@@ -388,12 +485,21 @@ export function scanSession(
             agentName: s.agentName ?? '?',
             title: s.title,
             ts: m.ts || s.mtime,
-            role: m.role,
+            role,
             sessionTs: s.mtime,
             ...(s.sessionId ? { sessionId: s.sessionId } : {}),
             ...(s.engine ? { engine: s.engine } : {}),
             ...(s.project ? { project: s.project } : {}),
             ...(m.role === 'delegator' && s.agentName ? { speaker: s.agentName } : {}),
+            ...(role === 'automation' || role === 'user'
+                ? {
+                    author: s.author ?? 'human',
+                    ...(s.authorLabel ? { authorLabel: s.authorLabel } : {}),
+                    ...(s.launcher ? { launcher: s.launcher } : {})
+                } : {}),
+            ...(s.provenance && s.provenance !== 'native' ? { provenance: s.provenance } : {}),
+            ...(s.producer ? { producer: s.producer } : {}),
+            ...(s.canonicalSessionId ? { canonicalSessionId: s.canonicalSessionId } : {}),
             ...part,
             turn: m.turn,
             turnLabel: m.turnLabel,

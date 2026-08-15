@@ -4,7 +4,10 @@ import {
     SearchResult, SearchRole, SearchableSession, ParseForeign, isSearchRole
 } from '../core/search';
 import { TextSearchService, isAborted } from '../core/textSearchCorpus';
-import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
+import { userAuthorOf } from '../core/authorship';
+import {
+    canonicalSessionKey, producerEngineOf, SessionIndex, SessionInfo, sessionOrigin
+} from '../core/sessions';
 import { ENGINES } from '../core/consoleEngine';
 import { handleAfNav, htmlShell } from './base';
 
@@ -143,16 +146,31 @@ export function scopeSessions(
 export function searchableSessions(
     list: SessionInfo[], projectOf?: (s: SessionInfo) => string
 ): SearchableSession[] {
-    return list.map(s => ({
-        file: s.file,
-        agentName: s.agentName,
-        title: s.title,
-        mtime: s.mtime,
-        sessionId: s.sessionId,
-        engine: engineOf(s),
-        isSidechain: s.isSidechain,
-        ...(projectOf ? { project: projectOf(s) } : {})
-    }));
+    return list.map(s => {
+        // ‼️ S-36 — the authorship judgment happens ONCE, here, from the facts
+        // the index recorded. The engine then has no reason to guess and no way
+        // to disagree with the Sessions page about the same session.
+        const author = userAuthorOf({
+            origin: sessionOrigin(s), launchedBy: s.launchedBy, provenance: s.provenance
+        });
+        return {
+            file: s.file,
+            agentName: s.agentName,
+            title: s.title,
+            mtime: s.mtime,
+            sessionId: s.sessionId,
+            engine: engineOf(s),
+            isSidechain: s.isSidechain,
+            author: author.author,
+            authorLabel: author.label,
+            ...(author.source ? { automationSource: author.source } : {}),
+            ...(author.launcher ? { launcher: author.launcher } : {}),
+            ...(s.provenance ? { provenance: s.provenance } : {}),
+            producer: producerEngineOf(s),
+            canonicalSessionId: canonicalSessionKey(s),
+            ...(projectOf ? { project: projectOf(s) } : {})
+        };
+    });
 }
 
 /** D4 — full-fleet transcript search panel ("which agent did I discuss this with?"). */

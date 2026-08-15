@@ -1610,6 +1610,99 @@ Sonuç pencere boyunca önbellekte tutulur ve **yaşıyla** gösterilir: dört s
 önceki bir onay, dört saniye öncekiyle aynı iddia değildir. Başarısızlıkta
 **motorun kendi sözleri** yazılır, uydurulmuş bir sebep değil.
 
+### ‼️ Üreten motor · depolayan motor · köken — bir dosyanın klasörü kim çalıştırdı demek değildir (X-44)
+
+Codex Desktop, başka bir ajanın geçmişini **kendi rollout biçimine çevirip**
+gerçekten çalıştırdığı thread'lerin yanına yazar. Eklenti klasörü motor
+saydığı için, Agent Farm'ın kendi başlattığı 13 dakikalık 12,47 $'lık headless
+bir Claude mission'ı **13 milisaniyelik, 0 $'lık, kullanıcının yazdığı bir
+Codex oturumu** olarak listelendi — üstelik kendi kaynağının yanında **ikinci
+kez** sayılarak. Tek bir `engine` alanına üç ayrı olgu binmişti:
+
+| Alan | Ne söyler | Bu vakada |
+|---|---|---|
+| `producerEngine` | işi **yapan** motor | claude |
+| `storageEngine` | dosyanın **yaşadığı** biçim | codex |
+| `provenance` | `native` · `imported` · `imported-unknown-source` | imported |
+
+Bağ **tahmin edilmez, okunur**: `~/.codex/external_agent_session_imports.json`
+her içe aktarılmış thread'i kaynak transcriptin yoluna, içerik hash'ine ve
+aktarım anına bağlar (bu makinede tek seferde 50 kayıt). Manifest yoksa,
+bozuksa ya da o thread'i anmıyorsa ham `<EXTERNAL SESSION IMPORTED>` /
+`external-import-turn-*` işaretleri "bu bir kopyadır" demeye yeter, **üreticiyi
+adlandırmaya yetmez** — sonuç `imported-unknown-source` olur, uydurulmuş bir
+motor değil. Manifest ve kullanıcı transcriptleri **yalnız okunur**.
+
+**Bir koşu, bir satır.** Kaynağı indekste bulunan bir import kopyası silinmez,
+**alias**'a alınır: `aliasOf` kaynağa bakar, kaynak da `importAliases` ile
+kopyayı bilir. `external()` / `allWithExternal()` yalnız kanonik satırı verir,
+yani sayım bir kere olur; `byId` / `byFile` alias'ı bulmaya devam eder, yani
+Codex thread'ini resume etmek ve "içe aktarılmış kopyayı aç" çalışmayı sürdürür.
+Alias'ın **görünen olguları da kaynaktan miras alınır** — zaman aralığı,
+maliyet, model, entrypoint, launcher — çünkü kopyanın kendi 13 ms'si ve 0 $'ı
+üçüncü bir yalan olurdu. Kaynak indekste **yoksa** import görünür kalır ve
+kendi elindeki veriyi sunar; hiçbir şey gizlenmez.
+
+Sayım anahtarı `canonicalSessionKey()`, açma/resume anahtarı `sessionId`.
+İkisini karıştırmak bu maddenin tamamıdır. Bridge tarafında `sessions.find` ve
+`sessions.recent` satırları geriye uyumlu olarak `producer` · `storage` ·
+`provenance` · `canonicalId` · `importedFrom` · `importedAt` · `aliasOf` ·
+`importAliases` taşır.
+
+### ‼️ `role: "user"` bir protokol kanalıdır, "bunu bir insan yazdı" demek değildir (S-36)
+
+Claude ve Codex transcriptleri modele giden kanalı `user` diye adlandırır; bu
+yüzden Agent Farm'ın **kendi ürettiği** mission/task/schedule brief'leri, bir
+insanın yazdıklarıyla aynı satırda görünüyordu. Sonuç: "You are the LEAD of a
+mission…" metni 🧑 **You** filtresinde çıkıyor, `search.transcripts
+roles:["user"]` ise açıklamasında "yalnız bir İNSANIN sorduğu" diyordu.
+
+Protokol rolü yerinde kalır; **yazarlık ikinci bir eksendir** ve Agent Farm'ın
+zaten kaydettiği olgulardan türetilir (`authorship.ts` → `userAuthorOf`):
+
+- `human` → **You** (Console'da yazılan `sdk-cli` oturumu dahil; istisna
+  `sessionOrigin` içinde zaten var ve korunur)
+- `automation` → **Mission prompt** · **Task prompt** · **Schedule prompt** ·
+  **Trigger prompt** · **Workflow prompt**, launcher'ı bilinmiyorsa
+  **Automation prompt**
+- `unknown` → çözülemeyen bir import: **Imported — author unverified**. Kanıtsız
+  kesin hüküm kurulmaz; belirsizlik görünür kalır.
+
+Aramada bu, `automation` adlı **yeni bir rol yongası**dır: `user` artık gerçekten
+yalnız insanın yazdıklarıdır, `Conversation` ön ayarı üçünü birden alır ve
+**People only** tek tuşla yalnız insanı bırakır. Kayıt diskte hâlâ `user`
+shard'ında durur (`storedRoles`); ayrım okuma anında, oturumun yazarına göre
+yapılır (`displayRole`) — yani korpus yeniden kurulmaz.
+
+**Başlık de wrapper'dan değil, işin kendisinden gelir.** `missions.ts` her lead
+promptunu tek şablondan üretir, bu yüzden üç ayrı mission tek ve aynı başlıkla
+geliyordu. `conversationTitle` artık tanınan şablonun `## Mission` gövdesini
+başlık yapar; gövde boşsa **launch binding'in kendi adı** kullanılır. Tanınmayan
+bir prompt asla spekülatif ayrıştırılmaz — mevcut başlık korunur.
+
+### ‼️ Aynı gibi görünen oturumları ayırt et, gerçek tekrarları silme (U-63)
+
+İki ayrı arıza aynı ekranda "aynı oturum üç kez çıkıyor" diye okunuyordu:
+başlıklar şablondan geldiği için aynıydı (S-36) ve bir Claude transcripti ile
+onun Codex kopyası iki ayrı grup üretiyordu (X-44). Arama tarafındaki üç
+kural bunu kapatır:
+
+1. **Havuz kanonik koşuda tekildir** — `orderSessions` `canonicalSessionId`
+   üzerinden teke indirir; kaynak + alias tek grup, tek sayaç.
+2. **Aynı kaydın iki kez gelmesi tek hit'tir** — kimlik `rol + tur + zaman +
+   araç + metnin başı`, yani kaydın transcriptteki **yeri**. Kullanıcı aynı
+   kelimeyi iki ayrı turda gerçekten yazdıysa iki hit korunur; snippet
+   eşitliğine göre kör dedupe yasaktır.
+3. **Grup başlığı ayırt edicidir** — motor rozetinin yanında `#<8 karakter>`
+   kısa kimlik, yazar imzası (🧑 / 🤖 / ❔) ve import işareti `⇄`; uzun form
+   AFTip'in içindedir (tam id, kanonik koşu, yazar ve launcher, üreten motor,
+   köken cümlesi). DENSITY + SHORTHAND: dar yerde en kısa kesin biçim, anlam
+   hover'da.
+
+`matchesFound` · `matchesShown` · `sessionsMatched` · `sessionMatches` bu
+kanonikleştirmeden **sonra** hesaplanır ve UI ile `search.transcripts` aynı
+`TextSearchService` sonucunu gösterir.
+
 Kimlik bilgisi hiçbir yolda eklentiden geçmez: giriş ve kurulum komutları bir
 terminale **yazılır, çalıştırılmaz**; anahtar yolu kasanın kendi formunu açar;
 belge bağlantısı yalnız `https`. Köprüde `engines.status` (okur) ve

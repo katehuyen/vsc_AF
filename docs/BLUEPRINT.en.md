@@ -1565,6 +1565,101 @@ cached for the life of the window and shown **with its age**: a tick from four
 hours ago is not the same claim as one from four seconds ago. On failure it
 prints the **engine's own words**, never an invented reason.
 
+### ‼️ Producer · storage · provenance — a file's folder is not who ran it (X-44)
+
+Codex Desktop **converts another agent's history into its own rollout format**
+and files it beside the threads it really ran. The extension read the folder as
+the engine, so a 13-minute, $12.47 headless Claude mission that Agent Farm had
+launched itself was listed as a **13-millisecond, $0, user-typed Codex chat** —
+and counted a **second time** beside its own source. Three separate facts were
+riding on one `engine` field:
+
+| Field | What it says | In this case |
+|---|---|---|
+| `producerEngine` | the engine that **did the work** | claude |
+| `storageEngine` | the format the file **lives in** | codex |
+| `provenance` | `native` · `imported` · `imported-unknown-source` | imported |
+
+The link is **read, not guessed**: `~/.codex/external_agent_session_imports.json`
+maps each imported thread to its source transcript's path, content hash and
+import time (50 records in one pass on this machine). When the manifest is
+missing, broken or silent about a thread, the raw `<EXTERNAL SESSION IMPORTED>`
+/ `external-import-turn-*` marks are enough to say "this is a copy of
+something" and **not** enough to name the producer — the answer is
+`imported-unknown-source`, never an invented engine. The manifest and the
+user's transcripts are **read only**.
+
+**One run, one row.** An import whose source is already in the index is not
+deleted, it becomes an **alias**: `aliasOf` points at the run and the run knows
+the copy through `importAliases`. `external()` / `allWithExternal()` return the
+canonical row only, so the work is counted once; `byId` / `byFile` still find
+the alias, so resuming the Codex thread and "open the imported copy" keep
+working. The alias also **inherits the run's display facts** — time span, cost,
+models, entrypoint, launcher — because the copy's own 13 ms and $0 would be a
+third lie. If the source is **not** in the index the import stays visible and
+offers what it has; nothing is hidden.
+
+Count on `canonicalSessionKey()`, open and resume on `sessionId`. Confusing
+those two is the whole of this item. On the bridge, `sessions.find` and
+`sessions.recent` rows carry, backwards compatibly, `producer` · `storage` ·
+`provenance` · `canonicalId` · `importedFrom` · `importedAt` · `aliasOf` ·
+`importAliases`.
+
+### ‼️ `role: "user"` is a protocol channel, not a claim that a person typed it (S-36)
+
+Claude's and Codex's transcripts both call the model's input channel `user`, so
+every mission/task/schedule brief Agent Farm **generates itself** arrived on the
+same line as something a person wrote. "You are the LEAD of a mission…" turned
+up under the 🧑 **You** filter, and `search.transcripts roles:["user"]` promised
+"only what a PERSON asked" while returning the extension's own machinery.
+
+The protocol role stays where it is; **authorship is a second axis**, derived
+from facts Agent Farm already records (`authorship.ts` → `userAuthorOf`):
+
+- `human` → **You** (including an `sdk-cli` session typed in the Console — that
+  exception already lives in `sessionOrigin` and is preserved)
+- `automation` → **Mission prompt** · **Task prompt** · **Schedule prompt** ·
+  **Trigger prompt** · **Workflow prompt**, or **Automation prompt** when the
+  launcher is not on record
+- `unknown` → an import that cannot be resolved: **Imported — author
+  unverified**. No unproven verdict; the uncertainty stays visible.
+
+In Search this is a **new role chip, `automation`**: `user` now really is only
+what a person wrote, the `Conversation` preset takes all three, and **People
+only** is the single press that leaves just the person. The record is still
+stored in the `user` shard (`storedRoles`); the split happens at read time
+against the session's author (`displayRole`), so no corpus is rebuilt.
+
+**And the title comes from the work, not from the wrapper.** `missions.ts`
+builds every lead prompt from one template, so three different missions arrived
+under one identical title. `conversationTitle` now takes the recognized
+template's `## Mission` body as the title; when that body is empty the **launch
+binding's own name** is used. An unrecognized prompt is never parsed
+speculatively — whatever title it had is kept.
+
+### ‼️ Tell apart sessions that look alike, without deleting real repeats (U-63)
+
+Two different defects read on screen as "the same session three times": the
+titles were identical because they came from a template (S-36), and a Claude
+transcript and its Codex copy produced two groups (X-44). Three rules on the
+search side close it:
+
+1. **The pool is unique on the canonical run** — `orderSessions` folds on
+   `canonicalSessionId`, so source + alias are one group and one counter.
+2. **The same record arriving twice is one hit** — identity is `role + turn +
+   timestamp + tool + the head of the text`, i.e. the record's **place** in the
+   transcript. If the user really typed the same word in two different turns,
+   both hits survive; blind dedupe on snippet equality is forbidden.
+3. **The group header tells them apart** — beside the engine badge, the
+   `#<8 characters>` short id, the author's glyph (🧑 / 🤖 / ❔) and the import
+   mark `⇄`; the long form is in the AFTip (full id, canonical run, author and
+   launcher, producing engine, the provenance sentence). DENSITY + SHORTHAND:
+   the shortest unambiguous form in a narrow place, the meaning on hover.
+
+`matchesFound` · `matchesShown` · `sessionsMatched` · `sessionMatches` are
+computed **after** that canonicalization, and the UI and `search.transcripts`
+show the same `TextSearchService` result.
+
 No credential passes through the extension on any of these paths: the sign-in
 and install commands are **typed** into a terminal and not run; the key route
 opens the vault's own form; the docs link is `https` only. On the bridge as

@@ -18,15 +18,17 @@ const NOW = Date.now();
 const hit = (o) => Object.assign({
     file: 'D:/s/a.jsonl', sessionId: '4d361981-6215-4c0b-9b9f-ffdbc394e478',
     agentName: 'developer', title: 'Oturum başlığı', ts: NOW - 3600000,
-    role: 'user', engine: 'claude', turn: 1, turnLabel: 'ilk soru',
+    role: 'user', author: 'human', engine: 'claude', turn: 1, turnLabel: 'ilk soru',
     before: '…arama kutusuna yazdığım ', match: 'parser', after: ' kelimesi hiçbir yerde bulunamıyordu'
 }, o);
 
 const RESULT = {
-    filesScanned: 42, truncated: false, matchesFound: 11, matchesShown: 8,
-    sessionsMatched: 4, omittedMatches: 3, parseFailures: 0,
+    filesScanned: 42, truncated: false, matchesFound: 13, matchesShown: 10,
+    sessionsMatched: 6, omittedMatches: 3, parseFailures: 0,
     sessionMatches: [
         { file: 'D:/s/a.jsonl', found: 6, shown: 3 },
+        { file: 'D:/s/e.jsonl', found: 1, shown: 1 },
+        { file: 'D:/s/f.jsonl', found: 1, shown: 1 },
         { file: 'D:/s/b.jsonl', found: 1, shown: 1 },
         { file: 'D:/s/c.jsonl', found: 1, shown: 1 },
         { file: 'D:/s/d.jsonl', found: 1, shown: 1 }
@@ -49,6 +51,28 @@ const RESULT = {
             title: 'Codex oturumu — motor eksenini bütün yüzeylere indir (çok uzun başlık)',
             role: 'assistant', turn: 3, turnLabel: 'codex tarafını da adapte et',
             before: 'kodeks tarafında ', match: 'parser', after: ' adaptörünü yazdım, testleri geçti'
+        }),
+        // ‼️ S-36 / U-63 — the row the user reported as "the same session three
+        // times": three Agent Farm missions whose prompts are one template.
+        // They must arrive here as three subjects, three ids and a robot
+        // signature that is not the word "You".
+        hit({
+            file: 'D:/s/e.jsonl', sessionId: '019f79a0-75bf-7e33-a6d2-a2ac7f4b850d',
+            engine: 'claude', producer: 'claude', agentName: 'developer', ts: NOW - 5400000,
+            title: 'dashboard içinde search yanında Missions butonu diğer sayfalarda da çıksın',
+            role: 'automation', author: 'automation', authorLabel: 'Mission prompt',
+            launcher: 'dashboard-Missions', turn: 1, turnLabel: 'mission başlangıcı',
+            before: 'sol panelde Missions için ayrı bir bölme olsun, ', match: 'parser',
+            after: ' tarafına dokunmadan yalnız yüzeyi genişlet'
+        }),
+        hit({
+            file: 'D:/s/f.jsonl', sessionId: '019f7b00-4e70-7000-8000-00000000bbbb',
+            engine: 'codex', producer: 'unknown', provenance: 'imported-unknown-source',
+            agentName: 'manager', ts: NOW - 260000000, title: 'İçe aktarılmış oturum',
+            role: 'automation', author: 'unknown', authorLabel: 'Imported — author unverified',
+            turn: 1, turnLabel: 'içe aktarılan tur',
+            before: 'bu kopyanın kaynağını hiçbir manifest söylemiyor, ', match: 'parser',
+            after: ' tarafı da doğrulanamıyor'
         }),
         hit({
             file: 'D:/s/c.jsonl', sessionId: '77c0e1aa-9f22-4d53-8b31-11d0a2f3c001',

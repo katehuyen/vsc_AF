@@ -6,7 +6,8 @@
     const DATA = window.__DATA__;
 
     const ROLES = [
-        { id: 'user', icon: '🧑', label: 'You', text: 'Prompts written by a person in an ordinary session. Work assigned between agents is under Delegator instead' },
+        { id: 'user', icon: '🧑', label: 'You', text: 'Prompts a PERSON wrote. A transcript calls its whole input channel "user", so this used to include every brief Agent Farm generated for a mission, task or schedule; those are under Automation now. Work assigned between agents is under Delegator instead' },
+        { id: 'automation', icon: '🤖', label: 'Automation', text: 'Prompts a PROGRAM wrote on the same input channel — a mission brief, a task, a schedule or trigger instruction, or a headless run with no launcher on record. Also covers an imported transcript whose real author cannot be verified' },
         { id: 'assistant', icon: '🤖', label: 'Agent', text: 'Answers from the main agent in an ordinary session. Answers produced inside delegated work are under Handler instead' },
         { id: 'delegator', icon: '📤', label: 'Delegator', text: 'The work instruction one agent sent to another agent when it delegated a task' },
         { id: 'handler', icon: '📥', label: 'Handler', text: 'The answer produced by the agent that handled a delegated task' },
@@ -14,9 +15,10 @@
         { id: 'toolResult', icon: '📄', label: 'Results', text: 'Content returned by tools, including file contents, command output and errors' }
     ];
     const ALL_ROLES = ROLES.map(x => x.id);
-    const DEFAULT_ROLES = ['user', 'assistant'];
+    const DEFAULT_ROLES = ['user', 'automation', 'assistant'];
     const PRESETS = [
-        { id: 'dialog', label: 'Conversation', roles: ['user', 'assistant'] },
+        { id: 'dialog', label: 'Conversation', roles: ['user', 'automation', 'assistant'] },
+        { id: 'human', label: 'People only', roles: ['user', 'assistant'] },
         { id: 'delegation', label: 'Delegation', roles: ['delegator', 'handler'] },
         { id: 'tools', label: 'Tool trail', roles: ['tool', 'toolResult'] },
         { id: 'all', label: 'Everything', roles: ALL_ROLES }
@@ -302,7 +304,7 @@
             .chip{box-sizing:border-box;font-size:11px;line-height:17px;height:23px;padding:2px 8px;border-radius:10px;cursor:pointer;background:transparent;color:var(--vscode-foreground);opacity:.82;border:1px solid var(--vscode-widget-border,#6667);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center}.chip:hover:not(:disabled){opacity:1;background:var(--vscode-list-hoverBackground)}.chip.on{opacity:1;color:var(--vscode-foreground);border-color:var(--vscode-focusBorder);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 50%,transparent);background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent)}.chip[data-tone="preset"].on{background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 28%,transparent);border-color:var(--vscode-charts-purple,#b180d7)}.chip[data-tone="mode"].on{background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 24%,transparent);border-color:var(--vscode-charts-blue,#3794ff)}.chip[data-tone="case"].on,.chip[data-tone="whole"].on{background:color-mix(in srgb,var(--vscode-charts-green,#89d185) 22%,transparent);border-color:var(--vscode-charts-green,#89d185)}.chip[data-tone="filter"].on{background:color-mix(in srgb,var(--vscode-charts-orange,#d18616) 24%,transparent);border-color:var(--vscode-charts-orange,#d18616)}.chip-check{display:inline-block;width:12px;margin-right:2px;overflow:hidden;opacity:0}.chip.on .chip-check{opacity:1}.chip.disabled,.unavailable .chip{opacity:.32;cursor:default}.seg{display:inline-flex}.seg>.af-tipw:not(:first-child) .chip,.seg>.chip:not(:first-child){border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px}.seg>.af-tipw:not(:last-child) .chip,.seg>.chip:not(:last-child){border-top-right-radius:0;border-bottom-right-radius:0}.scope-note{font-size:10px;color:var(--vscode-descriptionForeground)}.scope-pill{font-size:10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;padding:1px 4px 1px 8px;white-space:nowrap}.scope-pill button{border:0;background:transparent;color:inherit;padding:0 3px}.text-action{border:0;background:transparent;color:var(--vscode-textLink-foreground);padding:2px 4px;cursor:pointer;font-size:11px}.text-action:disabled{opacity:.3;cursor:default}
             .scope-layout{margin-top:8px}.scope-head{display:flex;align-items:center;gap:8px}.preset-group{display:flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;overflow:hidden;padding:3px 6px;border:1px solid color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 55%,transparent);border-radius:7px;background:color-mix(in srgb,var(--vscode-charts-purple,#b180d7) 7%,transparent);white-space:nowrap}.group-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--vscode-charts-purple,#b180d7);margin-right:2px}.scope-actions{display:inline-flex;align-items:center;flex:0 0 auto;margin-left:auto}.role-group{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:6px}.chip-run{display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex:0 1 auto}
             .meaning-line,.dirty-note{margin-top:7px;padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);font-size:11px}.meaning-line #sem-status{margin-left:5px;color:var(--vscode-descriptionForeground)}.fpanel{margin-top:7px;padding:7px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;background:color-mix(in srgb,var(--vscode-foreground) 2%,transparent)}.filter-row{display:grid;grid-template-columns:minmax(420px,1fr) repeat(3,minmax(120px,auto));align-items:center;gap:6px}.filter-row>.af-tipw:first-child{display:block;min-width:0}.fbox{box-sizing:border-box;width:100%;min-width:0;font-size:11px;padding:4px 7px}.filter-row .afms-btn{font-size:11px;min-width:118px;padding:3px 8px}.detail-row{margin-top:6px}.date-range,.sortbox{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.date-range input,.sortbox select{font-size:10px;padding:1px 3px}.date-range.unavailable,.scope-layout.unavailable .preset-group,.scope-layout.unavailable .role-group{opacity:.45}.guide{margin-top:7px;padding:8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:6px;max-height:460px;overflow:auto}.guide table{font-size:11px;width:100%}.guide p{font-size:10px;margin:5px 0 0;color:var(--vscode-descriptionForeground)}.guide p code{font-size:10px}
-            .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}#out.busy{opacity:.5}
+            .resultsbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 7px;font-size:11px;color:var(--vscode-descriptionForeground)}.resultsbar span{padding:2px 8px;border:1px solid var(--vscode-widget-border,#5555);border-radius:10px}.resultsbar b{color:var(--vscode-foreground);margin-right:3px}.partial{padding:5px 8px;border-left:3px solid var(--vscode-charts-yellow,#cca700);background:color-mix(in srgb,var(--vscode-charts-yellow,#cca700) 8%,transparent);margin-bottom:7px;font-size:11px}.sessgroup{margin-bottom:9px;border:1px solid var(--vscode-widget-border,#5555);border-radius:7px;overflow:hidden}.sesshead{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;background:color-mix(in srgb,var(--vscode-textLink-foreground) 8%,transparent)}.sesshead .meta{margin-left:auto;text-align:right;font-size:10px;color:var(--vscode-descriptionForeground)}.sesshead .ident{font-family:var(--vscode-editor-font-family,monospace);font-size:10px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--vscode-foreground) 22%,transparent);border-radius:9px;color:var(--vscode-descriptionForeground);white-space:nowrap}.hit{padding:6px 9px 6px 15px;border-top:1px solid color-mix(in srgb,var(--vscode-widget-border,#5555) 55%,transparent);cursor:pointer}.hit:hover{background:var(--vscode-list-hoverBackground)}.hit .badges{display:flex;gap:5px;margin-bottom:3px}.turnhead{font-size:10px;color:var(--vscode-descriptionForeground);padding:5px 9px 1px;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent)}.id-card{margin:9px 0 7px;padding:6px 9px;border-left:3px solid var(--vscode-charts-blue,#3794ff);background:color-mix(in srgb,var(--vscode-charts-blue,#3794ff) 10%,transparent);cursor:pointer}.source-head{margin:14px 0 6px;font-weight:650}.empty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground)}mark{background:var(--vscode-editor-findMatchHighlightBackground,#ffd33d55)}#out.busy{opacity:.5}
             @media(max-width:1100px){.filter-row{grid-template-columns:minmax(240px,1fr) repeat(3,minmax(110px,auto))}}
             @media(max-width:780px){.session-controls{justify-content:flex-start;margin-left:0}.filter-row{grid-template-columns:1fr 1fr}.filter-row>.af-tipw:first-child{grid-column:1/-1}.resultsbar{gap:4px}.sesshead{align-items:flex-start}.sesshead .meta{min-width:130px}}
         </style>`;
@@ -542,16 +544,53 @@
         if (build) build.addEventListener('click', () => vscode.postMessage({ type: 'buildIndex' }));
     }
 
-    const ROLE_WORD = { user: 'you', assistant: 'agent', delegator: 'delegator', handler: 'handler', tool: 'tool', toolResult: 'result', memory: 'memory', event: 'event' };
+    const ROLE_WORD = { user: 'you', automation: 'automation', assistant: 'agent', delegator: 'delegator', handler: 'handler', tool: 'tool', toolResult: 'result', memory: 'memory', event: 'event' };
     const SESSION_HINT = window.AFSessionCtx.HINT;
-    const viewerRoles = () => [...roleSel].map(r => r === 'delegator' ? 'user' : r === 'handler' ? 'assistant' : r);
+    // The VIEWER speaks the transcript's protocol roles: `automation` is a
+    // reading of the same `user` channel, so it opens as `user` there (S-36).
+    const viewerRoles = () => [...new Set([...roleSel].map(r =>
+        r === 'delegator' || r === 'automation' ? 'user' : r === 'handler' ? 'assistant' : r))];
     const openSession = (file, ts) => vscode.postMessage({ type: 'openSession', file, ts: ts || 0, roles: viewerRoles() });
+
+    /**
+     * ‼️ U-63 — WHAT MAKES TWO SESSIONS TWO SESSIONS, IN THE WIDTH OF A BADGE.
+     *
+     * Three different missions reached this page under one generated title, one
+     * engine badge and one agent name; nothing on the row said they were three
+     * conversations, so they read as one row drawn three times. SHORTHAND: the
+     * eight-character id (the form the whole extension prints), the author's
+     * glyph and an import mark — with the long form in the AFTip.
+     */
+    function identity(h) {
+        const id = String(h.sessionId || '').slice(0, 8);
+        const author = h.author === 'automation' ? '🤖' : h.author === 'unknown' ? '❔' : '🧑';
+        const imported = h.provenance && h.provenance !== 'native' ? '⇄' : '';
+        const head = id ? `Session #${id}` : 'Session';
+        const lines = [
+            h.sessionId ? `Full id: ${h.sessionId}` : '',
+            h.canonicalSessionId && h.canonicalSessionId !== h.sessionId
+                ? `Canonical run: ${h.canonicalSessionId}` : '',
+            `Author: ${h.authorLabel || (h.author === 'automation' ? 'Automation prompt' : 'You')}`
+                + (h.launcher ? ` — ${h.launcher}` : ''),
+            h.producer && h.producer !== (h.engine || 'claude')
+                ? `Ran on ${h.producer}; stored as ${h.engine || 'claude'}` : '',
+            h.provenance === 'imported'
+                ? 'This file is an imported copy. The run itself is indexed under its own transcript, and only that one is counted.' : '',
+            h.provenance === 'imported-unknown-source'
+                ? 'Marked as imported, but no manifest names the source — the engine that actually ran it is unknown.' : '',
+            h.title ? `Title: ${h.title}` : ''
+        ].filter(Boolean).join('\n');
+        return tip(`<span class="ident">#${C.esc(id)} ${author}${imported}</span>`, head, lines);
+    }
 
     function hitHtml(h, i) {
         const isSession = h.kind !== 'memory' && h.kind !== 'event' && h.file;
         const ctx = isSession ? ' ' + window.AFSessionCtx.row(h, { webviewSection: 'afSearchHit', hitIndex: i, hitTs: h.ts || 0 }) : '';
+        const who = h.role === 'automation'
+            ? (h.authorLabel || 'Automation prompt') + (h.launcher ? ' · ' + h.launcher : '')
+            : (ROLE_WORD[h.role] || h.role);
         return `<div class="hit" data-hit="${i}"${ctx}>
-            <div class="badges"><span class="badge">${C.esc(ROLE_WORD[h.role] || h.role)}${h.tool ? ' · ' + C.esc(h.tool) : ''}</span>
+            <div class="badges"><span class="badge">${C.esc(who)}${h.tool ? ' · ' + C.esc(h.tool) : ''}</span>
             ${typeof h.score === 'number' ? `<span class="badge">${Math.round(h.score * 100)}% similar</span>` : ''}<span class="grow"></span><span class="muted small">${relTime(h.ts)}</span></div>
             ${C.esc(h.before)}${h.match ? `<mark>${C.esc(h.match)}</mark>` : ''}${C.esc(h.after)}</div>`;
     }
@@ -611,7 +650,7 @@
                 turn = x.h.turn; return head + hitHtml(x.h, x.i);
             }).join('');
             return `<div class="sessgroup"><div class="sesshead" data-open="${C.esc(first.file)}" data-ts="${first.ts || 0}" ${window.AFSessionCtx.row(first)}>
-                ${window.AFEngine.badge(first.engine || 'claude')}<strong>${C.esc(first.agentName)}</strong><span>· ${C.esc(first.title)}</span>
+                ${window.AFEngine.badge(first.engine || 'claude')}${identity(first)}<strong>${C.esc(first.agentName)}</strong><span>· ${C.esc(first.title)}</span>
                 <span class="meta">${count.shown === count.found ? `${count.found} matches` : `${count.shown} of ${count.found} shown`}<br>${C.esc(first.project || '')} ${relTime(groupTs(g))} · ${C.esc(SESSION_HINT)}</span></div>${body}</div>`;
         }).join('');
         const mem = extras.filter(x => x.h.kind === 'memory'); const events = extras.filter(x => x.h.kind === 'event');

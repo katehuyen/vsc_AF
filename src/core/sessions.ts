@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import { isGeneratedPrompt, wrapperGoal } from './authorship';
+import { SessionProvenance } from './externalImports';
 import {
     applyBinding, BindableSession, bindSession, isBindingHit, LaunchBinding, normCwd
 } from './launchBinding';
@@ -112,6 +114,40 @@ export interface SessionInfo {
     machine?: string;
     /** E3: external CLI id (gemini/codex/…) — set only by external SessionSources, never by the claude scan. */
     source?: string;
+    /**
+     * ‼️ X-44 — THE THREE FACTS `source` USED TO CARRY AT ONCE.
+     *
+     * `producerEngine` is the engine that DID the work, `storageEngine` is the
+     * format the file on disk is in, and `provenance` says whether those are
+     * the same run or a copy of somebody else's. On a native session all three
+     * agree and nothing changes; on a Codex Desktop import of a Claude
+     * transcript they are claude / codex / imported, and reading the folder as
+     * the engine is what filed a $12.47 headless mission as a free user-typed
+     * Codex chat. Full reasoning: `externalImports.ts`.
+     *
+     * ANALYTICS AND FILTERS read `canonicalSessionId` (the id of the run that
+     * really happened); RESUME AND OPEN read `sessionId` (the thread the file
+     * on disk actually is). Mixing those two up is the whole bug.
+     */
+    producerEngine?: string;
+    storageEngine?: string;
+    provenance?: SessionProvenance;
+    /** The id of the run this record is a record OF — its own id when native. */
+    canonicalSessionId?: string;
+    sourceSessionId?: string;
+    sourcePath?: string;
+    importedThreadId?: string;
+    /** ms — when the COPY was made. Never used as the time the work ran. */
+    importedAt?: number;
+    /**
+     * Set on an import row once its canonical source is found in the index: the
+     * row is kept and reachable (resume, "open the imported copy") but is no
+     * longer counted, because the work it describes is already counted once
+     * under `aliasOf`.
+     */
+    aliasOf?: string;
+    /** The mirror of the above, on the canonical row: ids that are copies of it. */
+    importAliases?: string[];
     agentId?: string;
     agentName?: string;
     /** ‼️ S-31 — the project the RUN that produced this was created under, from
@@ -226,6 +262,58 @@ export interface SessionInfo {
 export type SessionOrigin = 'user' | 'auto';
 
 /**
+ * X-44 — the key every COUNT is taken on. A session that is a copy of another
+ * run answers with the run's id, so source and alias fall on the same key and
+ * the work is counted once; everything else answers with itself.
+ */
+export function canonicalSessionKey(
+    s: Pick<SessionInfo, 'sessionId' | 'canonicalSessionId'>
+): string {
+    return s.canonicalSessionId || s.sessionId;
+}
+
+/** The engine that DID the work — not the folder the file happens to sit in. */
+export function producerEngineOf(
+    s: Pick<SessionInfo, 'producerEngine' | 'source' | 'provenance'>
+): string {
+    if (s.producerEngine) { return s.producerEngine; }
+    // An import whose source cannot be named has NO known producer; saying the
+    // storage engine here is exactly the false claim X-44 removed.
+    if (s.provenance === 'imported-unknown-source') { return 'unknown'; }
+    return s.source || 'claude';
+}
+
+/** The format the file on disk is in — what resume and the viewer must use. */
+export function storageEngineOf(
+    s: Pick<SessionInfo, 'storageEngine' | 'source'>
+): string {
+    return s.storageEngine || s.source || 'claude';
+}
+
+/** A row that is a copy of a run already present in the index. */
+export function isImportAlias(s: Pick<SessionInfo, 'aliasOf'>): boolean {
+    return !!s.aliasOf;
+}
+
+/**
+ * One sentence for the badge/AFTip on any row: what ran it, and whether what we
+ * are looking at is the run or a copy of it. Kept here so Sessions, Search, the
+ * Viewer and the bridge cannot word the same fact three ways.
+ */
+export function provenanceNote(s: SessionInfo): string | undefined {
+    if (!s.provenance || s.provenance === 'native') { return undefined; }
+    if (s.provenance === 'imported-unknown-source') {
+        return `Imported into ${storageEngineOf(s)} — the source is not named by any manifest, `
+            + 'so the engine that actually ran it is unknown.';
+    }
+    const producer = producerEngineOf(s);
+    const when = s.importedAt ? new Date(s.importedAt).toISOString().slice(0, 10) : '';
+    return `Ran on ${producer}; this file is the copy ${storageEngineOf(s)} made`
+        + `${when ? ` on ${when}` : ''}`
+        + `${s.aliasOf ? '. The run itself is indexed under its own transcript.' : '.'}`;
+}
+
+/**
  * Read the origin off the transcript's own `entrypoint` field — never guessed
  * from timing or prompt shape. An `sdk-*` entrypoint means a program launched
  * the CLI (a schedule / trigger / task / mission run, or a hand-written
@@ -258,6 +346,29 @@ export function sessionOrigin(
     if (s.launchedBy) { return 'auto'; }
     if (s.consoleHosted) { return 'user'; }
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
+}
+
+/**
+ * X-44 — the provenance block, worded ONCE for every bridge row that carries it.
+ * Backwards compatible by construction: `engine` stays where it was on each op
+ * and this is added beside it, so a reader that never looked is unaffected and
+ * one that does can tell a run from a copy of a run.
+ */
+export function provenanceFields(s: SessionInfo): {
+    producer: string; storage: string; provenance: SessionProvenance;
+    canonicalId: string; importedFrom: string | null; importedAt: number | null;
+    aliasOf: string | null; importAliases: string[];
+} {
+    return {
+        producer: producerEngineOf(s),
+        storage: storageEngineOf(s),
+        provenance: s.provenance ?? 'native',
+        canonicalId: canonicalSessionKey(s),
+        importedFrom: s.sourcePath ?? null,
+        importedAt: s.importedAt ?? null,
+        aliasOf: s.aliasOf ?? null,
+        importAliases: s.importAliases ?? []
+    };
 }
 
 /**
@@ -374,6 +485,11 @@ const WHOLE_NOTICE = /^\[[^\]]*\]$/;
  * is invented and no prompt is dropped from any count.
  */
 export function conversationTitle(text: string): string {
+    // ‼️ S-36 — a prompt THIS extension generated is named by its subject, not
+    // by the template it was poured into. Before any whitespace flattening,
+    // because the wrapper is recognized by its section headings.
+    const generated = wrapperGoal(text);
+    if (generated) { return truncate(generated.goal, 80); }
     let t = String(text ?? '').replace(/\s+/g, ' ').trim();
     while (ATTACHMENT_MARK.test(t)) { t = t.replace(ATTACHMENT_MARK, ''); }
     if (t.startsWith('<')) { return commandArgsTitle(t); }
@@ -936,6 +1052,28 @@ export class SessionIndex implements vscode.Disposable {
         }
         this.bindingDoubts.delete(info.file);
         applyBinding(info, r);
+        this.nameFromLauncher(info);
+    }
+
+    /**
+     * ‼️ S-36 — THE LAST RESORT FOR A SESSION WHOSE PROMPT IS ALL TEMPLATE.
+     *
+     * `conversationTitle` already lifts the real goal out of a generated prompt
+     * whose subject it can find. When it cannot — a wrapper whose section is
+     * empty, or a template that changed shape — the row would fall back to the
+     * boilerplate's own first line, which is identical across every run of that
+     * template. The launcher Agent Farm recorded is a name a person chose, so
+     * it beats the boilerplate; it is used ONLY in that case, and never over a
+     * title derived from something somebody actually said.
+     */
+    private nameFromLauncher(info: SessionInfo): void {
+        const label = info.launchedBy?.label?.trim();
+        if (!label) { return; }
+        if (!isGeneratedPrompt(info.firstPrompt ?? '') && !isGeneratedPrompt(info.autoTitle)) { return; }
+        if (wrapperGoal(info.firstPrompt ?? '')) { return; }
+        const named = truncate(label, 80);
+        if (info.title === info.autoTitle) { info.title = named; }
+        info.autoTitle = named;
     }
 
     /** The memo a dropped file leaves behind, so a later binding can claim it. */
@@ -1150,6 +1288,8 @@ export class SessionIndex implements vscode.Disposable {
     // that want them ask for external() explicitly.
 
     private externalList: SessionInfo[] = [];
+    /** X-44 — import copies of runs already indexed: findable, never counted. */
+    private externalAliases: SessionInfo[] = [];
     private externalSig = '';
 
     setExternal(sessions: SessionInfo[]): void {
@@ -1186,18 +1326,86 @@ export class SessionIndex implements vscode.Disposable {
             + kept.map(s => `${s.sessionId}:${s.lastTs}:${s.userTurns}:${s.toolCalls}`).join('|');
         if (sig === this.externalSig) { return; }
         this.externalSig = sig;
-        this.externalList = kept;
+        const { canonical, aliases } = this.linkImports(kept);
+        this.externalList = canonical;
+        this.externalAliases = aliases;
         // ‼️ The title BEFORE the marks, and both on every rescan (X-35). A
         // source re-parses its transcript whenever the file changes and hands
         // back a freshly derived title, so a rename applied once would be
         // silently undone the next time the user said anything in that session —
         // the same rename bug as `setTitleOverrides`, one scan later.
-        for (const s of this.externalList) { this.applyTitle(s); this.applyMark(s); }
+        for (const s of [...this.externalList, ...this.externalAliases]) {
+            this.applyTitle(s); this.applyMark(s);
+        }
         this.onDidUpdateEmitter.fire();
+    }
+
+    /**
+     * ‼️ X-44 — ONE RUN, ONE ROW; THE COPY KEPT BUT NOT COUNTED.
+     *
+     * An imported rollout whose source transcript this index already holds is
+     * the SAME work seen twice. Left in the list it doubled the Codex session
+     * count, split one mission's cost between a real figure and a $0 one, and
+     * put two groups with the same title in Search — which is precisely the
+     * "duplicate" the user reported (U-63).
+     *
+     * So the alias is moved aside rather than deleted: `byId`/`byFile` still
+     * find it, so resuming the Codex thread and opening the imported copy both
+     * still work, and the canonical row learns that a copy exists. What it is
+     * NOT allowed to do is appear in a pool anything counts.
+     *
+     * ‼️ AND THE DISPLAY FACTS ARE INHERITED, not recomputed from the copy. The
+     * import carries the moment it was WRITTEN (13 ms, $0, "user"); the run
+     * carries when it happened, what it cost and who launched it. A reader who
+     * opens the alias must see the run's own facts or the row is a third lie.
+     */
+    private linkImports(list: SessionInfo[]): { canonical: SessionInfo[]; aliases: SessionInfo[] } {
+        const canonical: SessionInfo[] = [];
+        const aliases: SessionInfo[] = [];
+        // ‼️ Resolved against THIS scan and the claude pool only — never against
+        // the previous external list, or an alias could be re-linked to a row
+        // that no longer exists and carry a dead session's figures for ever.
+        const byId = new Map<string, SessionInfo>();
+        for (const s of list) { if (!byId.has(s.sessionId)) { byId.set(s.sessionId, s); } }
+        const findCanonical = (id: string): SessionInfo | undefined => {
+            for (const s of this.sessions.values()) { if (s.sessionId === id) { return s; } }
+            return byId.get(id);
+        };
+        for (const s of list) {
+            const target = s.provenance === 'imported' && s.canonicalSessionId
+                && s.canonicalSessionId !== s.sessionId
+                ? findCanonical(s.canonicalSessionId) : undefined;
+            if (!target || target === s) {
+                delete s.aliasOf;
+                canonical.push(s);
+                continue;
+            }
+            s.aliasOf = target.sessionId;
+            // The run's facts, onto the record of the copy.
+            s.firstTs = target.firstTs;
+            s.lastTs = target.lastTs;
+            s.usage = target.usage;
+            s.cost = target.cost;
+            s.wTokens = target.wTokens;
+            s.models = target.models;
+            s.entrypoint = target.entrypoint;
+            s.consoleHosted = target.consoleHosted;
+            if (target.launchedBy) { s.launchedBy = target.launchedBy; }
+            if (target.projectId) { s.projectId = target.projectId; }
+            if (target.agentId) { s.agentId = target.agentId; s.agentName = target.agentName; }
+            target.importAliases = [...new Set([...(target.importAliases ?? []), s.sessionId])];
+            aliases.push(s);
+        }
+        return { canonical, aliases };
     }
 
     external(): SessionInfo[] {
         return this.externalList;
+    }
+
+    /** X-44 — the import copies held aside by `linkImports`: reachable, uncounted. */
+    externalImportAliases(): SessionInfo[] {
+        return this.externalAliases;
     }
 
     /**
@@ -1260,7 +1468,11 @@ export class SessionIndex implements vscode.Disposable {
     byFile(file: string | undefined): SessionInfo | undefined {
         const f = String(file ?? '').trim();
         if (!f) { return undefined; }
-        return this.sessions.get(f) ?? this.externalList.find(s => s.file === f);
+        // Aliases last, and deliberately still here (X-44): the import copy has
+        // its own file on disk and opening it must keep working.
+        return this.sessions.get(f)
+            ?? this.externalList.find(s => s.file === f)
+            ?? this.externalAliases.find(s => s.file === f);
     }
 
     byId(sessionId: string | undefined): SessionInfo | undefined {
@@ -1272,7 +1484,8 @@ export class SessionIndex implements vscode.Disposable {
         for (const s of this.sessions.values()) {
             if (s.sessionId === id) { return s; }
         }
-        return this.externalList.find(s => s.sessionId === id);
+        return this.externalList.find(s => s.sessionId === id)
+            ?? this.externalAliases.find(s => s.sessionId === id);
     }
 
     externalForAgent(agentId: string): SessionInfo[] {
