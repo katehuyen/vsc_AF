@@ -350,6 +350,46 @@ başlangıç baseline’ı da transcript veya index’ten yüklenmelidir. Süre�
 motora kümülatif fark uygulanmaz. Adım toplamı ile sonuç toplamı aynı rakamı tekrar
 ediyorsa ikisi toplanmaz.
 
+#### “Context now” ayrı bir ölçüm sözleşmesidir
+
+Bir motor entegrasyonu aşağıdaki dört sayıyı birbirinin yerine kullanamaz:
+
+| Alan | Kesin anlamı |
+|---|---|
+| `sessionSpentTokens` | Konuşmanın ömrü boyunca bütün model çağrılarının toplam harcaması; pencere kapasitesini defalarca aşabilir |
+| `turnSpentTokens` | Bir kullanıcı turu boyunca yapılan bütün iç model çağrılarının toplamı; araç döngüsü varsa pencere kapasitesini aşabilir |
+| `contextTokens` | **En son model çağrısının** sonunda pencerenin tuttuğu yaklaşık token; toplam değil anlık doluluk |
+| `contextWindowTokens` | O oturumda gerçekten uygulanan operasyonel pencere kapasitesi; model kataloğundaki yayımlanmış üst sınırdan farklı olabilir |
+
+`contextTokens` yalnız tek model/API çağrısının kendi usage’ından veya motorun açıkça
+“son çağrı” diye yayımladığı alandan türetilir. Tur, süreç veya konuşma toplamını
+taşıyan usage bloğuna `contextAfter()` uygulamak yasaktır. Bir kullanıcı turunda on
+model çağrısı yapıldıysa bunların toplamı `turnSpentTokens`, yalnız sonuncusu
+`contextTokens` olur.
+
+Kanonik ölçüm en az `{ tokens, window?, measuredAt, source }` taşır. `source`, örneğin
+`stream-last-call`, `rollout-last-token-usage`, `transcript-last-call` veya
+`engine-reported` gibi doğrulanabilir bir köken söyler. Stream yalnız harcama toplamı
+veriyorsa transcript/rollout kuyruğu mtime+size cache’li ve sınırlı tail okumasıyla
+izlenebilir. Güvenilir son-çağrı kaynağı yoksa değer `unknown` kalır; session veya turn
+toplamı “yaklaşık ctx” diye gösterilmez. Son iyi örnek korunacaksa yaşı da taşınır ve
+stale olduğu UI/Bridge’de söylenir.
+
+Pencere kapasitesinde açık kullanıcı override’ı varsa bu bilinçli seçim uygulanır;
+yoksa öncelik oturum sırasında motorun raporladığı etkin değerde, sonra doğrulanmış
+model kataloğundadır. Yayımlanmış model üst sınırı, CLI’nin autocompact/plan/runtime
+nedeniyle raporladığı daha küçük operasyonel pencerenin üstüne yazılmaz. Compaction
+sonrası `contextTokens` düşebilir;
+bu normaldir ve kümülatif sayaç gibi monotonlaştırılmaz. `contextTokens >
+contextWindowTokens` görülürse yüzde çizilmez: ölçüm tutarsız/stale işaretlenir,
+toplama geri düşülmez.
+
+Motor çalışma kâğıdı şu matrisi gerçek iki turlu, araç kullanan bir smoke ile doldurur:
+
+| Motor | Harcama kaynağı ve kapsamı | Son-çağrı ctx kaynağı | Etkin pencere kaynağı | Yoksa davranış |
+|---|---|---|---|---|
+| Yeni motor | tur/süreç/konuşma/adım | kesin ham alan veya transcript olayı | runtime/model/unknown | `—`, asla toplam değil |
+
 ### Transcript, index ve canlılık
 
 | Soru | Ölçüm |
@@ -522,6 +562,9 @@ Motorun ham protokolü Agent Farm’ın kanonik Console olaylarına çevrilir. A
 - tekrar gelen snapshot ile delta’yı iki kez eklemez;
 - başarılı sonuç ve motorun kendi hata zarfını exit code’dan bağımsız okur;
 - usage alanlarını motorun ölçülmüş semantiğine göre çevirir;
+- harcama usage’ı ile son-çağrı context örneğini ayrı kanonik alanlar olarak üretir;
+- usage’ın `perCall`, `turnAggregate`, `processAggregate` veya `conversationCumulative`
+  kapsamını açıkça bildirir; yalnız `perCall` ctx türetmeye izin verir;
 - eksik alanı uydurmaz.
 
 Adapter testinde en az şunlar vardır:
@@ -534,6 +577,7 @@ Adapter testinde en az şunlar vardır:
 - eksik/unknown olayın güvenli davranışı;
 - iki turda state;
 - token/cache/reasoning hesabı;
+- çok çağrılı tek turda session/turn toplamı ile son-çağrı ctx ayrımı ve compaction;
 - bütün UTF-8 byte bölünmeleri.
 
 ### Console süreci — `src/core/consolehost.ts`
@@ -558,6 +602,10 @@ Yeni motor için şu bağlantılar açıkça yapılır:
 - interrupt, close, retry ve process tree cleanup;
 - tur kuyruğunun ancak motor gerçekten serbest kaldığında ilerlemesi;
 - reload/resume baseline’ı;
+- harcama sayaçlarını toplarken context’i yalnız adapter’ın açık `ContextSample`
+  ölçümünden güncelleme; sentetik toplu usage’ı otomatik ctx saymama;
+- stream son-çağrı usage’ı vermiyorsa motorun transcript/rollout tail probe’unu
+  throttle+mtime/size cache ile çalıştırma, tur bitişi ve process close’da son okuma;
 - hosted transcript kopyası.
 
 Bir `turn.completed` olayı sürecin konuşma lock’unu bıraktığını kanıtlamaz. Aynı
@@ -743,7 +791,11 @@ Yeni motor için:
 - kayıp/bozuk yanıt `0% used` yapılmaz;
 - plan bar’ının pencere/reset zamanı uydurulmaz;
 - `input`, `cacheRead`, `cacheWrite`, `output`, `reasoning` çakışmaları test edilir;
-- context penceresi konuşma ömrü toplamıyla karıştırılmaz;
+- session harcaması, turn harcaması, son-çağrı context’i ve etkin pencere dört ayrı
+  alan olarak tutulur; bir toplam hiçbir koşulda context fallback’i olmaz;
+- context kaynağı/ölçüm zamanı taşınır; source bilinmiyorsa sayı yerine unknown kalır;
+- transcript/index, Session Viewer, Console state, kart/alt şerit ve Bridge aynı ham
+  context örneğini kullanır veya görünür freshness farkı söyler;
 - motor price raporlamıyorsa Console/Tasks/Missions dolar tavanı davranışı
   yeniden değerlendirilir ve görünür token tavanı gerekir;
 - resume edilen konuşmada yalnız yeni run’ın delta’sı göreve yazılır.
@@ -1075,6 +1127,10 @@ Yeni `test/test_<motor>.js` en az şunları gerçek derlenmiş fonksiyonlarla s�
 - Auth dosyası var diye CLI yokken ready olma.
 - Exit 0 içindeki error zarfını başarı sayma.
 - Kümülatif usage’ı her tur yeniden yazma veya süreç toplamından delta çıkarma.
+- Tur/süreç/konuşma toplamını `contextAfter()` ile “ctx now” sayma.
+- Context bilinmiyorken session token toplamını fallback gösterme.
+- Model kataloğundaki üst sınırla motorun raporladığı etkin pencereyi ezme.
+- Compaction sonrası context düşüşünü negatif/kayıp sayıp eski yüksek değere kilitleme.
 - Cached/reasoning token’ı iki kez sayma.
 - Transcript filename’ını session id sayma.
 - Okunamayan transcriptte sahte `file`, `0 token` veya “henüz” mesajı.
@@ -1119,8 +1175,13 @@ hesap/tur harcar. Test gerçek `ConsoleHost` üzerinden şunları yapar:
 5. İkinci turda nonce ve dosya içeriğini sorar; bağlamın taşındığını doğrular.
 6. Çok satırlı, Türkçe ve shell metakarakterli prompt kullanır.
 7. Token/usage’ın pozitif ve motor semantiğine uygun olduğunu doğrular.
-8. Motor fiyat yayınlamıyorsa uydurma dolar olmadığını doğrular.
-9. Oturumu kapatır ve çocuk süreç/lock bırakmadığını doğrular.
+8. Ham son-çağrı context örneği ile Console/Session/Bridge `contextTokens` değerini;
+   runtime pencere alanı varsa `contextWindowTokens` değerini karşılaştırır. Session ve
+   turn toplamlarının pencereyi aşabilmesi ctx testinin başarısı sayılmaz.
+9. Araçlı turda birden fazla model çağrısı üretir; turn toplamının ctx’ye yazılmadığını,
+   compaction varsa ctx düşüşünün korunduğunu doğrular.
+10. Motor fiyat yayınlamıyorsa uydurma dolar olmadığını doğrular.
+11. Oturumu kapatır ve çocuk süreç/lock bırakmadığını doğrular.
 
 Terminal resume destekleniyorsa ayrıca gerçek TUI resume smoke’u yapılır. Task
 resume destekleniyorsa `TaskManager` yolunda aynı id ve yeni-run delta’sı ölçülür.
@@ -1229,6 +1290,18 @@ Codex usage konuşma boyunca kümülatif; Gemini süreç başına; Antigravity s
 usage’ı step toplamını tekrar ediyor. Cache input’a bazı motorlarda dahil, bazısında
 değil; reasoning output’a bazı motorlarda dahil, bazısında ayrık. Sonuç: motor
 başına fixture ve iki tur hesabı; ortak isim ortak semantik sayılmaz.
+
+### “Turun harcadığı token, turun sonunda pencerede duran tokendir”
+
+Bir ajan turu araç kullanırken aynı bağlamla birçok model çağrısı yapabilir. Codex’te
+ölçülmüş bir tur `total_token_usage.total_tokens = 5.414.907` harcarken aynı anda
+`last_token_usage.total_tokens = 220.471` ve `model_context_window = 258.400`
+raporladı. Toplam usage’ı kanonik assistant usage’a çevirip ortak reducer’da
+`contextAfter()` çalıştırmak Console’a **5,4M ctx** yazdı; Session parser’ı aynı
+rollout’un doğru `last_token_usage` alanını okuduğu için iki yüzey çelişti. Gemini’nin
+process stats’ı da çok çağrılı bir turun toplamıdır; tek çağrı kaynağı ayrıca
+kanıtlanmadan ctx sayılamaz. Sonuç: harcama usage’ı ve context örneği kanonik
+protokolde ayrı taşınır; gerçek son-çağrı alanı yoksa ctx `unknown` kalır.
 
 ### “Dosyanın adı session id’dir”
 
@@ -1465,7 +1538,10 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 - [ ] Model, effort, izin, attachment ve output-contract yetenekleri ölçüldü.
 - [ ] Session id, resume, live ownership ve reload davranışı ölçüldü.
 - [ ] Protokol olayları, UTF-8 ve hata zarfı ölçüldü.
-- [ ] Token/cache/reasoning/context/cost/kota semantiği ölçüldü.
+- [ ] Token/cache/reasoning/cost/kota semantiği ve usage kapsamı (`perCall` /
+  `turnAggregate` / `processAggregate` / `conversationCumulative`) ölçüldü.
+- [ ] Session harcaması, turn harcaması, son-çağrı `contextTokens` ve etkin
+  `contextWindowTokens` dört ayrı ham kanıtla ölçüldü; source/freshness kararı yazıldı.
 - [ ] Transcript/index yolu, gerçek id ve okunabilirlik ölçüldü.
 - [ ] Talimat keşfi, parent walk, merge sırası ve boyut tavanı ölçüldü.
 - [ ] Ortak anayasa, agent identity, memory/duty/skill ve MCP yolları ölçüldü.
@@ -1484,6 +1560,9 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
   veya mevcut ortak yolun yeterli olduğu kanıtlandı.
 - [ ] Memory/duty/skill/MCP uyumluluğu ve gerçek ajan kimliği turu eklendi.
 - [ ] Usage/kota ve billing/cost source ayrımı eklendi.
+- [ ] Harcama usage’ı ile `ContextSample` ayrıldı; toplu usage’dan ctx fallback’i yok.
+- [ ] Son-çağrı ctx stream’de yoksa sınırlı/cache’li transcript probe’u eklendi veya
+  UI/Bridge dürüstçe unknown gösteriyor.
 - [ ] Transcript/source/viewer parser ve gerçek kimlik resolver’ları eklendi.
 - [ ] Live geçici kimlik → gerçek kimlik uzlaşması, sahiplik güvenliği ve Timeline swim lane/işaret tıklaması için transcript dosya yolu çözümlemesi (hook payload yoksa SessionIndex kaydından tamamlama) eklendi.
 
@@ -1505,7 +1584,8 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 ### Okuma ve yönetim yüzeyleri
 
 - [ ] Engines.
-- [ ] Console list/card/history.
+- [ ] Console list/card/history; session total, turn total, ctx now ve pencere kapasitesi
+  aynı sayıymış gibi gösterilmiyor; source/freshness erişilebilir.
 - [ ] Sessions + filtre + open/action.
 - [ ] Turns + detail + export.
 - [ ] Session Viewer.
@@ -1535,6 +1615,8 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 
 - [ ] Hedef adapter/negatif/parity/round-trip testleri geçti.
 - [ ] Gerçek iki turlu Console smoke aynı id ve bağlamı kanıtladı.
+- [ ] Çok çağrılı araç turunda ham son-çağrı ctx = Console = Session Viewer = Bridge;
+  session/turn toplamı ayrı kaldı ve compaction düşüşü doğru işlendi.
 - [ ] Destekleniyorsa terminal ve task resume gerçek smoke’u geçti.
 - [ ] `npm test` temiz; encoding ve `git diff --check` temiz.
 - [ ] CHANGELOG, Motorlar tasarımı, Blueprint/README gerekli ölçüde güncel.
