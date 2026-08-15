@@ -1944,6 +1944,14 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // fact origin is now decided from (core/sessions.ts sessionOrigin).
         ok('…and carries the launcher and the session id an agent needs to act',
             /launchedBy: s\.launchedBy/.test(block) && /id: s\.sessionId/.test(block));
+        // ‼️ S-35 — the tables' 🌙 chip, reachable as data. An agent asked "did
+        // that run have anybody at it" must not have to infer it from the
+        // entrypoint, and the field is on every row whether or not it is
+        // filtered on — a filter you have to know about to see a fact is a
+        // fact that stays hidden.
+        ok('…and splits the robots the way the tables do (S-35)',
+            /headless\?/.test(block) && /sessionHeadless\(s\) === wantHeadless/.test(block)
+            && /headless: sessionHeadless\(s\)/.test(block));
     }
 
     // ---------- U-3: search.transcripts — the Search page's own question ------

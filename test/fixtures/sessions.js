@@ -43,6 +43,21 @@ const data = () => ({
             files: 0, apiCalls: 0, durationMin: 0,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             scanLimit: { bytes: 31_457_280, limit: 24 * 1024 * 1024 }
+        }),
+        // ‼️ S-35 — the two robots that used to look identical. Both are
+        // origin 'auto'; only the first ran with no terminal behind it, and the
+        // 🌙 that says so has to be legible at 9px beside the 🤖 it qualifies.
+        row(6, {
+            engine: '', models: ['claude-haiku-4-5'], origin: 'auto', headless: true,
+            title: 'Oturum 6 — zamanlanmış headless koşu',
+            entrypoint: 'sdk-cli',
+            launchedBy: { kind: 'schedule', label: 'Backlog ilerleme' }
+        }),
+        row(7, {
+            engine: '', models: ['claude-opus-5'], origin: 'auto', headless: false,
+            title: 'Oturum 7 — görev, ama gerçek bir terminalde',
+            entrypoint: 'cli',
+            launchedBy: { kind: 'task', label: 'ZEN sürüm notu' }
         })
     ],
     sessionTableN: 200
@@ -55,6 +70,15 @@ const variants = () => [
     {
         id: 'filters', label: 'Sessions — the filter panel open', data: data(),
         act: (r) => { r.query('.af-filter')[0].click(); }
+    },
+    // S-35 — the origin column and its chip row are only worth looking at with
+    // the scope opened to All: the default User scope has no robot in it at
+    // all, which is why the two kinds of automation run could stay identical
+    // for so long without anybody seeing them side by side.
+    {
+        id: 'origins', label: 'Sessions — every origin, filters open (🧑 · 🤖 · 🤖🌙)',
+        data: data(),
+        act: (r) => { r.query('.af-oswitch')[0].click(); r.query('.af-filter')[0].click(); }
     }
 ];
 

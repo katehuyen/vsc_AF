@@ -113,7 +113,7 @@ import {
 } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
-import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
+import { SessionIndex, SessionInfo, sessionOrigin, sessionHeadless } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
     LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, RunSurface,
@@ -4877,6 +4877,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     agent: s.agentName ?? null,
                     engine: s.source ?? 'claude',
                     origin: sessionOrigin(s),
+                    // S-35 — true only on an automation run that had no terminal
+                    // behind it (🌙 on the tables). An interactive task run is
+                    // origin 'auto' and headless false.
+                    headless: sessionHeadless(s),
                     sidechain: s.isSidechain,
                     pinned: s.pinned === true,
                     tags: s.tags ?? [],
@@ -4892,7 +4896,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -4902,8 +4906,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // of four and nothing said so.
                 const wantEngines = optStr(args, 'engine').toLowerCase()
                     .split(',').map(s => s.trim()).filter(Boolean);
+                // S-35 — the bridge form of the tables' 🌙 chip. Absent = both
+                // kinds, exactly as the omitted `origin` means both scopes.
+                const wantHeadless = args.headless === true ? true
+                    : args.headless === false ? false : undefined;
                 return index.allWithExternal()
                     .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
+                    .filter(s => wantHeadless === undefined || sessionHeadless(s) === wantHeadless)
                     .filter(s => !wantEngines.length || wantEngines.includes(s.source ?? 'claude'))
                     .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                     .slice(0, limit)
@@ -4915,6 +4924,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // say "Claude" out loud until it was named here.
                         engine: s.source ?? 'claude',
                         origin: sessionOrigin(s),
+                        // ‼️ S-35 — the second half of "who started it": a
+                        // headless run has no terminal and nobody at it, an
+                        // interactive task run opened one. Both are 'auto'.
+                        headless: sessionHeadless(s),
                         // WHICH mechanism, not just "a program" — the same fact
                         // the origin column now decides on (see sessionOrigin).
                         launchedBy: s.launchedBy ?? null,

@@ -158,7 +158,9 @@ ok('command OUTPUT is still not a name — only the argument is',
     const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');
     ok('‼️ the session viewer asks the index rather than deciding for itself',
         /const titleCandidate = conversationTitle;/.test(viewer)
-        && /import \{ conversationTitle, sessionOrigin \}/.test(viewer));
+        // The list grows as the page borrows more shared judgments (S-35 added
+        // sessionHeadless); what must not change is WHERE they come from.
+        && /import \{ conversationTitle,[^}]*\} from '\.\.\/core\/sessions'/.test(viewer));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.140.0 — Two glyphs that were hiding a fact each: the robot that ran alone, and the count that was smaller than it looked (2026-08-15)
+
+**S-35 — 🤖 was answering half of its own question.** The origin column separates your dialogs from the farm's runs, and then files two very different things under one icon: a **headless** run (a `claude -p` with no terminal and nobody who could have been watching) and a task launched in **interactive** mode, which opened a real terminal a person can type in. Which of the two a row is decides what you can still do with it — and nothing on screen said.
+
+- A small **🌙 rides on the robot** (🤖🌙), touching it, because it is one fact about one run and not a second column. It appears on every sessions table (Dashboard, Sessions, agent pages) and on the **Session Viewer's** own line, with the hover saying it in words: *Automation · headless — no terminal, nobody at the keyboard*.
+- The filter panel's **Started by:** row gains a fourth chip, **🌙 Headless**, behind a hairline that says it is not a fourth scope: the three before it are one choice, this one is a yes/no over whichever of them is showing. **On by default** — a filter that hides rows nobody asked it to hide is how a count stops being trustworthy — and when it is off it **counts itself on the Filters (n) badge**, so a shut panel cannot hide the fact that a whole class of runs is missing. It changes nothing under 🧑 User, where nothing is headless by definition.
+- **Decided host-side, from the same two recorded facts the origin is** (`core/sessions.ts` → `sessionHeadless`): a Console-hosted id is a person at the keyboard whatever its entrypoint says, and only `sdk-*` is the CLI entered by a program. The page draws what it was sent, so the tables, the viewer and the bridge cannot drift apart.
+- **On the bridge in the same commit:** every `sessions.recent` and `sessions.find` row carries `headless`, and `sessions.recent` takes a `headless?` filter — true for the runs with no terminal, false for the automation that opened one, omitted for both.
+
+**U-62 — the backlog counts had two readings and only one of them looked like anything.** `⊞` / `⊟` carried the whole difference between *every line* and *wholes only*, and two line-drawing characters at 11px are not a state anybody notices; the pointer only reaches the tooltip of somebody who already suspects something, which is the wrong way round.
+
+- The reduced reading now says its own name beside the glyph (**`⊟ wholes`**), states **how many lines it is leaving out** (`−8` — the honest size of the difference, not just its direction), and wears a **dashed accent outline** in the theme's own link colour, in light and dark alike.
+- The plain reading keeps exactly the typography it always had (`⊞ every`). A permanent highlight on both states would be a badge, not a signal, and the counts strip is deliberately not a fifth button in a bar that already has four.
+
 ## 3.139.0 — Memory keeps itself, and the parity scan stops being a thing somebody remembers to do (2026-08-15)
 
 B-3 is closed. The two items it was still waiting on ship here: the memory half of the bridge, and the machine that makes the whole programme unnecessary to repeat.

@@ -260,6 +260,31 @@ export function sessionOrigin(
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
 }
 
+/**
+ * ‼️ S-35 — WAS THERE A SCREEN, OR DID IT RUN WITH NOBODY THERE.
+ *
+ * `sessionOrigin` answers "who started it"; this answers the second half of the
+ * same question, which the 🤖 glyph on its own could not: an automation run is
+ * either a `claude -p` with no terminal and no keyboard, or a task launched in
+ * `interactive` mode that opened a real terminal a person can type into. Those
+ * are different things to look at afterwards — one has an author present, the
+ * other has only its transcript — and the tables filed both under one icon.
+ *
+ * Only ever true for a run that is already 'auto', and read from the same two
+ * recorded facts, in the same order: a Console-hosted id is a person at the
+ * keyboard whatever its entrypoint says, and `sdk-*` is the CLI entered by a
+ * program. An interactive task run (entrypoint 'cli' with a launcher) is
+ * automation that is NOT headless, which is exactly the distinction wanted.
+ * Absent entrypoint = the scan does not know → not claimed as headless.
+ */
+export function sessionHeadless(
+    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy'>
+): boolean {
+    if (sessionOrigin(s) !== 'auto') { return false; }
+    if (s.consoleHosted) { return false; }
+    return String(s.entrypoint ?? '').startsWith('sdk');
+}
+
 interface JsonlLine {
     type?: string;
     summary?: string;

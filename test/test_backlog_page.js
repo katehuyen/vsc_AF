@@ -1393,11 +1393,20 @@ const famData = () => {
         /<b>3<\/b> open/.test(r.html()));
     ok('…and the area chips follow, or two adjacent lines would disagree',
         /data-blarea="K"[^>]*>\s*K <span class="muted">0</.test(r.html()));
-    ok('the glyph says which reading is on screen', /pj-bl-cntg">⊟</.test(r.html()));
+    ok('the glyph says which reading is on screen', /pj-bl-cntg">⊟ wholes/.test(r.html()));
+    // ‼️ U-62 — AND IT SAYS IT WITHOUT A HOVER. Two line-drawing characters at
+    // 11px are not a state anybody notices, so the reduced reading is marked:
+    // the word beside the glyph, the number of lines being left out, and a
+    // class the stylesheet accents. All three, or the mark is decorative.
+    ok('‼️ U-62 — the reduced reading is marked, not left to the tooltip',
+        /class="pj-bl-cnt rollup"/.test(r.html()));
+    ok('…and says how many lines it is leaving out', /pj-bl-cntx">−2</.test(r.html()));
 
     r.els('act').find(e => e.dataset.act === 'blRollUp').click();
     ok('…and it is a toggle, remembered until it is pressed again',
-        /<b>5<\/b> open/.test(r.html()) && /pj-bl-cntg">⊞</.test(r.html()));
+        /<b>5<\/b> open/.test(r.html()) && /pj-bl-cntg">⊞ every/.test(r.html()));
+    ok('the plain reading keeps the typography it always had — no badge on the default',
+        !/pj-bl-cnt rollup/.test(r.html()));
 
     // A project that has never used [parent:: …] gets no control: a toggle
     // between two identical numbers is a button that does nothing.

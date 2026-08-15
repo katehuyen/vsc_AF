@@ -91,6 +91,13 @@ module.exports = {
             // done tick and a cancelled cross in one column.
             id: 'closed', label: 'Backlog — done, cancelled and held in one list',
             data: data(), act: showClosed
+        },
+        {
+            // ‼️ U-62 — the counting mode is a STATE, and a state has to be
+            // visible in both of its positions. The pair is what gets judged:
+            // 'every line' plain, 'wholes only' marked, side by side.
+            id: 'rollup', label: 'Backlog — counting wholes only (⊟)',
+            data: data(), act: (r) => { r.query('.pj-bl-cnt')[0].click(); }
         }
     ]
 };

@@ -961,9 +961,14 @@
      * "🤖 automation · schedule Backlog ilerleme" are different facts.
      */
     function subLineHtml() {
+        // S-35 — 🌙 rides on the robot here too, and says the same thing the
+        // Sessions tables' moon says: this run had no terminal and nobody at
+        // it. It is drawn as a tagged glyph so the words beside it stay short.
+        const moon = DATA.headless
+            ? '<span title="Headless — this run had no terminal and nobody at the keyboard">🌙</span>' : '';
         const by = DATA.launchedBy && DATA.launchedBy.kind
-            ? `🤖 ${C.esc(DATA.launchedBy.kind)}${DATA.launchedBy.label ? ' · ' + C.esc(DATA.launchedBy.label) : ''}`
-            : DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session';
+            ? `🤖${moon} ${C.esc(DATA.launchedBy.kind)}${DATA.launchedBy.label ? ' · ' + C.esc(DATA.launchedBy.label) : ''}`
+            : DATA.origin === 'auto' ? `🤖${moon} automation run` : '🧑 your session';
         const bits = [
             by,
             C.esc(DATA.cwd || ''),

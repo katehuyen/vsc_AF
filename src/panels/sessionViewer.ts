@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
-import { conversationTitle, sessionOrigin } from '../core/sessions';
+import { conversationTitle, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
@@ -328,6 +328,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             pinned: deps.pinnedFor?.(cli.sessionId) === true,
             tags: deps.tagsFor?.(cli.sessionId) ?? [],
             origin: sessionOrigin({ launchedBy }),
+            // S-35 — a foreign-CLI transcript states no entrypoint at all, so
+            // there is no evidence either way and the page claims none.
+            headless: false,
             launchedBy: launchedBy ?? null,
             engine: deps.engineFor?.(cli.sessionId) || cli.engine,
             context: {
@@ -641,6 +644,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         // same rule: a run the farm's own record names beats a reading of the
         // entrypoint (see core/sessions.ts sessionOrigin).
         origin: sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        // S-35 — 🌙: an automation run with no terminal behind it. Same rule as
+        // the tables', from core/sessions.ts, so the page and the row agree.
+        headless: sessionHeadless({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
         launchedBy: deps.launchedByFor?.(sessionId) ?? null,
         // The badge beside the title — see EngineFor above for why it is asked
         // for rather than worked out.

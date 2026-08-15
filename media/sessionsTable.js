@@ -50,6 +50,22 @@
     ];
     const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
     const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
+    /**
+     * ‼️ S-35 — THE SECOND HALF OF "WHO STARTED IT".
+     *
+     * 🤖 said a program launched the run and stopped there, but two very
+     * different things live under that glyph: a headless `claude -p` with no
+     * terminal and nobody at it, and a task launched in interactive mode that
+     * opened a real terminal a person can type into. The moon is drawn TOUCHING
+     * the robot — one fact about one run — and never appears on 🧑, where it
+     * would be a contradiction.
+     *
+     * The host decides it (core/sessions.ts `sessionHeadless`); the page only
+     * draws what it was sent, so the tables, the viewer and the bridge cannot
+     * drift apart.
+     */
+    const HLESS_GLYPH = '🌙';
+    const isHeadless = r => r.headless === true && originOf(r) === 'auto';
 
     // agents: null = every agent (no filter — one joining the fleet is included
     // by itself); an array = exactly that subset, [] = none. See afFilters.js.
@@ -63,6 +79,12 @@
     // gesture, in the same panel, with the same Clear.
     const FDEF = () => ({
         text: '', agents: null, engines: null, projects: null, origin: 'user',
+        // ‼️ S-35 — headless runs are IN by default, so the table on a fresh
+        // panel is the table it has always been: a filter that hides rows
+        // nobody asked it to hide is how a count stops being trustworthy. It
+        // only bites in the Auto and All scopes — under 🧑 there is nothing
+        // headless to drop.
+        headless: true,
         activeOnly: false, errorsOnly: false,
         mainOnly: false, pinnedOnly: false, from: '', to: '', ranges: {}
     });
@@ -159,6 +181,11 @@
         .af-fpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
             padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
         .af-frow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        /* S-35 — a hairline between the three scope chips (one choice) and the
+           🌙 chip beside them (a separate yes/no), so a row of four buttons does
+           not read as a row of four scopes. */
+        .af-fsep { width:1px; align-self:stretch; margin:1px 3px;
+            background:var(--vscode-widget-border, #4444); }
         .af-frange { font-size:11px; display:flex; gap:3px; align-items:center; white-space:nowrap; }
         .af-frange input[type=number] { width:64px; padding:1px 4px; }
         .af-frange input[type=date] { padding:1px 4px; }
@@ -181,9 +208,15 @@
             border:1px solid var(--vscode-widget-border, #4444); font-size:11px; }
         /* Origin: one narrow glyph column — the eye scans a single strip to tell
            your own dialogs from automation runs. The word is in the tooltip. */
-        .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
-            opacity:.85; cursor:default; }
+        .origcell { width:30px; text-align:center; font-size:11px; line-height:1;
+            opacity:.85; cursor:default; white-space:nowrap; }
         .origcell.auto { opacity:.6; }
+        /* S-35 — the moon is a MARK ON the robot, not a second column: smaller
+           than the glyph it qualifies, pulled tight against it, and never on a
+           row of its own. A headless row also loses the .auto dimming, because
+           it is the one kind of automation run you go looking for. */
+        .origcell.hless { opacity:.85; }
+        .origcell .hgl { font-size:9px; margin-left:-1px; }
         /* Pin: the shelf. One narrow always-present column — an outlined star
            on every row (click to shelve), filled on the ones you keep. */
         .pincell { width:20px; text-align:center; }
@@ -309,6 +342,10 @@
         function activeFilterCount() {
             let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.engines ? 1 : 0)
                 + (filters.projects ? 1 : 0)
+                // …but 🌙 IS counted, and for the opposite reason: it lives only
+                // inside the panel, so with the panel shut nothing else on the
+                // page would say that a whole class of runs is being hidden.
+                + (filters.headless ? 0 : 1)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
                 + (filters.pinnedOnly ? 1 : 0)
                 + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
@@ -342,6 +379,9 @@
                 if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
                 if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
+                // S-35 — an exclusion, not a scope: off means "leave the
+                // headless runs out of whichever scope is showing".
+                if (!filters.headless && isHeadless(r)) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
                 if (filters.errorsOnly && !(r.errors > 0)) { return false; }
                 if (filters.mainOnly && r.sidechain) { return false; }
@@ -438,13 +478,26 @@
             const origins = ORIGINS.map(o => ftip(
                 `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}">${o.glyph} ${o.label}</button>`,
                 `${o.glyph} ${o.label}`, o.tip)).join('');
+            // ‼️ S-35 — the fourth chip on this row is NOT a fourth scope. The
+            // three above are one choice (a person, a program, or both); this
+            // one narrows whichever of them is showing by dropping the runs that
+            // had no terminal. It is a MIRROR control: its first tooltip line is
+            // its current value, because pressed and unpressed chips look alike
+            // in a row of four.
+            const headlessChip = ftip(
+                `<button class="chip af-fhless${filters.headless ? ' on' : ''}">${HLESS_GLYPH} Headless</button>`,
+                `${HLESS_GLYPH} Headless — ${filters.headless ? 'ON: headless runs are listed' : 'OFF: headless runs are hidden'}`,
+                'A headless run is automation with no terminal behind it — a `claude -p` started by a schedule, a trigger, a task or a mission, with nobody at the keyboard. '
+                + 'An automation run launched in interactive mode opened a real terminal and is NOT headless, which is the difference this chip lets you see.\n\n'
+                + 'Press to drop them from the list. It changes nothing under 🧑 User: a session you started yourself is never headless.');
             const dateSet = filters.from || filters.to
                 ? `Now: ${filters.from || 'the beginning'} → ${filters.to || 'today'}`
                 : 'Now: every date';
             return `<div class="af-fpanel">
                 <div class="af-frow">
                     ${ftip('<span class="muted small">Started by:</span>', 'Started by',
-                'Who began the session: a person at a keyboard, or one of Agent Farm\'s own mechanisms — a schedule, a trigger, a task, a mission. Decided from a recorded launcher first and the transcript\'s entrypoint second, never guessed from timing.')}${origins}
+                'Who began the session: a person at a keyboard, or one of Agent Farm\'s own mechanisms — a schedule, a trigger, a task, a mission. Decided from a recorded launcher first and the transcript\'s entrypoint second, never guessed from timing.\n\n'
+                + '🌙 Headless splits the robots in two: runs with no terminal behind them, and automation that opened one.')}${origins}<span class="af-fsep"></span>${headlessChip}
                 </div>
                 <div class="af-frow">
                     ${ftip(`<input type="text" class="af-ftext" placeholder="title, agent, label or id…" value="${C.esc(filters.text)}">`,
@@ -588,7 +641,14 @@
 
         const TIP = {
             origin: r => [
-                line('Started by', originOf(r) === 'auto' ? '🤖 Automation' : '🧑 You'),
+                line('Started by', originOf(r) === 'auto'
+                    ? (r.headless ? '🤖🌙 Automation · headless' : '🤖 Automation') : '🧑 You'),
+                // S-35 — said in words as well as in the glyph, because the two
+                // robot rows differ in what you can still do with them: a
+                // headless run had no terminal and nobody at it.
+                line('Ran', originOf(r) === 'auto'
+                    ? (r.headless ? 'headless — no terminal, nobody at the keyboard'
+                        : 'in a terminal a person could type in') : ''),
                 line('Launched by', launcher(r)),
                 line('Entrypoint', r.entrypoint || '—'),
                 line('Console-hosted', r.consoleHosted ? 'yes' : ''),
@@ -757,7 +817,7 @@
          * and never advice; the cells below carry figures only.
          */
         const HEAD = {
-            origin: '<th class="origcell" title="Who started the session: 🧑 you · 🤖 automation">By</th>',
+            origin: '<th class="origcell" title="Who started the session: 🧑 you · 🤖 automation · 🌙 beside the robot = headless, it ran with no terminal and nobody at it">By</th>',
             agent: '<th title="Agent whose folder the session ran in. ● running · sub = sub-agent · ⌨ terminal · ⎋ interrupt">Agent</th>',
             // ‼️ WHICH ENGINE RAN IT — the column this table never had. Four
             // engines write sessions now and the table listed them as if they
@@ -785,7 +845,10 @@
         const CELL = {
             origin: r => {
                 const o = originMeta(originOf(r));
-                return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r))}">${o.glyph}</td>`;
+                // S-35 — the moon rides on the robot, touching it: two glyphs
+                // side by side are ONE fact about one run, not two columns.
+                const moon = isHeadless(r) ? `<span class="hgl">${HLESS_GLYPH}</span>` : '';
+                return `<td class="origcell ${o.id}${moon ? ' hless' : ''}" title="${tipOf(TIP.origin(r))}">${o.glyph}${moon}</td>`;
             },
             agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
             engine: r => `<td title="${tipOf(TIP.engine(r))}">${window.AFEngine.badge(r.engine)}</td>`,
@@ -1105,6 +1168,7 @@
             if (filtersOpen) {
                 ORIGINS.forEach(o =>
                     wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
+                wireEl('.af-fhless', 'click', () => { filters.headless = !filters.headless; apply(); });
                 liveEl('.af-ftext', el => { filters.text = el.value || ''; apply(); });
                 // the ✕ that empties it — the shared control (common.css .af-clr)
                 window.AFFilter.clearableAll(root, '.af-ftext', el => { filters.text = ''; el.value = ''; apply(); });

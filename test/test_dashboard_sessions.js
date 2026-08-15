@@ -87,7 +87,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         return origLoad.apply(this, arguments);
     };
     const { sessionRowPool } = require(path.join(__dirname, '..', 'out', 'panels', 'dashboard.js'));
-    const { sessionOrigin } = require(path.join(__dirname, '..', 'out', 'core', 'sessions.js'));
+    const { sessionOrigin, sessionHeadless } = require(path.join(__dirname, '..', 'out', 'core', 'sessions.js'));
     Module._load = origLoad;
 
     // the entrypoint the transcript itself recorded is the ONLY signal
@@ -119,6 +119,27 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         sessionOrigin({ entrypoint: 'sdk-cli', launchedBy: { kind: 'task', label: 't' } }) === 'auto');
     ok('a hosted conversation with no launcher on record is still a person',
         sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: true, launchedBy: undefined }) === 'user');
+
+    // ---- S-35: and WHICH kind of robot it was ----
+    //
+    // Origin says a program started it; this says whether there was a terminal
+    // and a person who could have been watching. Both are 'auto', and the
+    // tables filed them under one icon until the moon separated them.
+    ok('a launched `claude -p` is headless',
+        sessionHeadless({ entrypoint: 'sdk-cli', launchedBy: { kind: 'schedule', label: 's' } }) === true);
+    ok('‼️ a task launched in interactive mode is automation, but NOT headless',
+        sessionHeadless({ entrypoint: 'cli', launchedBy: { kind: 'task', label: 't' } }) === false);
+    ok('a Console conversation is a person at a keyboard, whatever the entrypoint says',
+        sessionHeadless({ entrypoint: 'sdk-cli', consoleHosted: true }) === false);
+    ok('…even when the farm started the run and the Console later resumed it',
+        sessionHeadless({
+            entrypoint: 'sdk-cli', consoleHosted: true,
+            launchedBy: { kind: 'schedule', label: 's' }
+        }) === false);
+    ok('your own dialog is never headless', sessionHeadless({ entrypoint: 'cli' }) === false);
+    ok('an unrecorded entrypoint claims nothing', sessionHeadless({}) === false);
+    ok('a hand-run `claude -p` with no launcher is headless too — it is what the word means',
+        sessionHeadless({ entrypoint: 'sdk-cli' }) === true);
 
     const usage = i => ({ input: i, output: 0, cacheWrite: 0, cacheRead: 0 });
     // 20 automation runs are the newest AND the most expensive; 3 user dialogs

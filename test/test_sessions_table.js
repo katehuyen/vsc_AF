@@ -606,6 +606,60 @@ const mkRow = (i, extra) => Object.assign({
         containers.orig.querySelectorAll('[data-fold]').length === 1);
 }
 
+// ---------- part: S-35 — headless is the second half of "who started it" ----
+//
+// 🤖 covered two different things: a `claude -p` with no terminal and nobody
+// at it, and a task launched in interactive mode that opened a real terminal.
+// The moon marks the first, and the chip beside the scope chips drops them.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'hless',
+        columns: ['origin', 'agent', 'title', 'when', 'cost'], stateKey: 'hless'
+    });
+    t.setRows([
+        mkRow(1, { origin: 'user' }),
+        mkRow(2, { origin: 'auto', headless: true, entrypoint: 'sdk-cli' }),
+        mkRow(3, { origin: 'auto', headless: false, entrypoint: 'cli' }),
+        // the host that has not learned the field yet says nothing, and a row
+        // that says nothing is not claimed as headless
+        mkRow(4, { origin: 'auto' })
+    ], 10);
+    const html = () => containers.hless.innerHTML;
+    const q = sel => containers.hless.querySelector(sel);
+    const shownRows = () => containers.hless.querySelectorAll('[data-fold]').length;
+
+    click(q('.af-oswitch'));   // open the scope to All — the robots live there
+    ok('a headless run wears the moon, touching the robot it qualifies',
+        html().includes('🤖<span class="hgl">🌙</span></td>'));
+    ok('…and an automation run that opened a terminal does not',
+        html().includes('🤖</td>'));
+    ok('‼️ the moon is never drawn on a session you started yourself',
+        !/🧑<span class="hgl">/.test(html()));
+    ok('the hover says it in words, not only in the glyph',
+        html().includes('Automation · headless'));
+
+    click(q('.af-filter'));
+    ok('the chip is offered beside the scope chips, and starts ON — nothing is hidden by default',
+        html().includes('af-fhless on'));
+    click(q('.af-fhless'));
+    ok('‼️ pressing it drops the headless runs from whichever scope is showing',
+        shownRows() === 3 && !html().includes('title2'));
+    ok('…and the Filters chip says so, because the panel can be shut over it',
+        html().includes('Filters (1)'));
+    ok('the moon leaves the table with the rows it marked',
+        !html().includes('class="hgl"'));
+    ok('the choice is persisted under the page key',
+        state.afSess.hless.filters.headless === false);
+
+    click(q('.af-forig-user'));
+    ok('it changes nothing under 🧑 User — your own sessions are never headless',
+        shownRows() === 1);
+
+    click(q('.af-fclear'));
+    ok('Clear brings the headless runs back', state.afSess.hless.filters.headless === true);
+}
+
 // ---------- part: the shelf — ★ column, pinned-first, exempt from the row limit ----------
 {
     posted = []; state = {};

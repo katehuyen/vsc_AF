@@ -1964,6 +1964,17 @@
                     background:var(--vscode-list-hoverBackground); }
                 .pj-bl-cntg { font-size:11px; opacity:.55; }
                 .pj-bl-cnt:hover .pj-bl-cntg { opacity:1; }
+                /* U-62 — the reduced reading looks reduced. A dotted outline in
+                   the theme's own accent and a lit label: enough to catch the
+                   eye on a glance across the bar, not enough to become a fifth
+                   button in it (see blCountsHtml). Both colours are VS Code
+                   variables, so it holds in light and dark alike. */
+                .pj-bl-cnt.rollup { border-style:dashed;
+                    border-color:var(--vscode-textLink-foreground, #4daafc); }
+                .pj-bl-cnt.rollup .pj-bl-cntg { opacity:1;
+                    color:var(--vscode-textLink-foreground, #4daafc); }
+                /* …and how much is being left out, in the same breath. */
+                .pj-bl-cntx { opacity:.8; }
                 .pj-bl-archive-age { display:inline-flex; align-items:stretch; gap:3px; }
                 .pj-bl-archive-age input { width:58px; min-width:58px; padding:3px 5px;
                     text-align:right; border-radius:3px 0 0 3px; }
@@ -3458,7 +3469,7 @@
         const every = blCounts(all, false);
         const tops = blCounts(all, true);
         const tip = window.AFTip.lines([
-            `Counting: ${blRollUp ? 'wholes only' : 'every line'}`,
+            `Counting: ${blRollUp ? `wholes only — ${parts} parts left out` : 'every line'}`,
             `Open: ${every.open} every line · ${tops.open} wholes only`,
             `Doing: ${every.doing} · ${tops.doing}`,
             `Done: ${every.done} · ${tops.done}`,
@@ -3466,8 +3477,25 @@
             '',
             'Press to switch. The area chips below count by the same rule, so the two lines can never disagree.'
         ]);
-        return `<button class="pj-bl-cnt" data-act="blRollUp" title="${C.esc(tip)}">${line(c)}
-            <span class="pj-bl-cntg">${blRollUp ? '⊟' : '⊞'}</span></button>`;
+        // ‼️ U-62 — WHICH READING IS ON SCREEN, VISIBLE WITHOUT A HOVER.
+        //
+        // The glyph alone (⊞ / ⊟) carried the whole difference, and two thin
+        // line-drawing characters at 11px are not a state you notice — so the
+        // reduced reading, the one where numbers are deliberately SMALLER than
+        // the file's contents, looked exactly like the complete one. The
+        // pointer only reaches the tooltip of somebody who already suspects
+        // something, which is the wrong way round.
+        //
+        // So the mark is on the state that is NOT the plain reading: the word
+        // beside the glyph (SHORTHAND — 'wholes' / 'every'), the count of lines
+        // being left out (−N, the honest size of the difference), and a quiet
+        // accented outline. The default reading keeps the typography it always
+        // had; a permanent highlight on both would be a badge, not a signal.
+        const glyph = blRollUp
+            ? `⊟ wholes${parts ? ` <span class="pj-bl-cntx">−${parts}</span>` : ''}`
+            : '⊞ every';
+        return `<button class="pj-bl-cnt${blRollUp ? ' rollup' : ''}" data-act="blRollUp" title="${C.esc(tip)}">${line(c)}
+            <span class="pj-bl-cntg">${glyph}</span></button>`;
     }
 
     /**

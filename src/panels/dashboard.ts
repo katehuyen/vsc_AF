@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
-import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
+import { SessionIndex, SessionInfo, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { PricingEngine, contextWindowFor, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
@@ -174,6 +174,11 @@ export function sessionRowPool(
         scanLimit: s.scanLimit ?? null,
         // 🧑 your own dialog vs 🤖 an automation run — the table's default scope
         origin: sessionOrigin(s),
+        // ‼️ S-35 — and, when it IS a robot, whether anybody could have been
+        // watching: a headless `claude -p` (🌙) or a task that opened a real
+        // terminal. Decided host-side by core/sessions.ts, never re-derived in
+        // the page, so every table and the viewer say the same thing.
+        headless: sessionHeadless(s),
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],
