@@ -991,5 +991,85 @@ const FAMILY = [
     }
 }
 
+// ---------- U-60: the hold — a bare ⛔, which is not a state ----------
+//
+// What is defended here is the SEPARATION. `⛔ P-3` means "waiting on P-3" and
+// must go on meaning exactly that; a ⛔ with nothing behind it means "parked",
+// and the two live on the same line without either one reading as the other.
+// The checkbox is not involved: a held item is open, live and counted.
+{
+    const HELD = [
+        '# Backlog', '',
+        '## P — Projects', '',
+        '- [ ] P-1 first thing #bug [effort:: S]',
+        '- [ ] P-2 second thing [effort:: M] ⛔ P-1',
+        '- [ ] P-3 third thing [effort:: S]', ''
+    ].join('\n');
+
+    const held = B.setBacklogHold(HELD, { code: 'P-3' }, true);
+    ok('U-60: a hold puts a bare ⛔ on the line', held.ok && held.item.onHold === true);
+    ok('‼️ …and changes NOTHING else — the box, the code, the field all stand',
+        /^- \[ \] P-3 third thing \[effort:: S\] ⛔$/m.test(held.text)
+        && HELD.split('\n').filter(l => !/P-3/.test(l)).join('\n')
+        === held.text.split('\n').filter(l => !/P-3/.test(l)).join('\n'));
+    ok('…the item is still OPEN — a hold is not a state',
+        B.parseBacklog(held.text).items.find(i => i.code === 'P-3').state === 'open');
+
+    const nxt = B.nextBacklog(held.text, { limit: 9 });
+    ok('‼️ …and "what is next" stops offering it',
+        !nxt.items.some(i => i.code === 'P-3'));
+    ok('…reported under `held`, NOT under `blocked` — nothing is in its way',
+        nxt.held.map(i => i.code).join() === 'P-3'
+        && !nxt.blocked.some(b => b.item.code === 'P-3'));
+    ok('…and a caller may still ask for it',
+        B.nextBacklog(held.text, { limit: 9, includeHeld: true }).items.some(i => i.code === 'P-3'));
+
+    // ‼️ The two ⛔ meanings on one line, each still saying its own thing.
+    const both = B.setBacklogHold(held.text, { code: 'P-2' }, true);
+    const p2 = B.parseBacklog(both.text).items.find(i => i.code === 'P-2');
+    ok('‼️ a coded ⛔ and a bare one coexist and are read apart',
+        p2.onHold === true && p2.blockedBy.join() === 'P-1');
+    ok('…and the second reason is said out loud rather than left to be discovered',
+        /already waiting on P-1/.test(both.note || ''));
+
+    const off = B.setBacklogHold(both.text, { code: 'P-2' }, false);
+    const p2off = B.parseBacklog(off.text).items.find(i => i.code === 'P-2');
+    ok('‼️ taking the hold off leaves every CODED ⛔ exactly where it stood',
+        p2off.onHold !== true && p2off.blockedBy.join() === 'P-1'
+        && /- \[ \] P-2 second thing \[effort:: M\] ⛔ P-1/.test(off.text));
+    ok('holding something already held writes nothing',
+        B.setBacklogHold(held.text, { code: 'P-3' }, true).text === held.text);
+
+    // Rebuilding the line must not quietly unpark it — the trap
+    // `setBacklogFields` documents, one field wider.
+    const rebuilt = B.setBacklogFields(held.text, { code: 'P-3' }, { priority: 'high' });
+    ok('‼️ a field edit CARRIES the hold — a rebuild that dropped it would unpark silently',
+        B.parseBacklog(rebuilt.text).items.find(i => i.code === 'P-3').onHold === true);
+
+    // Moving the box is a decision, so it ends the hold — except `open`, which
+    // is not a decision to start anything.
+    const doing = B.moveBacklogState(held.text, { code: 'P-3' }, 'doing');
+    ok('‼️ starting it takes the hold off in the same write',
+        doing.ok && !/⛔/.test(doing.text.split('\n').find(l => /P-3/.test(l)))
+        && /hold came off/.test(doing.note || ''));
+    ok('…and cancelling it does too', (() => {
+        const c = B.moveBacklogState(held.text, { code: 'P-3' }, 'cancelled');
+        return c.ok && !/⛔/.test(c.text.split('\n').find(l => /P-3/.test(l)));
+    })());
+    ok('‼️ …but reopening does NOT — putting something back to open is not starting it', (() => {
+        const closedHeld = B.setBacklogHold(
+            B.setBacklogState(HELD, { code: 'P-3' }, 'done').text, { code: 'P-3' }, true);
+        const back = B.moveBacklogState(closedHeld.text, { code: 'P-3' }, 'open');
+        return back.ok && B.parseBacklog(back.text).items.find(i => i.code === 'P-3').onHold === true;
+    })());
+
+    // Filing a parked capture must not unpark it — `codeBacklogItem` rebuilds.
+    ok('‼️ filing a held capture keeps it held', (() => {
+        const cap = B.setBacklogHold(`${HELD}- [ ] a parked thought\n`, { text: 'parked thought' }, true);
+        const filed = B.codeBacklogItem(cap.text, { text: 'parked thought' }, 'P');
+        return filed.ok && !!filed.item.onHold;
+    })());
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

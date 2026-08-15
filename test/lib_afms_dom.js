@@ -27,7 +27,11 @@ module.exports = function createAfmsDom(getHtml) {
         if (html === lastHtml) { return pickers; }
         lastHtml = html;
         const next = {};
-        const wrapRe = /<span class="afms" data-afms-wrap="([^"]*)">([\s\S]*?)<\/div><\/span>/g;
+        // ‼️ U-61 — the wrapper carries `afms-on` while its menu is open (the
+        // class the hover panel reads to know it is covered), so the class
+        // attribute is matched loosely. Pinning it to exactly "afms" made every
+        // open picker invisible to this shim.
+        const wrapRe = /<span class="afms[^"]*" data-afms-wrap="([^"]*)">([\s\S]*?)<\/div><\/span>/g;
         let w;
         while ((w = wrapRe.exec(html))) {
             const id = w[1];
@@ -69,7 +73,19 @@ module.exports = function createAfmsDom(getHtml) {
                     return null;
                 }
             });
-            next[id] = { id, inner, btn, menu, boxes, names, tools, presets };
+            // The wrapper itself — `wireMulti` puts `afms-on` on it while the
+            // menu is open, so the stub needs a classList that remembers.
+            const classes = new Set(((/^<span class="([^"]*)"/.exec(w[0]) || ['', ''])[1] || '').split(/\s+/).filter(Boolean));
+            const wrap = mkEl({ afmsWrap: id }, {
+                classList: {
+                    add: c => classes.add(c),
+                    remove: c => classes.delete(c),
+                    contains: c => classes.has(c),
+                    toggle: (c, on) => { if (on === undefined ? classes.has(c) : !on) { classes.delete(c); } else { classes.add(c); } }
+                },
+                classes
+            });
+            next[id] = { id, inner, btn, menu, boxes, names, tools, presets, wrap };
         }
         pickers = next;
         return pickers;
@@ -90,10 +106,14 @@ module.exports = function createAfmsDom(getHtml) {
             if (m) { return (all[unesc(m[1])] || {}).menu || null; }
             m = /\[data-afms="([^"]+)"\]/.exec(sel);
             if (m) { return (all[unesc(m[1])] || {}).btn || null; }
+            m = /\[data-afms-wrap="([^"]+)"\]/.exec(sel);
+            if (m) { return (all[unesc(m[1])] || {}).wrap || null; }
             return null;
         },
         ids: () => Object.keys(parse()),
         has: id => !!parse()[id],
+        /** U-61 — is the wrapper marked as covering its own hover panel? */
+        covered: id => pick(id).wrap.classes.has('afms-on'),
         /** The button's own words — "Agents: all", "Type: 2/7", "Level: none". */
         label: id => pick(id).btn.textContent.replace(/\s*▾\s*$/, ''),
         ticked: id => pick(id).boxes.filter(b => b.checked).map(b => b.dataset.afmsOpt),

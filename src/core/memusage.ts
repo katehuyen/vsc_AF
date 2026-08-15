@@ -166,6 +166,55 @@ export function applyIndexFixes(agentDir: string, fixes: IndexFix[]): string | u
 
 export const MEMORY_TYPES = ['project', 'feedback', 'user', 'reference'] as const;
 
+/** An agent's memory folder — the ONE root every memory act is allowed inside. */
+export function memoryDirOf(agentDir: string): string {
+    return path.join(agentDir, 'memory');
+}
+
+/**
+ * ‼️ THE ONE PLACE A MEMORY FILE REFERENCE BECOMES A PATH — B-6.
+ *
+ * The page picks its files out of a list the extension itself built, so its
+ * paths were never anything but real. A bridge caller TYPES the reference, and
+ * `../../../.ssh/id_rsa` is a string like any other: without this, "archive
+ * this memory file" would move whatever it was pointed at, and "copy it to the
+ * other agent" would copy whatever it could read. So every op resolves through
+ * here, and what comes back is guaranteed to sit inside THIS agent's memory/.
+ *
+ * A bare name (`user-profile`), a name with its extension (`user-profile.md`)
+ * and a full path all resolve; anything that leaves the folder, or is not
+ * markdown, is refused by name rather than silently coerced.
+ */
+export function resolveMemoryFile(
+    agentDir: string,
+    ref: string,
+    opts: { mustExist?: boolean } = {}
+): string {
+    const raw = (ref ?? '').trim();
+    if (!raw) { throw new Error('which memory file? — pass its name, e.g. "user-profile"'); }
+    const memDir = memoryDirOf(agentDir);
+    const withExt = /\.md$/i.test(raw) ? raw : `${raw}.md`;
+    const abs = path.resolve(path.isAbsolute(withExt) ? withExt : path.join(memDir, withExt));
+    if (!isInsideMemoryDir(abs, agentDir)) {
+        throw new Error(
+            `"${ref}" resolves outside ${memDir} — a memory op only ever touches the agent's own memory folder.`);
+    }
+    if (!/\.md$/i.test(abs)) {
+        throw new Error(`"${ref}" is not a markdown file — memory files are .md.`);
+    }
+    if (opts.mustExist !== false && !fs.existsSync(abs)) {
+        throw new Error(`"${path.basename(abs)}" is not in ${memDir} — memory.list shows what is.`);
+    }
+    return abs;
+}
+
+/** Whether a path really sits inside this agent's memory folder (no escapes). */
+export function isInsideMemoryDir(file: string, agentDir: string): boolean {
+    const root = path.resolve(memoryDirOf(agentDir));
+    const rel = path.relative(root, path.resolve(file));
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 const memoryTemplate = (name: string, type: string, description: string) => `---
 name: ${name}
 description: ${description}

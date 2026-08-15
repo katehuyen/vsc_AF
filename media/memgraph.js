@@ -289,7 +289,13 @@
         }
         if (card.kind === 'copy') {
             memMsg = '';
-            vscode.postMessage({ type: 'mem-save', mem: { mode: 'copy', path: card.path, target: card.target } });
+            // `agentId` is the agent the file is copied FROM — implied by the
+            // selection until the host started checking that the path really
+            // sits in that agent's memory/ folder (B-6), and stated now.
+            vscode.postMessage({
+                type: 'mem-save',
+                mem: { mode: 'copy', agentId: agentId, path: card.path, target: card.target }
+            });
             return;
         }
         if (card.kind === 'index') {

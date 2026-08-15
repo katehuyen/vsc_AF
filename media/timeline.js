@@ -541,6 +541,17 @@
                 const sx1 = x(Math.max(s.first, from)), sx2 = Math.max(x(Math.min(s.last, now)), sx1 + 4);
                 out += `<rect x="${sx1.toFixed(1)}" y="${y + 2}" width="${(sx2 - sx1).toFixed(1)}" height="${rowH - 4}" fill="transparent" ${laneCtx(s.id, lane.agent)}/>`;
             }
+            // ‼️ X-41 — A MARK BELONGS TO ITS LANE'S SESSION, so that is where
+            // its file comes from when the EVENT could not carry one. Only
+            // Claude's hooks put a transcript path on every event; a Console
+            // conversation on any other engine is mirrored into the monitor from
+            // a thread id and a cwd, so its bars and marks arrived here with an
+            // empty path while the lane label — fed from the session, which the
+            // host now resolves against the record — had the right one. Clicking
+            // the line did nothing, which is exactly what was reported. The
+            // path does not change inside a session, so the lane's own is not a
+            // guess: it is the same file, said once instead of on every event.
+            const fileOf = f => f || lane.file || '';
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
                 // A tool whose end never arrived is drawn hollow and dashed —
@@ -551,7 +562,7 @@
                 const when = seg.unfinished
                     ? `${fmtClock(seg.start)} → unfinished: no end event ever arrived (the session stopped at ${fmtClock(seg.end)})`
                     : `${fmtClock(seg.start)} → ${seg.live ? (seg.stale ? 'running? — nothing heard since ' + fmtClock(seg.end) : 'running') : fmtClock(seg.end)} (${Math.max(1, Math.round((seg.end - seg.start) / 1000))}s)`;
-                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style} class="mark" data-file="${C.esc(seg.file || '')}" data-ts="${seg.start}">` +
+                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style} class="mark" data-file="${C.esc(fileOf(seg.file))}" data-ts="${seg.start}">` +
                     `<title>${C.esc(seg.tool)} — ${C.esc(when)}</title></rect>`;
             }
             for (const m of lane.marks) {
@@ -559,11 +570,11 @@
                 const mx = x(m.ts), my = y + rowH / 2;
                 const tip = `<title>${C.esc(st.label)}${m.tool ? ' · ' + C.esc(m.tool) : ''}${m.detail ? ' — ' + C.esc(m.detail) : ''} (${fmtClock(m.ts)})</title>`;
                 if (st.shape === 'diamond') {
-                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</path>`;
+                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</path>`;
                 } else if (st.shape === 'tick') {
-                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</line>`;
+                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</line>`;
                 } else {
-                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</circle>`;
+                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</circle>`;
                 }
             }
         });

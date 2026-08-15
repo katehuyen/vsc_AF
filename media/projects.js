@@ -2032,6 +2032,22 @@
                    broken. Colour fades the words and leaves the box alone. */
                 .pj-bl-row.closed .pj-bl-t { color:var(--vscode-descriptionForeground);
                     text-decoration:line-through; }
+                /* ‼️ U-58 — CANCELLED IS CLOSED, SO ITS BOX IS FILLED TOO.
+                   The native tick is the platform's and is left alone — it is
+                   what "done" means here and the reader already knows it. This
+                   is the same box in the other closing colour, drawn rather than
+                   borrowed because no browser gives a checkbox a second mark.
+                   The glyph rides in the background so the box needs no overlay
+                   element: an absolutely positioned ✕ would have to be measured
+                   against a control whose size the platform, not this file,
+                   decides. Sized and spaced to the native one to the pixel, so a
+                   list of both states has one column and not two. */
+                .pj-bl-cb.x { appearance:none; -webkit-appearance:none;
+                    width:13px; height:13px; margin:3px 3px 3px 4px; padding:0;
+                    border-radius:3px; cursor:pointer; vertical-align:middle;
+                    border:1px solid var(--vscode-charts-red,#f14c4c);
+                    background:var(--vscode-charts-red,#f14c4c) center/9px 9px no-repeat
+                        url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3.2 3.2l5.6 5.6M8.8 3.2l-5.6 5.6' stroke='white' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E"); }
                 .pj-bl-row.next { border-left-color:var(--vscode-charts-green,#3fb950); }
                 /* ‼️ STARTED WINS OVER QUEUED, and it is declared after .next
                    so it does. The two are not the same kind of fact: the green
@@ -2131,6 +2147,19 @@
                 .pj-bl-act.on { visibility:visible; opacity:1;
                     color:var(--vscode-charts-yellow,#d7ba7d);
                     border-color:var(--vscode-charts-yellow,#d7ba7d); }
+                /* ‼️ U-60 — THE ONE BUTTON THAT IS A PICTURE, so it is turned
+                   OFF by draining it rather than by dimming it. ⛔ is an emoji
+                   and comes in full colour whatever the surrounding text colour
+                   says: on two hundred rows that is the loudest mark on the
+                   page, and on rows that are not parked it would be saying
+                   nothing at all. Grey means off, its own red means on — which
+                   is the whole state of this control, and the only thing it
+                   draws. Three classes, so the yellow "on" above (a different
+                   kind of switch, and declared earlier) does not reach it. */
+                .pj-bl-act.hold { filter:grayscale(1); opacity:.5; }
+                .pj-bl-act.hold:hover { filter:grayscale(.35); opacity:1; }
+                .pj-bl-act.hold.on { visibility:visible; filter:none; opacity:1;
+                    color:inherit; border-color:var(--vscode-charts-red,#f14c4c); }
                 .pj-bl-act:hover { opacity:1;
                     background:var(--vscode-toolbar-hoverBackground,#8882);
                     border-color:var(--vscode-widget-border,#4443); }
@@ -2812,6 +2841,22 @@
         { id: 'passive', label: 'Passive', values: ['done', 'cancelled'], title: 'Finished with — done and cancelled.' }
     ];
 
+    /**
+     * ‼️ U-61 — THE `and` ROW EXPLAINS ITSELF LATE, AND ONLY THE `and` ROW.
+     *
+     * Four boxes shoulder to shoulder behind ⚙, each with a paragraph on it:
+     * crossing the row on the way to the fourth one opened three panels that
+     * nobody asked for. These are also the boxes a reader sweeps rather than
+     * reads — the axes are yes/no — so the wait can be long without ever being
+     * felt, which is not true of the two in the bar above.
+     *
+     * Five times afTip's own 420ms. It rides on THESE FOUR ROWS and reaches
+     * nothing else: the component's default is untouched, so no other picker in
+     * the extension — Console, Search, Tasks, the state and filing boxes one
+     * line up — waits a millisecond longer than it did.
+     */
+    const BL_AND_TIP_MS = 2100;
+
     const BL_PICKS = [
         {
             id: 'bl-states', key: 'states', label: 'state', allLabel: 'every state',
@@ -2831,25 +2876,26 @@
         },
         {
             id: 'bl-blocked', key: 'blocked', label: 'blocked', allLabel: 'any',
-            where: 'panel', width: 200,
-            title: '⛔ — is something it waits on still open',
-            options: [{ v: 'no', t: 'startable now' }, { v: 'yes', t: 'waiting on something' }]
+            where: 'panel', width: 200, tipDelay: BL_AND_TIP_MS,
+            title: '⛔ — will "what is next" hand it out. Two different reasons it would not: '
+                + 'something it waits on is still open (⛔ CODE), or somebody parked it by hand (a bare ⛔).',
+            options: [{ v: 'no', t: 'startable now' }, { v: 'yes', t: 'waiting or held' }]
         },
         {
             id: 'bl-plan', key: 'plan', label: 'plan', allLabel: 'any',
-            where: 'panel', width: 200,
+            where: 'panel', width: 200, tipDelay: BL_AND_TIP_MS,
             title: '[plan:: 🆔] — which roadmap item it belongs to',
             options: [{ v: 'yes', t: 'linked to a plan item' }, { v: 'no', t: 'not linked' }]
         },
         {
             id: 'bl-due', key: 'due', label: 'due', allLabel: 'any',
-            where: 'panel', width: 200,
+            where: 'panel', width: 200, tipDelay: BL_AND_TIP_MS,
             title: '📅 — a date on the line',
             options: [{ v: 'yes', t: 'has a date' }, { v: 'no', t: 'no date' }]
         },
         {
             id: 'bl-rel', key: 'rel', label: 'family', allLabel: 'any',
-            where: 'panel', width: 230,
+            where: 'panel', width: 230, tipDelay: BL_AND_TIP_MS,
             title: '[parent:: CODE] — what an item is PART OF. Not ⛔: a child is not waiting on its parent. '
                 + '"Wholes only" is the roll-up reading: everything that is nobody\'s part, whether or not it has parts of its own.',
             options: [
@@ -2919,7 +2965,10 @@
         selected: blFilter[p.key], title: p.title, width: p.width,
         // U-51 — a named subset is per-picker data; the component knows the
         // mechanism and only this list knows what "Active" means.
-        presets: p.presets
+        presets: p.presets,
+        // U-61 — and so is how long this particular box waits before it explains
+        // itself: per-picker, carried on the row that declares it.
+        tipDelay: p.tipDelay
     })).join('');
     /**
      * How many characters of an item are drawn before it is cut off.
@@ -3314,15 +3363,24 @@
             // used to be drawn inside `.pj-bl-ppm`, which scrolls: a 620px box
             // squeezed into a 340px column, clipped at the menu's edge, and
             // gone the moment the pointer left the row to reach for it. It now
-            // leaves the flow and opens against the block, free and full size,
-            // with the delays afTip.js gives every tip-free trigger.
+            // leaves the flow and opens against the block, free and full size.
+            //
+            // ‼️ U-61 — AND IT WAITS THREE TIMES AS LONG AS THE COMPONENT'S
+            // DEFAULT, on this trigger alone. The list is READ downwards — code,
+            // words, size, how many parts — so the pointer crosses every row on
+            // the way to the one being looked for, and at 420ms a whole item's
+            // text flashed up at each of them. The number is on the wrapper, not
+            // in afTip.js: nothing else in the extension changes by a
+            // millisecond. See BL_AND_TIP_MS for the row of filter boxes, which
+            // is the same complaint about a different gesture.
             return window.AFTip.wrap(
                 `<button class="pj-bl-ppi${n === blPP.at ? ' at' : ''}" data-blpp="${C.esc(i.code)}">
                     <span class="pj-bl-ppc">${C.esc(i.code)}</span>
                     <span class="pj-bl-ppt">${C.esc(blShort(i.text, BL_PARENT_LABEL_WIDE))}</span>
                     ${i.effort ? `<span class="pj-bl-ppe">${C.esc(i.effort)}</span>` : ''}
                     ${(i.children || []).length ? `<span class="pj-bl-ppn">⊂ ${(i.children || []).length}</span>` : ''}
-                </button>`, head, body, 'tip-free', 'data-aftip-anchor=".pj-bl-pp"');
+                </button>`, head, body, 'tip-free',
+                'data-aftip-anchor=".pj-bl-pp" data-aftip-open="1260"');
         };
         return `<span class="pj-bl-ppm">
             <button class="pj-bl-ppi none${blPP.at === -1 ? ' at' : ''}" data-blpp=""
@@ -3910,7 +3968,13 @@
             const e = i.effort || '(none)';
             if (blFilter.efforts.indexOf(e) < 0) { return false; }
         }
-        if (!on(blFilter.blocked, (i.blockedBy || []).length ? 'yes' : 'no')) { return false; }
+        // ‼️ U-60 — A HELD ITEM IS NOT STARTABLE EITHER, so this axis has to
+        // know about it. The row still shows WHICH of the two it is (the ⛔
+        // badge names codes, the ⛔ button is simply red); the axis is asking
+        // the coarser question — will "what is next" hand this out — and
+        // answering it with only half the reasons would put a parked item in
+        // the "startable now" list.
+        if (!on(blFilter.blocked, (i.blockedBy || []).length || i.onHold ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.plan, i.plan ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.due, i.due ? 'yes' : 'no')) { return false; }
         // the code is part of the searchable text, so `K-3 bug` is one query
@@ -4259,8 +4323,18 @@
             <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}${band || ''}"
                 ${queueAt && dragging ? 'draggable="true"' : ''} data-blgrip
                 title="${C.esc(gripTip)}">${queueAt || '⠿'}</span>
-            <input type="checkbox" data-blcheck ${i.state === 'done' ? 'checked' : ''}
-                title="${i.state === 'done' ? 'Reopen' : 'Close as done'}">
+            ${/* ‼️ U-58 — THE BOX SAYS WHICH WAY IT CLOSED, not merely THAT it did.
+                  `done` is the native tick and stays exactly as it was; `cancelled`
+                  reached this line as a bare EMPTY box, pixel-identical to an open
+                  item — so the one state the row already draws with a strikethrough
+                  had no mark at all in the place the eye lands first, and a list
+                  with both in it read as half-open. It is the SAME control either
+                  way: checked means closed, clicking it reopens, only the paint
+                  differs. */''}
+            <input type="checkbox" data-blcheck ${closed ? 'checked' : ''}
+                ${i.state === 'cancelled' ? 'class="pj-bl-cb x"' : ''}
+                title="${i.state === 'cancelled' ? 'Cancelled — press to reopen'
+                : i.state === 'done' ? 'Reopen' : 'Close as done'}">
             ${i.code
                 ? `<code class="pj-bl-code open" data-blgo title="${C.esc(i.code + ' — permanent, quote it at an agent. ' + openTip)}">${C.esc(i.code)}</code>`
                 : `<span class="pj-bl-code unfiled open" data-blgo title="${C.esc('No code yet. ' + openTip)}">📥</span>`}
@@ -4316,6 +4390,25 @@
                     ? 'Started. Press to put it back to open — the [/] in your file goes back to [ ].'
                     : 'Start it — writes [/] on the line instead of [ ], marks the row, and puts the '
                     + 'moment in Backloglog. It stays live work, and ▶ again undoes it.')}">▶</button>
+                    ${/* ‼️ U-60 — PARK IT. Between ▶ and ✕ because that is where
+                          the three answers to "what about this one" belong:
+                          start it, hold it, drop it. Grey until it means
+                          something and red the moment it does — an ⛔ in full
+                          colour on a row that is NOT parked would be the loudest
+                          thing on a list of two hundred, saying nothing.
+                          Only on live rows: parking something already closed is
+                          a gesture with no consequence, and the hold comes off
+                          by itself the moment either of its neighbours is
+                          pressed. */''}
+                    ${!closed ? `<button class="pj-bl-act hold${i.onHold ? ' on' : ''}"
+                        data-blhold="${i.onHold ? '0' : '1'}" title="${C.esc(i.onHold
+                    ? 'ON HOLD — parked by hand.\n\nIt is still open and still live; it is only kept out of '
+                    + '"what is next", so no agent is handed it and the queue steps over it. Press to put it '
+                    + 'back exactly where it was — nothing about its place was given up. Starting it or '
+                    + 'closing it takes the hold off too.'
+                    : 'Not held.\n\nPut it on hold — a ⛔ on the line with nothing named, which is what "not '
+                    + 'yet" looks like when nothing is actually in the way. It keeps its code, its line and '
+                    + 'its queue position; it simply stops being offered as work.')}">⛔</button>` : ''}
                     <button class="pj-bl-act" data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
                     ${/* ‼️ AN ACTION, NOT A BADGE, WHEN THERE IS NOTHING TO SHOW.
                           Most items are part of nothing, and a "part?" badge on
@@ -6890,6 +6983,12 @@
                 blStatePost(el, el.checked ? 'done' : 'open')));
         document.querySelectorAll('[data-blstate]').forEach(el =>
             el.addEventListener('click', () => blStatePost(el, el.dataset.blstate)));
+        // U-60 — a switch, and the row says which way it is pointing (see the
+        // ▶ note above: a button that sends the same thing whatever the row
+        // already is works once and looks broken for ever after).
+        document.querySelectorAll('[data-blhold]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogHold', blRow(el), { on: el.dataset.blhold === '1' })));
         // ▲/▼ and every row of their step menus are the same message: which way,
         // and how far. `by` is absent on top/bottom, where "how far" is the end.
         document.querySelectorAll('[data-blmove]').forEach(el =>

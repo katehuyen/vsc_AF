@@ -345,6 +345,36 @@
      *  ~500ms a panel you have finished with follows you around. */
     const FREE_CLOSE_MS = 340;
 
+    /* ------------------------------------------------------------------
+       ‼️ U-61 — TWO THINGS A tip-free TRIGGER MAY SAY FOR ITSELF, AND BOTH ARE
+       THE CALL SITE'S TO SAY.
+
+       `FREE_OPEN_MS` is this component's default and stays it. Retuning that
+       number to settle two controls would retune every rich hover in the
+       extension — which is exactly the "central setting" nobody asked for. So a
+       trigger that needs longer asks for longer, on itself:
+
+         data-aftip-open="<ms>"    this trigger's own open delay
+         data-aftip-mute="<sel>"   while the trigger sits INSIDE something
+                                   matching this selector no panel opens, and
+                                   one already open closes
+
+       The mute is what a PICKER needs and no delay can give it: press the box,
+       its list drops over the page, and the panel explaining the box is now a
+       paragraph standing behind that list — already open, so no waiting period
+       was ever going to help, and saying nothing about the choice being made.
+       ------------------------------------------------------------------ */
+    /** A trigger's own open delay, or the component's. */
+    function tipOpenMs(w) {
+        const n = Number(w && w.getAttribute ? w.getAttribute('data-aftip-open') : 0);
+        return Number.isFinite(n) && n > 0 ? n : FREE_OPEN_MS;
+    }
+    /** Is this trigger inside something that says "not now"? */
+    function tipMuted(w) {
+        const sel = w && w.getAttribute ? w.getAttribute('data-aftip-mute') : '';
+        return !!(sel && typeof w.closest === 'function' && w.closest(sel));
+    }
+
     if (doc && typeof doc.addEventListener === 'function') {
         let openW = null, openT = 0, closeT = 0;
 
@@ -391,6 +421,10 @@
         doc.addEventListener('pointerover', function (e) {
             const t = e.target;
             const w = t && typeof t.closest === 'function' ? t.closest('.af-tipw.tip-free') : null;
+            // Muted is checked before "already open": the point is to get rid of
+            // a panel the control has since covered, not to leave it standing
+            // because the pointer never went anywhere.
+            if (w && tipMuted(w)) { clearTimeout(openT); clearTimeout(closeT); close(); return; }
             // Inside the panel itself: that is the reader arriving, not leaving.
             if (w && w === openW) { clearTimeout(closeT); return; }
             clearTimeout(openT);
@@ -400,12 +434,26 @@
             }
             clearTimeout(closeT);
             openT = setTimeout(function () {
-                if (!w.isConnected) { return; }
+                // Re-asked at the end of the wait, not only at the start: the
+                // control can have been opened during it, pointer still still.
+                if (!w.isConnected || tipMuted(w)) { return; }
                 close();
                 openW = w;
                 w.classList.add('af-open');
                 place(w);
-            }, FREE_OPEN_MS);
+            }, tipOpenMs(w));
+        }, true);
+
+        // ‼️ THE MUTE HAS TO SURVIVE A CLICK THAT NEVER MOVES THE POINTER, which
+        // is the whole gesture: press the box, the list drops, the hand stays
+        // put. Nothing above runs again, so the check is repeated here — after
+        // the control's own handler, because that is what puts the class on, and
+        // a picker that stops the event would otherwise win the race.
+        doc.addEventListener('click', function () {
+            if (!openW) { return; }
+            setTimeout(function () {
+                if (openW && tipMuted(openW)) { clearTimeout(openT); close(); }
+            }, 0);
         }, true);
 
         // A repaint under a stationary pointer takes the wrapper away; the panel

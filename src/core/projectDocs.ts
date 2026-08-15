@@ -180,6 +180,11 @@ af-role: backlog
                             parent. No line moves and no code changes; the queue
                             does not know about it, so both queue on their own.
      ⛔ CODE                 waits on that item
+     ⛔ (on its own)         ON HOLD — parked by hand. Still open and still live;
+                             it is only kept out of "what is next". Nothing is
+                             named because nothing is in its way. The ⛔ button on
+                             the row puts it there and takes it off, and starting
+                             or closing the item takes it off too.
      [plan:: 🆔]             which plan item it belongs to
      [closed:: 9c4d1f#3]     Agent Farm writes this: the session and turn it was
                              closed in. Its full history is in the Backloglog.

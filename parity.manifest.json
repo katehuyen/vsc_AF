@@ -1,0 +1,6280 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "capability": "abTest",
+      "ui": [
+        "cmd:agentfarm.abTest"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addAgentRoot",
+      "ui": [
+        "cmd:agentfarm.addAgentRoot"
+      ],
+      "ops": [
+        "agents.roots.add"
+      ]
+    },
+    {
+      "capability": "addDuty",
+      "ui": [
+        "cmd:agentfarm.addDuty",
+        "ctx:agentfarm.addDuty"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addDutyFromTemplate",
+      "ui": [
+        "cmd:agentfarm.addDutyFromTemplate"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addEvalCase",
+      "ui": [
+        "cmd:agentfarm.addEvalCase"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addMcpServer",
+      "ui": [
+        "cmd:agentfarm.addMcpServer"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addMemory",
+      "ui": [
+        "cmd:agentfarm.addMemory",
+        "ctx:agentfarm.addMemory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addRecipe",
+      "ui": [
+        "cmd:agentfarm.addRecipe"
+      ],
+      "ops": [
+        "workflows.add",
+        "workflows.step.update"
+      ],
+      "core": [
+        "WorkflowStep"
+      ]
+    },
+    {
+      "capability": "addSchedule",
+      "ui": [
+        "cmd:agentfarm.addSchedule"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addSessionFolderToProject",
+      "ui": [
+        "cmd:agentfarm.addSessionFolderToProject",
+        "ctx:agentfarm.addSessionFolderToProject"
+      ]
+    },
+    {
+      "capability": "addSkill",
+      "ui": [
+        "cmd:agentfarm.addSkill"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addTask",
+      "ui": [
+        "cmd:agentfarm.addTask"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addTrigger",
+      "ui": [
+        "cmd:agentfarm.addTrigger"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "addWorkflowStep",
+      "ui": [
+        "cmd:agentfarm.addWorkflowStep"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "agentDetail.ts#af-browse",
+      "ui": [
+        "page:agentDetail.ts#af-browse"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#afnav",
+      "ui": [
+        "page:agentDetail.ts#afnav",
+        "page:airtablePanel.ts#afnav",
+        "page:capabilities.ts#afnav",
+        "page:consolePanel.ts#afnav",
+        "page:dashboard.ts#afnav",
+        "page:enginesPanel.ts#afnav",
+        "page:evalsPanel.ts#afnav",
+        "page:livingPanel.ts#afnav",
+        "page:memoryGraph.ts#afnav",
+        "page:missionsPanel.ts#afnav",
+        "page:noticesPanel.ts#afnav",
+        "page:portfolioPanel.ts#afnav",
+        "page:projectsPanel.ts#afnav",
+        "page:queuePanel.ts#afnav",
+        "page:searchPanel.ts#afnav",
+        "page:secretsPanel.ts#afnav",
+        "page:sessionsPanel.ts#afnav",
+        "page:sessionViewer.ts#afnav",
+        "page:settingsPanel.ts#afnav",
+        "page:studioPanel.ts#afnav",
+        "page:taskAnalyticsPanel.ts#afnav",
+        "page:tasksPanel.ts#afnav",
+        "page:timeline.ts#afnav",
+        "page:toolboxPanel.ts#afnav",
+        "page:turnsPanel.ts#afnav",
+        "ctx:stOpen"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#consoleSession",
+      "ui": [
+        "page:agentDetail.ts#consoleSession"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#continueSession",
+      "ui": [
+        "page:agentDetail.ts#continueSession"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#duty-act",
+      "ui": [
+        "page:agentDetail.ts#duty-act"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#duty-save",
+      "ui": [
+        "page:agentDetail.ts#duty-save"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#focusTerminal",
+      "ui": [
+        "page:agentDetail.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#interruptSession",
+      "ui": [
+        "page:agentDetail.ts#interruptSession"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#launchSession",
+      "ui": [
+        "page:agentDetail.ts#launchSession"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#memCard",
+      "ui": [
+        "ctx:memCopyTo",
+        "ctx:memDistil",
+        "ctx:memCopyPath"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#openDashboard",
+      "ui": [
+        "page:agentDetail.ts#openDashboard"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#openFile",
+      "ui": [
+        "page:agentDetail.ts#openFile",
+        "page:consolePanel.ts#openFile",
+        "page:dashboard.ts#openAgent",
+        "page:missionsPanel.ts#openFile",
+        "page:missionsPanel.ts#openAgent",
+        "page:portfolioPanel.ts#openAgent",
+        "page:queuePanel.ts#openFile",
+        "page:searchPanel.ts#openFile",
+        "page:sessionViewer.ts#openAgent",
+        "page:settingsPanel.ts#openAgent",
+        "page:studioPanel.ts#openFile",
+        "ctx:msStepOpen",
+        "ctx:msStepOut",
+        "page:queuePanel.ts#setUrgency",
+        "page:queuePanel.ts#handoff",
+        "page:queuePanel.ts#openNotice",
+        "ctx:qOpen",
+        "page:queuePanel.ts#drop",
+        "ctx:qFold",
+        "ctx:qNotice"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "agentDetail.ts#openGuide",
+      "ui": [
+        "page:agentDetail.ts#openGuide",
+        "page:airtablePanel.ts#openGuide",
+        "page:capabilities.ts#openGuide",
+        "page:consolePanel.ts#openGuide",
+        "page:dashboard.ts#openGuide",
+        "page:evalsPanel.ts#openGuide",
+        "page:livingPanel.ts#openGuide",
+        "page:memoryGraph.ts#openGuide",
+        "page:missionsPanel.ts#openGuide",
+        "page:portfolioPanel.ts#openGuide",
+        "page:searchPanel.ts#openGuide",
+        "page:sessionsPanel.ts#openGuide",
+        "page:sessionViewer.ts#openGuide",
+        "page:settingsPanel.ts#openGuide",
+        "page:studioPanel.ts#openGuide",
+        "page:taskAnalyticsPanel.ts#openGuide",
+        "page:tasksPanel.ts#openGuide",
+        "page:timeline.ts#openGuide",
+        "page:toolboxPanel.ts#openGuide",
+        "page:turnsPanel.ts#openGuide",
+        "ctx:insOpen",
+        "ctx:insGuide",
+        "ctx:dutyEdit",
+        "ctx:dutyTo",
+        "ctx:dutyPause",
+        "ctx:dutyDel"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "agentDetail.ts#openMemoryGraph",
+      "ui": [
+        "page:agentDetail.ts#openMemoryGraph",
+        "page:agentDetail.ts#memCard",
+        "ctx:memOpen",
+        "ctx:memGraph"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#openSession",
+      "ui": [
+        "page:agentDetail.ts#openSession",
+        "page:dashboard.ts#openSession",
+        "page:missionsPanel.ts#openSession",
+        "page:projectsPanel.ts#openSession",
+        "page:searchPanel.ts#openSession",
+        "page:sessionsPanel.ts#openSession",
+        "page:timeline.ts#openSession",
+        "page:turnsPanel.ts#openSession",
+        "ctx:msnPlanner",
+        "ctx:msnAnswer",
+        "ctx:tnOpen"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#openTimeline",
+      "ui": [
+        "page:agentDetail.ts#openTimeline"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#pinSession",
+      "ui": [
+        "page:agentDetail.ts#pinSession"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#refresh",
+      "ui": [
+        "page:agentDetail.ts#refresh"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#reveal",
+      "ui": [
+        "page:agentDetail.ts#reveal",
+        "page:airtablePanel.ts#reveal",
+        "page:capabilities.ts#open",
+        "page:memoryGraph.ts#open",
+        "page:portfolioPanel.ts#reveal",
+        "page:toolboxPanel.ts#open",
+        "page:toolboxPanel.ts#reveal",
+        "ctx:tbOpen",
+        "ctx:tbReveal",
+        "page:airtablePanel.ts#set",
+        "page:settingsPanel.ts#set",
+        "ctx:atDefault",
+        "ctx:atReveal"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#savePricing",
+      "ui": [
+        "page:agentDetail.ts#savePricing"
+      ],
+      "ops": [
+        "pricing.set"
+      ],
+      "core": [
+        "PriceRule"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#sessionTurns",
+      "ui": [
+        "page:agentDetail.ts#sessionTurns"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#setTableN",
+      "ui": [
+        "page:agentDetail.ts#setTableN"
+      ]
+    },
+    {
+      "capability": "agentDetail.ts#startSession",
+      "ui": [
+        "page:agentDetail.ts#startSession"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#add-media",
+      "ui": [
+        "page:airtablePanel.ts#add-media"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#add-root",
+      "ui": [
+        "page:airtablePanel.ts#add-root"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#open-config",
+      "ui": [
+        "page:airtablePanel.ts#open-config"
+      ],
+      "ops": [
+        "airtable.config.get",
+        "service.install"
+      ],
+      "core": [
+        "loadStore",
+        "storageDir"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#open-ui",
+      "ui": [
+        "page:airtablePanel.ts#open-ui"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openExternal — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "airtablePanel.ts#probe-tools",
+      "ui": [
+        "page:airtablePanel.ts#probe-tools"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#refresh",
+      "ui": [
+        "page:airtablePanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#register",
+      "ui": [
+        "page:airtablePanel.ts#register"
+      ],
+      "ops": [
+        "airtable.register",
+        "airtable.status",
+        "service.install"
+      ],
+      "core": [
+        "extVersion",
+        "registerMcp",
+        "stageMcpServer",
+        "storageDir"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#remove-media",
+      "ui": [
+        "page:airtablePanel.ts#remove-media"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#remove-root",
+      "ui": [
+        "page:airtablePanel.ts#remove-root"
+      ]
+    },
+    {
+      "capability": "airtablePanel.ts#unregister",
+      "ui": [
+        "page:airtablePanel.ts#unregister"
+      ],
+      "ops": [
+        "airtable.unregister"
+      ],
+      "core": [
+        "unregisterMcp"
+      ]
+    },
+    {
+      "capability": "applyMergedMemory",
+      "ui": [
+        "cmd:agentfarm.applyMergedMemory"
+      ],
+      "ops": [
+        "memory.merge.apply"
+      ],
+      "core": [
+        "applyMergedContent"
+      ]
+    },
+    {
+      "capability": "archiveMemory",
+      "ui": [
+        "cmd:agentfarm.archiveMemory"
+      ],
+      "ops": [
+        "memory.archive"
+      ],
+      "core": [
+        "archiveMemoryFile"
+      ]
+    },
+    {
+      "capability": "archiveProject",
+      "ui": [
+        "cmd:agentfarm.archiveProject"
+      ],
+      "ops": [
+        "projects.archive",
+        "projects.create"
+      ],
+      "core": [
+        "ProjectStatus",
+        "planArchive",
+        "planRestore"
+      ]
+    },
+    {
+      "capability": "askMemory",
+      "ui": [
+        "cmd:agentfarm.askMemory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "assignProject",
+      "ui": [
+        "cmd:agentfarm.assignProject",
+        "ctx:agentfarm.assignProject"
+      ],
+      "ops": [
+        "projects.assign"
+      ]
+    },
+    {
+      "capability": "assignSessionProject",
+      "ui": [
+        "cmd:agentfarm.assignSessionProject",
+        "ctx:agentfarm.assignSessionProject"
+      ],
+      "ops": [
+        "projects.assign"
+      ]
+    },
+    {
+      "capability": "automateDuty",
+      "ui": [
+        "cmd:agentfarm.automateDuty"
+      ],
+      "ops": [
+        "duties.update"
+      ],
+      "core": [
+        "Duty"
+      ]
+    },
+    {
+      "capability": "backlogAdd",
+      "ui": [
+        "cmd:agentfarm.backlogAdd"
+      ],
+      "ops": [
+        "projects.backlog.add"
+      ]
+    },
+    {
+      "capability": "browsePackGallery",
+      "ui": [
+        "cmd:agentfarm.browsePackGallery"
+      ]
+    },
+    {
+      "capability": "buildSemanticIndex",
+      "ui": [
+        "cmd:agentfarm.buildSemanticIndex"
+      ]
+    },
+    {
+      "capability": "cancelTask",
+      "ui": [
+        "cmd:agentfarm.cancelTask"
+      ],
+      "ops": [
+        "tasks.cancel"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#copyDuty",
+      "ui": [
+        "page:capabilities.ts#copyDuty"
+      ],
+      "ops": [
+        "duties.add"
+      ],
+      "core": [
+        "CLAUDE_MD_SNIPPET",
+        "addDuty",
+        "claudeMdReferencesDuties"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#copyMcp",
+      "ui": [
+        "page:capabilities.ts#copyMcp"
+      ],
+      "ops": [
+        "toolbox.enable"
+      ],
+      "core": [
+        "readAgentMcpServers"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#copyMemory",
+      "ui": [
+        "page:capabilities.ts#copyMemory"
+      ],
+      "ops": [
+        "memory.copy"
+      ],
+      "core": [
+        "copyMemoryFileTo"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#copySkill",
+      "ui": [
+        "page:capabilities.ts#copySkill"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#openTaskHistory",
+      "ui": [
+        "page:capabilities.ts#openTaskHistory",
+        "ctx:capOpen",
+        "ctx:capTasks",
+        "ctx:capRowOpen",
+        "ctx:capRowTasks"
+      ]
+    },
+    {
+      "capability": "capabilities.ts#refresh",
+      "ui": [
+        "page:capabilities.ts#refresh"
+      ]
+    },
+    {
+      "capability": "clearDoneTasks",
+      "ui": [
+        "cmd:agentfarm.clearDoneTasks"
+      ],
+      "ops": [
+        "tasks.clearFinished"
+      ]
+    },
+    {
+      "capability": "commandBar",
+      "ui": [
+        "cmd:agentfarm.commandBar"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "completeTask",
+      "ui": [
+        "cmd:agentfarm.completeTask"
+      ],
+      "ops": [
+        "tasks.complete"
+      ]
+    },
+    {
+      "capability": "configureDocOpen",
+      "ui": [
+        "cmd:agentfarm.configureDocOpen"
+      ],
+      "ops": [
+        "docopen.set"
+      ]
+    },
+    {
+      "capability": "configureLivingChecks",
+      "ui": [
+        "cmd:agentfarm.configureLivingChecks",
+        "ctx:agentfarm.configureLivingChecks"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "connectTelegram",
+      "ui": [
+        "cmd:agentfarm.connectTelegram"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
+    },
+    {
+      "capability": "consoleEndAndRemove",
+      "ui": [
+        "cmd:agentfarm.consoleEndAndRemove",
+        "ctx:agentfarm.consoleEndAndRemove"
+      ],
+      "ops": [
+        "console.close"
+      ]
+    },
+    {
+      "capability": "consoleEndSession",
+      "ui": [
+        "cmd:agentfarm.consoleEndSession",
+        "ctx:agentfarm.consoleEndSession"
+      ],
+      "ops": [
+        "console.close"
+      ]
+    },
+    {
+      "capability": "consoleForAgent",
+      "ui": [
+        "cmd:agentfarm.consoleForAgent",
+        "ctx:agentfarm.consoleForAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "consoleForgetSession",
+      "ui": [
+        "cmd:agentfarm.consoleForgetSession",
+        "ctx:agentfarm.consoleForgetSession"
+      ],
+      "ops": [
+        "console.close"
+      ]
+    },
+    {
+      "capability": "consoleInterruptTurn",
+      "ui": [
+        "cmd:agentfarm.consoleInterruptTurn",
+        "ctx:agentfarm.consoleInterruptTurn"
+      ],
+      "ops": [
+        "console.interrupt"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#askAnswer",
+      "ui": [
+        "ctx:cqEdit",
+        "ctx:cqCopy",
+        "ctx:caAllow",
+        "ctx:caDeny",
+        "ctx:caSkip"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#attachDrop",
+      "ui": [
+        "page:consolePanel.ts#attachDrop"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#attachNothing",
+      "ui": [
+        "page:consolePanel.ts#attachNothing"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#attachPick",
+      "ui": [
+        "page:consolePanel.ts#attachPick"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#attachTooMany",
+      "ui": [
+        "page:consolePanel.ts#attachTooMany"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#attachUris",
+      "ui": [
+        "page:consolePanel.ts#attachUris"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#clearQueue",
+      "ui": [
+        "page:consolePanel.ts#clearQueue"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#close",
+      "ui": [
+        "page:consolePanel.ts#close"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#forget",
+      "ui": [
+        "page:consolePanel.ts#forget"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#forgetLastWindow",
+      "ui": [
+        "page:consolePanel.ts#forgetLastWindow"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#interrupt",
+      "ui": [
+        "page:consolePanel.ts#interrupt"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#loadOlder",
+      "ui": [
+        "page:consolePanel.ts#loadOlder"
+      ],
+      "ops": [
+        "console.older"
+      ],
+      "core": [
+        "transcriptPos"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#openPromptSnippets",
+      "ui": [
+        "page:consolePanel.ts#openPromptSnippets"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#openTranscript",
+      "ui": [
+        "page:consolePanel.ts#openTranscript"
+      ],
+      "ops": [
+        "notices.post",
+        "queue.stamp",
+        "ui.ctxmenu"
+      ],
+      "core": [
+        "host"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#permissionMode",
+      "ui": [
+        "page:consolePanel.ts#permissionMode"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#pickPromptSnippets",
+      "ui": [
+        "page:consolePanel.ts#pickPromptSnippets"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#promptSnippets",
+      "ui": [
+        "page:consolePanel.ts#promptSnippets"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#queueTake",
+      "ui": [
+        "page:consolePanel.ts#queueTake",
+        "page:consolePanel.ts#queueSend",
+        "page:consolePanel.ts#askAnswer",
+        "ctx:cqNow",
+        "ctx:cqDrop"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#refresh",
+      "ui": [
+        "page:consolePanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#resume",
+      "ui": [
+        "page:consolePanel.ts#resume"
+      ],
+      "ops": [
+        "agents.defaults",
+        "console.start",
+        "sessions.start"
+      ],
+      "core": [
+        "carriedTotals",
+        "launchDefaults"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#resumeQuery",
+      "ui": [
+        "page:consolePanel.ts#resumeQuery"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#select",
+      "ui": [
+        "page:consolePanel.ts#select"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#send",
+      "ui": [
+        "page:consolePanel.ts#send"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#setEffort",
+      "ui": [
+        "page:consolePanel.ts#setEffort"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#setEngine",
+      "ui": [
+        "page:consolePanel.ts#setEngine"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#setModel",
+      "ui": [
+        "page:consolePanel.ts#setModel"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#setProject",
+      "ui": [
+        "page:consolePanel.ts#setProject"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#start",
+      "ui": [
+        "page:consolePanel.ts#start"
+      ],
+      "ops": [
+        "agents.defaults",
+        "console.start",
+        "sessions.start",
+        "tasks.add"
+      ],
+      "core": [
+        "engineRefusal",
+        "launchDefaults"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#unpinAgent",
+      "ui": [
+        "page:consolePanel.ts#unpinAgent"
+      ]
+    },
+    {
+      "capability": "consoleResumeSession",
+      "ui": [
+        "cmd:agentfarm.consoleResumeSession",
+        "ctx:agentfarm.consoleResumeSession"
+      ],
+      "ops": [
+        "console.start"
+      ],
+      "core": [
+        "carriedTotals"
+      ]
+    },
+    {
+      "capability": "continueSession",
+      "ui": [
+        "cmd:agentfarm.continueSession",
+        "ctx:agentfarm.continueSession"
+      ],
+      "ops": [
+        "launch.profile.set"
+      ],
+      "core": [
+        "RunSurface"
+      ]
+    },
+    {
+      "capability": "copyAgentFolder",
+      "ui": [
+        "cmd:agentfarm.copyAgentFolder",
+        "ctx:agentfarm.copyAgentFolder"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies a value to the clipboard — nothing is read that an agent could not read directly, and nothing is changed."
+      }
+    },
+    {
+      "capability": "copyAgentName",
+      "ui": [
+        "cmd:agentfarm.copyAgentName",
+        "ctx:agentfarm.copyAgentName"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies a value to the clipboard — nothing is read that an agent could not read directly, and nothing is changed."
+      }
+    },
+    {
+      "capability": "copyCliHookCommand",
+      "ui": [
+        "cmd:agentfarm.copyCliHookCommand"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies a value to the clipboard — nothing is read that an agent could not read directly, and nothing is changed."
+      }
+    },
+    {
+      "capability": "copyDuty",
+      "ui": [
+        "cmd:agentfarm.copyDuty"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showInformationMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "copyMcpServer",
+      "ui": [
+        "cmd:agentfarm.copyMcpServer"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showInformationMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "copyMemory",
+      "ui": [
+        "cmd:agentfarm.copyMemory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showInformationMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "copySessionCwd",
+      "ui": [
+        "cmd:agentfarm.copySessionCwd",
+        "ctx:agentfarm.copySessionCwd"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "copySessionId",
+      "ui": [
+        "cmd:agentfarm.copySessionId",
+        "ctx:agentfarm.copySessionId"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "copySessionPath",
+      "ui": [
+        "cmd:agentfarm.copySessionPath",
+        "ctx:agentfarm.copySessionPath"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "copyWebhookUrl",
+      "ui": [
+        "cmd:agentfarm.copyWebhookUrl"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only clipboard.writeText, showInformationMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "costReport",
+      "ui": [
+        "cmd:agentfarm.costReport"
+      ],
+      "ops": [
+        "reports.cost"
+      ]
+    },
+    {
+      "capability": "ctx:anExport",
+      "ui": [
+        "ctx:anExport"
+      ]
+    },
+    {
+      "capability": "ctx:anReset",
+      "ui": [
+        "ctx:anReset"
+      ]
+    },
+    {
+      "capability": "ctx:asAssign",
+      "ui": [
+        "ctx:asAssign"
+      ]
+    },
+    {
+      "capability": "ctx:asCopyInput",
+      "ui": [
+        "ctx:asCopyInput"
+      ]
+    },
+    {
+      "capability": "ctx:asCopyModel",
+      "ui": [
+        "ctx:asCopyModel"
+      ]
+    },
+    {
+      "capability": "ctx:asCopyPath",
+      "ui": [
+        "ctx:asCopyPath"
+      ]
+    },
+    {
+      "capability": "ctx:asDrop",
+      "ui": [
+        "ctx:asDrop"
+      ]
+    },
+    {
+      "capability": "ctx:asFeedback",
+      "ui": [
+        "ctx:asFeedback"
+      ]
+    },
+    {
+      "capability": "ctx:asKeep",
+      "ui": [
+        "ctx:asKeep"
+      ]
+    },
+    {
+      "capability": "ctx:asOpen",
+      "ui": [
+        "ctx:asOpen"
+      ]
+    },
+    {
+      "capability": "ctx:asRerun",
+      "ui": [
+        "ctx:asRerun"
+      ]
+    },
+    {
+      "capability": "ctx:asVary",
+      "ui": [
+        "ctx:asVary"
+      ]
+    },
+    {
+      "capability": "ctx:atCopyDir",
+      "ui": [
+        "ctx:atCopyDir"
+      ]
+    },
+    {
+      "capability": "ctx:atCopyName",
+      "ui": [
+        "ctx:atCopyName"
+      ]
+    },
+    {
+      "capability": "ctx:backlogEdit",
+      "ui": [
+        "ctx:backlogEdit"
+      ]
+    },
+    {
+      "capability": "ctx:backlogFile",
+      "ui": [
+        "ctx:backlogFile"
+      ]
+    },
+    {
+      "capability": "ctx:backlogGo",
+      "ui": [
+        "ctx:backlogGo"
+      ]
+    },
+    {
+      "capability": "ctx:blCopyBoth",
+      "ui": [
+        "ctx:blCopyBoth"
+      ]
+    },
+    {
+      "capability": "ctx:blCopyCode",
+      "ui": [
+        "ctx:blCopyCode"
+      ]
+    },
+    {
+      "capability": "ctx:blCopyText",
+      "ui": [
+        "ctx:blCopyText"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortL",
+      "ui": [
+        "ctx:blEffortL"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortM",
+      "ui": [
+        "ctx:blEffortM"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortNone",
+      "ui": [
+        "ctx:blEffortNone"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortS",
+      "ui": [
+        "ctx:blEffortS"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortXL",
+      "ui": [
+        "ctx:blEffortXL"
+      ]
+    },
+    {
+      "capability": "ctx:blEffortXS",
+      "ui": [
+        "ctx:blEffortXS"
+      ]
+    },
+    {
+      "capability": "ctx:blGoCustom",
+      "ui": [
+        "ctx:blGoCustom"
+      ]
+    },
+    {
+      "capability": "ctx:blGoObsidian",
+      "ui": [
+        "ctx:blGoObsidian"
+      ]
+    },
+    {
+      "capability": "ctx:blGoPreview",
+      "ui": [
+        "ctx:blGoPreview"
+      ]
+    },
+    {
+      "capability": "ctx:blGoVscode",
+      "ui": [
+        "ctx:blGoVscode"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveBottom",
+      "ui": [
+        "ctx:blMoveBottom"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveDown1",
+      "ui": [
+        "ctx:blMoveDown1"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveDown5",
+      "ui": [
+        "ctx:blMoveDown5"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveTop",
+      "ui": [
+        "ctx:blMoveTop"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveUp1",
+      "ui": [
+        "ctx:blMoveUp1"
+      ]
+    },
+    {
+      "capability": "ctx:blMoveUp5",
+      "ui": [
+        "ctx:blMoveUp5"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioHigh",
+      "ui": [
+        "ctx:blPrioHigh"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioHighest",
+      "ui": [
+        "ctx:blPrioHighest"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioLow",
+      "ui": [
+        "ctx:blPrioLow"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioLowest",
+      "ui": [
+        "ctx:blPrioLowest"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioMedium",
+      "ui": [
+        "ctx:blPrioMedium"
+      ]
+    },
+    {
+      "capability": "ctx:blPrioNormal",
+      "ui": [
+        "ctx:blPrioNormal"
+      ]
+    },
+    {
+      "capability": "ctx:blStateCancelled",
+      "ui": [
+        "ctx:blStateCancelled"
+      ]
+    },
+    {
+      "capability": "ctx:blStateDoing",
+      "ui": [
+        "ctx:blStateDoing"
+      ]
+    },
+    {
+      "capability": "ctx:blStateDone",
+      "ui": [
+        "ctx:blStateDone"
+      ]
+    },
+    {
+      "capability": "ctx:blStateOpen",
+      "ui": [
+        "ctx:blStateOpen"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeBug",
+      "ui": [
+        "ctx:blTypeBug"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeChore",
+      "ui": [
+        "ctx:blTypeChore"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeDebt",
+      "ui": [
+        "ctx:blTypeDebt"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeDoc",
+      "ui": [
+        "ctx:blTypeDoc"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeFeat",
+      "ui": [
+        "ctx:blTypeFeat"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeIdea",
+      "ui": [
+        "ctx:blTypeIdea"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeNone",
+      "ui": [
+        "ctx:blTypeNone"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeResearch",
+      "ui": [
+        "ctx:blTypeResearch"
+      ]
+    },
+    {
+      "capability": "ctx:blTypeUx",
+      "ui": [
+        "ctx:blTypeUx"
+      ]
+    },
+    {
+      "capability": "ctx:caCopy",
+      "ui": [
+        "ctx:caCopy"
+      ]
+    },
+    {
+      "capability": "ctx:capCopy",
+      "ui": [
+        "ctx:capCopy"
+      ]
+    },
+    {
+      "capability": "ctx:capPath",
+      "ui": [
+        "ctx:capPath"
+      ]
+    },
+    {
+      "capability": "ctx:capRowName",
+      "ui": [
+        "ctx:capRowName"
+      ]
+    },
+    {
+      "capability": "ctx:dhCopyNew",
+      "ui": [
+        "ctx:dhCopyNew"
+      ]
+    },
+    {
+      "capability": "ctx:dhCopyOld",
+      "ui": [
+        "ctx:dhCopyOld"
+      ]
+    },
+    {
+      "capability": "ctx:docCopyFull",
+      "ui": [
+        "ctx:docCopyFull"
+      ]
+    },
+    {
+      "capability": "ctx:docCopyPath",
+      "ui": [
+        "ctx:docCopyPath"
+      ]
+    },
+    {
+      "capability": "ctx:docOpenCustom",
+      "ui": [
+        "ctx:docOpenCustom"
+      ]
+    },
+    {
+      "capability": "ctx:docOpenObsidian",
+      "ui": [
+        "ctx:docOpenObsidian"
+      ]
+    },
+    {
+      "capability": "ctx:docOpenPreview",
+      "ui": [
+        "ctx:docOpenPreview"
+      ]
+    },
+    {
+      "capability": "ctx:docOpenVscode",
+      "ui": [
+        "ctx:docOpenVscode"
+      ]
+    },
+    {
+      "capability": "ctx:dutyCopy",
+      "ui": [
+        "ctx:dutyCopy"
+      ]
+    },
+    {
+      "capability": "ctx:dutyOpen",
+      "ui": [
+        "ctx:dutyOpen"
+      ]
+    },
+    {
+      "capability": "ctx:evCopyInput",
+      "ui": [
+        "ctx:evCopyInput"
+      ]
+    },
+    {
+      "capability": "ctx:evCopyTitle",
+      "ui": [
+        "ctx:evCopyTitle"
+      ]
+    },
+    {
+      "capability": "ctx:feedCopy",
+      "ui": [
+        "ctx:feedCopy"
+      ]
+    },
+    {
+      "capability": "ctx:feedHide",
+      "ui": [
+        "ctx:feedHide"
+      ]
+    },
+    {
+      "capability": "ctx:feedOnly",
+      "ui": [
+        "ctx:feedOnly"
+      ]
+    },
+    {
+      "capability": "ctx:insCopy",
+      "ui": [
+        "ctx:insCopy"
+      ]
+    },
+    {
+      "capability": "ctx:lvCopy",
+      "ui": [
+        "ctx:lvCopy"
+      ]
+    },
+    {
+      "capability": "ctx:msCopyGoal",
+      "ui": [
+        "ctx:msCopyGoal"
+      ]
+    },
+    {
+      "capability": "ctx:msCopyId",
+      "ui": [
+        "ctx:msCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:msCopyLedger",
+      "ui": [
+        "ctx:msCopyLedger"
+      ]
+    },
+    {
+      "capability": "ctx:msCopyVerdict",
+      "ui": [
+        "ctx:msCopyVerdict"
+      ]
+    },
+    {
+      "capability": "ctx:msnCancel",
+      "ui": [
+        "ctx:msnCancel"
+      ]
+    },
+    {
+      "capability": "ctx:msnPause",
+      "ui": [
+        "ctx:msnPause"
+      ]
+    },
+    {
+      "capability": "ctx:msnResume",
+      "ui": [
+        "ctx:msnResume"
+      ]
+    },
+    {
+      "capability": "ctx:msnUnpause",
+      "ui": [
+        "ctx:msnUnpause"
+      ]
+    },
+    {
+      "capability": "ctx:msRoundClose",
+      "ui": [
+        "ctx:msRoundClose"
+      ]
+    },
+    {
+      "capability": "ctx:msRoundCopy",
+      "ui": [
+        "ctx:msRoundCopy"
+      ]
+    },
+    {
+      "capability": "ctx:msRoundOnly",
+      "ui": [
+        "ctx:msRoundOnly"
+      ]
+    },
+    {
+      "capability": "ctx:msRoundOpen",
+      "ui": [
+        "ctx:msRoundOpen"
+      ]
+    },
+    {
+      "capability": "ctx:mstCopyOutput",
+      "ui": [
+        "ctx:mstCopyOutput"
+      ]
+    },
+    {
+      "capability": "ctx:mstCopyPrompt",
+      "ui": [
+        "ctx:mstCopyPrompt"
+      ]
+    },
+    {
+      "capability": "ctx:mstCopyTitle",
+      "ui": [
+        "ctx:mstCopyTitle"
+      ]
+    },
+    {
+      "capability": "ctx:msTeamCopy",
+      "ui": [
+        "ctx:msTeamCopy"
+      ]
+    },
+    {
+      "capability": "ctx:ndClear",
+      "ui": [
+        "ctx:ndClear"
+      ]
+    },
+    {
+      "capability": "ctx:ndCopy",
+      "ui": [
+        "ctx:ndCopy"
+      ]
+    },
+    {
+      "capability": "ctx:ntAnswer",
+      "ui": [
+        "ctx:ntAnswer"
+      ]
+    },
+    {
+      "capability": "ctx:ntCopyBody",
+      "ui": [
+        "ctx:ntCopyBody"
+      ]
+    },
+    {
+      "capability": "ctx:ntCopyId",
+      "ui": [
+        "ctx:ntCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:ntCopyTitle",
+      "ui": [
+        "ctx:ntCopyTitle"
+      ]
+    },
+    {
+      "capability": "ctx:ntOnlyAgent",
+      "ui": [
+        "ctx:ntOnlyAgent"
+      ]
+    },
+    {
+      "capability": "ctx:ntOnlyLevel",
+      "ui": [
+        "ctx:ntOnlyLevel"
+      ]
+    },
+    {
+      "capability": "ctx:ntOnlyType",
+      "ui": [
+        "ctx:ntOnlyType"
+      ]
+    },
+    {
+      "capability": "ctx:ntOrig",
+      "ui": [
+        "ctx:ntOrig"
+      ]
+    },
+    {
+      "capability": "ctx:ntPin",
+      "ui": [
+        "ctx:ntPin"
+      ]
+    },
+    {
+      "capability": "ctx:ntQueue",
+      "ui": [
+        "ctx:ntQueue"
+      ]
+    },
+    {
+      "capability": "ctx:ntRead",
+      "ui": [
+        "ctx:ntRead"
+      ]
+    },
+    {
+      "capability": "ctx:ntStars0",
+      "ui": [
+        "ctx:ntStars0"
+      ]
+    },
+    {
+      "capability": "ctx:ntStars1",
+      "ui": [
+        "ctx:ntStars1"
+      ]
+    },
+    {
+      "capability": "ctx:ntStars2",
+      "ui": [
+        "ctx:ntStars2"
+      ]
+    },
+    {
+      "capability": "ctx:ntStars3",
+      "ui": [
+        "ctx:ntStars3"
+      ]
+    },
+    {
+      "capability": "ctx:ntUnpin",
+      "ui": [
+        "ctx:ntUnpin"
+      ]
+    },
+    {
+      "capability": "ctx:ntUnread",
+      "ui": [
+        "ctx:ntUnread"
+      ]
+    },
+    {
+      "capability": "ctx:planCopyId",
+      "ui": [
+        "ctx:planCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:planCopyText",
+      "ui": [
+        "ctx:planCopyText"
+      ]
+    },
+    {
+      "capability": "ctx:planDetail",
+      "ui": [
+        "ctx:planDetail"
+      ]
+    },
+    {
+      "capability": "ctx:planOpenCustom",
+      "ui": [
+        "ctx:planOpenCustom"
+      ]
+    },
+    {
+      "capability": "ctx:planOpenObsidian",
+      "ui": [
+        "ctx:planOpenObsidian"
+      ]
+    },
+    {
+      "capability": "ctx:planOpenPreview",
+      "ui": [
+        "ctx:planOpenPreview"
+      ]
+    },
+    {
+      "capability": "ctx:planOpenVscode",
+      "ui": [
+        "ctx:planOpenVscode"
+      ]
+    },
+    {
+      "capability": "ctx:planTick",
+      "ui": [
+        "ctx:planTick"
+      ]
+    },
+    {
+      "capability": "ctx:planUntick",
+      "ui": [
+        "ctx:planUntick"
+      ]
+    },
+    {
+      "capability": "ctx:plCopyId",
+      "ui": [
+        "ctx:plCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:plCopyPrompt",
+      "ui": [
+        "ctx:plCopyPrompt"
+      ]
+    },
+    {
+      "capability": "ctx:plCopyTitle",
+      "ui": [
+        "ctx:plCopyTitle"
+      ]
+    },
+    {
+      "capability": "ctx:plCopyWhen",
+      "ui": [
+        "ctx:plCopyWhen"
+      ]
+    },
+    {
+      "capability": "ctx:projBacklog",
+      "ui": [
+        "ctx:projBacklog"
+      ]
+    },
+    {
+      "capability": "ctx:projCopyFolder",
+      "ui": [
+        "ctx:projCopyFolder"
+      ]
+    },
+    {
+      "capability": "ctx:projCopyId",
+      "ui": [
+        "ctx:projCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:projCopyName",
+      "ui": [
+        "ctx:projCopyName"
+      ]
+    },
+    {
+      "capability": "ctx:projSettings",
+      "ui": [
+        "ctx:projSettings"
+      ]
+    },
+    {
+      "capability": "ctx:puCopy",
+      "ui": [
+        "ctx:puCopy"
+      ]
+    },
+    {
+      "capability": "ctx:pvCopy",
+      "ui": [
+        "ctx:pvCopy"
+      ]
+    },
+    {
+      "capability": "ctx:pvSetting",
+      "ui": [
+        "ctx:pvSetting"
+      ]
+    },
+    {
+      "capability": "ctx:pvVault",
+      "ui": [
+        "ctx:pvVault"
+      ]
+    },
+    {
+      "capability": "ctx:qAnswerFile",
+      "ui": [
+        "ctx:qAnswerFile"
+      ]
+    },
+    {
+      "capability": "ctx:qCopyId",
+      "ui": [
+        "ctx:qCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:qCopyText",
+      "ui": [
+        "ctx:qCopyText"
+      ]
+    },
+    {
+      "capability": "ctx:qlCopy",
+      "ui": [
+        "ctx:qlCopy"
+      ]
+    },
+    {
+      "capability": "ctx:qlDropHide",
+      "ui": [
+        "ctx:qlDropHide"
+      ]
+    },
+    {
+      "capability": "ctx:qlDropShow",
+      "ui": [
+        "ctx:qlDropShow"
+      ]
+    },
+    {
+      "capability": "ctx:qReport",
+      "ui": [
+        "ctx:qReport"
+      ]
+    },
+    {
+      "capability": "ctx:qUrgNormal",
+      "ui": [
+        "ctx:qUrgNormal"
+      ]
+    },
+    {
+      "capability": "ctx:qUrgSoon",
+      "ui": [
+        "ctx:qUrgSoon"
+      ]
+    },
+    {
+      "capability": "ctx:qUrgUrgent",
+      "ui": [
+        "ctx:qUrgUrgent"
+      ]
+    },
+    {
+      "capability": "ctx:rtCopy",
+      "ui": [
+        "ctx:rtCopy"
+      ]
+    },
+    {
+      "capability": "ctx:runAgain",
+      "ui": [
+        "ctx:runAgain"
+      ]
+    },
+    {
+      "capability": "ctx:runDown",
+      "ui": [
+        "ctx:runDown"
+      ]
+    },
+    {
+      "capability": "ctx:runNext",
+      "ui": [
+        "ctx:runNext"
+      ]
+    },
+    {
+      "capability": "ctx:runRetryEdit",
+      "ui": [
+        "ctx:runRetryEdit"
+      ]
+    },
+    {
+      "capability": "ctx:runSource",
+      "ui": [
+        "ctx:runSource"
+      ]
+    },
+    {
+      "capability": "ctx:runStart",
+      "ui": [
+        "ctx:runStart"
+      ]
+    },
+    {
+      "capability": "ctx:runUnpark",
+      "ui": [
+        "ctx:runUnpark"
+      ]
+    },
+    {
+      "capability": "ctx:runUp",
+      "ui": [
+        "ctx:runUp"
+      ]
+    },
+    {
+      "capability": "ctx:scAssets",
+      "ui": [
+        "ctx:scAssets"
+      ]
+    },
+    {
+      "capability": "ctx:scCopyId",
+      "ui": [
+        "ctx:scCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:scCopyName",
+      "ui": [
+        "ctx:scCopyName"
+      ]
+    },
+    {
+      "capability": "ctx:scCopyRef",
+      "ui": [
+        "ctx:scCopyRef"
+      ]
+    },
+    {
+      "capability": "ctx:scDelete",
+      "ui": [
+        "ctx:scDelete"
+      ]
+    },
+    {
+      "capability": "ctx:scDesc",
+      "ui": [
+        "ctx:scDesc"
+      ]
+    },
+    {
+      "capability": "ctx:scNext",
+      "ui": [
+        "ctx:scNext"
+      ]
+    },
+    {
+      "capability": "ctx:scScope",
+      "ui": [
+        "ctx:scScope"
+      ]
+    },
+    {
+      "capability": "ctx:scStatusApproved",
+      "ui": [
+        "ctx:scStatusApproved"
+      ]
+    },
+    {
+      "capability": "ctx:scStatusDraft",
+      "ui": [
+        "ctx:scStatusDraft"
+      ]
+    },
+    {
+      "capability": "ctx:scStatusGenerating",
+      "ui": [
+        "ctx:scStatusGenerating"
+      ]
+    },
+    {
+      "capability": "ctx:scStatusReview",
+      "ui": [
+        "ctx:scStatusReview"
+      ]
+    },
+    {
+      "capability": "ctx:scValue",
+      "ui": [
+        "ctx:scValue"
+      ]
+    },
+    {
+      "capability": "ctx:shCopyContext",
+      "ui": [
+        "ctx:shCopyContext"
+      ]
+    },
+    {
+      "capability": "ctx:shCopyLine",
+      "ui": [
+        "ctx:shCopyLine"
+      ]
+    },
+    {
+      "capability": "ctx:shOnlyAgent",
+      "ui": [
+        "ctx:shOnlyAgent"
+      ]
+    },
+    {
+      "capability": "ctx:shOnlySession",
+      "ui": [
+        "ctx:shOnlySession"
+      ]
+    },
+    {
+      "capability": "ctx:shOpen",
+      "ui": [
+        "ctx:shOpen"
+      ]
+    },
+    {
+      "capability": "ctx:stCopyKey",
+      "ui": [
+        "ctx:stCopyKey"
+      ]
+    },
+    {
+      "capability": "ctx:stCopyVal",
+      "ui": [
+        "ctx:stCopyVal"
+      ]
+    },
+    {
+      "capability": "ctx:stCopyValue",
+      "ui": [
+        "ctx:stCopyValue"
+      ]
+    },
+    {
+      "capability": "ctx:tbCopyInvoke",
+      "ui": [
+        "ctx:tbCopyInvoke"
+      ]
+    },
+    {
+      "capability": "ctx:tbCopyName",
+      "ui": [
+        "ctx:tbCopyName"
+      ]
+    },
+    {
+      "capability": "ctx:tbCopyPath",
+      "ui": [
+        "ctx:tbCopyPath"
+      ]
+    },
+    {
+      "capability": "ctx:tbMcpOff",
+      "ui": [
+        "ctx:tbMcpOff"
+      ]
+    },
+    {
+      "capability": "ctx:tbMcpOn",
+      "ui": [
+        "ctx:tbMcpOn"
+      ]
+    },
+    {
+      "capability": "ctx:tbPlugOff",
+      "ui": [
+        "ctx:tbPlugOff"
+      ]
+    },
+    {
+      "capability": "ctx:tbPlugOn",
+      "ui": [
+        "ctx:tbPlugOn"
+      ]
+    },
+    {
+      "capability": "ctx:tbTools",
+      "ui": [
+        "ctx:tbTools"
+      ]
+    },
+    {
+      "capability": "ctx:tkCopyId",
+      "ui": [
+        "ctx:tkCopyId"
+      ]
+    },
+    {
+      "capability": "ctx:tkCopyOutput",
+      "ui": [
+        "ctx:tkCopyOutput"
+      ]
+    },
+    {
+      "capability": "ctx:tkCopyPrompt",
+      "ui": [
+        "ctx:tkCopyPrompt"
+      ]
+    },
+    {
+      "capability": "ctx:tkCopyTitle",
+      "ui": [
+        "ctx:tkCopyTitle"
+      ]
+    },
+    {
+      "capability": "ctx:tnCopyAll",
+      "ui": [
+        "ctx:tnCopyAll"
+      ]
+    },
+    {
+      "capability": "ctx:tnCopyAnswer",
+      "ui": [
+        "ctx:tnCopyAnswer"
+      ]
+    },
+    {
+      "capability": "ctx:tnCopyPrompt",
+      "ui": [
+        "ctx:tnCopyPrompt"
+      ]
+    },
+    {
+      "capability": "ctx:tnCopyWhere",
+      "ui": [
+        "ctx:tnCopyWhere"
+      ]
+    },
+    {
+      "capability": "ctx:tnFold",
+      "ui": [
+        "ctx:tnFold"
+      ]
+    },
+    {
+      "capability": "ctx:trackBacklog",
+      "ui": [
+        "ctx:trackBacklog"
+      ]
+    },
+    {
+      "capability": "ctx:trackFillOne",
+      "ui": [
+        "ctx:trackFillOne"
+      ]
+    },
+    {
+      "capability": "ctx:trackOnly",
+      "ui": [
+        "ctx:trackOnly"
+      ]
+    },
+    {
+      "capability": "ctx:trackRecord",
+      "ui": [
+        "ctx:trackRecord"
+      ]
+    },
+    {
+      "capability": "ctx:trkCopyCode",
+      "ui": [
+        "ctx:trkCopyCode"
+      ]
+    },
+    {
+      "capability": "ctx:trkCopyReport",
+      "ui": [
+        "ctx:trkCopyReport"
+      ]
+    },
+    {
+      "capability": "ctx:trkCopySessions",
+      "ui": [
+        "ctx:trkCopySessions"
+      ]
+    },
+    {
+      "capability": "ctx:trkCopyStamp",
+      "ui": [
+        "ctx:trkCopyStamp"
+      ]
+    },
+    {
+      "capability": "ctx:vsCopyResult",
+      "ui": [
+        "ctx:vsCopyResult"
+      ]
+    },
+    {
+      "capability": "ctx:vsCopyText",
+      "ui": [
+        "ctx:vsCopyText"
+      ]
+    },
+    {
+      "capability": "ctx:vsCopyTool",
+      "ui": [
+        "ctx:vsCopyTool"
+      ]
+    },
+    {
+      "capability": "ctx:vsOnlyKind",
+      "ui": [
+        "ctx:vsOnlyKind"
+      ]
+    },
+    {
+      "capability": "ctx:vtCopyAll",
+      "ui": [
+        "ctx:vtCopyAll"
+      ]
+    },
+    {
+      "capability": "ctx:vtCopyAnswer",
+      "ui": [
+        "ctx:vtCopyAnswer"
+      ]
+    },
+    {
+      "capability": "ctx:vtCopyPrompt",
+      "ui": [
+        "ctx:vtCopyPrompt"
+      ]
+    },
+    {
+      "capability": "ctx:vtExportOff",
+      "ui": [
+        "ctx:vtExportOff"
+      ]
+    },
+    {
+      "capability": "ctx:vtExportOn",
+      "ui": [
+        "ctx:vtExportOn"
+      ]
+    },
+    {
+      "capability": "ctx:vtExportOnly",
+      "ui": [
+        "ctx:vtExportOnly"
+      ]
+    },
+    {
+      "capability": "ctx:vtFold",
+      "ui": [
+        "ctx:vtFold"
+      ]
+    },
+    {
+      "capability": "ctx:vtJump",
+      "ui": [
+        "ctx:vtJump"
+      ]
+    },
+    {
+      "capability": "ctx:vtOnly",
+      "ui": [
+        "ctx:vtOnly"
+      ]
+    },
+    {
+      "capability": "ctx:vtUnfold",
+      "ui": [
+        "ctx:vtUnfold"
+      ]
+    },
+    {
+      "capability": "ctx:wfStepCopy",
+      "ui": [
+        "ctx:wfStepCopy"
+      ]
+    },
+    {
+      "capability": "ctx:wfStepDown",
+      "ui": [
+        "ctx:wfStepDown"
+      ]
+    },
+    {
+      "capability": "ctx:wfStepUp",
+      "ui": [
+        "ctx:wfStepUp"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#compareWindow",
+      "ui": [
+        "page:dashboard.ts#compareWindow"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#focusTerminal",
+      "ui": [
+        "page:dashboard.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#headerAction",
+      "ui": [
+        "page:dashboard.ts#headerAction"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#interruptSession",
+      "ui": [
+        "page:dashboard.ts#interruptSession"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#manageProjects",
+      "ui": [
+        "page:dashboard.ts#manageProjects"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#openAgent",
+      "ui": [
+        "ctx:msStepAgent",
+        "page:missionsPanel.ts#consoleAgent",
+        "ctx:msTeamOpen",
+        "ctx:ndAgent"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#openFarmSettings",
+      "ui": [
+        "page:dashboard.ts#openFarmSettings"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#openSearch",
+      "ui": [
+        "page:dashboard.ts#openSearch"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#openTimeline",
+      "ui": [
+        "page:dashboard.ts#openTimeline"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#pinSession",
+      "ui": [
+        "page:dashboard.ts#pinSession"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#planUsage",
+      "ui": [
+        "page:dashboard.ts#planUsage"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#refresh",
+      "ui": [
+        "page:dashboard.ts#refresh"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#sessionTurns",
+      "ui": [
+        "page:dashboard.ts#sessionTurns"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#setTableN",
+      "ui": [
+        "page:dashboard.ts#setTableN"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#setUsageEngine",
+      "ui": [
+        "page:dashboard.ts#setUsageEngine"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#startSession",
+      "ui": [
+        "page:dashboard.ts#startSession"
+      ]
+    },
+    {
+      "capability": "dashboard.ts#statusAction",
+      "ui": [
+        "page:dashboard.ts#statusAction"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "delegateInsight",
+      "ui": [
+        "cmd:agentfarm.delegateInsight"
+      ],
+      "ops": [
+        "insights.delegate",
+        "insights.dismiss"
+      ],
+      "core": [
+        "Insight",
+        "buildDelegationPrompt",
+        "delegationTitle"
+      ]
+    },
+    {
+      "capability": "deleteDuty",
+      "ui": [
+        "cmd:agentfarm.deleteDuty"
+      ],
+      "ops": [
+        "duties.delete"
+      ],
+      "core": [
+        "deleteDuty"
+      ]
+    },
+    {
+      "capability": "deleteSchedule",
+      "ui": [
+        "cmd:agentfarm.deleteSchedule"
+      ],
+      "ops": [
+        "schedules.delete"
+      ]
+    },
+    {
+      "capability": "deleteSecret",
+      "ui": [
+        "cmd:agentfarm.deleteSecret"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
+    },
+    {
+      "capability": "deleteTask",
+      "ui": [
+        "cmd:agentfarm.deleteTask"
+      ],
+      "ops": [
+        "tasks.delete"
+      ]
+    },
+    {
+      "capability": "deleteTemplate",
+      "ui": [
+        "cmd:agentfarm.deleteTemplate"
+      ],
+      "ops": [
+        "templates.delete"
+      ]
+    },
+    {
+      "capability": "deleteTrigger",
+      "ui": [
+        "cmd:agentfarm.deleteTrigger"
+      ],
+      "ops": [
+        "triggers.delete"
+      ]
+    },
+    {
+      "capability": "deleteWorkflow",
+      "ui": [
+        "cmd:agentfarm.deleteWorkflow"
+      ],
+      "ops": [
+        "workflows.delete"
+      ]
+    },
+    {
+      "capability": "deleteWorkflowStep",
+      "ui": [
+        "cmd:agentfarm.deleteWorkflowStep"
+      ],
+      "ops": [
+        "workflows.step.delete"
+      ]
+    },
+    {
+      "capability": "disableMcpServer",
+      "ui": [
+        "cmd:agentfarm.disableMcpServer"
+      ],
+      "ops": [
+        "toolbox.enable"
+      ]
+    },
+    {
+      "capability": "dismissInsight",
+      "ui": [
+        "cmd:agentfarm.dismissInsight"
+      ],
+      "ops": [
+        "insights.delegate",
+        "insights.dismiss",
+        "insights.dismissed",
+        "insights.list",
+        "insights.restore"
+      ],
+      "core": [
+        "DismissEntry",
+        "Insight",
+        "insightKey"
+      ]
+    },
+    {
+      "capability": "dismissSession",
+      "ui": [
+        "cmd:agentfarm.dismissSession",
+        "ctx:agentfarm.dismissSession"
+      ],
+      "ops": [
+        "sessions.dismiss",
+        "sessions.files",
+        "sessions.live"
+      ],
+      "core": [
+        "SessionInfo",
+        "readCliSessions",
+        "sessionsDir"
+      ]
+    },
+    {
+      "capability": "distillMemory",
+      "ui": [
+        "cmd:agentfarm.distillMemory",
+        "ctx:agentfarm.distillMemory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "duplicateSkill",
+      "ui": [
+        "cmd:agentfarm.duplicateSkill"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showInformationMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "editDuty",
+      "ui": [
+        "cmd:agentfarm.editDuty"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "editMcpServer",
+      "ui": [
+        "cmd:agentfarm.editMcpServer"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "editSchedule",
+      "ui": [
+        "cmd:agentfarm.editSchedule"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "editTrigger",
+      "ui": [
+        "cmd:agentfarm.editTrigger"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "editWorkflowStep",
+      "ui": [
+        "cmd:agentfarm.editWorkflowStep"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "enableMcpServer",
+      "ui": [
+        "cmd:agentfarm.enableMcpServer"
+      ],
+      "ops": [
+        "toolbox.enable"
+      ]
+    },
+    {
+      "capability": "endSession",
+      "ui": [
+        "cmd:agentfarm.endSession",
+        "ctx:agentfarm.endSession"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#engineCommand",
+      "ui": [
+        "page:enginesPanel.ts#engineCommand"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#engineDocs",
+      "ui": [
+        "page:enginesPanel.ts#engineDocs"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#engineKey",
+      "ui": [
+        "page:enginesPanel.ts#engineKey"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#engineTest",
+      "ui": [
+        "page:enginesPanel.ts#engineTest"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#refresh",
+      "ui": [
+        "page:enginesPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#af-browse",
+      "ui": [
+        "page:evalsPanel.ts#af-browse"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#ev-ab",
+      "ui": [
+        "page:evalsPanel.ts#ev-ab"
+      ],
+      "ops": [
+        "agents.exclude",
+        "agents.roots.remove",
+        "memory.distill"
+      ],
+      "core": [
+        "candidates"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#ev-agent",
+      "ui": [
+        "page:evalsPanel.ts#ev-agent"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#ev-case-delete",
+      "ui": [
+        "page:evalsPanel.ts#ev-case-delete",
+        "ctx:evDelete"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#ev-case-save",
+      "ui": [
+        "page:evalsPanel.ts#ev-case-save"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#ev-run",
+      "ui": [
+        "page:evalsPanel.ts#ev-run"
+      ]
+    },
+    {
+      "capability": "evalsPanel.ts#refresh",
+      "ui": [
+        "page:evalsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "exportAgentPack",
+      "ui": [
+        "cmd:agentfarm.exportAgentPack",
+        "ctx:agentfarm.exportAgentPack"
+      ],
+      "ops": [
+        "agents.pack.export"
+      ]
+    },
+    {
+      "capability": "exportOtel",
+      "ui": [
+        "cmd:agentfarm.exportOtel"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "ENGINE_LABELS"
+      ]
+    },
+    {
+      "capability": "exportOutputsDigest",
+      "ui": [
+        "cmd:agentfarm.exportOutputsDigest"
+      ],
+      "ops": [
+        "constitution.sync"
+      ],
+      "core": [
+        "expandEnvPath"
+      ]
+    },
+    {
+      "capability": "exportRelayScript",
+      "ui": [
+        "cmd:agentfarm.exportRelayScript"
+      ],
+      "ops": [
+        "export.relayScript"
+      ]
+    },
+    {
+      "capability": "exportReport",
+      "ui": [
+        "cmd:agentfarm.exportReport"
+      ],
+      "ops": [
+        "reports.fleet"
+      ]
+    },
+    {
+      "capability": "exportSchtask",
+      "ui": [
+        "cmd:agentfarm.exportSchtask"
+      ],
+      "ops": [
+        "export.schedule"
+      ]
+    },
+    {
+      "capability": "exportSequence",
+      "ui": [
+        "cmd:agentfarm.exportSequence"
+      ],
+      "ops": [
+        "studio.export"
+      ]
+    },
+    {
+      "capability": "farmServiceStatus",
+      "ui": [
+        "cmd:agentfarm.farmServiceStatus"
+      ],
+      "ops": [
+        "service.status"
+      ]
+    },
+    {
+      "capability": "findSession",
+      "ui": [
+        "cmd:agentfarm.findSession"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "fireTrigger",
+      "ui": [
+        "cmd:agentfarm.fireTrigger"
+      ],
+      "ops": [
+        "triggers.fire"
+      ]
+    },
+    {
+      "capability": "fixInsight",
+      "ui": [
+        "cmd:agentfarm.fixInsight"
+      ],
+      "ops": [
+        "insights.delegate",
+        "insights.dismiss"
+      ],
+      "core": [
+        "Insight"
+      ]
+    },
+    {
+      "capability": "fixMemoryIndex",
+      "ui": [
+        "cmd:agentfarm.fixMemoryIndex"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "focusSessionTerminal",
+      "ui": [
+        "cmd:agentfarm.focusSessionTerminal",
+        "ctx:agentfarm.focusSessionTerminal"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "importAgentPack",
+      "ui": [
+        "cmd:agentfarm.importAgentPack"
+      ],
+      "ops": [
+        "constitution.sync"
+      ],
+      "core": [
+        "expandEnvPath"
+      ]
+    },
+    {
+      "capability": "importAgentPackInto",
+      "ui": [
+        "cmd:agentfarm.importAgentPackInto"
+      ],
+      "ops": [
+        "agents.pack.import"
+      ]
+    },
+    {
+      "capability": "insightHistory",
+      "ui": [
+        "cmd:agentfarm.insightHistory",
+        "ctx:agentfarm.insightHistory"
+      ],
+      "ops": [
+        "insights.delegate",
+        "insights.dismiss",
+        "insights.history",
+        "insights.list"
+      ],
+      "core": [
+        "describeRecord",
+        "insightKey",
+        "summarizeInsightHistory"
+      ]
+    },
+    {
+      "capability": "installFarmService",
+      "ui": [
+        "cmd:agentfarm.installFarmService"
+      ],
+      "ops": [
+        "service.install"
+      ],
+      "core": [
+        "installService"
+      ]
+    },
+    {
+      "capability": "installHooks",
+      "ui": [
+        "cmd:agentfarm.installHooks"
+      ],
+      "ops": [
+        "hooks.install"
+      ],
+      "core": [
+        "installHooksInto"
+      ]
+    },
+    {
+      "capability": "instructionHistory",
+      "ui": [
+        "cmd:agentfarm.instructionHistory"
+      ],
+      "ops": [
+        "reports.instructions"
+      ]
+    },
+    {
+      "capability": "interruptSession",
+      "ui": [
+        "cmd:agentfarm.interruptSession",
+        "ctx:agentfarm.interruptSession"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "lapClear",
+      "ui": [
+        "cmd:agentfarm.lapClear",
+        "ctx:agentfarm.lapClear"
+      ],
+      "ops": [
+        "usage.lap.clear"
+      ]
+    },
+    {
+      "capability": "lapReset",
+      "ui": [
+        "cmd:agentfarm.lapReset",
+        "ctx:agentfarm.lapReset"
+      ],
+      "ops": [
+        "usage.lap.reset"
+      ]
+    },
+    {
+      "capability": "launchSession",
+      "ui": [
+        "cmd:agentfarm.launchSession",
+        "ctx:agentfarm.launchSession"
+      ],
+      "ops": [
+        "launch.profile.set"
+      ],
+      "core": [
+        "RunSurface"
+      ]
+    },
+    {
+      "capability": "listSecrets",
+      "ui": [
+        "cmd:agentfarm.listSecrets"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
+    },
+    {
+      "capability": "livingPanel.ts#af-browse",
+      "ui": [
+        "page:livingPanel.ts#af-browse"
+      ]
+    },
+    {
+      "capability": "livingPanel.ts#checks-save",
+      "ui": [
+        "page:livingPanel.ts#checks-save"
+      ]
+    },
+    {
+      "capability": "livingPanel.ts#goto",
+      "ui": [
+        "page:livingPanel.ts#goto",
+        "ctx:lvGo"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "livingPanel.ts#openSettingsJson",
+      "ui": [
+        "page:livingPanel.ts#openSettingsJson"
+      ]
+    },
+    {
+      "capability": "livingPanel.ts#refresh",
+      "ui": [
+        "page:livingPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "manageProjects",
+      "ui": [
+        "cmd:agentfarm.manageProjects"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "memoryGraph.ts#mem-ask",
+      "ui": [
+        "page:memoryGraph.ts#mem-ask"
+      ]
+    },
+    {
+      "capability": "memoryGraph.ts#mem-distill",
+      "ui": [
+        "page:memoryGraph.ts#mem-distill"
+      ]
+    },
+    {
+      "capability": "memoryGraph.ts#mem-fix",
+      "ui": [
+        "page:memoryGraph.ts#mem-fix"
+      ]
+    },
+    {
+      "capability": "memoryGraph.ts#mem-save",
+      "ui": [
+        "page:memoryGraph.ts#mem-save"
+      ]
+    },
+    {
+      "capability": "memoryGraph.ts#mem-sync",
+      "ui": [
+        "page:memoryGraph.ts#mem-sync"
+      ],
+      "ops": [
+        "memory.archive",
+        "memory.copy",
+        "memory.distill"
+      ],
+      "core": [
+        "copyMemoryFileTo",
+        "resolveMemoryFile"
+      ]
+    },
+    {
+      "capability": "memoryGraph.ts#refresh",
+      "ui": [
+        "page:memoryGraph.ts#refresh"
+      ]
+    },
+    {
+      "capability": "missionAnswer",
+      "ui": [
+        "cmd:agentfarm.missionAnswer"
+      ],
+      "ops": [
+        "missions.answer"
+      ]
+    },
+    {
+      "capability": "missionApprove",
+      "ui": [
+        "cmd:agentfarm.missionApprove"
+      ],
+      "ops": [
+        "missions.approve"
+      ]
+    },
+    {
+      "capability": "missionCancel",
+      "ui": [
+        "cmd:agentfarm.missionCancel"
+      ],
+      "ops": [
+        "missions.cancel"
+      ]
+    },
+    {
+      "capability": "missionDelete",
+      "ui": [
+        "cmd:agentfarm.missionDelete"
+      ],
+      "ops": [
+        "missions.run.delete"
+      ]
+    },
+    {
+      "capability": "missionPause",
+      "ui": [
+        "cmd:agentfarm.missionPause"
+      ],
+      "ops": [
+        "missions.pause"
+      ]
+    },
+    {
+      "capability": "missionReject",
+      "ui": [
+        "cmd:agentfarm.missionReject"
+      ],
+      "ops": [
+        "missions.approve"
+      ]
+    },
+    {
+      "capability": "missionRerun",
+      "ui": [
+        "cmd:agentfarm.missionRerun"
+      ],
+      "ops": [
+        "missions.rerun"
+      ]
+    },
+    {
+      "capability": "missionResume",
+      "ui": [
+        "cmd:agentfarm.missionResume"
+      ],
+      "ops": [
+        "missions.resume"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#answer",
+      "ui": [
+        "page:missionsPanel.ts#answer"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#approve",
+      "ui": [
+        "ctx:msnApprove"
+      ],
+      "ops": [
+        "missions.rerun",
+        "studio.rerun",
+        "tasks.rerun"
+      ],
+      "core": [
+        "rerun"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#consoleAgent",
+      "ui": [
+        "ctx:msTeamTalk"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#control",
+      "ui": [
+        "page:missionsPanel.ts#control",
+        "page:missionsPanel.ts#approve",
+        "page:missionsPanel.ts#reject",
+        "page:missionsPanel.ts#rerun",
+        "page:missionsPanel.ts#delete",
+        "page:projectsPanel.ts#delete",
+        "page:secretsPanel.ts#delete",
+        "page:studioPanel.ts#rerun",
+        "page:tasksPanel.ts#delete",
+        "page:tasksPanel.ts#approve",
+        "ctx:msnOpen",
+        "ctx:msnFold"
+      ],
+      "ops": [
+        "console.interrupt",
+        "missions.start"
+      ],
+      "core": [
+        "control"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#create",
+      "ui": [
+        "page:missionsPanel.ts#create"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#delete",
+      "ui": [
+        "ctx:msnDelete"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#pickFolder",
+      "ui": [
+        "page:missionsPanel.ts#pickFolder"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#refresh",
+      "ui": [
+        "page:missionsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#reject",
+      "ui": [
+        "ctx:msnReject"
+      ],
+      "ops": [
+        "missions.rerun",
+        "studio.rerun",
+        "tasks.rerun"
+      ],
+      "core": [
+        "rerun"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#rerun",
+      "ui": [
+        "ctx:msnRerun"
+      ],
+      "ops": [
+        "missions.rerun",
+        "studio.rerun",
+        "tasks.rerun"
+      ],
+      "core": [
+        "rerun"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#tail",
+      "ui": [
+        "page:missionsPanel.ts#tail"
+      ]
+    },
+    {
+      "capability": "missionStepOutput",
+      "ui": [
+        "cmd:agentfarm.missionStepOutput"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "moveDutyDown",
+      "ui": [
+        "cmd:agentfarm.moveDutyDown"
+      ],
+      "ops": [
+        "duties.move"
+      ],
+      "core": [
+        "moveDuty"
+      ]
+    },
+    {
+      "capability": "moveDutyUp",
+      "ui": [
+        "cmd:agentfarm.moveDutyUp"
+      ],
+      "ops": [
+        "duties.move"
+      ],
+      "core": [
+        "moveDuty"
+      ]
+    },
+    {
+      "capability": "moveWorkflowStepDown",
+      "ui": [
+        "cmd:agentfarm.moveWorkflowStepDown"
+      ],
+      "ops": [
+        "workflows.step.move"
+      ]
+    },
+    {
+      "capability": "moveWorkflowStepUp",
+      "ui": [
+        "cmd:agentfarm.moveWorkflowStepUp"
+      ],
+      "ops": [
+        "workflows.step.move"
+      ]
+    },
+    {
+      "capability": "newAgent",
+      "ui": [
+        "cmd:agentfarm.newAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "newMission",
+      "ui": [
+        "cmd:agentfarm.newMission"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show(, showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "newProduction",
+      "ui": [
+        "cmd:agentfarm.newProduction"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "newProject",
+      "ui": [
+        "cmd:agentfarm.newProject"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "newWorkflow",
+      "ui": [
+        "cmd:agentfarm.newWorkflow"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "noticesPanel.ts#answer",
+      "ui": [
+        "page:noticesPanel.ts#answer"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#clearRead",
+      "ui": [
+        "page:noticesPanel.ts#clearRead"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#configureDocOpen",
+      "ui": [
+        "page:noticesPanel.ts#configureDocOpen"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#convertToQueue",
+      "ui": [
+        "page:noticesPanel.ts#convertToQueue"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#dismiss",
+      "ui": [
+        "page:noticesPanel.ts#dismiss",
+        "ctx:ntReport",
+        "ctx:ntExport",
+        "ctx:ntDismiss",
+        "ctx:ntDelete"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#dismissMany",
+      "ui": [
+        "page:noticesPanel.ts#dismissMany"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#edit",
+      "ui": [
+        "page:noticesPanel.ts#edit"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#exportChoose",
+      "ui": [
+        "page:noticesPanel.ts#exportChoose"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#handoffNotice",
+      "ui": [
+        "ctx:ntEdit",
+        "ctx:ntDecline",
+        "ctx:ntHand"
+      ],
+      "ops": [
+        "missions.answer",
+        "notices.resolve"
+      ],
+      "core": [
+        "decline"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#markAllRead",
+      "ui": [
+        "page:noticesPanel.ts#markAllRead"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#markRead",
+      "ui": [
+        "page:noticesPanel.ts#markRead",
+        "page:noticesPanel.ts#pin",
+        "page:noticesPanel.ts#setStars",
+        "page:noticesPanel.ts#handoffNotice",
+        "page:noticesPanel.ts#decline",
+        "page:noticesPanel.ts#exportOne",
+        "ctx:ntOpen",
+        "page:noticesPanel.ts#openReport",
+        "ctx:ntFold"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#markReadMany",
+      "ui": [
+        "page:noticesPanel.ts#markReadMany"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#openExternal",
+      "ui": [
+        "page:noticesPanel.ts#openExternal",
+        "page:queuePanel.ts#openExternal",
+        "page:toolboxPanel.ts#openExternal",
+        "page:toolboxPanel.ts#skillScope",
+        "ctx:tbHome",
+        "ctx:tbProbe",
+        "ctx:tbMcpEdit"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#openProject",
+      "ui": [
+        "page:noticesPanel.ts#openProject"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#openQueueItem",
+      "ui": [
+        "page:noticesPanel.ts#openQueueItem"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#refresh",
+      "ui": [
+        "page:noticesPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#setProject",
+      "ui": [
+        "page:noticesPanel.ts#setProject"
+      ]
+    },
+    {
+      "capability": "noticesPanel.ts#undo",
+      "ui": [
+        "page:noticesPanel.ts#undo"
+      ]
+    },
+    {
+      "capability": "openAgentDetail",
+      "ui": [
+        "cmd:agentfarm.openAgentDetail",
+        "ctx:agentfarm.openAgentDetail"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openAgentInNewWindow",
+      "ui": [
+        "cmd:agentfarm.openAgentInNewWindow",
+        "ctx:agentfarm.openAgentInNewWindow"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openAirtable",
+      "ui": [
+        "cmd:agentfarm.openAirtable"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openBacklog",
+      "ui": [
+        "cmd:agentfarm.openBacklog"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openBoard",
+      "ui": [
+        "cmd:agentfarm.openBoard"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openCapabilities",
+      "ui": [
+        "cmd:agentfarm.openCapabilities"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openConsole",
+      "ui": [
+        "cmd:agentfarm.openConsole"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openDashboard",
+      "ui": [
+        "cmd:agentfarm.openDashboard"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openDoc.ts#custom",
+      "ui": [
+        "page:openDoc.ts#custom"
+      ]
+    },
+    {
+      "capability": "openDoc.ts#obsidian",
+      "ui": [
+        "page:openDoc.ts#obsidian"
+      ]
+    },
+    {
+      "capability": "openDoc.ts#preview",
+      "ui": [
+        "page:openDoc.ts#preview"
+      ]
+    },
+    {
+      "capability": "openDoc.ts#vscode",
+      "ui": [
+        "page:openDoc.ts#vscode"
+      ]
+    },
+    {
+      "capability": "openDuties",
+      "ui": [
+        "cmd:agentfarm.openDuties",
+        "ctx:agentfarm.openDuties"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only showInformationMessage, executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openEditedFile",
+      "ui": [
+        "cmd:agentfarm.openEditedFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openEngines",
+      "ui": [
+        "cmd:agentfarm.openEngines"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openEvals",
+      "ui": [
+        "cmd:agentfarm.openEvals"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openExamples",
+      "ui": [
+        "cmd:agentfarm.openExamples"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openFarmSettings",
+      "ui": [
+        "cmd:agentfarm.openFarmSettings"
+      ],
+      "ops": [
+        "constitution.sync",
+        "docopen.get"
+      ],
+      "core": [
+        "DOC_OPEN_MODES",
+        "scanRoots"
+      ]
+    },
+    {
+      "capability": "openFile",
+      "ui": [
+        "cmd:agentfarm.openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openForecast",
+      "ui": [
+        "cmd:agentfarm.openForecast"
+      ]
+    },
+    {
+      "capability": "openGallery",
+      "ui": [
+        "cmd:agentfarm.openGallery"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openGuide",
+      "ui": [
+        "cmd:agentfarm.openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, openGuide, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openLiving",
+      "ui": [
+        "cmd:agentfarm.openLiving"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openMemoryGraph",
+      "ui": [
+        "cmd:agentfarm.openMemoryGraph",
+        "ctx:agentfarm.openMemoryGraph"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openMissions",
+      "ui": [
+        "cmd:agentfarm.openMissions"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openNeeds",
+      "ui": [
+        "cmd:agentfarm.openNeeds"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openNotices",
+      "ui": [
+        "cmd:agentfarm.openNotices"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openPortfolio",
+      "ui": [
+        "cmd:agentfarm.openPortfolio"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openProject",
+      "ui": [
+        "cmd:agentfarm.openProject"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openProjects",
+      "ui": [
+        "cmd:agentfarm.openProjects"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openQueue",
+      "ui": [
+        "cmd:agentfarm.openQueue"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openRoadmap",
+      "ui": [
+        "cmd:agentfarm.openRoadmap"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openSecrets",
+      "ui": [
+        "cmd:agentfarm.openSecrets"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openSession",
+      "ui": [
+        "cmd:agentfarm.openSession",
+        "ctx:agentfarm.openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openSessionAgent",
+      "ui": [
+        "cmd:agentfarm.openSessionAgent",
+        "ctx:agentfarm.openSessionAgent"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "openSessions",
+      "ui": [
+        "cmd:agentfarm.openSessions"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openStudio",
+      "ui": [
+        "cmd:agentfarm.openStudio"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openTaskAnalytics",
+      "ui": [
+        "cmd:agentfarm.openTaskAnalytics"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openTaskHistory",
+      "ui": [
+        "cmd:agentfarm.openTaskHistory",
+        "ctx:agentfarm.openTaskHistory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openTaskOutput",
+      "ui": [
+        "cmd:agentfarm.openTaskOutput"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only showInformationMessage, executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openTasks",
+      "ui": [
+        "cmd:agentfarm.openTasks"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openTimeline",
+      "ui": [
+        "cmd:agentfarm.openTimeline"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openToolbox",
+      "ui": [
+        "cmd:agentfarm.openToolbox"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openTurns",
+      "ui": [
+        "cmd:agentfarm.openTurns"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openUltraRoadmap",
+      "ui": [
+        "cmd:agentfarm.openUltraRoadmap"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openWebView",
+      "ui": [
+        "cmd:agentfarm.openWebView"
+      ]
+    },
+    {
+      "capability": "pauseAutomations",
+      "ui": [
+        "cmd:agentfarm.pauseAutomations"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "pinSession",
+      "ui": [
+        "cmd:agentfarm.pinSession",
+        "ctx:agentfarm.pinSession"
+      ],
+      "ops": [
+        "sessions.files",
+        "sessions.pin"
+      ],
+      "core": [
+        "SessionInfo",
+        "isPinned",
+        "togglePin"
+      ]
+    },
+    {
+      "capability": "planUsageRefresh",
+      "ui": [
+        "cmd:agentfarm.planUsageRefresh",
+        "ctx:agentfarm.planUsageRefresh"
+      ],
+      "ops": [
+        "usage.plan"
+      ]
+    },
+    {
+      "capability": "portfolioPanel.ts#agent-new",
+      "ui": [
+        "page:portfolioPanel.ts#agent-new"
+      ],
+      "ops": [
+        "agents.pack.import"
+      ],
+      "core": [
+        "importPack"
+      ]
+    },
+    {
+      "capability": "portfolioPanel.ts#assignProject",
+      "ui": [
+        "page:portfolioPanel.ts#assignProject"
+      ]
+    },
+    {
+      "capability": "portfolioPanel.ts#manageProjects",
+      "ui": [
+        "page:portfolioPanel.ts#manageProjects"
+      ]
+    },
+    {
+      "capability": "portfolioPanel.ts#refresh",
+      "ui": [
+        "page:portfolioPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "portfolioPanel.ts#startSession",
+      "ui": [
+        "page:portfolioPanel.ts#startSession"
+      ]
+    },
+    {
+      "capability": "projectFromSession",
+      "ui": [
+        "cmd:agentfarm.projectFromSession",
+        "ctx:agentfarm.projectFromSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "projectHandover",
+      "ui": [
+        "cmd:agentfarm.projectHandover"
+      ],
+      "ops": [
+        "projects.handover"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#applyBackfill",
+      "ui": [
+        "page:projectsPanel.ts#applyBackfill"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#archive",
+      "ui": [
+        "page:projectsPanel.ts#archive"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogAdd",
+      "ui": [
+        "page:projectsPanel.ts#backlogAdd"
+      ],
+      "ops": [
+        "projects.backlog.add"
+      ],
+      "core": [
+        "backlogAdd"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogArchive",
+      "ui": [
+        "page:projectsPanel.ts#backlogArchive"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogCode",
+      "ui": [
+        "page:projectsPanel.ts#backlogCode"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogGather",
+      "ui": [
+        "page:projectsPanel.ts#backlogGather",
+        "ctx:backlogTrack",
+        "page:projectsPanel.ts#backlogJoinParent",
+        "ctx:backlogGather"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogJoinParent",
+      "ui": [
+        "ctx:backlogJoinParent"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogMove",
+      "ui": [
+        "page:projectsPanel.ts#backlogMove"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogOpenItem",
+      "ui": [
+        "page:projectsPanel.ts#backlogOpenItem",
+        "ctx:trackOpen"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogQueue",
+      "ui": [
+        "page:projectsPanel.ts#backlogQueue"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogReorder",
+      "ui": [
+        "page:projectsPanel.ts#backlogReorder"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogSet",
+      "ui": [
+        "page:projectsPanel.ts#backlogSet"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogState",
+      "ui": [
+        "page:projectsPanel.ts#backlogState"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#backlogTidy",
+      "ui": [
+        "page:projectsPanel.ts#backlogTidy"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#browseFolder",
+      "ui": [
+        "page:projectsPanel.ts#browseFolder"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#create",
+      "ui": [
+        "page:projectsPanel.ts#create"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#focusTerminal",
+      "ui": [
+        "page:projectsPanel.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#handover",
+      "ui": [
+        "page:projectsPanel.ts#handover"
+      ],
+      "ops": [
+        "projects.get",
+        "projects.handover",
+        "search.transcripts"
+      ],
+      "core": [
+        "handover"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#interruptSession",
+      "ui": [
+        "page:projectsPanel.ts#interruptSession"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#mission",
+      "ui": [
+        "page:projectsPanel.ts#mission"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#newDoc",
+      "ui": [
+        "page:projectsPanel.ts#newDoc"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#newSchedule",
+      "ui": [
+        "page:projectsPanel.ts#newSchedule"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#newTask",
+      "ui": [
+        "page:projectsPanel.ts#newTask"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#newTrigger",
+      "ui": [
+        "page:projectsPanel.ts#newTrigger"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#notice",
+      "ui": [
+        "page:projectsPanel.ts#notice"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#openDoc",
+      "ui": [
+        "page:projectsPanel.ts#openDoc"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#openLink",
+      "ui": [
+        "page:projectsPanel.ts#openLink",
+        "ctx:projReveal",
+        "ctx:feedOpen"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#openWorkRow",
+      "ui": [
+        "page:projectsPanel.ts#openWorkRow"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#pickFolder",
+      "ui": [
+        "page:projectsPanel.ts#pickFolder"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#pinSession",
+      "ui": [
+        "page:projectsPanel.ts#pinSession"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#planAdd",
+      "ui": [
+        "page:projectsPanel.ts#planAdd"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#planCheck",
+      "ui": [
+        "page:projectsPanel.ts#planCheck"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#queue",
+      "ui": [
+        "page:projectsPanel.ts#queue"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#queueAdd",
+      "ui": [
+        "page:projectsPanel.ts#queueAdd",
+        "ctx:backlogQueue"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#recreateFolder",
+      "ui": [
+        "page:projectsPanel.ts#recreateFolder"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#refresh",
+      "ui": [
+        "page:projectsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#rescan",
+      "ui": [
+        "page:projectsPanel.ts#rescan"
+      ],
+      "ops": [
+        "insights.list",
+        "projects.rescan"
+      ],
+      "core": [
+        "rescan"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#revealFolder",
+      "ui": [
+        "page:projectsPanel.ts#revealFolder",
+        "page:timeline.ts#revealFolder",
+        "ctx:projSessions",
+        "ctx:projActive",
+        "ctx:projInactive"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#save",
+      "ui": [
+        "page:projectsPanel.ts#save"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#savePeople",
+      "ui": [
+        "page:projectsPanel.ts#savePeople"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#saveTemplate",
+      "ui": [
+        "page:projectsPanel.ts#saveTemplate"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#schedule",
+      "ui": [
+        "page:projectsPanel.ts#schedule"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#selectDoc",
+      "ui": [
+        "page:projectsPanel.ts#selectDoc",
+        "ctx:planOpen",
+        "page:settingsPanel.ts#docOpenSet",
+        "ctx:docOpen",
+        "ctx:docShow"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#sessionTurns",
+      "ui": [
+        "page:projectsPanel.ts#sessionTurns"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#setActive",
+      "ui": [
+        "page:projectsPanel.ts#setActive",
+        "page:projectsPanel.ts#openSessions",
+        "ctx:projOpen"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#setTableN",
+      "ui": [
+        "page:projectsPanel.ts#setTableN"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#startSession",
+      "ui": [
+        "page:projectsPanel.ts#startSession"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#suggestFolder",
+      "ui": [
+        "page:projectsPanel.ts#suggestFolder"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#task",
+      "ui": [
+        "page:projectsPanel.ts#task"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#taskAction",
+      "ui": [
+        "page:projectsPanel.ts#taskAction"
+      ],
+      "ops": [
+        "tasks.cancel",
+        "tasks.rerun"
+      ],
+      "core": [
+        "cancelTask",
+        "retryTask"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#trackBackfill",
+      "ui": [
+        "page:projectsPanel.ts#trackBackfill"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#trackRebuild",
+      "ui": [
+        "page:projectsPanel.ts#trackRebuild"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#trackRecord",
+      "ui": [
+        "page:projectsPanel.ts#trackRecord"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#trigger",
+      "ui": [
+        "page:projectsPanel.ts#trigger"
+      ]
+    },
+    {
+      "capability": "projectsPanel.ts#view",
+      "ui": [
+        "page:projectsPanel.ts#view"
+      ]
+    },
+    {
+      "capability": "queueAdd",
+      "ui": [
+        "cmd:agentfarm.queueAdd"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "queuePanel.ts#add",
+      "ui": [
+        "page:queuePanel.ts#add"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#answer",
+      "ui": [
+        "page:queuePanel.ts#answer"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#configureDocOpen",
+      "ui": [
+        "page:queuePanel.ts#configureDocOpen"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#drop",
+      "ui": [
+        "ctx:qHand",
+        "ctx:qDrop"
+      ],
+      "ops": [
+        "workflows.resume"
+      ],
+      "core": [
+        "handoff"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#edit",
+      "ui": [
+        "page:queuePanel.ts#edit"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#openProject",
+      "ui": [
+        "page:queuePanel.ts#openProject"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#refresh",
+      "ui": [
+        "page:queuePanel.ts#refresh"
+      ],
+      "ops": [
+        "projects.backlog.open"
+      ],
+      "core": [
+        "openDoc"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#remove",
+      "ui": [
+        "page:queuePanel.ts#remove",
+        "page:toolboxPanel.ts#remove",
+        "ctx:qAnswer",
+        "ctx:qEdit"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#remove",
+      "ui": [
+        "ctx:qRemove",
+        "page:toolboxPanel.ts#probe",
+        "page:toolboxPanel.ts#togglePlugin",
+        "page:toolboxPanel.ts#toggleMcp",
+        "ctx:tbRemove"
+      ],
+      "ops": [
+        "living.check.add",
+        "living.checks",
+        "projects.backlog",
+        "toolbox.enable",
+        "toolbox.mcptools"
+      ],
+      "core": [
+        "probe",
+        "setPluginEnabled",
+        "setServerDisabled",
+        "warn"
+      ]
+    },
+    {
+      "capability": "queuePanel.ts#setProject",
+      "ui": [
+        "page:queuePanel.ts#setProject"
+      ]
+    },
+    {
+      "capability": "quickMenu",
+      "ui": [
+        "cmd:agentfarm.quickMenu"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "quickStart",
+      "ui": [
+        "cmd:agentfarm.quickStart"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "refresh",
+      "ui": [
+        "cmd:agentfarm.refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "registerAsset",
+      "ui": [
+        "cmd:agentfarm.registerAsset"
+      ],
+      "ops": [
+        "studio.asset.register"
+      ],
+      "core": [
+        "registerExternalAsset"
+      ]
+    },
+    {
+      "capability": "removeFarmService",
+      "ui": [
+        "cmd:agentfarm.removeFarmService"
+      ],
+      "ops": [
+        "service.remove"
+      ],
+      "core": [
+        "removeService"
+      ]
+    },
+    {
+      "capability": "removeHooks",
+      "ui": [
+        "cmd:agentfarm.removeHooks"
+      ],
+      "ops": [
+        "hooks.remove"
+      ],
+      "core": [
+        "removeHooksFrom"
+      ]
+    },
+    {
+      "capability": "removeMcpServer",
+      "ui": [
+        "cmd:agentfarm.removeMcpServer"
+      ],
+      "ops": [
+        "toolbox.remove"
+      ]
+    },
+    {
+      "capability": "removeSkill",
+      "ui": [
+        "cmd:agentfarm.removeSkill"
+      ],
+      "ops": [
+        "toolbox.remove"
+      ]
+    },
+    {
+      "capability": "renameSession",
+      "ui": [
+        "cmd:agentfarm.renameSession",
+        "ctx:agentfarm.renameSession"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "renameWorkflow",
+      "ui": [
+        "cmd:agentfarm.renameWorkflow"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "rerunMedia",
+      "ui": [
+        "cmd:agentfarm.rerunMedia"
+      ],
+      "ops": [
+        "studio.rerun"
+      ]
+    },
+    {
+      "capability": "rescanProjects",
+      "ui": [
+        "cmd:agentfarm.rescanProjects"
+      ],
+      "ops": [
+        "projects.rescan"
+      ],
+      "core": [
+        "scanProjectsRoot"
+      ]
+    },
+    {
+      "capability": "restoreInsights",
+      "ui": [
+        "cmd:agentfarm.restoreInsights",
+        "ctx:agentfarm.restoreInsights"
+      ],
+      "ops": [
+        "insights.dismiss",
+        "insights.dismissed",
+        "insights.restore"
+      ],
+      "core": [
+        "DismissEntry"
+      ]
+    },
+    {
+      "capability": "resumeAutomations",
+      "ui": [
+        "cmd:agentfarm.resumeAutomations"
+      ],
+      "ops": [
+        "automations.resume"
+      ]
+    },
+    {
+      "capability": "resumeInConsole",
+      "ui": [
+        "cmd:agentfarm.resumeInConsole",
+        "ctx:agentfarm.resumeInConsole"
+      ],
+      "ops": [
+        "console.start",
+        "sessions.dismiss",
+        "sessions.files",
+        "sessions.live"
+      ],
+      "core": [
+        "SessionInfo",
+        "carriedTotals",
+        "ownerOf",
+        "readCliSessions"
+      ]
+    },
+    {
+      "capability": "resumeSession",
+      "ui": [
+        "cmd:agentfarm.resumeSession",
+        "ctx:agentfarm.resumeSession"
+      ],
+      "ops": [
+        "sessions.dismiss",
+        "sessions.files",
+        "sessions.live",
+        "sessions.start",
+        "tasks.add"
+      ],
+      "core": [
+        "ENGINE_LABELS",
+        "LaunchOptions",
+        "SessionInfo",
+        "engineRefusal",
+        "ownerOf",
+        "readCliSessions",
+        "withDefaults"
+      ]
+    },
+    {
+      "capability": "resumeWorkflow",
+      "ui": [
+        "cmd:agentfarm.resumeWorkflow"
+      ],
+      "ops": [
+        "workflows.resume"
+      ]
+    },
+    {
+      "capability": "retryTask",
+      "ui": [
+        "cmd:agentfarm.retryTask"
+      ],
+      "ops": [
+        "tasks.rerun"
+      ]
+    },
+    {
+      "capability": "retryTaskEdit",
+      "ui": [
+        "cmd:agentfarm.retryTaskEdit"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "revealAgent",
+      "ui": [
+        "cmd:agentfarm.revealAgent",
+        "ctx:agentfarm.revealAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "revealSessionFolder",
+      "ui": [
+        "cmd:agentfarm.revealSessionFolder",
+        "ctx:agentfarm.revealSessionFolder"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "revealSkill",
+      "ui": [
+        "cmd:agentfarm.revealSkill"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "revealTaskTerminal",
+      "ui": [
+        "cmd:agentfarm.revealTaskTerminal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "reviewEvalCases",
+      "ui": [
+        "cmd:agentfarm.reviewEvalCases"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "reviewSuggestions",
+      "ui": [
+        "cmd:agentfarm.reviewSuggestions"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "runEvals",
+      "ui": [
+        "cmd:agentfarm.runEvals"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "runParallel",
+      "ui": [
+        "cmd:agentfarm.runParallel"
+      ]
+    },
+    {
+      "capability": "runPulseNow",
+      "ui": [
+        "cmd:agentfarm.runPulseNow"
+      ],
+      "ops": [
+        "living.pulse"
+      ]
+    },
+    {
+      "capability": "runScheduleNow",
+      "ui": [
+        "cmd:agentfarm.runScheduleNow"
+      ],
+      "ops": [
+        "schedules.runNow"
+      ]
+    },
+    {
+      "capability": "runTaskNext",
+      "ui": [
+        "cmd:agentfarm.runTaskNext"
+      ],
+      "ops": [
+        "tasks.runNext"
+      ]
+    },
+    {
+      "capability": "runTemplate",
+      "ui": [
+        "cmd:agentfarm.runTemplate"
+      ],
+      "ops": [
+        "templates.run"
+      ]
+    },
+    {
+      "capability": "runWorkflow",
+      "ui": [
+        "cmd:agentfarm.runWorkflow"
+      ],
+      "ops": [
+        "workflows.run"
+      ]
+    },
+    {
+      "capability": "sampleQualityNow",
+      "ui": [
+        "cmd:agentfarm.sampleQualityNow"
+      ],
+      "ops": [
+        "quality.sample"
+      ]
+    },
+    {
+      "capability": "saveProjectTemplate",
+      "ui": [
+        "cmd:agentfarm.saveProjectTemplate"
+      ],
+      "ops": [
+        "projects.get",
+        "projects.template.save"
+      ],
+      "core": [
+        "scanRoles"
+      ]
+    },
+    {
+      "capability": "saveTaskTemplate",
+      "ui": [
+        "cmd:agentfarm.saveTaskTemplate"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "scanMemoryContradictions",
+      "ui": [
+        "cmd:agentfarm.scanMemoryContradictions"
+      ],
+      "ops": [
+        "memory.contradictions"
+      ],
+      "core": [
+        "scanContradictions"
+      ]
+    },
+    {
+      "capability": "scanSuggestionsNow",
+      "ui": [
+        "cmd:agentfarm.scanSuggestionsNow"
+      ],
+      "ops": [
+        "suggestions.scan"
+      ]
+    },
+    {
+      "capability": "searchPanel.ts#buildIndex",
+      "ui": [
+        "page:searchPanel.ts#buildIndex"
+      ]
+    },
+    {
+      "capability": "searchPanel.ts#findSession",
+      "ui": [
+        "page:searchPanel.ts#findSession"
+      ]
+    },
+    {
+      "capability": "searchPanel.ts#openFarmSettings",
+      "ui": [
+        "page:searchPanel.ts#openFarmSettings"
+      ]
+    },
+    {
+      "capability": "searchPanel.ts#openTimeline",
+      "ui": [
+        "page:searchPanel.ts#openTimeline"
+      ]
+    },
+    {
+      "capability": "searchPanel.ts#search",
+      "ui": [
+        "page:searchPanel.ts#search"
+      ],
+      "ops": [
+        "search.transcripts"
+      ],
+      "core": [
+        "isSearchRole",
+        "parseForeign",
+        "searchLiveEvents",
+        "searchMemory",
+        "searchTranscripts"
+      ]
+    },
+    {
+      "capability": "searchTranscripts",
+      "ui": [
+        "cmd:agentfarm.searchTranscripts"
+      ],
+      "ops": [
+        "search.transcripts"
+      ],
+      "core": [
+        "parseCliViewer",
+        "searchTranscripts"
+      ]
+    },
+    {
+      "capability": "secretsPanel.ts#refresh",
+      "ui": [
+        "page:secretsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "secretsPanel.ts#sec-save",
+      "ui": [
+        "page:secretsPanel.ts#sec-save"
+      ]
+    },
+    {
+      "capability": "sendDigestNow",
+      "ui": [
+        "cmd:agentfarm.sendDigestNow"
+      ],
+      "ops": [
+        "digest.daily"
+      ]
+    },
+    {
+      "capability": "sessionShelf",
+      "ui": [
+        "cmd:agentfarm.sessionShelf"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "ENGINE_LABELS",
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#focusTerminal",
+      "ui": [
+        "page:sessionsPanel.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#interruptSession",
+      "ui": [
+        "page:sessionsPanel.ts#interruptSession"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#pinSession",
+      "ui": [
+        "page:sessionsPanel.ts#pinSession"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#refresh",
+      "ui": [
+        "page:sessionsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#sessionTurns",
+      "ui": [
+        "page:sessionsPanel.ts#sessionTurns"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#setTableN",
+      "ui": [
+        "page:sessionsPanel.ts#setTableN"
+      ]
+    },
+    {
+      "capability": "sessionToQueue",
+      "ui": [
+        "cmd:agentfarm.sessionToQueue",
+        "ctx:agentfarm.sessionToQueue"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "SessionInfo"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#copyStep",
+      "ui": [
+        "page:sessionViewer.ts#copyStep"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#ctxCapture",
+      "ui": [
+        "page:sessionViewer.ts#ctxCapture"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#exportChoose",
+      "ui": [
+        "page:sessionViewer.ts#exportChoose"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#exportMd",
+      "ui": [
+        "page:sessionViewer.ts#exportMd"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#focusTerminal",
+      "ui": [
+        "page:sessionViewer.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#openDashboard",
+      "ui": [
+        "page:sessionViewer.ts#openDashboard"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#openEditedFile",
+      "ui": [
+        "page:sessionViewer.ts#openEditedFile",
+        "ctx:vsFile",
+        "page:sessionViewer.ts#revealFile",
+        "ctx:vfOpen",
+        "ctx:vfCopy",
+        "ctx:dhOpen"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#openRaw",
+      "ui": [
+        "page:sessionViewer.ts#openRaw"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionViewer.ts#openTimeline",
+      "ui": [
+        "page:sessionViewer.ts#openTimeline"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#pinSession",
+      "ui": [
+        "page:sessionViewer.ts#pinSession"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#refresh",
+      "ui": [
+        "page:sessionViewer.ts#refresh"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#renameSession",
+      "ui": [
+        "page:sessionViewer.ts#renameSession"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#resume",
+      "ui": [
+        "page:sessionViewer.ts#resume"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#resumeConsole",
+      "ui": [
+        "page:sessionViewer.ts#resumeConsole"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#sessionFileEdits",
+      "ui": [
+        "page:sessionViewer.ts#sessionFileEdits",
+        "ctx:vfDiff",
+        "ctx:vfHunks",
+        "ctx:vfReveal"
+      ],
+      "ops": [
+        "sessions.files"
+      ],
+      "core": [
+        "collectEdits",
+        "groupByFile"
+      ]
+    },
+    {
+      "capability": "setActiveProject",
+      "ui": [
+        "cmd:agentfarm.setActiveProject"
+      ]
+    },
+    {
+      "capability": "setQuietHours",
+      "ui": [
+        "cmd:agentfarm.setQuietHours"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "setSecret",
+      "ui": [
+        "cmd:agentfarm.setSecret"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#agentDefaultsEngine",
+      "ui": [
+        "page:settingsPanel.ts#agentDefaultsEngine"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#agentEffort",
+      "ui": [
+        "page:settingsPanel.ts#agentEffort"
+      ],
+      "ops": [
+        "agents.exclude",
+        "agents.roots.remove"
+      ],
+      "core": [
+        "agentFolders"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#agentExclude",
+      "ui": [
+        "page:settingsPanel.ts#agentExclude"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#agentInclude",
+      "ui": [
+        "page:settingsPanel.ts#agentInclude"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#agentModel",
+      "ui": [
+        "page:settingsPanel.ts#agentModel"
+      ],
+      "ops": [
+        "agents.exclude",
+        "agents.roots.remove"
+      ],
+      "core": [
+        "agentFolders"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#applyProfile",
+      "ui": [
+        "page:settingsPanel.ts#applyProfile"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#browse",
+      "ui": [
+        "page:settingsPanel.ts#browse"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#ccClear",
+      "ui": [
+        "page:settingsPanel.ts#ccClear"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#ccOpenFile",
+      "ui": [
+        "page:settingsPanel.ts#ccOpenFile"
+      ],
+      "ops": [
+        "claude.settings",
+        "claude.settings.clear",
+        "claude.settings.set"
+      ],
+      "core": [
+        "claudeSettingsFile"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#ccRaw",
+      "ui": [
+        "page:settingsPanel.ts#ccRaw"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#ccSet",
+      "ui": [
+        "page:settingsPanel.ts#ccSet"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#deleteProfile",
+      "ui": [
+        "page:settingsPanel.ts#deleteProfile"
+      ],
+      "ops": [
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ],
+      "core": [
+        "setProfiles"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#engineCommand",
+      "ui": [
+        "page:settingsPanel.ts#engineCommand"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#engineDocs",
+      "ui": [
+        "page:settingsPanel.ts#engineDocs"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openExternal — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#engineKey",
+      "ui": [
+        "page:settingsPanel.ts#engineKey"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#exportProfiles",
+      "ui": [
+        "page:settingsPanel.ts#exportProfiles"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#importProfiles",
+      "ui": [
+        "page:settingsPanel.ts#importProfiles"
+      ],
+      "ops": [
+        "settings.sets.apply",
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ],
+      "core": [
+        "SettingsProfile",
+        "parseImportedProfiles",
+        "setProfiles"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#openEngines",
+      "ui": [
+        "page:settingsPanel.ts#openEngines"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#openSettingsUi",
+      "ui": [
+        "page:settingsPanel.ts#openSettingsUi",
+        "ctx:stOpenUi"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#promptsOpen",
+      "ui": [
+        "page:settingsPanel.ts#promptsOpen"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only showTextDocument — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#promptsPick",
+      "ui": [
+        "page:settingsPanel.ts#promptsPick"
+      ],
+      "ops": [
+        "prompts.setFile"
+      ],
+      "core": [
+        "setPromptSnippetsFile"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#promptsReload",
+      "ui": [
+        "page:settingsPanel.ts#promptsReload"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#promptsUseDefault",
+      "ui": [
+        "page:settingsPanel.ts#promptsUseDefault"
+      ],
+      "ops": [
+        "prompts.setFile"
+      ],
+      "core": [
+        "setPromptSnippetsFile"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#refresh",
+      "ui": [
+        "page:settingsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#reset",
+      "ui": [
+        "page:settingsPanel.ts#reset",
+        "ctx:stReset"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#rootAdd",
+      "ui": [
+        "page:settingsPanel.ts#rootAdd",
+        "page:settingsPanel.ts#rootRemove",
+        "page:settingsPanel.ts#rootReveal",
+        "ctx:rtReveal",
+        "ctx:rtAdd",
+        "ctx:rtRemove"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#rootCleanDupes",
+      "ui": [
+        "page:settingsPanel.ts#rootCleanDupes"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#saveProfile",
+      "ui": [
+        "page:settingsPanel.ts#saveProfile"
+      ],
+      "ops": [
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ],
+      "core": [
+        "setProfiles"
+      ]
+    },
+    {
+      "capability": "setupExample",
+      "ui": [
+        "cmd:agentfarm.setupExample"
+      ]
+    },
+    {
+      "capability": "setUsageEngine",
+      "ui": [
+        "cmd:agentfarm.setUsageEngine"
+      ],
+      "ops": [
+        "usage.engines"
+      ]
+    },
+    {
+      "capability": "shareSkill",
+      "ui": [
+        "cmd:agentfarm.shareSkill"
+      ],
+      "ops": [
+        "toolbox.copy"
+      ],
+      "core": [
+        "moveSkillScope"
+      ]
+    },
+    {
+      "capability": "speakDigest",
+      "ui": [
+        "cmd:agentfarm.speakDigest"
+      ]
+    },
+    {
+      "capability": "startSession",
+      "ui": [
+        "cmd:agentfarm.startSession"
+      ],
+      "ops": [
+        "launch.profile.set"
+      ],
+      "core": [
+        "RunSurface"
+      ]
+    },
+    {
+      "capability": "startSessionWith",
+      "ui": [
+        "cmd:agentfarm.startSessionWith"
+      ],
+      "ops": [
+        "tasks.add"
+      ],
+      "core": [
+        "CliProfile"
+      ]
+    },
+    {
+      "capability": "startTask",
+      "ui": [
+        "cmd:agentfarm.startTask"
+      ],
+      "ops": [
+        "tasks.start"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#feedback",
+      "ui": [
+        "page:studioPanel.ts#feedback"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#generate",
+      "ui": [
+        "page:studioPanel.ts#generate"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#openAsset",
+      "ui": [
+        "page:studioPanel.ts#openAsset"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#openSettings",
+      "ui": [
+        "page:studioPanel.ts#openSettings"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#project",
+      "ui": [
+        "page:studioPanel.ts#project"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#refresh",
+      "ui": [
+        "page:studioPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#registerAsset",
+      "ui": [
+        "page:studioPanel.ts#registerAsset"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#setSceneStatus",
+      "ui": [
+        "page:studioPanel.ts#setSceneStatus"
+      ],
+      "ops": [
+        "studio.production.new",
+        "studio.scene.status"
+      ],
+      "core": [
+        "SCENE_STATUSES",
+        "SceneStatus",
+        "setSceneStatus",
+        "writeProduction"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#studio-save",
+      "ui": [
+        "page:studioPanel.ts#studio-save"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#tab",
+      "ui": [
+        "page:studioPanel.ts#tab"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#triageDecision",
+      "ui": [
+        "page:studioPanel.ts#triageDecision"
+      ],
+      "ops": [
+        "studio.assign",
+        "studio.triage"
+      ],
+      "core": [
+        "updateMediaMeta"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#vary",
+      "ui": [
+        "page:studioPanel.ts#vary"
+      ]
+    },
+    {
+      "capability": "syncAntigravity",
+      "ui": [
+        "cmd:agentfarm.syncAntigravity",
+        "ctx:agentfarm.syncAntigravity"
+      ],
+      "ops": [
+        "agents.sync",
+        "constitution.sync"
+      ],
+      "core": [
+        "antigravityStatus",
+        "syncCodexExtras",
+        "syncToAntigravity"
+      ]
+    },
+    {
+      "capability": "syncConstitution",
+      "ui": [
+        "cmd:agentfarm.syncConstitution"
+      ],
+      "ops": [
+        "agents.sync",
+        "constitution.sync"
+      ],
+      "core": [
+        "antigravityStatus",
+        "scanRoots",
+        "syncCodexExtras",
+        "syncToAntigravity"
+      ]
+    },
+    {
+      "capability": "syncMemory",
+      "ui": [
+        "cmd:agentfarm.syncMemory"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "tagSession",
+      "ui": [
+        "cmd:agentfarm.tagSession",
+        "ctx:agentfarm.tagSession"
+      ],
+      "ops": [
+        "sessions.files",
+        "sessions.tag"
+      ],
+      "core": [
+        "SessionInfo",
+        "parseTags",
+        "setTags",
+        "tagsOf"
+      ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#export-md",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#export-md"
+      ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#open-forecast",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#open-forecast"
+      ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#open-history",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#open-history",
+        "page:tasksPanel.ts#wfstep",
+        "page:tasksPanel.ts#open-history",
+        "ctx:planRun",
+        "ctx:planOn",
+        "ctx:planOff",
+        "ctx:planEdit",
+        "ctx:planExport",
+        "ctx:planHistory",
+        "ctx:planDelete"
+      ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#open-tasks",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#open-tasks"
+      ]
+    },
+    {
+      "capability": "taskAnalyticsPanel.ts#refresh",
+      "ui": [
+        "page:taskAnalyticsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "taskDown",
+      "ui": [
+        "cmd:agentfarm.taskDown"
+      ],
+      "ops": [
+        "tasks.move"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#bulk",
+      "ui": [
+        "page:tasksPanel.ts#bulk"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#cancel-queued",
+      "ui": [
+        "page:tasksPanel.ts#cancel-queued"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#chooser-pick",
+      "ui": [
+        "page:tasksPanel.ts#chooser-pick"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#clear-finished",
+      "ui": [
+        "page:tasksPanel.ts#clear-finished"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#command",
+      "ui": [
+        "page:tasksPanel.ts#command"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#down",
+      "ui": [
+        "page:tasksPanel.ts#down"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#edit",
+      "ui": [
+        "page:tasksPanel.ts#edit"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#export-md",
+      "ui": [
+        "page:tasksPanel.ts#export-md"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#gate",
+      "ui": [
+        "page:tasksPanel.ts#gate"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#open-analytics",
+      "ui": [
+        "page:tasksPanel.ts#open-analytics"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#open-needs",
+      "ui": [
+        "page:tasksPanel.ts#open-needs"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#open-output",
+      "ui": [
+        "page:tasksPanel.ts#open-output",
+        "page:tasksPanel.ts#open-transcript",
+        "ctx:runOutput",
+        "ctx:runTerminal",
+        "ctx:runDetail",
+        "ctx:runClone",
+        "ctx:runResumeWf",
+        "ctx:runTemplate",
+        "ctx:runCancel",
+        "ctx:runDelete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#open-transcript",
+      "ui": [
+        "ctx:runTranscript"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#plan",
+      "ui": [
+        "page:tasksPanel.ts#plan"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#plan-add",
+      "ui": [
+        "page:tasksPanel.ts#plan-add"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#plan-save",
+      "ui": [
+        "page:tasksPanel.ts#plan-save"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#refresh",
+      "ui": [
+        "page:tasksPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#runs-archive",
+      "ui": [
+        "page:tasksPanel.ts#runs-archive"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#schedule:delete",
+      "ui": [
+        "page:tasksPanel.ts#schedule:delete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#schedule:edit",
+      "ui": [
+        "page:tasksPanel.ts#schedule:edit"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#schedule:export",
+      "ui": [
+        "page:tasksPanel.ts#schedule:export"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#schedule:run",
+      "ui": [
+        "page:tasksPanel.ts#schedule:run"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#schedule:toggle",
+      "ui": [
+        "page:tasksPanel.ts#schedule:toggle"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#task",
+      "ui": [
+        "page:tasksPanel.ts#task"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#task-add",
+      "ui": [
+        "page:tasksPanel.ts#task-add"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only postMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "tasksPanel.ts#task-new",
+      "ui": [
+        "page:tasksPanel.ts#task-new"
+      ],
+      "ops": [
+        "schedules.edit",
+        "tasks.add",
+        "tasks.rerun",
+        "triggers.add"
+      ],
+      "core": [
+        "RetryPolicy",
+        "TaskMode",
+        "normalizeRetry"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#task-undo",
+      "ui": [
+        "page:tasksPanel.ts#task-undo"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#template:delete",
+      "ui": [
+        "page:tasksPanel.ts#template:delete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#template:edit",
+      "ui": [
+        "page:tasksPanel.ts#template:edit"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#template:run",
+      "ui": [
+        "page:tasksPanel.ts#template:run"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#trigger:delete",
+      "ui": [
+        "page:tasksPanel.ts#trigger:delete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#trigger:edit",
+      "ui": [
+        "page:tasksPanel.ts#trigger:edit"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#trigger:run",
+      "ui": [
+        "page:tasksPanel.ts#trigger:run"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#trigger:toggle",
+      "ui": [
+        "page:tasksPanel.ts#trigger:toggle"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#up",
+      "ui": [
+        "page:tasksPanel.ts#up"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#wfstep",
+      "ui": [
+        "ctx:planRuns",
+        "ctx:wfStepEdit",
+        "ctx:wfStepDelete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#workflow:delete",
+      "ui": [
+        "page:tasksPanel.ts#workflow:delete"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#workflow:edit",
+      "ui": [
+        "page:tasksPanel.ts#workflow:edit"
+      ]
+    },
+    {
+      "capability": "tasksPanel.ts#workflow:run",
+      "ui": [
+        "page:tasksPanel.ts#workflow:run"
+      ]
+    },
+    {
+      "capability": "taskUp",
+      "ui": [
+        "cmd:agentfarm.taskUp"
+      ],
+      "ops": [
+        "tasks.move"
+      ]
+    },
+    {
+      "capability": "terminalRenderFix",
+      "ui": [
+        "cmd:agentfarm.terminalRenderFix"
+      ]
+    },
+    {
+      "capability": "testDispatch",
+      "ui": [
+        "cmd:agentfarm.testDispatch"
+      ]
+    },
+    {
+      "capability": "timeline.ts#clearGone",
+      "ui": [
+        "page:timeline.ts#clearGone"
+      ]
+    },
+    {
+      "capability": "timeline.ts#dismissSession",
+      "ui": [
+        "page:timeline.ts#dismissSession"
+      ]
+    },
+    {
+      "capability": "timeline.ts#endSession",
+      "ui": [
+        "page:timeline.ts#endSession"
+      ]
+    },
+    {
+      "capability": "timeline.ts#focusTerminal",
+      "ui": [
+        "page:timeline.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "timeline.ts#history",
+      "ui": [
+        "page:timeline.ts#history"
+      ]
+    },
+    {
+      "capability": "timeline.ts#installHooks",
+      "ui": [
+        "page:timeline.ts#installHooks"
+      ]
+    },
+    {
+      "capability": "timeline.ts#interruptSession",
+      "ui": [
+        "page:timeline.ts#interruptSession"
+      ]
+    },
+    {
+      "capability": "timeline.ts#openDashboard",
+      "ui": [
+        "page:timeline.ts#openDashboard"
+      ]
+    },
+    {
+      "capability": "timeline.ts#refresh",
+      "ui": [
+        "page:timeline.ts#refresh"
+      ]
+    },
+    {
+      "capability": "timeline.ts#renameSession",
+      "ui": [
+        "page:timeline.ts#renameSession"
+      ]
+    },
+    {
+      "capability": "timeline.ts#setSessionTurnActions",
+      "ui": [
+        "page:timeline.ts#setSessionTurnActions"
+      ]
+    },
+    {
+      "capability": "timeline.ts#setTurnActions",
+      "ui": [
+        "page:timeline.ts#setTurnActions"
+      ]
+    },
+    {
+      "capability": "toggleDuty",
+      "ui": [
+        "cmd:agentfarm.toggleDuty"
+      ],
+      "ops": [
+        "duties.togglePause"
+      ],
+      "core": [
+        "togglePauseDuty"
+      ]
+    },
+    {
+      "capability": "toggleSchedule",
+      "ui": [
+        "cmd:agentfarm.toggleSchedule"
+      ],
+      "ops": [
+        "schedules.toggle"
+      ]
+    },
+    {
+      "capability": "toggleTrigger",
+      "ui": [
+        "cmd:agentfarm.toggleTrigger"
+      ],
+      "ops": [
+        "triggers.toggle"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#mcp-def",
+      "ui": [
+        "page:toolboxPanel.ts#mcp-def"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#refresh",
+      "ui": [
+        "page:toolboxPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#skillScope",
+      "ui": [
+        "ctx:tbCopyAgent",
+        "ctx:tbScope"
+      ],
+      "ops": [
+        "living.check.add",
+        "living.checks",
+        "projects.backlog",
+        "toolbox.copy",
+        "toolbox.enable"
+      ],
+      "core": [
+        "readAgentMcpServers",
+        "skillNode",
+        "warn"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#tool-save",
+      "ui": [
+        "page:toolboxPanel.ts#tool-save"
+      ]
+    },
+    {
+      "capability": "triggerReport",
+      "ui": [
+        "cmd:agentfarm.triggerReport"
+      ],
+      "ops": [
+        "reports.triggers"
+      ]
+    },
+    {
+      "capability": "turnsPanel.ts#exportChoose",
+      "ui": [
+        "page:turnsPanel.ts#exportChoose"
+      ]
+    },
+    {
+      "capability": "turnsPanel.ts#focusTerminal",
+      "ui": [
+        "page:turnsPanel.ts#focusTerminal"
+      ]
+    },
+    {
+      "capability": "turnsPanel.ts#refresh",
+      "ui": [
+        "page:turnsPanel.ts#refresh"
+      ]
+    },
+    {
+      "capability": "turnsPanel.ts#turnDetail",
+      "ui": [
+        "page:turnsPanel.ts#turnDetail"
+      ]
+    },
+    {
+      "capability": "weeklySummaryNow",
+      "ui": [
+        "cmd:agentfarm.weeklySummaryNow"
+      ],
+      "ops": [
+        "reports.weekly"
+      ]
+    },
+    {
+      "capability": "worktreeRuns",
+      "ui": [
+        "cmd:agentfarm.worktreeRuns"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    }
+  ]
+}

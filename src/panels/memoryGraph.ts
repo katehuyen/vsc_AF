@@ -3,7 +3,7 @@ import { AgentInfo } from '../core/agents';
 import { buildMemoryGraph } from '../core/memgraph';
 import {
     addMemoryFile, applyIndexFixes, copyMemoryFileTo, IndexFix, MEMORY_TYPES,
-    memoryUsage, planIndexFixes
+    memoryUsage, planIndexFixes, resolveMemoryFile
 } from '../core/memusage';
 import { buildMergeDraft, DupGroup, findDuplicateGroups, syncGroup } from '../core/memorySync';
 import { SessionIndex } from '../core/sessions';
@@ -218,7 +218,16 @@ export class MemoryGraphPanel {
         if (s('mode') === 'copy') {
             const target = this.agentById(s('target'));
             if (!target) { return this.say('Pick the agent it is copied to.'); }
-            try { copyMemoryFileTo(s('path'), target.dir); } catch (e) {
+            const source = this.agentById(s('agentId'));
+            if (!source) { return this.say('Pick the agent the file is copied FROM.'); }
+            let src: string;
+            // ‼️ The page picks from a list this class built, so the path was
+            // never anything but real — but it arrives as a webview string, and
+            // the same guard the bridge uses costs nothing here (B-6).
+            try { src = resolveMemoryFile(source.dir, s('path')); } catch (e) {
+                return this.say((e as Error).message ?? String(e));
+            }
+            try { copyMemoryFileTo(src, target.dir); } catch (e) {
                 return this.say((e as Error).message ?? String(e));
             }
             this.changed();

@@ -89,7 +89,30 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 subagentStops: s.subagentStops,
                 errors: s.errors,
                 cwd: s.cwd ?? '',
-                transcriptPath: s.transcriptPath,
+                /**
+                 * ‼️ X-41 — AND THE PATH COMES FROM THE RECORD WHEN THE HOOK
+                 * COULD NOT CARRY ONE.
+                 *
+                 * `LiveSession.transcriptPath` is `transcript_path` off a Claude
+                 * hook payload, and only Claude sends one. Every other engine
+                 * reaches this page through the Console mirror
+                 * (`mirrorConsoleToLive`), which has a thread id and a cwd and
+                 * no file — so the lane, its tool bars and its marks were all
+                 * drawn with an empty `data-file` and clicking any of them did
+                 * nothing, on a page where the Claude lane beside it opened the
+                 * transcript at the exact line. Not a structural limit: the
+                 * record has known where a foreign conversation lives on disk
+                 * since the external pool existed, and this join already reads
+                 * it for the title, the cost and the tokens (X-35). It was one
+                 * field short.
+                 *
+                 * The hook's own answer still wins where there is one — it is
+                 * first-hand and it is current. Where there is no record yet
+                 * (a Codex thread whose rollout file the scan has not seen)
+                 * this is empty, exactly as it was, and the page draws no link
+                 * rather than a dead one.
+                 */
+                transcriptPath: s.transcriptPath || row?.file || undefined,
                 // From the transcript (absent until the session's first turn lands).
                 title: row?.title ?? '',
                 cost: row?.cost ?? 0,

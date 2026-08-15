@@ -106,6 +106,10 @@ export interface ProjectsPanelDeps {
     /** Move one item between open/doing/done/cancelled — one character. */
     backlogState(id: string, target: { code?: string; line?: number }, state: string):
         { error?: string; note?: string };
+    /** U-60 — park it, or take it off the parking. One ⛔ on the line; the
+     *  checkbox, the queue and the code are all left alone. */
+    backlogHold(id: string, target: { code?: string; line?: number }, on: boolean):
+        { error?: string; note?: string };
     /** Set an item's axes from the row's own controls. */
     backlogSet(id: string, target: { code?: string; line?: number }, fields: Record<string, unknown>):
         { error?: string };
@@ -680,6 +684,16 @@ export class ProjectsPanel {
                 if (!id) { break; }
                 const res = this.deps.backlogState(id, backlogRowTarget(msg), String(msg.state ?? 'done'));
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Backlog updated.'));
+                break;
+            }
+            case 'backlogHold': {
+                if (!id) { break; }
+                const on = msg.on === true;
+                const res = this.deps.backlogHold(id, backlogRowTarget(msg), on);
+                this.done(res.error, res.error ? undefined
+                    : ((on ? 'Held — it stays out of "what is next" until the ⛔ comes off.'
+                        : 'Off hold — it is back in the queue where it was.')
+                        + (res.note ? ` ${res.note}` : '')));
                 break;
             }
             case 'backlogSet': {

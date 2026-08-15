@@ -53,7 +53,22 @@ const base = read('src/panels/base.ts');
     ok('…and honours it when you press Start',
         /if \(where === 'console'\) \{\s*\n\s*const errors = validateLaunch/.test(ext));
     ok('…and passes a caller-supplied surface straight in',
-        /runLauncher\(agent, \{ \.\.\.\(lastLaunch\(\)\[agent\.id\] \?\? \{\}\) \}, arg\?\.surface\)/.test(ext));
+        /await runLauncher\(agent, seed,\s*\n\s*arg\?\.surface \?\? lastWhere/.test(ext));
+    // ‼️ S-34 — THE LAUNCHER REOPENS ON THE SURFACE THIS AGENT LAST RAN ON.
+    // It remembered the engine, the model, the effort and the permissions and
+    // then opened on a terminal whatever the last session had been, so a setup
+    // that was right in four dimensions out of five read as "it does not
+    // remember" — the window is the part you see before you have read a row.
+    ok('…the surface is stored with the rest of the setup',
+        /surface: where\s*\n\s*\}\s*\n\s*\};\s*\n\s*await context\.globalState\.update\(LAST_LAUNCH_KEY/.test(ext));
+    ok('…and read back before the window\'s last answer, then a terminal',
+        /const \{ surface: lastWhere, \.\.\.seed \} = lastLaunch\(\)\[agent\.id\] \?\? \{\}/.test(ext)
+        && /\?\? context\.globalState\.get<RunSurface>\(SURFACE_KEY\) \?\? 'terminal'/.test(ext));
+    // …and the Start row SAYS which saved profile it is showing, or the
+    // remembering is invisible and indistinguishable from not remembering.
+    ok('…and the Start row names the profile the setup matches',
+        /const isProfile = matchProfile\(launchProfiles\(\), o, where\)/.test(ext)
+        && /isProfile \? `profile/.test(ext));
 }
 
 // ---------- ‼️ …AND UNDER WHICH PROJECT — the same offer on every path ----------

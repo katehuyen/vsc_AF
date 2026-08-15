@@ -1,5 +1,6 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import { parsePlannerEnvelope } from './missions';
 import { estimateTokens, extractJson, sanitizePrompt } from './util';
 
 /**
@@ -8,6 +9,52 @@ import { estimateTokens, extractJson, sanitizePrompt } from './util';
  * flagged — never applied without explicit approval, always with a .afbak
  * backup. The semi-automatic version of the manual "context diet".
  */
+
+/** What one cheap-model call answered, and what it cost. */
+export interface JudgeRun {
+    text: string;
+    costUSD?: number;
+    tokens?: number;
+    error?: string;
+}
+
+/**
+ * ‼️ A MODEL CALL THAT CANNOT SAY WHAT IT COST IS A BILL WITH NO LINE (B-6).
+ *
+ * Both cheap-model paths in this file used to run bare `claude -p` and read
+ * stdout as prose — which works, and reports nothing. `--output-format json`
+ * wraps the same answer in the envelope `total_cost_usd` and `usage` ride in,
+ * so a caller told "tidy this memory file" can be told back what the tidying
+ * cost. It is added only when `judgeArgs` has not already chosen a format
+ * (a user-set `agentFarm.judgeArgs` wins, and two `--output-format` flags
+ * would just make the CLI refuse), and an answer that is not an envelope is
+ * still read as prose — so nothing that worked before stops working.
+ */
+function runJudge(cwd: string, judgeArgs: string, prompt: string): Promise<JudgeRun> {
+    const extra = /--output-format/.test(judgeArgs) ? '' : ' --output-format json';
+    return new Promise(resolve => {
+        cp.exec(`claude ${judgeArgs.trim()}${extra} -p "${prompt}"`,
+            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+            (err, stdout) => {
+                const out = String(stdout ?? '').trim();
+                if (!out) {
+                    resolve({ text: '', error: 'no output' + (err ? ` (${String(err.message).slice(0, 80)})` : '') });
+                    return;
+                }
+                const envelope = parsePlannerEnvelope(out);
+                if (!envelope) { resolve({ text: out }); return; }
+                resolve({
+                    text: envelope.result.trim(),
+                    costUSD: envelope.costUSD,
+                    tokens: envelope.tokens,
+                    error: envelope.isError ? `the model reported an error (${envelope.subtype ?? 'unknown'})` : undefined
+                });
+            });
+    });
+}
+
+/** The CLI's own refusals must never be mistaken for an answer. */
+const MODEL_UNAVAILABLE = /session limit|usage limit|rate limit|overloaded|api error/i;
 
 export interface DistillCandidate {
     path: string;
@@ -51,48 +98,42 @@ export interface DistillResult {
     error?: string;
     tokensBefore: number;
     tokensAfter?: number;
+    /** What the cheap-model call itself cost, when the CLI reported it. */
+    costUSD?: number;
+    /** Tokens the CALL spent — not the same figure as tokensBefore/After. */
+    callTokens?: number;
 }
 
 /** Ask the cheap model for a condensed draft of one memory file. */
-export function distillFile(
+export async function distillFile(
     cwd: string,
     judgeArgs: string,
     filePath: string
 ): Promise<DistillResult> {
-    return new Promise(resolve => {
-        let content: string;
-        try { content = fs.readFileSync(filePath, 'utf8'); }
-        catch (e) { resolve({ error: 'unreadable: ' + String(e), tokensBefore: 0 }); return; }
-        const tokensBefore = estimateTokens(content);
-        const prompt = sanitizePrompt(`${DISTILL_PROMPT} --- DOSYA İÇERİĞİ: ${content.slice(0, 24_000)}`);
-        cp.exec(`claude ${judgeArgs.trim()} -p "${prompt}"`,
-            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-            (err, stdout) => {
-                const out = String(stdout ?? '').trim();
-                if (!out) {
-                    resolve({ error: 'no output' + (err ? ` (${String(err.message).slice(0, 80)})` : ''), tokensBefore });
-                    return;
-                }
-                // Strip a possible markdown fence around the whole answer.
-                const fenced = /^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/.exec(out);
-                const draft = (fenced ? fenced[1] : out).trim() + '\n';
-                if (draft.length < 40) {
-                    resolve({ error: 'draft suspiciously short — discarded', tokensBefore });
-                    return;
-                }
-                // CLI error/limit messages must never masquerade as a draft.
-                if (/session limit|usage limit|rate limit|overloaded|api error/i.test(draft.slice(0, 200))) {
-                    resolve({ error: 'model unavailable: ' + draft.slice(0, 120), tokensBefore });
-                    return;
-                }
-                // If the original carried frontmatter, a draft without it lost data.
-                if (content.trimStart().startsWith('---') && !draft.trimStart().startsWith('---')) {
-                    resolve({ error: 'draft dropped the frontmatter — discarded', tokensBefore });
-                    return;
-                }
-                resolve({ draft, tokensBefore, tokensAfter: estimateTokens(draft) });
-            });
-    });
+    let content: string;
+    try { content = fs.readFileSync(filePath, 'utf8'); }
+    catch (e) { return { error: 'unreadable: ' + String(e), tokensBefore: 0 }; }
+    const tokensBefore = estimateTokens(content);
+    const prompt = sanitizePrompt(`${DISTILL_PROMPT} --- DOSYA İÇERİĞİ: ${content.slice(0, 24_000)}`);
+    const run = await runJudge(cwd, judgeArgs, prompt);
+    // The cost is reported even when the answer is refused: the call happened.
+    const spent = { costUSD: run.costUSD, callTokens: run.tokens };
+    if (run.error && !run.text) { return { error: run.error, tokensBefore, ...spent }; }
+    // Strip a possible markdown fence around the whole answer.
+    const fenced = /^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/.exec(run.text);
+    const draft = (fenced ? fenced[1] : run.text).trim() + '\n';
+    if (draft.length < 40) {
+        return { error: 'draft suspiciously short — discarded', tokensBefore, ...spent };
+    }
+    // CLI error/limit messages must never masquerade as a draft.
+    if (MODEL_UNAVAILABLE.test(draft.slice(0, 200))) {
+        return { error: 'model unavailable: ' + draft.slice(0, 120), tokensBefore, ...spent };
+    }
+    // If the original carried frontmatter, a draft without it lost data.
+    if (content.trimStart().startsWith('---') && !draft.trimStart().startsWith('---')) {
+        return { error: 'draft dropped the frontmatter — discarded', tokensBefore, ...spent };
+    }
+    return { draft, tokensBefore, tokensAfter: estimateTokens(draft), ...spent };
 }
 
 /** Apply a draft over the original with a timestamped backup. Returns the backup path. */
@@ -118,6 +159,9 @@ export interface ContradictionResult {
     /** files actually included (budget may truncate the corpus) */
     scanned: string[];
     truncated: boolean;
+    /** What the cheap-model sweep cost, when the CLI reported it. */
+    costUSD?: number;
+    callTokens?: number;
 }
 
 const CONTRADICTION_PROMPT =
@@ -132,48 +176,37 @@ const CONTRADICTION_PROMPT =
 const SCAN_BUDGET_CHARS = 24_000;
 
 /** Cheap-model sweep over an agent's memory corpus for contradicting claims. */
-export function scanContradictions(
+export async function scanContradictions(
     cwd: string,
     judgeArgs: string,
     files: { name: string; path: string }[]
 ): Promise<ContradictionResult> {
-    return new Promise(resolve => {
-        let corpus = '';
-        const scanned: string[] = [];
-        let truncated = false;
-        for (const f of files) {
-            let content = '';
-            try { content = fs.readFileSync(f.path, 'utf8'); } catch { continue; }
-            const block = `\n=== DOSYA: ${f.name} ===\n${content.trim()}\n`;
-            if (corpus.length + block.length > SCAN_BUDGET_CHARS) { truncated = true; break; }
-            corpus += block;
-            scanned.push(f.name);
-        }
-        if (!scanned.length) {
-            resolve({ error: 'no readable memory files', scanned, truncated });
-            return;
-        }
-        const prompt = sanitizePrompt(`${CONTRADICTION_PROMPT} ${corpus}`);
-        cp.exec(`claude ${judgeArgs.trim()} -p "${prompt}"`,
-            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-            (err, stdout) => {
-                const out = String(stdout ?? '').trim();
-                if (!out) {
-                    resolve({ error: 'no output' + (err ? ` (${String(err.message).slice(0, 80)})` : ''), scanned, truncated });
-                    return;
-                }
-                if (/session limit|usage limit|rate limit|overloaded|api error/i.test(out.slice(0, 200))) {
-                    resolve({ error: 'model unavailable: ' + out.slice(0, 120), scanned, truncated });
-                    return;
-                }
-                const json = extractJson(out) as { contradictions?: Contradiction[] } | undefined;
-                if (!json || !Array.isArray(json.contradictions)) {
-                    resolve({ error: 'unparseable model output: ' + out.slice(0, 120), scanned, truncated });
-                    return;
-                }
-                const clean = json.contradictions.filter(c =>
-                    c && Array.isArray(c.files) && typeof c.claimA === 'string' && typeof c.claimB === 'string');
-                resolve({ contradictions: clean, scanned, truncated });
-            });
-    });
+    let corpus = '';
+    const scanned: string[] = [];
+    let truncated = false;
+    for (const f of files) {
+        let content = '';
+        try { content = fs.readFileSync(f.path, 'utf8'); } catch { continue; }
+        const block = `\n=== DOSYA: ${f.name} ===\n${content.trim()}\n`;
+        if (corpus.length + block.length > SCAN_BUDGET_CHARS) { truncated = true; break; }
+        corpus += block;
+        scanned.push(f.name);
+    }
+    if (!scanned.length) {
+        return { error: 'no readable memory files', scanned, truncated };
+    }
+    const prompt = sanitizePrompt(`${CONTRADICTION_PROMPT} ${corpus}`);
+    const run = await runJudge(cwd, judgeArgs, prompt);
+    const spent = { costUSD: run.costUSD, callTokens: run.tokens };
+    if (run.error && !run.text) { return { error: run.error, scanned, truncated, ...spent }; }
+    if (MODEL_UNAVAILABLE.test(run.text.slice(0, 200))) {
+        return { error: 'model unavailable: ' + run.text.slice(0, 120), scanned, truncated, ...spent };
+    }
+    const json = extractJson(run.text) as { contradictions?: Contradiction[] } | undefined;
+    if (!json || !Array.isArray(json.contradictions)) {
+        return { error: 'unparseable model output: ' + run.text.slice(0, 120), scanned, truncated, ...spent };
+    }
+    const clean = json.contradictions.filter(c =>
+        c && Array.isArray(c.files) && typeof c.claimA === 'string' && typeof c.claimB === 'string');
+    return { contradictions: clean, scanned, truncated, ...spent };
 }

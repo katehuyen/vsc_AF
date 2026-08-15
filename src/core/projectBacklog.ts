@@ -304,6 +304,27 @@ export const isOriginTag = (tag: string): boolean =>
 /** ⛔ P-5.1 — blocked until that one closes. Several may sit on one line. */
 const BLOCKED = /⛔\s*((?:[A-Z]{1,2}-\d+(?:\.\d+)*)(?:\s*,\s*[A-Z]{1,2}-\d+(?:\.\d+)*)*)/gu;
 
+/**
+ * ‼️ U-60 — THE SAME MARK SAYING LESS: a ⛔ with no code behind it.
+ *
+ * `⛔ P-5.1` is "waiting on P-5.1" and stays exactly that. A BARE ⛔ is the
+ * other half of the same sentence — waiting, with nothing named — and it is
+ * what a person means when they take an item off the front of the queue by
+ * hand: nothing is in its way, it is simply not to be started yet. The
+ * vocabulary was already the user's own (`⛔ KOD  o kalemi bekliyor` is in the
+ * legend at the top of their file); what was missing is that the panel could
+ * READ a ⛔ and had no way whatsoever to write one.
+ *
+ * ‼️ NOT A FIFTH CHECKBOX STATE, and that is the decision worth keeping. The box
+ * belongs to Obsidian — four statuses are configured in the user's Tasks plugin,
+ * and a character it does not know renders as an unknown box in their vault. A
+ * hold is also not a state: a held item is still open, still live, still counted
+ * as work. It is only held BACK, which is a fact about the QUEUE.
+ */
+const HOLD = /⛔(?!\s*[A-Z]{1,2}-\d)/u;
+/** Take the bare one off and leave every coded ⛔ where it stands. */
+const HOLD_CUT = /\s*⛔(?!\s*[A-Z]{1,2}-\d)/u;
+
 const dateAfter = (line: string, icon: string): string | undefined =>
     new RegExp(`${icon}\\s*(\\d{4}-\\d{2}-\\d{2})`, 'u').exec(line)?.[1];
 
@@ -430,6 +451,9 @@ export interface BacklogItem {
     effort?: BacklogEffort;
     /** Codes this item waits on (⛔). */
     blockedBy: string[];
+    /** A BARE ⛔ — held back by hand, with no other item named. Still open and
+     *  still live; it is only kept out of "what is next". See HOLD. */
+    onHold?: boolean;
     /** 🆔 — the Obsidian Tasks id, if the user put one there. Untouched. */
     taskId?: string;
     /** `[plan:: afprj-05]` — which plan item this belongs to. */
@@ -733,6 +757,7 @@ export function parseBacklog(text: string): BacklogSummary {
             priority,
             ...(effort ? { effort } : {}),
             blockedBy,
+            ...(HOLD.test(line) ? { onHold: true } : {}),
             ...(/🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1]
                 ? { taskId: /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1] as string } : {}),
             ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
@@ -811,6 +836,9 @@ export interface NextOptions {
     sort?: 'file' | 'score' | 'priority';
     /** Include items whose blockers are still open. Default false. */
     includeBlocked?: boolean;
+    /** Include items held back by a bare ⛔. Default false — the whole point of
+     *  a hold is that "what is next" stops offering it. */
+    includeHeld?: boolean;
 }
 
 export interface NextResult {
@@ -819,6 +847,11 @@ export interface NextResult {
      *  reported rather than hidden, so "why is P-9 not in the list" has an
      *  answer that does not require reading the file. */
     blocked: { item: BacklogItem; waitingOn: string[] }[];
+    /** ‼️ U-60 — held back by a bare ⛔, i.e. by hand. Reported SEPARATELY from
+     *  `blocked` because it is a different answer to "why is this not in the
+     *  list": nothing is in its way, somebody parked it. Folding the two
+     *  together would print "waiting on ∅", which reads as a bug. */
+    held: BacklogItem[];
     /** How many live leaves there were before the filters. */
     considered: number;
     /** THE ORDER, complete — every queueable item, the block's codes first and
@@ -877,6 +910,7 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     const byCode = new Map(items.filter(i => i.code).map(i => [i.code as string, i]));
     const live = items.filter(i => isLive(i.state));
     const blocked: NextResult['blocked'] = [];
+    const held: BacklogItem[] = [];
     const minW = PRIORITY_WEIGHT[opts.minPriority ?? 'lowest'];
     const maxW = opts.maxEffort ? EFFORT_WEIGHT[opts.maxEffort] : undefined;
 
@@ -896,6 +930,15 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
         // with no effort stated is not excluded by an explicit ceiling: it has
         // not been sized, so treating it as too large would be invented data.
         if (maxW !== undefined && i.effort && EFFORT_WEIGHT[i.effort] > maxW) { return false; }
+        // ‼️ U-60 — A HOLD IS THE STRONGEST "not this one", so it is asked first
+        // and it is asked of the ITEM rather than of anything around it. It is
+        // also the only one of these the user set by hand for no stated reason,
+        // which is exactly why it is reported instead of silently dropping the
+        // row: "I parked it and forgot" is the commonest thing a hold becomes.
+        if (i.onHold) {
+            held.push(i);
+            if (opts.includeHeld !== true) { return false; }
+        }
         const waitingOn = i.blockedBy.filter(c => {
             const dep = byCode.get(c);
             return dep ? isLive(dep.state) : false;   // an unknown code blocks nothing
@@ -949,7 +992,10 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     });
 
     const limit = Math.max(1, Math.min(50, opts.limit ?? 5));
-    return { items: sorted.slice(0, limit), blocked, considered: live.length, queue: order, staleQueue };
+    return {
+        items: sorted.slice(0, limit), blocked, held,
+        considered: live.length, queue: order, staleQueue
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1098,6 +1144,92 @@ export function setBacklogState(
 }
 
 // ---------------------------------------------------------------------------
+// writing — the hold
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ U-60 — PARK IT, OR TAKE IT OFF THE PARKING. One mark on, or one mark off.
+ *
+ * Kept apart from `setBacklogFields` for the reason `stampBacklogClosed` is: a
+ * rebuild reorders every piece of the line, and turning a hold on and off is a
+ * gesture somebody will make twice in a minute on a row they are looking at. A
+ * whole-line diff in their vault for a button press is not a fair trade, so this
+ * does the smallest edit that carries the fact — append the mark, or cut the
+ * bare one and leave every coded ⛔ exactly where it stands.
+ *
+ * The appended position is not the canonical one (`setBacklogFields` puts ⛔
+ * before 🆔 📅); like the closing stamp that is accepted rather than fixed,
+ * because it parses identically wherever it sits and the next field edit moves
+ * it into place.
+ *
+ * ‼️ IT DOES NOT TOUCH THE CHECKBOX. A held item is open, and the two facts are
+ * set by two different presses — see HOLD.
+ */
+export function setBacklogHold(
+    text: string, target: BacklogTarget, on: boolean
+): BacklogEditResult {
+    const src = String(text ?? '');
+    const { items } = parseBacklog(src);
+    const found = locate(items, target);
+    if (!found.item) { return { ok: false, error: found.error as string }; }
+    const item = found.item;
+    const want = !!on;
+    if (!!item.onHold === want) { return { ok: true, text: src, item }; }
+
+    const line = want
+        ? `${item.raw.trimEnd()} ⛔`
+        : item.raw.replace(HOLD_CUT, '').replace(/\s{2,}/g, ' ').trimEnd();
+    const nextText = replaceLine(src, item.line, line);
+    if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
+    const rebuilt = parseBacklog(nextText).items.find(i => i.line === item.line);
+    /** A hold on something already blocked is a real thing to do and says
+     *  something the ⛔ codes do not — but it is worth saying out loud, because
+     *  the row now carries two reasons it will not be handed out and taking one
+     *  off changes nothing. */
+    const note = want && item.blockedBy.length
+        ? `${item.code ?? 'it'} was already waiting on ${item.blockedBy.join(', ')}`
+        + ' — the hold is a second, separate reason it stays out of the queue'
+        : '';
+    return {
+        ok: true, text: nextText,
+        ...(rebuilt ? { item: rebuilt } : {}),
+        ...(note ? { note } : {})
+    };
+}
+
+/**
+ * ‼️ U-60 — MOVING THE BOX ENDS THE HOLD, AND IT IS ONE WRITE.
+ *
+ * Everything that changes an item's state goes through here rather than through
+ * `setBacklogState` directly, because the rule is the same wherever the press
+ * came from: a parked item that is now `doing` is a contradiction the file would
+ * otherwise keep, and one that is `done` or `cancelled` carries a hold that
+ * means nothing — which is the same failure a week later, when somebody reads it
+ * as a reason.
+ *
+ * `open` is the exception and deliberately so: putting something BACK to open is
+ * not a decision to start it, and silently unparking on the way past would throw
+ * away the one thing the reader said by hand.
+ *
+ * `setBacklogState` keeps its promise untouched — exactly one character — and
+ * the hold comes off with the small edit `setBacklogHold` makes. Two edits, one
+ * guarded write, so there is no state in which the box moved and the mark stayed.
+ */
+export function moveBacklogState(
+    text: string, target: BacklogTarget, state: BacklogState
+): BacklogEditResult {
+    const moved = setBacklogState(text, target, state);
+    if (!moved.ok || state === 'open' || !moved.item?.onHold) { return moved; }
+    const free = setBacklogHold(moved.text as string, target, false);
+    if (!free.ok) { return moved; }
+    const item = free.item ?? moved.item;
+    return {
+        ...moved, text: free.text, item,
+        note: [moved.note, 'the ⛔ hold came off with it'].filter(Boolean).join(' · ')
+    };
+}
+
+// ---------------------------------------------------------------------------
 // writing — the closing stamp
 // ---------------------------------------------------------------------------
 
@@ -1164,6 +1296,9 @@ export interface BacklogFields {
     due?: string | null;
     /** A plan item's 🆔, or `null`. */
     plan?: string | null;
+    /** The bare ⛔ — held back by hand. Omitted leaves it as it is; the toggle
+     *  the panel presses is `setBacklogHold`, which does not rebuild the line. */
+    hold?: boolean;
     /** The code this item is PART OF, or `null` to clear. Refused when it names
      *  something that is not there, itself, or one of its own descendants. */
     parent?: string | null;
@@ -1210,6 +1345,7 @@ export function setBacklogFields(
     const due = fields.due === null ? undefined : (fields.due ?? item.due);
     const plan = fields.plan === null ? undefined : (fields.plan ?? item.plan);
     const blockedBy = fields.blockedBy ?? item.blockedBy;
+    const hold = fields.hold === undefined ? !!item.onHold : !!fields.hold;
     const words = (fields.text ?? item.text).replace(/\r?\n/g, ' ').trim();
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
 
@@ -1238,6 +1374,8 @@ export function setBacklogFields(
     if (item.from) { parts.push(`[from:: ${item.from}]`); }
     if (item.was) { parts.push(`[was:: ${item.was}]`); }
     if (item.closed) { parts.push(`[closed:: ${item.closed}]`); }
+    // The bare hold leads the coded ones so every ⛔ on the line stays together.
+    if (hold) { parts.push('⛔'); }
     for (const b of blockedBy) { parts.push(`⛔ ${b}`); }
     if (item.taskId) { parts.push(`🆔 ${item.taskId}`); }
     if (due) { parts.push(`📅 ${due}`); }
@@ -1301,6 +1439,9 @@ export interface AddBacklogInput {
     carriedParent?: boolean;
     from?: string;
     blockedBy?: string[];
+    /** The bare ⛔ — carried through when a held capture is filed, never
+     *  invented for a new item. */
+    hold?: boolean;
     state?: BacklogState;
 }
 
@@ -1372,6 +1513,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     if (parent) { parts.push(`[parent:: ${parent}]`); }
     if (input.plan) { parts.push(`[plan:: ${input.plan}]`); }
     if (input.from) { parts.push(`[from:: ${input.from}]`); }
+    if (input.hold) { parts.push('⛔'); }
     for (const b of input.blockedBy ?? []) { parts.push(`⛔ ${b}`); }
     if (input.due) { parts.push(`📅 ${input.due}`); }
     const line = parts.join(' ');
@@ -1438,6 +1580,9 @@ export function codeBacklogItem(
         ...(item.parent ? { parent: item.parent, carriedParent: true } : {}),
         ...(item.from ? { from: item.from } : {}),
         blockedBy: item.blockedBy,
+        // U-60 — and the hold, for the same reason as the parent above: filing a
+        // parked capture must not quietly unpark it.
+        ...(item.onHold ? { hold: true } : {}),
         state: item.state
     });
     if (!added.ok) { return added; }

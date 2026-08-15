@@ -110,6 +110,33 @@ export function applyProfile(o: LaunchOptions, p: LaunchProfile): LaunchOptions 
 }
 
 /**
+ * ‼️ S-34 — WHICH SAVED PROFILE THE LAUNCHER IS SHOWING RIGHT NOW, if any.
+ *
+ * Loading a profile and then reopening the launcher restored the setup and said
+ * nothing about it, so "did it remember my profile?" was a question the reader
+ * could only answer by opening the list and comparing five values by eye —
+ * which is how a launcher that remembers almost everything reads as one that
+ * remembers nothing.
+ *
+ * Derived rather than stored, and that is the point: a remembered NAME would go
+ * on claiming a profile after the model row had been changed under it. This
+ * compares the setup itself, so it stops being true the moment it stops being
+ * true.
+ */
+export function matchProfile(
+    list: LaunchProfile[], o: LaunchOptions, surface?: RunSurface
+): LaunchProfile | undefined {
+    const mine = profileFrom(o, 'current', surface);
+    return list.find(p =>
+        PROFILE_KEYS.every(k => (p[k] ?? '') === (mine[k] ?? ''))
+        // A profile that says nothing about where it runs matches whatever the
+        // launcher is on — the promise `profileSurface` makes. Demanding an
+        // answer it never stored would mean no profile saved before the surface
+        // existed could ever be recognised again.
+        && (!p.surface || p.surface === mine.surface));
+}
+
+/**
  * Put one in the list. ‼️ ONE NAME, ONE PROFILE: a name that already exists is
  * replaced, which is the rule Save has always followed — two rows with the same
  * name make a picker you cannot use, and the second one is unreachable.

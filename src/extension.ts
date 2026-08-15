@@ -26,7 +26,8 @@ import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
 } from './core/worktree';
-import { applyDistilled, distillCandidates, distillFile, scanContradictions } from './core/distill';
+import { applyDistilled, distillFile, scanContradictions } from './core/distill';
+import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
@@ -93,19 +94,14 @@ import {
 import { removeMcpServer, setServerDisabled } from './core/mcp';
 import { compileQuery, queryMatches } from './core/query';
 import { moveSkillScope, removeSkill } from './core/skills';
-import {
-    addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes,
-    readMemoryFrontmatter
-} from './core/memusage';
+import { archiveMemoryFile } from './core/memusage';
 import {
     DEFAULT_MEDIA_PRICING, MediaPriceRule, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
 } from './core/media';
 import { IngestFolder, IngestWatcher } from './core/ingest';
 import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
 import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
-import {
-    applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
-} from './core/memorySync';
+import { applyMergedContent } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
 import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import {
@@ -124,7 +120,7 @@ import {
     validateLaunch, withDefaults
 } from './core/launch';
 import {
-    applyProfile, deleteProfile, describeProfile, editProfile, profileFrom,
+    applyProfile, deleteProfile, describeProfile, editProfile, matchProfile, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
 import {
@@ -189,7 +185,8 @@ import {
     BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
     BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, gatherFamilies, joinParent,
-    moveInQueue, nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields,
+    moveBacklogState, moveInQueue, nextBacklog, parseBacklog, placeInQueue, queueOrder,
+    setBacklogFields, setBacklogHold,
     setBacklogQueue, setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
@@ -3486,65 +3483,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 measuredSessions: index.forAgent(a.id).length
             }))
         },
-        /**
-         * ‼️ MEMORY HAD NO OPS AT ALL — not even a read.
-         *
-         * The memory page learned to MAKE a file in 3.91.0 and the bridge was
-         * never told, which is the rule in `_REF/agentfarm-dev.md` being broken
-         * in the same commit that wrote it down. It matters more here than
-         * almost anywhere else: an agent's memory is the one store an agent is
-         * expected to keep itself, and until now it could only do so by writing
-         * files behind the extension's back — no index entry, no refresh, no
-         * frontmatter convention. Both ops call the very functions the page
-         * calls (`core/memusage.ts`), so the index is written the same way from
-         * either door.
-         */
-        {
-            op: 'memory.list',
-            describe: 'An agent\'s memory files: name, path, type and the one-line description that IS its index entry, plus whether the index still points at it. args: agent (name|id)',
-            handler: (args) => {
-                const agent = findAgent(argStr(args, 'agent'));
-                const dir = path.join(agent.dir, 'memory');
-                const index = path.join(dir, 'MEMORY.md');
-                const indexText = fs.existsSync(index) ? fs.readFileSync(index, 'utf8') : '';
-                const files = fs.existsSync(dir)
-                    ? fs.readdirSync(dir).filter(f => /\.md$/i.test(f) && f !== 'MEMORY.md') : [];
-                return {
-                    agent: agent.name,
-                    dir,
-                    indexed: fs.existsSync(index),
-                    files: files.map(f => {
-                        const meta = readMemoryFrontmatter(path.join(dir, f));
-                        return {
-                            name: f.replace(/\.md$/i, ''), file: path.join(dir, f),
-                            type: meta.type ?? null, description: meta.description ?? null,
-                            // ‼️ The honest question about a memory file is not
-                            // "does it exist" but "will the agent ever open it":
-                            // the index is the only thing loaded every session.
-                            inIndex: indexText.includes(f)
-                        };
-                    })
-                };
-            }
-        },
-        {
-            op: 'memory.add',
-            describe: 'Make one memory file on an agent — scaffolded with the frontmatter convention and registered in MEMORY.md in the same write, so it is never born an orphan. ‼️ The description is not decoration: that line IS the index entry, and the index is what the agent reads to decide whether to open the file. args: agent (name|id), name (kebab-case, no .md), description, type? (user|feedback|project|reference, default project)',
-            handler: (args) => {
-                const agent = findAgent(argStr(args, 'agent'));
-                const name = argStr(args, 'name');
-                need(/^[a-z0-9][a-z0-9_-]*$/.test(name),
-                    'name: lowercase letters, digits, - and _ only — it becomes a file name and an index target');
-                const description = argStr(args, 'description');
-                need(!!description, 'description is required — it is the line the index carries');
-                const type = optStr(args, 'type') || 'project';
-                need(['user', 'feedback', 'project', 'reference'].includes(type),
-                    'type must be one of: user, feedback, project, reference');
-                const file = addMemoryFile(agent.dir, name, type, description);
-                MemoryGraphPanel.refreshIfOpen();
-                return { agent: agent.name, name, type, file };
-            }
-        },
+        // The memory ops moved out to `core/memoryBridge.ts` when there were
+        // fourteen of them rather than two (B-6) — registered below, next to
+        // the callbacks the semantic half needs.
         {
             op: 'tasks.list',
             describe: 'Current task queue/board rows. Each row says which ENGINE it runs on and whether that '
@@ -6510,7 +6451,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.next',
-            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. "Top N" means the first N entries of THAT order, with no silent effort filter: a queued L/XL item keeps its place. `sort` overrides the order only because asking "what is cheapest" is a different question from "what is next"; `maxEffort` narrows by size only when the caller explicitly asks for a ceiling. An item with no effort stated is never excluded by a ceiling because it has not been sized. ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. ‼️ AN ITEM THAT HAS BEEN REOPENED SAYS SO AND BRINGS ITS EARLIER ASKINGS WITH IT: `round` (2 = second go) and `earlierRounds` (what the item SAID before each reopen, oldest first). Read them before you start — the item\'s own text is only the LATEST asking, and doing what round 1 said is how a thing gets reopened a third time. `projects.tracks {code}` then gives you what was actually done each time. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL — no ceiling when omitted), sort? (file|score|priority, default file), includeBlocked?',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`, and anything PARKED by hand (a bare ⛔ — see projects.backlog.hold) is dropped and reported under `held`. The two lists are kept apart on purpose: `blocked` means something is in the way and names it, `held` means a person took it off the queue and named nothing. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. "Top N" means the first N entries of THAT order, with no silent effort filter: a queued L/XL item keeps its place. `sort` overrides the order only because asking "what is cheapest" is a different question from "what is next"; `maxEffort` narrows by size only when the caller explicitly asks for a ceiling. An item with no effort stated is never excluded by a ceiling because it has not been sized. ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. ‼️ AN ITEM THAT HAS BEEN REOPENED SAYS SO AND BRINGS ITS EARLIER ASKINGS WITH IT: `round` (2 = second go) and `earlierRounds` (what the item SAID before each reopen, oldest first). Read them before you start — the item\'s own text is only the LATEST asking, and doing what round 1 said is how a thing gets reopened a third time. `projects.tracks {code}` then gives you what was actually done each time. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL — no ceiling when omitted), sort? (file|score|priority, default file), includeBlocked?, includeHeld?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const res = nextBacklog(text, {
@@ -6525,7 +6466,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? { maxEffort: optStr(args, 'maxEffort')?.toUpperCase() as BacklogEffort } : {}),
                     ...(['file', 'score', 'priority'].includes(optStr(args, 'sort') ?? '')
                         ? { sort: optStr(args, 'sort') as 'file' | 'score' | 'priority' } : {}),
-                    ...(args.includeBlocked === true ? { includeBlocked: true } : {})
+                    ...(args.includeBlocked === true ? { includeBlocked: true } : {}),
+                    ...(args.includeHeld === true ? { includeHeld: true } : {})
                 });
                 // ‼️ X-36 — THIS is the door where the rounds matter most. An
                 // agent asking "what do I work on" and being handed an item on
@@ -6542,7 +6484,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             : backlogOut(i);
                     }),
                     queue: res.queue, staleQueue: res.staleQueue,
-                    blocked: res.blocked.map(b => ({ code: b.item.code ?? null, text: b.item.text, waitingOn: b.waitingOn }))
+                    blocked: res.blocked.map(b => ({ code: b.item.code ?? null, text: b.item.text, waitingOn: b.waitingOn })),
+                    // ‼️ U-60 — SEPARATE FROM `blocked`, because it is a
+                    // different answer. Nothing is in these items' way; a person
+                    // parked them, and "why is X-5 not in the list" has to say
+                    // which of the two it is or the caller goes looking for a
+                    // dependency that does not exist.
+                    held: res.held.map(i => ({ code: i.code ?? null, text: i.text }))
                 };
             }
         },
@@ -6640,7 +6588,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!refusal, refusal ?? '');
                 let touched = ''; let code: string | null = null;
                 const out = editProjectDoc(folder, file, src => {
-                    const res = setBacklogState(src, target, state);
+                    const res = moveBacklogState(src, target, state);
                     if (res.item) { touched = res.item.text; code = res.item.code ?? null; }
                     return res;
                 });
@@ -6657,6 +6605,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     project: project.name, file: relDoc(folder, out.file),
                     code, item: touched, state, note: out.note ?? null,
                     track: tracked ? trackOut(tracked) : null
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.hold',
+            describe: 'Park an item, or take it off the parking — the bare ⛔ on its line. ‼️ A HOLD IS NOT A STATE AND NOT A BLOCKER: the checkbox does not move (a held item is still open and still live), and nothing is named as being in its way — it is simply not to be started yet. It is exactly what backlog.next stops offering, and held items come back in that op\'s `held` list, separately from `blocked`, so "why is X-5 not in the list" says which of the two it is. Starting it (state doing) or closing it takes the hold off in the same write; putting it back to `open` does NOT, because that is not a decision to start it. Nothing else moves: no code, no line, no queue position. args: project (id or name), code?/line?/item? (which one), on? (default true; false takes the hold off)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const on = args.on === undefined ? true : args.on === true || optStr(args, 'on') === 'true';
+                let after: BacklogItem | undefined;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = setBacklogHold(src, target, on);
+                    if (res.item) { after = res.item; }
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    on, note: out.note ?? null,
+                    item: after ? backlogOut(after) : null
                 };
             }
         },
@@ -10258,7 +10227,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * draws the hits instead — score, agent, file and enough of the passage to
      * recognise it.
      */
-    const askFleetMemory = async (query: string): Promise<{
+    /**
+     * The indexing half, on its own — B-6 needed to be able to warm the index
+     * WITHOUT asking it anything (`memory.semantic.build`), and the query needs
+     * it done first, so it is one function called from two places rather than
+     * the same loop written twice.
+     */
+    const indexFleetMemory = async (
+        report?: (message: string) => void
+    ): Promise<MemoryIndexReport> => {
+        const ecfg = embeddingsCfg();
+        const refs = memoryFileRefs(agents);
+        memIndex.prune(new Set(refs.map(r => r.key)));
+        const pending = memIndex.pending(refs.map(r => ({ sessionId: r.key, mtime: r.mtime })));
+        const byKey = new Map(refs.map(r => [r.key, r]));
+        for (const [i, p] of pending.entries()) {
+            const ref = byKey.get(p.sessionId)!;
+            report?.(`indexing ${i + 1}/${pending.length}`);
+            const texts = chunkMemoryFile(ref.file);
+            if (texts.length) {
+                const { vectors, error } = await embedTexts(texts, ecfg);
+                if (error) { throw new Error(error); }
+                memIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
+                    sessionFile: ref.file, sessionId: ref.key,
+                    agentName: ref.agentName, title: ref.name, ts: ref.mtime, text: t
+                })), vectors!);
+            } else {
+                memIndex.addSession(p.sessionId, p.mtime, [], []);
+            }
+        }
+        memIndex.save();
+        const stats = memIndex.stats();
+        return { indexed: pending.length, files: stats.sessions, chunks: stats.chunks };
+    };
+
+    const askFleetMemory = async (query: string, k = 12): Promise<{
         hits?: { agent: string; title: string; score: number; text: string; file: string }[];
         error?: string;
     }> => {
@@ -10270,30 +10273,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: querying fleet memory…' },
                 async (progress) => {
-                    const refs = memoryFileRefs(agents);
-                    memIndex.prune(new Set(refs.map(r => r.key)));
-                    const pending = memIndex.pending(refs.map(r => ({ sessionId: r.key, mtime: r.mtime })));
-                    const byKey = new Map(refs.map(r => [r.key, r]));
-                    for (const [i, p] of pending.entries()) {
-                        const ref = byKey.get(p.sessionId)!;
-                        progress.report({ message: `indexing ${i + 1}/${pending.length}` });
-                        const texts = chunkMemoryFile(ref.file);
-                        if (texts.length) {
-                            const { vectors, error } = await embedTexts(texts, ecfg);
-                            if (error) { throw new Error(error); }
-                            memIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
-                                sessionFile: ref.file, sessionId: ref.key,
-                                agentName: ref.agentName, title: ref.name, ts: ref.mtime, text: t
-                            })), vectors!);
-                        } else {
-                            memIndex.addSession(p.sessionId, p.mtime, [], []);
-                        }
-                    }
-                    memIndex.save();
+                    await indexFleetMemory(m => progress.report({ message: m }));
                     const q = await embedTexts([query], ecfg);
                     if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
                     return {
-                        hits: memIndex.search(q.vectors[0], 12)
+                        hits: memIndex.search(q.vectors[0], k)
                             .filter(h => h.score > 0.15)
                             .map(h => ({
                                 agent: h.chunk.agentName, title: h.chunk.title, score: h.score,
@@ -10345,6 +10329,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         askMemory: (query: string) => askFleetMemory(query),
         distill: (agentDir: string, file: string) => distillOne(agentDir, file)
     };
+
+    // ---------- B-6: memory maintenance and semantic operations ----------
+    // The page's own callbacks, handed to the bridge unchanged — the index is
+    // built by the same loop, the query scores the same vectors, and every
+    // write goes through the same core that leaves the .afbak behind.
+    registerMemoryOps(bridge, {
+        getAgents: () => agents,
+        // The same repaint the page's own `changed()` does — a bridge write
+        // that leaves an open Memory Graph showing the old graph is a surface
+        // disagreeing with the disk.
+        refreshAll: () => { refreshAll(); MemoryGraphPanel.refreshIfOpen(); },
+        judgeArgs,
+        staleDays: () => cfg().get<number>('staleMemoryDays', 45),
+        embeddingsOn: () => embeddingsCfg().provider !== 'off',
+        buildMemoryIndex: async (): Promise<MemoryIndexReport> => {
+            try {
+                return await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: indexing fleet memory…' },
+                    progress => indexFleetMemory(m => progress.report({ message: m })));
+            } catch (e) {
+                return { indexed: 0, files: 0, chunks: 0, error: String((e as Error)?.message ?? e) };
+            }
+        },
+        askMemory: (query: string, k: number) => askFleetMemory(query, k)
+    });
 
     // `agentName` is here for the same reason SessionRef has five keys: a
     // surface publishes what it KNOWS. A Timeline lane knows the agent's name
@@ -10773,7 +10782,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // top row is the trigger, and its description is the EXACT command line
     // that will run. Nothing is hidden behind a flag the user can't see.
     const LAST_LAUNCH_KEY = 'agentfarm.lastLaunch';
-    const lastLaunch = () => context.globalState.get<Record<string, LaunchOptions>>(LAST_LAUNCH_KEY, {});
+    /**
+     * ‼️ S-34 — WHAT AN AGENT WAS LAST STARTED WITH, **INCLUDING WHERE**.
+     *
+     * The record held the four command-line dimensions and nothing else, so the
+     * launcher reopened remembering the engine, the model, the effort and the
+     * permissions — and then opened on a terminal, whatever the last session
+     * had actually been. That is a setup remembered in four places out of five,
+     * which reads as "it does not remember", because the one thing you SEE
+     * first is the window it opens in.
+     *
+     * `surface` is stored beside the options rather than inside them for the
+     * reason `LaunchProfile` keeps it outside `LaunchOptions`: it is not a flag
+     * on a command line, it decides which surface runs the command. An absent
+     * value is a record written before this and means nothing was said.
+     */
+    type LastLaunch = LaunchOptions & { surface?: RunSurface };
+    const lastLaunch = () => context.globalState.get<Record<string, LastLaunch>>(LAST_LAUNCH_KEY, {});
 
     /** Sub-picker for one dimension. Cancelling keeps the current value;
      *  "Other…" accepts anything the installed CLI might know that we don't. */
@@ -11128,6 +11153,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const inherited = (own: string | undefined, def: string | undefined) =>
                 !own?.trim() && def?.trim() ? ' (from your defaults)' : '';
             interface Row extends vscode.QuickPickItem { act?: string }
+            // ‼️ S-34 — THE ROW SAYS WHICH PROFILE THIS IS. The launcher reopens
+            // on the setup this agent was last started with, surface included,
+            // and until it said so out loud the only way to know whether it had
+            // remembered was to open the profile list and compare by eye.
+            const isProfile = matchProfile(launchProfiles(), o, where);
             const rows: Row[] = [
                 {
                     label: '$(rocket) Start',
@@ -11135,9 +11165,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // spawns its own streaming session), so printing it would be
                     // a lie about the exact thing this row exists to be honest about.
                     description: where === 'console' ? describeLaunch(merged) : command,
-                    detail: where === 'console'
-                        ? `runs in ${agent.dir}, hosted in the Console panel`
-                        : `runs in ${agent.dir}`,
+                    detail: (isProfile ? `profile “${isProfile.name}” · ` : '')
+                        + (where === 'console'
+                            ? `runs in ${agent.dir}, hosted in the Console panel`
+                            : `runs in ${agent.dir}`),
                     act: 'start'
                 },
                 { label: 'Session', kind: vscode.QuickPickItemKind.Separator },
@@ -11234,7 +11265,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // the engine rides along: the second time you start the
                         // same kind of session it is one Enter, engine included
                         engine: o.engine, model: o.model, effort: o.effort,
-                        permissionMode: o.permissionMode
+                        permissionMode: o.permissionMode,
+                        // ‼️ S-34 — and WHERE it ran. Without this the launcher
+                        // reopened on a terminal after a Console session, which
+                        // is the one part of the setup a person notices before
+                        // they have read a single row.
+                        surface: where
                     }
                 };
                 await context.globalState.update(LAST_LAUNCH_KEY, remembered);
@@ -14474,7 +14510,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         code: i.code ?? null, text: i.text, state: i.state, area: i.area ?? null,
         line: i.line + 1, section: i.section,
         kinds: i.kinds, priority: i.priority, effort: i.effort ?? null,
-        blockedBy: i.blockedBy, plan: i.plan ?? null, from: i.from ?? null,
+        blockedBy: i.blockedBy,
+        // U-60 — the bare ⛔. Sent on every row and always as a boolean, because
+        // "is this parked" is a question the reader asks of the whole list.
+        onHold: !!i.onHold,
+        plan: i.plan ?? null, from: i.from ?? null,
         // What this item is PART OF, and what is part of it. `parent` is stored
         // on the line; `children` is computed on every parse and never written
         // — one link, held once, on the child.
@@ -15228,7 +15268,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              *  why it is the whole list and not the strip's fourteen. */
             queue: order,
             staleQueue: up.staleQueue,
-            blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn }))
+            blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn })),
+            // U-60 — parked by hand. The rows carry `onHold` themselves; this is
+            // the same fact as a LIST, so the page can say how many are out.
+            held: up.held.map(i => i.code ?? null).filter(Boolean)
         };
     };
 
@@ -15869,7 +15912,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * worse than a row that says "panel, no session".
                  */
                 backlogState: (id: string, target: BacklogTarget, state: string) => {
-                    const res = edit(id, text => setBacklogState(text, target, state as BacklogState));
+                    const res = edit(id, text => moveBacklogState(text, target, state as BacklogState));
                     const folder = (projectStore.get(id)?.folder ?? '').trim();
                     const code = target.code ?? (folder ? codeAtTarget(folder, target) : undefined);
                     if (!res.error && code && folder) {
@@ -15893,6 +15936,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                     return res;
                 },
+                /**
+                 * ‼️ U-60 — THE PARK BUTTON. One mark on the line, on or off,
+                 * and nothing else about the item moves: not the checkbox, not
+                 * the queue, not the code. It is deliberately NOT routed through
+                 * `backlogSet` — that one rebuilds the whole line, and this is a
+                 * button somebody will press twice in a minute.
+                 */
+                backlogHold: (id: string, target: BacklogTarget, on: boolean) =>
+                    edit(id, text => setBacklogHold(text, target, on)),
                 backlogSet: (id: string, target: BacklogTarget, fields: Record<string, unknown>) =>
                     edit(id, text => setBacklogFields(text, target, {
                         ...(BACKLOG_PRIORITIES.includes(fields.priority as BacklogPriority)
@@ -18307,7 +18359,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!agent) { return; }
                 // Seeded with what this agent was last launched with — the second
                 // time you start the same kind of session it is one Enter.
-                await runLauncher(agent, { ...(lastLaunch()[agent.id] ?? {}) }, arg?.surface);
+                //
+                // ‼️ S-34 — AND THAT INCLUDES THE SURFACE. In order: what the
+                // caller asked for (a command that names one means it), then
+                // what THIS agent was last started on, then the window's last
+                // answer anywhere, then a terminal. The per-agent memory leads
+                // because the launcher is a per-agent picker: an agent you talk
+                // to in the Console does not stop being that one because the
+                // last thing you started somewhere else was a terminal.
+                const { surface: lastWhere, ...seed } = lastLaunch()[agent.id] ?? {};
+                await runLauncher(agent, seed,
+                    arg?.surface ?? lastWhere
+                    ?? context.globalState.get<RunSurface>(SURFACE_KEY) ?? 'terminal');
             }),
 
         // E1: open a session with a different CLI (gemini/codex/…) WITHOUT touching

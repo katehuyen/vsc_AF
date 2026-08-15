@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.138.0 — The top five of the backlog: a hold you can press, two closings you can tell apart, and a click that works on every engine (2026-08-15)
+
+**U-60 — parking an item, which the file has always allowed and the panel could never write.** The backlog format has said `⛔ CODE — waits on that item` since it existed, and the page could READ one and had no way whatsoever to put one there. A ⛔ with **nothing behind it** is the other half of the same sentence: waiting, with nothing named — what a person means when they take something off the front of the queue by hand.
+
+- **‼️ A hold is NOT a state and NOT a blocker.** The checkbox does not move: a held item is still open, still live, still counted. It is only kept out of "what is next", which is a fact about the QUEUE. Not a fifth checkbox character either — the box belongs to Obsidian, four statuses are configured in the user's Tasks plugin, and a character it does not know renders as an unknown box in their vault.
+- The row's ⛔ sits **between ▶ and ✕**, where the three answers to "what about this one" belong. It is grey until it means something and its own red once it does — **drained, not dimmed**, because ⛔ is a picture and ignores the surrounding text colour, so a full-colour one on a row that is *not* parked would be the loudest mark on a list of two hundred, saying nothing.
+- `backlog.next` stops offering it and reports it under **`held`, separately from `blocked`** — nothing is in a parked item's way, somebody parked it, and "why is X-5 not in the list" has to say which of the two it is. The `blocked` filter axis knows about it too, so a parked item is never in "startable now".
+- **Starting it or closing it takes the hold off in the same write**; putting it back to `open` does not, because that is not a decision to start it. `setBacklogState` keeps its promise of changing exactly one character — the mark comes off through a second small edit inside one guarded write.
+- On the bridge as `projects.backlog.hold`, and the hold survives a field edit and the filing of a parked capture — the two rebuilds that would otherwise have unparked it silently.
+
+**U-58 — the box says WHICH WAY an item closed.** A cancelled row arrived with an empty checkbox, pixel-identical to an open one, so the one state the row already strikes through had no mark at all in the place the eye lands first. It is now the same box in the other closing colour: a red ✕ beside the platform's blue tick, sized and spaced to it to the pixel so a mixed list has one column and not two. Same control either way — a filled box reopens.
+
+**U-61 — the two controls that explained themselves too eagerly.** The four `and` boxes behind ⚙ wait five times afTip's own 420 ms and the capture strip's *part of* list waits three times; the picker's hover panel now **closes when its own list drops over it**, which no delay could ever have fixed. **‼️ The delay is the call site's, not the component's** — `data-aftip-open` rides on the trigger, so no other hover in the extension waits a millisecond longer than it did.
+
+**S-34 — the launcher opens on the setup you last used, surface included.** It remembered the engine, the model, the effort and the permissions and then opened on a **terminal** whatever the last session had actually been — a setup right in four dimensions out of five, which reads as "it does not remember", because the window is the part you see before you have read a row. The surface is now stored with the rest (per agent, then the window's last answer, then a terminal), and the **Start row names the saved profile the setup matches** — derived, not remembered, so it stops being true the moment somebody changes the model row under it.
+
+**X-41 — clicking the swim lane opens the transcript on every engine, not only Claude.** Neglect, not a structural limit. `LiveSession.transcriptPath` is `transcript_path` off a Claude hook payload and only Claude sends one; every other engine reaches the page through the Console mirror, which has a thread id and a cwd and no file. So the lane, its tool bars and its marks were drawn with an empty path and clicking any of them did nothing. The host now falls back to the session **record** — the same wide pool this join has read the title, the cost and the tokens from since X-35 — and a mark whose event carried no path takes its lane's, because the path does not change inside a session. Where there is no record yet, the page still draws no link rather than a dead one.
+
+Tests: 159 files, 9701 assertions.
+
 ## 3.137.0 — Six of the eight bridge-parity items: the farm can now be set up, measured and tidied by instruction (2026-08-15)
 
 The rule in `_REF/agentfarm-dev.md` says that anything a person can trigger from a panel or the palette, and that an agent could reasonably be told to do, reaches the bridge in the same commit. B-3 is the programme that goes back and settles where that was not done. Six of its items ship here — **62 new operations** — and every one of them calls the same core function the page calls, because a bridge that grows a second implementation is a bridge that disagrees with the surface it copies.

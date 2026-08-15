@@ -289,5 +289,37 @@ ok('modal added to dev default', posted[0].map.dev.indexOf('modal') !== -1 && po
     ok('1h is still the one selected on open', /data-win="60" class="sel"/.test(lastHtml));
 }
 
+// ---- ‼️ X-41: clicking the LINE opens the transcript, on every engine ----
+//
+// Only Claude's hooks put a transcript path on each EVENT. A Console
+// conversation on any other engine is mirrored into the monitor from a thread
+// id and a cwd, so its marks and tool bars arrived with an empty `data-file`
+// and clicking them did nothing — beside a Claude lane that opened the
+// transcript at the exact line. S1 is that shape here: the session knows its
+// file, its events do not. The path does not change inside a session, so the
+// lane's own is not a guess.
+{
+    const markOf = re => (re.exec(lastHtml) || [])[1];
+    ok('‼️ X-41 — a mark whose EVENT carried no path takes its lane\'s',
+        markOf(/<circle cx="[\d.]+" cy="47" r="4\.2" fill="[^"]*" class="mark" data-file="([^"]*)"/)
+        === 'D:/t/S1.jsonl');
+    ok('…and so does a tool bar', (() => {
+        const files = (lastHtml.match(/<rect x="[\d.]+" y="\d+" width="[\d.]+" height="14"[^>]*data-file="([^"]*)"/g) || [])
+            .map(s => /data-file="([^"]*)"/.exec(s)[1]);
+        return files.length > 0 && files.some(f => f === 'D:/t/S1.jsonl');
+    })());
+    ok('‼️ …and a lane with no file anywhere still draws no link rather than a dead one',
+        /class="mark lanelabel" data-file=""[\s\S]{0,900}?>dev #2</.test(lastHtml));
+
+    // The host half: where the lane's file comes from when the hook could not
+    // carry one. The record has known where a foreign conversation lives since
+    // the external pool existed — this join was one field short of reading it.
+    const host = fs.readFileSync(require('path').resolve(__dirname, '../src/panels/timeline.ts'), 'utf8');
+    ok('…the host falls back to the session RECORD, which covers every engine',
+        /transcriptPath: s\.transcriptPath \|\| row\?\.file \|\| undefined/.test(host));
+    ok('…reading the wide pool, the same one the title and the cost come from',
+        /const rows = new Map\(deps\.index\.allWithExternal\(\)/.test(host));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

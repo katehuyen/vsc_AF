@@ -201,11 +201,20 @@
             ` style="width:${buttonWidth(o, opts)}ch"` +
             `${o.disabled ? ' disabled' : ''} aria-label="${esc(selectionLine(o, opts, sel))}">` +
             `${esc(buttonText(o, opts, sel))} ▾</button>`;
+        // ‼️ U-61 — TWO DIFFERENT THINGS, AND ONLY ONE OF THEM BELONGS TO EVERY
+        // PICKER. The MUTE does: the box's own list drops on top of its
+        // explanation, so the panel is behind the menu on every page that has
+        // one of these, and a paragraph nobody can read is nobody's preference.
+        // The DELAY does not — it is the call site's (`tipDelay`, ms), because
+        // one row of boxes wanting a longer wait is no reason to slow every
+        // hover in the extension down.
+        const tipAttrs = 'data-aftip-mute=".afms.afms-on"'
+            + (Number(o.tipDelay) > 0 ? ` data-aftip-open="${Number(o.tipDelay)}"` : '');
         const trigger = window.AFTip && typeof window.AFTip.wrap === 'function'
             ? window.AFTip.wrap(button, selectionLine(o, opts, sel), explanation,
-                `tip-free${o.align === 'right' ? ' tip-right' : ''}`)
+                `tip-free${o.align === 'right' ? ' tip-right' : ''}`, tipAttrs)
             : button;
-        return `<span class="afms" data-afms-wrap="${esc(o.id)}">` +
+        return `<span class="afms${openId === o.id ? ' afms-on' : ''}" data-afms-wrap="${esc(o.id)}">` +
             trigger +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
             `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +
@@ -219,6 +228,10 @@
         const scope = root && root.querySelectorAll ? root : document;
         if (!scope || typeof scope.querySelectorAll !== 'function') { return; }
         Array.prototype.forEach.call(scope.querySelectorAll('[data-afms-menu]'), m => { m.hidden = true; });
+        // The class the hover panel reads to know it is covered — see the
+        // `tipAttrs` note in multi(). It tracks the menu and nothing else.
+        Array.prototype.forEach.call(scope.querySelectorAll('.afms.afms-on'),
+            s => { s.classList.remove('afms-on'); });
     }
 
     function wireDocClose() {
@@ -237,6 +250,7 @@
         if (!root || typeof root.querySelector !== 'function') { return; }
         const btn = root.querySelector(`[data-afms="${cssEsc(o.id)}"]`);
         const menu = root.querySelector(`[data-afms-menu="${cssEsc(o.id)}"]`);
+        const wrap = root.querySelector(`[data-afms-wrap="${cssEsc(o.id)}"]`);
         if (!btn || !menu || !menu.querySelectorAll) { return; }
         const def = defs[o.id] || { opts: normOptions(o.options) };
         const total = def.opts.length;
@@ -259,6 +273,7 @@
                 const willOpen = menu.hidden !== false;
                 closeMenus(root === document ? document : root);
                 menu.hidden = !willOpen;
+                if (wrap) { wrap.classList.toggle('afms-on', willOpen); }
                 openId = willOpen ? o.id : null;
             });
         }

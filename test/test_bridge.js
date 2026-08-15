@@ -2608,8 +2608,9 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
         const {
             addBacklogItem, archiveBacklogDone, BACKLOG_CODE, gatherFamilies, joinParent, moveInQueue,
-            nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue,
-            setBacklogState, tidyBacklogFile
+            moveBacklogState,
+            nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogHold,
+            setBacklogQueue, setBacklogState, tidyBacklogFile
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
             require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
@@ -2958,8 +2959,22 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                             ...(optStr(a, 'item') ? { text: optStr(a, 'item') } : {})
                         };
                         need(target.code || target.text, 'say which item: code, line or item (text)');
-                        const r = editBacklog(t => setBacklogState(t, target, optStr(a, 'state') || 'done'));
-                        return { code: r.item.code || null, state: r.item.state };
+                        const r = editBacklog(t => moveBacklogState(t, target, optStr(a, 'state') || 'done'));
+                        return { code: r.item.code || null, state: r.item.state, note: r.note ?? null };
+                    }
+                },
+                {
+                    op: 'projects.backlog.hold',
+                    describe: 'park it, or take it off the parking. args: project, code?, on?',
+                    handler: a => {
+                        const target = {
+                            ...(optStr(a, 'code') ? { code: optStr(a, 'code') } : {}),
+                            ...(optStr(a, 'item') ? { text: optStr(a, 'item') } : {})
+                        };
+                        need(target.code || target.text, 'say which item: code, line or item (text)');
+                        const on = a.on === undefined ? true : a.on === true;
+                        const r = editBacklog(t => setBacklogHold(t, target, on));
+                        return { code: r.item.code || null, onHold: !!r.item.onHold, note: r.note ?? null };
                     }
                 }
             ]);
@@ -3059,6 +3074,42 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const noCode = await reg.dispatch('projects.backlog.under', { project: 'Agent Farm' });
             ok('…and it will not guess which item you meant',
                 !noCode.ok && /pass `code`/.test(noCode.error));
+
+            // ---- U-60: parked by hand, over the bridge ----
+            // The point of the op is what it takes OFF the table, so the test is
+            // not "did the mark appear" but "did next stop offering it".
+            {
+                const held = await reg.dispatch('projects.backlog.hold',
+                    { project: 'Agent Farm', code: 'P-2' });
+                ok('‼️ projects.backlog.hold parks an item with a bare ⛔',
+                    held.ok && held.result.onHold === true && /- \[ \] P-2 [^\n]*⛔/.test(readBacklog()));
+                ok('…and the checkbox does not move — a held item is still open',
+                    /- \[ \] P-2 second thing/.test(readBacklog()));
+                const without = await reg.dispatch('projects.backlog.next',
+                    { project: 'Agent Farm', limit: 9, maxEffort: 'XL' });
+                ok('…and "what is next" stops offering it',
+                    without.ok && without.result.items.indexOf('P-2') < 0);
+                const off = await reg.dispatch('projects.backlog.hold',
+                    { project: 'Agent Farm', code: 'P-2', on: false });
+                ok('…pressing it again takes the hold off and leaves the line otherwise alone',
+                    off.ok && off.result.onHold === false
+                    && /- \[ \] P-2 second thing \[efor:: XL\]\s*$/m.test(readBacklog()));
+                const back = await reg.dispatch('projects.backlog.next',
+                    { project: 'Agent Farm', limit: 9, maxEffort: 'XL' });
+                ok('…and it is back in the queue where it was',
+                    back.ok && back.result.items.indexOf('P-2') >= 0);
+                // Starting it is a decision, so it ends the hold in the same write.
+                await reg.dispatch('projects.backlog.hold', { project: 'Agent Farm', code: 'P-2' });
+                const started = await reg.dispatch('projects.backlog.check',
+                    { project: 'Agent Farm', code: 'P-2', state: 'doing' });
+                ok('‼️ starting a parked item takes the hold off with it',
+                    started.ok && started.result.state === 'doing'
+                    && !/⛔/.test(readBacklog()) && /the ⛔ hold came off/.test(started.result.note || ''));
+                await reg.dispatch('projects.backlog.check', { project: 'Agent Farm', code: 'P-2', state: 'open' });
+                const noAimHold = await reg.dispatch('projects.backlog.hold', { project: 'Agent Farm' });
+                ok('…and a hold with nothing to aim at is refused',
+                    !noAimHold.ok && /which item/.test(noAimHold.error));
+            }
 
             const emptied = await reg.dispatch('projects.backlog.queue',
                 { project: 'Agent Farm', codes: [] });
@@ -3887,7 +3938,17 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
     // ---------- the real catalogue carries the new ops ----------
     {
-        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        // ‼️ The registrations do not all live in extension.ts any more — an
+        // area with more than a handful of ops moves out to its own
+        // `core/*Bridge.ts` (B-6 took the memory ones). Reading one file and
+        // calling it "the catalogue" is how this check would start passing on
+        // a build that lost half of it.
+        const srcDir = path.join(__dirname, '..', 'src');
+        const coreDir = path.join(srcDir, 'core');
+        const src = [path.join(srcDir, 'extension.ts')]
+            .concat(fs.readdirSync(coreDir).filter(f => f.endsWith('.ts')).map(f => path.join(coreDir, f)))
+            .map(f => fs.readFileSync(f, 'utf8'))
+            .join('\n');
         for (const op of [
             'memory.list', 'memory.add', 'living.check.add', 'living.check.remove',
             // Faz 7 — every user-triggerable function reaches the bridge in the

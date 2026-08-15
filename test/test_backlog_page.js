@@ -989,6 +989,122 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         /From the track ledger/.test(r.html()));
     ok('an undated closed item wears no date rather than a made-up one',
         !new RegExp('data-key="U-3"[\\s\\S]{0,1200}?closedat').test(r.html()));
+
+    // ---------- ‼️ U-58: the box says WHICH WAY it closed ----------
+    // A cancelled item reached the list with an EMPTY box — pixel-identical to
+    // an open one — so the one state the row already strikes through had no
+    // mark at all in the place the eye lands first.
+    const boxOf = code => {
+        const at = r.html().indexOf(`data-key="${code}"`);
+        const m = /<input type="checkbox" data-blcheck([\s\S]*?)>/.exec(r.html().slice(at));
+        return m ? m[1] : '';
+    };
+    const inRow = (attr, code) =>
+        r.els(attr).find(e => (e.closest() || { dataset: {} }).dataset.key === code);
+    ok('‼️ U-58 — a cancelled row\'s box is FILLED, like a done one',
+        /checked/.test(boxOf('U-3')) && /checked/.test(boxOf('U-1')));
+    ok('…and drawn as its own mark rather than borrowing the done tick',
+        /pj-bl-cb x/.test(boxOf('U-3')) && !/pj-bl-cb/.test(boxOf('U-1')));
+    ok('…in the red the rest of the page uses for a closing that was not a finish',
+        /\.pj-bl-cb\.x[\s\S]{0,400}--vscode-charts-red/.test(r.html()));
+    ok('…and an OPEN row is still an empty box, which is the whole point',
+        !/checked/.test(boxOf('P-1')) && !/pj-bl-cb/.test(boxOf('P-1')));
+    ok('…its hover says what it is and what pressing it does',
+        /Cancelled — press to reopen/.test(r.html()));
+    // Same control either way: a filled box reopens.
+    const cancelledBox = inRow('blcheck', 'U-3');
+    cancelledBox.checked = false;
+    cancelledBox.click();
+    ok('‼️ …and pressing it REOPENS rather than marking it done',
+        (r.posted.filter(m => m.type === 'backlogState').pop() || {}).state === 'open');
+}
+
+// ---------- ‼️ U-60: parked by hand — the ⛔ nobody could write ----------
+// The file's own legend has said "⛔ — waiting" since the format existed, and
+// the page could READ one and had no way whatsoever to put one there.
+{
+    const d = data();
+    d.tabData.backlog.items = items().map(i =>
+        (i.code === 'K-1' ? { ...i, onHold: true } : i));
+    // held items are out of "what is next", exactly as blocked ones are
+    d.tabData.backlog.next = [{ code: 'P-2', line: 14 }];
+    d.tabData.backlog.held = ['K-1'];
+    const r = run(d);
+    const holdOf = code => {
+        const at = r.html().indexOf(`data-key="${code}"`);
+        const m = /<button class="pj-bl-act hold([^"]*)"\s*\n?\s*data-blhold="([01])"/.exec(
+            r.html().slice(at, at + 4000));
+        return m ? { cls: m[1], next: m[2] } : null;
+    };
+    ok('U-60: every live row carries the park button', !!holdOf('P-1') && !!holdOf('K-1'));
+    ok('‼️ …between Start it and Cancel, where the three answers belong', (() => {
+        const at = r.html().indexOf('data-key="P-1"');
+        const slice = r.html().slice(at, at + 6000);
+        return slice.indexOf('data-blstate="doing"') < slice.indexOf('data-blhold')
+            && slice.indexOf('data-blhold') < slice.indexOf('data-blstate="cancelled"');
+    })());
+    ok('…grey while it means nothing, its own colour once it does',
+        holdOf('P-1').cls === '' && holdOf('K-1').cls === ' on');
+    ok('…and the grey is DRAINED, not dimmed — ⛔ is a picture and ignores `color`',
+        /\.pj-bl-act\.hold \{ filter:grayscale\(1\)/.test(r.html())
+        && /\.pj-bl-act\.hold\.on[\s\S]{0,200}--vscode-charts-red/.test(r.html()));
+    ok('‼️ …it is a SWITCH: the row says which way it is pointing',
+        holdOf('P-1').next === '1' && holdOf('K-1').next === '0');
+    ok('…and a closed row has no park button — parking a finished item does nothing', (() => {
+        const sort = r.byId('bl-sort'); sort.value = 'closed'; sort.fire('change');
+        const at = r.html().indexOf('data-key="U-1"');
+        return !/data-blhold/.test(r.html().slice(at, at + 4000));
+    })());
+    const r2 = run(d);
+    const holdBtn = code =>
+        r2.els('blhold').find(e => (e.closest() || { dataset: {} }).dataset.key === code);
+    holdBtn('P-1').click();
+    ok('pressing it asks the host to park that row',
+        (r2.posted.filter(m => m.type === 'backlogHold').pop() || {}).on === true);
+    holdBtn('K-1').click();
+    ok('…and pressing a parked one asks for the hold to come off',
+        (r2.posted.filter(m => m.type === 'backlogHold').pop() || {}).on === false);
+    // The axis that asks "will next hand this out" has to know about it, or a
+    // parked item sits in the "startable now" list.
+    const r3 = run(d);
+    r3.els('act').find(e => e.dataset.act === 'blFilters').click();
+    r3.ms.only('bl-blocked', ['no']);
+    ok('‼️ …and "startable now" does not include a parked item',
+        codesIn(r3.html()).indexOf('K-1') < 0);
+    r3.ms.only('bl-blocked', ['yes']);
+    ok('…while "waiting or held" holds both kinds of reason',
+        codesIn(r3.html()).indexOf('K-1') >= 0 && codesIn(r3.html()).indexOf('K-2') >= 0);
+}
+
+// ---------- ‼️ U-61: the boxes that explain themselves too eagerly ----------
+{
+    const r = run(data());
+    // The four axes behind ⚙ are swept, not read: crossing the row on the way
+    // to the fourth opened three panels nobody asked for.
+    r.els('act').find(e => e.dataset.act === 'blFilters').click();
+    const html = r.html();
+    const delayOf = id => {
+        const at = html.indexOf(`data-afms-wrap="${id}"`);
+        const m = /data-aftip-open="(\d+)"/.exec(html.slice(at, at + 1400));
+        return m ? Number(m[1]) : 0;
+    };
+    ok('U-61: the four `and` boxes wait five times afTip\'s own 420ms',
+        ['bl-blocked', 'bl-plan', 'bl-due', 'bl-rel'].every(id => delayOf(id) === 2100));
+    ok('‼️ …and NOTHING else does — the state and filing boxes are untouched',
+        delayOf('bl-states') === 0 && delayOf('bl-filed') === 0);
+    ok('…the delay rides on the trigger, not on the component',
+        !/const FREE_OPEN_MS = (?!420)/.test(
+            require('fs').readFileSync(path.resolve(__dirname, '../media/afTip.js'), 'utf8')));
+    ok('‼️ every picker mutes its own hover panel while its list is open',
+        /data-aftip-mute="\.afms\.afms-on"/.test(html));
+    // …and the mute is real: opening the menu marks the wrapper.
+    r.ms.open('bl-states');
+    ok('…the wrapper says so the moment the menu drops', r.ms.covered('bl-states'));
+    // The capture box's parent picker is READ downwards, so it waits three times.
+    const r2 = run(data());
+    r2.byId('bl-parent').fire('focus');
+    ok('…and the capture area\'s parent list waits three times, on its own trigger',
+        /data-aftip-anchor="\.pj-bl-pp" data-aftip-open="1260"/.test(r2.html()));
 }
 
 // ---------- long items are cut, and open ----------
