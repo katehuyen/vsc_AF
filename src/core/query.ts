@@ -42,9 +42,26 @@ export interface CompiledQuery {
 /** One row of the grammar, with its columns intact — what a help card draws. */
 export interface QuerySyntaxRow { sym: string; what: string; example: string; }
 
+/**
+ * X-42 — which files a fast literal scanner may skip, decided by the grammar
+ * itself. `any` promises that a record carrying none of these literals cannot
+ * match; `all` says no such promise could be made. The real matcher still
+ * passes judgement on everything the plan lets through, so this can only ever
+ * cost a scan, never a hit.
+ */
+export interface QueryPrefilter {
+    mode: 'all' | 'any';
+    literals: string[];
+    /** Matching a piece of text still holds inside a longer one — true of every
+     *  positive query, false as soon as a NOT (or raw regex) is involved. A
+     *  reader that tests a whole block before splitting it depends on this. */
+    monotone: boolean;
+}
+
 interface QueryModule {
     compile(q: string, opts?: QueryOptions): CompiledQuery;
     matches(text: string, q: string, opts?: QueryOptions): boolean;
+    prefilter(q: string, opts?: QueryOptions): QueryPrefilter;
     tip(subject?: string, opts?: { wholeWord?: boolean }): string;
     SYNTAX: string;
     SYNTAX_ROWS: QuerySyntaxRow[];
@@ -61,6 +78,11 @@ export function compileQuery(q: string, opts: QueryOptions = {}): CompiledQuery 
 /** Does this text match? The one-liner a list filter wants. */
 export function queryMatches(text: string, q: string, opts: QueryOptions = {}): boolean {
     return impl.matches(text, q, opts);
+}
+
+/** The safe candidate plan for this query — see QueryPrefilter. */
+export function queryPrefilter(q: string, opts: QueryOptions = {}): QueryPrefilter {
+    return impl.prefilter(q, opts);
 }
 
 /** The grammar, in the words the tooltips and the guide both use. */

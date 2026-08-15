@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import {
-    searchTranscripts, searchMemory, searchLiveEvents,
+    searchMemory, searchLiveEvents,
     SearchResult, SearchRole, SearchableSession, ParseForeign, isSearchRole
 } from '../core/search';
+import { TextSearchService, isAborted } from '../core/textSearchCorpus';
 import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { ENGINES } from '../core/consoleEngine';
 import { handleAfNav, htmlShell } from './base';
@@ -22,6 +23,9 @@ export interface SearchDeps {
     projectOf?(session: SessionInfo): string;
     /** X-35: how to read a transcript this engine's scanner cannot (cliViewer). */
     parseForeign?: ParseForeign;
+    /** X-42: the ONE corpus service — the same instance the bridge op uses, so
+     *  the page and an agent never build two indexes of the same transcripts. */
+    textSearch: TextSearchService;
 }
 
 /** Pre-scoping passed by the surface that opened the panel (viewer → this
@@ -155,6 +159,14 @@ export function searchableSessions(
 export class SearchPanel {
     private static current: SearchPanel | undefined;
     private disposables: vscode.Disposable[] = [];
+    /**
+     * ‼️ LATEST WINS, AND THE LOSER STOPS (X-42). The page re-runs half a second
+     * after a keystroke, so a sentence typed at speed used to queue four full
+     * fleet scans on the host — each paid for in full — while the webview's
+     * `seq` merely declined to DRAW the three it no longer wanted. The token
+     * below is what actually stops them; `seq` stays as the last guard.
+     */
+    private running: { aborted: boolean } | undefined;
 
     static show(deps: SearchDeps, preset?: SearchPreset): void {
         if (SearchPanel.current) {
@@ -270,6 +282,12 @@ export class SearchPanel {
                 const roles = Array.isArray(msg.roles) && msg.roles.length
                     ? msg.roles.filter(isSearchRole)
                     : undefined;
+                const seq = typeof msg.seq === 'number' ? msg.seq : 0;
+                // Whatever was running answers a question that is no longer in
+                // the box. Stop it before starting this one.
+                if (this.running) { this.running.aborted = true; }
+                const token = { aborted: false };
+                this.running = token;
                 let result: SearchResult;
                 if (msg.semantic) {
                     const filters: SessionFilters = {
@@ -323,7 +341,26 @@ export class SearchPanel {
                         maxPerFile: file ? 400 : 12,
                         parseForeign: this.deps.parseForeign
                     };
-                    result = searchTranscripts(sessions, query, opts);
+                    try {
+                        result = await this.deps.textSearch.search(sessions, query, {
+                            ...opts,
+                            signal: token,
+                            // The first build of a 664 MB corpus is a visible
+                            // event, not a pause to be hidden: the page says how
+                            // far it has got and never presents a partial answer.
+                            onProgress: (done, total) => {
+                                if (token.aborted) { return; }
+                                void this.panel.webview.postMessage({
+                                    type: 'progress', seq, done, total
+                                });
+                            }
+                        });
+                    } catch (e) {
+                        // A superseded search posts nothing at all — the page is
+                        // already waiting for the one that replaced it.
+                        if (isAborted(e)) { return; }
+                        throw e;
+                    }
                     // S5 sources ride along unless the scope is a single session
                     // (that session's content is fully covered by the scan above).
                     // They have no engine/project/lane of their own, so only the
@@ -341,11 +378,13 @@ export class SearchPanel {
                         result.matchesShown += extras;
                     }
                 }
+                if (token.aborted) { return; }
+                if (this.running === token) { this.running = undefined; }
                 void this.panel.webview.postMessage({
                     type: 'results', result, query: msg.query,
                     // echoed back so the page can drop results of a superseded
                     // search (auto-search fires on every control change)
-                    seq: typeof msg.seq === 'number' ? msg.seq : 0,
+                    seq,
                     semanticStatus: this.deps.semanticStatus(),
                     facets: this.facets(),
                     // X-34: the id in the box (or in the Session filter), resolved
@@ -394,6 +433,9 @@ export class SearchPanel {
 
     private dispose(): void {
         SearchPanel.current = undefined;
+        // A closed panel has nothing to answer; the scan it left running would
+        // otherwise keep the host busy for a page nobody is looking at.
+        if (this.running) { this.running.aborted = true; this.running = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

@@ -187,7 +187,11 @@
             at++;
             const pattern = t.phrase ? phrasePattern(t.value, t.unclosed) : barePattern(t.value, whole);
             if (pattern === null) { bad('an empty phrase matches nothing — put a word inside the quotes'); }
-            return { t: 'leaf', re: new RegExp(pattern, flags) };
+            // `term` is the token this leaf was built from, kept so the candidate
+            // prefilter below can read the LITERAL out of it. Deriving it from
+            // the compiled RegExp instead would mean parsing our own escaping
+            // back out, which is the second grammar this file exists against.
+            return { t: 'leaf', re: new RegExp(pattern, flags), term: t };
         }
 
         function notExpr() {
@@ -310,6 +314,129 @@
     /** Does this text match? The one-liner every page filter wants. */
     function matches(text, q, opts) { return compile(q, opts).test(text); }
 
+    // ------------------------------------------------- the candidate prefilter
+    //
+    // ‼️ A PLAN IS A SUPERSET PROMISE, NOT A SECOND SEARCH (X-42).
+    //
+    // Scanning 664 MB of transcript to answer one word is the whole cost of the
+    // Search page, and the way out is to let a fast literal scanner say which
+    // FILES could possibly match before the real matcher reads any of them. The
+    // danger in that is obvious and fatal: a candidate list that is too small
+    // loses hits silently, and a search that quietly answers less is worse than
+    // a slow one. So the plan comes from THIS parse tree — the only grammar —
+    // and it obeys one rule: a record may be excluded only where a false
+    // negative is impossible.
+    //
+    //   leaf   → the longest run of characters the pattern cannot match without
+    //   and    → the more selective side; an unusable side is simply dropped,
+    //            because the other side alone is already a superset
+    //   or     → the union, and ONLY if both sides are usable
+    //   not    → nothing: a negated term is by definition absent from the hit
+    //
+    // Anything else — a negative-only query, a term too short to be worth
+    // scanning for, raw regex — returns `all`, meaning "read everything". The
+    // caller then runs the real `test()`/`find()` over whatever the plan let
+    // through, so AND/OR/NOT, parentheses, phrases, wildcards, Turkish Unicode,
+    // case and whole-word all behave exactly as they did.
+    //
+    // ‼️ The literals are matched against text whose whitespace has been
+    // collapsed to single spaces (what the corpus stores); nothing here spans
+    // a word gap, so that assumption only ever costs candidates, never hits.
+
+    /** Below this a literal is not worth a scan — and `*` on both ends of a
+     *  two-letter word is not a filter, it is a full read with extra steps. */
+    const PREFILTER_MIN = 3;
+
+    /** The longest invariant literal a term must contain. `*` is the only
+     *  character with a meaning left, so the runs between the stars are exactly
+     *  what any matching text has to carry, whole-word anchoring included. */
+    function literalOf(term) {
+        const words = term.phrase
+            ? String(term.value).trim().split(/\s+/).filter(Boolean)
+            : [String(term.value)];
+        let best = '';
+        for (const w of words) {
+            for (const part of w.split('*')) {
+                if (part.length > best.length) { best = part; }
+            }
+        }
+        return best.length >= PREFILTER_MIN ? best : null;
+    }
+
+    /** How much a literal set is worth: its WEAKEST member decides, since the
+     *  set is an OR and one short literal drags the whole scan back to reading
+     *  everything. Fewer literals break the tie. */
+    function selectivity(list) {
+        let min = Infinity;
+        for (const s of list) { if (s.length < min) { min = s.length; } }
+        return min - (list.length - 1) / 1000;
+    }
+
+    function planOf(node) {
+        switch (node.t) {
+            case 'leaf': { const lit = literalOf(node.term); return lit ? [lit] : null; }
+            case 'not': return null;
+            case 'or': {
+                const a = planOf(node.a), b = planOf(node.b);
+                return a && b ? a.concat(b) : null;
+            }
+            case 'and': {
+                const a = planOf(node.a), b = planOf(node.b);
+                if (!a) { return b; }
+                if (!b) { return a; }
+                return selectivity(a) >= selectivity(b) ? a : b;
+            }
+            default: return null;
+        }
+    }
+
+    /**
+     * ‼️ IS THIS QUERY MONOTONE — does matching a piece of text still hold when
+     * that text is put inside a longer one?
+     *
+     * It sounds pedantic and it is the difference between a correct fast path
+     * and a silently wrong one. A reader that wants to test a whole BLOCK of
+     * records at once, and only take it apart when the block matches, is
+     * relying on exactly this. It is true of everything positive: a word, a
+     * phrase, a wildcard, an AND, an OR — all of them still match with more
+     * text around them. It is false the moment a NOT appears, because "does not
+     * contain zebrafish" is true of one line and false of the file it lives in.
+     * Raw regex is false too: `^` and `$` are anchors on the WHOLE string, so a
+     * pattern that matches a record on its own can fail against the block.
+     */
+    function isMonotone(node) {
+        switch (node.t) {
+            case 'leaf': return true;
+            case 'not': return false;
+            case 'and': case 'or': return isMonotone(node.a) && isMonotone(node.b);
+            default: return false;
+        }
+    }
+
+    /**
+     * prefilter(q, opts) → { mode: 'all' } | { mode: 'any', literals: [...] }
+     *
+     * `any` means: a record that contains NONE of these literals cannot match,
+     * so a file that contains none of them may be skipped entirely. `all` means
+     * no such promise could be made and everything must be read. Case follows
+     * `opts.caseSensitive`, exactly as the matcher does; `regex: true` is always
+     * `all`, because a raw pattern's invariants are not ours to guess.
+     */
+    function prefilter(q, opts) {
+        const o = opts || {};
+        const src = String(q === undefined || q === null ? '' : q);
+        const everything = { mode: 'all', literals: [], monotone: false };
+        if (!src.trim() || o.regex) { return everything; }
+        const flags = (o.caseSensitive ? '' : 'i') + 'u';
+        let root;
+        try { root = parse(tokenize(src), flags, o.wholeWord === true); }
+        catch (e) { return everything; }
+        const monotone = isMonotone(root);
+        const list = planOf(root);
+        if (!list || !list.length) { return { mode: 'all', literals: [], monotone }; }
+        return { mode: 'any', literals: Array.from(new Set(list)), monotone };
+    }
+
     // -------------------------------------------------------------- the words
     // Said once, here, so twenty boxes cannot explain the same grammar twenty
     // ways — and so the guide (docs/BLUEPRINT) and the tooltips agree by
@@ -371,5 +498,8 @@
             + (o.wholeWord ? WHOLE_WORD_ON + '\n\n' : '') + SYNTAX;
     }
 
-    return { compile, matches, tip, SYNTAX, SYNTAX_ROWS, WHOLE_WORD_ON, BARE_WORD_NOTE, WORD };
+    return {
+        compile, matches, prefilter, tip,
+        SYNTAX, SYNTAX_ROWS, WHOLE_WORD_ON, BARE_WORD_NOTE, WORD, PREFILTER_MIN
+    };
 });

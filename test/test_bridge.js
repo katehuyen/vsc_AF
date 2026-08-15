@@ -2050,8 +2050,13 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // the real registration must carry the same contract
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         const block = src.slice(src.indexOf("op: 'search.transcripts'"), src.indexOf("op: 'sessions.find'"));
+        // ‼️ X-42 — the same SERVICE INSTANCE the page uses, not merely the same
+        // function. Two instances would index the same transcripts twice and
+        // disagree about which shard is current.
         ok('extension.ts registers it against the panel\'s own engine, not a copy',
-            /searchTranscripts\(/.test(block) && /searchMemory\(/.test(block) && /searchLiveEvents\(/.test(block));
+            /textSearch\.search\(/.test(block) && /searchMemory\(/.test(block) && /searchLiveEvents\(/.test(block));
+        ok('…and that one corpus service is what the Search panel is handed too',
+            /new TextSearchService\(\{/.test(src) && /SearchPanel\.show\(\{[\s\S]{0,1400}?\n\s+textSearch,/.test(src));
         ok('…with the roles, the window and the sources on the wire',
             /roles\?/.test(block) && /from\?\/to\?/.test(block)
             && /tsFrom: when\(args\.from, false\)/.test(block) && /tsTo: when\(args\.to, true\)/.test(block));

@@ -252,6 +252,7 @@ import {
 } from './core/consolehistory';
 import { MAX_TRANSCRIPT_BYTES, readSettled, snapshotLabel } from './core/transcriptRead';
 import { CliViewMessage, parseCliViewer } from './core/cliViewer';
+import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import {
     carriedTotals, ConsoleMessage, OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
@@ -621,6 +622,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // I4: semantic index over memory/*.md (separate from the transcript index).
     const memIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-memory.json'));
+
+    /**
+     * X-42 — ONE search corpus, for the page AND the bridge op. Two instances
+     * would index the same 664 MB twice and disagree about which shard is
+     * current; the whole point of the service is that "what is searchable" is
+     * built once. Nothing is built here: the first query on the Search page
+     * builds it, lazily and yielding, so activation stays what it was.
+     */
+    const textSearch = new TextSearchService({
+        storageRoot: context.globalStorageUri.fsPath,
+        rgPath: resolveRipgrep(vscode.env.appRoot),
+        parseForeign: (raw, file) => parseCliViewer(raw, file, pricing)
+    });
 
     // G1: browser-step approvals waiting for a human, mirrored into the Needs You queue.
     const approvalQueue = new ApprovalQueue();
@@ -4765,7 +4779,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (claude|codex|gemini|agy…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
                 + 'from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). '
                 + 'Each hit carries file, sessionId, engine, agentName, title, ts, role, speaker (the agent that wrote a delegation), turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources. `file` + `ts` are what the viewer takes to land on the exact moment; sessions.find takes an id.',
-            handler: (args) => {
+            handler: async (args) => {
                 const query = argStr(args, 'query');
                 const strs = (v: unknown): string[] | undefined =>
                     Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
@@ -4810,7 +4824,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     errorsOnly: args.errorsOnly === true,
                     session: optStr(args, 'sessionId')
                 }, sessionProjectName);
-                const result = searchTranscripts(searchableSessions(scoped, sessionProjectName), query, opts);
+                // ‼️ X-42 — THE PANEL'S OWN ENGINE, not a second synchronous one.
+                // The op's contract is unchanged; what changed is that it reads
+                // the same persistent corpus the page does, so an agent asking
+                // the fleet a question does not re-read 664 MB of transcript.
+                const result = await textSearch.search(
+                    searchableSessions(scoped, sessionProjectName), query, opts);
                 // Scoped to one session, the two extra sources are noise: that
                 // session's text is already covered in full by the scan above.
                 // They have no engine, project or lane of their own, so only the
@@ -19451,6 +19470,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // X-35: the OTHER engines' transcripts, read with the very
                     // parser the Session Viewer reads them with.
                     parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),
+                    // X-42: the same corpus the bridge op reads — one index.
+                    textSearch,
                     semanticSearch,
                     semanticStatus
                 }, preset && typeof preset === 'object' ? preset : undefined);

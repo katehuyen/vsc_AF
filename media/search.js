@@ -45,6 +45,9 @@
     let idMatch = null;
     let searching = false;
     let dirty = false;
+    // X-42: the one-time corpus build, while it is happening. A wait nobody can
+    // see reads as a hang; a wait with a number on it reads as work.
+    let prep = null;
     let seq = 0;
     let queryTimer = null;
     let opened = false;
@@ -432,7 +435,7 @@
         queryTimer = null;
         rememberQuery();
         if (!queryText.trim()) return;
-        searching = true; dirty = false; shell();
+        searching = true; dirty = false; prep = null; shell();
         vscode.postMessage({
             type: 'search', seq: ++seq, query: queryText,
             semantic: mode === 'meaning', regex: mode === 'regex',
@@ -566,6 +569,13 @@
         // the length of every scan made the results flash out and back in under
         // the reader — the previous answer stays, dimmed, until the new one lands.
         out.className = searching ? 'busy' : '';
+        if (searching && prep && prep.total) {
+            // ‼️ A PARTIAL ANSWER IS NEVER SHOWN AS AN ANSWER. This is the build
+            // talking, not the search: the results below (if any) still belong
+            // to the previous query and stay dimmed until this one lands.
+            const line = `<div class="empty">Preparing search corpus ${prep.done}/${prep.total}… <span class="muted">one time; it is reused from here on</span></div>`;
+            if (!lastResult) { out.innerHTML = line; return; }
+        }
         if (searching && !lastResult) { out.innerHTML = '<div class="empty">Searching the selected session pool…</div>'; return; }
         if (!lastResult) { out.innerHTML = '<div class="empty">Build the search above, then press Search.</div>'; return; }
         if (lastResult.error) { out.innerHTML = `<div class="partial">⚠ ${C.esc(lastResult.error)}</div>`; return; }
@@ -643,8 +653,19 @@
             if (preset?.agentName) agentSel = new Set([preset.agentName]);
             shell(); return;
         }
+        if (ev.data.type === 'progress') {
+            // Strict, not truthy: a build report belonging to a query that has
+            // already been replaced must not draw over the one running now.
+            if (typeof ev.data.seq === 'number' && ev.data.seq !== seq) return;
+            prep = { done: ev.data.done || 0, total: ev.data.total || 0 };
+            // ‼️ Only the results region redraws. A full `shell()` here would
+            // rebuild the controls under the reader's hands and take the caret
+            // out of the box they are still typing in.
+            if (searching) renderResults();
+            return;
+        }
         if (ev.data.type !== 'results' || (ev.data.seq && ev.data.seq !== seq)) return;
-        searching = false; dirty = false;
+        searching = false; dirty = false; prep = null;
         lastResult = ev.data.result; idMatch = ev.data.idMatch || null;
         if (ev.data.facets) facets = ev.data.facets;
         if (ev.data.semanticStatus) semStatus = ev.data.semanticStatus;

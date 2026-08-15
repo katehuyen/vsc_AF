@@ -176,13 +176,103 @@ Normalize kayıt:
 { role, text, ts, turn, turnLabel, tool? }
 ```
 
-Claude ve yabancı transcript'leri `mtime + size + engine + lane` imzasıyla önbelleğe
-alınır. LRU sınırı 80 dosya ve yaklaşık 48 milyon karakterdir. Filtre değişimi aynı
-95 MB'ı tekrar tekrar JSON ayrıştırmaz; dosya değiştiğinde imza önbelleği düşürür.
+Kayıt üreticisi tektir (`buildRecords`): hem doğrudan tarama hem indeks kurucu aynı
+fonksiyondan geçer, ikinci bir ayrıştırıcı ya da ikinci eşleşme semantiği yazılmaz.
+Boşluk normalizasyonu (`\s+ → ' '`) **kayıt üretilirken bir kez** yapılır; eskiden her
+sorguda, her mesaj için tekrar ediliyordu. `TEXT_CAP = 200.000` kesimi normalizasyondan
+önce uygulanır: bir mesaj kendi karakterlerinden 200 bininde kesilir.
 
 Bir user JSONL kaydındaki birden fazla text block tek turn sayılır. `<` ile başlayan
 normal kullanıcı metni korunur; yalnız bilinen sistem zarfı etiketleri dışlanır.
 Okunamayan dosyalar sessizce başarı sayılmaz, `parseFailures` olarak döner.
+
+### Kalıcı arama korpusu (X-42)
+
+Ölçülen kök neden: canlı havuz 405 oturum / 664 MB'a çıktığında hiç eşleşmeyen filo
+sorgusu 6.500–13.000 ms sürüyordu ve **ikinci koşu hızlanmıyordu** — 80 dosyalık LRU
+newest→oldest geçişte kendi başını çevrimsel olarak atıyordu. Daha kötüsü, ayrıştırıcı
+seçili roller yalnız You+Agent olsa bile bütün rolleri üretiyordu: gerçek ağaçta
+aranabilir 79,9 milyon karakterin diyalog kısmı 2,76 milyon karakter, yani varsayılan
+arama ~77 milyon karakterlik araç trafiğinin bedelini boşuna ödüyordu.
+
+`src/core/textSearchCorpus.ts` bunu kalıcı, rol-parçalı bir korpusla çözer:
+
+- **Yer:** `globalStorageUri/search-corpus-v1/`. Kullanıcının transcript'ine asla
+  yazılmaz; bu bir cache'tir, kaybı veri kaybı değildir.
+- **Geçerlilik imzası:** `schemaVersion + mtimeMs + size + engine + isSidechain`.
+  Yalnız imzası değişen oturum yeniden üretilir; silinen oturumun shard'ları prune
+  edilir; şema sürümü değişince hepsi yeniden kurulur.
+- **Rol başına shard:** `user`, `assistant`, `delegator`, `handler`, `tool`,
+  `toolResult`. Varsayılan Dialog araması tool shard'ına hiç dokunmaz.
+- **Satır biçimi:** `i \t ts \t turn \t tool \t label \t text`. Metin son alandadır ve
+  hiç kaçışlanmaz — bu sayede ham satır üzerinde yapılan her tarama, metnin kendisini
+  birebir görür. Kısa alanlar tab/newline için kaçışlanır. `i`, transcript'in kendi
+  sırasını geri kurar (hit sırası ve önizleme cap'i buna bağlıdır).
+- **Yazım:** aynı klasörde geçici dosya + atomic rename; manifest en son yazılır. Yarım
+  shard, bozuk manifest veya kayıp dosya = yeniden kurulum, hata değil.
+- **Kurulum anı:** activation'da hiçbir şey kurulmaz. İlk sorgu newest-first kurar,
+  dosya aralarında event-loop'a yield eder ve sayfaya `Preparing search corpus n/total…`
+  ilerlemesini yollar. Kısmi cevap hiçbir zaman cevap gibi sunulmaz.
+
+### Aday daraltma ve kapsama testi
+
+Aday planı **sorgu dilinin kendisinden** çıkar (`media/afQuery.js → prefilter`), sorgu
+metni ikinci kez yorumlanmaz. Tek kural: bir kaydı elemek ancak false-negative
+imkânsızsa serbesttir.
+
+- leaf → terimin taşımak zorunda olduğu en uzun değişmez literal (3 karakter altı
+  eleme yapmaz), AND → daha seçici dal, OR → birleşim (bir dal kullanılamazsa plan
+  düşer), NOT → hiçbir zaman daraltmaz. Regex daima tam tarama.
+- `prefilter` ayrıca **monotonluk** bildirir: "bir metni içine alan daha uzun metin de
+  eşleşir mi?" Bu her pozitif sorgu için doğrudur, bir NOT göründüğü anda yanlıştır
+  (`-zebrafish` bir satır için doğru, o satırı içeren dosya için yanlış) ve raw regex
+  için de yanlıştır (`^`/`$` bütün dizgeye çapa atar). Yalnız monoton sorgularda önce
+  bütün shard, sonra tek tek satırlar test edilir ve ancak eşleşebilecek satır kayda
+  dönüştürülür; bu, sorgu başına yüz binlerce nesne üretmeyi ortadan kaldırır.
+- **ripgrep yalnız kazandığı yerde çalışır.** Bu makinede bir rg süreci ~285 ms'e mal
+  oluyor, varsayılan diyalog korpusunu Node 84 ms'de baştan sona okuyor. Bu yüzden rg
+  yalnız seçili shard toplamı 12 milyon karakteri aştığında (yani araç izi) devreye
+  girer, batch'ler paralel koşar, ikili VS Code'un kendi kopyasından çözülür (PATH'e
+  güvenilmez). **Yalnız exit 1 dürüst sıfırdır**; ikili yok, exit > 1, timeout veya
+  okunamayan batch = daraltma iptal, tam tarama.
+- rg yalnız superset üretir; son hükmü her kayıtta bugünkü `CompiledQuery.test/find`
+  verir. AND/OR/NOT, parantez, phrase, wildcard, Türkçe Unicode, case ve whole-word
+  davranışı değişmez.
+
+### Bellekte tutulan çalışma kümesi
+
+Diskteki korpus tek gerçek kaynaktır; RAM'de yalnız son sorguların dokunduğu shard'ların
+ham metni, imzasıyla anahtarlanmış, **24 milyon karakterle sınırlı** bir LRU'da durur
+(yerine geçtiği eski önbellek 48 milyon karakterlik ayrıştırılmış mesaj tutuyordu).
+Gerçek havuzda varsayılan Dialog korpusunun tamamı ~5,5 MB'tır.
+
+### Ölçülen sonuç (405 oturum · 664 MB · bu makine)
+
+| | eski motor | korpus |
+|---|---|---|
+| hiç eşleşmeyen filo Text sorgusu | 6.546 ms | **58 ms** |
+| aynı sorgu, ikinci koşu | 7.060 ms (hızlanmıyor) | **57 ms** |
+| tipik dar sorgu | — | **55–63 ms** |
+| Everything (bütün roller), sıcak | — | **622 ms** |
+| sıcak sorguda ham transcript okuması | 405 dosya | **0** |
+| tek seferlik korpus inşası | — | 12,7 s (activation'a yazılmaz) |
+| korpus disk maliyeti | — | 77,5 MB |
+| heap | — | 24 MB |
+
+### Diğer iki kaynak
+
+Memory dosyaları `mtime + size` ile normalize edilmiş paragraf listesi olarak
+önbelleğe alınır. 26 MB'lık live-events deposu da imzasıyla **yazma başına bir kez**
+ayrıştırılır — eskiden her sorguda baştan JSON-parse ediliyordu. Orphan kararı bilerek
+önbelleğe alınmaz: transcript'in bugün var olup olmadığı diske ait bir gerçektir, bir
+saat önce silinmiş oturumun olayları depoya dokunulmadan görünür olmalıdır.
+
+### İptal (latest-wins)
+
+Panel bir iptal jetonu tutar. Yeni bir `search` mesajı önceki Text/Regex işini iptal
+eder, panel dispose da eder; iptal edilen iş sonuç post etmez. Webview'daki `seq`
+kontrolü son emniyet olarak kalır — eskiden **tek** emniyetti, yani hızlı yazarken
+oluşan sorgular host'ta tam maliyetle kuyruğa giriyor, yalnız çizilmiyorlardı.
 
 ## 7. Sonuç sözleşmesi
 
@@ -237,3 +327,13 @@ oturumdaki found/shown sayısı tek başlıkta bulunur.
 - Arama kutusu ve çoklu seçicilerde yerli `title` bulunmaması
 - Koyu ve açık temada `test/render_page.js search` görseli
 - `search.transcripts` köprü op'unun aynı kapsam ve sayaçları döndürmesi
+- **Korpus ile doğrudan taramanın birebir aynı cevabı vermesi** (`test/test_search_speed.js`):
+  AND, OR, NOT, yalnız-negatif, parantez, kapalı/açık phrase, wildcard, case, Türkçe
+  Unicode whole-word ve raw regex için aynı hit sırası, snippet, rol, turn ve
+  found/shown/omitted/sessionMatches/parseFailures sayaçları
+- Aynı sorgunun ikinci koşusunda sıfır transcript okuması; Dialog sorgusunun
+  tool/toolResult shard'ına dokunmaması
+- Append → yalnız o oturumun yeniden indekslenmesi; silme → prune; bozuk manifest ve
+  kayıp shard → self-heal; yabancı parser yokluğunun cache'i zehirlememesi
+- ripgrep yok / exit 1 / yanlış ikili durumlarının ayrı ayrı doğru davranması
+- İptal edilen aramanın cevap post etmemesi ve sayfanın yalnız son `seq`'i çizmesi
