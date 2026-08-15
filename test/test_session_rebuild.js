@@ -59,11 +59,18 @@ const lines = [
 const store = path.join(os.tmpdir(), 'af-test-rebuild-' + Date.now() + '.jsonl');
 fs.writeFileSync(store, lines, 'utf8');
 
+// ‼️ A REBUILD MUST NOT RE-ANNOUNCE A TURN THAT ALREADY HAPPENED (U-66). S1's
+// stored history ends in `stop`, so the revived card is `waiting-input` — but
+// that turn ended five minutes ago and the user has already seen it. Wiring the
+// callback BEFORE construction is the only way to measure that.
+const fires = [];
 const cfg = {
     enabled: false, port: 0, stuckThresholdMs: 240 * 1000,
-    notifyPermission: false, notifyStuck: true, notifyTurnEnd: false
+    notifyPermission: false, notifyStuck: true, notifyTurnEnd: false,
+    onTurnReady: (s) => fires.push(s.sessionId)
 };
 const live = new LiveMonitor(() => cfg, () => ({}), undefined, store);
+eq('a reload announces no past turn', fires, []);
 
 const sessions = live.sessions();
 eq('only live-window sessions revived', sessions.map(s => s.sessionId).sort(), ['S1', 'S4']);
@@ -81,8 +88,6 @@ eq('S4 stale mid-work → stalled', s4.status, 'stalled');
 eq('S4 quiet (no reload-noise notify)', s4.notifiedStuck, true);
 
 // A new Stop for revived S1 must NOT fire turn-ready (already waiting-input)…
-const fires = [];
-cfg.onTurnReady = (s) => fires.push(s.sessionId);
 live.handle({ session_id: 'S1', hook_event_name: 'Notification', message: 'waiting for input' });
 eq('no double fire on revived waiting session', fires.length, 0);
 // …but a fresh turn does.

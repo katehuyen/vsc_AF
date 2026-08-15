@@ -13,20 +13,26 @@
     let historyFetchedAt = 0;
     let historyRequested = 0;
 
-    // Per-agent "YOUR TURN" notification toggles, shown in the swim-lane gutter.
-    // Authoritative in the page once seeded from the host; edits round-trip back
-    // to globalState so they fire even when this panel is closed.
-    let turnActions = null;    // agentName -> array of action ids (agent DEFAULT)
-    // Per-session overrides edited on the Live-sessions cards: sessionId -> ids.
-    // An explicit [] means "mute this session"; a missing key follows the default.
-    let sessionActions = null;
+    // ‼️ "YOUR TURN" ALERTS BELONG TO THE SESSION, NOT THE AGENT (U-66).
+    // The row IS a session, so its four gutter controls read and patch that
+    // session's own record. The host is the authority: a click sends
+    // {sessionId, action, enabled} and the next `data` message brings back what
+    // was actually stored, so a panel left open behind another tab can never
+    // write a stale world back over a change made somewhere else.
     const TURN_ACTIONS = [
-        { id: 'sound', glyph: '♪', label: 'Sound (beep)' },
+        { id: 'sound', glyph: '♪', label: 'Sound (chime)' },
         { id: 'focus', glyph: '◎', label: 'Focus / bring forward' },
         { id: 'modal', glyph: '▣', label: 'Modal alert box' },
         { id: 'toast', glyph: '▭', label: 'Toast (corner notification)' }
     ];
-    function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
+    const ACTION_BY_ID = {};
+    TURN_ACTIONS.forEach(a => { ACTION_BY_ID[a.id] = a; });
+    function actionsFor(sessionId) {
+        return (DATA.sessionAlerts && DATA.sessionAlerts[sessionId]) || [];
+    }
+    /** The last "test in 3 seconds" run, per session — countdown then result. */
+    const ALERT_TESTS = new Map();   // sessionId -> {state,'counting'|'done', until, result}
+    let alertTick = null;
 
     const STYLE = `<style>
         .sid { font-weight:400; opacity:.6; font-size:11px; }
@@ -70,24 +76,60 @@
         });
     }
 
-    // HTML toggle chips for one Live-sessions card. Same .af-toggle class as the
-    // swim-lane SVG toggles, but carrying data-session: clicks change only THIS
-    // session, so two open sessions of one agent alert independently.
-    function turnChips(s) {
-        const override = sessionActions ? sessionActions[s.sessionId] : undefined;
-        const on = override !== undefined ? override : actionsFor(s.agentName);
-        const chips = TURN_ACTIONS.map(a => {
-            const sel = on.indexOf(a.id) !== -1;
-            const style = sel
-                ? 'background:var(--vscode-charts-blue,#3794ff);color:var(--vscode-editor-background,#fff);border-color:var(--vscode-charts-blue,#3794ff)'
-                : 'opacity:0.6';
-            return `<span class="af-toggle badge" data-agent="${C.esc(s.agentName)}" data-session="${C.esc(s.sessionId)}" data-action="${a.id}" title="${C.esc(a.label)} — when it's this session's turn (changes this session only; the swim-lane toggles set the agent default)" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
-        }).join(' ');
-        const mode = override !== undefined
-            ? `<span class="af-reset muted small" data-session="${C.esc(s.sessionId)}" style="cursor:pointer;text-decoration:underline" title="Drop this session's override and follow the agent default again">session override — reset</span>`
-            : `<span class="muted small">(agent default)</span>`;
-        return `<div class="sub" style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-            `<span class="muted small">alert on your turn:</span>${chips} ${mode}</div>`;
+    const BRANCH_GLYPH = { ok: '✓', failed: '✕', skipped: '·' };
+
+    /**
+     * ‼️ WHAT THE TEST ACTUALLY DID — the strip under the lanes.
+     *
+     * The ⏱ control lives in the row (the row is the session), but its RESULT is
+     * text: four branches, each with its own verdict, plus the sound backend's
+     * exit code and timing. That is an AFTip's job, not a native `title`'s, and
+     * an AFTip is HTML — so the row starts the test and this reads it back. The
+     * one line says the verdict; the panel says why.
+     */
+    function alertTestStrip() {
+        if (!ALERT_TESTS.size) { return ''; }
+        const rows = [...ALERT_TESTS.entries()].map(([sid, t]) => {
+            const s = LIVE_BY_ID.get(sid);
+            const who = (s && (s.label || s.agentName)) || sid.slice(0, 8);
+            const id = `<span class="lane-sid">#${C.esc(sid.slice(0, 8))}</span>`;
+            if (t.state === 'counting') {
+                const left = Math.max(0, Math.ceil((t.until - Date.now()) / 1000));
+                return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id}` +
+                    ` — testing in ${left}s… <span class="muted">switch to another window now if you want to see focus work</span></div>`;
+            }
+            const r = t.result || {};
+            if (!r.ok) {
+                return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id} — ` +
+                    `<span style="color:var(--vscode-charts-red,#f14c4c)">not run</span>` +
+                    ` <span class="muted">${C.esc(r.error || 'unknown reason')}</span></div>`;
+            }
+            const branches = r.branches || [];
+            const short = branches.map(b =>
+                `<span title="${C.esc((ACTION_BY_ID[b.action] || {}).label || b.action)}"` +
+                ` style="opacity:${b.status === 'skipped' ? '.45' : '1'};color:${b.status === 'failed'
+                    ? 'var(--vscode-charts-red,#f14c4c)' : 'inherit'}">` +
+                `${(ACTION_BY_ID[b.action] || {}).glyph || '?'}${BRANCH_GLYPH[b.status]}</span>`).join(' ');
+            const body = window.AFTip.lines(branches.map(b => {
+                const a = ACTION_BY_ID[b.action] || { label: b.action };
+                const head = `${a.label}: ${b.status}${b.ms ? ' (' + b.ms + ' ms)' : ''}`;
+                const snd = b.sound
+                    ? `\n    backend: ${b.sound.backend}` +
+                      `\n    exit: ${b.sound.exitCode === null ? '—' : b.sound.exitCode}` +
+                      (b.sound.timedOut ? '\n    TIMED OUT' : '') +
+                      (b.sound.stderr ? `\n    stderr: ${b.sound.stderr}` : '') +
+                      `\n    ‼️ exit 0 means the player accepted the file — that it was AUDIBLE is yours to confirm`
+                    : '';
+                return head + (b.detail ? `\n    ${b.detail}` : '') + snd;
+            }));
+            const trigger = `<span class="slink">${short}</span>`;
+            return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id} — ` +
+                window.AFTip.wrap(trigger,
+                    `Alert test · ${who} · ${new Date(r.at || Date.now()).toLocaleTimeString()}`,
+                    body) +
+                ` <span class="muted">${C.esc((r.actions || []).join(' · ') || 'nothing selected')}</span></div>`;
+        }).join('');
+        return `<div class="card" style="margin-top:6px"><div class="muted small">Alert test</div>${rows}</div>`;
     }
 
     function isDensity() { return windowMin > DETAIL_MAX_MIN; }
@@ -108,6 +150,10 @@
         } else if (ev.data.type === 'history') {
             HISTORY = ev.data;
             historyFetchedAt = Date.now();
+            render();
+        } else if (ev.data.type === 'alertTest') {
+            const r = ev.data.result || {};
+            if (r.sessionId) { ALERT_TESTS.set(r.sessionId, { state: 'done', result: r }); }
             render();
         }
     });
@@ -406,9 +452,9 @@
                 who,
                 name: who + (tracks.length > 1 ? ` #${i + 1}` : ''),
                 anon,
-                // How many rows this agent has here. The YOUR-TURN toggles are one
-                // setting per agent, so every row draws them and this is what the
-                // tooltip needs to say so out loud.
+                // How many rows this agent has here — the label's `#k` comes
+                // from it. The YOUR TURN controls do NOT: those belong to the
+                // session each row draws (U-66).
                 rowsOfAgent: tracks.length,
                 segments: t.segments,
                 marks: t.marks,
@@ -518,19 +564,67 @@
                     ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
                     : '') +
                 `<title>${C.esc('Engine: ' + window.AFEngine.label(laneEng) + '\n\n' + tip)}</title></g>`;
+            // ‼️ THE CONTROLS BELONG TO THIS ROW'S SESSION AND TO NOTHING ELSE
+            // (U-66). They used to carry `data-agent`, so an agent with three
+            // concurrent rows showed one setting three times and a click on any
+            // of them changed all three — on the page whose entire subject is
+            // watching several sessions at once. Each row now patches
+            // `sessionAlerts[<its own id>]`, and there is no agent-wide layer
+            // left underneath: a row with nothing selected alerts on nothing.
+            //
+            // A row that no longer carries a LIVE session (a packed historical
+            // track, or a lane whose per-turn engine has not named its
+            // conversation yet) shows the controls disabled rather than letting
+            // an alert be armed on a conversation that is over.
             const ty = y + 28;
-            const rows = lane.rowsOfAgent || 1;
-            const shared = rows > 1
-                ? ` This agent has ${rows} rows here and they all carry this same one setting — turning it on here turns it on for all ${rows}.`
-                : '';
+            const armable = !!(sid && LIVE_BY_ID.has(sid));
+            const selected = armable ? actionsFor(sid) : [];
+            const why = !sid
+                ? 'This row\'s engine has not named its conversation yet — alerts are set per session, so there is nothing to set them on until it does.'
+                : 'This row is history: no live session is tracked under this id any more, so an alert here could never fire.';
             TURN_ACTIONS.forEach((a, ai) => {
                 const gx = 4 + ai * 18;
-                const on = actionsFor(lane.agent).indexOf(a.id) !== -1;
-                out += `<g class="af-toggle" data-agent="${C.esc(lane.agent)}" data-action="${a.id}" style="cursor:pointer">` +
-                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
+                const on = selected.indexOf(a.id) !== -1;
+                const tip = armable
+                    ? `${a.label} — fires when THIS session (${sid.slice(0, 8)}) hits YOUR TURN.`
+                        + `\nCurrently: ${on ? 'ON' : 'off'}.`
+                        + `\n\nEvery row on this page is one session and carries its own four choices; nothing here is shared with the agent's other sessions.`
+                    : `${a.label} — unavailable.\n\n${why}`;
+                out += `<g class="af-toggle" role="checkbox" aria-checked="${on ? 'true' : 'false'}"`
+                    + ` aria-label="${C.esc(a.label + ' — ' + (lane.who || lane.agent))}"`
+                    + ` data-session="${C.esc(sid)}" data-action="${a.id}"`
+                    + `${armable ? '' : ' data-disabled="1"'}`
+                    + ` style="cursor:${armable ? 'pointer' : 'not-allowed'};opacity:${armable ? '1' : '0.32'}">` +
+                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'currentColor'}" stroke-opacity="${on ? '1' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
                     `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
-                    `<title>${C.esc(a.label)} — agent default for every ${C.esc(lane.who || lane.agent)} session hitting YOUR TURN.${C.esc(shared)} To alert on ONE session only, use the chips on its card below.</title></g>`;
+                    // ‼️ SELECTED IS NOT ONLY A FILL. A hover leaves a fill
+                    // behind on some themes and the row then lies about what is
+                    // armed, so a checked control also wears a tick of its own.
+                    (on ? `<path d="M${gx + 11.2} ${ty + 1.6} l1.5 1.6 l2.6 -2.9" fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"/>` : '') +
+                    `<title>${C.esc(tip)}</title></g>`;
             });
+            // ‼️ AND A WAY TO PROVE IT WORKS. Four alerts that only ever fire
+            // when an agent happens to finish are four alerts nobody can debug:
+            // the reported bug was "the sound does nothing", and there was no
+            // way to ask. This runs THIS row's selection on purpose, after a
+            // countdown long enough to leave the window — and the strip under
+            // the chart says what each branch actually did.
+            {
+                const gx = 4 + TURN_ACTIONS.length * 18;
+                const can = armable && selected.length > 0;
+                const tip = !armable ? `Test the alerts — unavailable.\n\n${why}`
+                    : !selected.length
+                        ? 'Test the alerts — nothing is selected on this row yet, so there is nothing to test.'
+                        : `Test the alerts of THIS session (${sid.slice(0, 8)}) in 3 seconds: ${selected.join(' · ')}.`
+                            + '\n\nThe countdown is long enough to switch to another window, which is the only way to see whether focus really came back. The result appears under the chart, branch by branch.';
+                out += `<g class="af-alerttest" data-session="${C.esc(sid)}"`
+                    + `${can ? '' : ' data-disabled="1"'}`
+                    + ` role="button" aria-label="Test this session's alerts in 3 seconds"`
+                    + ` style="cursor:${can ? 'pointer' : 'not-allowed'};opacity:${can ? '1' : '0.32'}">` +
+                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="transparent" stroke="currentColor" stroke-opacity="0.45"/>` +
+                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.6" style="pointer-events:none">⏱</text>` +
+                    `<title>${C.esc(tip)}</title></g>`;
+            }
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             // Right-click targets, laid down BEFORE the bars and dots so those
             // keep their own left-click. The whole row answers (with the row's
@@ -677,8 +771,6 @@
         const winMs = windowMin * 60000;
         const listener = DATA.listener;
         LIVE_BY_ID = new Map((DATA.sessions || []).map(s => [s.sessionId, s]));
-        if (turnActions === null) { turnActions = Object.assign({}, DATA.turnActions || {}); }
-        if (sessionActions === null) { sessionActions = Object.assign({}, DATA.sessionTurnActions || {}); }
 
         let listenerHtml;
         if (listener.state === 'listening') {
@@ -729,7 +821,6 @@
                 <div class="sub" style="margin-top:2px">${st.time}</div>
                 ${where ? `<div class="sub muted" style="margin-top:2px">${where}</div>` : ''}
                 ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page, card and swim lane together.</div>` : ''}
-                ${turnChips(s)}
                 <div class="btnrow">
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
                     ${!gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — stops the running turn and leaves the session open. A conversation the Console hosts is stopped through the Console; one running in a terminal gets Esc typed into it.">⎋ Interrupt</button>` : ''}
@@ -822,8 +913,9 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows — every row carries the toggles, and since the setting is one per agent they move together. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
+            ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${shownSessions.length}${engineSel === 'all' ? '' : ' of ' + DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || `<p class="muted">${engineSel === 'all' ? 'No sessions tracked yet.' : 'No ' + window.AFEngine.label(engineSel) + ' session is being tracked right now.'}</p>`}</div>
@@ -878,35 +970,43 @@
                     vscode.postMessage({ type: 'openSession', file: el.dataset.file, ts: Number(el.dataset.ts) || 0 });
                 }
             }));
+        // ‼️ ONE SESSION, ONE ACTION, ONE BOOLEAN — never the whole map. The
+        // host holds the authority and answers with a fresh `data` message, so
+        // the page draws what was really stored instead of what it assumed.
         document.querySelectorAll('.af-toggle').forEach(el =>
             el.addEventListener('click', () => {
+                if (el.dataset.disabled) { return; }
+                const sid = el.dataset.session;
                 const act = el.dataset.action;
-                if (el.dataset.session) {
-                    // Card chip: session-only override (an empty set is kept —
-                    // it means "mute this session despite the agent default").
-                    const sid = el.dataset.session;
-                    const base = sessionActions[sid] !== undefined
-                        ? sessionActions[sid] : actionsFor(el.dataset.agent);
-                    const cur = new Set(base);
-                    if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
-                    sessionActions[sid] = [...cur];
-                    vscode.postMessage({ type: 'setSessionTurnActions', map: sessionActions });
-                } else {
-                    // Swim-lane toggle: the agent default.
-                    const name = el.dataset.agent;
-                    const cur = new Set(actionsFor(name));
-                    if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
-                    if (cur.size) { turnActions[name] = [...cur]; } else { delete turnActions[name]; }
-                    vscode.postMessage({ type: 'setTurnActions', map: turnActions });
-                }
-                render();
+                if (!sid || !act) { return; }
+                vscode.postMessage({
+                    type: 'setTurnAlert', sessionId: sid, action: act,
+                    enabled: actionsFor(sid).indexOf(act) === -1
+                });
             }));
-        document.querySelectorAll('.af-reset').forEach(el =>
+        document.querySelectorAll('.af-alerttest').forEach(el =>
             el.addEventListener('click', () => {
-                delete sessionActions[el.dataset.session];
-                vscode.postMessage({ type: 'setSessionTurnActions', map: sessionActions });
+                if (el.dataset.disabled) { return; }
+                const sid = el.dataset.session;
+                if (!sid) { return; }
+                // The HOST runs the countdown, so leaving this window (which is
+                // the only way to judge focus) does not cancel the test.
+                ALERT_TESTS.set(sid, { state: 'counting', until: Date.now() + 3000 });
+                vscode.postMessage({ type: 'testTurnAlert', sessionId: sid, delayMs: 3000 });
+                startAlertTick();
                 render();
             }));
+    }
+
+    /** Redraw once a second while a countdown is on screen, and stop after. */
+    function startAlertTick() {
+        if (alertTick) { return; }
+        alertTick = setInterval(() => {
+            let counting = false;
+            ALERT_TESTS.forEach(t => { if (t.state === 'counting') { counting = true; } });
+            if (!counting) { clearInterval(alertTick); alertTick = null; return; }
+            render();
+        }, 500);
     }
 
     render();

@@ -3,6 +3,9 @@ import { LiveMonitor } from '../core/live';
 import { totalTokens } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { TaskManager } from '../core/tasks';
+import {
+    SessionAlertPrefs, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
+} from '../core/turnAlerts';
 import { handleAfNav, htmlShell } from './base';
 
 export interface TimelineDeps {
@@ -26,12 +29,20 @@ export interface TimelineDeps {
     hostedIds: () => string[];
     /** agentFarm.stuckThresholdMinutes in ms — the page marks silence with it. */
     stuckMs: () => number;
-    /** Per-agent turn-ready notification actions (agentName → action ids). */
-    getTurnActions: () => Record<string, string[]>;
-    setTurnActions: (map: Record<string, string[]>) => void;
-    /** Per-session overrides (sessionId → action ids; [] = mute that session). */
-    getSessionTurnActions: () => Record<string, string[]>;
-    setSessionTurnActions: (map: Record<string, string[]>) => void;
+    /**
+     * ‼️ YOUR TURN alerts, keyed by SESSION and by nothing else (U-66). The page
+     * never sends the whole map back: a click is `{sessionId, action, enabled}`
+     * and the host is the authority, so a stale webview cannot overwrite a
+     * choice made in another window.
+     */
+    getSessionAlerts: () => Record<string, SessionAlertPrefs>;
+    setSessionAlert: (sessionId: string, action: string, enabled: boolean)
+        => { ok: boolean; error?: string; prefs?: SessionAlertPrefs };
+    /** Run one session's selected alerts on purpose, after a countdown. */
+    testSessionAlert: (sessionId: string, delayMs: number) => Promise<{
+        ok: boolean; error?: string; sessionId: string; label?: string;
+        actions?: TurnAlertAction[]; at?: number; branches?: TurnAlertBranch[];
+    }>;
 }
 
 // Detail ranges (≤24h — the monitor keeps 24h in memory) render from this
@@ -134,8 +145,11 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         }),
         events: deps.live.events(DATA_WINDOW_MS),
         workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS),
-        turnActions: deps.getTurnActions(),
-        sessionTurnActions: deps.getSessionTurnActions()
+        // sessionId → the actions THAT session alerts with. A row with no entry
+        // alerts on nothing; there is no agent-level default underneath it.
+        sessionAlerts: Object.fromEntries(
+            Object.entries(deps.getSessionAlerts()).map(([id, p]) => [id, p.actions])),
+        alertActions: [...TURN_ALERT_ACTIONS]
     };
 }
 
@@ -261,16 +275,32 @@ export class TimelinePanel {
             case 'refresh':
                 this.refresh();
                 break;
-            case 'setTurnActions':
-                if (msg.map && typeof msg.map === 'object') {
-                    this.deps.setTurnActions(msg.map as Record<string, string[]>);
+            case 'setTurnAlert': {
+                // ‼️ ONE SESSION, ONE ACTION, ONE BOOLEAN — never the map. The
+                // host validates the action against its own allowlist and that
+                // the session is really being watched; a webview that has been
+                // sitting behind another tab cannot write back a whole stale
+                // world on the strength of one click.
+                const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+                const action = typeof msg.action === 'string' ? msg.action : '';
+                const r = this.deps.setSessionAlert(sessionId, action, !!msg.enabled);
+                if (!r.ok) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: that alert change was refused — ${r.error ?? 'unknown reason'}.`);
                 }
+                this.refresh();
                 break;
-            case 'setSessionTurnActions':
-                if (msg.map && typeof msg.map === 'object') {
-                    this.deps.setSessionTurnActions(msg.map as Record<string, string[]>);
-                }
+            }
+            case 'testTurnAlert': {
+                const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+                const delayMs = typeof msg.delayMs === 'number' ? msg.delayMs : 3000;
+                // The countdown runs in the HOST, so the user can leave this
+                // window entirely and still see whether focus really came back.
+                void this.deps.testSessionAlert(sessionId, delayMs).then(result => {
+                    void this.panel.webview.postMessage({ type: 'alertTest', result });
+                });
                 break;
+            }
             case 'history': {
                 // Long ranges: per-lane density buckets from the persistent event store.
                 const hours = typeof msg.hours === 'number' && msg.hours > 0 ? msg.hours : 24;

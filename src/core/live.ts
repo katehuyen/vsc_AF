@@ -190,6 +190,16 @@ export class LiveMonitor implements vscode.Disposable {
     private stuckTimer: NodeJS.Timeout;
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
     readonly onDidUpdate = this.onDidUpdateEmitter.event;
+    /**
+     * A session was CLEARED off the page on purpose (`dismiss(…, purge)`), or
+     * re-keyed onto its real id (`adopt`). Anything that keeps its own record
+     * per session — the YOUR TURN alert preferences (U-66) — follows this
+     * rather than guessing from the session list, which is the race the 8-second
+     * prune sweep used to lose.
+     */
+    private readonly onDidRekeyEmitter =
+        new vscode.EventEmitter<{ kind: 'cleared' | 'adopted'; sessionId: string; to?: string }>();
+    readonly onDidRekey = this.onDidRekeyEmitter.event;
     private readonly onEventEmitter = new vscode.EventEmitter<LiveEvent>();
     /** Fires for every individual live event (used by hook triggers). */
     readonly onEvent = this.onEventEmitter.event;
@@ -765,6 +775,7 @@ export class LiveMonitor implements vscode.Disposable {
             this.cleared.set(sessionId, Date.now());
             this.saveCleared();
             this.eventLog = this.eventLog.filter(e => e.sessionId !== sessionId);
+            this.onDidRekeyEmitter.fire({ kind: 'cleared', sessionId });
         }
         this.onDidUpdateEmitter.fire();
         return true;
@@ -803,6 +814,10 @@ export class LiveMonitor implements vscode.Disposable {
         for (const e of this.eventLog) {
             if (e.sessionId === from) { e.sessionId = to; }
         }
+        // ‼️ Everything else keyed by this id moves in the SAME step — the alert
+        // preference and the turn the user has already been told about. A lane
+        // that learns its name must not lose the choice made on it.
+        this.onDidRekeyEmitter.fire({ kind: 'adopted', sessionId: from, to });
         this.onDidUpdateEmitter.fire();
         return true;
     }
@@ -929,6 +944,7 @@ export class LiveMonitor implements vscode.Disposable {
             this.pendingWrites = [];
         }
         this.onDidUpdateEmitter.dispose();
+        this.onDidRekeyEmitter.dispose();
         this.onEventEmitter.dispose();
     }
 }

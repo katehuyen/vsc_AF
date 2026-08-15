@@ -1,5 +1,6 @@
 // DOM-stub test: timeline.js with the SAME agent open in two concurrent
-// sessions — per-session swim-lane tracks + per-session alert overrides.
+// sessions — per-session swim-lane tracks, and the YOUR TURN controls that
+// belong to each of those sessions rather than to the agent (U-66).
 const fs = require('fs');
 const vm = require('vm');
 
@@ -11,41 +12,35 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 let posted = [];
 let lastHtml = '';
 let chipEls = [];
-let resetEls = [];
+
+/** The `<g>` groups a class drew, with their data attributes. */
+function svgGroups(cls) {
+    const out = [];
+    const re = new RegExp('<g class="' + cls + '"([^>]*)>', 'g');
+    let m;
+    while ((m = re.exec(lastHtml))) {
+        const attrs = m[1];
+        const pick = k => { const g = new RegExp(k + '="([^"]*)"').exec(attrs); return g ? g[1] : undefined; };
+        out.push({
+            dataset: {
+                session: pick('data-session'), action: pick('data-action'),
+                disabled: pick('data-disabled'), agent: pick('data-agent')
+            },
+            checked: pick('aria-checked') === 'true'
+        });
+    }
+    return out;
+}
 
 function elemsForSelector(sel) {
-    const els = [];
-    if (sel === '.af-toggle') {
-        // gutter toggles (svg <g>) — agent defaults
-        let re = /<g class="af-toggle" data-agent="([^"]*)" data-action="([^"]*)"/g;
-        let m;
-        while ((m = re.exec(lastHtml))) {
-            const el = { dataset: { agent: m[1], action: m[2] } };
-            el.addEventListener = (_e, fn) => { el._click = fn; };
-            els.push(el);
-        }
-        // card chips (<span>) — per-session overrides
-        re = /<span class="af-toggle badge" data-agent="([^"]*)" data-session="([^"]*)" data-action="([^"]*)"/g;
-        while ((m = re.exec(lastHtml))) {
-            const el = { dataset: { agent: m[1], session: m[2], action: m[3] } };
-            el.addEventListener = (_e, fn) => { el._click = fn; };
-            els.push(el);
-        }
-        chipEls = els;
-        return els;
-    }
-    if (sel === '.af-reset') {
-        const re = /<span class="af-reset[^"]*" data-session="([^"]*)"/g;
-        let m;
-        while ((m = re.exec(lastHtml))) {
-            const el = { dataset: { session: m[1] } };
-            el.addEventListener = (_e, fn) => { el._click = fn; };
-            els.push(el);
-        }
-        resetEls = els;
-        return els;
-    }
-    return [];
+    if (sel !== '.af-toggle' && sel !== '.af-alerttest') { return []; }
+    const els = svgGroups(sel.slice(1)).map(g => {
+        const el = { dataset: g.dataset, checked: g.checked };
+        el.addEventListener = (_e, fn) => { el._click = fn; };
+        return el;
+    });
+    if (sel === '.af-toggle') { chipEls = els; }
+    return els;
 }
 
 const appEl = { set innerHTML(v) { lastHtml = v; }, get innerHTML() { return lastHtml; } };
@@ -92,8 +87,11 @@ const sandbox = {
                 { sessionId: 'abcdef1234567890', ts: NOW - 25 * MIN, kind: 'prompt', detail: 'anon' }
             ],
             workflowRuns: [],
-            turnActions: { dev: ['sound'] },
-            sessionTurnActions: {}
+            // ‼️ Keyed by SESSION: S1 alerts, S2 does not, and they are the same
+            // agent. That is the whole shape the old agent-keyed map could not
+            // express.
+            sessionAlerts: { S1: ['sound'] },
+            alertActions: ['sound', 'focus', 'modal', 'toast']
         },
         addEventListener() { }
     },
@@ -101,7 +99,7 @@ const sandbox = {
         getElementById: (id) => id === 'app' ? appEl : (id === 'install' ? null : stubEl),
         querySelectorAll: elemsForSelector
     },
-    setInterval: () => 0, console
+    setInterval: () => 1, clearInterval: () => { }, console
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -210,15 +208,23 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
     ok('a tool the session is still on keeps growing', !!live && Number(live[1]) + Number(live[2]) > 880);
 }
 
-// ---- gutter toggles: one agent setting, drawn on EVERY row of that agent ----
-// Drawing them once left "dev #2" with an empty gutter, which reads as a broken
-// row rather than as "the control is upstairs". Same key on every copy, so they
-// stay in lockstep; the tooltip on a repeated row says the setting is shared.
-const gutterDev = (lastHtml.match(/<g class="af-toggle" data-agent="dev"/g) || []).length;
-const gutterOps = (lastHtml.match(/<g class="af-toggle" data-agent="ops"/g) || []).length;
-ok('dev has two rows, so both gutters carry the four toggles (8)', gutterDev === 8);
-ok('ops has one row, so four', gutterOps === 4);
-ok('dev tooltip says the two rows share one setting', /dev[\s\S]{0,400}has 2 rows here/.test(lastHtml));
+// ---- gutter controls: four per ROW, each keyed by that row's session ----
+// Every row gets its own set (an empty gutter reads as a broken row), and no
+// two rows point at the same key — which is what makes "turn this one on"
+// possible at all on an agent that is running twice.
+{
+    const g = svgGroups('af-toggle');
+    ok('four controls per row, on all four rows', g.length === 16);
+    const bySession = {};
+    for (const x of g) { bySession[x.dataset.session] = (bySession[x.dataset.session] || 0) + 1; }
+    ok('dev\'s two rows have two DIFFERENT keys',
+        bySession.S1 === 4 && bySession.S2 === 4);
+    ok('the ops row has its own', bySession.S3 === 4);
+    ok('so does the unnamed one', bySession.abcdef1234567890 === 4);
+    ok('and every row carries a test control', svgGroups('af-alerttest').length === 4);
+    ok('the page explains the controls are per session, not per agent',
+        /Every row is one session and carries its own choices/.test(lastHtml));
+}
 ok('ops tooltip claims no shared rows', !/data-agent="ops"[\s\S]{0,600}has \d+ rows here/.test(lastHtml));
 
 // ---- session cards: disambiguated titles + per-session chips ----
@@ -249,35 +255,40 @@ ok('cards show start time', /started \d{2}:\d{2}/.test(lastHtml));
     ok('a session with a live process is NOT called finished',
         (lastHtml.match(/No live process owns this session/g) || []).length === 1);
 }
-ok('chips carry data-session', lastHtml.indexOf('data-session="S2"') !== -1);
-ok('no override yet — cards follow agent default', lastHtml.indexOf('(agent default)') !== -1 && lastHtml.indexOf('session override') === -1);
+// ---- ‼️ THE ALERTS BELONG TO THE ROW'S SESSION (U-66) ----
+//
+// S1 and S2 are the same agent running twice. The controls used to be one
+// setting drawn on both rows; now each row carries its own, and the second
+// surface that used to sit under the card is gone (ONE SUBJECT).
+{
+    const gutter = svgGroups('af-toggle');
+    ok('every control names a session, none names an agent',
+        gutter.length > 0 && gutter.every(g => g.dataset.session && !g.dataset.agent));
+    const state = (sid, act) => {
+        const g = gutter.find(x => x.dataset.session === sid && x.dataset.action === act);
+        return g && g.checked;
+    };
+    ok('S1 shows sound on', state('S1', 'sound') === true);
+    ok('‼️ S2 — the same agent — does NOT inherit it', state('S2', 'sound') === false);
+    ok('the card carries no second copy of the controls',
+        lastHtml.indexOf('alert on your turn:') === -1
+        && lastHtml.indexOf('(agent default)') === -1
+        && lastHtml.indexOf('af-reset') === -1);
+}
 
-// S2 card's sound chip is ON via the dev default
-const s2Sound = () => new RegExp('<span class="af-toggle badge" data-agent="dev" data-session="S2" data-action="sound"[^>]*>').exec(lastHtml)[0];
-ok('S2 sound chip inherits agent default (blue)', /background:var\(--vscode-charts-blue/.test(s2Sound()));
-
-// ---- click S2's sound chip → session-only override (mute), S1 untouched ----
+// ---- clicking S2's sound asks the host for S2 alone ----
 posted = [];
 chipEls.find(e => e.dataset.session === 'S2' && e.dataset.action === 'sound')._click();
-ok('post is setSessionTurnActions', posted.length === 1 && posted[0].type === 'setSessionTurnActions');
-ok('override is an explicit empty set (mute)', Array.isArray(posted[0].map.S2) && posted[0].map.S2.length === 0);
-ok('agent default map untouched', posted.every(p => p.type !== 'setTurnActions'));
-ok('S2 chip now off', !/background:var\(--vscode-charts-blue/.test(s2Sound()));
-ok('S2 card shows override marker + reset', lastHtml.indexOf('session override — reset') !== -1);
-const s1Sound = new RegExp('<span class="af-toggle badge" data-agent="dev" data-session="S1" data-action="sound"[^>]*>').exec(lastHtml)[0];
-ok('S1 chip still follows the default (blue)', /background:var\(--vscode-charts-blue/.test(s1Sound));
+ok('one click, one message', posted.length === 1 && posted[0].type === 'setTurnAlert');
+ok('it names S2 and asks to turn it ON',
+    posted[0].sessionId === 'S2' && posted[0].action === 'sound' && posted[0].enabled === true);
+ok('the whole map is never sent back', posted[0].map === undefined);
 
-// ---- reset → back to agent default ----
+// ---- and S1's own control still asks for S1 ----
 posted = [];
-resetEls.find(e => e.dataset.session === 'S2')._click();
-ok('reset posts map without S2', posted.length === 1 && !('S2' in posted[0].map));
-ok('S2 chip back to default (blue)', /background:var\(--vscode-charts-blue/.test(s2Sound()));
-
-// ---- gutter toggle still edits the agent default ----
-posted = [];
-chipEls.find(e => !e.dataset.session && e.dataset.agent === 'dev' && e.dataset.action === 'modal')._click();
-ok('gutter click posts setTurnActions', posted.length === 1 && posted[0].type === 'setTurnActions');
-ok('modal added to dev default', posted[0].map.dev.indexOf('modal') !== -1 && posted[0].map.dev.indexOf('sound') !== -1);
+chipEls.find(e => e.dataset.session === 'S1' && e.dataset.action === 'sound')._click();
+ok('S1 asks to turn its own sound OFF',
+    posted[0].sessionId === 'S1' && posted[0].enabled === false);
 
 // ---- range buttons: no gaps a user has to jump over ----
 {

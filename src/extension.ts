@@ -278,6 +278,10 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
+import {
+    playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
+    TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
+} from './core/turnAlerts';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
@@ -929,37 +933,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(live);
     live.start();
 
-    // ---- Turn-ready notifications (per-agent, opt-in via timeline swim-lane toggles) ----
-    // The swim lane for each agent carries four toggles: ♪ sound, ◎ focus, ▣ modal,
-    // ▭ toast. Whatever an agent has selected fires when it crosses INTO YOUR TURN.
-    // Those are the AGENT DEFAULT; a Live-sessions card can override them for one
-    // session only (keyed by sessionId — an empty override means "mute this session").
+    // ---- YOUR TURN alerts — one setting per SESSION (U-66) ----
+    //
+    // ‼️ THE ROW IS THE SESSION, SO THE SETTING IS THE SESSION'S. Each swim lane
+    // carries ♪ sound · ◎ focus · ▣ modal · ▭ toast in its gutter, and those four
+    // now patch `agentfarm.turnAlerts[sessionId]` — nothing else. Three concurrent
+    // runs of `developer` are three rows and three independent selections, which
+    // is what the page always looked like it was offering.
+    //
+    // There is no agent-keyed layer left to fall back to and no second copy of
+    // the control on the card below (ONE SUBJECT): the old design put the agent
+    // default in the gutter and a per-session override under the card, so the
+    // visible control was the one that changed all three rows and the one that
+    // did not was hidden. The old map is migrated ONCE, at first activation of
+    // this build, into every session of that agent still live at that moment.
     const AGENT_CLI_KEY = 'agentfarm.agentCli'; // E1: last CLI used per agent for "Start Session With…"
-    const TURN_ACTIONS_KEY = 'agentfarm.turnActions';
-    const TURN_ACTIONS_SESSION_KEY = 'agentfarm.turnActionsSession';
-    const getTurnActions = (): Record<string, string[]> =>
-        context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_KEY, {});
-    const setTurnActions = (map: Record<string, string[]>): void => {
-        void context.globalState.update(TURN_ACTIONS_KEY, map);
-    };
-    const getSessionTurnActions = (): Record<string, string[]> =>
-        context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_SESSION_KEY, {});
-    const pruneSessionTurnActions = (map: Record<string, string[]>): Record<string, string[]> => {
-        // Session ids are ephemeral — keep only overrides for sessions still tracked.
-        const alive = new Set(live.sessions().map(s => s.sessionId));
-        const pruned: Record<string, string[]> = {};
-        for (const [id, acts] of Object.entries(map)) {
-            if (alive.has(id) && Array.isArray(acts)) { pruned[id] = acts; }
+    const TURN_ALERTS_KEY = 'agentfarm.turnAlerts';
+    const TURN_ALERTS_MIGRATED_KEY = 'agentfarm.turnAlertsMigrated';
+    const LEGACY_TURN_ACTIONS_KEY = 'agentfarm.turnActions';
+    const turnAlerts = new TurnAlertStore({
+        read: () => context.globalState.get<Record<string, unknown>>(TURN_ALERTS_KEY, {}),
+        // Awaited in order by the store — two clicks in one tick cannot land
+        // out of order and leave storage disagreeing with the page.
+        write: map => context.globalState.update(TURN_ALERTS_KEY, map),
+        readMigration: () => context.globalState.get<number>(TURN_ALERTS_MIGRATED_KEY, 0),
+        writeMigration: v => context.globalState.update(TURN_ALERTS_MIGRATED_KEY, v)
+    });
+    const turnDedupe = new TurnKeyDedupe();
+    // A lane that learns its real conversation id (or is cleared off the page)
+    // takes its preference and its "already announced" record with it, in the
+    // one step LiveMonitor makes the change — never on a timer afterwards.
+    context.subscriptions.push(live.onDidRekey(ev => {
+        if (ev.kind === 'adopted' && ev.to) {
+            const r = turnAlerts.rekey(ev.sessionId, ev.to);
+            turnDedupe.rekey(ev.sessionId, ev.to);
+            if (!r.ok && r.reason === 'conflict') {
+                // Visible diagnosis, not a silent merge: two selections met on
+                // one id and we refuse to guess which the user meant.
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: ${ev.to.slice(0, 8)} already had its own YOUR TURN alerts, `
+                    + `so the ones set on ${ev.sessionId} were left behind rather than merged.`);
+            }
+        } else if (ev.kind === 'cleared') {
+            turnAlerts.forget(ev.sessionId);
+            turnDedupe.forget(ev.sessionId);
         }
-        return pruned;
-    };
-    const setSessionTurnActions = (map: Record<string, string[]>): void => {
-        void context.globalState.update(TURN_ACTIONS_SESSION_KEY, pruneSessionTurnActions(map));
-    };
-    // Sweep once after the live store has rebuilt its sessions (reload path).
-    const turnPruneTimer = setTimeout(
-        () => setSessionTurnActions(getSessionTurnActions()), 8000);
-    context.subscriptions.push({ dispose: () => clearTimeout(turnPruneTimer) });
+    }));
+    // One-time copy off the agent-keyed map, once the live store has rebuilt
+    // (its sessions are what the copy is written onto). Idempotent by marker.
+    const turnMigrateTimer = setTimeout(() => {
+        turnAlerts.migrateFromAgentDefaults(
+            context.globalState.get<Record<string, unknown>>(LEGACY_TURN_ACTIONS_KEY, {}),
+            live.sessions().map(s => ({ sessionId: s.sessionId, agentName: s.agentName })));
+    }, 8000);
+    context.subscriptions.push({ dispose: () => clearTimeout(turnMigrateTimer) });
+    // `lastSeenAt` is what keeps a preference alive across a reload, so it is
+    // refreshed on a slow heartbeat rather than on every hook event — a live
+    // session touches storage twelve times an hour, not twelve times a minute.
+    const turnSeenTimer = setInterval(
+        () => turnAlerts.seen(live.sessions().map(s => s.sessionId)), 5 * 60_000);
+    context.subscriptions.push({ dispose: () => clearInterval(turnSeenTimer) });
     const showTimeline = (): void => {
         TimelinePanel.show({
             extensionUri: context.extensionUri, live, tasks: taskManager, index,
@@ -976,57 +1009,116 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             hostedIds: () => consoleHost.list()
                 .map(s => s.sessionId).filter((id): id is string => !!id),
             stuckMs: () => cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
-            getTurnActions, setTurnActions, getSessionTurnActions, setSessionTurnActions
+            getSessionAlerts: () => turnAlerts.all(),
+            setSessionAlert: (sessionId, action, enabled) =>
+                setSessionAlertAction(sessionId, action, enabled),
+            testSessionAlert: (sessionId, delayMs) => testSessionAlert(sessionId, delayMs)
         });
     };
-    const turnFireCooldown = new Map<string, number>();
-    const playTurnSound = (): void => {
-        try {
-            if (process.platform === 'win32') {
-                cp.exec('powershell -NoProfile -NonInteractive -Command "[console]::beep(880,150);[console]::beep(1245,170)"');
-            } else if (process.platform === 'darwin') {
-                cp.exec('afplay /System/Library/Sounds/Glass.aiff || osascript -e beep');
-            } else {
-                cp.exec('paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null || printf "\\a"');
+    /**
+     * ‼️ THE ASSET, RESOLVED OFF THE EXTENSION AND NOT OFF A CWD. The alert is
+     * a WAV this repo generates (`tools/make_turn_sound.js`) — a real sound file
+     * played by a real player, in place of the motherboard beep that could not
+     * report its own failure.
+     */
+    const turnSoundAsset = vscode.Uri.joinPath(
+        context.extensionUri, 'media', 'sounds', 'turn-ready.wav').fsPath;
+    const soundFailureLimit = new RateLimit();
+    const alertSound = (): Promise<SoundResult> => playTurnSound(turnSoundAsset);
+    /**
+     * ‼️ THE ONE FUNCTION EVERY DOOR GOES THROUGH — the live turn edge, the
+     * row's "test in 3 seconds", and the `live.alerts.test` bridge op. The
+     * runners are injected, so a test verifies four branches without opening a
+     * modal or making a noise.
+     */
+    const dispatchAlerts = async (
+        sessionId: string, actions: TurnAlertAction[], label: string, transcript?: string
+    ): Promise<TurnAlertBranch[]> => {
+        const branches = await runTurnAlerts(actions, {
+            sound: alertSound,
+            focus: () => {
+                // Focus means what it always meant: bring the Timeline forward
+                // inside this window. VS Code offers no way to raise the WINDOW
+                // above other applications, and this does not pretend to.
+                showTimeline();
+                return Promise.resolve(
+                    vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+                ).then(() => undefined);
+            },
+            modal: () => {
+                const buttons = transcript ? ['Open Transcript'] : [];
+                void vscode.window.showInformationMessage(
+                    `Agent Farm — Your turn: ${label}`, { modal: true }, ...buttons
+                ).then(choice => {
+                    if (choice === 'Open Transcript' && transcript) {
+                        void vscode.commands.executeCommand('agentfarm.openSession', transcript);
+                    }
+                });
+            },
+            toast: () => {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${label} — your turn`, 'Open Timeline'
+                ).then(choice => {
+                    if (choice === 'Open Timeline') { showTimeline(); }
+                });
             }
-        } catch { /* best effort — a missing player must never break the flow */ }
+        });
+        // A sound branch that failed says so ONCE — a broken player is broken on
+        // every turn, and four agents finishing together must not produce four
+        // identical complaints. The other branches ran regardless.
+        const bad = branches.find(b => b.action === 'sound' && b.status === 'failed');
+        if (bad && soundFailureLimit.allow()) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: the YOUR TURN sound did not play — ${bad.detail ?? 'no detail'}. `
+                + 'The other alerts still ran.', 'Open Timeline'
+            ).then(c => { if (c === 'Open Timeline') { showTimeline(); } });
+        }
+        return branches;
+    };
+    /** Toggle one action on one session — the gutter's message and the op. */
+    const setSessionAlertAction = (
+        sessionId: string, action: unknown, enabled: boolean
+    ): { ok: boolean; error?: string; prefs?: SessionAlertPrefs } => {
+        // ‼️ The target must be a session this window is actually watching, or
+        // a stray message writes a preference for an id nothing will ever fire.
+        const known = live.sessions().some(s => s.sessionId === sessionId);
+        if (!known) {
+            return { ok: false, error: `no live session ${sessionId || '(empty)'} is being watched` };
+        }
+        const r = turnAlerts.set(sessionId, action, enabled);
+        if (r.ok) { TimelinePanel.refreshIfOpen(); }
+        return r;
+    };
+    /** Run a session's selected alerts on purpose, after a countdown. */
+    const testSessionAlert = async (
+        sessionId: string, delayMs = 3000
+    ): Promise<{
+        ok: boolean; error?: string; sessionId: string; label?: string;
+        actions?: TurnAlertAction[]; at?: number; branches?: TurnAlertBranch[];
+    }> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        if (!s) { return { ok: false, sessionId, error: `no live session ${sessionId || '(empty)'}` }; }
+        const actions = turnAlerts.actionsFor(sessionId);
+        if (!actions.length) {
+            return { ok: false, sessionId, label: live.labelOf(s), actions: [], error: 'nothing selected' };
+        }
+        const wait = Math.max(0, Math.min(30_000, Number(delayMs) || 0));
+        if (wait) { await new Promise(r => setTimeout(r, wait)); }
+        const branches = await dispatchAlerts(
+            sessionId, actions, live.labelOf(s), s.transcriptPath);
+        return { ok: true, sessionId, label: live.labelOf(s), actions, at: Date.now(), branches };
     };
     function fireTurnReady(s: LiveSession): void {
-        const name = live.labelOf(s);
-        // Session override wins (an explicit [] mutes this session); otherwise
-        // the agent default set on the swim-lane toggles applies.
-        const actions = getSessionTurnActions()[s.sessionId]
-            ?? getTurnActions()[s.agentName ?? s.sessionId.slice(0, 8)] ?? [];
+        // ‼️ THE SESSION IS THE KEY, AND THERE IS NO FALLBACK BEHIND IT.
+        const actions = turnAlerts.actionsFor(s.sessionId);
         if (!actions.length) { return; }
-        // Coalesce rapid re-entries into waiting-input so one turn = one alert.
-        // Keyed by session — two sessions of the same agent alert independently.
-        const now = Date.now();
-        if (now - (turnFireCooldown.get(s.sessionId) ?? 0) < 3000) { return; }
-        turnFireCooldown.set(s.sessionId, now);
-
-        if (actions.includes('sound')) { playTurnSound(); }
-        if (actions.includes('focus')) {
-            showTimeline();
-            try { void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup'); } catch { /* best effort */ }
-        }
-        const transcript = s.transcriptPath;
-        if (actions.includes('modal')) {
-            const buttons = transcript ? ['Open Transcript'] : [];
-            void vscode.window.showInformationMessage(
-                `Agent Farm — Your turn: ${name}`, { modal: true }, ...buttons
-            ).then(choice => {
-                if (choice === 'Open Transcript' && transcript) {
-                    void vscode.commands.executeCommand('agentfarm.openSession', transcript);
-                }
-            });
-        }
-        if (actions.includes('toast')) {
-            void vscode.window.showInformationMessage(
-                `Agent Farm: ${name} — your turn`, 'Open Timeline'
-            ).then(choice => {
-                if (choice === 'Open Timeline') { showTimeline(); }
-            });
-        }
+        // One turn = one alert. The key is the session's own prompt ordinal, so
+        // the `Notification(waiting)` and the `Stop` that follows it are the
+        // same turn and ring once — while a genuinely new turn that ends a
+        // second later has a new key and rings again, which the old 3-second
+        // cooldown swallowed.
+        if (!turnDedupe.shouldFire(s.sessionId, String(s.prompts))) { return; }
+        void dispatchAlerts(s.sessionId, actions, live.labelOf(s), s.transcriptPath);
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -5214,6 +5306,84 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         kinds: s.kinds
                     }))
                 };
+            }
+        },
+        {
+            op: 'live.alerts.get',
+            describe: '‼️ WHICH SESSION ALERTS YOU WHEN IT IS YOUR TURN — the four controls in each Live Timeline swim lane, read back. The key is the SESSION and nothing else: three concurrent runs of one agent are three independent settings, and an id with no record alerts on nothing (there is no agent-wide default behind it). Each row carries sessionId, label, agentName, engine, status, `actions` (any of '
+                + TURN_ALERT_ACTIONS.join('|')
+                + '), whether that session is still being watched (`live`), and when the choice was made/last seen. `stored` also lists preferences whose session is not live right now — they survive a reload and are dropped on a bounded TTL, not on an eight-second race. args: sessionId? (one id or its 8-char prefix)',
+            handler: (args) => {
+                const wanted = optStr(args, 'sessionId')?.trim();
+                const stored = turnAlerts.all();
+                const sessions = live.sessions();
+                const match = (id: string): boolean =>
+                    !wanted || id === wanted || id.startsWith(wanted);
+                const rows = sessions.filter(s => match(s.sessionId)).map(s => ({
+                    sessionId: s.sessionId,
+                    label: live.labelOf(s),
+                    agentName: s.agentName ?? null,
+                    engine: s.source ?? 'claude',
+                    status: s.status,
+                    live: true,
+                    actions: turnAlerts.actionsFor(s.sessionId),
+                    updatedAt: stored[s.sessionId]?.updatedAt ?? null,
+                    lastSeenAt: stored[s.sessionId]?.lastSeenAt ?? null
+                }));
+                const liveIds = new Set(sessions.map(s => s.sessionId));
+                return {
+                    actions: [...TURN_ALERT_ACTIONS],
+                    sessions: rows,
+                    stored: Object.values(stored)
+                        .filter(p => !liveIds.has(p.sessionId) && match(p.sessionId))
+                        .map(p => ({ ...p, live: false }))
+                };
+            }
+        },
+        {
+            op: 'live.alerts.set',
+            describe: 'Arm or disarm ONE session\'s YOUR TURN alerts — the same call the swim-lane control makes, so the page and an agent cannot disagree. Give either `action` + `enabled` to toggle one, or `actions` (array) to set the whole selection at once; an empty array clears it. Only '
+                + TURN_ALERT_ACTIONS.join('|')
+                + ' are accepted and anything else is refused by name, and the session must be one this window is actually watching — a preference written for an id nothing tracks would never fire and is not stored. args: sessionId (required, full id or 8-char prefix of a live session), action?, enabled? (default true), actions? (array)',
+            handler: (args) => {
+                const raw = argStr(args, 'sessionId').trim();
+                const s = live.sessions().find(x =>
+                    x.sessionId === raw || x.sessionId.startsWith(raw));
+                if (!s) { throw new Error(`no live session matches "${raw}"`); }
+                const list = (args as { actions?: unknown }).actions;
+                if (list !== undefined) {
+                    const r = turnAlerts.replace(s.sessionId, list);
+                    if (!r.ok) { throw new Error(r.error ?? 'refused'); }
+                    TimelinePanel.refreshIfOpen();
+                    return {
+                        sessionId: s.sessionId, label: live.labelOf(s),
+                        actions: turnAlerts.actionsFor(s.sessionId)
+                    };
+                }
+                const action = argStr(args, 'action');
+                const enabled = (args as { enabled?: unknown }).enabled === undefined
+                    ? true : !!(args as { enabled?: unknown }).enabled;
+                const r = setSessionAlertAction(s.sessionId, action, enabled);
+                if (!r.ok) { throw new Error(r.error ?? 'refused'); }
+                return {
+                    sessionId: s.sessionId, label: live.labelOf(s),
+                    actions: turnAlerts.actionsFor(s.sessionId)
+                };
+            }
+        },
+        {
+            op: 'live.alerts.test',
+            describe: '‼️ RUN A SESSION\'S SELECTED ALERTS ON PURPOSE AND SAY WHAT EACH ONE DID — the same "test in 3 seconds" the swim lane offers. Every branch is reported separately as ok|failed|skipped, so a dead branch cannot hide behind a working one; the sound branch also carries its backend, exit code, stderr, duration and whether it was killed on the timeout. ‼️ `exit 0` means THE PLAYER ACCEPTED THE FILE — that a human heard it is not something any of this can claim, and the result says so. A session with nothing selected is refused rather than reported as a silent success. args: sessionId (required, full id or 8-char prefix of a live session), delayMs? (0-30000, default 3000 — the countdown exists so you can switch windows and watch focus work)',
+            handler: async (args) => {
+                const raw = argStr(args, 'sessionId').trim();
+                const s = live.sessions().find(x =>
+                    x.sessionId === raw || x.sessionId.startsWith(raw));
+                if (!s) { throw new Error(`no live session matches "${raw}"`); }
+                const delay = (args as { delayMs?: unknown }).delayMs;
+                const result = await testSessionAlert(s.sessionId,
+                    typeof delay === 'number' ? delay : 3000);
+                if (!result.ok) { throw new Error(result.error ?? 'refused'); }
+                return result;
             }
         },
         {

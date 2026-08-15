@@ -63,6 +63,26 @@ const sessions = () => ([
         owner: null
     },
     {
+        // ‼️ THE THIRD `developer` ROW — the fixture U-66 exists for. Three
+        // concurrent sessions of ONE agent, each with its own YOUR TURN
+        // selection: sound here, focus+modal above, toast below. Until the
+        // controls were keyed by session this picture was impossible to draw,
+        // because all three rows showed the agent's single setting.
+        sessionId: '5b31d907-84ac-4e21-a7d0-9f5512ab3300',
+        agentName: 'developer', resolved: true, label: 'developer #3',
+        source: undefined,
+        status: 'waiting-input',
+        lastPrompt: 'U-66 kabul matrisi — üç eşzamanlı oturum, üç ayrı uyarı',
+        startedAt: min(63), lastEventTs: min(1),
+        prompts: 9, toolCalls: 74, compactions: 0, subagentStops: 1, errors: 0,
+        cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm',
+        transcriptPath: 'C:\\Users\\x\\.claude\\projects\\vsc_AgentFarm\\5b31d907.jsonl',
+        title: 'U-66 — YOUR TURN uyarıları oturum-kimlikli olsun',
+        cost: 2.14, tokens: 1_402_000, wTokens: 690_000, ctxTokens: 121_300,
+        turns: 9, model: 'claude-opus-5', filesEdited: 5,
+        owner: { pid: 30112, entrypoint: 'sdk-cli', status: 'idle' }
+    },
+    {
         // A hosted Antigravity conversation: Agent Farm keeps its transcript too.
         sessionId: 'agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4',
         agentName: 'basit', resolved: true, label: 'basit',
@@ -135,6 +155,18 @@ const events = () => {
     push('019ff43f-ff3d-7790-9431-63799a45b1b2', 'developer', 'codex', 'prompt', 0.2,
         { detail: 'now run the whole suite' });
 
+    // The third developer session — its own row, its own alert selection.
+    push('5b31d907-84ac-4e21-a7d0-9f5512ab3300', 'developer', '', 'start', 63);
+    for (let i = 0; i < 6; i++) {
+        push('5b31d907-84ac-4e21-a7d0-9f5512ab3300', 'developer', '', 'prompt', 60 - i * 9,
+            { detail: 'u-66 turn ' + (i + 1) });
+        push('5b31d907-84ac-4e21-a7d0-9f5512ab3300', 'developer', '', 'toolStart', 59 - i * 9,
+            { tool: i % 2 ? 'Edit' : 'Read', detail: 'src/core/turnAlerts.ts' });
+        push('5b31d907-84ac-4e21-a7d0-9f5512ab3300', 'developer', '', 'toolEnd', 57 - i * 9,
+            { tool: i % 2 ? 'Edit' : 'Read' });
+    }
+    push('5b31d907-84ac-4e21-a7d0-9f5512ab3300', 'developer', '', 'stop', 1);
+
     // Antigravity — hosted too.
     push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'start', 18);
     push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'prompt', 17,
@@ -158,8 +190,16 @@ const base = () => ({
     sessions: sessions(),
     events: events(),
     workflowRuns: [],
-    turnActions: { developer: ['sound'], basit: [] },
-    sessionTurnActions: {}
+    // ‼️ THREE ROWS OF ONE AGENT, THREE DIFFERENT ANSWERS (U-66). This is the
+    // picture to check: `developer #1` alerts on sound, `#2` on focus+modal,
+    // `#3` on toast, and `basit` on nothing at all — four rows that used to be
+    // incapable of disagreeing.
+    sessionAlerts: {
+        '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60': ['sound'],
+        '019ff43f-ff3d-7790-9431-63799a45b1b2': ['focus', 'modal'],
+        '5b31d907-84ac-4e21-a7d0-9f5512ab3300': ['toast']
+    },
+    alertActions: ['sound', 'focus', 'modal', 'toast']
 });
 
 const data = base;

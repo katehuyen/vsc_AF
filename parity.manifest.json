@@ -6169,24 +6169,22 @@
       }
     },
     {
-      "capability": "timeline.ts#setSessionTurnActions",
+      "capability": "timeline.ts#testTurnAlert",
       "ui": [
-        "page:timeline.ts#setSessionTurnActions"
+        "page:timeline.ts#testTurnAlert"
       ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
+      "ops": [
+        "live.alerts.test"
+      ]
     },
     {
-      "capability": "timeline.ts#setTurnActions",
+      "capability": "timeline.ts#setTurnAlert",
       "ui": [
-        "page:timeline.ts#setTurnActions"
+        "page:timeline.ts#setTurnAlert"
       ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
+      "ops": [
+        "live.alerts.set"
+      ]
     },
     {
       "capability": "toggleDuty",

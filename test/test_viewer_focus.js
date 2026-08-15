@@ -44,7 +44,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                     { sessionId: 's1', agentName: 'dev', ts: T + 1000, kind: 'toolStart', tool: 'Bash', transcriptPath: 'C:/t/x.jsonl' },
                     { sessionId: 's1', agentName: 'dev', ts: T + 5000, kind: 'toolEnd', tool: 'Bash', transcriptPath: 'C:/t/x.jsonl' }
                 ],
-                workflowRuns: [], turnActions: {}
+                workflowRuns: [], sessionAlerts: {}, alertActions: ['sound', 'focus', 'modal', 'toast']
             },
             addEventListener() { }
         },
