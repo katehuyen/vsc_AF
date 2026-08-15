@@ -17,6 +17,7 @@ import {
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
+import { OPENCODE_RUN_OUTPUT_NOTE } from './opencoderun';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
     classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, normalizeRetry,
@@ -2266,7 +2267,13 @@ export class TaskManager implements vscode.Disposable {
                 ? '- Output: one `agy --output-format json` envelope — `response` is the answer, `usage` is what it cost, `conversation_id` is what resumes it\n'
                 : perTurn && engine.id === 'gemini'
                     ? '- Output: one `gemini --output-format json` envelope — `response` is the answer, `stats` is what it cost, `session_id` is what resumes it\n'
-                    : '') +
+                    // ‼️ M-14 — AND THE ONE THAT IS NOT AN ENVELOPE AT ALL. Saying
+                    // "envelope" over this engine too would send whoever reads the
+                    // archive looking for an object that is not there; it prints a
+                    // stream (core/opencoderun.ts, measured).
+                    : perTurn && engine.id === 'opencode'
+                        ? `- Output: ${OPENCODE_RUN_OUTPUT_NOTE}\n`
+                        : '') +
             // ‼️ AND WHAT THIS ENGINE COULD NOT HONOUR. The JSON output contract
             // is `claude -p --output-format json` — one envelope with the result,
             // the cost and the session id in it. `codex exec --json` is a
