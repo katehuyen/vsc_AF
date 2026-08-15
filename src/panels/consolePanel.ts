@@ -451,7 +451,19 @@ export class ConsolePanel {
                 // answer on its own — above zero means the CLI asked when it
                 // should not have, which is worth showing rather than hiding.
                 bypassAutoApproved: s.bypassAutoApproved ?? 0,
-                contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
+                // ‼️ X-43 — THE FOUR CONTEXT FACTS TRAVEL TOGETHER OR NOT AT ALL.
+                // `contextTokens` alone was read as "how full is it", which is a
+                // question it cannot answer, and a turn total was quietly
+                // answering it: the card showed `ctx 5.4M` on a 258 400 window.
+                // What is in the window, what the window holds, where the
+                // reading came from and how old it is — the strip draws the
+                // first two and the AFTip carries all four.
+                contextTokens: s.contextTokens ?? 0,
+                contextWindowTokens: s.contextWindowTokens ?? 0,
+                contextSource: s.contextSource ?? '',
+                contextMeasuredAt: s.contextMeasuredAt ?? 0,
+                contextStale: !!s.contextStale,
+                lastTs: s.lastTs,
                 // the working strip counts from here
                 turnStartedAt: s.turnStartedAt ?? 0,
                 // …and says what THIS TURN has spent, while it is still running:
@@ -677,6 +689,15 @@ export class ConsolePanel {
             // "Ctx now" — the same figure the sessions tables show, so a row
             // says what resuming it would cost you in window before you do
             contextTokens: s.lastCtxTokens ?? 0,
+            // …against the capacity that session itself reported (X-43). Codex
+            // states an operational window on every turn boundary and it is not
+            // the model catalogue's published ceiling; a row that showed only
+            // the numerator left the reader to guess which of the two it was a
+            // fifth or a whole of.
+            contextWindowTokens: s.ctxWindow ?? 0,
+            // …and where that reading came from: the index read it off the
+            // conversation's own last call, which is the only thing it may mean.
+            contextSource: s.lastCtxTokens ? 'transcript-last-call' : '',
             // ‼️ U-50 — WHAT THIS CONVERSATION WAS, so choosing one does not mean
             // opening it first. `firstPrompt` rides on the session for exactly
             // this reason (see SessionInfo) and the Sessions tables already show

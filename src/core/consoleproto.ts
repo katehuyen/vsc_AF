@@ -266,6 +266,90 @@ export function transcriptPos(id: string): number {
     return m[1] ? Number(m[2]) : Number(m[2]) - 1;
 }
 
+/**
+ * ‼️ X-43 — WHAT A `usage` BLOCK ON AN ASSISTANT EVENT IS THE USAGE **OF**.
+ *
+ * Four numbers were being read out of one field and three of them were wrong.
+ * Claude puts a single API call's usage on each assistant message, so
+ * `contextAfter()` on it is the window that call carried — which is what ctx
+ * means. Every other engine reports a SUM: Codex's `turn.completed` is the
+ * whole thread's running total, Gemini's `result.stats` is the process's. The
+ * adaptors already subtract to get honest SPEND out of those sums, and spend is
+ * all they can honestly give: a turn that made eleven model calls spent the sum
+ * of eleven windows and is sitting in exactly one of them.
+ *
+ * So the scope travels ON the event, and the reducer derives ctx from `perCall`
+ * only. Absent means `perCall`, because Claude's real stream — the one engine
+ * that never carried a sum — says nothing and must keep working unchanged.
+ *
+ * Every scope still feeds the spend counters. This governs ONE thing: whether
+ * the block is allowed to say what the window is holding.
+ */
+export type UsageScope =
+    /** one model/API call's own usage — the only kind ctx can be derived from */
+    | 'perCall'
+    /** every internal call of one user turn, summed */
+    | 'turnAggregate'
+    /** everything one CLI process did */
+    | 'processAggregate'
+    /** the conversation's running total since its first turn */
+    | 'conversationCumulative';
+
+/** The scope an event declares, defaulting to `perCall` — see UsageScope. */
+export function usageScopeOf(o: Record<string, unknown> | undefined): UsageScope {
+    const s = o?.usage_scope;
+    return s === 'turnAggregate' || s === 'processAggregate' || s === 'conversationCumulative'
+        ? s : 'perCall';
+}
+
+/**
+ * ONE reading of how full the window is, from a named source.
+ *
+ * The canonical shape the SOP requires ("Context now ayrı bir ölçüm
+ * sözleşmesidir"): what is in the window, what the window holds, when it was
+ * measured, and where it was read. A surface that has this cannot accidentally
+ * print a lifetime total as a fullness — there is nowhere to put one.
+ */
+export interface ContextSample {
+    tokens: number;
+    window?: number;
+    measuredAt?: number;
+    source?: string;
+    /** the reading is the last good one, not a fresh one */
+    stale?: boolean;
+}
+
+/** The state's own context reading, or undefined when nothing has been
+ *  measured. `—` on the surfaces, never a total in disguise. */
+export function contextSample(s: {
+    contextTokens?: number; contextWindowTokens?: number;
+    contextMeasuredAt?: number; contextSource?: string; contextStale?: boolean;
+}): ContextSample | undefined {
+    if (!(s.contextTokens && s.contextTokens > 0)) { return undefined; }
+    return {
+        tokens: s.contextTokens,
+        ...(s.contextWindowTokens ? { window: s.contextWindowTokens } : {}),
+        ...(s.contextMeasuredAt ? { measuredAt: s.contextMeasuredAt } : {}),
+        ...(s.contextSource ? { source: s.contextSource } : {}),
+        ...(s.contextStale ? { stale: true } : {})
+    };
+}
+
+/**
+ * How full the window is, as a percentage — or undefined when it cannot be
+ * stated honestly.
+ *
+ * ‼️ `tokens > window` DOES NOT GROW THE WINDOW AND DOES NOT DRAW A BAR. It
+ * means the two figures came from different moments (a model switch, a stale
+ * sample) and the right answer is to say so, not to pick whichever of them
+ * makes a percentage possible.
+ */
+export function contextPercent(c: ContextSample | undefined): number | undefined {
+    if (!c || !c.window || c.window <= 0 || c.tokens <= 0) { return undefined; }
+    if (c.tokens > c.window) { return undefined; }
+    return Math.round((c.tokens / c.window) * 100);
+}
+
 export interface ConsoleSessionState {
     /** Agent Farm's own id for the hosted process */
     id: string;
@@ -339,6 +423,32 @@ export interface ConsoleSessionState {
      * stands.
      */
     contextTokens?: number;
+    /**
+     * X-43 — THE CAPACITY THAT WINDOW IS MEASURED AGAINST, as the SESSION
+     * reports it and not as a model catalogue publishes it.
+     *
+     * Measured 2026-08-15 on a real `gpt-5.6-sol` thread: the published model
+     * ceiling is 1.05M and the CLI's own `model_context_window` on every
+     * `token_count` line of that same conversation said **258 400** — its
+     * operational/autocompact window. A percentage drawn against the catalogue
+     * would have called a full window a fifth full. Absent means the engine
+     * states none; nothing is invented in its place.
+     */
+    contextWindowTokens?: number;
+    /** when `contextTokens` was measured (epoch ms) — a live figure and a figure
+     *  from four minutes ago are not the same claim, so the age travels with it */
+    contextMeasuredAt?: number;
+    /**
+     * WHERE the figure came from, in a word a reader can check:
+     * `stream-last-call` (the engine's own per-call usage on the wire),
+     * `rollout-last-token-usage` (Codex's transcript, the only live source it
+     * has), `transcript-last-call`, `engine-reported`. Absent means unknown,
+     * and unknown is shown as `—` rather than filled in from a total.
+     */
+    contextSource?: string;
+    /** the last good sample is being shown because a fresher one could not be
+     *  read — never silently, see the ctx AFTip */
+    contextStale?: boolean;
     /**
      * The usage block already counted — `<message id>|<request id>`.
      *
@@ -900,6 +1010,47 @@ export function reduceEvent(
     });
     const type = String(o.type ?? '');
 
+    /**
+     * ‼️ X-43 — AN ENGINE THAT CANNOT PUT ITS WINDOW ON THE WIRE SAYS IT HERE.
+     *
+     * Codex publishes a per-call figure nowhere in its stdout stream and writes
+     * one to disk on every turn boundary (`token_count.info.last_token_usage`
+     * beside `model_context_window`). The host reads that file and hands the
+     * reading in as a canonical sample, so the reducer never has to know which
+     * engine it is serving — it applies a measurement it was given, exactly as
+     * it applies one it derived from a per-call usage block.
+     *
+     * `tokens: 0` is not a measurement and never wipes the last good one; it is
+     * how a probe says "nothing new", and it can still mark the standing figure
+     * STALE so the surfaces stop presenting it as live.
+     */
+    if (type === 'context') {
+        const tokens = typeof o.tokens === 'number' && isFinite(o.tokens) ? Math.max(0, o.tokens) : 0;
+        const win = typeof o.window === 'number' && isFinite(o.window) && o.window > 0
+            ? o.window : undefined;
+        const stale = o.stale === true;
+        if (!tokens) {
+            // Only a freshness claim. Nothing to draw unless it changes one.
+            if (!state.contextTokens || !!state.contextStale === stale) { return { state, changed: false }; }
+            return { state: { ...state, contextStale: stale }, changed: true };
+        }
+        const same = state.contextTokens === tokens
+            && (win === undefined || state.contextWindowTokens === win)
+            && !!state.contextStale === stale;
+        if (same) { return { state, changed: false }; }
+        return {
+            state: {
+                ...state,
+                contextTokens: tokens,
+                ...(win ? { contextWindowTokens: win } : {}),
+                contextMeasuredAt: typeof o.measuredAt === 'number' && o.measuredAt > 0 ? o.measuredAt : now,
+                contextSource: typeof o.source === 'string' && o.source ? o.source : 'engine-reported',
+                contextStale: stale
+            },
+            changed: true
+        };
+    }
+
     if (type === 'system') {
         const sub = String(o.subtype ?? '');
         if (sub === 'init') {
@@ -979,7 +1130,15 @@ export function reduceEvent(
                 // and snaps back afterwards, the same false reading
                 // `thinking_tokens` used to produce.
                 const ofSubAgent = typeof o.parent_tool_use_id === 'string' && !!o.parent_tool_use_id;
-                const ctxNow = ofSubAgent ? 0 : contextAfter(u);
+                // ‼️ X-43 — AND A SUM IS NOT A WINDOW. `contextAfter` on a block
+                // that carries a turn's or a thread's total reports the whole
+                // conversation's spend as the size of the window: measured, a
+                // real Codex thread showed `ctx 5.4M` against a window of
+                // 258 400, and the honest figure — the last call's own 220 471 —
+                // was sitting in that session's rollout the whole time. Those
+                // engines' ctx arrives as an explicit `context` event instead
+                // (see the branch below); their usage keeps feeding spend.
+                const ctxNow = ofSubAgent || usageScopeOf(o) !== 'perCall' ? 0 : contextAfter(u);
                 // The limit-side twin of `spent`, off the model that served this
                 // very line — a sub-agent on a cheaper model must not be charged
                 // at the parent's rate. See ConsoleState.wTokens.
@@ -995,7 +1154,12 @@ export function reduceEvent(
                     // reason their tokens are: they are what the turn cost.
                     turnApiCalls: (next.turnApiCalls ?? 0) + 1,
                     // zero is "not measured here", so the last real figure stands
-                    ...(ctxNow > 0 ? { contextTokens: ctxNow } : {})
+                    ...(ctxNow > 0 ? {
+                        contextTokens: ctxNow,
+                        contextMeasuredAt: now,
+                        contextSource: 'stream-last-call',
+                        contextStale: false
+                    } : {})
                 };
                 changed = true;
             }
@@ -1401,6 +1565,15 @@ export function newSessionState(o: {
         costUSD: c?.costUSD ?? 0, turns: c?.turns ?? 0, tokens: c?.tokens ?? 0,
         wTokens: c?.wTokens ?? 0,
         contextTokens: c?.contextTokens || undefined,
+        // ‼️ X-43 — the carried window comes back with the carried figure or the
+        // resumed card draws a percentage of nothing. It is also the ONLY thing
+        // the resume baseline may touch about context: `usage` beside it is a
+        // SPEND baseline (see CarriedTotals.usage), and the aggregate blocks it
+        // exists for can no longer overwrite this reading.
+        contextWindowTokens: c?.contextWindowTokens || undefined,
+        ...(c?.contextTokens
+            ? { contextSource: 'transcript-last-call', contextStale: true }
+            : {}),
         startedAt: o.now, lastTs: o.now
     };
 }
@@ -1424,6 +1597,9 @@ export interface CarriedTotals {
     wTokens?: number;
     turns?: number;
     contextTokens?: number;
+    /** …and the capacity that reading was against, when the transcript stated
+     *  one (Codex writes it on every turn boundary — see contextWindowTokens) */
+    contextWindowTokens?: number;
     /**
      * ‼️ THE TOTAL, SPLIT — needed by an engine that reports CUMULATIVELY.
      *
@@ -1440,7 +1616,8 @@ export interface CarriedTotals {
 
 /** The carried totals of a transcript, off the index row the resume list uses. */
 export function carriedTotals(s: {
-    cost?: number; usage?: Usage; wTokens?: number; userTurns?: number; lastCtxTokens?: number;
+    cost?: number; usage?: Usage; wTokens?: number; userTurns?: number;
+    lastCtxTokens?: number; ctxWindow?: number;
 }): CarriedTotals {
     const u = s.usage;
     return {
@@ -1449,6 +1626,7 @@ export function carriedTotals(s: {
         wTokens: s.wTokens ?? 0,
         turns: s.userTurns ?? 0,
         contextTokens: s.lastCtxTokens ?? 0,
+        contextWindowTokens: s.ctxWindow ?? 0,
         ...(u ? { usage: { ...u } } : {})
     };
 }

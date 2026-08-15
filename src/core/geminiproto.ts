@@ -352,7 +352,19 @@ export function translateGemini(
         // array produces none — it only carries the numbers. And it is NOT a
         // delta against a running total: on this engine there is no running
         // total to subtract (measurement 1).
-        events.push({ type: 'assistant', message: { content: [], usage: geminiUsage(stats) } });
+        //
+        // ‼️ X-43 — IT IS STILL A SUM, AND SUMS DO NOT STATE A WINDOW. `stats`
+        // is what this PROCESS did: one turn in which the agent called tools
+        // made several model calls, and the window it ended in is the last of
+        // them, not their total. Marked `processAggregate` so the reducer spends
+        // it and derives no ctx from it (consoleproto.ts → UsageScope). This
+        // engine publishes no per-call figure and no `model_context_window` on
+        // any surface measured here, so its ctx stays honestly unknown — a `—`
+        // rather than a total wearing the wrong label.
+        events.push({
+            type: 'assistant', usage_scope: 'processAggregate',
+            message: { content: [], usage: geminiUsage(stats) }
+        });
         const failed = str(o.status) === 'error';
         events.push(failed
             ? {

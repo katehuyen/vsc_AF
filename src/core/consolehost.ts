@@ -336,8 +336,45 @@ export class ConsoleHost {
          * it carries has to be current anyway.
          */
         private projectContextFile: (projectId: string | undefined) => string | undefined =
-            () => undefined
+            () => undefined,
+        /**
+         * ‼️ X-43 — WHAT THE WINDOW IS HOLDING, ON AN ENGINE THAT DOES NOT SAY.
+         *
+         * Codex puts one usage block on the wire per turn and it is the thread's
+         * running total: there is nothing there a window can be read out of, and
+         * reading one out of it anyway is how a card came to show `ctx 5.4M`
+         * against a capacity of 258 400. The figure exists — the CLI writes it to
+         * its own rollout at every turn boundary — so it is READ rather than
+         * derived (core/codexctx.ts). Injected because the host has no `fs`, and
+         * absent in a test, which is the same thing as an engine that publishes
+         * nothing: ctx stays unknown and no total takes its place.
+         */
+        private codexContext: (threadId: string, force?: boolean) => {
+            tokens: number; window?: number; source: string; measuredAt: number;
+        } | undefined = () => undefined
     ) {}
+
+    /**
+     * Apply Codex's on-disk context reading to a hosted session, as a canonical
+     * `context` event (consoleproto.ts).
+     *
+     * Returns whether anything changed — the reducer answers that, by comparing
+     * the reading with the one already on the state, so an unchanged file costs
+     * a Map lookup and repaints nothing.
+     */
+    private pollCodexContext(h: Hosted, force = false): boolean {
+        if (h.engine.id !== 'codex' || h.closed) { return false; }
+        const thread = threadOf(h) ?? h.state.sessionId;
+        if (!thread) { return false; }
+        const r = this.codexContext(thread, force);
+        if (!r) { return false; }
+        const rr = reduceEvent(h.state, {
+            type: 'context', tokens: r.tokens, window: r.window,
+            source: r.source, measuredAt: r.measuredAt
+        }, Date.now());
+        h.state = rr.state;
+        return rr.changed;
+    }
 
     onChange(fn: (id: string) => void): { dispose(): void } {
         this.listeners.push(fn);
@@ -817,6 +854,11 @@ export class ConsoleHost {
                     : `the turn did not run (exit ${code})`);
             }
             cur.turn = undefined;
+            // ‼️ X-43 — THE LAST MANDATORY READING. The rollout's final
+            // `token_count` line can be written after the answer has streamed,
+            // so the figure the card settles on has to be taken once the writer
+            // is actually gone. Forced past the throttle for that reason.
+            if (this.pollCodexContext(cur, true)) { this.fire(id); }
             // …and only NOW is the thread free for the next one (see releasePerTurn).
             this.releasePerTurn(id);
         });
@@ -987,6 +1029,15 @@ export class ConsoleHost {
                         h.turn.reported = true;
                     }
                 }
+                // ‼️ X-43 — and the window is asked for on the way past. The
+                // rollout is being appended to WHILE the turn runs, so this is a
+                // live reading and not an end-of-turn one; the probe's own
+                // throttle (700 ms) and mtime cache mean a chatty turn does not
+                // turn into a disk read per line. Forced when the turn is over,
+                // because that is the moment the file has just been given its
+                // last word and the card is about to be looked at.
+                changed = this.pollCodexContext(
+                    h, h.state.status === 'idle' || !h.child) || changed;
                 // ‼️ THE TURN IS NOT OVER UNTIL THE PROCESS IS GONE, AND THE
                 // ENGINE SAYS OTHERWISE FIVE SECONDS EARLY.
                 //

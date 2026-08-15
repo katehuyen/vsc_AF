@@ -342,6 +342,16 @@ function translateStep(state: AgyState, step: Row, events: unknown[]): AgyTransl
     // produces none — it only carries the numbers, and it is emitted for EVERY
     // step that reports usage, including the `checkpoint` steps that carry
     // nothing else. A checkpoint's tokens are tokens.
+    //
+    // ‼️ X-43 — AND ON THIS ENGINE A STEP *IS* A CALL. Measured: usage arrives
+    // per step, the step's own, and the `result` block at the end is their sum
+    // and carries no usage for exactly that reason (see the header). So this is
+    // the one non-Claude engine whose stream can state a window: the last step
+    // with usage is the last model call, which is what ctx means. Left at the
+    // default `perCall` scope (consoleproto.ts → UsageScope) deliberately —
+    // marking it aggregate would throw away a true reading. Antigravity's CLI
+    // publishes no capacity, so the window stays unknown and no percentage is
+    // drawn against an invented one.
     const usage = step.usage ? agyUsage(obj(step.usage)) : undefined;
 
     if (type === 'agent_response') {

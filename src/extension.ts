@@ -255,8 +255,10 @@ import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import {
-    carriedTotals, ConsoleMessage, OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
+    carriedTotals, ConsoleMessage, contextPercent, contextSample, OlderHistory,
+    PERMISSION_MODES_LIVE, transcriptPos
 } from './core/consoleproto';
+import { CodexContextProbe, isStale } from './core/codexctx';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -5416,7 +5418,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -5452,7 +5454,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // …and, once the ball is back with the user, what the turn
                     // that just ended really cost (the CLI's own figure)
                     lastTurn: s.lastTurn ?? null,
+                    // ‼️ X-43 — `tokens` ABOVE AND `contextTokens` HERE ARE TWO
+                    // DIFFERENT MEASUREMENTS, and this reply used to return the
+                    // same figure for both: measured on a real Codex thread,
+                    // `tokens=5414907` and `contextTokens=5414907` at an instant
+                    // when the window held 220 471 of 258 400. An agent reading
+                    // that could only conclude the session was 21× over its
+                    // limit. The window figures now say what they are worth:
+                    // `contextPct` is null rather than invented when there is no
+                    // capacity or when the reading exceeds it, and `contextStale`
+                    // says the sample is the last good one rather than a live one.
                     contextTokens: s.contextTokens ?? null,
+                    contextWindowTokens: s.contextWindowTokens ?? null,
+                    contextPct: contextPercent(contextSample(s)) ?? null,
+                    contextSource: s.contextSource ?? null,
+                    contextMeasuredAt: s.contextMeasuredAt ?? null,
+                    contextStale: s.contextTokens
+                        ? (s.contextStale ?? false) || isStale(s.contextMeasuredAt, Date.now())
+                        : null,
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     // ‼️ The turn is OPEN and standing still until this is
                     // answered — `status` alone still says "working", which is
@@ -11667,11 +11686,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The second argument is what makes "End session" end the right process:
     // the CLI's registry names the `claude` itself, while the child we hold is
     // only the shell that started it (see ConsoleHost.close).
+    /**
+     * ‼️ X-43 — CODEX'S LIVE `ctx`, READ OFF ITS OWN ROLLOUT.
+     *
+     * The reading discipline is core/codexctx.ts and is pure; this is the only
+     * part that needs a home directory. `find` walks the date-partitioned
+     * sessions tree NEWEST FIRST and stops at the first filename carrying the
+     * thread id — the id is in the name, so no rollout is opened to identify one
+     * and a live thread is found in the first directory looked at.
+     */
+    const codexCtxProbe = new CodexContextProbe({
+        find: threadId => {
+            const root = path.join(
+                expandEnvPath(cfg().get<string>('codexHome', '').trim())
+                || path.join(os.homedir(), '.codex'), 'sessions');
+            const hunt = (dir: string, depth: number): string | undefined => {
+                let entries: fs.Dirent[] = [];
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return undefined; }
+                // `YYYY/MM/DD` sorts lexically, so descending IS newest first —
+                // and the thread being asked about is almost always today's.
+                const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort().reverse();
+                if (depth < 3) {
+                    for (const d of dirs) {
+                        const hit = hunt(path.join(dir, d), depth + 1);
+                        if (hit) { return hit; }
+                    }
+                    return undefined;
+                }
+                const f = entries.find(e => e.isFile()
+                    && e.name.endsWith('.jsonl') && e.name.includes(threadId));
+                return f ? path.join(dir, f.name) : undefined;
+            };
+            return hunt(root, 0);
+        },
+        stat: abs => {
+            try { const st = fs.statSync(abs); return { mtimeMs: st.mtimeMs, size: st.size }; }
+            catch { return undefined; }
+        },
+        // the same bounded tail the quota reader uses — a rollout runs to tens
+        // of megabytes and the line wanted is at the end of it
+        readTail: (abs, bytes) => usageProbe.readTail(abs, bytes)
+    });
     const consoleHost = new ConsoleHost(
         () => 'claude',
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
         () => activeProjectId() || undefined,
-        projectContextFileFor);
+        projectContextFileFor,
+        (threadId, force) => codexCtxProbe.read(threadId, { force: !!force }));
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
     const writeExternalConsoleTranscript = (id: string): void => {
         const s = consoleHost.get(id);

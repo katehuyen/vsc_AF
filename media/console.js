@@ -1029,6 +1029,71 @@
     const perTurn = (n, turns) => (turns > 1 && n > 0 ? n / turns : 0);
     const when = ts => (ts ? window.AFTime.full(ts) : '');
 
+    /**
+     * ‼️ X-43 — "ctx" IS HOW FULL THE WINDOW IS, NOT WHAT THE SESSION SPENT.
+     *
+     * The two were one number on this page and the card read `~5.4M ctx` while
+     * the window it was in held 220 471 of 258 400 — measured, on a real Codex
+     * thread. They are different quantities and they now have different homes:
+     * the spend is "… this session", this is the window.
+     *
+     * SHORTHAND on the strip (`ctx 220k / 258k`), the whole reading in the
+     * AFTip. A percentage is only drawn when it can be computed honestly — no
+     * capacity, or a reading larger than the capacity, means the two figures came
+     * from different moments and the tip says THAT rather than picking whichever
+     * of them makes a percentage possible.
+     */
+    const ctxPct = (s) => {
+        const t = s.contextTokens || 0, w = s.contextWindowTokens || 0;
+        return t > 0 && w > 0 && t <= w ? Math.round((t / w) * 100) : 0;
+    };
+    /** The strip's own text, or '' when nothing has been measured — a `—` where
+     *  a figure belongs is the point (never a total standing in for one). */
+    const ctxShort = (s) => {
+        if (!s.contextTokens) { return ''; }
+        return 'ctx ' + C.fmtTok(s.contextTokens)
+            + (s.contextWindowTokens ? ' / ' + C.fmtTok(s.contextWindowTokens) : '');
+    };
+    const CTX_SOURCE_TEXT = {
+        'stream-last-call': 'the engine\'s own usage for its last call',
+        'rollout-last-token-usage': 'the session\'s rollout on disk (last_token_usage)',
+        'transcript-last-call': 'the transcript, read when this session was resumed',
+        'engine-reported': 'the engine\'s own reading'
+    };
+    /** MIRROR — the current value first, then what it means. */
+    const ctxTip = (s) => {
+        const pct = ctxPct(s);
+        const over = s.contextTokens && s.contextWindowTokens
+            && s.contextTokens > s.contextWindowTokens;
+        return {
+            head: ctxShort(s) || 'ctx — not measured',
+            body: window.AFTip.lines([
+                'Context now: ' + (s.contextTokens ? C.fmtTok(s.contextTokens) : '—'),
+                'Window: ' + (s.contextWindowTokens
+                    ? C.fmtTok(s.contextWindowTokens) + ' — the capacity this session reports, '
+                        + 'which is not always the model\'s published ceiling'
+                    : 'this engine states none'),
+                pct ? 'Full: ' + pct + '%' : '',
+                over
+                    ? '‼️ The reading is larger than the window, so the two came from '
+                        + 'different moments — no percentage is drawn and nothing is rounded up.'
+                    : '',
+                s.contextSource
+                    ? 'Read from: ' + (CTX_SOURCE_TEXT[s.contextSource] || s.contextSource)
+                    : '',
+                s.contextMeasuredAt
+                    ? 'Measured: ' + relTime(s.contextMeasuredAt) + ' ago'
+                        + (s.contextStale ? ' — the last good reading, not a live one' : '')
+                    : '',
+                '',
+                'This is what the window is HOLDING after the last model call. '
+                    + 'What the conversation has SPENT is the figure beside it and can '
+                    + 'exceed the window many times over — a turn that calls tools makes '
+                    + 'many model calls and pays for all of them, while sitting in one window.'
+            ])
+        };
+    };
+
     /** WHO and WHERE — the half of a card that does not move while it runs. */
     const cardWhoTip = (s) => ({
         head: `${s.agentName || 'session'} · ${s.engineLabel || window.AFEngine.label(s.engine)}`
@@ -1090,8 +1155,13 @@
                         + (sp.est ? ' — the running turn is an estimate until it closes' : ''),
                 ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens'
                     + (pc ? ' · ' + C.fmtUSD(pc) : '') : '',
-                s.contextTokens ? 'Context now: ' + C.fmtTok(s.contextTokens)
-                    + ' — what the next turn starts from' : ''
+                // ‼️ ONE SUBJECT — the window has its own panel (ctxTip), so this
+                // one names it and stops. Repeating the reading here is how the
+                // spend tip came to look like it was about the window too.
+                s.contextTokens
+                    ? 'Context now: ' + ctxShort(s).replace(/^ctx /, '')
+                        + ' — a different measurement, see the ctx panel'
+                    : ''
             ])
         };
     };
@@ -1548,7 +1618,7 @@
                 </div>
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
-                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
+                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -1804,10 +1874,11 @@
                             r.cost ? 'Cost: ' + C.fmtUSD(r.cost) : '',
                             ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens' : '',
                             r.contextTokens
-                                ? 'Context after its last reply: ' + C.fmtTok(r.contextTokens)
-                                + ' — what resuming it starts from, and what it costs you before you say anything'
+                                ? 'Context after its last reply: ' + ctxShort(r).replace(/^ctx /, '')
+                                + ' — a different measurement from the spend above; it is what '
+                                + 'resuming this costs you in window before you say anything'
                                 : ''
-                        ]))}` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+                        ]))}` : ''}${r.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(r))}</span>`, ctxTip(r).head, ctxTip(r).body)}` : ''}</div>
             </div>`;
         }).join('');
         // How many of how many — a list that silently ends at fifteen is why
@@ -2160,7 +2231,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

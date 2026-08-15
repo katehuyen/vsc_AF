@@ -390,6 +390,18 @@ Motor çalışma kâğıdı şu matrisi gerçek iki turlu, araç kullanan bir sm
 |---|---|---|---|---|
 | Yeni motor | tur/süreç/konuşma/adım | kesin ham alan veya transcript olayı | runtime/model/unknown | `—`, asla toplam değil |
 
+Ölçülmüş dört motorun bugünkü doldurulmuş hâli (X-43, 2026-08-15). Kapsam
+işareti olayın üzerinde taşınır (`usage_scope`, `src/core/consoleproto.ts`);
+ortak reducer yalnız `perCall` bloğundan ctx türetir, bütün kapsamlar harcamayı
+besler.
+
+| Motor | Harcama kaynağı ve kapsamı | Son-çağrı ctx kaynağı | Etkin pencere kaynağı | Yoksa davranış |
+|---|---|---|---|---|
+| Claude | assistant mesajının kendi usage'ı — `perCall` | aynı blok, `contextAfter()` | motor yayımlamaz → unknown | subagent ve `thinking_tokens` ctx'e dokunmaz |
+| Codex | `turn.completed.usage`, konuşma kümülatifi; delta alınır — `turnAggregate` | ‼️ stream'de YOK. Rollout `event_msg/token_count.info.last_token_usage` (sınırlı tail + mtime cache, `src/core/codexctx.ts`) | aynı satırdaki `model_context_window` (ölçülen 258.400; yayımlanmış model tavanı 1,05M olsa bile bu ezilmez) | dosya yoksa/yarım satırsa `—`, asla tur veya oturum toplamı |
+| Gemini | `result.stats`, süreç toplamı — `processAggregate` | yayımlanmış per-call alan yok → unknown | yok | `—` |
+| Antigravity | `step.usage`, adım başına — `perCall` | son usage'lı step (adım = çağrı; `result` bloğu bunların toplamı olduğu için usage taşımaz) | CLI yayımlamıyor → unknown | `—`, yüzde çizilmez |
+
 ### Transcript, index ve canlılık
 
 | Soru | Ölçüm |

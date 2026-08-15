@@ -255,10 +255,17 @@ export function codexTotalsFromUsage(u: {
  *     window — which is how a session that never exceeded 258k came to show
  *     38M of context at the end of it.
  *
- * So the delta is taken here, once, against the previous total. The turn's own
- * request input IS the window occupancy at that turn, which is exactly what
- * `contextAfter` means on Claude — the two engines end up saying the same
- * thing with the same arithmetic instead of one of them lying quietly.
+ * So the delta is taken here, once, against the previous total.
+ *
+ * ‼️ AND WHAT COMES OUT IS SPEND, NOT CONTEXT — X-43. A user turn is not one
+ * model call: while the agent runs tools it makes many, and this delta is their
+ * SUM. Measured 2026-08-15 on a real `gpt-5.6-sol` thread, at the same instant:
+ * total 5 414 907, last call 220 471, window 258 400. The turn aggregate is the
+ * honest answer to "what did this turn cost" and a 21× overstatement of "how
+ * full is the window". The block is therefore emitted `usage_scope:
+ * 'turnAggregate'` (consoleproto.ts → UsageScope) so the reducer counts its
+ * spend and refuses to read a window out of it; the window comes from the
+ * rollout instead — see `readCodexContext`.
  *
  * A total that goes DOWN (a compaction, a CLI that revised its bookkeeping) is
  * clamped at zero rather than reported as negative usage: unsigned is the
@@ -287,6 +294,57 @@ export function codexTurnUsage(
         }),
         total
     };
+}
+
+/**
+ * ‼️ X-43 — WHAT THE WINDOW IS HOLDING RIGHT NOW, out of the rollout the CLI is
+ * writing while it works.
+ *
+ * The stdout stream carries a turn total and nothing else, so the live answer is
+ * structurally unavailable there. It is not unavailable: `~/.codex/sessions/…`
+ * grows during the turn and every `event_msg` line of type `token_count` states
+ * all three figures at once — measured on a live thread, 2026-08-15:
+ *
+ *   total_token_usage.total_tokens  5 414 907   ← the conversation's spend
+ *   last_token_usage.total_tokens     220 471   ← THE WINDOW, this is ctx
+ *   model_context_window              258 400   ← the capacity in force
+ *
+ * Pure over the TEXT, so the caller owns the bounded tail read and the cache and
+ * this stays testable without a home directory. The tail is scanned forward and
+ * the LAST valid line wins; a half-written final line simply fails `JSON.parse`
+ * and is skipped, which is the whole handling a file being appended to needs.
+ *
+ * `total_tokens` is preferred where the CLI states it, and `input + output` is
+ * the fallback — the cached share is already inside `input_tokens` on this
+ * engine (see `codexUsage`), so adding it again would overstate the window.
+ *
+ * ‼️ NO SAMPLE IS `undefined`, NEVER ZERO. Zero would read as an empty window.
+ */
+export function readCodexContext(tail: string | undefined): {
+    tokens: number; window?: number; spent?: number;
+} | undefined {
+    const text = String(tail ?? '');
+    if (!text) { return undefined; }
+    let found: { tokens: number; window?: number; spent?: number } | undefined;
+    for (const line of text.split(/\r?\n/)) {
+        if (!line.includes('"token_count"')) { continue; }
+        let row: Record<string, unknown>;
+        try { row = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+        const payload = (row.payload ?? row) as Record<string, unknown>;
+        if (payload?.type !== 'token_count') { continue; }
+        const info = payload.info as Record<string, unknown> | undefined;
+        if (!info || typeof info !== 'object') { continue; }
+        const last = info.last_token_usage as Item | undefined;
+        if (!last || typeof last !== 'object') { continue; }
+        const tokens = num(last.total_tokens) || (num(last.input_tokens) + num(last.output_tokens));
+        if (tokens <= 0) { continue; }
+        const win = num(info.model_context_window);
+        const total = info.total_token_usage as Item | undefined;
+        const spent = total && typeof total === 'object'
+            ? num(total.total_tokens) || undefined : undefined;
+        found = { tokens, ...(win > 0 ? { window: win } : {}), ...(spent ? { spent } : {}) };
+    }
+    return found;
 }
 
 /** How many of the turn's output tokens went on private reasoning. Reported
@@ -343,7 +401,11 @@ export function translateCodex(
         // ‼️ The usage rides on an assistant message with no blocks, because
         // that is where the reducer counts (see the header). It draws no row —
         // an empty content array produces none — it only carries the numbers.
-        events.push({ type: 'assistant', message: { content: [], usage } });
+        //
+        // ‼️ X-43 — AND IT SAYS WHAT KIND OF NUMBER IT IS. This is one turn's
+        // whole tool loop summed; the reducer must spend it and must not read a
+        // window out of it (consoleproto.ts → UsageScope).
+        events.push({ type: 'assistant', usage_scope: 'turnAggregate', message: { content: [], usage } });
         events.push({
             type: 'result', subtype: 'success', is_error: false
             // ‼️ NO `total_cost_usd`. Codex runs on a plan and states no price;

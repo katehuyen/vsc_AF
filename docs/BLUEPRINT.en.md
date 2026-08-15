@@ -379,6 +379,7 @@ A streaming conversation re-renders several times a second. The page used to be 
 - **Your half-typed message survives** a streamed line, with its cursor where you left it.
 - **No gap in the middle of the page.** The Console is a full-height app layout now: the conversation is the only scroller, the composer sits under it, and a short conversation is pushed **down onto** the composer instead of leaving a tall empty box between them.
 - **"ctx now" keeps up.** It was read only from the CLI's occasional `thinking_tokens` event, so it froze at whatever the first one said; it is now taken off each assistant message's own usage — the same arithmetic the sessions tables do.
+- **‼️ "ctx now" and "this session" are two different measurements (3.142.0 — X-43).** The strip reads `ctx 220.5k / 258.4k · 85%`: what the window HOLDS after the last model call, against the capacity **that session itself reports** — not the model catalogue's published ceiling (measured: a published limit of 1,05M on a thread whose Codex CLI ran an operational window of 258.400). Beside it, `… this session` is the conversation's LIFETIME SPEND, which a tool-using turn can push many times past the window and legitimately so. The AFTip carries the reading, the capacity, the fullness, **where it was read** (`stream-last-call`; for Codex, the session's own rollout) and how old it is. With no per-call source it says `—`: a session or turn total is never shown as "approximate ctx", and `ctx > window` draws no percentage.
 
 ### The card carries the session's commands (3.35.0)
 

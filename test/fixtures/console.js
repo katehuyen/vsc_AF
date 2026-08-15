@@ -97,7 +97,14 @@ const data = () => ({
             engine: 'codex', engineLabel: 'Codex', turnShape: 'perTurn',
             steerable: false, reportsCost: false,
             status: 'working', turns: 2, tokens: 46210, wTokens: 46210,
-            contextTokens: 28874, turnStartedAt: NOW - 34000,
+            // ‼️ X-43 — the Codex card is the one that showed the bug, so the
+            // fixture carries the whole reading: what the window holds, the
+            // capacity that session reports (its OWN 258 400, not the model's
+            // published ceiling) and where the figure was read. `tokens` above
+            // is the spend and is deliberately a different number.
+            contextTokens: 28874, contextWindowTokens: 258400,
+            contextSource: 'rollout-last-token-usage', contextMeasuredAt: NOW - 4000,
+            turnStartedAt: NOW - 34000,
             turnTokens: 14310, turnWTokens: 14310, turnApiCalls: 3, turnSteps: 7,
             turnThinking: 2, turnCost: 0, turnModel: 'gpt-5.6-terra', turnEffort: 'low',
             model: 'gpt-5.6-terra', effort: 'low', permissionMode: 'acceptEdits',

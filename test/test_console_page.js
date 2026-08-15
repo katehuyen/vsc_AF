@@ -774,8 +774,40 @@ const html = allHtml;
     push(data(CONVO.slice()));
     ok('the session line carries the cost AND the tokens it bought',
         /\$0\.12 \(48200t tokens\)<\/span> this session/.test(status()));
-    ok('…the context the window is holding', /~24100t ctx/.test(status()));
+    // ‼️ X-43 — `ctx <held>` and, when the session states a capacity, the
+    // capacity beside it. The figure is not prefixed `~` any more: it is the
+    // engine's own reading of its last call, not an estimate of anything.
+    ok('…the context the window is holding', /ctx 24100t/.test(status()));
     ok('…and how many turns it took', /3 turns/.test(status()));
+
+    // ‼️ X-43 — THE TWO FIGURES ON ONE STRIP, AND THEY MUST NOT BE THE SAME
+    // NUMBER. A real Codex thread held 220 471 of a 258 400 window while having
+    // spent 5 414 907, and the strip printed the spend twice — once as ctx.
+    push(data(CONVO.slice(), {
+        tokens: 5414907, contextTokens: 220471, contextWindowTokens: 258400,
+        contextSource: 'rollout-last-token-usage', contextMeasuredAt: Date.now()
+    }));
+    ok('‼️ ctx is drawn against the window the session itself reported',
+        /ctx 220471t \/ 258400t/.test(status()));
+    ok('…with the fullness beside it, computed from that window',
+        /· 85%/.test(status()));
+    ok('‼️ …and the SPEND is a different number on the same strip',
+        /5414907t|5\.4Mt/.test(status()) && !/ctx 5/.test(status()));
+    ok('the whole reading — window, source and age — is one hover away',
+        /Read from: the session's rollout on disk/.test(status())
+        && /Window: 258400t/.test(status()));
+
+    // A session whose engine states no capacity says the numerator and stops;
+    // no percentage is invented against a catalogue figure.
+    push(data(CONVO.slice(), { contextTokens: 220471, contextWindowTokens: 0 }));
+    ok('‼️ no capacity means no percentage, not a guessed one',
+        /ctx 220471t/.test(status()) && !/ · \d+%/.test(status()));
+
+    // A reading larger than the window is two moments, not a full bar.
+    push(data(CONVO.slice(), { contextTokens: 300000, contextWindowTokens: 258400 }));
+    ok('‼️ tokens > window draws no percentage and says why',
+        !/· \d+%/.test(status())
+        && /larger than the window/.test(status()));
 
     // a turn nobody has spent anything on yet says nothing rather than "$0"
     push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now(), turnTokens: 0, turnCost: 0 }));

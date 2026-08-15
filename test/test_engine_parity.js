@@ -121,7 +121,6 @@ function newIndex(includeUnmatched = true) {
 // ---------------------------------------------------------------------------
 {
     const { newCodexState, translateCodex } = out('codexproto.js');
-    const { contextAfter } = out('pricing.js');
 
     // ‼️ MEASURED 2026-08-12, codex-cli 0.147.0, two real turns of one thread:
     //   turn 1  input 12378  cached 4480   output 17
@@ -163,10 +162,15 @@ function newIndex(includeUnmatched = true) {
         u2.input_tokens === (24774 - 12378) - (16640 - 4480)
         && u2.cache_read_input_tokens === 16640 - 4480
         && u2.output_tokens === 23 - 17);
-    // ‼️ THE FIGURE THE USER SAW. The window after turn 2 is what turn 2's own
-    // request carried — about 12.4k — and not the 24.8k the thread has spent.
-    ok('‼️ …so the context figure is a window, not a lifetime total',
-        contextAfter(u2) === (24774 - 12378) + (23 - 17));
+    // ‼️ X-43 — AND THE DELTA IS SPEND, NOT A WINDOW. This block used to assert
+    // `contextAfter(u2)` as the context figure, which quietly encoded "one user
+    // turn is one model call" — false the moment the agent touches a tool, and
+    // the reason the wrong reading survived a green suite. A turn aggregate says
+    // what the turn COST; it cannot say what the window holds, and it now
+    // declares as much on the event itself so the reducer refuses to try.
+    const aggregate = r.events.find(e => e && e.type === 'assistant' && e.message && e.message.usage);
+    ok('‼️ the turn total declares its scope, and it is not per-call',
+        aggregate.usage_scope === 'turnAggregate');
     ok('…and both turns together still add up to what the thread spent',
         u1.input_tokens + u1.cache_read_input_tokens + u2.input_tokens + u2.cache_read_input_tokens === 24774);
 
