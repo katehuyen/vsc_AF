@@ -2661,8 +2661,14 @@
         if (!s) { return ''; }
         return window.AFEngine.badge(s.engine, window.AFTip.lines([
             'Engine: ' + (s.engineLabel || window.AFEngine.label(s.engine)),
-            'Shape: ' + (s.turnShape === 'perTurn' ? 'one process per turn' : 'one long-lived process'),
-            'Mid-turn message: ' + (s.turnShape === 'perTurn' ? 'held until the turn ends' : 'steers this turn'),
+            // ‼️ THREE SHAPES, NOT TWO (K-25). A shared-ACP engine has one process
+            // for the whole WINDOW, carrying every card at once — reading it as
+            // "one long-lived process" would tell a reader this card owns it, and
+            // the reason it does not is the reason ending a card does not stop it.
+            'Shape: ' + (s.turnShape === 'perTurn' ? 'one process per turn'
+                : s.turnShape === 'sharedAcp' ? 'one shared process for every card on this engine'
+                    : 'one long-lived process'),
+            'Mid-turn message: ' + (s.turnShape === 'persistent' ? 'steers this turn' : 'held until the turn ends'),
             'Price per turn: ' + (s.reportsCost ? 'reported' : 'not reported — plan or account billing')
         ]));
     }

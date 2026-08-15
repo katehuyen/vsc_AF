@@ -401,7 +401,17 @@ export function readEngineModels(
      * hands the text in. Absent means "not fetched yet", which is a different
      * thing from "the engine has none" and the note says which.
      */
-    agyCatalog?: { text?: string; fetchedAt?: number }
+    agyCatalog?: { text?: string; fetchedAt?: number },
+    /**
+     * ‼️ …AND THE ONE CATALOG THAT ARRIVES UNASKED. OpenCode answers `session/new`
+     * with every model this machine can reach, their display names and the one
+     * currently selected (measured, A-16) — so shelling out to `opencode models`
+     * for a list the handshake just handed over would be a spawn per picker draw
+     * for no new fact. The Console records it when a session opens and hands it
+     * in here. Absent means "no OpenCode session has been opened yet", which the
+     * note says rather than pretending the engine has no catalog.
+     */
+    opencodeCatalog?: { models?: { id: string; label: string }[]; fetchedAt?: number }
 ): Record<EngineId, EngineModels> {
     const safe = <T>(fn: () => T): T | undefined => { try { return fn(); } catch { return undefined; } };
     const settingsModels = [DEFAULT_ROW, ...fromAliases(aliases)];
@@ -480,7 +490,43 @@ export function readEngineModels(
                 + 'Until it does this is the agentFarm.modelAliases list, which is almost certainly wrong for this engine.'
         };
 
-    return { claude, codex, gemini, agy };
+    const opencodeRows = (opencodeCatalog?.models ?? []).filter(m => m.id);
+    const opencode: EngineModels = opencodeRows.length
+        ? {
+            models: [DEFAULT_ROW, ...opencodeRows.map(m => ({
+                id: m.id, label: m.label || m.id,
+                // The catalogue states a provider-qualified id and a display
+                // name and nothing else, so the detail is the id — which is what
+                // actually goes on the wire and the one thing a reader may need
+                // to check against `opencode models`.
+                detail: m.id
+            }))],
+            // ‼️ NO EFFORT VOCABULARY AT ALL, AND IT IS MEASURED. ACP 1.18.18
+            // declares only `model` and `mode` as session config, and not one of
+            // the seven reachable models publishes a variant (`export` →
+            // `variant: "default"`). `engineTakesEffort` already answers no for
+            // this engine; the empty list is the same answer where a picker
+            // reads it instead.
+            efforts: { '': [] },
+            defaultEffort: {},
+            source: 'catalog',
+            fetchedAt: opencodeCatalog?.fetchedAt,
+            note: `${opencodeRows.length} models, as OpenCode itself listed them when the session opened — `
+                + 'the handshake hands the whole catalog over, so nothing is spawned to ask. '
+                + 'This engine has no reasoning-effort setting to go with them.'
+                + ageNote(opencodeCatalog?.fetchedAt)
+        }
+        : {
+            models: settingsModels,
+            efforts: { '': [] },
+            defaultEffort: {},
+            source: 'settings',
+            note: 'OpenCode publishes its model list on the connection rather than on disk, and no session has opened yet — '
+                + 'start one and this becomes its own catalog. Until then it is the agentFarm.modelAliases list, '
+                + 'which is almost certainly wrong for this engine.'
+        };
+
+    return { claude, codex, gemini, agy, opencode };
 }
 
 /** The effort rows for one engine+model — the per-model vocabulary when the

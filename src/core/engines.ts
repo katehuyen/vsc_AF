@@ -40,7 +40,9 @@
  * matrix can be tested without a keychain, a home directory or a spawn.
  */
 
-export type EngineId = 'claude' | 'codex' | 'gemini' | 'agy';
+import { OPENCODE_AUTH_FILE, OPENCODE_INSTALL_COMMAND } from './opencode';
+
+export type EngineId = 'claude' | 'codex' | 'gemini' | 'agy' | 'opencode';
 
 /** How an engine is being paid for, as far as we can see from disk. */
 export type AuthMode =
@@ -146,6 +148,19 @@ interface EngineSpec {
     /** What to do when nothing is signed in and there is no `loginCommand` to
      *  offer — the branch that must never end in "not configured". */
     signInHint?: string;
+    /**
+     * ‼️ X-38/A-16 — CREDENTIALS ARE NOT THE READINESS TEST ON EVERY ENGINE.
+     *
+     * Four of the five answer "can it run" with "is there a sign-in on disk".
+     * Measured on opencode 1.18.18 that question returns the WRONG answer: with
+     * an empty `auth.json` its own connected provider still lists seven models
+     * and runs real turns on them. A row that said "not signed in → not ready"
+     * would be telling the user to fix something that is not broken, which is
+     * the exact dishonesty this module was written to end — so the engine that
+     * does not need one says so here rather than being special-cased at each
+     * reader. See `OPENCODE_READY_WITHOUT_CREDENTIAL` in `core/opencode.ts`.
+     */
+    readyWithoutCredential?: boolean;
     read(probe: EngineProbe): EngineAuth;
 }
 
@@ -335,6 +350,61 @@ const SPECS: EngineSpec[] = [
             }
             return { mode: 'none', detail: 'The CLI has never run on this machine.' };
         }
+    },
+    {
+        // ‼️ THE ONE ENGINE THAT IS READY WITH NOTHING SIGNED IN — and it is a
+        // measurement, not a courtesy (A-16, opencode 1.18.18): `opencode
+        // providers list` printed "0 credentials" while `opencode models`
+        // returned seven and every one of them ran a real turn. The row below
+        // therefore carries `readyWithoutCredential`, and its `next` line says
+        // what a person can do with the free tier instead of sending them off to
+        // sign in for nothing.
+        id: 'opencode',
+        label: 'OpenCode',
+        command: 'opencode',
+        // It reaches many providers and each has its own variable; there is no
+        // single "the OpenCode key". An empty env is the honest answer — the
+        // same one Antigravity gives, for a different reason.
+        env: '',
+        billing: 'Its own connected `opencode` provider needs no sign-in at all — measured: seven models, zero credentials, real turns. '
+            + 'Signing in with `opencode auth login`, or adding a provider key, is how you reach the paid models beside them. '
+            + 'The engine states the price of a turn itself, so a figure beside an OpenCode session is quoted, not derived.',
+        docs: 'https://opencode.ai/docs/cli/',
+        loginCommand: 'opencode auth login',
+        installCommand: OPENCODE_INSTALL_COMMAND,
+        read(probe) {
+            const creds = json(probe.readHome(OPENCODE_AUTH_FILE));
+            const names = creds ? Object.keys(creds) : [];
+            if (names.length) {
+                // ‼️ READ TOLERANTLY, BECAUSE THE FILE WAS MEASURED EMPTY HERE.
+                // OpenCode keeps one entry per provider and marks an OAuth grant
+                // apart from a stored key; this machine had neither, so the
+                // shape is read for what it plainly says and nothing is asserted
+                // about what it does not. Getting it wrong changes ONE SENTENCE
+                // and never `ready` — which is the whole reason `ready` does not
+                // depend on it.
+                const oauth = names.some(n => {
+                    const entry = creds?.[n];
+                    return !!entry && typeof entry === 'object'
+                        && String((entry as Record<string, unknown>).type ?? '').toLowerCase() === 'oauth';
+                });
+                return {
+                    mode: oauth ? 'subscription' : 'apikey',
+                    file: OPENCODE_AUTH_FILE,
+                    detail: `OpenCode is holding credentials for ${names.length} provider${names.length === 1 ? '' : 's'} `
+                        + `(${names.slice(0, 4).join(', ')}${names.length > 4 ? ', …' : ''})`
+                        + `${oauth ? ' — at least one is an account sign-in rather than a key.' : '.'}`
+                };
+            }
+            return {
+                mode: 'none',
+                file: OPENCODE_AUTH_FILE,
+                // ‼️ NOT "not signed in, so it cannot run". Measured otherwise.
+                detail: 'No provider credential is stored — and on this engine that does NOT mean it cannot run: '
+                    + 'its own connected `opencode` provider lists and runs models with an empty `auth.json`.'
+            };
+        },
+        readyWithoutCredential: true
     }
 ];
 
@@ -428,6 +498,16 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
         return `Ready, on a key (${spec.env}) — this one is billed per token.`
             + (spec.loginCommand ? ` A plan is the cheaper route for daily work: ${spec.loginCommand}.` : '');
     }
+    // ‼️ X-38 — "NOTHING SIGNED IN" IS NOT "NOTHING WORKS" ON THIS ONE. Without
+    // this branch OpenCode's row would tell a user to run a login command to fix
+    // an engine that is running perfectly well, which is the same false report
+    // this module exists to remove — only in the opposite direction.
+    if (spec.readyWithoutCredential) {
+        return 'Ready, with nothing signed in — its own connected provider runs on the free tier. '
+            + (spec.loginCommand
+                ? `Run ${spec.loginCommand} only when you want the paid models beside them.`
+                : 'Add a provider credential only when you want the paid models beside them.');
+    }
     if (spec.loginCommand) {
         return `Sign in once with your plan — run ${spec.loginCommand} in a terminal — or put ${spec.env} in the vault to pay per token.`;
     }
@@ -458,7 +538,8 @@ export function readEngines(probe: EngineProbe): EngineStatus[] {
             // is a question with no meaning, and an answer to it would put a
             // nameless entry in the vault's own hover.
             key: { env: spec.env, inVault: !!spec.env && !!safe(() => probe.hasSecret(spec.env)) },
-            ready: cli.found && auth.mode !== 'none',
+            // see EngineSpec.readyWithoutCredential — the CLI still has to be here
+            ready: cli.found && (auth.mode !== 'none' || !!spec.readyWithoutCredential),
             next: nextStep(spec, cli, auth),
             loginCommand: spec.loginCommand,
             installCommand: spec.installCommand,

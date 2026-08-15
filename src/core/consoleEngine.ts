@@ -38,6 +38,10 @@ import { agyArgs, agyModeNote, agyRunArgs, agyTuiArgs, AgyTurnInit } from './agy
 import {
     geminiApprovalFor, geminiArgs, geminiModeNote, geminiRunArgs, geminiTuiArgs, GeminiTurnInit
 } from './gemini';
+import {
+    OPENCODE_NO_TRANSCRIPT_NOTE, opencodeModeNote, opencodePermissionSetting,
+    opencodeRunArgs, opencodeTuiArgs
+} from './opencode';
 
 export { EngineId };
 
@@ -46,8 +50,19 @@ export { EngineId };
  *
  * `persistent` — one process for the whole session; a turn is a line on stdin.
  * `perTurn`    — one process per turn; the conversation is resumed by its id.
+ * `sharedAcp`  — ‼️ ONE PROCESS FOR THE WHOLE EXTENSION, carrying every card at
+ *                once and told them apart by a `sessionId` inside the frames
+ *                (`core/opencodeacp.ts`).
+ *
+ * ‼️ THE THIRD VALUE IS A MEASUREMENT, NOT A TASTE (X-38/K-25). OpenCode's ACP
+ * server is neither of the other two and forcing it into either loses something
+ * real: read as `persistent` it would spawn a 383 MB process per card, and read
+ * as `perTurn` it would throw away the live control channel, the cooperative
+ * cancel and the permission prompt that only a standing connection can carry.
+ * Every dispatch below is exhaustive over `EngineId` on purpose, so the compiler
+ * — not production — is what finds the place a fourth shape was forgotten.
  */
-export type EngineShape = 'persistent' | 'perTurn';
+export type EngineShape = 'persistent' | 'perTurn' | 'sharedAcp';
 
 /** What talking to an engine COSTS in machinery — as opposed to `EngineStatus`
  *  in `core/engines.ts`, which is whether this machine can talk to it at all. */
@@ -179,6 +194,39 @@ export const ENGINES: Record<EngineId, EngineTransport> = {
         liveControls: false, reportsCost: false, costSource: 'tokens', label: 'Antigravity',
         promptOn: 'argv', spawnShell: false, resumeInTerminal: true,
         readableTranscript: false
+    },
+    opencode: {
+        // ‼️ THE FIRST ENGINE HERE THAT IS NEITHER SHAPE — see EngineShape. Every
+        // field below was measured in A-16 against opencode 1.18.18; the file
+        // that holds the evidence is `docs/OPENCODE-ENTEGRASYON.tr.md`.
+        id: 'opencode', exe: 'opencode', shape: 'sharedAcp',
+        // ‼️ FALSE, AND THE TEMPTATION TO SAY OTHERWISE IS THE POINT. This field
+        // asks ONE question — can it be changed WHILE a turn runs — and ACP
+        // 1.18.18 declares no way to, so the answer is no; `extension.ts` reads
+        // this as `steerable`, and a `true` here would tell the bridge a message
+        // typed mid-turn reaches the turn. It does not: it is held.
+        //
+        // What IS different from Codex is not this field. The change reaches a
+        // LIVE connection (`session/set_config_option`) at the next turn
+        // boundary, rather than becoming a flag on a process that does not exist
+        // yet — so `ConsoleHost.setModel` has its own branch for this engine and
+        // never reads this one. Frozen in A-16's decision table; do not flip it
+        // without a measurement that says the protocol grew a way.
+        liveControls: false,
+        // ‼️ AND IT STATES DOLLARS ITSELF: `usage_update.cost.amount` on the wire
+        // and `cost` in the headless JSONL. `0` on a free model is a REAL zero,
+        // not "unknown" — which is why this is `cli` and not `tokens`.
+        reportsCost: true, costSource: 'cli', label: 'OpenCode',
+        // The hosted turn travels inside a JSON-RPC frame and the headless one is
+        // piped to `run`'s stdin: on NEITHER transport does user text reach a
+        // command line, which is what makes the shell its `.cmd` shim needs safe.
+        promptOn: 'stdin', spawnShell: true,
+        // `opencode -s <id>` and `-c` are ordinary flags on the ordinary command,
+        // unlike Codex's separate `exec resume` subcommand.
+        resumeInTerminal: true,
+        // Conversations live in SQLite; there is no file to open. The sentence is
+        // NOT Antigravity's, though — see `noTranscriptNote`.
+        readableTranscript: false
     }
 };
 
@@ -194,9 +242,17 @@ export const ENGINES: Record<EngineId, EngineTransport> = {
  */
 export function noTranscriptNote(engine: string | undefined): string {
     const e = engineOf(engine);
-    return e.readableTranscript
-        ? `No transcript on disk for that ${e.label} session yet — it is written as the conversation runs.`
-        : `${e.label} keeps its conversations as protobuf inside per-conversation SQLite files, `
+    if (e.readableTranscript) {
+        return `No transcript on disk for that ${e.label} session yet — it is written as the conversation runs.`;
+    }
+    // ‼️ "NO FILE" IS NOT ONE SENTENCE — TWO ENGINES, TWO DIFFERENT TRUTHS.
+    // Antigravity's conversations are protobuf blobs nothing here can read, so
+    // the row is all there will ever be. OpenCode's are SQLite too, but it
+    // PUBLISHES `session list` and `export` — the history really is readable,
+    // through the CLI, and telling a user otherwise would send them looking for
+    // a viewer instead of the surface that exists.
+    if (e.id === 'opencode') { return OPENCODE_NO_TRANSCRIPT_NOTE; }
+    return `${e.label} keeps its conversations as protobuf inside per-conversation SQLite files, `
         + 'so there is no transcript to read — the row is built from the CLI\'s own index.';
 }
 
@@ -461,6 +517,20 @@ export function codexContextPrefix(context: string): string {
  */
 export function engineNote(id: string | undefined): string {
     const e = engineOf(id);
+    if (e.shape === 'sharedAcp') {
+        // ‼️ THE THIRD SENTENCE, AND EVERY CLAUSE OF IT IS A MEASUREMENT. It is
+        // NOT the persistent sentence: this engine does not steer, because ACP
+        // declares no way to speak into a running turn — so a message typed
+        // mid-turn is HELD, and saying otherwise would lose it. It is not the
+        // per-turn sentence either: the pickers really do reach a live
+        // connection, the Stop button really does ask the engine to stop, and
+        // the permission card really is the engine's own question.
+        return 'One shared process carries every OpenCode card at once, each conversation told apart inside it. '
+            + 'A message typed mid-turn is HELD until the turn ends — this protocol has no way to speak into a running turn — '
+            + 'but the model and the session mode are changed on the live connection at the next turn boundary, '
+            + 'Stop asks the engine to stop rather than killing it, and it can genuinely stop and ask you before it acts. '
+            + 'It states the price of each turn itself.';
+    }
     if (e.shape === 'persistent') {
         return 'One long-lived process: a message typed mid-turn steers that turn, and model, effort and permissions can be changed while it runs. It reports what each turn cost.';
     }
@@ -599,6 +669,17 @@ export function turnArgs(engine: string | undefined, o: TurnInit): string[] {
         // argv. Listed so the exhaustiveness check below is real.
         case 'claude':
             return codexArgs(o as CodexTurnInit);
+        // ‼️ AND THIS ONE HAS NO TURN ARGV AT ALL — ASKING FOR IT IS THE BUG.
+        // A hosted OpenCode turn is a `session/prompt` frame on a connection that
+        // is already open; there is no command line to build. Falling through to
+        // Codex's would spawn a second engine's binary, which is precisely the
+        // silent failure this dispatch was made exhaustive to stop, so it is
+        // refused by name instead.
+        case 'opencode':
+            throw new Error(
+                'turnArgs: OpenCode runs a hosted turn over the shared ACP connection '
+                + '(core/opencodeacp.ts), not as a command line. Whoever asked for one is '
+                + 'about to spawn a process per card — which the 383 MB measurement rules out.');
         default:
             return unknownEngine(spec.id, 'turnArgs');
     }
@@ -612,6 +693,11 @@ export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
         case 'gemini': return geminiRunArgs(o);
         case 'codex': return codexRunArgs(o);
         case 'claude': return codexRunArgs(o);
+        // ‼️ A HEADLESS RUN IS NOT THE ACP CONNECTION. `opencode run --format
+        // json` is its own transport with its own vocabulary — `-s` to resume,
+        // the prompt on stdin — and it is the ONLY form that puts a `sessionID`
+        // and a cost on the wire, which is what makes a task archive resumable.
+        case 'opencode': return opencodeRunArgs({ ...o, variant: o.effort });
         default: return unknownEngine(spec.id, 'runArgs');
     }
 }
@@ -659,7 +745,10 @@ export function headlessResumeRefusal(engine: string | undefined, cli?: string):
     const known = !named || Object.prototype.hasOwnProperty.call(ENGINES, named.toLowerCase());
     if (known) {
         switch (engineOf(engine).id) {
-            case 'claude': case 'codex': case 'gemini': case 'agy': return '';
+            // ‼️ `opencode run -s <id>` was MEASURED to carry the context and to
+            // come back with the SAME `ses_…` — the one thing this refusal
+            // exists to be sure of before a run is allowed to claim a resume.
+            case 'claude': case 'codex': case 'gemini': case 'agy': case 'opencode': return '';
         }
     }
     const label = known ? engineOf(engine).label : named;
@@ -677,6 +766,12 @@ export function tuiArgs(
         case 'gemini': return geminiTuiArgs(o);
         case 'codex': return codexTuiArgs(o);
         case 'claude': return codexTuiArgs(o);
+        // ‼️ THE TUI TAKES THE FOLDER AS A POSITIONAL, NOT `--dir` — a different
+        // vocabulary on the same binary, which is exactly why this lives in
+        // `opencode.ts` and not inline at a call site.
+        case 'opencode': return opencodeTuiArgs({
+            ...o, resume: o.conversation ?? o.resume, continueLast: o.continueLast
+        });
         default: return unknownEngine(spec.id, 'tuiArgs');
     }
 }
@@ -689,6 +784,7 @@ export function engineModeNote(engine: string | undefined, mode: string | undefi
         case 'gemini': return geminiModeNote(mode);
         case 'codex': return codexModeNote(mode);
         case 'claude': return codexModeNote(mode);
+        case 'opencode': return opencodeModeNote(mode);
         default: return unknownEngine(spec.id, 'engineModeNote');
     }
 }
@@ -710,6 +806,11 @@ export function engineModeNote(engine: string | undefined, mode: string | undefi
  */
 export function engineFirstPromptFlag(engine: string | undefined): string[] {
     const id = engineOf(engine).id;
+    // ‼️ AND A THIRD SPELLING FOR THE SAME IDEA. `opencode --prompt "<text>"`
+    // seeds the first message and STAYS in the conversation; `opencode run`
+    // would answer once and exit, which is the failure this function exists to
+    // prevent — a person watching a terminal print an answer and close.
+    if (id === 'opencode') { return ['--prompt']; }
     return id === 'agy' || id === 'gemini' ? ['-i'] : [];
 }
 
@@ -733,6 +834,11 @@ export function enginePermissionSetting(
     switch (engineOf(engine).id) {
         case 'codex': return { label: 'Sandbox', value: codexSandboxFor(mode) };
         case 'gemini': return { label: 'Approval mode', value: geminiApprovalFor(mode) };
+        // ‼️ "Session mode", and NOT "Sandbox" — this engine has none. Its
+        // restraint is its own agent (`build` executes, `plan` disallows every
+        // edit tool) plus one blunt `--auto` override, so a label naming a
+        // sandbox would read as a guarantee it does not keep.
+        case 'opencode': return opencodePermissionSetting(mode);
         // The app's own setting governs, and saying "sandbox" here would be a
         // promise this engine does not keep (see agyModeNote).
         case 'agy': return undefined;
@@ -750,7 +856,16 @@ export function enginePermissionSetting(
  * so every surface asks this instead of assuming four engines behave alike.
  */
 export function engineTakesEffort(engine: string | undefined): boolean {
-    return engineOf(engine).id !== 'gemini';
+    const id = engineOf(engine).id;
+    // ‼️ OPENCODE HAS THE FLAG AND NOTHING TO PUT IN IT — measured. `--variant`
+    // exists on the headless command, and on this machine not one of the seven
+    // reachable models publishes a variant (`export` → `variant: "default"`);
+    // ACP 1.18.18 declares only `model` and `mode` as session config, so a
+    // hosted card has no channel for one at all. A picker offering the box would
+    // be a control with no referent, which `docs/CONVENTIONS.md` already forbids
+    // — so the answer is no until a measurement says otherwise, at which point
+    // this is the one line that changes.
+    return id !== 'gemini' && id !== 'opencode';
 }
 
 /** The prompt as a per-turn engine receives it — the same wording on both, so
@@ -771,6 +886,12 @@ export function enginePromptText(
  *  has `-i`; Antigravity and Gemini have no such flag on the headless path. */
 export function engineHasImageChannel(engine: string | undefined): boolean {
     const id = engineOf(engine).id;
+    // ‼️ OpenCode DECLARES one — `promptCapabilities.image: true`, off the real
+    // handshake — and carries it as an ACP content block on the hosted path and
+    // as `-f` on the headless one. The declaration is measured; the block's own
+    // field names are the protocol's and have not been exercised against this
+    // binary (see `opencodePromptBlocks`), so a refusal arrives as the engine's
+    // own words rather than as a picture that quietly went missing.
     return id !== 'agy' && id !== 'gemini';
 }
 

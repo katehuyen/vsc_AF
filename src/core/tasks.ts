@@ -2114,7 +2114,13 @@ export class TaskManager implements vscode.Disposable {
             let command: string;
             if (profile) {
                 command = buildCliCommand(profile.interactive ?? profile.headless, task.prompt, extra);
-            } else if (engineOf(task.engine).shape === 'perTurn') {
+            // ‼️ NOT `=== 'perTurn'` — "anything that is not Claude" is the real
+            // question here (K-25). OpenCode's hosted shape is a shared ACP
+            // connection, but a TASK is `opencode run --format json`, which has
+            // its own vocabulary exactly like the per-turn engines do. Read as
+            // Claude it would be handed `agentFarm.taskArgs`, which is Claude's
+            // flag set, and the terminal would print "unexpected argument".
+            } else if (engineOf(task.engine).shape !== 'persistent') {
                 // ‼️ ANOTHER ENGINE IS ANOTHER PROGRAM, NOT ANOTHER FLAG SET.
                 // `agentFarm.taskArgs` (`extra`) is claude's vocabulary — passing
                 // it to `codex` would produce "unexpected argument" and a
@@ -2208,7 +2214,10 @@ export class TaskManager implements vscode.Disposable {
         task.outputFile = outFile;
         const profile = this.cliProfileFor(task);
         const engine = engineOf(task.engine);
-        const perTurn = !profile && engine.shape === 'perTurn';
+        // ‼️ "HAS ITS OWN COMMAND VOCABULARY", not "is per-turn" — see the note in
+        // the terminal path above. Claude is the one engine whose headless run is
+        // built as a string here; every other one goes through `runArgs`.
+        const perTurn = !profile && engine.shape !== 'persistent';
         const policy = profile || perTurn ? undefined : this.modelArgs(task);
         const header = `# ${task.title}\n\n` +
             `- Agent: ${task.agentName}\n` +

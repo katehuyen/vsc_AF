@@ -509,6 +509,12 @@ span.af-tipw { display: inline; }
    most needs to tell apart. Red is the remaining chart hue, it is the furthest
    thing from green, and it is legible against orange and purple at 9px. */
 .af-engc.agy { --af-engc: var(--vscode-charts-red, #f14c4c); }
+/* ‼️ …and OpenCode is the fifth, on the last chart hue that is not already
+   spoken for and not green (X-38). Orange, purple, blue and red are taken;
+   yellow is the remaining one, it is legible at 9px against all four, and it is
+   nothing this extension uses as a signal of its own. The rule from U-49 stands
+   unchanged: a badge colour must never be readable as a STATE. */
+.af-engc.opencode { --af-engc: var(--vscode-charts-yellow, #d7ba7d); }
 
 /* WHICH PROJECT (media/afProject.js) — the same mark on every surface.
 

@@ -220,7 +220,7 @@ Bu turda ölçülen ve X-39’un başlangıç verisi olan iki gerçek:
 | Serve/SSE | Yalnız tanı/fallback; ikinci daemon yok, kullanıcının TUI’sine gizli attach yok | Karar 2 |
 | `promptOn` | Hiçbiri argv değil (ACP çerçevesi / stdin) | shim shell’i güvenli kalsın |
 | `spawnShell` | true (Windows `.cmd` shim) | kullanıcı metni komut satırına çıkmıyor |
-| `liveControls` | false — model/mod yalnız tur sınırında | ACP steer ilan etmiyor |
+| `liveControls` | false — model/mod yalnız tur sınırında | ACP steer ilan etmiyor. ‼️ Bu alan **tek** soru sorar: çalışan tur değiştirilebilir mi. `extension.ts` bunu `steerable` diye yayımlıyor; `true` yapmak tur içi mesajın tura ulaştığını söylemek olur |
 | `resumeInTerminal` | true (`-s`, `-c`) | ölçüldü |
 | `readableTranscript` | false, ama `session list`/`export` var | Tuzak 3 |
 | `reportsCost` / `costSource` | true / `cli` | Karar 6 |
@@ -228,17 +228,62 @@ Bu turda ölçülen ve X-39’un başlangıç verisi olan iki gerçek:
 | ctx / pencere kaynağı | `usage_update.used` / `usage_update.size` | Karar 5 |
 | Effort | Hosted’ta yok; headless/TUI’de `--variant` | ACP yalnız model+mode ilan ediyor |
 
+## 8b. K-25 — paylaşılan runtime ve Console (uygulandı)
+
+Sözleşme değişmedi; aşağıdakiler onun **üstüne** kurulan kararlardır.
+
+| Karar | Değer | Gerekçe |
+|---|---|---|
+| `EngineShape` üçüncü değeri | `sharedAcp` | Ne `persistent` (kart başına 383 MB) ne `perTurn` (canlı kanal, kooperatif iptal ve izin kartı kaybolurdu) |
+| Süreç sahipliği | Uzantı başına **tek** runtime; ilk kartta doğar, **son kart gidince ölür** | Kimseye hizmet etmeyen 383 MB önbellek değil, mazereti olan sızıntıdır |
+| Kart sonu | `detach` — ajana `session/close`, süreç yaşamaya devam eder | Bir kartı bitirmek başkasının turunu kesmemeli |
+| Stop | Önce `session/cancel`; **8 sn** cevap yoksa yalnız o zaman runtime restart | `OPENCODE_CANCEL_GRACE_MS`; ölçülen iptal saniyenin altında |
+| Çökme | Bekleyenler **reddedilir**, sonra yeni süreç, sonra canlı kartlar `session/load` | Sırayla: eski süreç gitmeden yükleme = ikinci yazar |
+| `session/load` replay | Çevirici `replaying` iken **hiçbir şey çizmez** | Kart zaten o konuşmayı gösteriyor; S-30'un çift-konuşma kuralı |
+| `user_message_chunk` (canlı) | Atılır | Composer'ın yazdığının yankısı; çizmek her mesajı ikiye katlar |
+| Tur içi mesaj | `hold/queue` | ACP steer ilan etmiyor; "steer ettim" sessiz yalan olurdu |
+| Model/mod | Tur çalışıyorsa **sınıra kadar tutulur**, sonra uygulanır ve söylenir | Çalışan turun modeli protokolde değiştirilemiyor |
+| İzin | ACP isteği → reducer'ın Claude biçimli `can_use_tool` dalı; cevap **`optionId`** olarak döner | K-22 (bypass kendi cevabı + felaket şeklin reddi) tek yerde kalsın |
+| `thoughtTokens` | `output_tokens`'a **eklenir** | 6196+13+63+1920 = motorun kendi 8192'si; Antigravity'nin tersi |
+| `usage_update.cost` | Kümülatif kabul edilir; tura **fark** yazılır, negatif olmaz | Aşağıdaki belirsizlik 5 |
+| Araç adı | **İlk** çerçevenin `title`'ı; `completed` yeniden adlandırması yok sayılır | `read` → `package.json` ölçüldü |
+| Araç satırı | `pending`'de değil, `rawInput` dolduğunda çizilir | `pending`'in `rawInput`'u boş ölçüldü |
+| Bilinmeyen ACP **isteği** | `-32601` ile reddedilir | Yok saymak turu asar; `null` yapılmamış bir işi yapıldı sanır |
+| `fs/read_text_file` hatası | JSON-RPC **hatası**, boş içerik değil | "Dosya boş" diyen ajan onu yeniden yazar |
+
+Dosyalar: `src/core/opencodeacp.ts` (runtime, enjekte edilen spawn üzerinde saf) ·
+`src/core/opencodeproto.ts` (çeviri) · `consolehost.ts` üçüncü kol ·
+`test/test_opencodeacp.js` · `test/test_opencodeproto.js` ·
+`test/test_console_opencode.js` (kabul listesi).
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi
    modelde varyant listesi yayımlanmıyor (`export` → `variant: "default"`).
    U-59 hosted kartta effort kontrolü **göstermeyerek** bunu sağlama alır.
-2. **`session/request_permission` gerçek kartı canlı görülmedi** — ölçüm turlarında
-   `read`/`glob` izin istemeden çalıştı. K-25 kabulü bunu yazma isteyen bir turla
-   ayrıca kanıtlamalıdır.
-3. **Runtime çökme/yeniden yükleme** ölçülmedi; K-25’in kabul maddesi.
+2. **`session/request_permission` gerçek kartı hâlâ canlı görülmedi.** K-25 onu
+   ACP v1 alan adlarına göre uçtan uca uyguladı ve sahte çerçevelerle sınadı
+   (`optionId` · `allow_once/allow_always/reject_once` · `outcome.selected` /
+   `outcome.cancelled`), ama gerçek binary bunu henüz göndermedi. **X-40 kabulü
+   yazma isteyen bir turla bunu kanıtlamalıdır.**
+3. **Runtime çökme/yeniden yükleme** gerçek binary'de ölçülmedi; K-25 bunu enjekte
+   edilen süreç üzerinde uçtan uca sınadı (bekleyenlerin reddi → yeni süreç →
+   `session/load` → kart yeniden kullanılabilir). X-40 gerçek süreçte tekrarlar.
 4. **`available_commands_update` kaynağının tam kümesi** (hangi klasörler, hangi
    öncelik) X-39’a bırakıldı.
+5. **‼️ `usage_update.cost.amount` kümülatif mi tur başına mı — ölçülemedi.**
+   Ölçümdeki her değer 0'dı (ücretsiz modeller). Aynı olayda taşındığı `used`
+   tartışmasız kümülatif, ve `export` tüm oturum için tek `info.cost` + mesaj
+   başına ayrı `cost` yayımlıyor; bu yüzden **kümülatif** okundu ve tura **fark**
+   yazılıyor (`OpencodeState.cost`). Çift saymayan okuma budur. **Ücret alan bir
+   modelde iki turluk bir koşu bunu kesin olarak çözer — X-40.**
+6. **ACP `image` content block alan adları ölçülmedi.** `promptCapabilities.image:
+   true` ölçüldü; `{ type, mimeType, data }` protokolün kendi tanımı. Reddedilirse
+   motorun kendi sözleriyle satır olur, sessizce düşmez. X-40 gerçek bir görselle
+   doğrular.
+7. **OpenCode'un MCP araç adlandırması ölçülmedi** (ölçüm makinesinde MCP sunucusu
+   yoktu). `mcp[_-]` ile başlayan ad `mcp__` biçimine normalleştiriliyor; başka
+   türlü adlandırılan bir MCP aracı şimdilik ACP `kind`'ına göre sınıflanır.
 
 ## 10. Gerileme taban çizgisi ve kabul
 
@@ -250,5 +295,12 @@ Bu turda ölçülen ve X-39’un başlangıç verisi olan iki gerçek:
   sürüm/capability kapısı, `configId` tuzağı, kümülatif-değil ölçümü, harcama ≠
   bağlam ayrımı, `export` önsözü, Türkçe satırın **her byte bölünmesinde** aynı
   olaya çözülmesi.
+- **K-25 kabulü (tamam, sahte süreç üzerinde):** `test/test_console_opencode.js`
+  kalemin kabul listesini satır satır karşılıyor — iki ajan klasöründe iki kart
+  tek süreç altında · aynı `ses_…` üzerinde iki tur · canlı düşünme/araç/kullanım ·
+  izin once/always/reject · görsel · iptalden sonra aynı oturumda yeni tur ·
+  runtime restart + `session/load` · End/Remove ayrımı · hiçbir kartın sahip
+  olmadığı süreci öldürmemesi. **Gerçek binary'ye karşı tekrarı X-40'a aittir**
+  (belirsizlik 2, 3, 5, 6).
 - **Sonraki çocuklar bu sözleşmeyi veri kabul eder** ve değiştirmek isterlerse
   önce bu belgeyi yeni bir ölçümle günceller.

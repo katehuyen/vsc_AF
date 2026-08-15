@@ -25,6 +25,15 @@ import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
+import { OpencodeConfigOption, opencodeModelsFrom, opencodePermissionFor } from './opencode';
+import {
+    AcpChild, OpencodePermissionRequest, OpencodeRuntime, OpencodeRuntimeIo,
+    opencodePromptBlocks, opencodeRuntimeArgs
+} from './opencodeacp';
+import {
+    OpencodeState, newOpencodeState, opencodeReplay, opencodeTurnStarted,
+    translateOpencodeResult, translateOpencodeUpdate
+} from './opencodeproto';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
     CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, drainAutoAnswer, editQueued,
@@ -184,6 +193,76 @@ export const RESUME_RETRIES = 3;
 /** The first backoff; it lengthens with each attempt. */
 export const RESUME_RETRY_MS = 300;
 
+/**
+ * ‼️ K-25 — HOW LONG A COOPERATIVE CANCEL IS GIVEN BEFORE THE BLUNT ONE.
+ *
+ * `session/cancel` was MEASURED to work: the running prompt settled with
+ * `stopReason: "cancelled"`, a zero usage, the conversation intact and the next
+ * turn accepted on the same `ses_…`. That is the outcome Stop should have, and
+ * it is the only one that leaves the session usable — so it is asked for first
+ * and given a real chance.
+ *
+ * The fallback is deliberately violent and deliberately last: restarting the
+ * SHARED process ends every other card's turn as well. Eight seconds is the
+ * measured cancel (well under a second here) with an order of magnitude of
+ * room, so the blunt path is reached only when the engine has genuinely stopped
+ * listening — never because a slow machine was slow.
+ */
+export const OPENCODE_CANCEL_GRACE_MS = 8000;
+
+/**
+ * The real `opencode acp` process, wrapped in the handle the runtime wants.
+ *
+ * ‼️ IT LIVES HERE AND NOT IN `opencodeacp.ts` ON PURPOSE. That file is pure over
+ * an injected spawner so the whole lifecycle — handshake, turn, cancel, crash,
+ * reload — is testable without a binary; the moment it imports `child_process`
+ * that stops being true. This is the one adaptor, and it is three lines of
+ * plumbing plus the two facts that are genuinely this engine's:
+ *
+ *   · `shell: true`, because `opencode` is an npm `.cmd` shim on Windows — and
+ *     it is SAFE here for a reason worth stating: nothing user-typed reaches the
+ *     command line, the prompt travels inside a JSON-RPC frame on stdin.
+ *   · `killTree`, because with a shell the child we hold is `cmd.exe` and a plain
+ *     kill would orphan the real process — 383 MB of it, holding every card's
+ *     conversation open.
+ */
+export function nodeOpencodeIo(
+    exe: () => string = () => 'opencode',
+    args: () => string[] = opencodeRuntimeArgs
+): OpencodeRuntimeIo {
+    return {
+        spawn(cwd: string): AcpChild {
+            const child = cp.spawn(exe(), args(), {
+                cwd: cwd || undefined, shell: true, windowsHide: true,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+            return {
+                pid: child.pid,
+                write: (text: string) => {
+                    try { return child.stdin?.write(text) ?? false; } catch { return false; }
+                },
+                kill: () => killTree(child),
+                onStdout: fn => { child.stdout?.on('data', fn); },
+                onStderr: fn => { child.stderr?.on('data', fn); },
+                onExit: fn => {
+                    // ‼️ `close`, NOT `exit` — and both spellings of failure land
+                    // on it. A binary that is not installed never starts at all
+                    // and only emits `error`; read as anything other than "the
+                    // runtime is gone", that leaves every card waiting on a
+                    // handshake that will never come.
+                    child.on('close', code => fn(code));
+                    child.on('error', () => fn(null));
+                }
+            };
+        },
+        readTextFile: (p: string) => fs.readFileSync(p, 'utf8'),
+        writeTextFile: (p: string, content: string) => {
+            fs.mkdirSync(path.dirname(p), { recursive: true });
+            fs.writeFileSync(p, content, 'utf8');
+        }
+    };
+}
+
 export interface HostedSessionInit {
     agentId: string;
     agentName: string;
@@ -212,6 +291,38 @@ export interface HostedSessionInit {
     firstPrompt?: string;
     /** files hung on that first message — a new session can start with a screenshot */
     firstAttachments?: Attachment[];
+}
+
+/**
+ * One hosted card's half of the shared ACP connection.
+ *
+ * ‼️ THERE IS NO `child` HERE AND THAT IS NOT AN OMISSION. A Codex session has a
+ * process while it answers; an OpenCode session never has one of its own at all.
+ * Everything that would have been "is the process still up" is answered by
+ * `running` — whether THIS conversation has a `session/prompt` outstanding —
+ * because the process being up says nothing about this card.
+ */
+interface OpencodeCard {
+    /** the translator's own state (opencodeproto.ts) */
+    proto: OpencodeState;
+    /** what the engine said this session's config options are — model list
+     *  included, which is why nothing spawns `opencode models` */
+    options: OpencodeConfigOption[];
+    /** a `session/prompt` is outstanding for THIS conversation */
+    running?: boolean;
+    /**
+     * ‼️ A PICKER CHANGE WAITING FOR THE TURN TO END. The protocol offers no way
+     * to change the model of a turn that is already running, and applying one
+     * mid-turn is the kind of thing that either fails silently or changes the
+     * answer half way through. So it is held, said out loud, and applied at the
+     * boundary — which is a genuinely different promise from Codex's "the next
+     * turn's flags", because here it really does reach a live connection.
+     */
+    pending?: { model?: string; mode?: string };
+    /** the permission request the agent is blocked on, as the runtime named it */
+    ask?: { requestId: string; options: { optionId: string; name: string; kind: string }[] };
+    /** a cooperative cancel is in flight — see OPENCODE_CANCEL_GRACE_MS */
+    cancelTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface Hosted {
@@ -256,6 +367,20 @@ interface Hosted {
      * the first.
      */
     gemini?: GeminiState;
+    /**
+     * …and OpenCode's, which is a FOURTH state for a fourth protocol
+     * (opencodeproto.ts) — and the first one that is not a reader over lines
+     * this session's own process printed. There is no process of this session's:
+     * the frames arrive on a connection shared with every other OpenCode card
+     * and are routed here by `sessionId` (opencodeacp.ts).
+     *
+     * ‼️ IT CARRIES WHAT ONLY A LIVE CONNECTION CAN HOLD — the config options the
+     * engine volunteered (its own model list included), a picker change waiting
+     * for the turn boundary, and the permission request the agent is BLOCKED on.
+     * None of those has anywhere to live on a per-turn engine, which is why this
+     * is a third arm and not a third spelling of the second one.
+     */
+    opencode?: OpencodeCard;
     /** The turn a per-turn engine is running: what was said, what rode with it,
      *  what the engine has complained about, and how many times this exact turn
      *  has been attempted (see the thread-store conflict in `runTurn`). */
@@ -351,8 +476,40 @@ export class ConsoleHost {
          */
         private codexContext: (threadId: string, force?: boolean) => {
             tokens: number; window?: number; source: string; measuredAt: number;
-        } | undefined = () => undefined
+        } | undefined = () => undefined,
+        /**
+         * ‼️ K-25 — HOW THE ONE SHARED `opencode acp` PROCESS IS STARTED.
+         *
+         * Injected rather than built here for the reason every other io on this
+         * class is: the host must stay testable without a binary, and the whole
+         * point of this engine's shape is a lifecycle (handshake, turn, cancel,
+         * crash, reload) that only a test can exercise cheaply. Absent means this
+         * build cannot run OpenCode, and a card that asks for it is told so in
+         * one sentence rather than sitting at `starting` for ever.
+         *
+         * There is exactly ONE runtime per host, created on the first OpenCode
+         * card and stopped when the last one goes — the 383 MB measurement is the
+         * whole argument, and a factory called twice would quietly undo it.
+         */
+        private opencodeIo?: OpencodeRuntimeIo
     ) {}
+
+    /** The shared OpenCode runtime, made on demand. `undefined` when this build
+     *  was given no way to spawn one (see the constructor). */
+    private opencodeRt?: OpencodeRuntime;
+
+    private runtime(): OpencodeRuntime | undefined {
+        if (!this.opencodeIo) { return undefined; }
+        if (!this.opencodeRt) { this.opencodeRt = new OpencodeRuntime(this.opencodeIo); }
+        return this.opencodeRt;
+    }
+
+    /** What the one shared process is doing, for a surface that wants to say —
+     *  and for the acceptance run, which has to prove two cards share one pid. */
+    opencodeRuntimeState(): { phase: string; pid?: number; cards: number } | undefined {
+        const rt = this.opencodeRt;
+        return rt ? { phase: rt.state, pid: rt.pid, cards: rt.cardCount } : undefined;
+    }
 
     /**
      * Apply Codex's on-disk context reading to a hosted session, as a canonical
@@ -515,6 +672,7 @@ export class ConsoleHost {
         const projectId = init.projectId ?? this.activeProjectId();
         const engine = engineOf(init.engine);
         if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, prior); }
+        if (engine.shape === 'sharedAcp') { return this.startShared(id, engine, init, projectId, prior); }
         /**
          * ‼️ K-22 — WHAT THIS SESSION WILL REALLY BE IN, decided before it runs.
          *
@@ -696,6 +854,483 @@ export class ConsoleHost {
             this.send(id, init.firstPrompt ?? '', false, firstFiles);
         }
         return id;
+    }
+
+    // -----------------------------------------------------------------------
+    // K-25 — the shared-ACP arm
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ A SESSION THAT HAS NO PROCESS *AT ALL*, EVER — and is not broken either.
+     *
+     * The per-turn arm above has no process BETWEEN turns. This one never has one
+     * of its own: the conversation lives on a connection shared with every other
+     * OpenCode card, and what this card owns is a `ses_…` inside it. So the work
+     * of starting is not a spawn, it is a handshake plus `session/new` (or
+     * `session/load` on a resume) — genuinely asynchronous, genuinely able to
+     * fail with something worth reading, and therefore the one engine here whose
+     * `starting` status means something.
+     *
+     * Everything downstream is identical to the other two: the same state object,
+     * the same queue, the same panel, the same transcript shape.
+     */
+    private startShared(
+        id: string, engine: EngineTransport, init: HostedSessionInit,
+        projectId: string | undefined, prior: ConsoleMessage[] = []
+    ): string {
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            now: Date.now(),
+            sessionId: init.resume,
+            projectId,
+            resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        // ‼️ THE MODE IS RECORDED AS *ENFORCED* HERE, and that is what makes
+        // K-22's bypass rule work on this engine. Over ACP there is no `--auto`
+        // flag to hand the process — the engine asks, every time, on a channel
+        // that is genuinely open. So "bypass" means Agent Farm answers those
+        // questions itself, which is exactly what the reducer already does when
+        // it sees this field, catastrophic-shape refusal included.
+        base.enforcedPermissionMode = init.permissionMode ?? '';
+        base.permissionWhy = this.opencodePermissionWhy(init.permissionMode);
+        const carriedMessages = this.resumeMessages(prior, init.history);
+        const hosted: Hosted = {
+            state: {
+                ...(carriedMessages ? { ...base, messages: carriedMessages } : base),
+                status: 'starting',
+                engine: engine.id
+            },
+            engine,
+            opencode: {
+                proto: {
+                    ...newOpencodeState(),
+                    ...(init.resume ? { sessionId: init.resume } : {})
+                },
+                options: []
+            },
+            // The brief has nowhere else to go: this engine has no system-prompt
+            // flag either (`OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG`), so it rides
+            // inside the first prompt exactly as it does on Codex — and only for
+            // a session that is starting, because a resume is continuing a
+            // conversation that was already told.
+            context: init.resume ? undefined : this.readProjectContext(projectId),
+            buffer: '', reqSeq: 0
+        };
+        this.sessions.set(id, hosted);
+        this.fire(id);
+        void this.openShared(id, init);
+        return id;
+    }
+
+    /** One sentence for the card: what the chosen mode means on THIS engine, on
+     *  THIS transport. Kept apart from `opencodeModeNote`, which has to describe
+     *  the headless and terminal forms too — where `--auto` is a real flag and
+     *  here it is not. */
+    private opencodePermissionWhy(mode: string | undefined): string {
+        const p = opencodePermissionFor(mode);
+        if (p.mode === 'plan') {
+            return 'OpenCode is running its own `plan` agent: every edit tool is disallowed, so it can read and reason and not write.';
+        }
+        if (!p.auto) {
+            return 'OpenCode\'s `build` agent asks before it acts, and here it really can — the permission card is the engine\'s own '
+                + 'request, answered back down the same connection.';
+        }
+        return 'The engine still asks — a hosted card has no `--auto` flag to hand it — and Agent Farm answers yes for you, '
+            + 'without opening a window. The one shape it refuses instead is the catastrophic one, out loud, because '
+            + '"never ask me" is not consent to that.';
+    }
+
+    /** The handshake, the session and the first prompt — everything that has to
+     *  happen before this card can be talked to. */
+    private async openShared(id: string, init: HostedSessionInit): Promise<void> {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        const rt = this.runtime();
+        if (!rt) {
+            this.failShared(id, 'This build of Agent Farm was not given a way to start `opencode acp`, '
+                + 'so an OpenCode session cannot be hosted here. The engine still works in a terminal and in a task.');
+            return;
+        }
+        const cwd = h.state.cwd;
+        try {
+            let sessionId = String(init.resume ?? '').trim();
+            let options: OpencodeConfigOption[];
+            if (sessionId) {
+                // ‼️ ATTACHED BEFORE THE LOAD, because `session/load` REPLAYS the
+                // whole conversation as ordinary update frames and they would
+                // otherwise arrive at a card the runtime does not know yet. The
+                // translator is put in `replaying` for exactly that window: this
+                // card is already showing all of it (see OpencodeState.replaying).
+                rt.attach(sessionId, cwd, this.opencodeHandlers(id));
+                this.withOpencode(id, c => ({ ...c, proto: opencodeReplay(c.proto, true) }));
+                options = await rt.loadSession(sessionId, cwd);
+                this.withOpencode(id, c => ({ ...c, proto: opencodeReplay(c.proto, false) }));
+            } else {
+                const made = await rt.newSession(cwd);
+                sessionId = made.sessionId;
+                options = made.options;
+                rt.attach(sessionId, cwd, this.opencodeHandlers(id));
+            }
+            const now = this.sessions.get(id);
+            if (!now || now.closed) { rt.detach(sessionId); return; }
+            this.withOpencode(id, c => ({ ...c, options, proto: { ...c.proto, sessionId } }));
+            this.mutate(id, s => ({ ...s, sessionId, status: 'idle', lastTs: Date.now() }));
+            // The pickers, now that there is a connection to apply them to. A
+            // refusal is said out loud rather than leaving a card claiming a
+            // model it is not using.
+            await this.applyOpencodeConfig(id, {
+                model: h.state.model, mode: opencodePermissionFor(h.state.permissionMode).mode
+            }, true);
+            const firstFiles = init.firstAttachments ?? [];
+            if (init.firstPrompt?.trim() || firstFiles.length) {
+                this.send(id, init.firstPrompt ?? '', false, firstFiles);
+            }
+        } catch (e) {
+            this.failShared(id, String((e as Error).message ?? e));
+        }
+    }
+
+    /** A card that could not be started says why, once, and stays readable. */
+    private failShared(id: string, why: string): void {
+        this.mutate(id, s => ({
+            ...s, status: 'error', exitReason: why, lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error', text: why
+            }]
+        }));
+    }
+
+    /** Change one card's ACP state without rebuilding the session record. */
+    private withOpencode(id: string, fn: (c: OpencodeCard) => OpencodeCard): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        h.opencode = fn(h.opencode);
+    }
+
+    /** What the runtime tells this card about. Every one of these is called from
+     *  the shared process's reader, so none of them may throw. */
+    private opencodeHandlers(id: string): {
+        update(u: Record<string, unknown>): void;
+        permission(r: OpencodePermissionRequest): void;
+        reloaded(ok: boolean, why?: string): void;
+        note(text: string): void;
+    } {
+        return {
+            update: u => this.onOpencodeUpdate(id, u),
+            permission: r => this.onOpencodePermission(id, r),
+            reloaded: (ok, why) => this.onOpencodeReloaded(id, ok, why),
+            note: text => this.mutate(id, s => ({
+                ...s, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system', text
+                }]
+            }))
+        };
+    }
+
+    /**
+     * One `session/update` for this card.
+     *
+     * ‼️ THE SAME REDUCER AS EVERY OTHER ENGINE, WHICH IS THE POINT. The frames
+     * are foreign; what comes out of the translator is not, so state, panel, cost
+     * strip and transcript stay one code path (see opencodeproto.ts).
+     */
+    private onOpencodeUpdate(id: string, update: Record<string, unknown>): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed) { return; }
+        const t = translateOpencodeUpdate(h.opencode.proto, update);
+        h.opencode = { ...h.opencode, proto: t.state };
+        if (!t.events.length) { return; }
+        this.applyOpencodeEvents(id, t.events);
+    }
+
+    /** Reduce a batch of translated events and repaint once. */
+    private applyOpencodeEvents(id: string, events: unknown[]): void {
+        const h = this.sessions.get(id);
+        if (!h || h.closed) { return; }
+        const now = Date.now();
+        let changed = false;
+        for (const ev of events) {
+            const r = reduceEvent(h.state, ev, now);
+            h.state = r.state;
+            changed = changed || r.changed;
+            // ‼️ K-22 on a connection instead of a pipe. The reducer built the
+            // answer to a permission request a bypassed session must not open a
+            // window for; only the host can put it on the wire, and here that
+            // means an ACP option id rather than a control_response line.
+            const auto = drainAutoAnswer(h.state);
+            if (auto.line) {
+                h.state = auto.state;
+                this.answerOpencodeAuto(id, auto.line);
+            }
+        }
+        // ‼️ A CARD IS `working` FOR AS LONG AS ITS OWN PROMPT IS OUTSTANDING —
+        // not for as long as the shared process is up, which says nothing about
+        // this conversation. The reducer moves to `idle` on a `result`; a stray
+        // frame arriving after that must not put the card back to work.
+        if (h.opencode?.running && h.state.status === 'idle') {
+            h.state = { ...h.state, status: 'working' };
+        }
+        if (changed) { this.fire(id); }
+    }
+
+    /**
+     * The agent is asking whether it may do something.
+     *
+     * ‼️ TRANSLATED INTO THE CLAUDE-SHAPED `control_request` THE REDUCER ALREADY
+     * KNOWS, rather than given its own state. That is not tidiness: the reducer's
+     * `can_use_tool` branch is where K-22 lives — a bypassed session answering
+     * itself, and the one catastrophic shape it refuses anyway — and a second
+     * permission path would be a second place for that policy to be forgotten.
+     * What is kept apart is only what ACP adds: the option ids, which are what an
+     * answer has to travel back as.
+     */
+    private onOpencodePermission(id: string, req: OpencodePermissionRequest): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.closed || h.state.status === 'ended' || h.state.status === 'error') {
+            // Nobody is going to answer. `cancelled` un-parks the agent honestly.
+            this.runtime()?.answerPermission(req.requestId);
+            return;
+        }
+        h.opencode = { ...h.opencode, ask: { requestId: req.requestId, options: req.options } };
+        const call = req.toolCall ?? {};
+        const title = String(call.title ?? 'a tool');
+        this.applyOpencodeEvents(id, [{
+            type: 'control_request',
+            request_id: req.requestId,
+            request: {
+                subtype: 'can_use_tool',
+                tool_name: title,
+                display_name: title,
+                tool_use_id: typeof call.toolCallId === 'string' ? call.toolCallId : undefined,
+                input: (call.rawInput as Record<string, unknown> | undefined) ?? {}
+            }
+        }]);
+    }
+
+    /**
+     * ‼️ WHICH OPTION A YES OR A NO ACTUALLY IS — the one thing ACP adds that the
+     * Claude vocabulary has no word for.
+     *
+     * The agent publishes its own options with its own ids and a `kind`
+     * (`allow_once` · `allow_always` · `reject_once` · `reject_always`); the
+     * answer has to be one of THOSE ids, not a behaviour. So "allow" picks the
+     * once option, "allow, and stop asking" picks the always one when the agent
+     * offered it, and a no picks a reject. An engine that offered neither leaves
+     * this returning nothing, and the caller cancels the request instead — which
+     * un-parks the agent without inventing a choice it never gave.
+     */
+    private opencodeOptionFor(
+        options: { optionId: string; kind: string }[], want: 'allow' | 'always' | 'reject'
+    ): string | undefined {
+        const byKind = (k: string) => options.find(o => o.kind === k)?.optionId;
+        if (want === 'reject') { return byKind('reject_once') ?? byKind('reject_always'); }
+        if (want === 'always') { return byKind('allow_always') ?? byKind('allow_once'); }
+        return byKind('allow_once') ?? byKind('allow_always');
+    }
+
+    /** Put the answer the panel (or K-22) produced on the wire. */
+    private answerOpencodeAsk(
+        id: string, want: 'allow' | 'always' | 'reject'
+    ): boolean {
+        const h = this.sessions.get(id);
+        const ask = h?.opencode?.ask;
+        if (!h?.opencode || !ask) { return false; }
+        h.opencode = { ...h.opencode, ask: undefined };
+        const optionId = this.opencodeOptionFor(ask.options, want);
+        return this.runtime()?.answerPermission(ask.requestId, optionId) ?? false;
+    }
+
+    /**
+     * K-22's own answer, which the reducer wrote as a Claude control line because
+     * that is the only shape it can write. Read back for the single fact this
+     * transport needs — allow or deny — rather than reimplementing the policy
+     * that produced it.
+     */
+    private answerOpencodeAuto(id: string, line: string): void {
+        let allow = false;
+        try {
+            const frame = JSON.parse(line) as Record<string, unknown>;
+            const response = (frame.response as Record<string, unknown> | undefined) ?? {};
+            const verdict = (response.response as Record<string, unknown> | undefined) ?? {};
+            allow = verdict.behavior === 'allow';
+        } catch { allow = false; }
+        this.answerOpencodeAsk(id, allow ? 'allow' : 'reject');
+    }
+
+    /**
+     * The shared process died and this card was picked up again — or was not.
+     *
+     * ‼️ A RUNNING TURN DOES NOT SURVIVE, AND SAYING SO IS THE WHOLE POINT. The
+     * conversation does: it is in the engine's own store and `session/load` put
+     * this card back on it. What is gone is the turn that was in flight, and a
+     * card left at `working` after that is a card that will never move again.
+     */
+    private onOpencodeReloaded(id: string, ok: boolean, why?: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed) { return; }
+        h.opencode = {
+            ...h.opencode, running: false, ask: undefined,
+            proto: opencodeReplay(h.opencode.proto, false)
+        };
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); h.opencode.cancelTimer = undefined; }
+        const text = ok
+            ? `${why ?? 'the shared OpenCode process restarted'} — this conversation was re-opened on the new one`
+            + ' and is ready. Anything that was mid-turn did not finish; say it again.'
+            : `${why ?? 'the shared OpenCode process stopped'}. The conversation itself is safe in OpenCode's own store —`
+            + ' resume this session to pick it up again.';
+        this.mutate(id, s => ({
+            ...s,
+            status: ok ? 'idle' : 'error',
+            ...(ok ? {} : { exitReason: why ?? 'the shared OpenCode process stopped' }),
+            turnStartedAt: undefined, turnTokensAt: undefined,
+            lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `sys-${Date.now().toString(36)}`, ts: Date.now(),
+                role: ok ? 'system' : 'error', text
+            }]
+        }));
+        if (ok) { this.releaseShared(id); }
+    }
+
+    /**
+     * Run ONE turn over the shared connection.
+     *
+     * ‼️ THE PROMPT IS A FRAME, NOT A COMMAND LINE, AND NOTHING IS SPAWNED. The
+     * turn ends when the engine answers the `session/prompt` request — there is
+     * no process exit to wait for, which is why (unlike the per-turn arm) the
+     * queue is released the moment the promise settles.
+     */
+    private promptShared(id: string, prompt: string, attachments: Attachment[] = []): boolean {
+        const h = this.sessions.get(id);
+        const rt = this.runtime();
+        const sessionId = h?.state.sessionId;
+        if (!h?.opencode || h.closed || !rt || !sessionId) { return false; }
+        // The brief, once, on the way into the first turn — consumed before the
+        // frame goes out so a retried turn cannot send it twice.
+        if (h.context) {
+            prompt = engineContextPrefix(h.context) + prompt;
+            h.context = undefined;
+        }
+        h.opencode = {
+            ...h.opencode, running: true, proto: opencodeTurnStarted(h.opencode.proto)
+        };
+        const blocks = opencodePromptBlocks(
+            prompt, attachments.filter(a => a.kind === 'image' && a.data));
+        rt.prompt(sessionId, blocks).then(
+            result => this.finishShared(id, result),
+            (e: Error) => this.failShared2(id, String(e?.message ?? e)));
+        return true;
+    }
+
+    /** The turn answered: translate the result, apply anything the pickers were
+     *  holding, then let the queue move. */
+    private finishShared(id: string, result: Record<string, unknown>): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+        h.opencode = { ...h.opencode, running: false, cancelTimer: undefined, ask: undefined };
+        const t = translateOpencodeResult(h.opencode.proto, result, { model: h.state.model });
+        h.opencode = { ...h.opencode, proto: t.state };
+        if (h.closed) { return; }
+        this.applyOpencodeEvents(id, t.events);
+        const held = h.opencode.pending;
+        if (held) {
+            h.opencode = { ...h.opencode, pending: undefined };
+            void this.applyOpencodeConfig(id, held, false);
+        }
+        this.releaseShared(id);
+    }
+
+    /** The turn could not be run, or the connection went while it was running.
+     *  The SESSION survives — the conversation is in the engine's store. */
+    private failShared2(id: string, why: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+        h.opencode = { ...h.opencode, running: false, cancelTimer: undefined, ask: undefined };
+        if (h.closed) { return; }
+        this.endTurn(id, why);
+        this.releaseShared(id);
+    }
+
+    /** The next held message, once the turn really is over — which here is the
+     *  moment the prompt promise settles, because there is no process exiting
+     *  behind it (compare `releasePerTurn`). */
+    private releaseShared(id: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed || h.opencode.running || !h.state.queued.length) { return; }
+        const next = shiftQueued(h.state);
+        h.state = next.state;
+        if (!next.text) { this.fire(id); return; }
+        h.state = {
+            ...h.state, status: 'working',
+            turnStartedAt: Date.now(), turnTokensAt: h.state.tokens
+        };
+        this.fire(id);
+        this.promptShared(id, enginePromptText(h.engine.id, next.text));
+    }
+
+    /**
+     * Apply the pickers to the live connection.
+     *
+     * ‼️ ONLY AT A TURN BOUNDARY, AND THE CALLER HAS ALREADY CHECKED. The
+     * protocol has no way to change the model of a turn that is running, and
+     * doing it anyway is the shape of change that either fails on stderr nobody
+     * reads (the `configId` trap) or moves the answer half way through.
+     */
+    private async applyOpencodeConfig(
+        id: string, want: { model?: string; mode?: string }, quiet: boolean
+    ): Promise<void> {
+        const rt = this.runtime();
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        if (!rt || !h?.opencode || !sessionId) { return; }
+        for (const [configId, value] of [['model', want.model], ['mode', want.mode]] as const) {
+            const v = String(value ?? '').trim();
+            if (!v) { continue; }
+            // Already what the engine says it is: a call that changes nothing is
+            // a round trip and a chance to fail for no gain.
+            const current = h.opencode.options.find(o => o.id === configId)?.currentValue;
+            if (current === v) { continue; }
+            try {
+                const options = await rt.setConfig(sessionId, configId, v);
+                this.withOpencode(id, c => ({ ...c, options }));
+                if (configId === 'model') {
+                    this.mutate(id, s => ({
+                        ...s, model: v, pendingModel: undefined,
+                        ...(quiet ? {} : {
+                            messages: [...s.messages, {
+                                id: `sys-${Date.now().toString(36)}`, ts: Date.now(),
+                                role: 'system', text: `model is now "${v}"`
+                            }]
+                        })
+                    }));
+                }
+            } catch (e) {
+                // ‼️ THE ENGINE'S OWN WORDS. `configId: expected string, received
+                // undefined` is the difference between "the picker is broken" and
+                // one key name, and A-16 measured that this failure otherwise
+                // lands on a stderr nobody is reading.
+                this.mutate(id, s => ({
+                    ...s, pendingModel: undefined, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                        text: `OpenCode refused the ${configId} change — ${String((e as Error).message ?? e)}`
+                    }]
+                }));
+            }
+        }
+    }
+
+    /** The model list this engine handed over when the session opened — the one
+     *  catalogue in this codebase that costs no spawn (see `opencodeModelsFrom`). */
+    opencodeModels(id: string): { id: string; label: string }[] {
+        const c = this.sessions.get(id)?.opencode;
+        return c ? opencodeModelsFrom(c.options) : [];
     }
 
     /**
@@ -926,7 +1561,11 @@ export class ConsoleHost {
         if (!h) { return; }
         // A per-turn engine has no live control channel to ask on, and nothing
         // to resolve: the flags of the turn about to start ARE what it runs on.
-        if (h.engine.shape === 'perTurn') { return; }
+        // OpenCode HAS a channel and it is not this one — `get_settings` is
+        // Claude's control vocabulary, and the same question is answered there by
+        // the `configOptions` every `session/new` and `session/set_config_option`
+        // volunteers (see applyOpencodeConfig).
+        if (h.engine.shape !== 'persistent') { return; }
         const requestId = `settings-${++h.reqSeq}`;
         if (!this.write(id, controlLine(requestId, 'get_settings'))) { return; }
         h.state = { ...h.state, pendingSettings: { requestId, turnStartedAt } };
@@ -1148,6 +1787,16 @@ export class ConsoleHost {
         // lose them, they are HELD, which is a state the composer already draws
         // and the reader can already act on.
         const perTurn = h.engine.shape === 'perTurn';
+        // ‼️ AND THE THIRD SHAPE HOLDS FOR A DIFFERENT REASON, WHICH THE READER
+        // IS TOLD RATHER THAN LEFT TO INFER. Codex holds because its stdin is
+        // already closed. OpenCode's connection is wide open — it simply does not
+        // declare a way to speak into a turn that is running, so a message sent
+        // into one would be accepted by the pipe and dropped by the agent. Saying
+        // "I steered it" there would be a lie with no error attached, which is
+        // the worst kind; the message is HELD instead, which the composer already
+        // draws and the reader can act on.
+        const shared = h.engine.shape === 'sharedAcp';
+        const busyShared = shared && !!h.opencode?.running;
         // ‼️ AND A TURN IS NOT OVER UNTIL ITS PROCESS IS GONE. Measured, and it
         // cost the first end-to-end run: `turn.completed` arrives while the
         // process is still shutting down and still holding the thread, so a
@@ -1156,7 +1805,12 @@ export class ConsoleHost {
         // and the conversation loses the message. On a persistent engine the
         // result line genuinely ends the turn, because the process stays; here
         // the process IS the turn, and `h.child` is what says it is still there.
-        const holdNow = hold || (perTurn && (h.state.status === 'working' || !!h.child));
+        const holdNow = hold
+            || (perTurn && (h.state.status === 'working' || !!h.child))
+            // ‼️ …and a card whose session is still being opened holds too. There
+            // is no `ses_…` to prompt yet, and a message sent into that gap would
+            // be accepted and lost.
+            || (shared && (busyShared || h.state.status === 'working' || h.state.status === 'starting'));
         const r = acceptUserText(h.state, text, Date.now(), holdNow, notes);
         h.state = r.state;
         // A NEW turn (not a message said into a running one) asks what it is
@@ -1164,12 +1818,14 @@ export class ConsoleHost {
         // the CLI is idle at that moment, so the answer comes straight back
         // (see askSettings). A per-turn engine has nobody to ask: the flags of
         // the turn about to start ARE the answer.
-        if (!perTurn && h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
+        if (!perTurn && !shared && h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
             this.askSettings(id, h.state.turnStartedAt);
         }
         if (r.send) {
             if (perTurn) {
                 this.runTurn(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
+            } else if (shared) {
+                this.promptShared(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
             } else {
                 this.write(id, userMessageLine(text.trim(), ready));
             }
@@ -1259,7 +1915,15 @@ export class ConsoleHost {
         const r = answerAsk(h.state, decision, Date.now());
         if (!r.line) { return false; }
         h.state = r.state;
-        const wrote = this.write(id, r.line);
+        // ‼️ THE STATE CHANGE IS SHARED, THE WIRE IS NOT. `answerAsk` is pure and
+        // can only produce Claude's control line; on the shared connection the
+        // agent is waiting for one of the OPTION IDS it published, so the verdict
+        // is carried across rather than the line (see opencodeOptionFor).
+        const wrote = h.engine.shape === 'sharedAcp'
+            ? this.answerOpencodeAsk(id,
+                decision.kind === 'deny' ? 'reject'
+                    : decision.kind === 'allow' && decision.always ? 'always' : 'allow')
+            : this.write(id, r.line);
         this.fire(id);
         return wrote;
     }
@@ -1290,6 +1954,45 @@ export class ConsoleHost {
             this.endTurn(id, 'turn interrupted');
             return true;
         }
+        /**
+         * ‼️ K-25 — STOP ASKS THE ENGINE TO STOP, AND ONLY THE ENGINE.
+         *
+         * `session/cancel` was measured to end a real turn with `stopReason:
+         * "cancelled"`, a zero usage and a conversation that took the next turn
+         * on the same `ses_…`. Killing anything here would be wrong twice over:
+         * the process is SHARED, so it would end every other card's turn as
+         * well, and this card would lose a conversation that did not need to be
+         * lost. The blunt path exists — it is the timer below — and it is what
+         * happens only if the engine stops listening (OPENCODE_CANCEL_GRACE_MS).
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            const card = h.opencode;
+            if (!card?.running || !h.state.sessionId) { return false; }
+            const rt = this.runtime();
+            if (!rt) { return false; }
+            rt.cancel(h.state.sessionId);
+            if (card.cancelTimer) { clearTimeout(card.cancelTimer); }
+            h.opencode = {
+                ...card,
+                cancelTimer: setTimeout(() => {
+                    const now = this.sessions.get(id);
+                    if (!now?.opencode?.running || now.closed) { return; }
+                    now.opencode = { ...now.opencode, cancelTimer: undefined };
+                    this.mutate(id, s => ({
+                        ...s, lastTs: Date.now(),
+                        messages: [...s.messages, {
+                            id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                            text: 'OpenCode did not answer the stop request, so Agent Farm restarted the shared '
+                                + 'runtime it owns. Every OpenCode card is being re-opened on the new one; '
+                                + 'the conversations themselves are in OpenCode\'s own store and are safe.'
+                        }]
+                    }));
+                    this.runtime()?.restart();
+                }, OPENCODE_CANCEL_GRACE_MS)
+            };
+            this.mutate(id, s => ({ ...s, lastTs: Date.now() }));
+            return true;
+        }
         return this.write(id, controlLine(`int-${++h.reqSeq}`, 'interrupt'));
     }
 
@@ -1304,6 +2007,34 @@ export class ConsoleHost {
     setModel(id: string, model: string): boolean {
         const h = this.sessions.get(id);
         if (!h || !model.trim()) { return false; }
+        /**
+         * ‼️ K-25 — A LIVE CONTROL THAT IS STILL NOT A MID-TURN ONE.
+         *
+         * This engine really does take the change on the open connection
+         * (`session/set_config_option`), so it is neither Claude's "ask the CLI
+         * now" nor Codex's "the next process's flags". What it is not is a
+         * change to a turn that is already running: the protocol offers no such
+         * thing, and applying one anyway is how an answer changes model half way
+         * through. So a change asked for mid-turn is HELD to the boundary and
+         * said out loud — a picker that appeared to work and did nothing is the
+         * exact failure the `configId` trap already set once.
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            const want = model.trim();
+            if (h.opencode?.running) {
+                h.opencode = { ...h.opencode, pending: { ...h.opencode.pending, model: want } };
+                this.mutate(id, s => ({
+                    ...s, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                        text: `model will become "${want}" when this turn ends — OpenCode cannot change the model of a turn that is running`
+                    }]
+                }));
+                return true;
+            }
+            void this.applyOpencodeConfig(id, { model: want }, false);
+            return true;
+        }
         // ‼️ NOTHING IS PENDING ON AN ENGINE WITH NO LIVE CONTROLS. There is no
         // CLI to accept or refuse the switch: the next turn is a new process and
         // it will be started with this flag, so the change is already true. A
@@ -1361,6 +2092,26 @@ export class ConsoleHost {
     setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
+        // ‼️ ON THIS ENGINE THE MODE IS THE AGENT — `build` executes tools under
+        // its configured permissions, `plan` disallows every edit tool — and it
+        // is session config, so it moves on the live connection at the turn
+        // boundary exactly as the model does. What is recorded on the card as
+        // well is what "bypass" means HERE: not a flag handed to a process, but
+        // Agent Farm answering the engine's own questions (see startShared).
+        if (h.engine.shape === 'sharedAcp') {
+            const want = opencodePermissionFor(mode).mode;
+            this.mutate(id, s => ({
+                ...s, permissionMode: mode,
+                enforcedPermissionMode: mode,
+                permissionWhy: this.opencodePermissionWhy(mode)
+            }));
+            if (h.opencode?.running) {
+                h.opencode = { ...h.opencode, pending: { ...h.opencode.pending, mode: want } };
+                return true;
+            }
+            void this.applyOpencodeConfig(id, { mode: want }, true);
+            return true;
+        }
         // ‼️ On a per-turn engine the mode is a SANDBOX chosen when the next
         // process starts (see codexSandboxFor), so it takes effect on the next
         // turn and not on the one already running — and a retry nudge would be
@@ -1458,6 +2209,20 @@ export class ConsoleHost {
         if (!again && h.state.pendingAsk) {
             this.answer(id, { kind: 'deny', message: 'The session was closed.' });
         }
+        /**
+         * ‼️ K-25 — ENDING A CARD MUST NOT END ANYBODY ELSE'S TURN.
+         *
+         * There is no process of this session's to kill, and killing the shared
+         * one would take every other OpenCode conversation with it. So the card
+         * detaches: the runtime tells the agent the session is closed if the
+         * build offers a way to, and stops the process only when the LAST card
+         * has gone — which is the asymmetry the shared shape is for.
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            if (h.opencode?.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+            if (h.opencode) { h.opencode = { ...h.opencode, cancelTimer: undefined, running: false }; }
+            if (h.state.sessionId) { this.opencodeRt?.detach(h.state.sessionId); }
+        }
         // ‼️ END MEANS END, AND THE PIPE IS SHUT BEFORE THE KILL — NOT AFTER.
         // `taskkill` is asynchronous and a process that is dying still has
         // everything it already wrote sitting in the pipe. Those lines kept
@@ -1550,6 +2315,11 @@ export class ConsoleHost {
         // tick that never comes is the orphaned-process leak, not a fast panel.
         for (const id of [...this.sessions.keys()]) { this.close(id, { sync: true, silent: true }); }
         this.sessions.clear();
+        // …and the one process no session owns. `close` above detaches each card
+        // and stops it when the last goes, but a window closing with no OpenCode
+        // card open must still not leave 383 MB behind.
+        this.opencodeRt?.dispose();
+        this.opencodeRt = undefined;
         this.listeners = [];
     }
 }

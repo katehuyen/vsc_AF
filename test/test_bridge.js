@@ -161,7 +161,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         const all = await r2.dispatch('engines.status', {});
         ok('it dispatches and counts what can run',
-            all.ok && all.result.total === 4 && all.result.ready === 1 && all.result.onPlan === 1);
+            all.ok && all.result.total === 5 && all.result.ready === 1 && all.result.onPlan === 1);
         const one = await r2.dispatch('engines.status', { id: 'codex' });
         ok('…and answers about one engine when asked',
             one.ok && one.result.engines.length === 1 && one.result.engines[0].id === 'codex');
@@ -2099,8 +2099,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         };
         const SP = require(path.join(__dirname, '..', 'out', 'panels', 'searchPanel.js'));
         Module._load = origLoad;
-        ok('Search engine facets come from the one four-engine registry',
-            SP.BUILTIN_SEARCH_ENGINES.join(',') === 'claude,codex,gemini,agy');
+        // ‼️ DERIVED, NOT TYPED OUT — which is the whole assertion. The fifth
+        // engine appeared here without this file being edited for it; the list
+        // is checked so that a facet set that stops following the registry is a
+        // failed test rather than a filter nobody can pick.
+        ok('Search engine facets come from the one engine registry',
+            SP.BUILTIN_SEARCH_ENGINES.join(',') === 'claude,codex,gemini,agy,opencode');
         const pool = [
             { sessionId: '4d361981-aaaa', file: 'a.jsonl', title: 'nothing', agentName: 'dev', lastTs: 1, mtime: 1, tags: [] },
             { sessionId: 'ffffffff-bbbb', file: 'b.jsonl', title: 'about 4d361981', agentName: 'dev', lastTs: 9, mtime: 9, tags: [] },

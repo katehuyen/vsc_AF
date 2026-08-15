@@ -25,7 +25,8 @@
         claude: 'Claude',
         codex: 'Codex',
         gemini: 'Gemini',
-        agy: 'Antigravity'
+        agy: 'Antigravity',
+        opencode: 'OpenCode'
     };
 
     /** ‼️ An id this build has never heard of is still drawn — as itself, in the

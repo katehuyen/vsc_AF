@@ -32,8 +32,8 @@ const by = (list, id) => list.find(e => e.id === id);
 // ---------- nothing installed: every row still says what to do ----------
 {
     const list = readEngines(probe({}));
-    ok('all four engines are always listed', list.length === 4
-        && ['claude', 'codex', 'gemini', 'agy'].every(id => !!by(list, id)));
+    ok('all five engines are always listed', list.length === 5
+        && ['claude', 'codex', 'gemini', 'agy', 'opencode'].every(id => !!by(list, id)));
     ok('nothing is ready on an empty machine', list.every(e => !e.ready));
     // ‼️ The whole complaint in one assertion: a state is not an answer.
     ok('‼️ no row stops at naming a state — each one says what to do',
@@ -54,7 +54,52 @@ const by = (list, id) => list.find(e => e.id === id);
         && /Antigravity app/.test(by(list, 'agy').next)
         && /agy install/.test(by(list, 'agy').next));
     ok('the summary counts what can run', JSON.stringify(enginesSummary(list))
-        === JSON.stringify({ ready: 0, total: 4, onPlan: 0 }));
+        === JSON.stringify({ ready: 0, total: 5, onPlan: 0 }));
+    // ‼️ X-38 — AND THE ONE ENGINE THAT NEEDS NO SIGN-IN IS STILL NOT READY WITH
+    // NO CLI. `readyWithoutCredential` waives the credential, never the binary:
+    // an OpenCode row on a machine without the command has to say "install it"
+    // like every other row, or the waiver would turn into a claim that a session
+    // can be started against nothing at all.
+    ok('‼️ the credential-free engine still needs its CLI',
+        !by(list, 'opencode').ready
+        && /not installed on this machine/.test(by(list, 'opencode').next)
+        && /npm install -g opencode-ai/.test(by(list, 'opencode').next));
+}
+
+// ---------- OpenCode: READY with an empty auth.json, which is measured ----------
+{
+    // ‼️ THE MEASUREMENT THIS WHOLE BRANCH EXISTS FOR (A-16, opencode 1.18.18):
+    // `opencode providers list` printed "0 credentials" while `opencode models`
+    // returned seven, and every one of them ran a real turn. Four engines answer
+    // "can it run" with "is there a sign-in"; on this one that question returns
+    // the wrong answer, and a row telling the user to fix something that is not
+    // broken is the same dishonesty this module was written to end.
+    const list = readEngines(probe({ path: ['opencode'] }));
+    const row = by(list, 'opencode');
+    ok('‼️ OpenCode is READY with nothing signed in', row.ready && row.auth.mode === 'none');
+    ok('…and its row says so instead of sending you to a login',
+        /Ready, with nothing signed in/.test(row.next) && /free tier/.test(row.next));
+    ok('…and the login is offered as the way to the PAID models, not as a fix',
+        /opencode auth login/.test(row.next) && /paid models/.test(row.next));
+    ok('…and the "no credential" detail refuses to read as "cannot run"',
+        /does NOT mean it cannot run/.test(row.auth.detail));
+    // …and a credential, when there IS one, is read for what it plainly says.
+    const keyed = by(readEngines(probe({
+        path: ['opencode'],
+        files: { '.local/share/opencode/auth.json': '{"anthropic":{"type":"oauth"},"openai":{"type":"api"}}' }
+    })), 'opencode');
+    ok('an OAuth grant in auth.json reads as a sign-in',
+        keyed.auth.mode === 'subscription' && /2 providers/.test(keyed.auth.detail));
+    const apiOnly = by(readEngines(probe({
+        path: ['opencode'],
+        files: { '.local/share/opencode/auth.json': '{"openai":{"type":"api"}}' }
+    })), 'opencode');
+    ok('a stored key alone reads as a key', apiOnly.auth.mode === 'apikey');
+    // ‼️ NO KEY BOX FOR THIS ENGINE. It reaches many providers and each has its
+    // own variable; there is no single "the OpenCode key" to put in the vault,
+    // and a surface drawing that box would offer a gesture leading nowhere.
+    ok('‼️ it has no key route, so no surface may draw a key box',
+        row.key.env === '' && row.key.inVault === false);
 }
 
 // ---------- Antigravity: signed in through an APP, with no key anywhere ----------
@@ -200,7 +245,9 @@ const by = (list, id) => list.find(e => e.id === id);
     let list = null;
     try { list = readEngines(angry); } catch { /* recorded below */ }
     ok('‼️ a machine that refuses every question still renders every row',
-        !!list && list.length === 4 && list.every(e => !e.ready && !!e.next));
+        // ‼️ …and `readyWithoutCredential` does not survive a machine that cannot
+        // even be asked: `which` throws, so no CLI is found, so nothing is ready.
+        !!list && list.length === 5 && list.every(e => !e.ready && !!e.next));
 }
 
 // ---------- the stamp parser, on its own ----------

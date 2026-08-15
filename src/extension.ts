@@ -255,7 +255,7 @@ import {
 import { MAX_TRANSCRIPT_BYTES, readSettled, snapshotLabel } from './core/transcriptRead';
 import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
-import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
+import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
 import {
     carriedTotals, ConsoleMessage, contextPercent, contextSample, OlderHistory,
     PERMISSION_MODES_LIVE, transcriptPos
@@ -3860,7 +3860,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         const set = enginePermissionSetting(task.engine, task.permissionMode);
                         return set ? { [set.label === 'Sandbox' ? 'sandbox' : 'approvalMode']: set.value } : {};
                     })(),
-                    permissionNote: engineOf(task.engine).shape === 'perTurn'
+                    // Every engine that is not Claude means something else by the
+                    // word, so every one of them prints its own sentence (K-25).
+                    permissionNote: engineOf(task.engine).shape !== 'persistent'
                         ? engineModeNote(task.engine, task.permissionMode) : null,
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
                     priority: task.priority ?? 0,
@@ -11913,7 +11915,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
         () => activeProjectId() || undefined,
         projectContextFileFor,
-        (threadId, force) => codexCtxProbe.read(threadId, { force: !!force }));
+        (threadId, force) => codexCtxProbe.read(threadId, { force: !!force }),
+        // ‼️ K-25 — ONE shared `opencode acp` process for the whole window, and
+        // it is handed IN rather than built inside the host: the host has to stay
+        // testable without a binary, which is the only cheap way to exercise a
+        // lifecycle whose interesting states are a crash and a reload. It is
+        // created on the first OpenCode card and stopped when the last one goes
+        // — the 383 MB measurement is the whole argument for the shape.
+        nodeOpencodeIo(() => ENGINES.opencode.exe));
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
     const writeExternalConsoleTranscript = (id: string): void => {
         const s = consoleHost.get(id);
