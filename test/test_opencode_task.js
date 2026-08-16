@@ -82,6 +82,56 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
         (() => { const e = R.readOpencodeRun(''); return e.steps.length === 0 && e.cost === 0 && e.sessionId === ''; })());
 }
 
+// ---------- the brief goes in ONCE ----------
+//
+// A per-turn engine has no system-prompt channel (OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG,
+// and the same fact on Codex), so the project brief rides inside the prompt. On a
+// CONTINUATION it is already in the conversation — a resume only happens on an
+// engine `headlessResumeRefusal` measured to carry its own context — so sending it
+// again pays for the same tokens twice and re-introduces a project the model has
+// been working in since turn one.
+{
+    ok('‼️ a continuation does not repeat the project brief',
+        /\? \(safeResume \? '' : engineContextPrefix\(this\.readContext\(ctxFile\)\)\) \+ task\.prompt/
+            .test(tasksTs));
+    ok('…and a FIRST turn still carries it, exactly as before',
+        /const perTurnPrompt = perTurn/.test(tasksTs)
+        && /engineContextPrefix\(this\.readContext\(ctxFile\)\)/.test(tasksTs));
+    ok('…and the archive says why this run\'s prompt is shorter',
+        /the project brief is not repeated; it is already in this conversation/.test(tasksTs));
+}
+
+// ---------- a schedule's next firing is a NEW conversation ----------
+//
+// "schedule'ın normal sonraki firing'i açık resume yoksa eski ses_ oturumunu miras
+// almasın" — a nightly job that silently resumed last night's conversation would
+// grow one thread for ever and bill its whole history on every run.
+{
+    const fired = tasksTs.slice(tasksTs.indexOf('private fireSchedule('));
+    const body = fired.slice(0, fired.indexOf('\n    private ', 1));
+    ok('‼️ a timed firing never inherits a session id',
+        /fromSchedule: s\.id, projectId: s\.projectId \|\| undefined, \.\.\.runExtras\(s\)/.test(body)
+        && !/resumeSessionId/.test(body));
+    ok('…and the manual "run now" is the same call, so it cannot differ',
+        (tasksTs.match(/\{ fromSchedule: s\.id, projectId: s\.projectId \|\| undefined, \.\.\.runExtras\(s\) \}/g) || [])
+            .length === 2);
+    // Resume only ever comes from a place that MEANT it: Smart Continue after an
+    // interrupted run, which is where the id is copied on purpose.
+    ok('the only place a task inherits a conversation is Smart Continue',
+        /if \(prev\.failurePhase === 'interrupted' && p\.behavior === 'smart' && resumeId\) \{/.test(tasksTs)
+        && /held\.resumeSessionId = resumeId;/.test(tasksTs));
+}
+
+// ---------- cancel stops what this task owns, and nothing else ----------
+{
+    ok('cancel kills the task\'s OWN process tree',
+        /private killProcess\(taskId: string, child: cp\.ChildProcess\): void \{/.test(tasksTs)
+        && /taskkill \/pid \$\{child\.pid\} \/T \/F/.test(tasksTs));
+    ok('…and it is looked up by task id, never by engine or by name',
+        /const child = this\.processes\.get\(task\.id\);\s*\n\s*if \(child\) \{ this\.killProcess\(task\.id, child\); \}/
+            .test(tasksTs));
+}
+
 // ---------- one executor, and both doors say so ----------
 {
     const extTs = read('src', 'extension.ts');

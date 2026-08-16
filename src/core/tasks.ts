@@ -2266,7 +2266,12 @@ export class TaskManager implements vscode.Disposable {
             // opens the transcript.
             (task.resumeSessionId
                 ? `- Resumed conversation: ${task.resumeSessionId}`
-                + (task.resumedFrom ? ` (${task.resumedFrom})` : '') + '\n'
+                + (task.resumedFrom ? ` (${task.resumedFrom})` : '')
+                // ‼️ M-14 — and WHY this run's prompt looks shorter than the
+                // first one's. Without this line the missing brief reads as a
+                // bug months later, when the archive is the only record left.
+                + (perTurn ? ' — the project brief is not repeated; it is already in this conversation' : '')
+                + '\n'
                 : '') +
             (profile ? `- CLI: ${profile.name}\n` : '') +
             (policy ? `- Model policy: ${policy.reason}\n` : '') +
@@ -2365,8 +2370,16 @@ export class TaskManager implements vscode.Disposable {
         // it does not reach the run; and stdin is the one channel a shell does
         // not mangle. Everything Claude's path expresses as flags is expressed
         // here in the measured vocabulary instead (codexRunArgs).
+        // ‼️ M-14 — AND IT GOES IN ONCE, AT THE START OF THE CONVERSATION.
+        // On a CONTINUATION the brief is already in the conversation: a resume
+        // only happens on an engine `headlessResumeRefusal` has measured to
+        // carry its own context, so repeating it pays for the same tokens a
+        // second time and re-introduces a project the model has been working in
+        // since turn one. Worse on this engine than on the others, because
+        // OpenCode's brief is the largest thing in the prompt and every
+        // `step_finish` bills the cache read that carries it.
         const perTurnPrompt = perTurn
-            ? engineContextPrefix(this.readContext(ctxFile)) + task.prompt
+            ? (safeResume ? '' : engineContextPrefix(this.readContext(ctxFile))) + task.prompt
             : '';
         // ‼️ …EXCEPT ON THE ENGINE THAT HAS NO PIPE FOR IT. `agy --print` takes
         // the prompt as its VALUE and reads nothing from stdin (measured: an
