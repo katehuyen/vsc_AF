@@ -6060,8 +6060,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 for (const key of ['status', 'kind', 'summary', 'folder', 'parentId', 'color', 'icon']) {
                     if (args[key] !== undefined) { patch[key] = String(args[key]); }
                 }
+                // ‼️ The describe promises `""` clears an optional field, and
+                // for the numeric ones it did not: only a number got through,
+                // so a due date set by mistake could be moved but never taken
+                // off. The store already reads `''` as "clear it" (P-15).
                 for (const key of ['budgetUSD', 'budgetTotalUSD', 'dueAt', 'startedAt']) {
                     if (typeof args[key] === 'number') { patch[key] = args[key]; }
+                    else if (args[key] === '' || args[key] === null) { patch[key] = ''; }
                 }
                 if (Array.isArray(args.repos)) { patch.repos = args.repos; }
                 if (Array.isArray(args.tags)) { patch.tags = args.tags; }
@@ -13623,6 +13628,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const parts = projectParts()[p.id];
         return {
             id: p.id, name: p.name, status: p.status, kind: p.kind ?? null,
+            // ‼️ EVERY FIELD THE SETTINGS FORM EDITS IS REPORTED BACK (P-15).
+            // A field the editor writes but the view drops is not a display
+            // gap — it is a DELETE: the form renders the missing value as
+            // empty and the next Save posts that emptiness over the stored
+            // one. That is how a colour "went back to grey" and a start date
+            // disappeared on a Save the user pressed to change something else.
+            color: p.color ?? null, icon: p.icon ?? null,
+            startedAt: p.startedAt ?? null, dueAt: p.dueAt ?? null,
+            closedAt: p.closedAt ?? null,
             folder: p.folder ?? null, folderState: projectFolderState(p),
             repos: p.repos ?? [], parentId: p.parentId ?? null,
             parent: parent ? { id: parent.id, name: parent.name, status: parent.status } : null,

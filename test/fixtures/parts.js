@@ -13,8 +13,16 @@ const T = Date.parse('2026-08-11T09:20:00Z');
 const H = 3600000;
 const DAY = 86400000;
 
+// ‼️ THE VISUAL IDENTITY AND THE DATES ARE ON THE FIXTURE (P-15). They were
+// not, and that is precisely why nobody saw that the page never received them:
+// a fixture without a colour renders exactly like a page that drops it. One
+// project here has both, one has neither — the Settings tab must be right in
+// both states, and only the one that HAS a colour offers to take it off.
 const parent = {
     id: 'p1', name: 'TalkScribe', status: 'active', kind: 'product',
+    color: '#c8791f', icon: '🎙',
+    startedAt: Date.parse('2026-03-02T00:00:00'), dueAt: Date.parse('2026-09-30T00:00:00'),
+    closedAt: null,
     summary: 'Sesli dikte ürün ailesi — mağazada iki canlı uygulama',
     folder: 'D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\10_PROJECTS\\TalkScribe',
     folderState: 'ok', repos: ['D:\\zone\\dev\\git\\miropharm\\muvu_talkScribe'],
@@ -32,6 +40,8 @@ const parent = {
 
 const zen = {
     id: 'p2', name: 'TalkScribe ZEN', status: 'active', kind: 'product',
+    color: '#3b7dd8', icon: '🧩',
+    startedAt: Date.parse('2026-03-02T00:00:00'), dueAt: null, closedAt: null,
     summary: 'Chrome eklentisi — Web Store\'da yayında',
     folder: 'D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\10_PROJECTS\\TalkScribe ZEN',
     folderState: 'ok', repos: ['D:\\zone\\dev\\git\\miropharm\\muvu_talkScribe\\ZEN'],
@@ -42,8 +52,12 @@ const zen = {
     tokens: 22400000, lastTs: T - 2 * H, warnings: []
 };
 
+// no colour and no icon on purpose — the "nothing set yet" half of the pair
 const zep = {
     id: 'p3', name: 'TalkScribe ZEP', status: 'done', kind: 'product',
+    color: null, icon: null,
+    startedAt: Date.parse('2025-11-04T00:00:00'), dueAt: null,
+    closedAt: Date.parse('2026-07-16T00:00:00'),
     summary: 'Android uygulaması — Google Play\'de yayında',
     folder: 'D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\99_ARCHIVE\\10_PROJECTS_ARCHIVE\\TalkScribe ZEP',
     folderState: 'ok', repos: [], parentId: 'p1',

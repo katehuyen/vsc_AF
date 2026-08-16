@@ -206,5 +206,46 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         /projectStore\.update\(p\.id, \{ folder: res\.path \}\)/.test(extTs));
 }
 
+// ---------- P-15: a Save must not delete what the page never showed ----------
+//
+// The colour "would not save" and the start date "disappeared on Save". One
+// cause, and it was not in the store: `projectView` — the only shape the page
+// ever sees — dropped four of the fields the Settings form edits. The form
+// drew the missing values as empty, and the next Save posted that emptiness
+// back over the stored ones. So there are two rules to keep, not one.
+{
+    // Rule 1 — the view reports every field the form edits.
+    const viewAt = extTs.indexOf('const projectView = (p: Project) => {');
+    const view = extTs.slice(viewAt, extTs.indexOf('\n    };', viewAt));
+    for (const field of ['color', 'icon', 'startedAt', 'dueAt']) {
+        ok(`‼️ projectView reports "${field}" — the Settings form edits it`,
+            new RegExp(`\\b${field}: p\\.${field} \\?\\? null`).test(view));
+    }
+    // and the form reads them back out of that shape, so the round trip closes
+    ok('…and the form renders them from the project it was handed',
+        /id="f-color" type="color" value="\$\{C\.esc\(p\.color \|\| '#888888'\)\}"/.test(pageJs)
+        && /id="f-started" type="date" value="\$\{dateValue\(p\.startedAt\)\}"/.test(pageJs)
+        && /id="f-due" type="date" value="\$\{dateValue\(p\.dueAt\)\}"/.test(pageJs));
+
+    // Rule 2 — the same mistake made again must be harmless. A field with no
+    // input on the page is not an empty field: `collect` posts nothing for it.
+    const collectAt = pageJs.indexOf('    function collect() {');
+    const collect = pageJs.slice(collectAt, pageJs.indexOf('\n    }', collectAt));
+    ok('‼️ collect() posts nothing for a field whose input is not on the page',
+        /const el = document\.getElementById\(id\);\s*\n\s*if \(el\) \{ patch\[key\] = read\(el\.value\); \}/.test(collect));
+    ok('…so no field is read straight off a possibly-missing element',
+        !/document\.getElementById\([^)]*\) \|\| \{\}\)\.value/.test(collect));
+    ok('…and the agent rules, which are checkboxes, gate on their container',
+        /if \(document\.querySelector\('\.pj-chks'\)\)/.test(collect));
+
+    // A colour picker cannot say "no colour", so taking one off needs its own
+    // control — the same ✕ the folder field already uses.
+    ok('a colour that was set can be taken off again',
+        /data-act="clearColor"/.test(pageJs)
+        && /case 'clearColor': vscode\.postMessage\(\{ type: 'save', id, patch: \{ color: '' \} \}\)/.test(pageJs));
+    ok('‼️ and the bridge can clear a date too, which its own describe promised',
+        /else if \(args\[key\] === '' \|\| args\[key\] === null\) \{ patch\[key\] = ''; \}/.test(extTs));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

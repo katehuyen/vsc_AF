@@ -550,7 +550,14 @@
             <label>Status<select id="f-status">${statusOpts}</select></label>
             <label>Kind<select id="f-kind">${kindOpts}</select></label>
             <label>Icon<input id="f-icon" maxlength="4" value="${C.esc(p.icon || '')}" placeholder="🚀"></label>
-            <label>Colour<input id="f-color" type="color" value="${C.esc(p.color || '#888888')}"></label>
+            <label>Colour
+                <div class="pj-row">
+                    <input id="f-color" type="color" value="${C.esc(p.color || '#888888')}"
+                        title="${C.esc((p.color ? 'Now: ' + p.color : 'Now: no colour — the swatch shows the neutral default')
+        + '\n\nThe one visual identity this project carries wherever it is listed.')}">
+                    ${p.color ? '<button class="secondary" data-act="clearColor" title="Take the colour off — the project goes back to no colour at all, which a picker cannot say on its own">✕</button>' : ''}
+                </div>
+            </label>
             <label>Part of<select id="f-parent">${parentOpts}</select></label>
             <label class="pj-wide">Summary<input id="f-summary" value="${C.esc(p.summary || '')}" placeholder="one line; the long version lives in the project's own charter"></label>
 
@@ -6307,37 +6314,56 @@
         sessTable.setRows(d.rows || [], d.tableN);
     }
 
-    /** Read the whole form back. Empty clears the field — that is how the page
-     *  says "no folder / no budget / no parent" without a command per field. */
+    /**
+     * Read the whole form back. An empty INPUT clears the field — that is how
+     * the page says "no folder / no budget / no parent" without a command per
+     * field.
+     *
+     * ‼️ BUT A FIELD THAT IS NOT ON THE FORM IS NOT AN EMPTY FIELD (P-15). The
+     * two are the same string once you read `.value` off an element that isn't
+     * there, and the difference is a stored value the user never saw being
+     * deleted by a Save they pressed to change something else. So every field
+     * here is read through `put`, which posts nothing at all when its input is
+     * missing. It costs one indirection and it makes the whole class of bug
+     * — add a field to the model, forget it in the form — harmless.
+     */
     function collect() {
-        const val = id => (document.getElementById(id) || {}).value;
-        const num = id => {
-            const v = (val(id) || '').trim();
-            return v === '' ? '' : Number(v);
+        const patch = {};
+        const put = (key, id, read) => {
+            const el = document.getElementById(id);
+            if (el) { patch[key] = read(el.value); }
         };
-        return {
-            status: val('f-status'),
-            kind: val('f-kind') || '',
-            icon: val('f-icon') || '',
-            color: val('f-color') || '',
-            summary: val('f-summary') || '',
-            parentId: val('f-parent') || '',
-            repos: (val('f-repos') || '').split('\n').map(s => s.trim()).filter(Boolean),
-            budgetUSD: num('f-budget'),
-            budgetTotalUSD: num('f-budgettotal'),
-            startedAt: dateMs(val('f-started')),
-            dueAt: dateMs(val('f-due')),
-            tags: (val('f-tags') || '').split(',').map(s => s.trim()).filter(Boolean),
-            match: {
+        const text = v => v || '';
+        const num = v => {
+            const s = (v || '').trim();
+            return s === '' ? '' : Number(s);
+        };
+        put('status', 'f-status', v => v);
+        put('kind', 'f-kind', text);
+        put('icon', 'f-icon', text);
+        put('color', 'f-color', text);
+        put('summary', 'f-summary', text);
+        put('parentId', 'f-parent', text);
+        put('repos', 'f-repos', v => (v || '').split('\n').map(s => s.trim()).filter(Boolean));
+        put('budgetUSD', 'f-budget', num);
+        put('budgetTotalUSD', 'f-budgettotal', num);
+        put('startedAt', 'f-started', dateMs);
+        put('dueAt', 'f-due', dateMs);
+        put('tags', 'f-tags', v => (v || '').split(',').map(s => s.trim()).filter(Boolean));
+        // The agent rules are checkboxes, not one input, so "none ticked" and
+        // "the form is not there" are told apart by the container instead.
+        if (document.querySelector('.pj-chks')) {
+            patch.match = {
                 agents: [...document.querySelectorAll('[data-agent]')]
                     .filter(el => el.checked).map(el => el.dataset.agent)
-            }
-            // ‼️ People are NOT in this patch. They moved to their own tab, and
-            // `people` is null until that tab renders the editor — so sending
-            // `people: (people || [])` from the Settings tab would post an empty
-            // list and delete every person on the project, on a Save the user
-            // pressed to change a budget.
-        };
+            };
+        }
+        // ‼️ People are NOT in this patch. They moved to their own tab, and
+        // `people` is null until that tab renders the editor — so sending
+        // `people: (people || [])` from the Settings tab would post an empty
+        // list and delete every person on the project, on a Save the user
+        // pressed to change a budget.
+        return patch;
     }
 
     function wire() {
@@ -7567,6 +7593,7 @@
                 }
                 case 'pickFolder': vscode.postMessage({ type: 'pickFolder', id }); break;
                 case 'clearFolder': vscode.postMessage({ type: 'save', id, patch: { folder: '' } }); break;
+                case 'clearColor': vscode.postMessage({ type: 'save', id, patch: { color: '' } }); break;
                 case 'recreateFolder': vscode.postMessage({ type: 'recreateFolder', id }); break;
                 case 'revealFolder': vscode.postMessage({ type: 'revealFolder', id }); break;
                 case 'handover': vscode.postMessage({ type: 'handover', id }); break;
