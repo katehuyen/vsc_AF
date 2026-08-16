@@ -161,6 +161,17 @@ interface EngineSpec {
      * reader. See `OPENCODE_READY_WITHOUT_CREDENTIAL` in `core/opencode.ts`.
      */
     readyWithoutCredential?: boolean;
+    /**
+     * ‼️ M-14 — HOW MANY CONCURRENCY SLOTS ONE UNATTENDED RUN OF THIS ENGINE
+     * TAKES, AND ONLY WHERE IT WAS MEASURED.
+     *
+     * The governor counts RUNS, which assumes every run costs the same machine.
+     * It does not. Absent (the default) means one slot and no claim; a number
+     * here is a measurement with a date on it, never a guess, and the comment on
+     * it must say what was measured and when. Setting one for an engine nobody
+     * has weighed would be the invented figure this repo forbids.
+     */
+    concurrencyWeight?: number;
     read(probe: EngineProbe): EngineAuth;
 }
 
@@ -372,6 +383,23 @@ const SPECS: EngineSpec[] = [
         docs: 'https://opencode.ai/docs/cli/',
         loginCommand: 'opencode auth login',
         installCommand: OPENCODE_INSTALL_COMMAND,
+        /**
+         * ‼️ MEASURED 2026-08-16, TWICE, ON THIS MACHINE: one `opencode run
+         * --format json` peaks at **615 MB and 596 MB** working set over its own
+         * process tree (`opencode.exe` + the shim's `cmd.exe`/`conhost.exe` +
+         * whatever it spawns). `tools/measure_opencode_run.js` walks the tree by
+         * ParentProcessId — the first version of that tool summed "every pid
+         * that is new", and reported 175 MB of somebody else's Chrome.
+         *
+         * That is heavier than the shared ACP server (383 MB), which at least
+         * serves every hosted card at once; this is one task. Two of them
+         * together is 1.2 GB of transient memory on a machine with 8 GB and no
+         * room, which is why one run takes the whole default fleet allowance of
+         * 2 rather than half of it. The user can still raise
+         * `agentFarm.maxConcurrentTasks` — the weight scales with their setting,
+         * it does not overrule it.
+         */
+        concurrencyWeight: 2,
         read(probe) {
             const creds = json(probe.readHome(OPENCODE_AUTH_FILE));
             const names = creds ? Object.keys(creds) : [];
@@ -426,6 +454,22 @@ export const ENGINE_LABELS: Record<string, string> = {
     '': 'Claude Code',
     ...Object.fromEntries(SPECS.map(s => [s.id, s.label]))
 };
+
+/**
+ * ‼️ M-14 — WHAT ONE UNATTENDED RUN OF THIS ENGINE WEIGHS, IN CONCURRENCY SLOTS.
+ *
+ * The governor counts runs, and counting assumes they cost the same machine.
+ * Read from `SPECS` so the number lives beside the measurement that justifies
+ * it; an engine nobody has weighed is 1 and says nothing. Absent id (a Claude
+ * transcript states no engine) is 1 for the same reason.
+ */
+export function engineConcurrencyWeight(engine: string | undefined): number {
+    const id = String(engine ?? '').trim();
+    if (!id) { return 1; }
+    const spec = SPECS.find(s => s.id === id);
+    const w = spec?.concurrencyWeight;
+    return typeof w === 'number' && w >= 1 ? w : 1;
+}
 
 /** `Codex ×4 · Gemini ×1` — engines counted, busiest first, spelt as people say
  *  them. Empty string when there is nothing to count. */

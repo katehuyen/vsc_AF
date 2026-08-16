@@ -142,5 +142,57 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
         && /A task runs on ONE executor: pick an engine, or a CLI profile — not both\./.test(panelTs));
 }
 
+// ------------------------------------------------------------------------
+// M-14 — AN EFFORT THE ENGINE HAS NO FLAG FOR IS REFUSED BEFORE IT SPAWNS.
+//
+// The item asks for "a clear refusal, before starting, for a wrong model /
+// variant / permission". Three layers already existed and each has a hole the
+// next one does not cover: the bridge refuses it on `tasks.add`, `narrowLaunch`
+// clears it on an edit, and the picker does not offer it — all three only while
+// the model matrix is in hand. What none of them covers is a row that was
+// SAVED for another engine: change a task from Claude to OpenCode and the
+// effort it was written with is still on it, and still goes to the command
+// line. Gemini exits 42 on one (measured) and OpenCode takes a `--variant` that
+// no reachable model publishes, so the failure is either silence or a death
+// with nothing a reader can act on.
+{
+    const CE = (() => {
+        const Module = require('module');
+        const orig = Module._load;
+        Module._load = function (r) {
+            if (r === 'vscode') {
+                return {
+                    Uri: {}, window: {},
+                    EventEmitter: class { get event() { return () => ({ dispose() { } }); } fire() { } },
+                    workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
+                    ViewColumn: {}, ConfigurationTarget: {}, env: {}
+                };
+            }
+            return orig.apply(this, arguments);
+        };
+        try { return require(path.join(__dirname, '..', 'out', 'core', 'consoleEngine.js')); }
+        finally { Module._load = orig; }
+    })();
+
+    ok('‼️ an effort on OpenCode is refused, and the sentence says what to clear',
+        /clear the effort/.test(CE.headlessEffortRefusal('opencode', 'high'))
+        && /variant/.test(CE.headlessEffortRefusal('opencode', 'high')));
+    ok('…and on Gemini, which exits 42 rather than explaining itself',
+        CE.headlessEffortRefusal('gemini', 'medium') !== '');
+    for (const id of ['claude', 'codex', 'agy']) {
+        ok(`${id} takes an effort, so nothing is refused`,
+            CE.headlessEffortRefusal(id, 'high') === '');
+    }
+    ok('no effort, nothing to refuse — on any engine',
+        CE.headlessEffortRefusal('opencode', '') === ''
+        && CE.headlessEffortRefusal('opencode', undefined) === '');
+    ok('a CLI profile runs a binary this matrix knows nothing about, so it is left alone',
+        CE.headlessEffortRefusal('opencode', 'high', 'my-profile') === '');
+
+    ok('the launch gate applies it, and fails the run BEFORE it starts',
+        /headlessEffortRefusal\(task\.engine, task\.effort, task\.cli\)/.test(tasksTs)
+        && /failed before it started — \$\{refused\}/.test(tasksTs));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

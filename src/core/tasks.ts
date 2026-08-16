@@ -8,9 +8,10 @@ import {
     gateBlock, pauseExpired, Precondition
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
+import { engineConcurrencyWeight } from './engines';
 import {
     claudeResumeArgs, engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
-    enginePermissionSetting, headlessResumeRefusal, runArgs, tuiArgs
+    enginePermissionSetting, headlessEffortRefusal, headlessResumeRefusal, runArgs, tuiArgs
 } from './consoleEngine';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
@@ -1845,6 +1846,28 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /**
+     * ‼️ M-14 — THE FLEET LIMIT COUNTS WEIGHT, NOT RUNS.
+     *
+     * Counting runs assumes they cost the same machine, and they do not.
+     * Measured 2026-08-16, twice: one `opencode run --format json` peaks at
+     * 615 MB / 596 MB working set over its own process tree — heavier than the
+     * shared ACP server that serves every hosted card at once. Two of those
+     * together is 1.2 GB of transient memory on a machine that has none spare,
+     * and the flat count would have started them both without a word.
+     *
+     * Only an engine that has been WEIGHED carries a number
+     * (`engineConcurrencyWeight`); everything else is 1, so this is the old
+     * count exactly until a measurement says otherwise. The PER-AGENT limit
+     * stays a plain count on purpose: it is about an agent not talking over
+     * itself, which is a question about the conversation and not about memory.
+     */
+    private runningWeight(): number {
+        return this.tasks
+            .filter(t => t.status === 'running')
+            .reduce((sum, t) => sum + engineConcurrencyWeight(t.engine), 0);
+    }
+
+    /**
      * Why this task can't launch right now, or undefined if it can.
      *
      * ‼️ M-11 — EVERY ANSWER CARRIES A CODE. The sentence is for the row and the
@@ -1894,8 +1917,25 @@ export class TaskManager implements vscode.Disposable {
         }
         const maxGlobal = this.opts.maxConcurrent?.() ?? 2;
         const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 1;
-        if (maxGlobal > 0 && this.runningCount() >= maxGlobal) {
-            return { code: 'concurrency:fleet', reason: `concurrency: ${maxGlobal} running` };
+        // The run being weighed is the one asking, so its own weight is added:
+        // a 2-slot engine cannot start into a 2-slot fleet that is already busy,
+        // and — deliberately — cannot start beside another of its own kind.
+        const mine = engineConcurrencyWeight(task.engine);
+        if (maxGlobal > 0 && this.runningWeight() + mine > maxGlobal) {
+            // ‼️ THE SENTENCE HAS TO EXPLAIN A NUMBER THE USER CANNOT SEE. With
+            // every engine at weight 1 this reads exactly as it always did; when
+            // a heavy one is involved it says so, because "concurrency: 2
+            // running" beside ONE running task is the kind of line that looks
+            // like a bug in the counter.
+            const running = this.runningCount();
+            const heavy = mine > 1 || this.runningWeight() > running;
+            return {
+                code: 'concurrency:fleet',
+                reason: heavy
+                    ? `concurrency: ${maxGlobal} slots, ${this.runningWeight()} in use`
+                    + ` (${running} running) — this engine takes ${mine}`
+                    : `concurrency: ${maxGlobal} running`
+            };
         }
         if (maxAgent > 0 && this.runningCount(task.agentId) >= maxAgent) {
             return {
@@ -2089,6 +2129,26 @@ export class TaskManager implements vscode.Disposable {
                 ? 'continuing an existing conversation is a headless run — an interactive one opens the '
                 + 'session in a terminal, where the Console\'s own Resume does this properly'
                 : headlessResumeRefusal(task.resumedEngine ?? task.engine, task.cli);
+            if (refused) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${task.title}" did not start — ${refused}`);
+                task.status = 'failed';
+                task.endedAt = Date.now();
+                task.deferredReason = refused;
+                task.deferredCode = undefined;
+                noteTaskEvent(task, 'finished', `failed before it started — ${refused}`);
+                this.save();
+                return false;
+            }
+        }
+        // ‼️ M-14 — …AND THE SAME RULE FOR AN EFFORT THE ENGINE HAS NO FLAG FOR.
+        // A row outlives the engine it was written for: move a task from Claude
+        // to OpenCode and the effort it was saved with is still on it and still
+        // sent. Gemini exits 42 on one (measured) and OpenCode takes a
+        // `--variant` no reachable model publishes — both of which look like a
+        // run that worked, or a run that failed for no stated reason.
+        {
+            const refused = headlessEffortRefusal(task.engine, task.effort, task.cli);
             if (refused) {
                 void vscode.window.showWarningMessage(
                     `Agent Farm: "${task.title}" did not start — ${refused}`);

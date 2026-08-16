@@ -68,6 +68,29 @@ Kodda karşılığı `src/core/opencode.ts`, testi `test/test_opencode.js`,
 > kullanıcı 1.5 GB öder. Uzantı başına **tek** paylaşılan runtime; kartlar
 > `sessionId` ile ayrılır (K-25).
 
+> ### ‼️ Karar 2b — **bir headless koşu bir eşzamanlılık yuvası değil, İKİ yuva** (M-14)
+> Ölçüm **2026-08-16, iki kez**, `tools/measure_opencode_run.js` ile: tek bir
+> `opencode run --format json` kendi süreç ağacında (`opencode.exe` + npm shim'inin
+> `cmd.exe`/`conhost.exe` + çağırdığı `git.exe`) **615 MB ve 596 MB** working set
+> zirvesi yapıyor. Yani paylaşılan ACP sunucusundan (383 MB) **daha ağır** — üstelik o
+> uzun ömürlü ve bütün kartlara birden hizmet ediyor, bu ise tek bir görev.
+>
+> Governor koşu sayıyordu; saymak her koşunun aynı makineye mal olduğunu varsayar.
+> Artık **ağırlık** sayıyor (`engineConcurrencyWeight`, `EngineSpec.concurrencyWeight`):
+> yalnızca **tartılmış** motor bir sayı taşır, geri kalan her motor 1'dir ve davranışı
+> zerre değişmez. `opencode` = 2, yani varsayılan `maxConcurrentTasks: 2` altında bir
+> OpenCode koşusu filoyu tek başına doldurur. Kullanıcı ayarı yükseltirse ağırlık onunla
+> ölçeklenir; kuralı ezmez.
+>
+> **‼️ Ölçüm aracının kendi tuzağı, tekrar düşmemek için:** ilk sürümü "az önce olmayan
+> her pid" toplamını alıyordu ve gerçek bir masaüstünde bu, o sırada başlayan başka her
+> şey demek — ölçtü, **175 MB** dedi, zirvedeki süreçler `chrome.exe`,
+> `SearchFilterHost.exe`, `esif_assist_64.exe` çıktı ve listede `opencode` **hiç yoktu**.
+> Cevaba benzeyen ama başkasının tarayıcısı olan bir rakam. Artık ağaç
+> `ParentProcessId` ile yürünüyor. (Ondan önceki sürüm de `powershell -Command "…"`
+> çağırıyordu; `execSync` cmd.exe üzerinden gittiği için iç tırnaklar yeniyor ve her
+> örnek **boş** dönüyordu — sorgu artık bir dosyada.)
+
 ## 3. Model, mod, izin ve ekler
 
 | Soru | Ölçüm |

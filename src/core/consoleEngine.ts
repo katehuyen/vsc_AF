@@ -868,6 +868,42 @@ export function engineTakesEffort(engine: string | undefined): boolean {
     return id !== 'gemini' && id !== 'opencode';
 }
 
+/**
+ * ‼️ M-14 — AN EFFORT ON AN ENGINE THAT HAS NONE IS REFUSED BEFORE ANYTHING
+ * SPAWNS. '' = nothing wrong; anything else is the sentence to refuse with.
+ *
+ * `engineTakesEffort` already tells a PICKER not to offer the box. It does not
+ * stop a value that is already on the row from reaching a command line, and a
+ * row outlives the engine it was written for: change a task from Claude to
+ * OpenCode and the effort it was saved with is still there, still sent. What
+ * happens then is not an error message, it is worse —
+ *
+ * - **gemini exits 42** and says nothing a reader can act on (measured);
+ * - **opencode** takes `--variant` happily and no reachable model publishes
+ *   one, so the flag is either ignored or the run dies on a provider's
+ *   complaint, with the Effort column on the row still saying it asked.
+ *
+ * A silent flag is the failure this repo keeps finding, so the run is refused
+ * BY NAME with the field to clear — a refusal a person can fix in one click
+ * beats a run that starts and lies.
+ */
+export function headlessEffortRefusal(
+    engine: string | undefined, effort: string | undefined, cli?: string
+): string {
+    const value = String(effort ?? '').trim();
+    // A CLI profile runs a binary this matrix knows nothing about; refusing on
+    // its behalf would refuse a profile that works.
+    if (!value || String(cli ?? '').trim()) { return ''; }
+    if (engineTakesEffort(engine)) { return ''; }
+    const spec = engineOf(engine);
+    const why = spec.id === 'opencode'
+        ? 'OpenCode has a `--variant` flag and nothing to put in it: not one of the models reachable here '
+        + 'publishes a variant, and its hosted channel declares only model and mode'
+        : `${spec.label} has no reasoning-effort flag at all`;
+    return `this run asks for effort "${value}" and ${why} — clear the effort, `
+        + 'or run it on an engine that has one';
+}
+
 /** The prompt as a per-turn engine receives it — the same wording on both, so
  *  the same instruction cannot behave differently for no visible reason. */
 export function enginePromptText(

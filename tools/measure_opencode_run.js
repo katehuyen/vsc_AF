@@ -38,46 +38,79 @@ child.stdout.on('data', d => { stdout += d; });
 child.stderr.on('data', d => { stderr += d; });
 
 /**
- * Every process alive right now, by pid, with its working set.
+ * Every process alive right now — pid, PARENT pid, name and working set.
  *
- * ‼️ `tasklist`, not a nested PowerShell. The first attempt shelled out to
- * `powershell -Command "Get-Process … | ConvertTo-Json"` through `execSync`,
- * which goes via cmd.exe — the inner quotes were eaten and every sample came
- * back EMPTY while the run itself succeeded. A measurement that silently reads
- * zero is worse than no measurement, so this uses a plain CSV tool and the
- * caller checks that the baseline is non-empty before believing anything.
+ * ‼️ THE PARENT COLUMN IS THE WHOLE POINT, AND THE FIRST TWO ATTEMPTS DID NOT
+ * HAVE IT. `tasklist` cannot publish a parent, so the run's cost was taken as
+ * "every pid that was not there a moment ago" — and on a real desktop that is
+ * whatever else happened to start. Measured with that method: a 175 MB "peak"
+ * whose processes were `chrome.exe`, `SearchFilterHost.exe`, `esif_assist_64.exe`
+ * and `tasklist.exe`, with no `opencode` or `bun` in the list at all. A figure
+ * that looks like an answer and is somebody else's browser is precisely the
+ * invented number this file exists to avoid.
+ *
+ * (The attempt before that shelled out to `powershell -Command "…"` through
+ * `execSync`, which goes via cmd.exe: the inner quotes were eaten and every
+ * sample came back EMPTY. So the query lives in a FILE, and the caller checks
+ * the baseline is non-empty before believing anything.)
  */
+const psFile = path.join(outDir, '_sample_processes.ps1');
+fs.writeFileSync(psFile,
+    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,WorkingSetSize '
+    + '| ConvertTo-Csv -NoTypeInformation\n', 'utf8');
+
 function sample() {
     try {
-        const csv = cp.execSync('tasklist /fo csv /nh',
-            { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 << 20 });
+        const csv = cp.execSync(
+            `powershell -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`,
+            { encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 16 << 20 });
         const rows = [];
-        for (const line of csv.split(/\r?\n/)) {
-            // "name","pid","session","session#","12,345 K"
-            const m = line.match(/^"([^"]*)","(\d+)","[^"]*","[^"]*","([\d.,\s]+) K"$/);
+        for (const line of csv.split(/\r?\n/).slice(1)) {
+            const m = line.match(/^"(\d+)","(\d*)","([^"]*)","(\d*)"$/);
             if (!m) { continue; }
             rows.push({
-                Id: Number(m[2]), ProcessName: m[1],
-                WorkingSet64: Number(m[3].replace(/[^\d]/g, '')) * 1024
+                Id: Number(m[1]), Parent: Number(m[2] || 0),
+                ProcessName: m[3], WorkingSet64: Number(m[4] || 0)
             });
         }
         return rows;
     } catch { return []; }
 }
 
-// The baseline first: whatever is already running is NOT this run's cost.
+/** Our child and everything it started, however deep. */
+function tree(rows, rootPid) {
+    const kids = new Map();
+    for (const r of rows) {
+        if (!kids.has(r.Parent)) { kids.set(r.Parent, []); }
+        kids.get(r.Parent).push(r);
+    }
+    const out = [], stack = [rootPid], seen = new Set();
+    while (stack.length) {
+        const pid = stack.pop();
+        if (seen.has(pid)) { continue; }
+        seen.add(pid);
+        const self = rows.find(r => r.Id === pid);
+        if (self && pid !== rootPid) { out.push(self); }
+        else if (self) { out.push(self); }
+        for (const k of kids.get(pid) || []) { stack.push(k.Id); }
+    }
+    return out;
+}
+
+// The baseline is only a sanity check now — the tree is what is measured.
 const baseline = sample();
-const baseIds = new Set(baseline.map(r => r.Id));
-let peakWs = 0, peakPriv = 0, peakN = 0, samples = 0;
+let peakWs = 0, peakN = 0, samples = 0, peakNames = [];
 
 const timer = setInterval(() => {
-    const rows = sample().filter(r => !baseIds.has(r.Id));
+    const rows = sample();
+    if (!rows.length) { return; }
     samples++;
-    const ws = rows.reduce((a, r) => a + (r.WorkingSet64 || 0), 0);
+    const mine = tree(rows, child.pid);
+    const ws = mine.reduce((a, r) => a + (r.WorkingSet64 || 0), 0);
     if (ws > peakWs) {
         peakWs = ws;
-        peakN = rows.length;
-        peakNames = [...new Set(rows.map(r => r.ProcessName))].sort();
+        peakN = mine.length;
+        peakNames = [...new Set(mine.map(r => r.ProcessName))].sort();
     }
 }, 400);
 
@@ -93,15 +126,20 @@ const stop = code => {
         durationMs: Date.now() - started,
         samples,
         newProcessesAtPeak: peakN,
+        processNamesAtPeak: peakNames,
         peakWorkingSetMB: mb(peakWs),
-        peakPrivateMB: mb(peakPriv),
+        // ‼️ NO `peakPrivateMB` HERE. `tasklist` publishes working set and
+        // nothing else, and a private-bytes field that always read 0 would look
+        // like a measurement and be an absence. The 383 MB ACP figure it is
+        // compared against is a working set too, so the two are the same unit.
         baselineProcesses: baseline.length,
         stdoutBytes: stdout.length,
         stderrHead: stderr.slice(0, 400),
-        note: 'Peak is the SUM over processes this run added — the baseline set is '
-            + 'excluded, so an editor\'s own node processes are not counted against it. '
-            + 'Compare with the 383 MB shared ACP server (K-25): that one is long-lived '
-            + 'and serves every hosted card, this one lives for the length of one task.'
+        note: 'Peak is the SUM over the spawned process TREE — the child and every '
+            + 'descendant, walked by ParentProcessId, so nothing that merely started '
+            + 'at the same time is counted against it. Compare with the 383 MB shared '
+            + 'ACP server (K-25): that one is long-lived and serves every hosted card, '
+            + 'this one lives for the length of one task — and weighs more.'
     };
     fs.writeFileSync(path.join(outDir, 'opencode-run-weight.json'),
         JSON.stringify(result, null, 2), 'utf8');

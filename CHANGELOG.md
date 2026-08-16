@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.148.0 — One OpenCode run is not one slot, and an effort the engine has no flag for stops being sent (2026-08-16)
+
+Two M-14 items, both of which were left open for the same stated reason: **they needed a measurement, and inventing the number was not allowed.**
+
+**The concurrency governor counted RUNS, which assumes they cost the same machine.** They do not. The only figure on record was 383 MB — the shared ACP server, which is a different process doing a different job, and guessing from it is exactly the invented figure this repo forbids. So one was measured.
+
+- **Measured 2026-08-16, twice: one `opencode run --format json` peaks at 615 MB and 596 MB** working set over its own process tree (`opencode.exe` + the npm shim's `cmd.exe`/`conhost.exe` + the `git.exe` it calls). Heavier than the shared ACP server — and that one at least serves every hosted card at once; this is a single task.
+- **‼️ The measuring tool's own trap, written down so nobody repeats it.** Its first version summed "every pid that was not there a moment ago", which on a real desktop is whatever else happened to start: it reported **175 MB**, and the processes at that peak were `chrome.exe`, `SearchFilterHost.exe` and `esif_assist_64.exe`, with no `opencode` in the list at all. A figure that looks like an answer and is somebody else's browser. It now walks the tree by `ParentProcessId`.
+- So the governor counts **weight**. Only an engine somebody has actually weighed carries a number (`EngineSpec.concurrencyWeight`); every other engine is 1 and behaves exactly as it did. OpenCode is 2, so one run fills the default fleet allowance on its own — two of them together is 1.2 GB of transient memory on a machine that has none spare. Raising `agentFarm.maxConcurrentTasks` still works; the weight scales with the setting rather than overruling it. The hold sentence says *"2 slots, 2 in use (1 running) — this engine takes 2"*, because "concurrency: 2 running" beside ONE running task reads like a broken counter.
+
+**An effort the engine has no flag for is now refused before anything spawns.** Three layers already guarded this and each stops at the same place: the bridge refuses it on `tasks.add`, `narrowLaunch` clears it on an edit, and the picker does not offer it — all three only while the model matrix is in hand. What none of them covers is a row **saved for another engine**: change a task from Claude to OpenCode and the effort it was written with is still on it, and still reaches the command line.
+
+- **Gemini exits 42** when handed one (measured) — a run that dies with nothing a reader can act on. **OpenCode** takes `--variant` happily and not one reachable model publishes a variant, so the flag is ignored while the Effort column still says it asked.
+- The run fails **before it starts**, naming the field to clear. A refusal a person can fix in one click beats a run that starts and lies.
+
 ## 3.147.0 — A row that opens a page that shows nothing, and the sweep that proves there are no more (2026-08-16)
 
 3.146.0 gave every Antigravity row a FILE for the first time — and a row with a file is a row you can click. Nothing here could read that format, so every automated `agy` run opened blank, with the filter's "No messages match." as the only explanation. That is the defect this release is about, and it is a defect no string test can see: the row is perfectly correct and the page is empty.
