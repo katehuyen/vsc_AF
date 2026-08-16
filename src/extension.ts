@@ -2048,7 +2048,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const publishLaunchBindings = (): void => {
         const out: LaunchBinding[] = [];
-        for (const t of taskManager.tasks) {
+        // ‼️ AND THE ARCHIVE, WHICH IS THE OTHER HALF OF THAT SAME STORE (S-37).
+        // A finished task is moved to `task-history/YYYY-MM.jsonl` and leaves
+        // the live list, taking its binding with it — so a run stopped being
+        // ours the moment it was filed. That is invisible on Claude, whose
+        // transcript names its own folder, and fatal on Antigravity, whose step
+        // log records what happened and never where: with no binding there is no
+        // folder, with no folder there is no agent, and the scope filter then
+        // drops the run from the Sessions page altogether. The archive is read
+        // through `archivedTasks`, which is cached by mtime+size.
+        const live = new Set(taskManager.tasks.map(t => t.id));
+        const pool = [...taskManager.tasks,
+        ...taskManager.archivedTasks().filter(t => !live.has(t.id))];
+        for (const t of pool) {
             // Interactive runs open a terminal the user is sitting at; they are
             // not the automation this repairs and they have no headless
             // transcript of their own to claim.
@@ -2063,9 +2075,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // unrelated rows with no schedule name on any of them. The origin is
             // walked, with a hop limit, because a store edited by hand must not
             // be able to make this loop.
+            // …walked over the SAME pool, so a retry chain whose origin has
+            // already been filed still leads back to the schedule that owns it.
             let origin = t;
             for (let hop = 0; hop < 20 && origin.retryOf; hop++) {
-                const up = taskManager.tasks.find(x => x.id === origin.retryOf);
+                const up = pool.find(x => x.id === origin.retryOf);
                 if (!up || up.id === origin.id) { break; }
                 origin = up;
             }

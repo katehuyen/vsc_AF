@@ -383,6 +383,24 @@
         scrollToTurn(target);
     }
 
+    /**
+     * ‼️ TWO KINDS OF NOTHING, AND SAYING WHICH (S-37).
+     *
+     * "No messages match." is the FILTER's answer, and it was printed over a
+     * conversation that had no messages AT ALL — so a session that genuinely
+     * never said anything read exactly like one whose content the page had
+     * lost, which is the difference between "fine" and "broken". Nothing else
+     * on the page distinguished them either.
+     */
+    function emptyStateHtml() {
+        if (DATA.messageCount) { return '<p class="muted">No messages match.</p>'; }
+        var why = DATA.scanLimit
+            ? 'its transcript is past the scan’s read ceiling, so it was never read'
+            : 'its transcript holds no conversation — no prompt, no answer, no tool call';
+        return '<p class="muted">Nothing to show: ' + C.esc(why)
+            + '. The file is still there — <b>Open raw JSONL</b> shows exactly what it contains.</p>';
+    }
+
     function listHtml(msgs) {
         return msgs.map((m, i) => turnHdrHtml(m) + messageHtml(m, i)).join('');
     }
@@ -1229,7 +1247,7 @@
             ${DATA.truncatedCount ? `<p class="muted small">Showing last ${DATA.messages.length} of ${DATA.messageCount} messages (${DATA.truncatedCount} older hidden — raise <code>agentFarm.maxTranscriptMessages</code> to see more).</p>` : ''}
             <div id="msgs">${replay.active
                 ? listHtml(replay.msgs.slice(0, replay.pos + 1))
-                : (listHtml(visible) || '<p class="muted">No messages match.</p>')}</div>
+                : (listHtml(visible) || emptyStateHtml())}</div>
         `;
         if (prevScroll) { window.scrollTo(prevScroll.x, prevScroll.y); }
 
@@ -1452,7 +1470,7 @@
                 filter = input.value;
                 clear.style.display = filter ? '' : 'none';
                 const msgs = document.getElementById('msgs');
-                msgs.innerHTML = listHtml(visibleMsgs()) || '<p class="muted">No messages match.</p>';
+                msgs.innerHTML = listHtml(visibleMsgs()) || emptyStateHtml();
             };
             input.addEventListener('input', applyFilter);
             clear.addEventListener('click', () => { input.value = ''; applyFilter(); input.focus(); });

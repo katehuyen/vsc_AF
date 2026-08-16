@@ -830,14 +830,114 @@ export function farmConsoleSessionsSource(
 // Antigravity — ~/.gemini/antigravity-cli/brain/<id>/…/transcript.jsonl
 // ---------------------------------------------------------------------------
 
+/** One call the model made, as the step log records it. */
+export interface AgyToolCall {
+    name?: string;
+    args?: Record<string, unknown>;
+}
+
 /** One line of an Antigravity step log. */
-interface AgyStep {
+export interface AgyStep {
     step_index?: number;
     source?: string;
     type?: string;
     status?: string;
     created_at?: string;
     content?: string;
+    exit_code?: number;
+    /** the call itself — the log folds the call and its result into one line */
+    tool_calls?: AgyToolCall[];
+    /** the CLI's own admission that it cut a field short, by name */
+    truncated_fields?: string[];
+}
+
+/**
+ * ‼️ EVERY ARG VALUE IN THIS LOG IS A JSON STRING INSIDE A JSON STRING.
+ * Measured: `"CommandLine": "\"git status --short\""` and
+ * `"Cwd": "\"D:\\\\zone\\\\agent\""`. Printing the raw value puts quotes and
+ * doubled backslashes on screen and makes a path unusable to anything that
+ * tries to match it, so it is unwrapped once — and only when it really is one.
+ */
+export function agyArg(args: Record<string, unknown> | undefined, key: string): string {
+    const raw = args?.[key];
+    if (raw === undefined || raw === null) { return ''; }
+    let s = String(raw);
+    if (!s.startsWith('"')) { return s; }
+    // ‼️ AND IT IS NOT ALWAYS *VALID* JSON, NOR EVEN CLOSED. Measured on a real
+    // multi-line `python -c` command: 2070 characters that open with a quote,
+    // escape their inner quoting — and then end `…<truncated 195 bytes>` with no
+    // closing quote at all, because the CLI cut its own field short. So
+    // `JSON.parse` throws and a matched-pair test fails, and a reader that
+    // insists on either hands the page a command line still wearing its quotes
+    // and its doubled backslashes. Each end is judged on its own and the
+    // unescape is done by hand; the CLI's `<truncated …>` marker is left
+    // exactly where it is, because it is the engine admitting what it did.
+    s = s.slice(1);
+    if (s.endsWith('"')) { s = s.slice(0, -1); }
+    return s.replace(/\\(["\\/bfnrt])/g, (_m, c: string) => (
+        c === 'n' ? '\n' : c === 'r' ? '\r' : c === 't' ? '\t'
+            : c === 'b' ? '\b' : c === 'f' ? '\f' : c
+    ));
+}
+
+/**
+ * What one step DID, in one line — the engine's own tool name plus the argument
+ * that identifies the call. `toolAction` is the CLI's own human sentence about
+ * the call ("Checking git status") and is the honest fallback when a tool takes
+ * arguments this does not name.
+ */
+export function agyToolDetail(call: AgyToolCall | undefined): string {
+    const a = call?.args;
+    if (!a) { return ''; }
+    for (const key of ['CommandLine', 'AbsolutePath', 'TargetFile', 'DirectoryPath',
+        'Query', 'query', 'SearchPath', 'ToolName', 'Prompt', 'Instruction', 'Action']) {
+        const v = agyArg(a, key).trim();
+        if (v) { return v; }
+    }
+    return agyArg(a, 'toolAction').trim() || agyArg(a, 'toolSummary').trim();
+}
+
+/**
+ * ‼️ THE CALL AND ITS RESULT ARE TWO SEPARATE STEPS, AND NOT THE ONES YOU WOULD
+ * GUESS. Measured on a real run:
+ *
+ * ```
+ *   2 MODEL PLANNER_RESPONSE  tool_calls=[run_command]  content=-        ← the CALL
+ *   3 MODEL RUN_COMMAND       tool_calls=-  exit_code=0  content="…"     ← the RESULT
+ * ```
+ *
+ * The announcement carries the name, the command line and the `Cwd`; the step
+ * NAMED after the tool carries only the output. Reading the arguments off the
+ * result step — which is the obvious thing to do — finds nothing, so the page
+ * draws a column of outputs with no commands above them and the row learns no
+ * working directory. The call is therefore carried forward to the step that
+ * answers it.
+ */
+export function agyToolName(step: AgyStep, pending?: AgyToolCall): string {
+    const named = String(step.tool_calls?.[0]?.name ?? pending?.name ?? '').trim();
+    if (named) { return named; }
+    return String(step.type ?? 'tool').toLowerCase();
+}
+
+/** The call a step ANNOUNCES (rather than answers), if it announces one. */
+export function agyAnnouncedCall(s: AgyStep): AgyToolCall | undefined {
+    return s.tool_calls?.length ? s.tool_calls[0] : undefined;
+}
+
+/** Step types that ARE a tool call, whether or not the line carried `tool_calls`. */
+const AGY_TOOL_STEPS = new Set([
+    'RUN_COMMAND', 'CODE_ACTION', 'VIEW_FILE', 'LIST_DIRECTORY',
+    'SEARCH_WEB', 'GREP_SEARCH', 'MCP_TOOL', 'GENERIC'
+]);
+
+/** Did this step fail? The log says so two ways and both have to be read. */
+export function agyStepFailed(s: AgyStep): boolean {
+    return s.status === 'ERROR' || s.type === 'ERROR_MESSAGE'
+        || (typeof s.exit_code === 'number' && s.exit_code !== 0);
+}
+
+export function agyIsToolStep(s: AgyStep): boolean {
+    return AGY_TOOL_STEPS.has(String(s.type ?? '')) || !!s.tool_calls?.length;
 }
 
 /** The workspace a conversation ran in, from whichever cache still says so. */
@@ -927,38 +1027,56 @@ function parseAgyTranscript(
     info.lastTs = lastTs;
 
     let firstPrompt = '';
+    let pending: AgyToolCall | undefined;
     for (const s of steps) {
-        switch (s.type) {
-            case 'USER_INPUT': {
-                const text = agyPromptText(String(s.content ?? ''));
-                if (!text) { break; }
-                info.userTurns++;
-                if (!firstPrompt) { firstPrompt = text; }
-                break;
-            }
-            case 'PLANNER_RESPONSE':
-                info.assistantMsgs++;
-                break;
-            // The two things this engine actually DOES, named the way every
-            // other source names its tools so the Tools hover reads the same.
-            case 'RUN_COMMAND':
-            case 'CODE_ACTION': {
-                info.toolCalls++;
-                const name = s.type === 'RUN_COMMAND' ? 'Command' : 'Edit';
-                info.tools[name] = (info.tools[name] ?? 0) + 1;
-                break;
-            }
-            case 'ERROR_MESSAGE':
-                info.errors++;
-                break;
-            default:
-                break;
+        if (agyStepFailed(s)) { info.errors++; }
+        if (s.type === 'USER_INPUT') {
+            const text = agyPromptText(String(s.content ?? ''));
+            if (!text) { continue; }
+            info.userTurns++;
+            if (!firstPrompt) { firstPrompt = text; }
+            continue;
         }
-        if (s.status === 'ERROR') { info.errors++; }
+        const announced = agyAnnouncedCall(s);
+        if (announced) {
+            pending = announced;
+            // What it wrote, on the same axis every other engine reports it —
+            // read from the ANNOUNCEMENT, which is the only step that has it.
+            if (/^(write_to_file|replace_file_content)$/.test(String(announced.name ?? ''))) {
+                const f = agyArg(announced.args, 'TargetFile').trim();
+                if (f) { info.filesEdited[f] = (info.filesEdited[f] ?? 0) + 1; }
+            }
+        }
+        if (s.type === 'PLANNER_RESPONSE') {
+            // An announcement carries no prose; only a step that actually SAID
+            // something is a message the model addressed to the reader.
+            if (String(s.content ?? '').trim()) { info.assistantMsgs++; }
+            continue;
+        }
+        if (agyIsToolStep(s)) {
+            info.toolCalls++;
+            const name = agyToolName(s, pending);
+            info.tools[name] = (info.tools[name] ?? 0) + 1;
+            pending = undefined;
+        }
     }
 
     const hint = hints.byId.get(id);
-    const cwd = hint?.cwd ?? hints.lastCwd.get(id);
+    /**
+     * ‼️ `Cwd` ON A CALL IS NOT THE SESSION'S FOLDER, AND USING IT WOULD FILE
+     * THE RUN UNDER THE WRONG AGENT. It is where THAT COMMAND ran. Measured on
+     * the real store: the daily-backup run lives in `ajanlar\basit` and every
+     * one of its `run_command` steps says `D:\zone\agent`, because that is the
+     * git root it was told to work in; across the whole store the commonest
+     * `Cwd` is `D:\zone\dev\git\miropharm\vsc_AgentFarm` (123 calls), a repo no
+     * agent owns. It looks like the answer and it is a different question, so
+     * it is deliberately NOT read here.
+     *
+     * What is left is the CLI's own caches — and, for the runs Agent Farm
+     * started itself, the launch binding, which states the folder it spawned in
+     * as a RECORD rather than an inference (core/launchBinding.ts).
+     */
+    const cwd = hint?.cwd || hints.lastCwd.get(id);
     if (cwd) {
         info.cwd = cwd;
         const who = resolveAgent(cwd);

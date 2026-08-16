@@ -58,15 +58,26 @@ const iso = ts => new Date(ts).toISOString().replace(/\.\d+Z$/, 'Z');
     // whole seconds: the CLI writes `created_at` to the second, so a base with
     // milliseconds would compare a timestamp against its own rounding
     const t0 = Math.floor((Date.now() - 3600_000) / 1000) * 1000;
-    // a headless task run: exactly the shape the schedule writes
+    // A headless task run, in the shape the CLI really writes it — measured:
+    // the CALL is announced on a `PLANNER_RESPONSE` carrying `tool_calls` and no
+    // prose, and the step NAMED after the tool carries only the output. Every
+    // arg value is a JSON string inside a JSON string.
     write('conv-headless', [
         { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', created_at: iso(t0), content: '<USER_REQUEST>\nRun the daily backup commit.\n</USER_REQUEST>' },
         { step_index: 1, source: 'SYSTEM', type: 'CONVERSATION_HISTORY', status: 'DONE', created_at: iso(t0 + 1000) },
         { step_index: 2, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 2000), content: 'Looking.' },
-        { step_index: 3, source: 'MODEL', type: 'RUN_COMMAND', status: 'DONE', created_at: iso(t0 + 3000), content: 'git status' },
-        { step_index: 4, source: 'MODEL', type: 'CODE_ACTION', status: 'DONE', created_at: iso(t0 + 4000), content: 'edit' },
-        { step_index: 5, source: 'SYSTEM', type: 'ERROR_MESSAGE', status: 'DONE', created_at: iso(t0 + 5000), content: 'nope' },
-        { step_index: 6, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 6000), content: 'Done.' }
+        {
+            step_index: 3, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 2500),
+            tool_calls: [{ name: 'run_command', args: { CommandLine: '"git status --short"', Cwd: '"D:\\\\work\\\\basit"', toolAction: '"Checking git status"' } }]
+        },
+        { step_index: 4, source: 'MODEL', type: 'RUN_COMMAND', status: 'DONE', exit_code: 0, created_at: iso(t0 + 3000), content: 'M one.txt' },
+        {
+            step_index: 5, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 3500),
+            tool_calls: [{ name: 'write_to_file', args: { TargetFile: '"D:\\\\work\\\\basit\\\\note.md"', CodeContent: '"hello"' } }]
+        },
+        { step_index: 6, source: 'MODEL', type: 'CODE_ACTION', status: 'DONE', created_at: iso(t0 + 4000), content: 'written' },
+        { step_index: 7, source: 'SYSTEM', type: 'ERROR_MESSAGE', status: 'DONE', created_at: iso(t0 + 5000), content: 'nope' },
+        { step_index: 8, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 6000), content: 'Done.' }
     ]);
     // a conversation the Console hosted — Agent Farm keeps the fuller record
     write('conv-mirrored', [
@@ -88,11 +99,17 @@ const iso = ts => new Date(ts).toISOString().replace(/\.\d+Z$/, 'Z');
         [run.userTurns, run.assistantMsgs, run.toolCalls, run.errors], [1, 2, 2, 1]);
     eq('…named by what it was actually asked to do, without the CLI\'s wrapper',
         run.title, 'Run the daily backup commit.');
-    eq('…with the tools it used, in the vocabulary the hover already speaks',
-        run.tools, { Command: 1, Edit: 1 });
+    // ‼️ The ENGINE's own names, read off the announcement — eleven tools exist
+    // and inventing two of our own for them made the hover a fiction.
+    eq('…with the tools it used, named the way the engine names them',
+        run.tools, { run_command: 1, write_to_file: 1 });
+    eq('…and what it wrote, unwrapped from the double-encoded arg',
+        run.filesEdited, { 'D:\\work\\basit\\note.md': 1 });
     eq('…and the real span, first step to last', [run.firstTs, run.lastTs], [t0, t0 + 6000]);
-    eq('…attributed through the CLI\'s workspace cache', [run.cwd, run.agentId],
-        ['D:\\work\\basit', 'basit']);
+    // ‼️ NOT from the call's `Cwd`: that is where the COMMAND ran, not where the
+    // session lives, and reading it files the run under the wrong agent.
+    eq('…attributed through the CLI\'s workspace cache, never through a call\'s Cwd',
+        [run.cwd, run.agentId], ['D:\\work\\basit', 'basit']);
     eq('the engine is named on the row', run.source, 'agy');
     eq('tokens and cost stay an honest zero — the db that holds them is protobuf',
         [run.wTokens, run.cost, run.usage.input], [0, 0, 0]);

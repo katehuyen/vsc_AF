@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.147.0 — A row that opens a page that shows nothing, and the sweep that proves there are no more (2026-08-16)
+
+3.146.0 gave every Antigravity row a FILE for the first time — and a row with a file is a row you can click. Nothing here could read that format, so every automated `agy` run opened blank, with the filter's "No messages match." as the only explanation. That is the defect this release is about, and it is a defect no string test can see: the row is perfectly correct and the page is empty.
+
+**The Antigravity step log is now read by the page as well as by the row.** One JSON object per line, and the shape is not the one you would guess:
+
+```
+  2 MODEL PLANNER_RESPONSE  tool_calls=[run_command]  content=-       ← the CALL
+  3 MODEL RUN_COMMAND       tool_calls=-  exit_code=0  content="…"    ← the RESULT
+```
+
+- **The command is on the step BEFORE the one named after the tool.** Reading the arguments off the result step — the obvious thing to do — finds nothing, so the page drew a column of outputs with no commands above them. The call is carried forward to the step that answers it.
+- **Eleven tool names exist, not two.** Measured across the whole store: `run_command`, `view_file`, `write_to_file`, `grep_search`, `list_dir`, `call_mcp_tool`, `manage_task`… against fifteen step types. The engine's own names are used; inventing our own made the Tools hover a fiction.
+- **Every argument is a JSON string inside a JSON string, and not always valid.** Measured on a real multi-line `python -c`: 2070 characters that open with a quote and end `…<truncated 195 bytes>` with no closing quote, because the CLI cut its own field short. `JSON.parse` throws on it. Each end is judged on its own and the unescape is done by hand; the CLI's truncation marker is left exactly where it is.
+- A `CHECKPOINT` is **drawn**, not hidden — it is where the CLI cut its own history, and a reader who cannot see that cannot tell a short conversation from a summarised one. A call whose announcement the log no longer holds says so instead of showing an empty box.
+
+**‼️ `Cwd` on a call is NOT the session's folder, and the first version of this read it.** It is where THAT COMMAND ran. Measured: the daily-backup run lives in `ajanlar\basit` and every one of its commands says `D:\zone\agent`; across the store the commonest `Cwd` is a repo no agent owns (123 calls). It looks like the answer and it is a different question, so it is deliberately not read. What supplies the folder instead is the launch binding — a record, not an inference.
+
+**A finished task took its binding with it, so a run stopped being ours the moment it was filed.** `publishLaunchBindings` read only the live task list, and a finished task moves to `task-history/YYYY-MM.jsonl`. Invisible on Claude, whose transcript names its own folder; fatal on Antigravity, which records what happened and never where. **Measured after: five automated `agy` runs attributed to `basit` with their schedule named, where before there were none at all.**
+
+**A slash command's own answer is part of the conversation.** Every `system` line was read for its metadata and then dropped, so "`/login` isn't available in this environment", the output of `/clear`, a hook's refusal appeared nowhere. Measured: session `9490331f-…` is five lines long and ALL of its content is of that kind — the page opened blank over a file that was not empty.
+
+**And the empty state says which kind of nothing it is.** "No messages match." is the FILTER's answer. Printed over a conversation that has no messages at all, it makes a session that genuinely never said anything read exactly like one whose content the page lost.
+
+**The sweep.** `tools/probe_session_audit.js` builds the real index over the real stores and holds every surface against every other one for every session — row against page for engine, origin, headless, times and identity; reachable by `byId` and by `byFile`; filed to an agent or honestly to "Other projects"; no duplicate ids; no placeholder title over a real prompt; no negative figure; no cost without tokens. **527 sessions · 527 pages opened · 0 disagreements.** The only two pages that draw nothing are two OpenCode sessions whose export really is `"messages": []`, and they now say so.
+
 ## 3.146.0 — The note that said "you held this conversation" was being erased by another window (2026-08-16)
 
 **S-37, reopened, and the last release fixed the wrong half.** 3.145.0 made the session page ASK the index instead of guessing, which was right — but it left the index answering with a record that had a whole day missing from it, so the same wrong 🤖 now appeared on both surfaces at once. This release is about the record.

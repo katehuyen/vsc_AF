@@ -445,6 +445,26 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             if (parsed) { parsed.ts = ts || parsed.ts; contextReport = parsed; }
             continue;
         }
+        /**
+         * ‼️ S-37 — WHAT THE CLI SAID BACK IS PART OF THE CONVERSATION.
+         *
+         * Every other `system` line was read for its metadata and then dropped,
+         * so a slash command's own answer — "`/login` isn't available in this
+         * environment", the output of `/clear`, a hook's refusal — appeared
+         * nowhere. Measured: session `9490331f-…` is five lines long and ALL of
+         * its content is of this kind, so the page opened blank over a file that
+         * was not empty, with the filter's "No messages match." as the only
+         * explanation on offer. The `Context Usage` report above is the one that
+         * keeps its own home; everything else is shown.
+         */
+        if (line.type === 'system' && typeof line.content === 'string' && line.content.trim()) {
+            messages.push({
+                role: 'system', ts,
+                text: line.content.replace(/<\/?local-command-stdout>/g, '').trim(),
+                sidechain: line.isSidechain
+            });
+            continue;
+        }
 
         if (line.type === 'user' && line.message) {
             const content = line.message.content;

@@ -3575,9 +3575,14 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // does not carry `fromSchedule`, so read on its own it looks like
         // something a person typed — and the six limit-retries of one scheduled
         // run each came out as an unrelated row with no schedule name on it.
+        // S-37: the walk is over the live list AND the archive (`pool`), because
+        // a chain whose origin has already been filed still leads to the
+        // schedule that owns it — the live list alone forgets it.
         ok('‼️ a retry inherits the launcher of the run it is a retry OF',
             /for \(let hop = 0; hop < 20 && origin\.retryOf; hop\+\+\)/.test(src)
-            && /taskManager\.tasks\.find\(x => x\.id === origin\.retryOf\)/.test(src));
+            && /pool\.find\(x => x\.id === origin\.retryOf\)/.test(src));
+        ok('…and the pool a binding is built from includes the archive, not just the live list',
+            /taskManager\.archivedTasks\(\)\.filter\(t => !live\.has\(t\.id\)\)/.test(src));
         ok('…and the walk cannot loop on a hand-edited store',
             /if \(!up \|\| up\.id === origin\.id\) \{ break; \}/.test(src));
 

@@ -1,5 +1,9 @@
 import * as path from 'path';
-import { codexPromptTitle, codexUserText, readFarmConsoleTranscript } from './cliTranscripts';
+import {
+    agyAnnouncedCall, agyArg, agyIsToolStep, AgyStep, agyStepFailed, AgyToolCall,
+    agyToolDetail, agyToolName,
+    codexPromptTitle, codexUserText, readFarmConsoleTranscript
+} from './cliTranscripts';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
 import { conversationTitle } from './sessions';
@@ -641,11 +645,165 @@ function parseOpencode(raw: string): ParsedCliViewer | undefined {
 
 /** Parse a foreign CLI transcript into the Session Viewer vocabulary. Claude
  * files return undefined and continue through the existing, richer parser. */
+/**
+ * ‼️ S-37 — AN ANTIGRAVITY CONVERSATION, OUT OF THE STEP LOG THE CLI WRITES.
+ *
+ * The row and the page have to come from the same place or one of them lies.
+ * `agySessionsSource` was changed to read `brain/<id>/…/transcript.jsonl`
+ * because the CLI's own index had gone stale — and that gave every `agy` row a
+ * FILE for the first time, which is what makes a row openable. Without a reader
+ * here the page fell through to the Claude parser, found nothing it recognised,
+ * and drew "no messages to show" over a conversation whose every step was on
+ * disk: the hover could state when the run started while the page it opened was
+ * blank.
+ *
+ * The format is one JSON object per line, `type` naming what the step was:
+ * `USER_INPUT` (wrapped in the CLI's own `<USER_REQUEST>` tags), `PLANNER_RESPONSE`
+ * for what the model said, `RUN_COMMAND` and `CODE_ACTION` for what it did,
+ * `ERROR_MESSAGE`, and `CHECKPOINT` — which is the CLI telling itself that it
+ * truncated the conversation, and is drawn rather than hidden because a reader
+ * who cannot see WHERE the history was cut cannot tell a short conversation
+ * from a summarised one.
+ *
+ * Figures stay zero for the same reason the row's do: the tokens live in
+ * `conversations/<id>.db` as protobuf with no schema on disk. The turn table is
+ * still built, because turn boundaries and durations ARE in the log.
+ */
+function parseAgyBrain(raw: string, file: string): ParsedCliViewer | undefined {
+    if (!/"step_index"/.test(raw)) { return undefined; }
+    const steps: AgyStep[] = [];
+    for (const line of raw.split('\n')) {
+        const t = line.trim();
+        if (!t.startsWith('{')) { continue; }
+        try {
+            const o = JSON.parse(t) as AgyStep;
+            if (typeof o.step_index === 'number' && typeof o.type === 'string') { steps.push(o); }
+        } catch { /* a torn last line */ }
+    }
+    if (!steps.length) { return undefined; }
+
+    const messages: CliViewMessage[] = [];
+    const turns: Record<number, TurnAcc> = {};
+    const prompts: Record<number, string> = {};
+    const started: Record<number, number> = {};
+    const models: Record<number, Set<string>> = {};
+    const attrs: Record<number, Record<string, string>> = {};
+    let turn = 0, firstTs = 0, lastTs = 0, errors = 0, toolCalls = 0, cwd = '';
+    // The call is announced one step before the step that answers it — see
+    // `agyToolName` in cliTranscripts.ts for the measurement.
+    let pending: AgyToolCall | undefined;
+
+    for (const s of steps) {
+        const ts = stamp(s.created_at);
+        if (ts) { firstTs = firstTs ? Math.min(firstTs, ts) : ts; lastTs = Math.max(lastTs, ts); }
+        let text = asText(s.content);
+        // The CLI names the field it cut, so the page says so instead of letting
+        // a clipped output read as the whole of it.
+        if (s.truncated_fields?.includes('content') && text) {
+            text += '\n… [the CLI truncated this itself — `truncated_fields: ["content"]`]';
+        }
+        const failed = agyStepFailed(s);
+
+        if (s.type === 'USER_INPUT') {
+            const m = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i.exec(text);
+            const ask = (m ? m[1] : text).trim();
+            if (!ask) { continue; }
+            turn++;
+            prompts[turn] = ask;
+            started[turn] = ts;
+            turns[turn] = blankTurn();
+            messages.push({ role: 'user', ts, text: ask, turn, turnStart: true });
+            continue;
+        }
+        const announced = agyAnnouncedCall(s);
+        if (announced) { pending = announced; }
+        if (s.type === 'PLANNER_RESPONSE') {
+            // ‼️ AN ANNOUNCEMENT IS NOT A MESSAGE. The step that carries
+            // `tool_calls` has no prose at all; drawing it as an empty assistant
+            // bubble would put a blank speech balloon above every single tool
+            // call in the conversation.
+            if (!text.trim()) { continue; }
+            messages.push({ role: 'assistant', ts, text, turn: turn || undefined });
+            if (turn) { turns[turn].steps++; turns[turn].apiCalls++; turns[turn].endTs = ts; }
+            continue;
+        }
+        if (agyIsToolStep(s)) {
+            toolCalls++;
+            const call = s.tool_calls?.[0] ?? pending;
+            const tool = agyToolName(s, pending);
+            pending = undefined;
+            // The call and its answer, drawn as the two things they are: the
+            // command (and what it was about to write) above, the output below.
+            const detail = agyToolDetail(call);
+            const written = agyArg(call?.args, 'CodeContent') || agyArg(call?.args, 'ReplacementContent');
+            // ‼️ AN EMPTY CALL BUBBLE IS A LIE OF OMISSION. Measured: two calls
+            // in this store answer an announcement the log no longer holds (the
+            // CLI truncates its own history at a CHECKPOINT), so there are no
+            // arguments to show. Saying so beats a blank box that reads as "this
+            // tool was called with nothing".
+            const shown = [detail, written].filter(Boolean).join('\n\n');
+            messages.push({
+                role: 'tool', ts, tool,
+                input: shown ? clipTool(shown)
+                    : '(the step log holds no arguments for this call — its announcement is not in the file)',
+                kind: stepKindForTool(tool), turn: turn || undefined
+            });
+            if (text.trim() || failed) {
+                if (failed) { errors++; }
+                const code = typeof s.exit_code === 'number' ? s.exit_code : undefined;
+                const head = code !== undefined && code !== 0 ? `exit ${code}\n` : '';
+                messages.push({
+                    role: 'toolResult', ts, tool, isError: failed,
+                    text: clipTool(head + (text.trim() || (failed ? 'failed' : ''))),
+                    turn: turn || undefined
+                });
+            }
+            if (turn) { turns[turn].steps++; turns[turn].endTs = ts; }
+            continue;
+        }
+        if (s.type === 'ERROR_MESSAGE') {
+            errors++;
+            messages.push({ role: 'system', ts, text: text || 'error', isError: true, turn: turn || undefined });
+            continue;
+        }
+        if (s.type === 'CONVERSATION_HISTORY') {
+            // A marker with no body — the CLI saying it loaded the thread.
+            continue;
+        }
+        // CHECKPOINT (the CLI truncating its own history), SYSTEM_MESSAGE,
+        // EPHEMERAL_MESSAGE and anything a later version adds. A checkpoint is
+        // DRAWN rather than hidden: a reader who cannot see where the history
+        // was cut cannot tell a short conversation from a summarised one.
+        if (text.trim()) {
+            messages.push({ role: 'system', ts, text, isError: failed, turn: turn || undefined });
+        }
+    }
+    if (!messages.length) { return undefined; }
+
+    const table = finishTurns(messages, turns, prompts, started, models, attrs);
+    const firstUser = messages.find(m => m.role === 'user' && m.text?.trim());
+    return {
+        engine: 'agy',
+        // The conversation IS its folder: `brain/<id>/.system_generated/logs/…`.
+        sessionId: file.replace(/\\/g, '/').split('/brain/')[1]?.split('/')[0]
+            ?? path.basename(path.dirname(path.dirname(path.dirname(file)))),
+        title: firstUser?.text ? conversationTitle(firstUser.text) : 'Antigravity session',
+        cwd, permissionMode: '', firstTs, lastTs,
+        models: [], usage: emptyUsage(),
+        // ‼️ Honest zeros, not measured ones — see the block above.
+        totalTokens: 0, totalWTokens: 0, cost: 0,
+        errors, toolCalls, context: { tokens: 0, ts: 0, model: '' },
+        turnCount: table.length, turnTotals: turns, turns: table, messages
+    };
+}
+
 export function parseCliViewer(raw: string, file: string, pricing: PricingEngine): ParsedCliViewer | undefined {
     // Order is by how positively each reader identifies its own document, not by
     // age: the Console snapshot and the OpenCode export both carry a marker
     // nothing else writes (`format` / a `ses_` id), so neither can steal a file
-    // from the two readers below them, which recognise their formats by shape.
-    return parseFarmConsole(raw) ?? parseOpencode(raw)
+    // from the readers below them, which recognise their formats by shape.
+    // `parseAgyBrain` is as positive as those two — nothing else writes
+    // `step_index` — so it sits with them rather than in the guessing half.
+    return parseFarmConsole(raw) ?? parseOpencode(raw) ?? parseAgyBrain(raw, file)
         ?? parseCodex(raw, file, pricing) ?? parseGemini(raw, file, pricing);
 }
