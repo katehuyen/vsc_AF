@@ -8,7 +8,7 @@ import {
 } from './externalImports';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
-import { conversationTitle, SessionInfo } from './sessions';
+import { conversationTitle, FIRST_PROMPT_MAX, SessionInfo } from './sessions';
 import { SessionSource } from './sessionSource';
 import { truncate } from './util';
 import { ConsoleMessage, ConsoleSessionState } from './consoleproto';
@@ -827,88 +827,247 @@ export function farmConsoleSessionsSource(
 }
 
 // ---------------------------------------------------------------------------
-// Antigravity — ~/.gemini/antigravity-cli/cache/conversation_metadata.json
+// Antigravity — ~/.gemini/antigravity-cli/brain/<id>/…/transcript.jsonl
 // ---------------------------------------------------------------------------
 
+/** One line of an Antigravity step log. */
+interface AgyStep {
+    step_index?: number;
+    source?: string;
+    type?: string;
+    status?: string;
+    created_at?: string;
+    content?: string;
+}
+
+/** The workspace a conversation ran in, from whichever cache still says so. */
+interface AgyHints {
+    /** conversation id → { cwd, title } from `cache/conversation_metadata.json` */
+    byId: Map<string, { cwd?: string; title?: string }>;
+    /** conversation id → cwd from `cache/last_conversations.json` (workspace → id) */
+    lastCwd: Map<string, string>;
+}
+
 /**
- * ‼️ THE ENGINE THAT WAS STRUCTURALLY INVISIBLE (U-26).
- *
- * An Engine column that can never print one of the four engines is not a
- * column, it is a claim. Antigravity was that engine: nothing in this file
- * read it, so no `agy` conversation had ever appeared in a sessions table.
- *
- * Its real transcript cannot be read here, and that is worth stating rather
- * than working around. Measured 2026-08-10: each conversation is a SQLite db
- * under `conversations/<id>.db`, and its `steps` table stores `step_payload`
- * as protobuf BLOBs with no schema on disk — decoding that is guesswork with
- * a version number attached to it.
- *
- * What IS readable is the CLI's own index of those conversations, which
- * carries exactly the columns a session row needs: the id, a Preview that
- * serves as the title, the step count, when it was last touched, and the
- * WORKSPACE — which is what attributes the conversation to an agent, the same
- * way every other source does it.
- *
- * `file` stays empty on purpose: the convention in this module is that an
- * empty `file` means "no transcript a viewer could open", and offering one
- * that leads to a protobuf blob would be worse than offering none. Tokens and
- * cost are honestly zero for the same reason the live-events source reports
- * zero — this index does not carry them, and inventing a number would put a
- * fabricated figure in a spend column.
+ * Where a step log lives, given the conversation's folder. The CLI writes the
+ * same content twice — `transcript.jsonl` and `transcript_full.jsonl`, plus a
+ * `chunks/` copy of each — and the short one is the conversation, so it is the
+ * one read.
  */
-export function agySessionsSource(
-    agyHome: () => string,
-    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
-    cacheMs = 60_000
-): SessionSource {
-    let cache: SessionInfo[] = [];
-    let cachedSig = '';
-    let lastScan = 0;
-    return {
-        id: 'agy',
-        scan(): SessionInfo[] {
-            const home = agyHome();
-            if (!home) { return cache = []; }
-            const file = path.join(home, 'cache', 'conversation_metadata.json');
-            const now = Date.now();
-            let st: fs.Stats;
-            try { st = fs.statSync(file); } catch { return cache = []; }
-            const sig = `${st.size}:${st.mtimeMs}`;
-            if (sig === cachedSig && now - lastScan < cacheMs) { return cache; }
-            cachedSig = sig;
-            lastScan = now;
+function agyTranscriptFile(brainDir: string, id: string): string {
+    return path.join(brainDir, id, '.system_generated', 'logs', 'transcript.jsonl');
+}
 
-            let root: Record<string, unknown>;
-            try { root = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>; }
-            catch { return cache = []; }
-            const convs = root.conversations;
-            if (!convs || typeof convs !== 'object') { return cache = []; }
-
-            const cutoff = now - SCAN_DAYS * 24 * 3600 * 1000;
-            const out: SessionInfo[] = [];
+/** The caches, read cheaply and tolerated missing — they are hints, not the source. */
+function readAgyHints(home: string): AgyHints {
+    const byId = new Map<string, { cwd?: string; title?: string }>();
+    const lastCwd = new Map<string, string>();
+    try {
+        const root = JSON.parse(fs.readFileSync(
+            path.join(home, 'cache', 'conversation_metadata.json'), 'utf8')) as Record<string, unknown>;
+        const convs = root.conversations;
+        if (convs && typeof convs === 'object') {
             for (const [key, raw] of Object.entries(convs as Record<string, unknown>)) {
                 if (!raw || typeof raw !== 'object') { continue; }
                 const row = raw as Record<string, unknown>;
-                // the CLI's own bookkeeping threads are not the user's sessions
                 if (row.is_internal === true) { continue; }
                 const sum = (row.summary && typeof row.summary === 'object'
                     ? row.summary : {}) as Record<string, unknown>;
                 const id = String(sum.ID ?? key).trim();
                 if (!id) { continue; }
-                const ts = stamp(row.last_modified_time) ?? stamp(sum.UpdatedAt);
-                if (!ts || ts < cutoff) { continue; }
-                const info = blankInfo('', id, 'agy', ts);
-                const title = String(sum.Title ?? '').trim() || String(sum.Preview ?? '').trim();
-                if (title) { info.title = truncate(title, 120); info.autoTitle = info.title; }
-                else { info.title = info.autoTitle = 'Antigravity session'; }
-                const cwd = firstWorkspace(sum.WorkspaceURIs);
-                if (cwd) {
-                    info.cwd = cwd;
-                    const who = resolveAgent(cwd);
-                    if (who.agentId) { info.agentId = who.agentId; }
-                    if (who.agentName) { info.agentName = who.agentName; }
+                byId.set(id, {
+                    cwd: firstWorkspace(sum.WorkspaceURIs),
+                    title: String(sum.Title ?? '').trim() || String(sum.Preview ?? '').trim() || undefined
+                });
+            }
+        }
+    } catch { /* the file is 2026-08-10 vintage on this machine — that is the point */ }
+    try {
+        const last = JSON.parse(fs.readFileSync(
+            path.join(home, 'cache', 'last_conversations.json'), 'utf8')) as Record<string, unknown>;
+        for (const [cwd, id] of Object.entries(last)) {
+            if (typeof id === 'string' && id.trim()) { lastCwd.set(id.trim(), cwd); }
+        }
+    } catch { /* no map, no cwd — the row still exists */ }
+    return { byId, lastCwd };
+}
+
+/**
+ * ‼️ THE `<USER_REQUEST>` WRAPPER IS THE CLI'S, NOT THE USER'S. Leaving it on
+ * puts a tag where the title should be on every single Antigravity row.
+ */
+function agyPromptText(content: string): string {
+    const m = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i.exec(content);
+    return (m ? m[1] : content).trim();
+}
+
+/** One conversation folder → one row, or nothing when the log is unreadable. */
+function parseAgyTranscript(
+    file: string, id: string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    hints: AgyHints
+): SessionInfo | undefined {
+    const read = readWhole(file);
+    if (!read) { return undefined; }
+    if (read.over) { return unreadInfo(file, id, 'agy', read); }
+    const lines = (read.text ?? '').split('\n');
+    const steps: AgyStep[] = [];
+    for (const line of lines) {
+        const t = line.trim();
+        if (!t) { continue; }
+        try { steps.push(JSON.parse(t) as AgyStep); } catch { /* a torn last line */ }
+    }
+    if (!steps.length) { return undefined; }
+
+    const times = steps.map(s => Date.parse(String(s.created_at ?? ''))).filter(n => n > 0);
+    if (!times.length) { return undefined; }
+    const firstTs = Math.min(...times), lastTs = Math.max(...times);
+    const info = blankInfo(file, id, 'agy', lastTs);
+    info.firstTs = firstTs;
+    info.lastTs = lastTs;
+
+    let firstPrompt = '';
+    for (const s of steps) {
+        switch (s.type) {
+            case 'USER_INPUT': {
+                const text = agyPromptText(String(s.content ?? ''));
+                if (!text) { break; }
+                info.userTurns++;
+                if (!firstPrompt) { firstPrompt = text; }
+                break;
+            }
+            case 'PLANNER_RESPONSE':
+                info.assistantMsgs++;
+                break;
+            // The two things this engine actually DOES, named the way every
+            // other source names its tools so the Tools hover reads the same.
+            case 'RUN_COMMAND':
+            case 'CODE_ACTION': {
+                info.toolCalls++;
+                const name = s.type === 'RUN_COMMAND' ? 'Command' : 'Edit';
+                info.tools[name] = (info.tools[name] ?? 0) + 1;
+                break;
+            }
+            case 'ERROR_MESSAGE':
+                info.errors++;
+                break;
+            default:
+                break;
+        }
+        if (s.status === 'ERROR') { info.errors++; }
+    }
+
+    const hint = hints.byId.get(id);
+    const cwd = hint?.cwd ?? hints.lastCwd.get(id);
+    if (cwd) {
+        info.cwd = cwd;
+        const who = resolveAgent(cwd);
+        if (who.agentId) { info.agentId = who.agentId; }
+        if (who.agentName) { info.agentName = who.agentName; }
+    }
+    // The conversation's OWN opening ask first: it is what the run was about,
+    // and it is present on every log. The stale index's Preview is the fallback
+    // for a conversation whose log the CLI has since pruned to nothing.
+    const title = firstPrompt ? conversationTitle(firstPrompt) : (hint?.title ?? '');
+    info.title = info.autoTitle = truncate(title || 'Antigravity session', 120);
+    if (firstPrompt) { info.firstPrompt = truncate(firstPrompt, FIRST_PROMPT_MAX); }
+    return info;
+}
+
+/**
+ * ‼️ THE ENGINE THAT WAS STRUCTURALLY INVISIBLE (U-26) — AND WENT INVISIBLE
+ * AGAIN THE MOMENT THE CLI STOPPED WRITING THE FILE THIS READ (S-37).
+ *
+ * The first version of this adaptor read the CLI's own index,
+ * `cache/conversation_metadata.json`. On 2026-08-16 that file's last write was
+ * 2026-08-10 14:17: Antigravity keeps updating it for some paths and not for
+ * the headless `--print` runs Agent Farm's tasks and schedules use, so every
+ * automated `agy` run since was missing from the Sessions page entirely — no
+ * row under any filter — and, because `matchTaskSession` looks a run up in the
+ * index, its task lost its transcript link and its launch binding with it.
+ *
+ * An index a program maintains for its own convenience is not a record; the
+ * conversation is. So this reads what the CLI actually writes per run:
+ * `brain/<id>/.system_generated/logs/transcript.jsonl`, one JSON step per line
+ * — measured on a real headless run, 50 steps carrying `type`, `status`,
+ * `created_at` and the text. That gives the id (the folder's own name), the
+ * real span, the opening ask as a title, and honest counts of turns, tool calls
+ * and errors, none of which the old index carried.
+ *
+ * Two things it still cannot give, and both are stated rather than invented.
+ * The WORKSPACE is not in the step log, so it comes from whichever cache still
+ * knows it (`conversation_metadata.json` for old conversations,
+ * `last_conversations.json` for the newest one per folder) and a conversation
+ * with neither is listed with no agent rather than guessed at. TOKENS and COST
+ * are honestly zero: `conversations/<id>.db` holds them as protobuf BLOBs with
+ * no schema on disk (measured 2026-08-10), and a fabricated figure in a spend
+ * column is worse than a zero that means "this engine does not say".
+ */
+export function agySessionsSource(
+    agyHome: () => string,
+    resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
+    /**
+     * ‼️ ONE CONVERSATION, ONE ROW. A conversation the Console hosted is
+     * written down TWICE — once by the CLI in `brain/`, and once by Agent Farm
+     * itself as `external-console-transcripts/<id>.json`, which is the fuller
+     * record (it carries the model, the tokens, the cost and a transcript the
+     * viewer can open) and the one `farmConsoleSessionsSource` already lists.
+     * Reading both would put the same conversation on the table twice, so this
+     * source stands aside wherever the mirror exists. Absent = no mirror to
+     * check, which is what every test that does not care passes.
+     */
+    mirrorDir?: () => string,
+    cacheMs = 15_000
+): SessionSource {
+    let cache: SessionInfo[] = [];
+    let lastScan = 0;
+    // per conversation: the parse, kept while the log has not changed
+    const parsed = new Map<string, { sig: string; info?: SessionInfo }>();
+    return {
+        id: 'agy',
+        scan(): SessionInfo[] {
+            const home = agyHome();
+            if (!home) { return cache = []; }
+            const now = Date.now();
+            if (now - lastScan < cacheMs && cache.length) { return cache; }
+            lastScan = now;
+            const brain = path.join(home, 'brain');
+            let ids: string[];
+            try {
+                ids = fs.readdirSync(brain, { withFileTypes: true })
+                    .filter(d => d.isDirectory()).map(d => d.name);
+            } catch { return cache = []; }
+
+            const cutoff = now - SCAN_DAYS * 24 * 3600 * 1000;
+            const hints = readAgyHints(home);
+            const mirrored = new Set<string>();
+            const mdir = mirrorDir?.();
+            if (mdir) {
+                try {
+                    for (const n of fs.readdirSync(mdir)) {
+                        if (n.endsWith('.json')) { mirrored.add(n.slice(0, -5)); }
+                    }
+                } catch { /* no mirrors yet */ }
+            }
+            const out: SessionInfo[] = [];
+            for (const id of ids) {
+                if (mirrored.has(id)) { continue; }
+                const file = agyTranscriptFile(brain, id);
+                let st: fs.Stats;
+                try { st = fs.statSync(file); } catch { continue; }
+                if (st.mtimeMs < cutoff) { continue; }
+                const sig = `${st.size}:${st.mtimeMs}`;
+                const hit = parsed.get(id);
+                if (hit && hit.sig === sig) {
+                    if (hit.info) { out.push(hit.info); }
+                    continue;
                 }
-                out.push(info);
+                const info = parseAgyTranscript(file, id, resolveAgent, hints);
+                parsed.set(id, { sig, info });
+                if (info) { out.push(info); }
+            }
+            for (const id of [...parsed.keys()]) {
+                if (!ids.includes(id)) { parsed.delete(id); }
             }
             return cache = out;
         }

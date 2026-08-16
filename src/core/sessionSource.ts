@@ -56,6 +56,24 @@ export function liveEventsSource(
     let cache: SessionInfo[] = [];
     let cachedSig = '';
     let lastParse = 0;
+    /**
+     * ‼️ S-37 — AN APPEND-ONLY LOG IS NOT RE-READ FROM THE TOP EVERY MINUTE.
+     *
+     * Measured on the user's store: `live-events.jsonl` had grown to 26.6 MB /
+     * 81,104 lines, and this scan read and parsed ALL of it once a minute —
+     * 325 ms on the extension host's own thread — to produce, on that machine,
+     * exactly ZERO rows, because every id in it belonged to Claude and this
+     * source only builds rows for the external CLIs' `<engine>:` ids. A cost
+     * that grows with a log that never shrinks, paid for nothing.
+     *
+     * The log only ever has lines APPENDED, so the parse carries on from where
+     * it stopped: what was read stays read, and only the new bytes are work. A
+     * file that got SHORTER was rotated or pruned, and that is the one case
+     * that starts again from the top.
+     */
+    let readBytes = 0;
+    let carry = '';
+    const bySession = new Map<string, SessionInfo>();
     return {
         id: 'live-events',
         scan(): SessionInfo[] {
@@ -69,10 +87,27 @@ export function liveEventsSource(
             cachedSig = sig;
             lastParse = now;
 
-            const bySession = new Map<string, SessionInfo>();
-            let raw = '';
-            try { raw = fs.readFileSync(file, 'utf8'); } catch { return cache = []; }
-            for (const line of raw.split('\n')) {
+            if (st.size < readBytes) {
+                // rotated/pruned — everything this source believed is now unproven
+                readBytes = 0; carry = ''; bySession.clear();
+            }
+            let chunk = '';
+            try {
+                const fd = fs.openSync(file, 'r');
+                try {
+                    const len = st.size - readBytes;
+                    if (len > 0) {
+                        const buf = Buffer.allocUnsafe(len);
+                        const n = fs.readSync(fd, buf, 0, len, readBytes);
+                        chunk = buf.subarray(0, n).toString('utf8');
+                        readBytes += n;
+                    }
+                } finally { fs.closeSync(fd); }
+            } catch { return cache = []; }
+            const parts = (carry + chunk).split('\n');
+            // the last piece may be half a line the writer has not finished
+            carry = parts.pop() ?? '';
+            for (const line of parts) {
                 if (!line.trim()) { continue; }
                 let e: LiveEvent;
                 try { e = JSON.parse(line) as LiveEvent; } catch { continue; }

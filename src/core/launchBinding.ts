@@ -146,7 +146,20 @@ export function bindSession(
         if (engineKey(b.engine) !== want) { return false; }
         // A binding that already owns a different transcript is spoken for.
         if (b.sessionId && b.sessionId !== id) { return false; }
-        if (!underCwd(session.cwd, b.cwd)) { return false; }
+        // ‼️ A SESSION THAT STATES NO FOLDER CANNOT CONTRADICT ONE (S-37).
+        //
+        // The folder test is here to stop a binding claiming a transcript from
+        // somewhere else — it is a REFUTATION, and an absent cwd refutes
+        // nothing. Antigravity is the engine that has none: its step log
+        // (`brain/<id>/…/transcript.jsonl`) records what happened and never
+        // where, and the CLI's workspace cache only remembers the newest
+        // conversation per folder. Requiring a cwd therefore left every
+        // scheduled `agy` run unbound, and unbound means unattributed, and
+        // unattributed means dropped by the scope filter — the run vanished
+        // from the Sessions page altogether, which is exactly the report.
+        // Ambiguity is still refused below, so this widens what CAN be decided
+        // without letting anything be decided on less than one clear candidate.
+        if (session.cwd && !underCwd(session.cwd, b.cwd)) { return false; }
         const ended = b.endedAt ?? now;
         return session.firstTs >= b.startedAt - tolMs
             && session.firstTs <= ended + 15_000
@@ -181,13 +194,19 @@ export function isBindingHit(r: BindingHit | BindingAmbiguity | undefined): r is
  * has.
  */
 export function applyBinding<T extends {
-    agentId?: string; agentName?: string; projectId?: string;
+    agentId?: string; agentName?: string; projectId?: string; cwd?: string;
     launchedBy?: { kind: string; label: string };
 }>(info: T, hit: BindingHit): T {
     if (!info.agentId) {
         info.agentId = hit.binding.agentId;
         info.agentName = hit.binding.agentName;
     }
+    // …and WHERE it ran, on the same terms: supplied where the transcript says
+    // nothing, never over the top of what it does say. The binding's cwd is the
+    // folder the process was spawned in, so for an engine that records no
+    // working directory at all (S-37, Antigravity) this is the only honest
+    // answer there is — and without it the row has no folder to show.
+    if (!info.cwd) { info.cwd = hit.binding.cwd; }
     if (!info.projectId && hit.binding.projectId) { info.projectId = hit.binding.projectId; }
     if (!info.launchedBy) {
         info.launchedBy = { kind: hit.binding.kind, label: hit.binding.label };

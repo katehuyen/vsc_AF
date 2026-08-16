@@ -118,6 +118,7 @@ import {
 } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
+import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import {
     provenanceFields, SessionIndex, SessionInfo, sessionOrigin, sessionHeadless
 } from './core/sessions';
@@ -1215,13 +1216,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => agents,
         () => pricing);
     // ‼️ THE FOURTH ENGINE, WHICH HAD NEVER APPEARED IN A SESSIONS TABLE AT ALL
-    // (U-26). Its own transcripts are protobuf inside per-conversation SQLite
-    // files; what is readable is the CLI's index of them, which carries the id,
-    // a title, the time and the workspace — see agySessionsSource.
+    // (U-26), AND THEN WENT MISSING AGAIN WHEN THE CLI STOPPED WRITING THE FILE
+    // IT WAS READ FROM (S-37). It now reads the CLI's own per-conversation step
+    // log — see agySessionsSource — and stands aside for the conversations the
+    // Console mirrored, which are the same conversations held twice.
     const agySource = agySessionsSource(
         () => expandEnvPath(cfg().get<string>('agyHome', '').trim())
             || path.join(os.homedir(), '.gemini', 'antigravity-cli'),
-        resolveAgentByCwd);
+        resolveAgentByCwd,
+        () => farmExternalTranscriptDir);
     /**
      * ‼️ S-33 — THE FIFTH ENGINE, WHOSE HISTORY IS NOT A FILE.
      *
@@ -12235,14 +12238,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * index, which re-files the sessions and tells every open page.
      */
     const consoleIdsFile = path.join(context.globalStorageUri.fsPath, 'console-sessions.json');
-    const readConsoleIds = (): string[] => {
-        try {
-            const j = JSON.parse(fs.readFileSync(consoleIdsFile, 'utf8')) as { ids?: unknown };
-            return Array.isArray(j.ids) ? j.ids.filter((x): x is string => typeof x === 'string') : [];
-        } catch { return []; }
-    };
-    let consoleIds = readConsoleIds();
+    let consoleIds = readConsoleIds(consoleIdsFile);
     index.setConsoleSessions(consoleIds);
+    /**
+     * ‼️ AND WHAT ANOTHER WINDOW WROTE WHILE THIS ONE WAS THINKING (S-37).
+     *
+     * The merge on write stops a window from ERASING an id; this stops it from
+     * being blind to one. Without it a second window keeps drawing 🤖 over a
+     * conversation the first window is hosting right now — the same wrong icon,
+     * one window along. `watchFile` polls a stat, which is the cheap way to
+     * watch a file outside the workspace on Windows.
+     */
+    fs.watchFile(consoleIdsFile, { interval: 5000 }, () => {
+        const disk = readConsoleIds(consoleIdsFile);
+        const merged = mergeConsoleIds(disk, consoleIds);
+        if (merged.length === consoleIds.length) { return; }
+        consoleIds = merged;
+        index.setConsoleSessions(consoleIds);
+    });
+    context.subscriptions.push({ dispose: () => fs.unwatchFile(consoleIdsFile) });
 
     /**
      * ‼️ WHICH OF OUR OWN MECHANISMS STARTED WHICH SESSION.
@@ -12259,7 +12273,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const publishLaunchers = (): void => {
         const map: Record<string, { kind: string; label: string }> = {};
-        for (const t of taskManager.tasks) {
+        // ‼️ AND THE ARCHIVE, BECAUSE THE LIVE LIST FORGETS (S-37). A finished
+        // task is moved to `task-history/YYYY-MM.jsonl` and leaves
+        // `taskManager.tasks`, so a run's launcher used to survive only as long
+        // as its row did — and once the origin rule started reading "no record
+        // of ours" as "a person's", a month-old scheduled run would have turned
+        // into 🧑 the day it was filed. The archive is the durable ledger; it is
+        // cached by mtime+size in taskstats, so this costs a stat per month.
+        // Archive first: a live row about the same id is the fresher statement.
+        for (const t of [...taskManager.archivedTasks(), ...taskManager.tasks]) {
             const f = t.costSessionFile;
             if (!f) { continue; }
             // ‼️ THE ID COMES FROM THE INDEX, NOT FROM THE FILENAME (X-35). Only
@@ -12367,17 +12389,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         writeLastWindow(merged.slice(0, 30));
     };
     const rememberConsoleSessions = (): void => {
-        const known = new Set(consoleIds);
-        let added = false;
-        for (const s of consoleHost.list()) {
-            if (s.sessionId && !known.has(s.sessionId)) { known.add(s.sessionId); added = true; }
-        }
-        if (!added) { return; }
-        consoleIds = [...known].slice(-2000);   // ids only; a session is ~40 bytes
-        try {
-            fs.writeFileSync(consoleIdsFile, JSON.stringify({ ids: consoleIds }, null, 1), 'utf8');
-        } catch { /* the index still has it for this window */ }
+        const live = consoleHost.list()
+            .map(s => s.sessionId).filter((x): x is string => !!x);
+        if (live.every(id => consoleIds.includes(id))) { return; }
+        // ‼️ THE FILE IS EVERY WINDOW'S, SO IT IS RE-READ AND UNIONED RATHER
+        // THAN OVERWRITTEN (S-37, core/consoleRegistry.ts). Writing this
+        // window's snapshot whole erased a whole day of the user's own Console
+        // conversations, and with the record gone they drew 🤖 automation
+        // everywhere — a transcript cannot tell a person typing from `-p`.
+        const w = recordConsoleIds(consoleIdsFile, consoleIds, live);
+        consoleIds = w.ids;
         index.setConsoleSessions(consoleIds);
+        if (w.error) {
+            // Not silent: losing this is what makes a dialog look like a robot.
+            console.warn('Agent Farm: console-sessions.json write failed', w.error);
+        }
     };
     /**
      * "Your turn" — told once, when the turn ends and you are NOT watching it.

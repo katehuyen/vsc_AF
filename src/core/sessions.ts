@@ -339,12 +339,28 @@ export function provenanceNote(s: SessionInfo): string | undefined {
  * that owns the transcript) is automation whatever happened to it afterwards,
  * so that is read FIRST. Measured on a real case: a scheduled headless run
  * appeared under 🧑 User while its own limit-retries appeared under 🤖 Auto.
+ *
+ * ‼️ …AND INSIDE THE FLEET, "sdk-cli" IS NO LONGER READ AS A CONFESSION (S-37).
+ *
+ * `sdk-cli` says a PROGRAM entered the CLI. It does not say WHICH program, and
+ * in an agent's own folder there are only two candidates: one of Agent Farm's
+ * own mechanisms — which always leaves a record, a live task, an archived one
+ * or a launch binding, and is therefore already caught by `launchedBy` above —
+ * or the Console, which is a person typing. Reading the entrypoint there was a
+ * GUESS dressed as evidence, and it fell the moment the Console's own note went
+ * missing: one window overwrote another's `console-sessions.json`, a whole day
+ * of the user's dialogs lost their mark, and every surface promptly drew them
+ * as 🤖 automation runs. The absence of our record is now read for what it is —
+ * this was not one of ours — and only OUTSIDE the fleet, where Agent Farm keeps
+ * no ledger and a stray `claude -p` genuinely could be anything, does the
+ * entrypoint still get to answer.
  */
 export function sessionOrigin(
-    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy'>
+    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy' | 'agentId'>
 ): SessionOrigin {
     if (s.launchedBy) { return 'auto'; }
     if (s.consoleHosted) { return 'user'; }
+    if (s.agentId) { return 'user'; }
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
 }
 
@@ -389,7 +405,7 @@ export function provenanceFields(s: SessionInfo): {
  * Absent entrypoint = the scan does not know → not claimed as headless.
  */
 export function sessionHeadless(
-    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy'>
+    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy' | 'agentId'>
 ): boolean {
     if (sessionOrigin(s) !== 'auto') { return false; }
     if (s.consoleHosted) { return false; }
@@ -430,7 +446,7 @@ const MAX_EVENTS_PER_FILE = 40;
  * A prompt longer than this is a pasted document, and the tail of a pasted
  * document is not what the hover is for — open the session.
  */
-const FIRST_PROMPT_MAX = 4000;
+export const FIRST_PROMPT_MAX = 4000;
 
 /** Tools that change a file on disk (codeedits.ts parses their inputs in full). */
 export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -1399,7 +1415,15 @@ export class SessionIndex implements vscode.Disposable {
             s.consoleHosted = target.consoleHosted;
             if (target.launchedBy) { s.launchedBy = target.launchedBy; }
             if (target.projectId) { s.projectId = target.projectId; }
-            if (target.agentId) { s.agentId = target.agentId; s.agentName = target.agentName; }
+            // ‼️ THE OWNER IS MIRRORED WHOLE, INCLUDING ITS ABSENCE (S-37). It
+            // used to be copied only when the run had one, which left the copy
+            // claiming an agent the run does not have — and now that "is this
+            // inside the fleet" is one of the inputs `sessionOrigin` reads, that
+            // half-copy made the alias and the run disagree about who started
+            // the same work. The alias is held out of every counted pool, so it
+            // owns no attribution of its own to protect.
+            s.agentId = target.agentId;
+            s.agentName = target.agentName;
             target.importAliases = [...new Set([...(target.importAliases ?? []), s.sessionId])];
             aliases.push(s);
         }

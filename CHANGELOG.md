@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.146.0 — The note that said "you held this conversation" was being erased by another window (2026-08-16)
+
+**S-37, reopened, and the last release fixed the wrong half.** 3.145.0 made the session page ASK the index instead of guessing, which was right — but it left the index answering with a record that had a whole day missing from it, so the same wrong 🤖 now appeared on both surfaces at once. This release is about the record.
+
+**The record was being erased, not never written.** `console-sessions.json` is the only thing that can tell a Console conversation from a headless `claude -p`: the CLI writes `entrypoint: "sdk-cli"` for both. It was read into memory once, at activation, and written back WHOLE on every change — so a window that had been open since the day before overwrote everything a second window had added. Measured on the store: every Console session up to **2026-08-14 19:51**, then nothing at all until **2026-08-16 12:18**, with exactly three exceptions — the three whose cards were still open in the panel and were therefore re-added by the window doing the overwriting. Eight of the user's own conversations lost their mark and drew 🤖 automation everywhere.
+
+- **The store now re-reads the file and unions before it writes** (`core/consoleRegistry.ts`). A list of ids has a merge that cannot be wrong, because nothing is ever removed from it; last-writer-wins was never the right shape for it. A failed write says so instead of vanishing into a swallowed `catch`.
+- **And a window now notices what another window wrote**, so the second window stops drawing 🤖 over a conversation the first one is hosting right now.
+
+**`sdk-cli` is no longer read as a confession inside the fleet.** It says a PROGRAM entered the CLI; it does not say WHICH. In an agent's own folder there are only two candidates — one of Agent Farm's own mechanisms, which always leaves a record, or the Console, which is a person typing. The absence of our record is now read for what it is. Outside the agent roots, where Agent Farm keeps no ledger, the entrypoint still answers.
+
+- **So the ledger had to become durable too.** `launchedBy` was published from the LIVE task list only, and a finished task is moved to `task-history/YYYY-MM.jsonl` — a month-old scheduled run would have turned into 🧑 the day it was filed. The archive is read with it.
+
+**Antigravity went invisible a second time, and this time only the automated runs.** The adaptor read the CLI's own index, `cache/conversation_metadata.json` — last written **2026-08-10 14:17**, because Antigravity stopped updating it for the headless `--print` runs tasks and schedules use. Every automated `agy` run since was missing from the Sessions page under every filter, and with no row there was no transcript link and no launch binding for its task either.
+
+- It now reads what the CLI actually writes per run: `brain/<id>/.system_generated/logs/transcript.jsonl`, one JSON step per line. Measured on the real store: **27 conversations where the stale index could see 7**, with the real span, the opening ask as the title, and honest counts of turns, tool calls and errors — none of which the old index carried. Tokens and cost stay zero, because the db that holds them is protobuf with no schema on disk.
+- A conversation the Console mirrored is left to the mirror, so one conversation is still one row.
+- **A session that states no folder can no longer be refused by the folder test.** Antigravity records what happened and never where, so requiring a `cwd` left every scheduled `agy` run unbound — and unbound means unattributed, which means dropped by the scope filter. Ambiguity is still refused; the binding now SUPPLIES the folder it spawned in.
+
+**The live-event log stopped being re-read from the top every minute.** Measured: 26.6 MB, 81,104 lines, **325 ms on the extension host's own thread**, producing zero rows on that machine — a cost that grows with a log that never shrinks, paid for nothing. It is append-only, so the parse carries on from where it stopped; a log that got shorter was pruned and is the one case that starts again.
+
 ## 3.145.0 — Three forms that could add and change but not REMOVE, and a Save that started an agent (2026-08-16)
 
 **One shape, found three times in one day.** A page renders a stored object, the user empties a box, presses Save — and the emptiness is thrown away somewhere between the form and the file. It is never reported, because from the save's point of view nothing happened. Everything below is that same sentence with a different object in it.
