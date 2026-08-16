@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.145.0 — Three forms that could add and change but not REMOVE, and a Save that started an agent (2026-08-16)
+
+**One shape, found three times in one day.** A page renders a stored object, the user empties a box, presses Save — and the emptiness is thrown away somewhere between the form and the file. It is never reported, because from the save's point of view nothing happened. Everything below is that same sentence with a different object in it.
+
+**P-15 — the project colour "would not save" and the start date deleted itself.** The cause was not in the store. `projectView` — the only shape the Projects page ever sees — dropped four of the fields the Settings form edits: `color`, `icon`, `startedAt`, `dueAt`. The form drew the missing values as empty and the next Save posted that emptiness over the stored ones.
+
+- The colour really was being saved; the picker snapped back to `#888888` on the repaint because the colour never came back down, and the following Save then wrote that grey. The record on disk proved it. The dates had no such luck: an empty `<input type="date">` reads as "clear it", and the store obeyed.
+- **The view reports every field the editor edits**, which also fixes the bridge: `projects.list` had never told an agent a project's colour or its due date.
+- **And the same mistake made again is now harmless.** `collect()` reads every field through one helper that posts NOTHING for an input that is not on the page — so adding a field to the model and forgetting it in the form no longer means deleting it.
+- A colour picker cannot say "no colour", so taking one off got the ✕ the folder field already had; and `projects.set` can now clear a date or a budget with `""`, which its own `describe` had been promising.
+
+**M-21 — the Tasks page: saving a schedule ran it, and reverting a change did nothing.** Two independent defects in one save.
+
+- **`lastRunKey` was cleared on EVERY save**, not only when the time changed. `scheduleDue` decides on nothing else, so both of its branches then said "due": past the time, today looks unhandled; before it, a catch-up policy looks at yesterday and finds nothing there either. A 05:00 daily backup, edited just before midnight to change only its engine, started there and then — and again on every subsequent save. The rule now is the one the report asked for: **an edit takes effect at the next occurrence and never at the moment of saving** (`settledKeyAfterEdit`, which reads `scheduleDue`'s own two branches in the same order so the two cannot drift).
+- **`Object.assign` cannot remove a field**, and the form omitted whatever the user had cleared — so putting the engine back to the default was accepted, announced as saved, and ignored. The row then showed the new MODEL beside the OLD engine (`agy` + `haiku`, a pair that cannot run), and reopening the editor offered the engine that was supposedly gone. Every dimension is now stated, `undefined` means gone, and the merge deletes it. **Triggers and templates were saved the same way and are fixed with it.**
+- **One door.** The page used to reach past `updateSchedule` and assign onto the object itself while the bridge came through it — two doors, two behaviours. Both now call it, and both rules live inside. Switching a schedule back **on** settles the past too: it was off, so it missed nothing. A quiet-hours deferral is dropped by the edit that replaced it. A `once` keeps its stamp unless its appointment moved.
+- **The row now says which engine**, not the model alone — without which the revert could not be seen at all. The column is `Launch`, defined on its own `<th>`, and a template finally shows what it will launch with. The confirmation names the next firing and states plainly that saving never runs it.
+
+**S-37 — a session's own page said 🤖🌙 "automation run" about a conversation you held yourself.** Measured first: the index had it right (`origin: user, headless: false`), and so did the Sessions table. Only the page was wrong, and only about the icons.
+
+- Both surfaces call the same two functions; they differed in the EVIDENCE. The table passes the indexed `SessionInfo`, which carries `consoleHosted`. The page passed an object built out of the transcript it had just parsed — and a transcript writes `entrypoint: "sdk-cli"` for a person typing in the Console and for a headless `claude -p` alike (all 375 lines of the reported session say `sdk-cli`). The page could only guess, and guessed automation every time.
+- So it **asks** now, through one dep that returns both halves together — two would be two chances to wire only one of them, and the next fact `sessionOrigin` learns to read would go missing here again. The page decides for itself only when nothing has ever indexed the file.
+- Second defect of the same family, closed with it: `setConsoleSessions` was the only mark-setter that did not re-mark the EXTERNAL list, so a Codex or Antigravity session the Console had just taken over stayed filed as automation until an unrelated rescan happened to fix it.
+
 ## 3.144.0 — A swim lane's four alert boxes stop belonging to the agent, and the sound stops failing in silence (2026-08-15)
 
 **U-66 — three rows, one setting.** The Live Timeline draws one lane per SESSION: three concurrent runs of `developer` are `developer #1/#2/#3`, three ids, three rows. The ♪ ◎ ▣ ▭ controls in each row's gutter sent `data-agent`, so all three rows showed the same selection and clicking any one of them changed all three. A per-session override existed — under the cards, where it was neither the visible control nor the one the row implied. Two layers telling the same story, and the visible one was the wrong one.
