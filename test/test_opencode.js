@@ -287,5 +287,62 @@ ok('there is no system-prompt channel', O.OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG ===
 ok('the no-transcript note names the CLI route rather than saying "yet"',
     /session list/.test(O.OPENCODE_NO_TRANSCRIPT_NOTE) && !/yet/.test(O.OPENCODE_NO_TRANSCRIPT_NOTE));
 
+// ---------------------------------------------------------------------------
+// M-14 — ONE BUILDER, AND THE GATE THAT KEEPS IT THAT WAY
+// ---------------------------------------------------------------------------
+//
+// The item's first line asks that every production surface run OpenCode through
+// "aynı opencode-specific builder/parser" — the same builder everywhere. Today
+// they do: `runArgs`/`tuiArgs` are the only doors, and the four call sites
+// outside the Console (tasks.ts twice, `scheduleExportFor`, launch.ts) all go
+// through them. Nothing stops the fifth from being typed inline, and an inline
+// `--auto` is exactly the kind of thing that works on the day it is written and
+// then never learns anything the real builder learns afterwards.
+//
+// So it is DERIVED rather than trusted: an OpenCode flag written as an argv
+// token anywhere but the module that owns them fails this test. Prose is not
+// caught and must not be — half this repo's comments quote `--auto` to explain
+// it — and the discriminator is the QUOTE: an argv element is written '--auto'
+// or "--auto", prose writes it in backticks. That distinction is the whole gate,
+// and it was found by writing the gate wrong first: with backticks in the class
+// it reported nine "strays", every one of them a comment explaining the flag.
+{
+    const fsx = require('fs');
+    const pathx = require('path');
+    const SRC = pathx.resolve(__dirname, '..', 'src');
+    // The two modules allowed to name this vocabulary: the launch lines, and the
+    // read-only harvest path (`session list --format json`).
+    const OWNERS = ['core/opencode.ts', 'core/opencodeharvest.ts'];
+    // Flags that mean OpenCode and nothing else. `-s` is deliberately NOT here:
+    // it is Codex's sandbox flag too, so it would report the wrong file.
+    const FLAGS = ['--auto', '--variant', '--agent'];
+
+    const walk = (dir) => fsx.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+        const p = pathx.join(dir, e.name);
+        return e.isDirectory() ? walk(p) : (p.endsWith('.ts') ? [p] : []);
+    });
+
+    const strays = [];
+    for (const file of walk(SRC)) {
+        const rel = pathx.relative(SRC, file).replace(/\\/g, '/');
+        if (OWNERS.includes(rel)) { continue; }
+        const text = fsx.readFileSync(file, 'utf8');
+        for (const f of FLAGS) {
+            // A whole quoted token — how an argv element is written, and how
+            // prose never is.
+            const re = new RegExp(`(['"])${f.replace(/-/g, '\\-')}\\1`);
+            if (re.test(text)) { strays.push(`${rel} names ${f} as an argument`); }
+        }
+    }
+    ok('‼️ no surface builds an OpenCode command line of its own', strays.length === 0,
+        strays.join(' · '));
+
+    // …and the owner really does hold them, so the gate cannot pass by the
+    // vocabulary having quietly moved somewhere it does not check.
+    const owner = fsx.readFileSync(pathx.join(SRC, 'core', 'opencode.ts'), 'utf8');
+    ok('…and the builder that owns them still does',
+        FLAGS.every(f => new RegExp(`(['"\`])${f.replace(/-/g, '\\-')}\\1`).test(owner)));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

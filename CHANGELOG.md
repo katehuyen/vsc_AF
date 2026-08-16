@@ -2,7 +2,7 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.152.0 — A mission delegate could not say what it was allowed to do — and the reason 3.150.0 gave was wrong (2026-08-16)
+## 3.153.0 — A mission delegate could not say what it was allowed to do — and the reason 3.150.0 gave was wrong (2026-08-16)
 
 A mission delegation is an ordinary headless task — `missionDelegateWave` calls `addTask(..., 'headless')` and everything after that is the launch path a task already has. It carried the member's **model** and the member's **engine**. It carried no permissions, because `MissionTeamMember` had no such field at all: task, schedule, template and workflow step all spend `permissionMode` up front on an unattended run, and the mission delegate was the one surface that did not.
 
@@ -20,6 +20,8 @@ A mission delegation is an ordinary headless task — `missionDelegateWave` call
 - **`-s <ses_…>` really resumes**: same id back, and the number given in the first turn came back in the second — the conversation carried, not just the handle.
 - **A free model's `cost: 0` is a real zero** with tokens beside it, so "free" and "we could not parse a price" stay distinguishable by whether steps were seen at all.
 - **`--file` really carries an attachment** into the turn (checked with a word the model cannot reach by guessing), and **cancel takes the whole tree**: `taskkill /pid <p> /T /F` — the exact line `TaskManager.killProcess` runs — turned `cmd.exe, conhost.exe, opencode.exe` into nothing. On a 615 MB-per-run engine, a cancel that leaves the tree up is not untidiness, it is the leak.
+
+**And the "same builder everywhere" line is now a gate rather than a habit.** M-14 asks that every production surface reach OpenCode through one builder, and today they do — `runArgs`/`tuiArgs` are the only doors and the four call sites outside the Console all use them. Nothing stopped the fifth from being typed inline, so an OpenCode-only flag written as an argv token anywhere but the module that owns it now fails the build. Prose is untouched: the discriminator is the quote, `'--auto'` being an argument and `` `--auto` `` being an explanation — which was found by writing the gate wrong first and having it report nine "strays", every one a comment about the flag.
 - **‼️ M-14's own text is wrong about `--auto`, and so were this probe's first two runs.** The item says `--auto` "passes ask decisions as once and does not overrule an explicit deny", which suggests testing a denied directory with and without the flag. The flag was not the variable: `write` returns `error` on a denied path in *every* run. What varies is whether the model then falls back to `bash` — and a `bash` that runs writes into the denied directory quite happily, observed **with** `--auto` (runs 1, 2) and **without** it (run 3). The first two runs alone supported a tidy and false conclusion ("`--auto` bypasses the deny by tool substitution"); the third killed it. The honest statement is about the config, not the flag: **`external_directory` fences the file tools and does not fence a shell.**
 
 ## 3.150.0 — Mission delegate permissions, first cut (2026-08-16)
