@@ -42,7 +42,7 @@ export interface ViewerDeps {
     /** Which of Agent Farm's own mechanisms started this run, when one did —
      *  see SessionInfo.launchedBy. Decides the origin and names the schedule
      *  in the subtitle instead of "automation run". */
-    launchedByFor?(sessionId: string): { kind: string; label: string } | undefined;
+    launchedByFor?(sessionId: string): { kind: string; label: string; mode?: string } | undefined;
     /**
      * ‼️ WHICH ENGINE RAN IT (U-26). Not derivable here: this page is built by
      * PARSING one transcript, and a transcript does not name the CLI that wrote

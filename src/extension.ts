@@ -2112,7 +2112,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 sessionId: t.resumeSessionId,
                 // …and once the cost matcher has named the transcript, that is a
                 // recorded fact too — it survives the restart in the same row.
-                transcriptFile: t.costSessionFile
+                transcriptFile: t.costSessionFile,
+                mode: t.mode
             });
         }
         index.setLaunchBindings(out);
@@ -12286,7 +12287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * schedule instead of saying "automation" and stopping.
      */
     const publishLaunchers = (): void => {
-        const map: Record<string, { kind: string; label: string }> = {};
+        const map: Record<string, { kind: string; label: string; mode?: string }> = {};
         // ‼️ AND THE ARCHIVE, BECAUSE THE LIVE LIST FORGETS (S-37). A finished
         // task is moved to `task-history/YYYY-MM.jsonl` and leaves
         // `taskManager.tasks`, so a run's launcher used to survive only as long
@@ -12317,13 +12318,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? taskManager.triggers.find(x => x.id === t.fromTrigger) : undefined;
             const flow = t.workflowId
                 ? taskManager.workflows.find(w => w.id === t.workflowId) : undefined;
-            map[id] = t.missionId ? { kind: 'mission', label: t.title }
-                : sched ? { kind: 'schedule', label: sched.title }
-                    : trig ? { kind: 'trigger', label: trig.title }
-                        : flow ? { kind: 'workflow', label: flow.title }
-                            : t.fromSchedule ? { kind: 'schedule', label: t.title }
-                                : t.fromTrigger ? { kind: 'trigger', label: t.title }
-                                    : { kind: 'task', label: t.title };
+            map[id] = t.missionId ? { kind: 'mission', label: t.title, mode: t.mode }
+                : sched ? { kind: 'schedule', label: sched.title, mode: t.mode }
+                    : trig ? { kind: 'trigger', label: trig.title, mode: t.mode }
+                        : flow ? { kind: 'workflow', label: flow.title, mode: t.mode }
+                            : t.fromSchedule ? { kind: 'schedule', label: t.title, mode: t.mode }
+                                : t.fromTrigger ? { kind: 'trigger', label: t.title, mode: t.mode }
+                                    : { kind: 'task', label: t.title, mode: t.mode };
         }
         index.setLaunchers(map);
     };

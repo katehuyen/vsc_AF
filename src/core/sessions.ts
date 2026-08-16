@@ -237,7 +237,7 @@ export interface SessionInfo {
      * `kind` is the mechanism ('task' · 'schedule' · 'trigger' · 'mission');
      * `label` is what a person calls it — the schedule's name, the task's title.
      */
-    launchedBy?: { kind: string; label: string };
+    launchedBy?: { kind: string; label: string; mode?: string };
     /**
      * ‼️ S-32 — THE SCAN COULD NOT READ THIS TRANSCRIPT IN FULL.
      *
@@ -392,23 +392,26 @@ export function provenanceFields(s: SessionInfo): {
  *
  * `sessionOrigin` answers "who started it"; this answers the second half of the
  * same question, which the 🤖 glyph on its own could not: an automation run is
- * either a `claude -p` with no terminal and no keyboard, or a task launched in
- * `interactive` mode that opened a real terminal a person can type into. Those
- * are different things to look at afterwards — one has an author present, the
- * other has only its transcript — and the tables filed both under one icon.
+ * either a headless run (`claude -p`, `agy`, `opencode run`, Codex headless...)
+ * with no terminal and no keyboard, or a task launched in `interactive` mode
+ * that opened a real terminal a person can type into.
  *
- * Only ever true for a run that is already 'auto', and read from the same two
- * recorded facts, in the same order: a Console-hosted id is a person at the
- * keyboard whatever its entrypoint says, and `sdk-*` is the CLI entered by a
- * program. An interactive task run (entrypoint 'cli' with a launcher) is
- * automation that is NOT headless, which is exactly the distinction wanted.
- * Absent entrypoint = the scan does not know → not claimed as headless.
+ * Only ever true for a run that is already 'auto'.
+ * If Agent Farm started the run itself (`launchedBy`), it is headless unless
+ * it explicitly opened an interactive terminal (`mode === 'interactive'` or
+ * entrypoint `'cli'`).
+ * Outside the fleet (or when no launcher is recorded), `entrypoint.startsWith('sdk')`
+ * remains the proxy for Claude runs.
  */
 export function sessionHeadless(
     s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy' | 'agentId'>
 ): boolean {
     if (sessionOrigin(s) !== 'auto') { return false; }
     if (s.consoleHosted) { return false; }
+    if (s.launchedBy) {
+        if (s.launchedBy.mode === 'interactive' || s.entrypoint === 'cli') { return false; }
+        return true;
+    }
     return String(s.entrypoint ?? '').startsWith('sdk');
 }
 
@@ -875,7 +878,7 @@ export class SessionIndex implements vscode.Disposable {
     /** Session ids the Console hosted — see setConsoleSessions. */
     private consoleIds = new Set<string>();
     /** Session id → the farm mechanism that started it — see setLaunchers. */
-    private launchers = new Map<string, { kind: string; label: string }>();
+    private launchers = new Map<string, { kind: string; label: string; mode?: string }>();
     /** ‼️ S-31 — the runs Agent Farm started, written at the spawn. */
     private bindings: LaunchBinding[] = [];
     /** Files the scope filter dropped, as little of them as a binding needs to
@@ -1196,12 +1199,12 @@ export class SessionIndex implements vscode.Disposable {
      * so `sessionOrigin` reads it before anything else, and the origin tooltip
      * can name the schedule instead of saying "automation" and stopping.
      */
-    setLaunchers(map: Record<string, { kind: string; label: string }>): void {
+    setLaunchers(map: Record<string, { kind: string; label: string; mode?: string }>): void {
         const next = new Map(Object.entries(map ?? {}).filter(([id, v]) => !!id && !!v));
         const same = next.size === this.launchers.size
             && [...next].every(([id, v]) => {
                 const had = this.launchers.get(id);
-                return had && had.kind === v.kind && had.label === v.label;
+                return had && had.kind === v.kind && had.label === v.label && had.mode === v.mode;
             });
         if (same) { return; }
         this.launchers = next;

@@ -65,6 +65,8 @@ export interface LaunchBinding {
     /** known without deduction — see BindingProof */
     sessionId?: string;
     transcriptFile?: string;
+    /** 'headless' | 'interactive' */
+    mode?: string;
 }
 
 /** The little a session has to be able to say to be tested against a binding. */
@@ -195,7 +197,7 @@ export function isBindingHit(r: BindingHit | BindingAmbiguity | undefined): r is
  */
 export function applyBinding<T extends {
     agentId?: string; agentName?: string; projectId?: string; cwd?: string;
-    launchedBy?: { kind: string; label: string };
+    launchedBy?: { kind: string; label: string; mode?: string };
 }>(info: T, hit: BindingHit): T {
     if (!info.agentId) {
         info.agentId = hit.binding.agentId;
@@ -209,7 +211,11 @@ export function applyBinding<T extends {
     if (!info.cwd) { info.cwd = hit.binding.cwd; }
     if (!info.projectId && hit.binding.projectId) { info.projectId = hit.binding.projectId; }
     if (!info.launchedBy) {
-        info.launchedBy = { kind: hit.binding.kind, label: hit.binding.label };
+        info.launchedBy = {
+            kind: hit.binding.kind,
+            label: hit.binding.label,
+            ...(hit.binding.mode ? { mode: hit.binding.mode } : {})
+        };
     }
     return info;
 }

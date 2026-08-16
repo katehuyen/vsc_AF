@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.149.0 — Foreign engine headless runs stopped losing their moon badge (2026-08-16)
+
+A headless task run on Antigravity (`agy`), OpenCode, Codex or Gemini showed `🤖` (Auto) on the Sessions table and **never showed `🌙` (Headless)**. The task settings had `mode: headless`, the launcher map named the schedule, the task ran without a screen in the background — and the row and page both said it was not headless.
+
+- **The root cause was a Claude Code CLI assumption in `sessionHeadless`.** Claude writes `"entrypoint": "sdk-cli"` into its transcript on a `-p` run; foreign CLI step logs (Antigravity `brain/<id>/.../transcript.jsonl`, OpenCode exports, Codex rollouts, Gemini chats) have no `entrypoint` field at all. `sessionHeadless` evaluated `String(entrypoint).startsWith('sdk')`, saw `undefined`, and answered `false` for every non-Claude automation run across the fleet.
+- **The fix.** `LaunchBinding` and `publishLaunchers` now pass the task's recorded `mode` ('headless' | 'interactive') through `launchedBy`. `sessionHeadless` checks `s.launchedBy`: any automation run started by Agent Farm that did not open an interactive terminal is headless by fact rather than proxy. Unbound external Claude runs keep the `sdk` entrypoint fallback.
+- **SOP updated.** `docs/YENI-MOTOR-EKLEME-SOP.tr.md` now explicitly documents the foreign engine entrypoint difference and adds the headless detection trap to the engine checklist.
+
 ## 3.148.0 — One OpenCode run is not one slot, and an effort the engine has no flag for stops being sent (2026-08-16)
 
 Two M-14 items, both of which were left open for the same stated reason: **they needed a measurement, and inventing the number was not allowed.**

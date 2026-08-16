@@ -43,7 +43,7 @@ Module._load = function (request) {
     if (request === 'vscode') { return fakeVscode; }
     return origLoad.apply(this, arguments);
 };
-const { SessionIndex } = require(path.resolve(__dirname, '../out/core/sessions.js'));
+const { SessionIndex, sessionHeadless } = require(path.resolve(__dirname, '../out/core/sessions.js'));
 const { PricingEngine } = require(path.resolve(__dirname, '../out/core/pricing.js'));
 
 let pass = 0, fail = 0;
@@ -116,6 +116,10 @@ index.setLaunchers({
         })());
     ok('…and the launcher, so an automated foreign run is not reported as 🧑 User',
         index.byId('019fe859-aaaa-bbbb-cccc-000000000001').launchedBy.kind === 'schedule');
+    ok('‼️ an automated foreign run with no entrypoint is correctly recognized as headless',
+        sessionHeadless(index.byId('019fe859-aaaa-bbbb-cccc-000000000001')) === true);
+    ok('…while an interactive automated run is NOT headless',
+        sessionHeadless({ ...index.byId('019fe859-aaaa-bbbb-cccc-000000000001'), launchedBy: { kind: 'task', label: 'manual', mode: 'interactive' } }) === false);
     ok('an unknown id is undefined, not a throw and not a wrong row',
         index.byId('nope') === undefined
         && index.byId('') === undefined && index.byId(undefined) === undefined);

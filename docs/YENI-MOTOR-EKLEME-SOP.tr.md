@@ -851,6 +851,13 @@ Tarama:
 - unmatched project filtresini bütün motorlara aynı uygular;
 - aynı hosted + dış transcript kaydını doğru kimlikle tekilleştirir.
 
+#### Headless ve Origin Kararları — `sessionHeadless` ve `sessionOrigin`
+
+Claude dışındaki motorların (Antigravity `agy`, OpenCode, Codex, Gemini) transcript dosyalarında Claude Code CLI'a özgü `entrypoint: "sdk-cli"` alanı bulunmaz (`entrypoint` alanı boştur).
+
+- `sessionOrigin(s)`: Oturumun Agent Farm tarafından başlatılmış bir görev, zamanlama, tetikleyici veya misyon olup olmadığını `launchedBy` üzerinden tespit eder (`auto`).
+- `sessionHeadless(s)`: Başsızlık (🌙) kararı yalnız Claude'un `entrypoint` yazısına bağlanamaz. Agent Farm'ın başlattığı görevler (`LaunchBinding` / `launchedBy`), `mode: 'headless' | 'interactive'` bilgisini taşır. Motor ne olursa olsun (`claude`, `agy`, `opencode`, `codex`, `gemini`), `launchedBy` kaydı taşıyan ve interaktif bir terminale bağlanmamış her otomasyon oturumu `headless: true` kabul edilmelidir. Dışarıdan açılan oturumlarda ise `entrypoint.startsWith('sdk')` Claude fallback'i olarak işler.
+
 ### Canlılık ve sahiplik — `src/core/live.ts`, `src/core/sessionSource.ts`, `src/core/consoleresume.ts`
 
 Yeni motor kendi hook’unu vermiyorsa şu yaşam döngüleri yine görünmelidir:
@@ -1371,6 +1378,14 @@ motorlarda Timeline çizgisine ve işaretlerine tıklamak sessizce hiçbir şey
 yapmaz (`data-file=""`). Çözüm: hook payload’unda dosya yolu yoksa
 `SessionIndex` (`allWithExternal()`) kaydındaki dosya yolu kulvara ve
 işaretlerine verilir; kayıt henüz taranmadıysa ölü link yerine link çizilmez.
+
+### “entrypoint: 'sdk-cli' var mı diye bakmak headless tespiti için yeterlidir (Claude varsayımı tuzağı)”
+
+Claude Code CLI, headless çalıştığında transcript dosyasına `entrypoint: "sdk-cli"` yazar; interactive çalıştığında `entrypoint: "cli"` yazar. Antigravity (`agy`), OpenCode, Codex ve Gemini gibi diğer motorların log/transcript formatlarında `entrypoint` alanı hiç yoktur.
+
+Headless tespitini (`sessionHeadless`) yalnızca `entrypoint.startsWith('sdk')` kontrolüne bağlamak, yabancı motorlarda çalışan bütün headless görevlerin (task/schedule/trigger/mission) oturumlar tablosunda `🤖` (Otomatik) görünürken `🌙` (Başsız) rozetini kaybetmesine neden olur.
+
+Sonuç: Agent Farm'ın başlattığı her görev `LaunchBinding` ve `launchedBy` üzerinde `mode: 'headless' | 'interactive'` kaydını taşır; `sessionHeadless` fonksiyonu launcher kaydını motor ayırt etmeksizin değerlendirir. Yalnızca kayıt bulunmayan dış oturumlarda `entrypoint` fallback'i çalışır.
 
 ### “Yeşil test paketi entegrasyonun kanıtıdır”
 
