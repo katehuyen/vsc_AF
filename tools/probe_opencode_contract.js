@@ -23,6 +23,11 @@
  *      the model can answer from the first turn).
  *   4. COST ON A FREE MODEL — whether `step_finish` states a real `0` or states
  *      nothing. "Free" and "we could not parse it" must not look alike.
+ *   5. ATTACHMENT — whether `--file` reaches the turn, checked with a word the
+ *      model cannot produce without having read the file.
+ *   6. CANCEL — `taskkill /pid <p> /T /F`, the line `TaskManager.killProcess`
+ *      runs, against the tree it actually spawned. This engine is the heavy one
+ *      (615 MB a run), so a cancel that leaves the tree up is the leak itself.
  *
  * Free models and a scratch cwd: it must cost nothing to repeat and must not be
  * able to touch the repo. Run it whenever the OpenCode CLI moves.
@@ -257,6 +262,84 @@ if (on(4)) {
         'the token ceiling is the only fence on a plan-billed engine (X-19)');
     say(`   →  a real 0 and an unparsed price are told apart by whether STEPS were seen:`
         + ` ${d.lines} step object(s) here.`);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Attachment — `--file`
+// ---------------------------------------------------------------------------
+if (on(5)) {
+    say('\n═══ 5. ATTACHMENT — does `--file` actually reach the turn?');
+    const att = path.join(DIR, 'attached.txt');
+    // A token the model cannot produce by guessing: it has to have read the file.
+    fs.writeFileSync(att, 'The secret word is ZARFIL. Nothing else in this file matters.\n', 'utf8');
+    const args = [...opencodeRunArgs({ cwd: DIR, model: MODEL || undefined }), '--file', JSON.stringify(att)];
+    const r = cp.spawnSync(OPENCODE_EXE, args, {
+        cwd: DIR, shell: true, windowsHide: true, timeout: TIMEOUT_MS,
+        input: 'What is the secret word in the attached file? Reply with that one word only.',
+        maxBuffer: 32 * 1024 * 1024, encoding: 'utf8'
+    });
+    const d = decode(r.stdout);
+    say(`   flags: ${args.join(' ')}`);
+    say(`   exit=${r.status} · text=${JSON.stringify(d.text.slice(0, 80))}`);
+    // A word the model cannot reach by guessing, so the reply IS the evidence.
+    want('`--file` carries the attachment into the turn', d.text.toUpperCase().includes('ZARFIL'),
+        `looked for ZARFIL in the reply · exit ${r.status}`);
+    try { fs.rmSync(att, { force: true }); } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// 6. Cancel — does killing the tree really take the engine with it?
+// ---------------------------------------------------------------------------
+if (on(6)) {
+    say('\n═══ 6. CANCEL — `taskkill /T /F` on the spawned pid, as TaskManager does');
+    say('   ‼️ This engine is the heavy one — 615 MB per run measured — so a cancel that');
+    say('   leaves the tree behind is not an untidy detail on this machine, it is the leak.');
+    const args = opencodeRunArgs({ cwd: DIR, model: MODEL || undefined });
+    // A prompt long enough that the run is certainly alive when we cut it.
+    const child = cp.spawn(OPENCODE_EXE, args, {
+        cwd: DIR, shell: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']
+    });
+    child.stdin.write('Count slowly from 1 to 500, writing every number out in full English words.');
+    child.stdin.end();
+    let out = '';
+    child.stdout.on('data', c => { out += c; });
+
+    /** Every pid under `root`, walked by ParentProcessId the way the memory probe does. */
+    const treeOf = (root) => {
+        const q = cp.execSync(
+            'powershell -NoProfile -Command "Get-CimInstance Win32_Process | '
+            + 'Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress"',
+            { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+        const all = JSON.parse(q);
+        const kids = new Map();
+        for (const p of all) {
+            if (!kids.has(p.ParentProcessId)) { kids.set(p.ParentProcessId, []); }
+            kids.get(p.ParentProcessId).push(p);
+        }
+        const seen = [], walk = (pid) => {
+            for (const k of kids.get(pid) || []) { seen.push(k); walk(k.ProcessId); }
+        };
+        const self = all.find(p => p.ProcessId === root);
+        if (self) { seen.push(self); }
+        walk(root);
+        return seen;
+    };
+
+    const wait = (ms) => cp.execSync(`powershell -NoProfile -Command "Start-Sleep -Milliseconds ${ms}"`);
+    wait(9000);                                   // let the tree come up
+    const before = treeOf(child.pid);
+    say(`   tree before cancel: ${before.length} process(es) — ${before.map(p => p.Name).join(', ') || '(none)'}`);
+    want('the run really is alive before we cut it', before.length > 0, 'nothing to cancel');
+
+    cp.execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });   // TaskManager.killProcess
+    wait(3000);
+    const after = treeOf(child.pid).filter(p => before.some(b => b.ProcessId === p.ProcessId));
+    say(`   tree after cancel:  ${after.length} process(es) — ${after.map(p => p.Name).join(', ') || '(none)'}`);
+    want('‼️ cancel takes the WHOLE tree, not just the shim', after.length === 0,
+        after.map(p => `${p.Name}(${p.ProcessId})`).join(', '));
+    // A stray `opencode` from somewhere else must not be blamed on us, and one
+    // of ours must not be left running: only pids that were in OUR tree count.
+    try { child.kill(); } catch { /* already gone */ }
 }
 
 say('\n===== SUMMARY =====');

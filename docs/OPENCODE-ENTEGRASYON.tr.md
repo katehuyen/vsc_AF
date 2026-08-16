@@ -166,6 +166,8 @@ Kodda karşılığı `src/core/opencode.ts`, testi `test/test_opencode.js`,
 > | `plan` ajanı | **Hiç araç çağırmıyor** — motorun kendi özelliği, config'e bağlı değil |
 > | Varsayılan `build` | Bu makinenin config'inde kendi cwd'sinde **yazabiliyor** (config hiçbir şeye "ask" demiyor) |
 > | Reddedilen çağrı | **exit 0.** Dört vakanın dördü de 0 döndü |
+> | Ek dosya | `--file` turu gerçekten taşıyor — modelin tahmin edemeyeceği bir kelime dosyaya konup cevapta geri alındı |
+> | Cancel | `taskkill /pid <p> /T /F` (`TaskManager.killProcess`'in kendi satırı) **bütün ağacı** alıyor: `cmd.exe, conhost.exe, opencode.exe` → 0. 615 MB'lık motorda ağacı bırakan bir cancel sızıntının kendisi olurdu |
 >
 > **‼️ Kalem yanlış varsayıyordu, ilk iki ölçüm de öyle.** M-14 metni "`--auto`
 > yalnız ask kararlarını once olarak geçirir ve **explicit deny'ı aşmaz**" diyor.
