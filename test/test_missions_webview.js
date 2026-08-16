@@ -51,12 +51,26 @@ const DATA = {
     specs: [{
         id: 'spec1', title: 'Parser mission', goal: 'Fix the parser and prove it',
         leadAgentId: 'a0', leadAgentName: 'lead',
-        team: [{ agentId: 'a1', agentName: 'coder', role: 'implements' }, { agentId: 'a2', agentName: 'reviewer' }],
+        team: [
+            { agentId: 'a1', agentName: 'coder', role: 'implements', permissionMode: 'acceptEdits' },
+            { agentId: 'a2', agentName: 'reviewer' }
+        ],
         workdir: 'D:/repo', limits: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
         approvalMode: 'each-round', createdAt: 1
     }],
     runs: [RUN],
     agents: [{ id: 'a0', name: 'lead' }, { id: 'a1', name: 'coder' }, { id: 'a2', name: 'reviewer' }],
+    // The host's own PERMISSION_CHOICES, verbatim — the form must never carry a
+    // copy of this vocabulary, so the fixture is the real list.
+    permissions: [
+        { id: '', label: 'Default', detail: 'no --permission-mode flag — asks before acting, as configured' },
+        { id: 'plan', label: 'plan', detail: 'plans only, changes nothing until you approve' },
+        { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved, everything else still asks' },
+        { id: 'auto', label: 'auto', detail: 'the CLI decides what is safe to run unattended' },
+        { id: 'manual', label: 'manual', detail: 'asks for every action' },
+        { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking when it would need permission' },
+        { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved — no prompts at all' }
+    ],
     defaults: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
     pending: { questions: [], approvals: ['run1'] }
 };
@@ -122,6 +136,11 @@ ok('readonly step badged', html().includes('read-only'));
 ok('ask_user round shows Q and A', html().includes('which branch?') && html().includes('main'));
 ok('pending approval renders the wait box', html().includes('needs your approval') && html().includes('id="d-approve-run1"'));
 ok('team chips carry roles', html().includes('coder — implements'));
+// ‼️ M-14 — and the permissions the member delegated WITH, on the same footing
+// as its engine and model. A chip only where it was set: no chip is the engine
+// default, and that is a different fact, not a missing one.
+ok('team chips carry the delegation permissions when one was set',
+    html().includes('title="delegation permissions — what this member may do without stopping to ask">acceptEdits'));
 
 // ---------- click routing ----------
 posted = [];
@@ -286,6 +305,32 @@ getEl('f-start').listeners.click();
 const created2 = posted.find(p => p.type === 'create');
 ok('member model rides along in the create payload',
     created2 && created2.input.team.length === 1 && created2.input.team[0].model === 'haiku');
+msgHandler({ data: { type: 'created' } });
+
+// ---------- M-14: per-member PERMISSION mode in the form ----------
+// A delegation is a headless run and there is nobody in it to answer a
+// permission prompt, so the mode is spent up front or never. Before this the
+// form offered no way to say it and the core carried no field, so every
+// delegation took the engine default — on OpenCode, `build` without `--auto`,
+// which answers every "ask" tool call with `error=user rejected`.
+msgHandler({ data: { type: 'openForm' } });
+ok('team rows carry a permission picker, offered from the host list',
+    html().includes('id="pm-1"') && html().includes('— engine default —')
+    && html().includes('>acceptEdits<') && html().includes('bypassPermissions<'));
+ok('‼️ MIRROR: the picker tooltip opens with what it is set to right now',
+    html().includes('engine default — no --permission-mode flag'));
+ok('…and explains what an empty one costs on the engine that cannot ask',
+    html().includes('there is nobody in it to answer a prompt'));
+getEl('f-goal').value = 'Ship the docs site';
+getEl('f-lead').value = 'a0';
+getEl('tm-1').checked = true;
+getEl('pm-1').value = 'acceptEdits';
+posted = [];
+getEl('f-start').listeners.click();
+const created3 = posted.find(p => p.type === 'create');
+ok('member permission mode rides along in the create payload',
+    created3 && created3.input.team.length === 1
+    && created3.input.team[0].permissionMode === 'acceptEdits');
 msgHandler({ data: { type: 'created' } });
 
 // ---------- live "now" strip ----------
@@ -473,7 +518,10 @@ ok('run row shows delegation count with the failed badge',
     html().includes('Tasks') && html().includes('1✕'));
 ok('run row tooltip characterizes the mission (goal, team, limits, tokens)',
     html().includes('goal: Fix the parser and prove it')
-    && html().includes('team: coder — implements, reviewer')
+    // ‼️ M-14 — and what each member was allowed to do unattended. `{...}` only
+    // when it was SET: absent means the engine default, and telling the two
+    // apart is how a delegate that called no tool gets explained.
+    && html().includes('team: coder — implements {acceptEdits}, reviewer')
     // ‼️ …and the token ceiling is stated beside the dollar one (X-35). A
     // mission delegating on a subscription engine can never reach `maxCostUSD`,
     // so a summary that named only the dollars described a fence that is not

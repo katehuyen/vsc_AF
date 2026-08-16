@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.150.0 — A mission delegate could not call a tool, and said so nowhere (2026-08-16)
+
+A mission delegation is an ordinary headless task — `missionDelegateWave` calls `addTask(..., 'headless')` and everything after that is the launch path a task already has. It carried the member's **model** and the member's **engine**. It carried no permissions, because `MissionTeamMember` had no such field at all.
+
+- **What that cost, measured rather than guessed.** With nothing set, `opencodePermissionFor('')` is `{ mode: 'build', auto: false }` — no `--auto` — and every tool call the user's `opencode.json` marks "ask" comes back `error=user rejected`. Nobody is sitting in a headless run to answer, so an OpenCode-engined delegate could not edit a file, and the mission reported a delegate that simply did nothing useful. Claude degrades quietly in the same hole; OpenCode fails outright.
+- **The field is per MEMBER**, on the same axis as `model` and `engine`, because that is the shape of the decision: the reviewer reads and needs nothing, the writer edits and needs everything. One setting for the whole team would hand both the wider of the two. Left empty, the engine's own default still stands — this does not change the default, it stops the default from being the only option.
+- **A typo is refused, not dropped.** An unknown *engine* falls back to something that runs, so dropping it is safe; an unknown *permission mode* would fall back to the engine default, which is the exact silence the field exists to end. Validation goes through `validateLaunch` — the one vocabulary every launch surface reads, so the list can never fork.
+- **It reads back.** `missions.start` takes `permissionMode` per team entry and both `missions.list` and `missions.status` report it (`null` = the engine default). A dimension you can set over the bridge and cannot read gives a caller no way to tell a deliberate default from a value that never arrived.
+- **On the page:** each team row in the New Mission form gets a permission picker, filled from the host's `PERMISSION_CHOICES` rather than a copy, its tooltip opening with what it is set to right now. The run detail shows the chosen mode as a chip beside the engine and model chips, and the row tooltip carries it in the team line.
+- **The Missions page had never been drawn.** It had no render fixture, so five commits' worth of team-row controls shipped on markup nobody had looked at. `test/fixtures/missions.js` now covers the form with members picked (an unticked row draws every control disabled and hides exactly the width problem) and a running mission open on its detail; both checked in dark and light.
+
 ## 3.149.0 — Foreign engine headless runs stopped losing their moon badge (2026-08-16)
 
 A headless task run on Antigravity (`agy`), OpenCode, Codex or Gemini showed `🤖` (Auto) on the Sessions table and **never showed `🌙` (Headless)**. The task settings had `mode: headless`, the launcher map named the schedule, the task ran without a screen in the background — and the row and page both said it was not headless.

@@ -3242,6 +3242,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // translation all already live on the task's launch path.
                     const wanted = (member?.engine || spec.engine || '').trim();
                     if (wanted && wanted !== 'claude') { task.engine = wanted; }
+                    // ‼️ M-14 — AND THE MEMBER'S PERMISSION MODE, which nothing
+                    // carried. A delegation is a headless run with nobody in it,
+                    // so a mode the engine would have stopped to ask about is
+                    // spent up front here or never: on OpenCode the default
+                    // (`build`, no `--auto`) answers every "ask" tool call with
+                    // `error=user rejected`, and the delegate reported no reason.
+                    // Empty stays empty — the engine default is still the
+                    // default, this only stops it from being the ONLY option.
+                    if (member?.permissionMode) { task.permissionMode = member.permissionMode; }
                     if (spec.workdir) { task.workDir = spec.workdir; }
                     step.taskId = task.id;
                     step.status = 'running';
@@ -3509,7 +3518,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!lead) { return 'Pick a lead agent.'; }
         const modelOk = (m: string) => /^[\w.:-]+$/.test(m);
         const teamIn = Array.isArray(input.team)
-            ? input.team as { agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown }[]
+            ? input.team as {
+                agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
+                permissionMode?: unknown;
+            }[]
             : [];
         const team: MissionSpec['team'] = [];
         for (const t of teamIn) {
@@ -3523,11 +3535,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // build does not know is dropped rather than passed on to fail
                 // at spawn time (`engineOf` would fall back to claude anyway).
                 const memberEngine = String(t.engine ?? '').trim().toLowerCase();
+                // ‼️ M-14 — the permission mode is REFUSED on a typo, not dropped
+                // like the engine is. An unknown engine falls back to something
+                // that runs; an unknown permission mode would fall back to the
+                // engine default, which is the exact silence this field exists
+                // to end. Same validator every other launch surface uses, so the
+                // vocabulary can never fork.
+                const memberPerm = String(t.permissionMode ?? '').trim();
+                if (memberPerm) {
+                    const bad = validateLaunch({ permissionMode: memberPerm });
+                    if (bad.length) { return `${a.name}: ${bad[0]}`; }
+                }
                 team.push({
                     agentId: a.id, agentName: a.name,
                     role: String(t.role ?? '').trim() || undefined,
                     model: model || undefined,
-                    engine: memberEngine in ENGINES ? memberEngine : undefined
+                    engine: memberEngine in ENGINES ? memberEngine : undefined,
+                    permissionMode: memberPerm || undefined
                 });
             }
         }
@@ -4350,7 +4374,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     team: (sp?.team ?? []).map(m => ({
                         agent: m.agentId, role: m.role ?? null,
                         engine: m.engine ?? sp?.engine ?? 'claude',
-                        model: m.model ?? null
+                        model: m.model ?? null,
+                        // ‼️ M-14 — readable back for the same reason `engine` is
+                        // (X-35): a caller that can SET a dimension over the
+                        // bridge and cannot READ it has no way to tell a
+                        // deliberate default from a value that never arrived.
+                        // null = the engine's own default.
+                        permissionMode: m.permissionMode ?? null
                     })),
                     startedAt: r.startedAt
                 };
@@ -4358,8 +4388,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.start',
-            describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?}]), '
-                + 'title?, workdir?, plannerModel?, '
+            describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?, '
+                + 'permissionMode?}] — ‼️ `permissionMode` is spent UP FRONT on a delegation for the same '
+                + 'reason it is on a task: a delegation is a headless run and there is nobody in it to ask. '
+                + 'Omit it and the engine default stands, which on OpenCode is `build` without `--auto`: every '
+                + 'tool call its config marks "ask" comes back `error=user rejected`. '
+                + PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join('|')
+                + '), title?, workdir?, plannerModel?, '
                 + 'engine? (which engine the DELEGATIONS run on — '
                 + Object.values(ENGINES).map(e => e.id).join(', ')
                 + ', default claude; a team member '
@@ -4377,10 +4412,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: (args) => {
                 const lead = findAgent(argStr(args, 'lead'));
                 const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
-                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "..." }]');
+                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "permissionMode"?: "..." }]');
                 const team = teamIn.map(t => ({
                     agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
-                    engine: t.engine
+                    engine: t.engine, permissionMode: t.permissionMode
                 }));
                 const err = createMission({ ...args, leadAgentId: lead.id, team });
                 need(!err, err ?? '');
@@ -4425,7 +4460,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     team: (sp?.team ?? []).map(m => ({
                         agent: m.agentId, role: m.role ?? null,
                         engine: m.engine ?? sp?.engine ?? 'claude',
-                        model: m.model ?? null
+                        model: m.model ?? null,
+                        // ‼️ M-14 — null means the engine's own default, and on
+                        // OpenCode that default answers every "ask" tool call
+                        // with `error=user rejected`. A delegate that could not
+                        // call a tool is diagnosed from this line.
+                        permissionMode: m.permissionMode ?? null
                     })),
                     // a waiting run says WHAT it waits for, so an agent knows to
                     // call missions.answer / missions.approve
@@ -9186,6 +9226,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engines: engineMatrix().map(e => ({
                 id: e.id, label: e.label, ready: e.ready, next: e.next ?? null
             })),
+            // ‼️ THE PERMISSION VOCABULARY, FROM THE ONE LIST (M-14). Same
+            // constant the Tasks and Console launchers read, so a mode can never
+            // exist on one surface and not another — and the form can say what
+            // each one means instead of asking the user to know.
+            permissions: PERMISSION_CHOICES,
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),

@@ -62,7 +62,12 @@
         // the fleet was set up to use, and there was no way to say otherwise
         // short of the bridge.
         engine: '',
-        team: {}, roles: {}, models: {}, engines: {},
+        // ‼️ …and `perms`, the member's permission mode (M-14). A delegation is
+        // a headless run with nobody in it, so a mode the engine wants to ASK
+        // about has no one to ask; every other unattended surface spends this up
+        // front and a mission delegation was the one that did not. On OpenCode
+        // the default refuses every "ask" tool call and says nothing.
+        team: {}, roles: {}, models: {}, engines: {}, perms: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
         // engine no delegation ever states a dollar, so `maxCostUSD` — the limit
@@ -156,6 +161,23 @@
                 `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}${e.ready ? '' : ' disabled'}>`
                 + `${C.esc(e.label)}${e.ready ? '' : ' — not ready on this machine'}</option>`))
             .join('');
+        // ‼️ The permission vocabulary comes from the host's one list, the same
+        // constant the Tasks and Console launchers read — never a copy here.
+        const perms = DATA.permissions || [];
+        const permOpts = (sel) => ['<option value="">— engine default —</option>']
+            .concat(perms.filter(p => p.id).map(p =>
+                `<option value="${C.esc(p.id)}"${sel === p.id ? ' selected' : ''}>${C.esc(p.label)}</option>`))
+            .join('');
+        // MIRROR: the control is too narrow to say what it means, so its tooltip
+        // opens with what it is set to RIGHT NOW, then explains the field.
+        const permTitle = (sel) => {
+            const cur = perms.find(p => p.id === (sel || ''));
+            return (sel || 'engine default') + (cur && cur.detail ? ' — ' + cur.detail : '')
+                + '\n\nPermissions: what this member\'s delegations may do without stopping to ask.'
+                + ' A delegation is headless — there is nobody in it to answer a prompt — so this is spent'
+                + ' up front or never. Empty leaves the engine\'s own default, which on OpenCode is `build`'
+                + ' without `--auto`: every tool call the config marks "ask" comes back as user-rejected.';
+        };
         const teamRows = DATA.agents.map((a, i) => `
             <div class="tmrow">
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
@@ -164,6 +186,9 @@
                 <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
                     title="Engine: which CLI this member's delegations run on — empty = the mission's engine below"
                     ${form.team[a.id] ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
+                <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
+                    title="${C.esc(permTitle(form.perms[a.id] || ''))}"
+                    ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
                 <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="modelopts"
                     placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy"
                     value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
@@ -228,6 +253,7 @@
             form.roles[a.id] = document.getElementById('rl-' + i).value;
             form.models[a.id] = document.getElementById('md-' + i).value;
             form.engines[a.id] = document.getElementById('en-' + i).value;
+            form.perms[a.id] = document.getElementById('pm-' + i).value;
         });
         ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'].forEach(k => {
             form[k] = document.getElementById('lim-' + k).value;
@@ -247,7 +273,8 @@
                 team: DATA.agents.filter(a => form.team[a.id])
                     .map(a => ({
                         agentId: a.id, role: form.roles[a.id] || '',
-                        model: form.models[a.id] || '', engine: form.engines[a.id] || ''
+                        model: form.models[a.id] || '', engine: form.engines[a.id] || '',
+                        permissionMode: form.perms[a.id] || ''
                     })),
                 maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
                 maxTokens: form.maxTokens,
@@ -521,7 +548,11 @@
             `lead: ${sp.leadAgentName}${sp.plannerModel ? ` (planner: ${sp.plannerModel})` : ''}`,
             `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '')
                 + ((m.engine || sp.engine) ? ` <${m.engine || sp.engine}>` : '')
-                + (m.model ? ` [${m.model}]` : '')).join(', ')}`,
+                + (m.model ? ` [${m.model}]` : '')
+                // What this member was allowed to do unattended. Absent = the
+                // engine default, and the reader has to be able to tell the two
+                // apart to explain a delegate that called no tool.
+                + (m.permissionMode ? ` {${m.permissionMode}}` : '')).join(', ')}`,
             // ‼️ THE ENGINE AND THE TOKEN CEILING BELONG IN THE SUMMARY (X-35).
             // A run whose delegations went to Codex and whose only real fence
             // was the token cap used to read as a $-budgeted Claude run.
@@ -660,7 +691,7 @@
             <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
                 title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
                 `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
-                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
+                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}${m.permissionMode ? ` <i class="mdl" title="delegation permissions — what this member may do without stopping to ask">${C.esc(m.permissionMode)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
@@ -882,6 +913,9 @@
                 .tmrow { display:flex; gap:10px; align-items:center; margin:3px 0; }
                 .tmrow label { flex:0 0 180px; }
                 .tmrow input[type=text] { flex:1; max-width:340px; }
+                /* Two pickers on the row now (engine + permissions): fixed and
+                   equal, so the free-text fields keep the space they had. */
+                .tmrow select { flex:0 0 152px; margin-top:0; }
                 .limrow { display:flex; gap:14px; flex-wrap:wrap; }
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }

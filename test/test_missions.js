@@ -520,6 +520,38 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
             /const refused = engineRefusal\(engineMatrix\(\), missionEngine\);/.test(ext));
     }
 
+    // ---------- M-14: a delegation's PERMISSIONS ----------
+    // A delegation is a headless run. Every other unattended surface (task,
+    // schedule, template, workflow step) spends `permissionMode` up front
+    // because there is nobody in the run to answer a prompt; the mission
+    // delegate was the one path that carried no such field at all, so it always
+    // took the engine default. On Claude that degrades quietly. On OpenCode it
+    // does not — `opencodePermissionFor('')` is `build` with no `--auto`, and
+    // every tool call the config marks "ask" comes back `error=user rejected`
+    // with the delegate reporting no reason.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'missions.ts'), 'utf8');
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const media = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+        ok('a team member carries its own permission mode', /permissionMode\?: string;/.test(src));
+        ok('‼️ …with the reason it is PER MEMBER, not one setting for the team',
+            /Per MEMBER, on the same axis as `model` and `engine`/.test(src));
+        ok('‼️ …and the measured symptom written down, not the guess',
+            /error=user rejected/.test(src) && /`opencodePermissionFor\(''\)`/.test(src));
+        ok('the delegation really carries it onto the task',
+            /if \(member\?\.permissionMode\) \{ task\.permissionMode = member\.permissionMode; \}/.test(ext));
+        ok('‼️ a typo is REFUSED at creation, not dropped like an unknown engine is',
+            /const bad = validateLaunch\(\{ permissionMode: memberPerm \}\);/.test(ext)
+            && /if \(bad\.length\) \{ return `\$\{a\.name\}: \$\{bad\[0\]\}`; \}/.test(ext));
+        ok('…and empty stays empty — the engine default is still the default',
+            /permissionMode: memberPerm \|\| undefined/.test(ext));
+        ok('the form offers it from the ONE permission list, never a copy',
+            /permissions: PERMISSION_CHOICES/.test(ext) && /DATA\.permissions \|\| \[\]/.test(media));
+        ok('…and the run detail reads the chosen mode back',
+            /m\.permissionMode \? ` \{\$\{m\.permissionMode\}\}` : ''/.test(media)
+            && /delegation permissions/.test(media));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

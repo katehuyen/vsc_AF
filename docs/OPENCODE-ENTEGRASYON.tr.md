@@ -118,6 +118,35 @@ Kodda karşılığı `src/core/opencode.ts`, testi `test/test_opencode.js`,
 > cevaplayacak kimse olmadığı için reddedilir; ölçülen headless oturumun
 > `info.permission` bloğu `question`, `plan_enter`, `plan_exit` için `deny` yazar.
 
+> ### ‼️ Karar 4b — misyon delegesi izin modunu **üye bazında** taşır (M-14)
+> Karar 4'ün gözetimsiz koşuda reddedilen izni, tek bir yolda telafisi yoktu:
+> misyon delegasyonu. Delegasyon **sıradan bir görevdir** (`missionDelegateWave`
+> → `addTask(..., 'headless')`), ama `MissionTeamMember`'da `permissionMode`
+> **diye bir alan yoktu** — model ve motor taşınıyordu, izin taşınmıyordu. Sonuç
+> ölçülü: `opencodePermissionFor('')` → `{ mode: 'build', auto: false }` → `--auto`
+> yok → `opencode.json`'un "ask" dediği her `tool_use` `error=user rejected` ile
+> biter. **OpenCode motorlu bir misyon delegesi araç çağıramıyordu ve bunu hiçbir
+> yerde söylemiyordu.**
+>
+> Alan **üye bazında**, `model` ve `engine` ile aynı eksende: okuyan üyeyle yazan
+> üyenin ihtiyacı aynı değildir, misyon seviyesinde tek ayar ikisine de geniş
+> olanı verirdi. Boş kalırsa motorun kendi varsayılanı geçerlidir — bu alan
+> varsayılanı değiştirmiyor, **tek seçenek olmaktan çıkarıyor.**
+>
+> Kabul kuralları: yazım hatası motorun aksine **düşürülmez, reddedilir**
+> (`validateLaunch`, her başlatma yüzeyinin okuduğu tek sözlük — bilinmeyen bir
+> motor koşabilecek bir şeye düşer, bilinmeyen bir izin modu ise tam da bu alanın
+> bitirdiği sessizliğe düşerdi) · `missions.list` ve `missions.status` değeri
+> **geri okutur** (X-35 kuralı: yazıp okuyamamak, kasıtlı varsayılanla hiç
+> ulaşmamış değeri ayırt edilemez kılar) · form seçeneklerini `PERMISSION_CHOICES`
+> sabitinden alır, kopyasından değil.
+>
+> Dosyalar: `src/core/missions.ts` (alan + gerekçe) · `src/extension.ts`
+> (`createMission` doğrulaması, `missionDelegateWave` aktarımı, `missions.start`
+> sözleşmesi, iki liste ucu, panel yükü) · `media/missions.js` (satır seçicisi +
+> geri okuma) · `test/test_missions.js` · `test/test_missions_webview.js` ·
+> `test/test_bridge.js` · `test/fixtures/missions.js` (sayfanın ilk çizimi).
+
 ## 4. Konuşma kimliği ve resume
 
 | Soru | Ölçüm |

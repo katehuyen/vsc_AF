@@ -46,6 +46,28 @@ export interface MissionTeamMember {
      * covered by this — see MissionSpec.engine.
      */
     engine?: string;
+    /**
+     * ‼️ WHAT THIS MEMBER'S DELEGATIONS ARE ALLOWED TO DO WITHOUT ASKING (M-14).
+     * Empty = the engine's own default, which is NOT the same as "everything
+     * allowed" and on one engine is not even workable.
+     *
+     * A delegation is a headless run: nobody is sitting in it, so a permission
+     * decision the engine wants to ASK about has no one to ask. Every other
+     * unattended surface in this codebase (task, schedule, template, workflow
+     * step) already spends `permissionMode` up front for exactly that reason;
+     * a mission delegation was the one that did not carry it, so it always ran
+     * on the engine default. On Claude that degrades quietly. On OpenCode it
+     * does not: `opencodePermissionFor('')` is `{ mode: 'build', auto: false }`,
+     * no `--auto`, and every tool call the config marks "ask" comes back
+     * `error=user rejected` — an OpenCode delegate could not call a tool and
+     * said so nowhere.
+     *
+     * Per MEMBER, on the same axis as `model` and `engine`, because it is the
+     * same shape of decision: the reviewer reads and needs nothing, the writer
+     * edits and needs everything. One setting for the whole team would give
+     * both the wider of the two.
+     */
+    permissionMode?: string;
 }
 
 export interface MissionLimits {
