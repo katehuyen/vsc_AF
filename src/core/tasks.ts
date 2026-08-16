@@ -17,7 +17,9 @@ import {
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
-import { OPENCODE_RUN_OUTPUT_NOTE } from './opencoderun';
+import {
+    OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
+} from './opencoderun';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
     classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, normalizeRetry,
@@ -2423,7 +2425,38 @@ export class TaskManager implements vscode.Disposable {
             } catch { /* the close handler reports what the run did */ }
         }
         this.processes.set(task.id, child);
-        child.stdout?.on('data', chunk => stream.write(chunk));
+        /**
+         * ‼️ M-14 — THIS ENGINE STATES ITS OWN CONVERSATION ID AND ITS OWN PRICE,
+         * AND THE ARCHIVE WAS THE ONLY PLACE EITHER OF THEM LANDED.
+         *
+         * Every other engine's run is bound to a session afterwards, by matching
+         * a transcript the index found on disk. `opencode run --format json` does
+         * not need that and cannot wait for it: `sessionID` is on the FIRST line
+         * it prints, so the binding can be made while the run is still going —
+         * which is the difference between a killed run that is still resumable
+         * and one nobody can find. Same for the money: the steps carry real
+         * dollars, so the row does not have to sit blank until something else
+         * discovers them.
+         *
+         * The reader is `core/opencoderun.ts` and it is the ONLY one, which is
+         * the rule M-14 states by name — nothing here parses a line itself.
+         */
+        const opencodeRun = perTurn && engine.id === 'opencode';
+        let bound = '';
+        let seen = '';
+        child.stdout?.on('data', chunk => {
+            stream.write(chunk);
+            if (!opencodeRun) { return; }
+            const text = String(chunk);
+            seen += text;
+            if (!bound) {
+                const id = opencodeRunSessionId(text);
+                // Bound the moment it is knowable, and never re-bound: one `run`
+                // is one conversation, and a second id would mean this reader is
+                // looking at something it does not understand.
+                if (id) { bound = id; this.setRunProgress(task.id, { sessionId: id }); }
+            }
+        });
         child.stderr?.on('data', chunk => stream.write(chunk));
         child.on('error', err => {
             stream.write(`\n\n---\n[spawn error] ${String(err)}\n`);
@@ -2436,6 +2469,27 @@ export class TaskManager implements vscode.Disposable {
             stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · exit ${code ?? '?'} · ${mins} min\n`);
             stream.end();
             this.processes.delete(task.id);
+            // ‼️ M-14 — WHAT THE RUN COST AND HOW FAR IT GOT, read once, from the
+            // stream it already printed. `readOpencodeRun` is fail-soft by
+            // construction, so a killed process with a half-written last line
+            // produces figures rather than an exception — and an unread run
+            // produces zeros WITH no steps, which is how a real $0 (a free
+            // model, measured) is told apart from "nothing was parsed".
+            if (opencodeRun) {
+                const run = readOpencodeRun(seen);
+                if (run.sessionId && !bound) {
+                    bound = run.sessionId;
+                }
+                if (run.steps.length) {
+                    this.setRunProgress(task.id, {
+                        ...(bound ? { sessionId: bound } : {}),
+                        assistantSteps: run.steps.length, toolCalls: run.tools.length
+                    });
+                    this.setTaskCost(task.id, run.cost, task.outputFile ?? '', run.spend.total);
+                } else if (bound) {
+                    this.setRunProgress(task.id, { sessionId: bound });
+                }
+            }
             if (task.status === 'running') {
                 this.finish(task, code === 0 ? 'done' : 'failed');
             }
