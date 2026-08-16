@@ -729,3 +729,70 @@ order:
    an extra robot row.
 
 Never guess from timing, prompt shape or file name.
+
+**‼️ AND A SURFACE ASKS FOR THE VERDICT, IT DOES NOT RE-DERIVE IT (S-37).** The
+inputs above live in the INDEX. A page that builds its own object out of a
+transcript is missing `consoleHosted` and cannot know it is missing it, so it
+returns a confident wrong answer — the Session page said 🤖🌙 "automation run"
+about conversations the Sessions table, calling the very same two functions on
+the full record, correctly showed as 🧑. When a surface cannot see all the
+inputs, it takes **one** dep returning the whole verdict (`ViewerDeps.originFor`
+→ `{ origin, headless }`), never one dep per input: two are two chances to wire
+only one of them, and the next input these functions learn to read goes missing
+again.
+
+---
+
+## Saving a whole form
+
+Three separate bugs in one day were this same sentence (P-15 · M-21), so it is a
+rule now.
+
+**‼️ A FORM THAT SUBMITS THE WHOLE OBJECT MUST BE ABLE TO REMOVE A FIELD, AND
+MUST NOT REMOVE ONE IT NEVER SHOWED.** Two halves, and each is silent on its own.
+
+1. **The view hands the page every field the form edits.** A field the editor
+   writes but the payload drops is not a display gap — it is a DELETE: the form
+   renders the missing value as empty and the next Save writes that emptiness
+   over the stored one. `projectView` dropped `color`, `icon`, `startedAt` and
+   `dueAt`; the colour "went back to grey" and a start date disappeared on a
+   Save pressed to change something else.
+2. **A missing INPUT is not an empty input.** Read every field through a helper
+   that posts nothing at all when its element is not on the page, so adding a
+   field to the model and forgetting it in the form is harmless instead of
+   destructive (`collect()` in `media/projects.js`).
+3. **`Object.assign(stored, fields)` cannot say "gone".** It adds and changes
+   and never removes, so a cleared box is accepted, announced as saved, and
+   ignored — the Tasks form could move a schedule ONTO another engine but never
+   back off it. State every field, let `undefined` mean delete, and merge with a
+   helper that deletes it (`applyForm` in `src/panels/tasksPanel.ts`). A key
+   genuinely left OUT of the patch still means "not mentioned" and survives.
+
+A control that cannot express "nothing" — a `<input type="color">` has no empty
+state — gets its own ✕ beside it, the same one the folder field uses.
+
+**And the fixture carries the field.** None of this was visible in a screenshot
+because no fixture had a colour, an icon, a date or a non-default engine on it —
+a fixture without the field renders exactly like a page that drops it.
+
+---
+
+## Editing an automation is not running it
+
+**‼️ SAVING A SCHEDULE MUST NEVER FIRE IT (M-21).** `scheduleDue` decides on
+`lastRunKey` and nothing else, so whatever an edit leaves there decides whether
+closing a form starts an agent. Clearing it makes BOTH branches say yes: past
+the time, today looks unhandled; before it, a catch-up policy looks at yesterday
+and finds nothing. An edit settles whichever occurrence is already behind the
+schedule's (possibly new) time — `settledKeyAfterEdit`, which reads
+`scheduleDue`'s own two branches in the same order so the two cannot drift.
+
+The same rule covers switching one back **on** (it was off, so it missed
+nothing) and drops a quiet-hours deferral of the occurrence the edit replaced.
+It all lives behind `TaskManager.updateSchedule`, which the page and the bridge
+both call — the page used to reach past it and keep its own opinion, which is
+how the two doors came to behave differently in the first place.
+
+The confirmation says **when it next fires** and that saving never runs it: the
+old "Schedule saved." was true and useless, and left the surprise nowhere to be
+caught.
