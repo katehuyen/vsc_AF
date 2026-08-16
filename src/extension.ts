@@ -10195,7 +10195,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-25: a subagent's OWN transcript — the index knows it by its folder
         // depth, and the file itself does not say so on every line.
         laneFor: (file: string) =>
-            index.allWithExternal().find(s => s.file === file)?.isSidechain === true
+            index.allWithExternal().find(s => s.file === file)?.isSidechain === true,
+        // ‼️ S-37 — the ONE place 🧑/🤖 and 🌙 are decided for the viewer, and
+        // it is the same record and the same two functions the Sessions table
+        // reads. The page used to work it out of the transcript it had just
+        // parsed; a transcript carries `entrypoint: "sdk-cli"` for a Console
+        // conversation and for a headless run alike, so every session held in
+        // the Console opened as "🤖🌙 automation run" while its own row said
+        // 🧑. `byId` covers the external list too, so a Codex or Antigravity
+        // session gets the same answer on both surfaces.
+        originFor: (sessionId: string) => {
+            const s = index.byId(sessionId);
+            return s ? { origin: sessionOrigin(s), headless: sessionHeadless(s) } : undefined;
+        }
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------

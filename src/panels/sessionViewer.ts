@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
-import { conversationTitle, sessionOrigin, sessionHeadless } from '../core/sessions';
+import { conversationTitle, SessionOrigin, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
@@ -61,6 +61,26 @@ export interface ViewerDeps {
      * USER and AGENT, which is the very confusion X-25 is about.
      */
     laneFor?(file: string): boolean;
+    /**
+     * ‼️ S-37 — WHO RAN THIS, ANSWERED BY THE SIDE THAT HOLDS THE EVIDENCE.
+     *
+     * This page is built by PARSING one transcript, and a transcript cannot
+     * tell a person typing in the Console from a headless `claude -p`: the CLI
+     * writes `entrypoint: "sdk-cli"` for both. Only the index can, because only
+     * it holds the ids the Console hosted and the launcher that started the run
+     * — which is why calling `sessionOrigin`/`sessionHeadless` HERE, with an
+     * object missing `consoleHosted`, printed 🤖🌙 "automation run" over a
+     * conversation the Sessions table, reading the same two functions off the
+     * full record, correctly showed as 🧑 yours.
+     *
+     * So the verdict is ASKED FOR rather than recomputed, and both halves come
+     * back together: two deps would be two chances to wire only one of them,
+     * and the next fact `sessionOrigin` learns to read would go missing here
+     * again. Undefined = the index has never seen this session (a transcript
+     * opened straight off a path), and only then does the page fall back to
+     * what the transcript alone can support.
+     */
+    originFor?(sessionId: string): { origin: SessionOrigin; headless: boolean } | undefined;
 }
 
 interface ViewMessage {
@@ -321,16 +341,20 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     if (cli) {
         const max = deps.maxMessages();
         const launchedBy = deps.launchedByFor?.(cli.sessionId);
+        // S-37 — the index's verdict first, so this page and the row that
+        // opened it cannot disagree about the same session.
+        const verdict = deps.originFor?.(cli.sessionId);
         return {
             ...cli,
             file,
             title: deps.titleFor?.(cli.sessionId) || cli.title || '(untitled session)',
             pinned: deps.pinnedFor?.(cli.sessionId) === true,
             tags: deps.tagsFor?.(cli.sessionId) ?? [],
-            origin: sessionOrigin({ launchedBy }),
+            origin: verdict?.origin ?? sessionOrigin({ launchedBy }),
             // S-35 — a foreign-CLI transcript states no entrypoint at all, so
-            // there is no evidence either way and the page claims none.
-            headless: false,
+            // with no record to ask there is no evidence either way and the
+            // page claims none.
+            headless: verdict?.headless ?? false,
             launchedBy: launchedBy ?? null,
             engine: deps.engineFor?.(cli.sessionId) || cli.engine,
             context: {
@@ -629,6 +653,14 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     const truncatedCount = Math.max(0, messages.length - max);
 
     const sessionId = path.basename(file, '.jsonl');
+    // ‼️ S-37 — ONE VERDICT, FROM THE RECORD. The two lines below used to call
+    // `sessionOrigin`/`sessionHeadless` themselves, with an object built out of
+    // this transcript — and a transcript has no `consoleHosted`, so every
+    // conversation held in the Console read as 🤖🌙 automation on its own page
+    // while its row in the table read 🧑. Same functions, different evidence.
+    // Now the index answers, and the page only decides when nothing has ever
+    // indexed this file. See ViewerDeps.originFor.
+    const verdict = deps.originFor?.(sessionId);
     return {
         file,
         sessionId,
@@ -643,10 +675,12 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         // tables filter on, so opening a transcript says it too, and by the
         // same rule: a run the farm's own record names beats a reading of the
         // entrypoint (see core/sessions.ts sessionOrigin).
-        origin: sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        origin: verdict?.origin
+            ?? sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
         // S-35 — 🌙: an automation run with no terminal behind it. Same rule as
         // the tables', from core/sessions.ts, so the page and the row agree.
-        headless: sessionHeadless({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        headless: verdict?.headless
+            ?? sessionHeadless({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
         launchedBy: deps.launchedByFor?.(sessionId) ?? null,
         // The badge beside the title — see EngineFor above for why it is asked
         // for rather than worked out.

@@ -1207,6 +1207,13 @@ export class SessionIndex implements vscode.Disposable {
         }
         this.consoleIds = next;
         for (const s of this.sessions.values()) { this.applyMark(s); }
+        // ‼️ …AND THE EXTERNAL LIST, which this was the only setter to forget
+        // (S-37). Every sibling — setMarks, setLaunchers, setExternal — re-marks
+        // both halves. Missing it here meant a Codex or Antigravity session the
+        // Console had just taken over kept `consoleHosted: undefined` until the
+        // next external rescan happened to re-apply the marks, and until then it
+        // was filed as automation on every surface that asks sessionOrigin.
+        for (const s of this.externalList) { this.applyMark(s); }
         this.onDidUpdateEmitter.fire();
     }
 
