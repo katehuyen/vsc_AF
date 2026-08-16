@@ -65,8 +65,8 @@
         // ‼️ …and `perms`, the member's permission mode (M-14). A delegation is
         // a headless run with nobody in it, so a mode the engine wants to ASK
         // about has no one to ask; every other unattended surface spends this up
-        // front and a mission delegation was the one that did not. On OpenCode
-        // the default refuses every "ask" tool call and says nothing.
+        // front and a mission delegation was the one that did not — a read-only
+        // reviewer could not be asked for even in principle.
         team: {}, roles: {}, models: {}, engines: {}, perms: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
@@ -175,8 +175,9 @@
             return (sel || 'engine default') + (cur && cur.detail ? ' — ' + cur.detail : '')
                 + '\n\nPermissions: what this member\'s delegations may do without stopping to ask.'
                 + ' A delegation is headless — there is nobody in it to answer a prompt — so this is spent'
-                + ' up front or never. Empty leaves the engine\'s own default, which on OpenCode is `build`'
-                + ' without `--auto`: every tool call the config marks "ask" comes back as user-rejected.';
+                + ' up front or never. Empty leaves the engine\'s own default; a run refused by it still'
+                + ' ends "successfully", so a delegate that did nothing looks like one that worked.'
+                + ' Set plan for a reviewer that must not write.';
         };
         const teamRows = DATA.agents.map((a, i) => `
             <div class="tmrow">

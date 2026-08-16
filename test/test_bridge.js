@@ -2552,11 +2552,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             // ‼️ M-14 — the member's PERMISSION mode is on that same line, and the
             // describe has to say why it matters unattended: a delegation is a
             // headless run, so a mode the engine would stop and ask about has
-            // nobody to ask. Left empty on OpenCode it refuses every tool call.
+            // nobody to ask — and a refused call still exits 0 (measured), which
+            // is the part a caller cannot discover for itself.
             ok('‼️ …and the permission mode a delegation spends UP FRONT',
                 /permissionMode\?\}\]/.test(misBlock)
                 && /nobody in it to ask/.test(misBlock.replace(/'\s*\+\s*'/g, ''))
-                && /error=user rejected/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
+                && /exits 0/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
             ok('…and both list ops read it back, so a caller can tell a default from a value that never arrived',
                 (src.match(/permissionMode: m\.permissionMode \?\? null/g) || []).length >= 2);
             ok('…and the delegation actually carries it onto the task',

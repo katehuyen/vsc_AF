@@ -536,8 +536,19 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         ok('a team member carries its own permission mode', /permissionMode\?: string;/.test(src));
         ok('‼️ …with the reason it is PER MEMBER, not one setting for the team',
             /Per MEMBER, on the same axis as `model` and `engine`/.test(src));
-        ok('‼️ …and the measured symptom written down, not the guess',
-            /error=user rejected/.test(src) && /`opencodePermissionFor\(''\)`/.test(src));
+        // ‼️ The tidy version of this sentence is the one that was wrong, so the
+        // test guards against it coming back: the field's reason may not be
+        // stated as "an unattended OpenCode run cannot call a tool". Measured
+        // four times on 2026-08-16 — a `build` delegate on a config that marks
+        // nothing "ask" writes fine. What holds every run is the exit code.
+        ok('‼️ …and the reason is the MEASURED one, with its own limits stated',
+            /THE TIDY VERSION OF/.test(src)
+            && /probe_opencode_contract\.js/.test(src)
+            && /still exits 0/.test(src));
+        ok('‼️ …and the overclaim it replaced cannot creep back in',
+            !/error=user rejected/.test(src));
+        ok('…and `plan` is named as the thing no config can supply',
+            /plan agent calls no\s*\*?\s*tool at all/.test(src.replace(/\s*\*\s*/g, ' ')));
         ok('the delegation really carries it onto the task',
             /if \(member\?\.permissionMode\) \{ task\.permissionMode = member\.permissionMode; \}/.test(ext));
         ok('‼️ a typo is REFUSED at creation, not dropped like an unknown engine is',

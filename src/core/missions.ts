@@ -48,19 +48,28 @@ export interface MissionTeamMember {
     engine?: string;
     /**
      * ‼️ WHAT THIS MEMBER'S DELEGATIONS ARE ALLOWED TO DO WITHOUT ASKING (M-14).
-     * Empty = the engine's own default, which is NOT the same as "everything
-     * allowed" and on one engine is not even workable.
+     * Empty = the engine's own default.
      *
      * A delegation is a headless run: nobody is sitting in it, so a permission
      * decision the engine wants to ASK about has no one to ask. Every other
      * unattended surface in this codebase (task, schedule, template, workflow
-     * step) already spends `permissionMode` up front for exactly that reason;
-     * a mission delegation was the one that did not carry it, so it always ran
-     * on the engine default. On Claude that degrades quietly. On OpenCode it
-     * does not: `opencodePermissionFor('')` is `{ mode: 'build', auto: false }`,
-     * no `--auto`, and every tool call the config marks "ask" comes back
-     * `error=user rejected` — an OpenCode delegate could not call a tool and
-     * said so nowhere.
+     * step) spends `permissionMode` up front for exactly that reason. The
+     * mission delegate was the one that did not: it carried the member's model
+     * and the member's engine and nothing at all about permissions, so a
+     * delegate could only ever take the engine default.
+     *
+     * ‼️ WHAT THAT COSTS IS ENGINE- AND CONFIG-SPECIFIC, AND THE TIDY VERSION OF
+     * THIS SENTENCE IS WRONG. Measured 2026-08-16 against OpenCode 1.18.18
+     * (`tools/probe_opencode_contract.js`): a `build` delegate on a config that
+     * marks nothing "ask" writes perfectly well, so "an unattended OpenCode run
+     * cannot call a tool" is false as a general claim. What IS true every run:
+     * a refused tool call still exits 0, so a caller watching the exit code sees
+     * a successful run that did nothing.
+     *
+     * What no config can supply is the two settings the member itself needs and
+     * had no way to ask for: `plan` (measured — OpenCode's plan agent calls no
+     * tool at all, which is exactly what a read-only reviewer wants) and
+     * `--auto`. Neither was reachable for a delegate at any price.
      *
      * Per MEMBER, on the same axis as `model` and `engine`, because it is the
      * same shape of decision: the reviewer reads and needs nothing, the writer

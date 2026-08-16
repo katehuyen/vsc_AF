@@ -119,14 +119,26 @@ Kodda karşılığı `src/core/opencode.ts`, testi `test/test_opencode.js`,
 > `info.permission` bloğu `question`, `plan_enter`, `plan_exit` için `deny` yazar.
 
 > ### ‼️ Karar 4b — misyon delegesi izin modunu **üye bazında** taşır (M-14)
-> Karar 4'ün gözetimsiz koşuda reddedilen izni, tek bir yolda telafisi yoktu:
-> misyon delegasyonu. Delegasyon **sıradan bir görevdir** (`missionDelegateWave`
-> → `addTask(..., 'headless')`), ama `MissionTeamMember`'da `permissionMode`
-> **diye bir alan yoktu** — model ve motor taşınıyordu, izin taşınmıyordu. Sonuç
-> ölçülü: `opencodePermissionFor('')` → `{ mode: 'build', auto: false }` → `--auto`
-> yok → `opencode.json`'un "ask" dediği her `tool_use` `error=user rejected` ile
-> biter. **OpenCode motorlu bir misyon delegesi araç çağıramıyordu ve bunu hiçbir
-> yerde söylemiyordu.**
+> Delegasyon **sıradan bir görevdir** (`missionDelegateWave` →
+> `addTask(..., 'headless')`), ama `MissionTeamMember`'da `permissionMode` **diye
+> bir alan yoktu** — model ve motor taşınıyordu, izin taşınmıyordu. Görev,
+> schedule, template ve workflow adımı bu alanı gözetimsiz koşuda peşin harcarken
+> misyon delegesi harcamayan **tek** yüzeydi; yani bir delege ancak motorun
+> varsayılanını alabiliyordu.
+>
+> **‼️ Bunun bedeli motora VE kullanıcının config'ine bağlıdır; bu cümlenin derli
+> toplu hâli yanlıştır.** 2026-08-16'da OpenCode 1.18.18'e karşı ölçüldü
+> (`tools/probe_opencode_contract.js`, dört koşu): `opencode.json` hiçbir şeye
+> "ask" demiyorsa `build` delegesi kendi cwd'sinde **rahatça yazıyor** — yani
+> "gözetimsiz OpenCode koşusu araç çağıramaz" genel bir iddia olarak **doğru
+> değil**. Her koşuda sabit olan şu: reddedilen bir araç çağrısı da **exit 0**
+> veriyor, yani çıkış koduna bakan bir çağıran için hiçbir şey yapmamış koşu ile
+> başarılı koşu aynı görünüyor.
+>
+> Hiçbir config'in veremeyeceği şey, üyenin kendisinin isteyeceği iki ayardır ve
+> delege bunları **hiçbir şekilde** isteyemiyordu: `plan` (ölçüldü — OpenCode'un
+> plan ajanı hiç araç çağırmıyor; salt-okur bir inceleyicinin istediği tam da bu)
+> ve `--auto`.
 >
 > Alan **üye bazında**, `model` ve `engine` ile aynı eksende: okuyan üyeyle yazan
 > üyenin ihtiyacı aynı değildir, misyon seviyesinde tek ayar ikisine de geniş
@@ -140,6 +152,31 @@ Kodda karşılığı `src/core/opencode.ts`, testi `test/test_opencode.js`,
 > **geri okutur** (X-35 kuralı: yazıp okuyamamak, kasıtlı varsayılanla hiç
 > ulaşmamış değeri ayırt edilemez kılar) · form seçeneklerini `PERMISSION_CHOICES`
 > sabitinden alır, kopyasından değil.
+>
+> **Ölçüm aracı — `tools/probe_opencode_contract.js` (KALICI, tekrar çalıştırılabilir).**
+> Uzantının kendi kurucusuyla (`opencodeRunArgs`) gerçek `opencode run` koşuları
+> yapar; CLI her kıpırdadığında çalıştırın. Ölçtükleri:
+>
+> | Satır | Ölçüm |
+> |---|---|
+> | Prompt kanalı | **argv da stdin de çalışıyor.** İkisi birden verilirse hangisinin kazandığı **tırnaklamaya göre değişti** — belirsiz, o yüzden asla ikisi birden verilmez. Üretim yolu (`spawnHeadless`) stdin, `scheduleExportFor`'un ürettiği `.cmd` argv; **ikisi de geçerli** |
+> | Oturum kimliği | İlk olaydan gerçek `ses_…`; `step_start, text, step_finish` sözlüğü ayrıştırıcının beklediği gibi |
+> | Resume | `-s <ses_…>` **aynı kimliği** döndürüyor **ve** konuşma gerçekten taşınıyor (ilk turda verilen sayı ikinci turda geri geldi) |
+> | Bedava model | `cost=0` **gerçek bir 0**, token sayısı dolu (28). Yani "bedava" ile "ayrıştıramadım" adım görülüp görülmemesiyle ayrılıyor |
+> | `plan` ajanı | **Hiç araç çağırmıyor** — motorun kendi özelliği, config'e bağlı değil |
+> | Varsayılan `build` | Bu makinenin config'inde kendi cwd'sinde **yazabiliyor** (config hiçbir şeye "ask" demiyor) |
+> | Reddedilen çağrı | **exit 0.** Dört vakanın dördü de 0 döndü |
+>
+> **‼️ Kalem yanlış varsayıyordu, ilk iki ölçüm de öyle.** M-14 metni "`--auto`
+> yalnız ask kararlarını once olarak geçirir ve **explicit deny'ı aşmaz**" diyor.
+> Değişken `--auto` çıkmadı: her koşuda sabit olan, reddedilmiş bir dizine
+> `write` aracının `error` dönmesi. Değişen şey modelin ardından **`bash`'e
+> düşüp düşmediği** — ve çalışan bir `bash` o dizine rahatça yazıyor. `--auto`
+> **ile** (koşu 1, 2) ve `--auto` **olmadan** (koşu 3) yazdığı görüldü. İlk iki
+> koşu tek başına derli toplu ve **yanlış** bir sonucu destekliyordu ("`--auto`
+> araç değiştirerek deny'ı aşıyor"); üçüncüsü onu öldürdü. Doğru ifade config
+> hakkındadır, bayrak hakkında değil: **`external_directory` dosya araçlarını
+> çitler, kabuğu çitlemez.**
 >
 > Dosyalar: `src/core/missions.ts` (alan + gerekçe) · `src/extension.ts`
 > (`createMission` doğrulaması, `missionDelegateWave` aktarımı, `missions.start`

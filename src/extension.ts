@@ -3245,11 +3245,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // ‼️ M-14 — AND THE MEMBER'S PERMISSION MODE, which nothing
                     // carried. A delegation is a headless run with nobody in it,
                     // so a mode the engine would have stopped to ask about is
-                    // spent up front here or never: on OpenCode the default
-                    // (`build`, no `--auto`) answers every "ask" tool call with
-                    // `error=user rejected`, and the delegate reported no reason.
-                    // Empty stays empty — the engine default is still the
-                    // default, this only stops it from being the ONLY option.
+                    // spent up front here or never — and `plan` for a read-only
+                    // reviewer was not reachable for a delegate at all. Empty
+                    // stays empty: the engine default is still the default, this
+                    // only stops it from being the ONLY option.
                     if (member?.permissionMode) { task.permissionMode = member.permissionMode; }
                     if (spec.workdir) { task.workDir = spec.workdir; }
                     step.taskId = task.id;
@@ -4391,8 +4390,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?, '
                 + 'permissionMode?}] — ‼️ `permissionMode` is spent UP FRONT on a delegation for the same '
                 + 'reason it is on a task: a delegation is a headless run and there is nobody in it to ask. '
-                + 'Omit it and the engine default stands, which on OpenCode is `build` without `--auto`: every '
-                + 'tool call its config marks "ask" comes back `error=user rejected`. '
+                + 'Omit it and the engine default stands; what that default refuses is the engine\'s and the '
+                + 'user\'s config to decide, and a refused tool call still exits 0, so a delegate that did '
+                + 'nothing looks like one that succeeded. Set `plan` for a reviewer that must not write. '
                 + PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join('|')
                 + '), title?, workdir?, plannerModel?, '
                 + 'engine? (which engine the DELEGATIONS run on — '
@@ -4461,10 +4461,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agent: m.agentId, role: m.role ?? null,
                         engine: m.engine ?? sp?.engine ?? 'claude',
                         model: m.model ?? null,
-                        // ‼️ M-14 — null means the engine's own default, and on
-                        // OpenCode that default answers every "ask" tool call
-                        // with `error=user rejected`. A delegate that could not
-                        // call a tool is diagnosed from this line.
+                        // ‼️ M-14 — null means the engine's own default. A
+                        // delegate that called no tool exits 0 exactly like one
+                        // that worked (measured), so this line is where that
+                        // gets diagnosed rather than guessed at.
                         permissionMode: m.permissionMode ?? null
                     })),
                     // a waiting run says WHAT it waits for, so an agent knows to
