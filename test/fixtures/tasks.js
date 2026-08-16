@@ -192,7 +192,13 @@ const data = () => ({
 const plan = () => ([
     {
         id: 's1', kind: 'schedule', title: 'sabah13',
-        when: 'every day 09:00', nextAt: NOW + 22 * 3600e3, agentName: 'developer', model: '',
+        when: 'every day 09:00', nextAt: NOW + 22 * 3600e3, agentName: 'developer',
+        // ‼️ M-21 — THE ROW THAT LIED. `haiku` is a Claude model name; the
+        // engine underneath it is Antigravity, so this pair cannot run — and
+        // with only the model drawn, the row was indistinguishable from an
+        // ordinary Claude schedule. That is how a user reverted an engine, read
+        // "haiku" here, and believed it.
+        model: 'haiku', engine: 'Antigravity',
         guard: '', hasGuard: false, switchable: true, enabled: true,
         cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
         lastNote: '', issues: ['no-guard', 'overdue'],
@@ -213,7 +219,8 @@ const plan = () => ([
     },
     {
         id: 's2', kind: 'schedule', title: 'AGENT_AREA dosyalama turu',
-        when: 'every day 05:00', nextAt: NOW + 14 * 3600e3, agentName: 'manager', model: 'opus',
+        when: 'every day 05:00', nextAt: NOW + 14 * 3600e3, agentName: 'manager',
+        model: 'opus', engine: '',
         guard: 'files in …/00_INPUT (skip _LOG_.md)', hasGuard: true,
         switchable: true, enabled: true,
         cost7d: 12.3, runs7d: 3, skipped7d: 4, skipRate: 57,
@@ -233,7 +240,7 @@ const plan = () => ([
     },
     {
         id: 't1', kind: 'trigger', title: 'Medya izleyicisi',
-        when: 'on change · …/02_MEDIALASTIR', agentName: 'manager', model: '',
+        when: 'on change · …/02_MEDIALASTIR', agentName: 'manager', model: '', engine: '',
         guard: '', hasGuard: false, switchable: true, enabled: true,
         cost7d: 70.9, runs7d: 23, skipped7d: 0, skipRate: 0,
         lastRunAt: NOW - 3600e3, lastNote: 'no files waiting',
@@ -245,6 +252,25 @@ const plan = () => ([
                 { label: 'Fires', value: 'on change · …/02_MEDIALASTIR' },
                 { label: 'Armed', value: 'yes — the path exists and is being watched' },
                 { label: 'Brakes', value: 'debounce 60s · cooldown 300s · max 6/h' }
+            ]
+        }
+    },
+    {
+        // A template is the object whose whole point is "that again", so the
+        // launch it will do it WITH belongs on its row (M-21).
+        id: 'tp1', kind: 'template', title: 'Sürüm notu taslağı',
+        when: 'when you run it', agentName: 'developer',
+        model: 'gpt-5.6-sol', engine: 'Codex',
+        guard: '', hasGuard: false, switchable: false, enabled: true,
+        cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+        lastNote: '', issues: [], overdue: '',
+        detail: {
+            prompt: 'CHANGELOG üstündeki sürümü oku ve mağaza notunu yaz',
+            target: 'runs on developer · headless', timing: '', steps: [], missed: '',
+            setup: [
+                { label: 'Agent', value: 'developer · headless' },
+                { label: 'Engine', value: 'Codex' },
+                { label: 'Model', value: 'gpt-5.6-sol' }
             ]
         }
     }

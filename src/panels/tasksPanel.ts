@@ -11,7 +11,8 @@ import { EngineModels } from '../core/models';
 import {
     describeFailurePhase, FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow,
     MissedPolicy, newId,
-    RunDimensions, ScheduleKind, scheduleDue, TaskManager, TaskMode, WorkflowStep
+    RunDimensions, ScheduleKind, scheduleDue, settledKeyAfterEdit,
+    TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { TaskRecord } from '../core/taskstats';
@@ -126,6 +127,16 @@ interface PlanRow {
     nextAt?: number;
     agentName: string;
     model: string;
+    /**
+     * ‼️ M-21 — WHICH ENGINE, ON THE ROW. The row carried the model and not the
+     * engine, so `agy` + `haiku` — a Claude model name sitting on Antigravity,
+     * which is not a thing that can run — read exactly like an ordinary Claude
+     * schedule. The user reverted an engine change, saw "haiku" on the row,
+     * believed it had taken, and only the edit form disagreed. Empty = the
+     * default; a stated engine is shown, because a fact the reader has to open
+     * a panel for is a fact the row is hiding (DENSITY).
+     */
+    engine: string;
     guard: string;
     hasGuard: boolean;
     /** false for definitions with no on/off state (workflows, templates) */
@@ -411,6 +422,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             nextAt: s.enabled ? nextOccurrences(s, now, 35)[0] : undefined,
             agentName: s.agentName,
             model: s.model ?? '',
+            engine: s.engine ? engineOf(s.engine).label : '',
             guard: describePrecondition(s.fireIf),
             hasGuard: !!s.fireIf?.kind,
             switchable: true, enabled: s.enabled,
@@ -442,6 +454,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             when: triggerWhen(t),
             agentName: t.action.kind === 'task' ? t.action.agentName : '',
             model: t.action.kind === 'workflow' ? '' : (t.action.model ?? ''),
+            engine: t.action.kind === 'workflow' || !t.action.engine
+                ? '' : engineOf(t.action.engine).label,
             guard: describePrecondition(t.fireIf),
             hasGuard: !!t.fireIf?.kind,
             switchable: true, enabled: t.enabled,
@@ -464,7 +478,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: w.id, kind: 'workflow', title: w.title,
             when: 'when you run it (or a trigger does)',
-            agentName: '', model: '', guard: '', hasGuard: false,
+            // a chain has no single launch of its own — each step states one
+            agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
             lastNote: `${w.steps.length} step(s)`,
@@ -483,7 +498,11 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: t.id, kind: 'template', title: t.title,
             when: 'when you run it',
-            agentName: t.agentName ?? '', model: '', guard: '', hasGuard: false,
+            // ‼️ M-21 — a template's whole point is "that again", and since
+            // X-35 it carries the launch to do it with. The row said neither.
+            agentName: t.agentName ?? '', model: t.model ?? '',
+            engine: t.engine ? engineOf(t.engine).label : '',
+            guard: '', hasGuard: false,
             switchable: false, enabled: true,
             cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
             lastNote: '',
@@ -987,6 +1006,54 @@ function guardSeed(p: Precondition | undefined): Record<string, unknown> {
  * it, which is precisely why cloning a scheduled run produced a task with no
  * time on it: there was nowhere to ask for a schedule's fields from.
  */
+/**
+ * ‼️ M-21 — WHAT THE SAVE JUST DID, IN THE SENTENCE THAT CONFIRMS IT.
+ *
+ * "Schedule saved." was true and useless: it did not say that the schedule had
+ * ALSO started running, which it had, so the surprise had nowhere to be caught.
+ * Now the confirmation states the next firing and says in as many words that
+ * saving is not running — the one fact the user had to learn by watching an
+ * agent wake up at midnight.
+ *
+ * Read off `nextOccurrences`, which is the same forecast the Plan rows use, so
+ * the sentence cannot promise a time the list contradicts.
+ */
+function nextFireNote(s: FarmSchedule): string {
+    if (!s.enabled) { return 'it is switched off, so nothing fires until you turn it on.'; }
+    const at = nextOccurrences(s, Date.now(), 370)[0];
+    if (!at) {
+        return s.kind === 'once'
+            ? 'its time has already passed — it will not fire again.'
+            : 'no firing is scheduled ahead of it.';
+    }
+    const when = new Date(at);
+    const today = new Date();
+    const sameDay = when.toDateString() === today.toDateString();
+    const clock = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+    return `next run ${sameDay ? 'today' : when.toLocaleDateString()} at ${clock}`
+        + ' (while VS Code is open). Saving never runs it.';
+}
+
+/**
+ * ‼️ M-21 — A WHOLE-FORM SAVE HAS TO BE ABLE TO EMPTY A FIELD.
+ *
+ * `Object.assign(stored, fields)` cannot express "this is gone": it writes what
+ * is there and leaves everything else exactly as it was, so a form that carries
+ * the whole object could ADD and CHANGE but never REMOVE. Every complaint of
+ * the shape "I set it back and it did not take" comes out of that one line.
+ *
+ * Here `undefined` is a value with a meaning — delete the key — which is what a
+ * form's empty box actually says. It is not the same as omitting the key: a
+ * caller that has nothing to say about a field leaves it out of `fields`
+ * entirely and the stored value survives.
+ */
+function applyForm<T extends object>(target: T, fields: Partial<T>): void {
+    const t = target as Record<string, unknown>;
+    for (const [key, value] of Object.entries(fields)) {
+        if (value === undefined) { delete t[key]; } else { t[key] = value; }
+    }
+}
+
 function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
     return {
         mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
@@ -1290,25 +1357,35 @@ export class TasksPanel {
             if (gk === 'folderHasFiles') { p.recursive = item.guardRecursive !== false; }
             return p;
         };
+        /**
+         * ‼️ M-21 — EVERY DIMENSION IS STATED, INCLUDING THE ONES THE USER
+         * EMPTIED. This used to leave a cleared field OUT of the object, and an
+         * absent key reads as "no change" to a merge — so putting the engine
+         * back to the default was accepted, announced as saved, and silently
+         * dropped. The row then showed the new MODEL beside the OLD engine, and
+         * reopening the form proved it by offering the engine the user thought
+         * they had just taken off. `undefined` here means GONE; `applyForm`
+         * deletes it, and on a brand-new object it simply never reaches disk.
+         */
         const dims = (): RunDimensions => ({
-            ...(str('engine') ? { engine: str('engine') } : {}),
-            ...(str('model') ? { model: str('model') } : {}),
-            ...(str('effort') ? { effort: str('effort') } : {}),
-            ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
-            ...(str('cli') ? { cli: str('cli') } : {}),
-            ...(str('workDir') ? { workDir: str('workDir') } : {}),
-            ...(num('priority', 0) ? { priority: num('priority', 0) } : {}),
-            ...(str('project') ? { projectId: str('project') } : {}),
+            engine: str('engine') || undefined,
+            model: str('model') || undefined,
+            effort: str('effort') || undefined,
+            permissionMode: str('permissionMode') || undefined,
+            cli: str('cli') || undefined,
+            workDir: str('workDir') || undefined,
+            priority: num('priority', 0) || undefined,
+            projectId: str('project') || undefined,
             // ‼️ M-7 — the budget waiver rides with the AUTOMATION, so every run
             // it makes carries it. Ticking it on each produced task by hand is
             // exactly what nobody is there to do at 09:00.
-            ...(item.ignoreBudget === true ? { ignoreBudget: true } : {}),
+            ignoreBudget: item.ignoreBudget === true ? true : undefined,
             // ‼️ M-3 — and so does the retry policy, for the same reason: an
             // automation that fails at 03:00 with nobody watching is the case
             // "try it again in half an hour" exists for. Absent (the form's
             // "use my default") stays absent — storing the resolved default
             // would freeze it against a setting the user changes later.
-            ...(normalizeRetry(item.retry) ? { retry: normalizeRetry(item.retry) as RetryPolicy } : {})
+            retry: (normalizeRetry(item.retry) as RetryPolicy | undefined) || undefined
         });
         const done = (text: string): void => {
             void this.panel.webview.postMessage({ type: 'plan-saved', text });
@@ -1332,15 +1409,17 @@ export class TasksPanel {
             };
             const existing = editing ? m.schedules.find(s => s.id === id) : undefined;
             if (existing) {
-                Object.assign(existing, fields);
-                // A changed time is a different occurrence: the old day-stamp
-                // would otherwise mark the new time as already handled.
-                existing.lastRunKey = undefined;
-                m.persist();
-                done(`Schedule “${fields.title}” saved.`);
+                // ‼️ M-21 — SAVING IS NOT RUNNING, and the page no longer has
+                // its own opinion about that. It used to assign the fields onto
+                // the object and clear `lastRunKey` itself, which made
+                // `scheduleDue` fire the schedule the moment the form closed.
+                // Both rules now live behind updateSchedule, where the bridge
+                // meets them too.
+                m.updateSchedule(existing.id, fields, true);
+                done(`Schedule “${fields.title}” saved — ${nextFireNote(existing)}`);
             } else {
-                m.addSchedule(fields);
-                done(`Schedule “${fields.title}” created — it fires while VS Code is open.`);
+                const made = m.addSchedule(fields);
+                done(`Schedule “${fields.title}” created — ${nextFireNote(made)}`);
             }
             return;
         }
@@ -1381,7 +1460,7 @@ export class TasksPanel {
             };
             const existing = editing ? m.triggers.find(t => t.id === id) : undefined;
             if (existing) {
-                Object.assign(existing, fields);
+                applyForm(existing, fields);
                 m.persist();
                 done(`Trigger “${fields.title}” saved.`);
             } else {
@@ -1433,7 +1512,7 @@ export class TasksPanel {
         };
         const existing = editing ? m.templates.find(t => t.id === id) : undefined;
         if (existing) {
-            Object.assign(existing, fields);
+            applyForm(existing, fields);
             m.persist();
             done(`Template “${fields.title}” saved.`);
         } else {

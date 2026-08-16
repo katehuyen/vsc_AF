@@ -340,6 +340,31 @@
         });
     }
 
+    /**
+     * ‼️ M-21 — THE LAUNCH, NOT HALF OF IT.
+     *
+     * This cell used to be the model alone. A schedule moved to Antigravity but
+     * still carrying the model name `haiku` therefore read exactly like an
+     * ordinary Claude one — which is how a user reverted an engine, saw the old
+     * model on the row, and concluded the revert had taken when it had not. The
+     * engine is shown whenever one is stated; "default" still means the
+     * launcher's own choice, both parts of it.
+     */
+    function launchCell(p) {
+        if (!p.engine && !p.model) {
+            return p.switchable || p.kind === 'template'
+                ? '<td><span class="muted">default</span></td>'
+                : '<td><span class="muted">—</span></td>';
+        }
+        const bits = [];
+        if (p.engine) { bits.push(`<span class="badge">${C.esc(p.engine)}</span>`); }
+        if (p.model) { bits.push(`<span class="badge">${C.esc(p.model)}</span>`); }
+        const now = [p.engine || 'default engine', p.model || 'default model'].join(' · ');
+        return `<td title="${C.esc('Now: ' + now
+            + '\n\nWhat this definition launches with. An empty half is the launcher\'s own default,'
+            + ' resolved when it runs.')}">${bits.join(' ')}</td>`;
+    }
+
     function planRowHtml(p) {
         const key = p.kind + ':' + p.id;
         const k = KIND[p.kind];
@@ -373,7 +398,7 @@
             ]), 'tip-free mainw', 'data-aftip-anchor=".prow"')}
             </td>
             <td class="agent">${p.agentName ? C.esc(p.agentName) : '<span class="muted">—</span>'}</td>
-            <td>${p.model ? `<span class="badge">${C.esc(p.model)}</span>` : '<span class="muted">default</span>'}</td>
+            ${launchCell(p)}
             <td class="guardcell">${guard}</td>
             <td class="num">${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}</td>
             <td class="lastrun">${p.lastRunAt ? C.esc(rel(p.lastRunAt)) : '<span class="muted">never</span>'}
@@ -443,7 +468,9 @@
             <th class="expand"></th>
             ${sortCell(v, 'title', 'What runs')}
             ${sortCell(v, 'agent', 'Agent')}
-            <th>Model</th>
+            <th title="${C.esc('What this definition launches with — its engine and its model. '
+        + 'Either half may be blank: that half is the launcher\'s own default, resolved when it runs. '
+        + 'A stated engine is shown here because a model name alone cannot say which CLI it goes to.')}">Launch</th>
             <th>Guard</th>
             ${sortCell(v, 'cost', 'Cost 7d', true)}
             ${sortCell(v, 'last', 'Last run')}

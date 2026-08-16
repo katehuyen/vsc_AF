@@ -695,6 +695,36 @@ export function previousOccurrenceKey(s: Pick<FarmSchedule, 'kind' | 'dow'>, now
     return `${prev.getFullYear()}-${prev.getMonth() + 1}-${prev.getDate()}`;
 }
 
+/**
+ * ‼️ M-21 — THE STAMP THAT MEANS "AN EDIT IS NOT A FIRING".
+ *
+ * `scheduleDue` decides entirely on `lastRunKey`, so whatever an edit leaves in
+ * that field decides whether pressing Save starts an agent. Clearing it — which
+ * the Tasks page did on EVERY save, whether or not the time had changed — makes
+ * BOTH of that function's branches say yes: past the time today, today's
+ * occurrence looks unhandled; before it, a catch-up policy looks at yesterday
+ * and finds nothing there either. Measured on the user's own 05:00 daily backup:
+ * they changed only the engine, just before midnight, and it ran there and then,
+ * every single time they saved.
+ *
+ * The rule is the one they stated: **an edit takes effect at the NEXT
+ * occurrence and never at the moment of saving.** So a save settles whichever
+ * occurrence is already behind the schedule's (possibly new) time — the same
+ * two branches `scheduleDue` reads, in the same order, so the two cannot drift.
+ *
+ * `once` is not settled here: it has no recurring occurrence to be behind, and
+ * a `once` whose appointment the user moved is a new appointment.
+ */
+export function settledKeyAfterEdit(
+    s: Pick<FarmSchedule, 'kind' | 'dow' | 'hour' | 'minute'>, now: Date
+): string {
+    const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+    const runDay = s.kind !== 'weekly' || now.getDay() === s.dow;
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    if (runDay && minutes >= s.hour * 60 + s.minute) { return dayKey; }
+    return previousOccurrenceKey(s, now);
+}
+
 /** Validate the content of a seed-schedules.json (external one-shot schedule
  *  seeding — see applySeedFile). Bad entries are dropped, sane defaults fill
  *  the gaps. Exported pure for tests. */
@@ -4053,11 +4083,50 @@ export class TaskManager implements vscode.Disposable {
 
     // ---------- schedules ----------
 
-    /** Edit-in-place (parity with editTrigger — schedules used to be delete+recreate). */
-    updateSchedule(id: string, patch: Partial<Omit<FarmSchedule, 'id'>>): void {
+    /**
+     * ‼️ M-21 — THE ONE DOOR INTO A STORED SCHEDULE.
+     *
+     * Edit-in-place (parity with editTrigger — schedules used to be
+     * delete+recreate). The Tasks page used to reach past this and
+     * `Object.assign` the object itself while the bridge came through here, so
+     * the two could not help but drift, and they did: only one of them settled
+     * the occurrence, and neither of them could take a field back OFF.
+     *
+     * Two rules, and both doors get them because there is one door:
+     *
+     * - **`undefined` in the patch REMOVES the field.** That is what a form's
+     *   empty box means, and `Object.assign` cannot say it. A key simply left
+     *   out of the patch is not mentioned and survives untouched.
+     * - **An edit is not a firing** (`settle`). See `settledKeyAfterEdit`:
+     *   clearing the day-stamp on a save made the schedule run the moment the
+     *   form closed. Switching one back ON settles whether or not the caller
+     *   asked, because a schedule that was off did not miss anything.
+     */
+    updateSchedule(
+        id: string, patch: Partial<Omit<FarmSchedule, 'id'>>, settle = false,
+        now = new Date()
+    ): void {
         const s = this.schedules.find(x => x.id === id);
         if (!s) { return; }
-        Object.assign(s, patch);
+        const wasEnabled = s.enabled;
+        const wasOnceAt = s.onceAt;
+        const rec = s as unknown as Record<string, unknown>;
+        for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined) { delete rec[key]; } else { rec[key] = value; }
+        }
+        if (settle || (!wasEnabled && s.enabled)) {
+            if (s.kind === 'once') {
+                // a `once` whose appointment moved is a new appointment; one
+                // that did not move keeps whatever it had, run or not
+                if (wasOnceAt !== s.onceAt) { s.lastRunKey = undefined; }
+            } else {
+                s.lastRunKey = settledKeyAfterEdit(s, now);
+            }
+            // and a quiet-hours deferral of the occurrence just settled goes
+            // with it, or the window ending would fire the very run this edit
+            // was supposed to replace
+            s.pendingRunKey = undefined;
+        }
         this.save();
     }
 
@@ -4075,9 +4144,10 @@ export class TaskManager implements vscode.Disposable {
         return schedule;
     }
 
-    toggleSchedule(s: FarmSchedule): void {
-        s.enabled = !s.enabled;
-        this.save();
+    /** ‼️ M-21 — through the one door, so switching a schedule back on settles
+     *  the past exactly as an edit does: it was off, so it missed nothing. */
+    toggleSchedule(s: FarmSchedule, now = new Date()): void {
+        this.updateSchedule(s.id, { enabled: !s.enabled }, false, now);
     }
 
     deleteSchedule(s: FarmSchedule): void {

@@ -8185,7 +8185,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     'A weekly schedule needs dow (0=Sunday … 6=Saturday).');
                 need(kindAfter !== 'once' || (patch.onceAt ?? cur.onceAt) !== undefined,
                     'A once schedule needs onceAt.');
-                taskManager.updateSchedule(cur.id, patch);
+                // ‼️ M-21 — `settle` here for the same reason the page passes
+                // it: an edit takes effect at the next occurrence. An agent
+                // adjusting a nightly schedule at two in the afternoon must not
+                // start it, and the page and the bridge must not answer that
+                // question differently (_REF/agentfarm-dev.md).
+                taskManager.updateSchedule(cur.id, patch, true);
                 return { id: cur.id, title: patch.title ?? cur.title, updated: Object.keys(patch) };
             }
         },
