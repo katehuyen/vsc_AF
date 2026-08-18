@@ -499,6 +499,25 @@ koşmuş görevlerin `workDir`'lerini de içeriyor.
 > **Ders (yine):** üç düzeltmeyi doğrulamak, iki yeni hata daha buldurdu. Yüzey
 > ölçümü tek seferlik bir kabul değil, tekrarlanabilir bir yordam olmalı.
 
+### 8e-4. Son iki düzeltmenin doğrulaması — M-14 kabulü TAMAM
+
+3.157.0 kurulup pencere yenilendikten sonra:
+
+| Doğrulama | Sonuç |
+|---|---|
+| `sessions.opencodeSync` | ✅ Kökler **15 → 24**, listelenen **11 → 62**, `inTable` **0 → 2**. Farm artık kendi koştuğu klasörlerdeki konuşmaları görüyor |
+| **Yüzeyden explicit resume** (kabul matrisinin son açık satırı) | ✅ `tasks.add { resume:"ses_feac8a864ffe…" }` kabul edildi, `runSession` **aynı kimliği** döndürdü ve cevap **`ZARFIL-M14`** geldi. Prompt "dosyaya tekrar bakma" diyordu — modelin bunu bilmesinin tek yolu **taşınan konuşma**. `resumeCostBefore: 0`, tur token'ı 8.572 (konuşmanın toplamı değil, **bu turun artışı**) |
+| Antigravity devri, iki adımlı gerçek `agy` zinciri | ✅ 2. adımın prompt'u yalnız cevabı taşıyor; `conversation_id`, `status`, `duration_seconds` **yok** |
+
+Böylece M-14'ün kabul matrisi kapandı: her yüzeyde fresh **ve** explicit resume ·
+araç başarısı · token/cache/`cost=0` bedava model · cancel · retry ·
+restart binding · ek dosya · yanlış model için başlamadan anlaşılır ret.
+
+> **‼️ Kalan bir gözlem, M-14'ün değil S-33'ün alanı:** hasat `failed: 20`
+> bildiriyor (62 listelenenin 20'sinin export'u başarısız). Kökler düzeldiği için
+> artık **çok daha fazla** konuşma görülüyor ve bunların bir kısmı export
+> edilemiyor. Kök nedeni ölçülmedi; ayrı bir kalem hak ediyor.
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi

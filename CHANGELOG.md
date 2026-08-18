@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.158.0 — M-14 is closed: every surface, on the real engine, verified twice (2026-08-18)
+
+The last two fixes were run through their own paths on the live build, which closes M-14's acceptance matrix.
+
+- **Agent Farm can now find the conversations it causes.** `sessions.opencodeSync` went from `roots 15 · listed 11 · inTable 0` to `roots 24 · listed 62 · inTable 2` — the run folders the farm itself chose are scan roots now.
+- **‼️ Explicit resume works from a surface, which was the last open row.** `tasks.add { resume: "ses_feac8a864ffe…" }` was accepted, came back on the **same** session id rather than a new one, and answered `ZARFIL-M14` to a prompt that said *don't look at the file again* — so the only way it could know was the conversation carrying. `resumeCostBefore: 0` and 8 572 tokens for the turn, not the conversation's total.
+- **Antigravity's handoff verified on a real two-step chain.** Step 2 received the answer alone: no `conversation_id`, no `status`, no timings.
+
+**M-14's acceptance matrix is complete:** fresh **and** explicit resume on every surface · tool success · tokens / cache / `cost: 0` on a free model · cancel · retry · restart binding · attachment · a readable refusal, before anything starts, for a model the engine cannot take.
+
+**What the item actually cost, and what it bought.** Running the six surfaces for the first time found **five** bugs — an empty prompt on every bridge retry, a schedule that could not be given an engine model at all, two handoffs that carried a transcript instead of an answer, and a farm that could not index the conversation it had just created. Every one of them passed all 10 700+ tests that existed at the time. The shared root is one assumption — *what is true on Claude is true on every engine* — and the only thing that exposed it was running the real binary through the real surface.
+
+*One thing is now visible that was not before, and it is not M-14's:* the harvest reports `failed: 20`. Fixing the roots means far more conversations are seen, and a fifth of them fail to export. The cause was not measured; it is filed as its own item rather than guessed at here.
+
 ## 3.157.0 — verifying the three fixes found two more (2026-08-18)
 
 3.156.0's three fixes were run again through the same paths on the live build, because a passing test is not a working feature. All three held: `tasks.rerun` with no `prompt` now **inherits** the original's; `schedules.add` **accepts** `opencode/nemotron-3.5-lightning-free` while still refusing `opencode/x; rm -rf /` and `opencode/$(whoami)` — the guard was not loosened, a missing character was added to its class; and a two-step chain's second step received `… : ZARFIL-M14`, the answer rather than the transcript. The reload also closed an acceptance row that only a restart can answer: **the launch binding survived it** — every pre-reload run still knows its engine, its `ses_…`, its tokens and its cost.
