@@ -10243,9 +10243,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spawn, and because it spends a turn of the user's plan it is NEVER run on
      * a timer, on page open, or by a refresh — only by the button.
      */
-    const engineRunner: EngineRunner = (command, args, timeoutMs, shell = true) =>
+    const engineRunner: EngineRunner = (command, args, timeoutMs, shell = true, stdin) =>
         new Promise((resolve, reject) => {
-            cp.execFile(command, args, {
+            const child = cp.execFile(command, args, {
                 // ‼️ THE ENGINE DECIDES (engineTest.ts). Under a shell the
                 // arguments are joined and NOT quoted, which turns a sentence
                 // into five arguments; an engine whose check carries one asks
@@ -10265,6 +10265,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? (err as { code: number }).code : (err ? 1 : 0);
                 resolve({ code, stdout: out, stderr: errOut });
             });
+            // ‼️ U-59 — THE PROMPT CHANNEL, AND THE CLOSE THAT MAKES IT ONE.
+            // OpenCode's run reads its message from stdin; a pipe left open is a
+            // CLI that waits for more input until the timeout, which would read
+            // as "the engine never answered". Engines that take the prompt on
+            // argv get their stdin closed too, so nothing can sit waiting on a
+            // terminal that is not there.
+            if (child.stdin) {
+                if (stdin !== undefined) { child.stdin.write(stdin); }
+                child.stdin.end();
+            }
         });
     /**
      * ‼️ THE LINE IS TYPED, NOT RUN — and that `false` is the whole safety of

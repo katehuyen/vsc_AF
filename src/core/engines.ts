@@ -50,6 +50,23 @@ export type AuthMode =
     | 'subscription'
     /** a key, ours or the CLI's own */
     | 'apikey'
+    /**
+     * ‼️ U-59 — NOTHING IS SIGNED IN AND NOTHING NEEDS TO BE.
+     *
+     * `none` used to carry both answers to "is there a credential?": *nobody has
+     * signed in yet, so this cannot run* and *this engine's own provider asks
+     * for nothing*. They are opposite states and they were the same word, so
+     * every reader that had only the mode to go on drew the second as the first
+     * — the badge said "not signed in" in the warning colour directly above a
+     * sentence saying the engine was ready, and the row offered a sign-in button
+     * as the fix for a thing that was not broken.
+     *
+     * A separate state rather than a flag beside the mode, because the mode is
+     * what the exhaustiveness tables switch on: a new reader is now made to
+     * answer for this case instead of falling into the failure branch by
+     * default.
+     */
+    | 'builtin'
     /** nothing found: the CLI is here but nobody has signed in */
     | 'none';
 
@@ -425,9 +442,11 @@ const SPECS: EngineSpec[] = [
                 };
             }
             return {
-                mode: 'none',
+                // ‼️ `builtin`, NOT `none` (U-59) — the two mean opposite things
+                // and used to be the same word. Measured: this engine runs with
+                // an empty `auth.json`.
+                mode: 'builtin',
                 file: OPENCODE_AUTH_FILE,
-                // ‼️ NOT "not signed in, so it cannot run". Measured otherwise.
                 detail: 'No provider credential is stored — and on this engine that does NOT mean it cannot run: '
                     + 'its own connected `opencode` provider lists and runs models with an empty `auth.json`.'
             };
@@ -582,7 +601,11 @@ export function readEngines(probe: EngineProbe): EngineStatus[] {
             // is a question with no meaning, and an answer to it would put a
             // nameless entry in the vault's own hover.
             key: { env: spec.env, inVault: !!spec.env && !!safe(() => probe.hasSecret(spec.env)) },
-            // see EngineSpec.readyWithoutCredential — the CLI still has to be here
+            // The CLI still has to be here. `builtin` is a READY mode (U-59) —
+            // it says a credential is not wanted, not that one is missing — so
+            // the mode alone now answers this for OpenCode; the flag stays as
+            // the belt to that braces, for a spec that declares readiness
+            // without its reader having been taught the new mode.
             ready: cli.found && (auth.mode !== 'none' || !!spec.readyWithoutCredential),
             next: nextStep(spec, cli, auth),
             loginCommand: spec.loginCommand,

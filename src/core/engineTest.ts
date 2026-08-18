@@ -21,6 +21,10 @@
  */
 
 import { EngineId } from './engines';
+import {
+    opencodeFreeModel, opencodeModelsListArgs, opencodeRunArgs,
+    OPENCODE_EXE, OPENCODE_NEEDS_SHELL
+} from './opencode';
 
 /**
  * What a test run needs from the outside world.
@@ -32,8 +36,17 @@ import { EngineId } from './engines';
  * arguments it never asked for. Engines whose command line carries a sentence
  * say so and are spawned directly.
  */
+/**
+ * ‼️ …AND SO IS `stdin`, FOR THE SAME REASON (U-59). OpenCode's run takes the
+ * prompt on standard input — `run [message..]` would put the user's text on a
+ * command line for no gain, and its own builder therefore never writes one.
+ * Measured in M-14: argv and stdin both work, but which one wins when BOTH are
+ * given changes with the quoting, so a caller sends exactly one. The health
+ * check has to speak the same channel production does, or it is a check of a
+ * path nothing uses.
+ */
 export type EngineRunner = (
-    command: string, args: string[], timeoutMs: number, shell?: boolean
+    command: string, args: string[], timeoutMs: number, shell?: boolean, stdin?: string
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 export interface EngineTestResult {
@@ -66,6 +79,24 @@ interface TestSpec {
     /** false when an argument is a sentence — see EngineRunner. Default true,
      *  because two of these engines are `.cmd` shims and need one. */
     shell?: boolean;
+    /** the prompt, when this engine takes it on standard input rather than argv */
+    stdin?: string;
+    /**
+     * ‼️ U-59 — THE CALL THAT CANNOT BE WRITTEN DOWN IN ADVANCE.
+     *
+     * Every other engine's check is a constant: a flag set and the smallest
+     * model on the plan, both true for as long as the CLI keeps its vocabulary.
+     * OpenCode's is not. Its cheapest turn is a FREE model from whichever
+     * providers happen to be connected on this machine, and that list is not
+     * knowable here — a name pinned in this file would be a paid turn the day
+     * the free one is retired, on an engine that offers free ones.
+     *
+     * So the spec may work its call out at press time, using the same injected
+     * runner (the lookup is a catalogue read, not a turn — it costs nothing).
+     * Returning a `refusal` is a real answer: "there is no free model, so this
+     * check would spend money — you choose" is worth more than a silent bill.
+     */
+    resolve?: (run: EngineRunner) => Promise<{ args?: string[]; stdin?: string; refusal?: string }>;
     /** what a healthy answer looks like on stdout */
     expect(stdout: string): boolean;
 }
@@ -121,6 +152,45 @@ const SPECS: TestSpec[] = [
         // The envelope says so itself, and a run that answered with an error
         // still exits 0 — so the status is the proof, not the exit code.
         expect: out => /"status"\s*:\s*"SUCCESS"/.test(out)
+    },
+    {
+        id: 'opencode',
+        command: OPENCODE_EXE,
+        // Filled in by `resolve` — the model is not knowable until the
+        // catalogue is read, and the flags are the owner module's to write
+        // (M-14: no opencode-only flag is spelled outside `core/opencode.ts`).
+        args: [],
+        stdin: PROMPT,
+        // A `.cmd` shim on Windows, and the prompt is on stdin rather than argv,
+        // so nothing here is a sentence the shell could split.
+        shell: OPENCODE_NEEDS_SHELL,
+        timeoutMs: 120000,
+        /**
+         * ‼️ A FREE MODEL, AND A TURN THAT CANNOT TOUCH A FILE.
+         *
+         * `--agent plan` is not a courtesy: measured in M-14, OpenCode's plan
+         * agent calls NO tool at all, whatever the config says. That is a
+         * stronger read-only guarantee than a permission mode, because it is the
+         * engine's own behaviour rather than a setting a user's `opencode.json`
+         * could have overridden.
+         */
+        resolve: async (run) => {
+            const listed = await run(OPENCODE_EXE, opencodeModelsListArgs(), 30000, OPENCODE_NEEDS_SHELL);
+            const model = opencodeFreeModel(listed.stdout);
+            if (!model) {
+                return {
+                    refusal: 'No free model is on offer from the providers connected here, so this check '
+                        + 'would spend money on a paid turn. Connect the `opencode` provider (it needs no '
+                        + 'sign-in) or pick a model yourself and run one turn by hand — Agent Farm will not '
+                        + 'choose a billed model for a health check.'
+                };
+            }
+            return { args: opencodeRunArgs({ model, agent: 'plan' }) };
+        },
+        // The JSON stream is the proof: a step really finished. `text` alone
+        // would pass on a run that only echoed, and an exit code proves nothing
+        // here — M-14 measured a REFUSED tool call exiting 0.
+        expect: out => /"type"\s*:\s*"step_finish"/.test(out)
     }
 ];
 
@@ -157,7 +227,23 @@ export async function testEngine(
     }
     const started = now();
     try {
-        const r = await run(spec.command, spec.args, spec.timeoutMs, spec.shell ?? true);
+        let args = spec.args;
+        let stdin = spec.stdin;
+        if (spec.resolve) {
+            // ‼️ THE LOOKUP IS INSIDE THE TRY, so a catalogue read that cannot
+            // run at all lands in the same "could not be run" answer a failed
+            // spawn does — a health check that throws is the one failure a user
+            // cannot read.
+            const plan = await spec.resolve(run);
+            if (plan.refusal) {
+                // Not a failure of the engine: nothing was tested, and saying
+                // "it did not answer" would be a verdict this never reached.
+                return { id, ok: false, ms: now() - started, at, detail: plan.refusal };
+            }
+            if (plan.args) { args = plan.args; }
+            if (plan.stdin !== undefined) { stdin = plan.stdin; }
+        }
+        const r = await run(spec.command, args, spec.timeoutMs, spec.shell ?? true, stdin);
         const ms = now() - started;
         const answered = r.code === 0 && spec.expect(r.stdout);
         if (answered) {

@@ -76,7 +76,14 @@ const by = (list, id) => list.find(e => e.id === id);
     // broken is the same dishonesty this module was written to end.
     const list = readEngines(probe({ path: ['opencode'] }));
     const row = by(list, 'opencode');
-    ok('‼️ OpenCode is READY with nothing signed in', row.ready && row.auth.mode === 'none');
+    // ‼️ U-59 — AND IT SAYS SO IN THE MODE, NOT ONLY IN THE SENTENCE. This used
+    // to assert `mode === 'none'`, i.e. the same word the engine that CANNOT run
+    // reports. `ready` was then true beside it and every reader with only the
+    // mode to go on drew the row as broken — which is exactly what the Engines
+    // page did. `builtin` is the state; `none` still means "nothing found".
+    ok('‼️ OpenCode is READY with nothing signed in', row.ready && row.auth.mode === 'builtin');
+    ok('…and "needs no credential" is NOT spelled the same as "has no credential"',
+        row.auth.mode !== 'none');
     ok('…and its row says so instead of sending you to a login',
         /Ready, with nothing signed in/.test(row.next) && /free tier/.test(row.next));
     ok('…and the login is offered as the way to the PAID models, not as a fix',
@@ -365,6 +372,121 @@ const by = (list, id) => list.find(e => e.id === id);
         await testEngine('claude', claude, clock(1000));
         ok('the cheapest model is the one asked for',
             claude.calls[0].args.includes('--model') && claude.calls[0].args.includes('haiku'));
+
+        // ---------- U-59: "no credential" is TWO states, not one ----------
+        // ‼️ `none` used to carry both *nobody has signed in, so this cannot
+        // run* and *this engine asks for nothing*. Opposite meanings, one word —
+        // so the badge drew the second as the first: `not signed in` in the
+        // warning colour, directly above a sentence saying the engine was ready,
+        // with a "Sign in with a plan" button offered as the fix for a fault the
+        // row did not have. Seen in one second in a picture and invisible to
+        // every string test, because each string was correct on its own.
+        {
+            const fsx = require('fs');
+            const pagejs = fsx.readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8');
+            const eng = fsx.readFileSync(path.join(__dirname, '..', 'src', 'core', 'engines.js').replace(/\.js$/, '.ts'), 'utf8');
+
+            ok('‼️ the type itself distinguishes "needs no credential" from "has none"',
+                /\|\s*'builtin'/.test(eng) && /\|\s*'none'/.test(eng));
+            ok('…and OpenCode reports the first, not the second',
+                /mode: 'builtin',\s*\n\s*file: OPENCODE_AUTH_FILE/.test(eng));
+            ok('the badge reads as READY rather than as a warning',
+                /mode === 'builtin'[\s\S]{0,120}tone: 'ok'/.test(pagejs)
+                && /no sign-in needed/.test(pagejs));
+            ok('‼️ …and the button stops offering itself as the repair',
+                /Add paid providers/.test(pagejs)
+                && /builtin \? 'Add paid providers' : 'Sign in with a plan'/.test(pagejs));
+            ok('…while still saying what signing in WOULD buy, since it buys something real',
+                /adds the PAID providers beside/.test(pagejs));
+
+            // The picture is the only place this was ever visible, so the
+            // fixture that draws it is part of the guarantee.
+            const fx = fsx.readFileSync(path.join(__dirname, 'fixtures', 'engines.js'), 'utf8');
+            ok('the Engines fixture actually draws this row — it had four engines and never this one',
+                /id: 'opencode'/.test(fx) && /mode: 'builtin'/.test(fx));
+        }
+
+        // ---------- U-59: OpenCode's check, worked out at press time ----------
+        // ‼️ Every other engine's health check is a constant. OpenCode's cannot
+        // be: its cheapest turn is a FREE model from whichever providers happen
+        // to be connected on this machine, and a name pinned in the source would
+        // become a PAID turn the day that model is retired — on the one engine
+        // whose own provider gives free ones away. So the catalogue is read
+        // first, and this is what holds that in place.
+        {
+            const { opencodeFreeModel } =
+                require(path.join(__dirname, '..', 'out', 'core', 'opencode.js'));
+
+            /** A runner that answers per call, and records the WHOLE contract —
+             *  shell and stdin included, because both decide whether the call
+             *  works at all. */
+            const scripted = (replies) => {
+                const calls = [];
+                const fn = (command, args, timeoutMs, shell, stdin) => {
+                    calls.push({ command, args, timeoutMs, shell, stdin });
+                    const r = replies[calls.length - 1] || {};
+                    return Promise.resolve({ code: r.code ?? 0, stdout: r.stdout ?? '', stderr: r.stderr ?? '' });
+                };
+                fn.calls = calls;
+                return fn;
+            };
+            const CATALOG = [
+                'opencode/nemotron-3.5-lightning-free',
+                'opencode/deepseek-v4-flash-free',
+                'anthropic/claude-opus-5',
+                'openai/gpt-5'
+            ].join('\n');
+
+            const oc = scripted([
+                { stdout: CATALOG },
+                { stdout: '{"type":"step_start"}\n{"type":"text","part":{"text":"OK"}}\n{"type":"step_finish"}\n' }
+            ]);
+            const res = await testEngine('opencode', oc, clock(1000));
+            ok('‼️ OpenCode HAS a health check at all — it used to answer "no health '
+                + 'check is defined", so the Engines page showed a permanently untestable engine',
+                res.ok === true && !/No health check/.test(res.detail));
+            ok('…the catalogue is read FIRST, and that read is not a turn',
+                oc.calls[0].args.join(' ') === 'models');
+            ok('‼️ …and the model it then spends is a FREE one, off that list rather than out of the source',
+                oc.calls[1].args.includes('-m')
+                && /-free$/.test(oc.calls[1].args[oc.calls[1].args.indexOf('-m') + 1]));
+            ok('‼️ …on the `plan` agent, which MEASURABLY calls no tool at all (M-14) — '
+                + 'a stronger read-only guarantee than a permission mode, because it is the '
+                + 'engine\'s own behaviour and not a setting the user\'s config could override',
+                oc.calls[1].args.includes('--agent') && oc.calls[1].args.includes('plan'));
+            ok('…and the prompt goes on STDIN, the channel this engine\'s run really uses',
+                oc.calls[1].stdin === 'Reply with exactly: OK'
+                && !oc.calls[1].args.some(a => /Reply with exactly/.test(a)));
+            ok('…proved by a step really finishing, not by an exit code — M-14 measured '
+                + 'a REFUSED tool call exiting 0',
+                res.ok === true);
+
+            // The same run, minus the finished step: exit 0 is not an answer here.
+            const hollow = scripted([{ stdout: CATALOG }, { stdout: '{"type":"step_start"}\n' }]);
+            const hollowRes = await testEngine('opencode', hollow, clock(1000));
+            ok('‼️ a run that opened a step and never finished one is NOT ok, though it exited 0',
+                hollowRes.ok === false);
+
+            // ‼️ NOTHING IS BILLED BY DEFAULT. A catalogue with no free model is a
+            // question for the user, not a licence to pick a paid one.
+            const paidOnly = scripted([{ stdout: 'anthropic/claude-opus-5\nopenai/gpt-5\n' }]);
+            const refused = await testEngine('opencode', paidOnly, clock(1000));
+            ok('‼️ with no free model the check REFUSES rather than spending on a paid turn',
+                refused.ok === false && /would spend money/.test(refused.detail)
+                && paidOnly.calls.length === 1);
+            ok('…and it says what the user can do about it, instead of only saying no',
+                /pick a model yourself/.test(refused.detail));
+
+            // The picker itself: the engine's own naming is the signal, and the
+            // choice is deterministic so a flaky result cannot be blamed on it.
+            ok('the free-model picker reads the provider\'s own suffix',
+                opencodeFreeModel(CATALOG) === 'opencode/deepseek-v4-flash-free');
+            ok('…deterministically, so two runs of the check test the same thing',
+                opencodeFreeModel(CATALOG) === opencodeFreeModel(CATALOG.split('\n').reverse().join('\n')));
+            ok('…and prose in the output is not mistaken for a model',
+                opencodeFreeModel('Models for connected providers:\nnot a model at all -free\n') === '');
+            ok('…an empty catalogue is empty, not a guess', opencodeFreeModel('') === '');
+        }
 
         // ‼️ The verdict's AGE is part of the claim: a tick from four hours ago
         // is not the same statement as one from four seconds ago.

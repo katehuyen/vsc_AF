@@ -328,6 +328,39 @@ export function opencodeExportArgs(sessionId: string): string[] {
  *  first prompt, exactly as it does on Codex. */
 export const OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG = true;
 
+/** `opencode models` — every model the CONNECTED providers offer, one per line
+ *  as `provider/model`. It is a catalogue read, not a turn, so it costs nothing
+ *  and needs no credential on the connected `opencode` provider. */
+export function opencodeModelsListArgs(): string[] { return ['models']; }
+
+/**
+ * ‼️ U-59 — THE FREE MODEL TO SPEND A HEALTH CHECK ON, PICKED FROM WHAT IS
+ * REALLY THERE.
+ *
+ * A health check is one real turn, so the model it burns is the whole cost of
+ * pressing the button — and a hardcoded one is wrong twice over: it is a paid
+ * model on an engine whose own provider offers free ones, and it is a name that
+ * will be retired while this string stays. So the list is read at press time and
+ * a `*-free` model is taken from it.
+ *
+ * The naming convention IS the signal (`opencode/…-free`), and it is the
+ * engine's, not ours: nothing here decides what is free, it only reads what the
+ * provider called free. Empty when the catalogue offers none — the caller then
+ * has to ask rather than guess, because guessing spends money.
+ *
+ * Sorted so the choice is deterministic: two runs of the same check on the same
+ * catalogue must test the same thing, or a flaky result cannot be told from a
+ * flaky model.
+ */
+export function opencodeFreeModel(stdout: string): string {
+    return String(stdout ?? '')
+        .split('\n')
+        .map(l => l.trim())
+        // A model line and nothing else: `provider/model`, no spaces, no prose.
+        .filter(l => /^[\w.:-]+\/[\w.:-]+$/.test(l) && /-free$/.test(l))
+        .sort()[0] ?? '';
+}
+
 // ---------------------------------------------------------------------------
 // ACP frame shapes — the field names, frozen (K-25 builds the runtime on these)
 // ---------------------------------------------------------------------------

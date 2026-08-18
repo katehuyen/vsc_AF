@@ -31,6 +31,20 @@ const data = () => {
                 detail: 'The command finished but the engine never completed a turn.',
                 error: 'stream disconnected before completion: An attempt was made to access a '
                     + 'socket in a way forbidden by its access permissions. (os error 10013)'
+            },
+            // ‼️ U-59 — THE FOURTH VERDICT SHAPE: the check did not run at all,
+            // and that is not the same as "the engine failed". OpenCode's health
+            // check picks a FREE model off the live catalogue; when the connected
+            // providers offer none, spending a paid turn on a health check is not
+            // Agent Farm's call to make, so it refuses and says what the user can
+            // do instead. Drawn here because "not ok" and "not attempted" wearing
+            // the same red row is exactly the confusion this state creates.
+            {
+                id: 'opencode', ok: false, ms: 900, at: NOW - 90 * 1000,
+                detail: 'No free model is on offer from the providers connected here, so this check '
+                    + 'would spend money on a paid turn. Connect the `opencode` provider (it needs no '
+                    + 'sign-in) or pick a model yourself and run one turn by hand — Agent Farm will not '
+                    + 'choose a billed model for a health check.'
             }
             // gemini: deliberately untested — the third state.
         ]

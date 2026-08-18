@@ -72,6 +72,32 @@ const engines = () => ([
         next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
         billing: 'A Google account signed into the Antigravity app — the CLI borrows that sign-in. There is no API key for this engine and nothing to keep in the vault.',
         docs: 'https://antigravity.google'
+    },
+    {
+        // ‼️ U-59 — THE FIFTH STATE, AND THE ONE THAT BREAKS THE ROW'S OLD
+        // ASSUMPTION: READY WITH AN EMPTY CREDENTIAL FILE.
+        //
+        // Every row above answers "can it run?" by finding a grant somewhere.
+        // Measured in A-16 on opencode 1.18.18, this one runs with `auth.json`
+        // empty: its own connected `opencode` provider lists seven models and
+        // takes real turns with no sign-in at all. So the row has to read as
+        // READY while naming no credential — and must NOT offer "Add key",
+        // which would tell the user to go and fix something that is not broken.
+        // That is a claim about what is DRAWN, so it is drawn here.
+        id: 'opencode', label: 'OpenCode',
+        cli: { command: 'opencode', found: true, path: 'C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd' },
+        auth: {
+            mode: 'builtin', file: '.local/share/opencode/auth.json',
+            detail: 'No credential is needed for its own connected `opencode` provider — measured: '
+                + 'seven models, zero credentials, real turns. Signing in adds the paid providers beside them.'
+        },
+        key: { env: '', inVault: false },
+        ready: true,
+        next: 'Ready, with no sign-in — its own connected provider needs none.',
+        loginCommand: 'opencode auth login',
+        installCommand: 'npm install -g opencode-ai',
+        billing: 'Its own connected `opencode` provider needs no sign-in at all. Signing in with `opencode auth login`, or adding a provider key, is how you reach the paid models beside them.',
+        docs: 'https://opencode.ai/docs/cli/'
     }
 ]);
 

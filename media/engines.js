@@ -52,6 +52,13 @@
         if (!e.cli.found) { return { tone: 'off', text: 'not installed' }; }
         if (e.auth.mode === 'subscription') { return { tone: 'ok', text: 'on a plan' }; }
         if (e.auth.mode === 'apikey') { return { tone: 'ok', text: 'on a key' }; }
+        // ‼️ U-59 — "NOTHING SIGNED IN" AND "NOTHING TO SIGN IN TO" ARE NOT THE
+        // SAME BADGE. This row used to read `not signed in` in the warning
+        // colour with the sentence *Ready, with nothing signed in* directly
+        // beneath it — the badge is the first thing read and it contradicted
+        // the row it labelled. Seen in one second in a picture; invisible to
+        // every string test, because both strings were correct on their own.
+        if (e.auth.mode === 'builtin') { return { tone: 'ok', text: 'no sign-in needed' }; }
         return { tone: 'warn', text: 'not signed in' };
     }
 
@@ -114,10 +121,21 @@
             ? '<button class="small" data-engcmd="' + esc(e.installCommand) + '" title="'
             + esc('Write ' + e.installCommand + ' into a terminal — it is NOT run for you, so you can read it first.')
             + '">Install ' + esc(e.cli.command) + '</button>' : '';
+        // ‼️ U-59 — THE BUTTON'S WORDS FOLLOW WHAT SIGNING IN WOULD BUY.
+        // On an engine that already runs without a credential, "Sign in with a
+        // plan" reads as the missing step — the fix for a fault the row does not
+        // have. It is still offered, because signing in really does add the paid
+        // providers beside the free ones; it just stops pretending to be the
+        // repair and says what it actually gets you.
+        const builtin = e.auth.mode === 'builtin';
         const login = e.cli.found && e.loginCommand
             ? '<button class="secondary small" data-engcmd="' + esc(e.loginCommand) + '" title="'
-            + esc('Write ' + e.loginCommand + ' into a terminal — it is NOT run for you. The sign-in happens in your browser and the CLI keeps the grant; Agent Farm never sees it.')
-            + '">Sign in with a plan</button>' : '';
+            + esc(builtin
+                ? e.label + ' already runs without this. Signing in adds the PAID providers beside its own free '
+                + 'ones — it fixes nothing, because nothing here is broken. Write ' + e.loginCommand
+                + ' into a terminal; it is NOT run for you.'
+                : 'Write ' + e.loginCommand + ' into a terminal — it is NOT run for you. The sign-in happens in your browser and the CLI keeps the grant; Agent Farm never sees it.')
+            + '">' + (builtin ? 'Add paid providers' : 'Sign in with a plan') + '</button>' : '';
         // ‼️ The test button says what it costs, every time. It is one real turn
         // against a plan's quota or a key's tokens, and it never runs by itself.
         const test = '<button class="secondary small" data-engtest="' + esc(e.id) + '"'

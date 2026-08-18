@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.159.0 — U-59: OpenCode had no health check, and its row called itself broken (2026-08-18)
+
+**‼️ The Engines page showed an engine that could never be tested.** Pressing Test on OpenCode answered *"No health check is defined for this engine."* — measured through the bridge, not guessed. Four engines had a spec and the fifth did not, so the one control on that page that proves a call really gets through was permanently unavailable for it.
+
+It could not simply be added like the others, because the others are constants: a flag set and the smallest model on the plan, both true for as long as the CLI keeps its vocabulary. **OpenCode's cheapest turn is a free model from whichever providers happen to be connected on this machine**, and a name pinned in the source would become a *paid* turn the day that model is retired — on the very engine whose own provider gives free ones away. So a spec may now work its call out at press time:
+
+- The catalogue is read first (`opencode models` — a listing, not a turn, so it costs nothing) and a `*-free` model is taken from it. The naming convention is the **engine's** signal, not ours: nothing here decides what is free, it reads what the provider called free. Sorted, so two runs of the check test the same thing and a flaky result cannot be blamed on the choice.
+- The turn runs on **`--agent plan`**, which M-14 measured as calling *no tool at all* — a stronger read-only guarantee than a permission mode, because it is the engine's own behaviour rather than a setting a user's `opencode.json` could have overridden.
+- The prompt goes on **stdin**, the channel this engine's run really uses. `EngineRunner` gained that parameter for the same reason it already carried `shell`: a health check that speaks a channel production does not is a check of a path nothing uses. Stdin is now closed on every engine, so nothing can sit waiting for input that will never come.
+- **With no free model on offer, it refuses.** "This check would spend money on a paid turn — connect the provider, or pick a model and run one turn by hand" is worth more than a silent bill. Verified against the real binary outside VS Code: **ok in 12.2s**.
+
+**And the row itself was calling a working engine broken.** `AuthMode` used `none` for two opposite answers to "is there a credential?" — *nobody has signed in, so this cannot run* and *this engine asks for nothing*. Every reader with only the mode to go on drew the second as the first: the badge said **`not signed in` in the warning colour, directly above a sentence saying the engine was ready**, and the row offered **"Sign in with a plan"** as the fix for a fault it did not have. `builtin` is now its own state — a state rather than a flag beside the mode, because the mode is what the exhaustiveness tables switch on, so a new reader is made to answer for this case instead of falling into the failure branch by default. The badge reads *no sign-in needed* in the ready colour, and the button says *Add paid providers*, which is what pressing it actually buys.
+
+**Found by looking at it.** The Engines fixture had four engines and had never drawn this one; both faults were plain in the first picture and invisible to every string test, because each string was correct on its own. Checked in dark and light.
+
 ## 3.158.0 — M-14 is closed: every surface, on the real engine, verified twice (2026-08-18)
 
 The last two fixes were run through their own paths on the live build, which closes M-14's acceptance matrix.
