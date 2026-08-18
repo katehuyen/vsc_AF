@@ -703,6 +703,52 @@ export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
 }
 
 /**
+ * ‼️ U-59 — WHICH FLAG THIS ENGINE ACTUALLY CARRIES A MODEL OR AN EFFORT ON,
+ * ASKED OF THE BUILDER RATHER THAN WRITTEN DOWN AGAIN.
+ *
+ * Farm Settings tells the user what happens to a per-agent default, and it said
+ * "passed as `--model`/`--effort`" for every engine that is not Claude. On
+ * OpenCode that is simply untrue twice over: the model rides on `-m` and the
+ * effort is `--variant`, which is not even the same idea. A sentence that names
+ * a flag the run does not use is worse than one that names none — it is
+ * checkable, and it fails the check.
+ *
+ * So it is derived: the engine's own argument builder is run with a sentinel
+ * and asked which token ended up in front of it. Nothing here knows any flag
+ * names, which is the point — an engine that renames one tomorrow renames it
+ * here too, and an engine that has no such flag says so by returning ''.
+ *
+ * ‼️ Not for `claude`: it is the persistent engine and never goes through
+ * `runArgs` (`spawnHeadless` builds its line as a string), so the answer here
+ * would be another engine's vocabulary wearing Claude's name.
+ */
+export function engineFlagFor(engine: string | undefined, field: 'model' | 'effort'): string {
+    const spec = engineOf(engine);
+    if (spec.id === 'claude') { return ''; }
+    const SENTINEL = 'AF_FLAG_PROBE';
+    const args = runArgs(spec.id, field === 'model' ? { model: SENTINEL } : { effort: SENTINEL });
+    const at = args.indexOf(SENTINEL);
+    if (at > 0) {
+        // A flag only if something really preceded the value AND it looks like
+        // one: an engine that takes the value positionally has no flag to name.
+        const before = args[at - 1];
+        return /^-/.test(before) ? before : '';
+    }
+    // ‼️ …AND THE JOINED FORM (`--flag=value`), but ONLY when what precedes the
+    // value is really a flag. Measured: Codex carries the effort as a CONFIG
+    // ASSIGNMENT — `-c model_reasoning_effort="high"` — and calling
+    // `model_reasoning_effort=` a flag would put a string in front of the user
+    // that they could not type. An engine that sets a value some other way has
+    // no flag to name, and '' is the honest answer for it.
+    const joined = args.find(a => a.includes(SENTINEL) && a !== SENTINEL);
+    if (joined) {
+        const head = joined.slice(0, joined.indexOf(SENTINEL)).replace(/[="\s]+$/, '');
+        return /^-/.test(head) ? head : '';
+    }
+    return '';
+}
+
+/**
  * ‼️ S-19 — HOW *CLAUDE* PICKS A CONVERSATION UP IN A HEADLESS RUN.
  *
  * Claude is the persistent engine, so it never goes through `runArgs` for a

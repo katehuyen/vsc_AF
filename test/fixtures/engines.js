@@ -145,6 +145,19 @@ const folders = () => ({
                         model: '', effort: '',
                         resolved: resolved('', 'cli', 'Antigravity decides — nothing is set for this agent.'),
                         resolvedEffort: resolved('', 'cli', 'Antigravity decides.')
+                    },
+                    // ‼️ U-59 — THE BOX THE USER WAS NEVER OFFERED. The per-agent
+                    // engines were a hand-typed list that stopped at four, so
+                    // OpenCode simply had no row here. Its model is
+                    // `provider/model`, which is the widest label in this
+                    // section — drawn on purpose, because the long-label case is
+                    // where a picker's width fails and no string test would say so.
+                    opencode: {
+                        model: 'opencode/nemotron-3.5-lightning-free', effort: '',
+                        resolved: resolved('opencode/nemotron-3.5-lightning-free', 'farm',
+                            'opencode/nemotron-3.5-lightning-free — set here for this agent on OpenCode; passed as -m.'),
+                        resolvedEffort: resolved('', 'cli',
+                            'OpenCode decides. Effort is `--variant` here and only on models that declare one.')
                     }
                 }
             },
@@ -165,7 +178,10 @@ const folders = () => ({
                         resolvedEffort: resolved('low', 'launch-defaults', 'low — from agentFarm.launchDefaults.')
                     },
                     gemini: { model: '', effort: '', resolved: resolved('', 'cli', 'Gemini decides.'), resolvedEffort: resolved('', 'cli', '') },
-                    agy: { model: '', effort: '', resolved: resolved('', 'cli', 'Antigravity decides.'), resolvedEffort: resolved('', 'cli', '') }
+                    agy: { model: '', effort: '', resolved: resolved('', 'cli', 'Antigravity decides.'), resolvedEffort: resolved('', 'cli', '') },
+                    // The empty case beside the set one: nothing chosen, so the
+                    // engine's own default stands and the box says which.
+                    opencode: { model: '', effort: '', resolved: resolved('', 'cli', 'OpenCode decides — nothing is set for this agent.'), resolvedEffort: resolved('', 'cli', 'OpenCode decides.') }
                 }
             }
         ]
@@ -206,6 +222,33 @@ const engineModels = () => ({
             'claude-sonnet-4-6': [{ id: '', label: 'Default' }]
         },
         defaultEffort: {}, source: 'catalog', note: 'read from Antigravity\u2019s own `agy models`'
+    },
+    // \u203c\ufe0f U-59 \u2014 THE CATALOGUE THAT IS READ, NOT THE ONE THAT EXISTS.
+    //
+    // OpenCode knows of 184 providers and is CONNECTED to one. Drawing the whole
+    // catalogue would offer 184 providers' models as if they were selectable and
+    // make every one of them fail at run time with a credential error; drawing a
+    // static alias list would go stale the first time the provider changes. So
+    // the picker shows what the connected provider itself listed when the session
+    // opened \u2014 measured, seven \u2014 and the note says when it was read, because a
+    // catalogue with no age is a claim that cannot be checked.
+    //
+    // The ids are `provider/model` and they are LONG: this is the widest option
+    // text any picker on this page has to hold, which is a layout question and
+    // therefore drawn rather than asserted.
+    opencode: {
+        models: [{ id: '', label: 'Default' },
+            { id: 'opencode/nemotron-3.5-lightning-free', label: 'opencode/nemotron-3.5-lightning-free' },
+            { id: 'opencode/deepseek-v4-flash-free', label: 'opencode/deepseek-v4-flash-free' },
+            { id: 'opencode/laguna-s-2.1-free', label: 'opencode/laguna-s-2.1-free' },
+            { id: 'opencode/mimo-v2.5-free', label: 'opencode/mimo-v2.5-free' },
+            { id: 'opencode/nemotron-3-ultra-free', label: 'opencode/nemotron-3-ultra-free' },
+            { id: 'opencode/hy3-free', label: 'opencode/hy3-free' }],
+        // \u203c\ufe0f Effort is `--variant` on this engine and HEADLESS-ONLY, and only
+        // some models declare one \u2014 so the box is not drawn per model by habit.
+        efforts: { '': [{ id: '', label: 'Default' }] },
+        defaultEffort: {}, source: 'catalog',
+        note: '7 models, as OpenCode itself listed them when the session opened'
     }
 });
 
@@ -231,6 +274,16 @@ const variants = () => ([
     {
         id: 'engines-codex', label: 'Settings — the same agents, defaults for CODEX',
         data: { ...base(), agentDefaultsEngine: 'codex' }
+    },
+    // ‼️ U-59 — THE LONG-LABEL CASE, AND IT IS NOT HYPOTHETICAL. Every other
+    // engine names a model in a word or two (`sonnet`, `gpt-5.6-terra`);
+    // OpenCode's are `provider/model` and run past thirty characters, which is
+    // the width no string test measures and the one a picker fails at. Drawn
+    // beside an agent that has nothing set, so the widest and the emptiest box
+    // are in the same picture.
+    {
+        id: 'engines-opencode', label: 'Settings — defaults for OPENCODE, where a model id is a sentence',
+        data: { ...base(), agentDefaultsEngine: 'opencode' }
     }
 ]);
 

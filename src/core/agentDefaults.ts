@@ -18,9 +18,12 @@
  *   1. **The default is per engine.** Claude's still goes in the file its CLI
  *      reads, because that is what makes it work even when a session is started
  *      from a terminal. The other three have nowhere to put it, so Agent Farm
- *      keeps them (`agentFarm.agentEngineDefaults`) and PASSES them as `--model`
- *      / `--effort` when it starts that agent on that engine. That difference is
- *      not hidden — `originOf` says which of the two a value is.
+ *      keeps them (`agentFarm.agentEngineDefaults`) and PASSES them on the
+ *      command line when it starts that agent on that engine. ‼️ WHICH FLAG is
+ *      asked of the engine's own builder (`engineFlagFor`) and never spelled
+ *      here: this text used to say `--model` / `--effort` for all of them, and
+ *      that was measured wrong on three of the four. That difference is not
+ *      hidden — `originOf` says which of the two a value is.
  *   2. **"Default" says what it resolves to.** A box whose only word is
  *      "Default" is the mystery restated. `resolutionOf` produces the sentence
  *      the box prints: which value will actually be used, and who decided it.
@@ -28,6 +31,7 @@
  * Pure, like engines.ts and models.ts: no vscode, no disk, no home directory.
  */
 
+import { engineFlagFor } from './consoleEngine';
 import { EngineId } from './engines';
 
 export interface AgentEngineDefault {
@@ -144,10 +148,18 @@ export function resolveDefault(
     if (farm) {
         return {
             value: farm, origin: 'farm',
+            // ‼️ U-59 — THE FLAG IS ASKED OF THE ENGINE, NOT SPELLED HERE. This
+            // said `--${field}` for every engine, and measured that was wrong on
+            // three of the four: Codex and Gemini take the model on `-m`, and
+            // OpenCode takes it on `-m` with the effort as `--variant`, which is
+            // not even the same idea. An engine that carries the value some other
+            // way (Codex's effort is a config assignment, not a flag) gets a
+            // sentence that names none, because naming one would be a thing the
+            // user could check and find false.
             note: `${farm} — set here for this agent on ${layers.engineLabel}. `
-                + `${layers.engineLabel} has no per-folder settings file, so Agent Farm passes it as `
-                + `--${field} when it starts the session. A session you start yourself in a terminal `
-                + 'will not have it.'
+                + `${layers.engineLabel} has no per-folder settings file, so Agent Farm passes it `
+                + `${engineFlagFor(engine, field) ? `as ${engineFlagFor(engine, field)} ` : ''}when it starts the session. `
+                + 'A session you start yourself in a terminal will not have it.'
         };
     }
     if (launch) {

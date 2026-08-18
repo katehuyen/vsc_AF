@@ -390,9 +390,16 @@ const by = (list, id) => list.find(e => e.id === id);
                 /\|\s*'builtin'/.test(eng) && /\|\s*'none'/.test(eng));
             ok('…and OpenCode reports the first, not the second',
                 /mode: 'builtin',\s*\n\s*file: OPENCODE_AUTH_FILE/.test(eng));
+            // ‼️ The rule moved to `afEngine.js` because BOTH the Engines page
+            // and Farm Settings drew this badge, each from its own copy — which
+            // is how one of them stayed on four states after a fifth arrived.
+            const shared = fsx.readFileSync(path.join(__dirname, '..', 'media', 'afEngine.js'), 'utf8');
             ok('the badge reads as READY rather than as a warning',
-                /mode === 'builtin'[\s\S]{0,120}tone: 'ok'/.test(pagejs)
-                && /no sign-in needed/.test(pagejs));
+                /mode === 'builtin'[\s\S]{0,80}tone: 'ok'/.test(shared)
+                && /no sign-in needed/.test(shared));
+            ok('‼️ …and BOTH surfaces ask the same component instead of each keeping a copy',
+                /AFEngine\.authBadge\(/.test(pagejs)
+                && /AFEngine\.authBadge\(/.test(fsx.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8')));
             ok('‼️ …and the button stops offering itself as the repair',
                 /Add paid providers/.test(pagejs)
                 && /builtin \? 'Add paid providers' : 'Sign in with a plan'/.test(pagejs));

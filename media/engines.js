@@ -49,17 +49,13 @@
      * rather than merely stated (docs/CONVENTIONS.md → Hover).
      */
     function badgeOf(e) {
-        if (!e.cli.found) { return { tone: 'off', text: 'not installed' }; }
-        if (e.auth.mode === 'subscription') { return { tone: 'ok', text: 'on a plan' }; }
-        if (e.auth.mode === 'apikey') { return { tone: 'ok', text: 'on a key' }; }
-        // ‼️ U-59 — "NOTHING SIGNED IN" AND "NOTHING TO SIGN IN TO" ARE NOT THE
-        // SAME BADGE. This row used to read `not signed in` in the warning
-        // colour with the sentence *Ready, with nothing signed in* directly
-        // beneath it — the badge is the first thing read and it contradicted
-        // the row it labelled. Seen in one second in a picture; invisible to
-        // every string test, because both strings were correct on their own.
-        if (e.auth.mode === 'builtin') { return { tone: 'ok', text: 'no sign-in needed' }; }
-        return { tone: 'warn', text: 'not signed in' };
+        // ‼️ U-59 — ONE DECISION, IN `afEngine.js`. This page and Farm Settings
+        // both draw this badge and each had its own copy of the rule; when a
+        // fifth auth state arrived, the copy that had not been taught it fell
+        // through to `not signed in` IN THE WARNING COLOUR, on a row whose next
+        // line said the engine was ready. Two spellings of one rule is one rule
+        // waiting to disagree with itself.
+        return window.AFEngine.authBadge(e);
     }
 
     function factsOf(e) {

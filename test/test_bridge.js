@@ -389,8 +389,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             eng.claude.model.value === 'sonnet' && eng.claude.model.origin === 'agent-file');
         ok('‼️ …and Codex does NOT inherit that file',
             eng.codex.model.value === 'gpt-5.6-terra' && eng.codex.model.origin === 'farm');
+        // ‼️ U-59 — `-m`, not `--model`: the sentence named a flag Codex does not
+        // take, and did so for three engines out of four.
         ok('…and every answer says which layer decided it',
-            /passes it as --model/.test(eng.codex.model.note));
+            /passes it as -m /.test(eng.codex.model.note));
         const badD = await r5.dispatch('agents.defaults', { engine: 'nope' });
         ok('an unknown engine is refused by name', !badD.ok && /no engine called "nope"/.test(badD.error));
     }

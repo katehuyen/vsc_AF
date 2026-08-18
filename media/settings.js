@@ -139,7 +139,14 @@
     function agentEngineNote(id) {
         return id === 'claude'
             ? 'written to each agent\u2019s .claude/settings.local.json \u2014 the CLI reads it itself, terminal sessions included'
-            : 'kept by Agent Farm and passed as --model/--effort \u2014 this engine has no per-folder settings file';
+            // \u203c\ufe0f U-59 \u2014 no flag is named here any more. It said
+            // `--model/--effort` for every non-Claude engine and that was wrong
+            // on three of the four (Codex and Gemini take `-m`; OpenCode takes
+            // `-m` and calls the effort `--variant`). The per-box note below
+            // names the real flag, asked of the engine's own builder; this line
+            // is the one sentence above the whole list and now says only the
+            // thing that is true of all of them.
+            : 'kept by Agent Farm and passed on the command line \u2014 this engine has no per-folder settings file';
     }
 
     // Model names for the CHOSEN engine, read from that engine's own catalog
@@ -339,15 +346,21 @@
 
     function engineRow(e) {
         const T = window.AFTip;
-        const tone = !e.cli.found ? 'off' : e.auth.mode === 'none' ? 'warn' : 'ok';
-        const badge = !e.cli.found ? 'not installed'
-            : e.auth.mode === 'subscription' ? 'on a plan'
-                : e.auth.mode === 'apikey' ? 'on a key' : 'not signed in';
+        // ‼️ U-59 — the SAME decision the Engines page draws, from `afEngine.js`.
+        // This was a second copy of the rule and it is how OpenCode's row said
+        // "not signed in" here while the Engines page had been taught otherwise.
+        const b = window.AFEngine.authBadge(e);
+        const tone = b.tone;
+        const badge = b.text;
         // Figures on the hover, the way a column's own tooltip works elsewhere:
         // where it was read from, when, and what the alternative route is.
         const facts = T.lines([
             `Command: ${e.cli.command}${e.cli.path ? ' — ' + e.cli.path : ' — not on PATH'}`,
-            `Billing: ${e.auth.mode === 'subscription' ? 'a plan' : e.auth.mode === 'apikey' ? 'per token' : 'nothing set up'}`,
+            // ‼️ "nothing set up" is a complaint, and on `builtin` there is
+            // nothing TO set up — the engine's own provider is free (U-59).
+            `Billing: ${e.auth.mode === 'subscription' ? 'a plan'
+                : e.auth.mode === 'apikey' ? 'per token'
+                    : e.auth.mode === 'builtin' ? 'free — its own provider, no credential' : 'nothing set up'}`,
             e.auth.file ? `Read from: ~/${e.auth.file}` : '',
             e.auth.refreshedAt ? `Last refreshed: ${new Date(e.auth.refreshedAt).toLocaleString()}` : '',
             // An engine with no key route says so rather than naming a variable
@@ -367,9 +380,15 @@
             ? `<button class="small" data-engcmd="${C.esc(e.installCommand)}"
                 title="${C.esc(`Write ${e.installCommand} into a terminal — it is NOT run for you, so you can read it first. Node and npm have to be on this machine.`)}">Install ${C.esc(e.cli.command)}</button>`
             : '';
+        // ‼️ U-59 — same words as the Engines page, for the same reason: on an
+        // engine that already runs without a credential, "Sign in with a plan"
+        // reads as the missing step rather than as the upgrade it really is.
+        const builtin = e.auth.mode === 'builtin';
         const login = e.cli.found && e.loginCommand
             ? `<button class="secondary small" data-engcmd="${C.esc(e.loginCommand)}"
-                title="${C.esc(`Write ${e.loginCommand} into a terminal — it is NOT run for you. The sign-in happens in your browser and the CLI keeps the grant itself; Agent Farm never sees it.`)}">Sign in with a plan</button>`
+                title="${C.esc(builtin
+                    ? `${e.label} already runs without this. Signing in adds the PAID providers beside its own free ones — it fixes nothing, because nothing here is broken. Write ${e.loginCommand} into a terminal; it is NOT run for you.`
+                    : `Write ${e.loginCommand} into a terminal — it is NOT run for you. The sign-in happens in your browser and the CLI keeps the grant itself; Agent Farm never sees it.`)}">${builtin ? 'Add paid providers' : 'Sign in with a plan'}</button>`
             : '';
         return `<div class="setitem eng eng-${tone}">
             <div class="sethead">

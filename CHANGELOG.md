@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.160.0 — U-59: two surfaces disagreeing about one engine, and a flag name that was wrong on three (2026-08-19)
+
+**‼️ Farm Settings still called OpenCode broken after the Engines page had been taught otherwise.** 3.159.0 gave the badge its fifth state; the picture then showed Settings drawing the row the old way — amber `not signed in`, and `Sign in with a plan` offered as the repair. Two pages drew the same badge from **two copies of the same rule**, so teaching one taught only one. The decision now lives once, in `media/afEngine.js` — the component that already owned how an engine is named and coloured — and both pages ask it. `builtin` and `none` are opposite answers and can no longer share a badge in one place while differing in another.
+
+**‼️ And the per-agent default sentence named a flag three engines out of four do not take.** It read *"kept by Agent Farm and passed as `--model`/`--effort`"* for every engine that is not Claude. Measured by asking each engine's own argument builder:
+
+| engine | model | effort |
+|---|---|---|
+| Codex | `-m` | *(none — it is a config assignment, `-c model_reasoning_effort=…`)* |
+| Gemini | `-m` | *(none — this engine has no effort setting at all)* |
+| Antigravity | `--model` | *(not carried on its own flag)* |
+| OpenCode | `-m` | `--variant` |
+
+So the sentence was right for one engine and wrong for the rest — and wrong in a way the user could **check**, by typing the flag and watching it fail. `engineFlagFor` now runs the engine's own builder with a sentinel and reads back which token ended up in front of it. Nothing knows a flag name any more, which is the point: an engine that renames one renames it here too. **An engine that carries the value some other way gets a sentence that names no flag at all** — printing `model_reasoning_effort=` as if it were one would be worse than saying nothing.
+
+**Also in this pass:** the per-agent engine list had a hand-typed fallback (`['claude','codex','gemini','agy']`) that was complete the day it was written and silently short of OpenCode ever after — a defaults box the user was simply never offered. It comes off `SPECS` now (`ENGINE_IDS`). The Settings fixture gained the OpenCode row, the per-agent boxes and the model catalogue, including the **long-label** case U-59 asks for: every other engine names a model in a word or two, OpenCode's are `provider/model` and run past thirty characters. Checked in dark and light.
+
 ## 3.159.0 — U-59: OpenCode had no health check, and its row called itself broken (2026-08-18)
 
 **‼️ The Engines page showed an engine that could never be tested.** Pressing Test on OpenCode answered *"No health check is defined for this engine."* — measured through the bridge, not guessed. Four engines had a spec and the fifth did not, so the one control on that page that proves a call really gets through was permanently unavailable for it.

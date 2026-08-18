@@ -10,7 +10,7 @@ import {
     validateRawClaudeSettings
 } from '../core/claudesettings';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { EngineId, EngineStatus } from '../core/engines';
+import { EngineId, ENGINE_IDS, EngineStatus } from '../core/engines';
 import {
     AgentEngineDefaults, resolveDefault, storedDefault, withAgentDefault
 } from '../core/agentDefaults';
@@ -150,9 +150,13 @@ export class FarmSettingsPanel {
         const launch = vscode.workspace.getConfiguration()
             .get<{ model?: string; effort?: string }>('agentFarm.launchDefaults', {}) ?? {};
         const engines = (this.deps.engines?.() ?? []).map(e => ({ id: e.id, label: e.label }));
+        // The live matrix when there is one; otherwise every engine there IS
+        // (U-59). The fallback used to be a hand-typed list — complete on the
+        // day it was written and silently short of OpenCode ever after, which is
+        // a per-agent default box the user simply never got offered.
         const ids: EngineId[] = engines.length
             ? engines.map(e => e.id as EngineId)
-            : ['claude', 'codex', 'gemini', 'agy'];
+            : ENGINE_IDS;
         return {
             ...rep,
             reports: rep.reports.map(r => ({

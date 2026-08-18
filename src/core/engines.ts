@@ -475,6 +475,18 @@ export const ENGINE_LABELS: Record<string, string> = {
 };
 
 /**
+ * ‼️ U-59 — EVERY ENGINE THERE IS, DERIVED RATHER THAN TYPED OUT AGAIN.
+ *
+ * A surface that cannot reach the live matrix still has to name the engines —
+ * and the one that did typed `['claude', 'codex', 'gemini', 'agy']` by hand,
+ * which was complete on the day it was written and quietly wrong from the day
+ * OpenCode arrived. A list written twice is a list that disagrees with itself
+ * eventually; this one comes off `SPECS`, so an engine added there cannot be
+ * missing here.
+ */
+export const ENGINE_IDS: EngineId[] = SPECS.map(s => s.id);
+
+/**
  * ‼️ M-14 — WHAT ONE UNATTENDED RUN OF THIS ENGINE WEIGHS, IN CONCURRENCY SLOTS.
  *
  * The governor counts runs, and counting assumes they cost the same machine.

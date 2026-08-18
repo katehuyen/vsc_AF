@@ -73,8 +73,28 @@ const { agentKey, storedDefault, withAgentDefault, resolveDefault, defaultLabel 
     });
     ok('the per-engine store outranks the fleet-wide default',
         farm.value === 'gpt-5.6-terra' && farm.origin === 'farm');
+    // ‼️ U-59 — THIS USED TO ASSERT `--model`, AND `--model` WAS WRONG. Codex
+    // takes it on `-m`; the sentence said otherwise for every non-Claude engine
+    // and was wrong on three of the four. The flag is now asked of the engine's
+    // own argument builder, so the test asks the same source rather than
+    // pinning a second copy of the answer here.
     ok('‼️ …and admits it only applies to sessions Agent Farm starts',
-        /passes it as --model/.test(farm.note) && /terminal will not have it/.test(farm.note));
+        /passes it as -m /.test(farm.note) && /terminal will not have it/.test(farm.note));
+    {
+        const { engineFlagFor } = require(path.join(__dirname, '..', 'out', 'core', 'consoleEngine.js'));
+        ok('…naming the flag the engine really uses, derived rather than retyped',
+            engineFlagFor('codex', 'model') === '-m'
+            && engineFlagFor('opencode', 'model') === '-m'
+            && engineFlagFor('opencode', 'effort') === '--variant'
+            && engineFlagFor('agy', 'model') === '--model');
+        ok('‼️ …and naming NONE when the engine does not use one — Codex carries the '
+            + 'effort as a config assignment, and printing `model_reasoning_effort=` as '
+            + 'if it were a flag would be a thing the user could type and watch fail',
+            engineFlagFor('codex', 'effort') === '' && engineFlagFor('claude', 'model') === '');
+        const noFlag = resolveDefault('codex', 'effort', { farm: 'high', engineLabel: 'Codex' });
+        ok('…so that sentence simply does not claim one', !/passes it as/.test(noFlag.note)
+            && /passes it when it starts the session/.test(noFlag.note));
+    }
 
     const fleet = resolveDefault('agy', 'effort', { farm: '', launch: 'high', engineLabel: 'Antigravity' });
     ok('the fleet-wide default is the next layer down',

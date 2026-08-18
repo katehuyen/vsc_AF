@@ -78,5 +78,34 @@
             + '>' + esc(label(engine)) + '</span>';
     }
 
-    window.AFEngine = { id: id, label: label, badge: badge, cls: cls, known: KNOWN };
+    /**
+     * ‼️ U-59 — HOW THIS ENGINE IS PAID FOR, IN TWO WORDS, DECIDED ONCE.
+     *
+     * The Engines page and Farm Settings both draw this and each had written its
+     * own version, so the rule lived in two files that were free to disagree —
+     * and did, the moment a fifth state arrived. `mode: 'builtin'` means the
+     * engine asks for no credential at all; read by a copy that had never heard
+     * of it, that fell through to `not signed in` IN THE WARNING COLOUR, on a
+     * row whose very next line said the engine was ready.
+     *
+     * ‼️ `builtin` and `none` are opposite answers and must never share a badge:
+     * one is "nothing to do", the other is "nothing works yet".
+     *
+     * Takes the whole status row rather than a mode, because "not installed"
+     * outranks every payment question — an engine that is not here is not paid
+     * for in any way.
+     */
+    function authBadge(e) {
+        const cliFound = !!(e && e.cli && e.cli.found);
+        const mode = String((e && e.auth && e.auth.mode) || '').trim();
+        if (!cliFound) { return { tone: 'off', text: 'not installed' }; }
+        if (mode === 'subscription') { return { tone: 'ok', text: 'on a plan' }; }
+        if (mode === 'apikey') { return { tone: 'ok', text: 'on a key' }; }
+        if (mode === 'builtin') { return { tone: 'ok', text: 'no sign-in needed' }; }
+        return { tone: 'warn', text: 'not signed in' };
+    }
+
+    window.AFEngine = {
+        id: id, label: label, badge: badge, cls: cls, known: KNOWN, authBadge: authBadge
+    };
 })();
