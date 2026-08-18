@@ -5051,10 +5051,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'figure came from and how old it is. WHERE EACH ONE COMES FROM (measured 2026-08-10): '
                 + 'Claude = Anthropic\'s usage endpoint, live; Codex = the `rate_limits` block its own '
                 + 'rollout transcript records at each turn boundary, so it is free but as old as its '
-                + 'last turn; Gemini = an API key, no plan; Antigravity = nothing on disk at all. '
+                + 'last turn; Gemini = an API key, no plan; Antigravity = nothing on disk at all; '
+                + 'OpenCode = each model runs against its own provider, so there is no single plan '
+                + 'window — it states the price of every turn instead. '
                 + '‼️ NEVER TREAT A MISSING FIGURE AS 0% — that is the one mistake this op is shaped to '
                 + 'prevent. `shown` is the engine the status bar is currently displaying '
-                + '(agentFarm.planUsageEngine). args: id? (claude | codex | gemini | agy)',
+                + '(agentFarm.planUsageEngine). args: id? (claude | codex | gemini | agy | opencode)',
             handler: (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 const all = engineUsageMatrix();
@@ -9316,8 +9318,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // otherwise was the bridge. An engine that is not ready is listed
             // with the reason rather than left out, the same rule the launcher
             // pickers follow.
+            // ‼️ U-59 — …AND WHETHER EACH ONE STATES A PRICE. The two budget
+            // fields on this form named the engines by hand: "Only Claude Code
+            // states a per-turn price" and "the ONLY hard budget for a team
+            // delegating on Codex, Gemini or Antigravity". OpenCode publishes
+            // `cost` on the wire and in its JSONL, so the first sentence had
+            // become false and the second incomplete — on a budget control,
+            // which is the worst place to be describing the farm as it was.
+            // Sent as a fact per row so the sentence is derived, not retyped.
             engines: engineMatrix().map(e => ({
-                id: e.id, label: e.label, ready: e.ready, next: e.next ?? null
+                id: e.id, label: e.label, ready: e.ready, next: e.next ?? null,
+                reportsCost: engineOf(e.id).reportsCost
             })),
             // ‼️ THE PERMISSION VOCABULARY, FROM THE ONE LIST (M-14). Same
             // constant the Tasks and Console launchers read, so a mode can never

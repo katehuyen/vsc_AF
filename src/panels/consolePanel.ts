@@ -11,7 +11,9 @@ import {
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
-import { EngineId, engineNote, engineOf, ENGINES, noTranscriptNote } from '../core/consoleEngine';
+import {
+    EngineId, engineFlagFor, engineNote, engineOf, ENGINES, engineTakesEffort, noTranscriptNote
+} from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { EngineModels, narrowLaunch } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
@@ -554,6 +556,20 @@ export class ConsolePanel {
                 shape: ENGINES[e.id].shape,
                 steerable: ENGINES[e.id].liveControls,
                 reportsCost: ENGINES[e.id].reportsCost,
+                // ‼️ U-59 — THE FLAG NAMES, DERIVED, so the composer's tooltips
+                // stop printing Claude's over every engine. `engineFlagFor` runs
+                // the engine's own argument builder and reads back what ended up
+                // in front of the value; '' means this engine names no such
+                // flag, and the webview then draws no parenthesis at all.
+                modelFlag: engineFlagFor(e.id, 'model'),
+                effortFlag: engineFlagFor(e.id, 'effort'),
+                // ‼️ …AND WHETHER IT HAS AN EFFORT AT ALL, which is a fact about
+                // the engine and not about whether its catalog has answered yet.
+                // Reading it off an empty effort list works only once the
+                // handshake has landed; before that the page fell back to the
+                // flat list and drew Claude's five levels on an engine that has
+                // none. This is the same answer the bridge refuses on.
+                takesEffort: engineTakesEffort(e.id),
                 // one line: what changes about talking to it
                 note: engineNote(e.id)
             })),

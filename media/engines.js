@@ -96,13 +96,23 @@
                 + 'The reading above is what is on disk — a call is the only thing that proves it works.</div>';
         }
         const when = age(v.at, DATA.now || Date.now());
+        // ‼️ U-59 — THREE OUTCOMES, NOT TWO. `ok: false` carried both "asked and
+        // it did not answer" and "the check would not run", and they were drawn
+        // as the same red ✗ with the engine's name over it — so an OpenCode card
+        // whose own line above said "Ready, with no sign-in" wore a failure for
+        // the ordinary case of having no free model on offer. A refusal is not
+        // the engine's verdict: nothing was called, nobody complained, and the
+        // sentence is a choice being handed back to the user.
+        const state = v.ok ? 'good' : v.refused ? 'held' : 'bad';
+        const mark = v.ok ? '✓ ' : v.refused ? '⊘ ' : '✗ ';
         const head = window.AFTip.lines([
-            (v.ok ? 'Answered' : 'Failed') + ' · ' + window.AFTime.full(v.at),
+            (v.ok ? 'Answered' : v.refused ? 'Not attempted' : 'Failed') + ' · ' + window.AFTime.full(v.at),
+            v.refused ? 'Called: nothing — the engine was never asked' : '',
             'Took: ' + (v.ms / 1000).toFixed(1) + 's',
             v.error ? 'The engine said: ' + v.error : ''
         ]);
-        return '<div class="engv ' + (v.ok ? 'good' : 'bad') + '" title="' + esc(head) + '">'
-            + (v.ok ? '✓ ' : '✗ ') + esc(v.detail)
+        return '<div class="engv ' + state + '" title="' + esc(head) + '">'
+            + mark + esc(v.detail)
             + ' <span class="engage">' + esc(when) + '</span>'
             + (v.error ? '<div class="engerr">' + esc(v.error) + '</div>' : '')
             + '</div>';
@@ -193,6 +203,12 @@
                     background:var(--vscode-textCodeBlock-background,#2b2b2b); }
                 .engv.good { color:var(--vscode-charts-green,#3fb950); }
                 .engv.bad { color:var(--vscode-charts-red,#f14c4c); }
+                /* ‼️ U-59 — "not attempted" is its own colour, and it is NOT red.
+                   Red says the engine was asked and failed; this row says the
+                   check declined to spend money and is handing the choice back,
+                   on a card whose line above it may well read "Ready". Yellow is
+                   the palette's word for "your move", which is exactly this. */
+                .engv.held { color:var(--vscode-charts-yellow,#cca700); }
                 .engv.none, .engv.testing { opacity:.7; }
                 .engage { opacity:.6; font-size:11px; margin-left:4px; }
                 .engerr { margin-top:4px; font-family:var(--vscode-editor-font-family,monospace);
@@ -212,11 +228,14 @@
                 <b>A plan sign-in lives in the CLI's own credentials file and never passes through Agent Farm</b>;
                 a key is the other route and is kept in the OS keychain (the Secrets page is the full table),
                 injected into an agent's environment under the exact name the engine reads.
-                A third arrangement exists and has no box on this page at all: <b>Antigravity is signed in
+                Two more arrangements exist and neither has a box on this page: <b>Antigravity is signed in
                 inside its own desktop app</b>, so it has no key, no login command and no credential file
-                here to read — its row says what it found instead.
+                here to read — and <b>OpenCode needs no sign-in at all</b>, because its own connected provider
+                serves free models; signing in there ADDS the paid ones rather than switching it on. Each of
+                those rows says what it found instead.
                 Everything above a card's verdict line was read off disk — <b>only ⚡ Test proves a call gets through</b>,
-                and it costs one real turn.</p>
+                and it costs one real turn. ⊘ means the check declined to run: nothing was called, and the row
+                says what you can do about it.</p>
             ${list.map(cardHtml).join('')}`;
         wire();
     }

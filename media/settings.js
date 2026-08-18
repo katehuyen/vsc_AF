@@ -146,7 +146,7 @@
             // names the real flag, asked of the engine's own builder; this line
             // is the one sentence above the whole list and now says only the
             // thing that is true of all of them.
-            : 'kept by Agent Farm and passed on the command line \u2014 this engine has no per-folder settings file';
+            : 'kept by Agent Farm and passed on the command line \u2014 nothing is written to a per-folder file the engine reads on its own';
     }
 
     // Model names for the CHOSEN engine, read from that engine's own catalog

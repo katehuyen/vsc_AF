@@ -1599,10 +1599,30 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         && /Antigravity a request its own app can overrule/.test(page)
         && /counting tokens instead/.test(page)
         && !/goes against a plan/.test(page));
-    ok('‼️ …and that gemini has no effort setting, so the box is not drawn for it',
-        /Gemini has no reasoning-effort setting/.test(page)
-        && /if \(String\(engine \|\| ''\) === 'gemini'\) \{ return \[\]; \}/.test(page)
+    // ‼️ U-59 — THE CLAIM IS NOW ABOUT ENGINES THAT HAVE NO EFFORT, NOT ABOUT
+    // GEMINI. A second one arrived (OpenCode: ACP declares only model and mode,
+    // and no reachable model publishes a variant), and both the sentence and the
+    // guard had been written around the first one's name.
+    ok('‼️ …and that an engine with no effort setting is not given the box',
+        /Gemini has none, OpenCode has none/.test(page)
+        && /if \(row && row\.takesEffort === false\) \{ return \[\]; \}/.test(page)
         && /if \(!\(list \|\| \[\]\)\.length\) \{ return ''; \}/.test(page));
+    ok('‼️ …and that answer is the engine\'s own, not the catalog\'s silence',
+        /takesEffort: engineTakesEffort\(e\.id\)/.test(panel));
+    // ‼️ U-59 — OPENCODE BREAKS THE PER-TURN SENTENCE AT BOTH ENDS, and the
+    // Engine box has to say so: it CAN stop and ask (which is exactly why an
+    // unattended run of it needs the auto-approve mode) and it states the price
+    // of every turn itself. The old text put "cannot stop and ask, and states no
+    // dollar figure" over every engine that is not Claude.
+    ok('‼️ …and that OpenCode is neither of those two stories',
+        /OpenCode breaks that sentence at both ends/.test(page)
+        && /comes back REFUSED rather than waiting/.test(page)
+        && /states the price of every turn itself/.test(page));
+    ok('‼️ …and the Permissions box says what happens on THIS engine, unattended',
+        /const permTipFor = engineId =>/.test(page)
+        && /shape === 'sharedAcp'/.test(page)
+        && /shape === 'perTurn'/.test(page)
+        && /shape: engineOf\(e\.id\)\.shape/.test(panel));
     ok('the value is read, carried and re-seeded like every other dimension',
         /v\('engine', 'engine'\)/.test(page)
         && /engine: t\.engine \?\? '',/.test(panel)

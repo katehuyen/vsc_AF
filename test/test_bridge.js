@@ -340,7 +340,11 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('usage.engines is in the catalogue',
             (await r4.dispatch('farm.ops', {})).result.some(c => c.op === 'usage.engines'));
         const all = await r4.dispatch('usage.engines', {});
-        ok('every engine answers', all.ok && all.result.engines.length === 4);
+        // ‼️ U-59 — FIVE, AND THE NUMBER IS THE ASSERTION. An engine absent from
+        // this matrix is absent from the status bar, the Dashboard card and this
+        // op at once, and a caller then reads the farm as having one fewer
+        // engine than it has.
+        ok('every engine answers', all.ok && all.result.engines.length === 5);
         const by = Object.fromEntries(all.result.engines.map(e => [e.id, e]));
         ok('Codex\'s own transcript is a real quota reading',
             by.codex.state === 'ok' && by.codex.bars[0].percent === 7);

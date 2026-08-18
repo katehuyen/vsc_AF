@@ -824,7 +824,7 @@
             // were one, so "why did that one cost nothing" had no answer on
             // the row. The badge and its colour come from AFEngine, the same
             // ones the Console and the Engines page draw.
-            engine: '<th title="Which CLI ran the session: Claude · Codex · Gemini · Antigravity">Engine</th>',
+            engine: '<th title="Which CLI ran the session: ' + window.AFEngine.names() + '">Engine</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',
@@ -956,7 +956,7 @@
                 };
             };
             return `<table class="turnmini">
-                <tr><th class="num" title="Turn number within the session">#</th><th title="The prompt that opened the turn">prompt</th><th title="Model(s) that served the turn">model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num" title="Prompt to the turn's last recorded line">took</th><th class="num" title="Raw tokens; after ⚖ weighted against the plan limit">tokens</th><th class="num" title="API-equivalent cost of the turn">cost</th><th class="num" title="Context in the window when the turn ended">ctx</th></tr>
+                <tr><th class="num" title="Turn number within the session">#</th><th title="The prompt that opened the turn">prompt</th><th title="Model(s) that served the turn">model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num" title="Prompt to the turn's last recorded line">took</th><th class="num" title="Raw tokens; after ⚖ weighted against the plan limit">tokens</th><th class="num" title="What the turn cost. An engine that publishes a price per turn states its own figure; where none is published this is the API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, never a bill.">cost</th><th class="num" title="Context in the window when the turn ended">ctx</th></tr>
                 ${c.turns.map(t => {
         const tip = tTip(t), p = pTip(t);
         return `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}">

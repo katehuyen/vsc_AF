@@ -40,7 +40,7 @@ const data = () => {
             // do instead. Drawn here because "not ok" and "not attempted" wearing
             // the same red row is exactly the confusion this state creates.
             {
-                id: 'opencode', ok: false, ms: 900, at: NOW - 90 * 1000,
+                id: 'opencode', ok: false, refused: true, ms: 900, at: NOW - 90 * 1000,
                 detail: 'No free model is on offer from the providers connected here, so this check '
                     + 'would spend money on a paid turn. Connect the `opencode` provider (it needs no '
                     + 'sign-in) or pick a model yourself and run one turn by hand — Agent Farm will not '

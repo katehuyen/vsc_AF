@@ -2691,6 +2691,14 @@
      *  model (five for luna, four for 5.5), so one shared list was wrong for
      *  both. Falls back to the engine's shared list, then the page's. */
     function effortsForModel(engineId, model) {
+        // ‼️ U-59 — AN ENGINE WITH NO EFFORT SETTING OFFERS NONE, WHATEVER ITS
+        // CATALOG HAS ANSWERED. Gemini has no such flag and OpenCode has none
+        // either (ACP declares only model and mode); the empty list in their
+        // catalogs said so, but only AFTER the catalog had landed — before that
+        // this fell through to the flat list and drew Claude's five levels on an
+        // engine that would reject every one of them.
+        const row = engineRow(engineId || 'claude');
+        if (row && row.takesEffort === false) { return []; }
         const em = (DATA.engineModels || {})[engineId || 'claude'];
         if (!em || !em.efforts) { return DATA.efforts || []; }
         return em.efforts[String(model || '')] || em.efforts[''] || DATA.efforts || [];
@@ -2725,6 +2733,24 @@
         reconcileComposer(engineNow(), false);
         save();
     }
+    /**
+     * ‼️ U-59 — THE FLAG IN THE PARENTHESIS IS THE ENGINE'S OWN, OR THERE IS NO
+     * PARENTHESIS.
+     *
+     * `(--model)` `(--effort)` `(--permission-mode)` were Claude's flag names
+     * printed over every engine. OpenCode carries the model on `-m`, has no
+     * effort setting at all and no such permission flag — three parentheses a
+     * reader could check and all three failing. `engineFlagFor` derives the
+     * name from the engine's own argument builder host-side; an engine that
+     * names none returns '' and gets no parenthesis, which is the honest shape
+     * of "this engine does not have one".
+     */
+    function flagOf(engineId, field) {
+        const e = engineRow(engineId);
+        const f = e && e[field === 'model' ? 'modelFlag' : 'effortFlag'];
+        return f ? ' (' + f + ')' : '';
+    }
+
     /** The one line a picker's tooltip carries: where this list came from and
      *  how old it is — a list nobody can date is a list nobody can distrust. */
     function modelNote(engineId) {
@@ -2782,9 +2808,25 @@
         // an engine that cannot do it would be the panel lying about the one
         // thing the reader is deciding.
         const live = !s || s.steerable !== false;
+        // ‼️ U-59 — AND THE THIRD SHAPE ANSWERS DIFFERENTLY AGAIN, SO IT IS
+        // ASKED SEPARATELY. `steerable` answers ONE question — can this be
+        // changed while a turn is RUNNING — and a shared-ACP engine says no to
+        // it while saying yes to the question the reader is actually asking:
+        // the change reaches a LIVE connection at the next turn boundary
+        // (`session/set_config_option`), and the engine really can stop and ask
+        // before it acts. Reading the permission sentence off `steerable` alone
+        // printed "this engine cannot stop and ask, so the mode becomes a
+        // SANDBOX" over OpenCode — the exact promise-that-is-not-kept this file
+        // already refuses to make about Antigravity, made about the one engine
+        // whose permission card is on screen while it says it.
+        const shapeNow = s ? (s.turnShape || 'persistent')
+            : ((engineRow(engineNow()) || {}).shape || 'persistent');
+        const shared = shapeNow === 'sharedAcp';
         const modelTip = live
             ? 'Switches the model mid-conversation — the same thing /model does in a terminal. It applies from the next turn.'
-            : 'This engine runs one process per turn, so there is nothing to switch mid-conversation: this is the model the NEXT turn will be spawned with.';
+            : shared
+                ? 'Nothing switches inside a running turn — this protocol has no channel for it — but the change is not a flag on a future process either: it is sent to the live connection as session config at the next turn boundary.'
+                : 'This engine runs one process per turn, so there is nothing to switch mid-conversation: this is the model the NEXT turn will be spawned with.';
         const effortTip = live
             ? 'How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.'
             : 'How hard it thinks per turn — passed to the NEXT turn as model_reasoning_effort. There is no running process to ask.';
@@ -2797,7 +2839,48 @@
             : '';
         const permTip = permNow + (live
             ? 'What it may do without asking — applied live. Fewer rows than the start picker on purpose: a running session can only be moved to modes the CLI accepts mid-conversation, and it says so out loud when it refuses one.'
-            : 'What the NEXT turn may do. ‼️ This engine cannot stop and ask, so the mode becomes a SANDBOX chosen up front: "Default" means read-only here — the only honest thing an engine with nobody to ask can do — and acceptEdits means it may write inside the folder without asking.');
+            : shared
+                ? 'What it may do without asking. ‼️ This engine really can stop and ask, and here it does: the turn halts and the card that appears is the ENGINE\'S OWN question, answered once / always / reject. The mode is its agent — "Default" runs `build`, which asks; "plan" runs the plan agent, which is refused every edit tool. acceptEdits and bypassPermissions reach the same one blunt override and mean the same thing: those questions are answered for you. Unattended is where the difference bites — a headless run of this engine has nobody to answer, so without that override the request comes back refused rather than pausing.'
+                : 'What the NEXT turn may do. ‼️ This engine cannot stop and ask, so the mode becomes a SANDBOX chosen up front: "Default" means read-only here — the only honest thing an engine with nobody to ask can do — and acceptEdits means it may write inside the folder without asking.');
+        /**
+         * ‼️ U-59 — AND THE SAME QUESTION ON THE FRESH COMPOSER, WHICH HAD ONE
+         * ANSWER FOR EVERY ENGINE. `(--permission-mode)` is Claude's flag name:
+         * Codex turns this into a sandbox, OpenCode into an agent plus one
+         * `--auto` override, and neither of them has ever seen that flag. The
+         * fresh row cannot use `permTip` — that one is written for a session
+         * that is already running — so it asks the shape the same way.
+         */
+        const startPermTip = shared
+            ? 'What the session may do without asking. ‼️ This engine can genuinely stop and ask: mid-turn the card becomes the engine\'s own request, answered once / always / reject. "Default" starts its `build` agent, which asks; "plan" starts the plan agent, which is refused every edit tool; acceptEdits and bypassPermissions both reach one blunt auto-approve override and are the same choice here.'
+            : shapeNow === 'perTurn'
+                ? 'What the session may do without asking. ‼️ This engine cannot stop and ask, so this is fixed up front for every turn — hover the ? beside the engine for what it becomes there.'
+                : 'What it may do without asking (--permission-mode). It can be changed later without restarting the session.';
+        /**
+         * ‼️ U-59 — AN ENGINE WITH NO EFFORT SETTING IS NOT GIVEN THE BOX.
+         *
+         * Gemini has no such flag and OpenCode has none either (ACP declares
+         * only model and mode, and no reachable model publishes a variant), so
+         * both were handed an EMPTY dropdown to stare at — the control with no
+         * referent `docs/CONVENTIONS.md` forbids and the tasks form already
+         * drops. The Console drew it anyway, at a fixed 82px, on both rows.
+         *
+         * ‼️ The question is THE ENGINE'S, not the list's. A short list is not
+         * the same fact as no setting: an engine that has one and whose catalog
+         * has not answered yet still gets the box, filled from the fallback,
+         * because the control does have a referent — it is the answer that has
+         * not arrived.
+         */
+        const drawsEffort = engineId => {
+            const row = engineRow(engineId || 'claude');
+            return !row || row.takesEffort !== false;
+        };
+        const effortBox = (engineId, model, cur, id, tip) => {
+            if (!drawsEffort(engineId)) { return ''; }
+            const rows = effortsForModel(engineId, model);
+            return `<label class="permlbl" title="${C.esc(boxTip(rows, cur, tip))}">effort
+                    <select id="${id}">${opts(rows, cur)}</select>
+                </label>`;
+        };
         const controls = s
             ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
                     ${C.esc(s.agentName)}
@@ -2806,9 +2889,7 @@
                 <label class="permlbl" title="${C.esc(boxTip(modelsFor(s.engine), s.model, modelTip + ' · ' + modelNote(s.engine)))}">model
                     <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>
-                <label class="permlbl" title="${C.esc(boxTip(effortsForModel(s.engine, s.model), s.effort, effortTip))}">effort
-                    <select id="c-effort-live">${opts(effortsForModel(s.engine, s.model), s.effort)}</select>
-                </label>
+                ${effortBox(s.engine, s.model, s.effort, 'c-effort-live', effortTip)}
                 <label class="permlbl" title="${C.esc(boxTip(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode, permTip))}">permissions
                     <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
                 </label>
@@ -2838,9 +2919,11 @@
                 </select>`}
                 <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
-                <select id="c-model" title="${C.esc(boxTip(modelsFor(engineNow()), st.model, 'Model for the new session (--model). ' + modelNote(engineNow())))}">${opts(modelsFor(engineNow()), st.model)}</select>
-                <select id="c-effort" title="${C.esc(boxTip(effortsForModel(engineNow(), st.model), st.effort, 'Reasoning effort (--effort)'))}">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>
-                <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, 'What it may do without asking (--permission-mode)'))}">${opts(DATA.permissions, st.permissionMode)}</select>
+                <select id="c-model" title="${C.esc(boxTip(modelsFor(engineNow()), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(modelsFor(engineNow()), st.model)}</select>
+                ${drawsEffort(engineNow())
+                    ? `<select id="c-effort" title="${C.esc(boxTip(effortsForModel(engineNow(), st.model), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>`
+                    : ''}
+                <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, startPermTip))}">${opts(DATA.permissions, st.permissionMode)}</select>
                 <select id="c-proj" title="${C.esc(boxTip([{ id: '', label: '◧ No project' }, ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))], DATA.activeProjectId || '', 'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.'))}">
                     <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
                     ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}

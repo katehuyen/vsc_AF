@@ -19,6 +19,11 @@ const ENGINES = [
     {
         id: 'claude', label: 'Claude Code', ready: true, auth: 'subscription',
         shape: 'persistent', steerable: true, reportsCost: true,
+        // ‼️ U-59 — the flag names exactly as `engineFlagFor` derives them
+        // (measured). Claude abstains: its line is built as a string and never
+        // goes through `runArgs`, so the box names no flag rather than another
+        // engine's vocabulary wearing Claude's name.
+        modelFlag: '', effortFlag: '', takesEffort: true,
         billing: 'A Claude Pro or Max plan, signed in once in the browser.',
         next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
         note: 'One long-lived process: a message typed mid-turn steers that turn, and model, '
@@ -27,6 +32,9 @@ const ENGINES = [
     {
         id: 'codex', label: 'Codex', ready: true, auth: 'subscription',
         shape: 'perTurn', steerable: false, reportsCost: false,
+        // …and Codex's effort is a CONFIG ASSIGNMENT rather than a flag, so
+        // there is nothing to put in the parenthesis and none is drawn.
+        modelFlag: '-m', effortFlag: '', takesEffort: true,
         billing: 'A ChatGPT Plus, Pro, Team or Business plan, signed in once in the browser.',
         next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
         note: 'One process per turn: a message typed mid-turn is HELD until the turn ends, the '
@@ -37,9 +45,28 @@ const ENGINES = [
     {
         id: 'gemini', label: 'Gemini', ready: false, auth: 'none',
         shape: 'perTurn', steerable: false, reportsCost: false,
+        modelFlag: '-m', effortFlag: '', takesEffort: false,
         billing: 'An API key. The "sign in with Google" route this CLI used to have was retired in June 2026.',
         next: 'Put GEMINI_API_KEY in the vault. This engine has no plan sign-in.',
         note: 'One process per turn: a message typed mid-turn is HELD until the turn ends.'
+    },
+    {
+        // ‼️ U-59 — THE THIRD SHAPE, IN THE PICTURE. The composer's tooltips
+        // branch on it and the effort box disappears for it, and neither of
+        // those was visible in any fixture: a page whose only engines are one
+        // persistent and two per-turn cannot show a reviewer that a shared-ACP
+        // engine draws four boxes instead of five and says something different
+        // about permissions.
+        id: 'opencode', label: 'OpenCode', ready: true, auth: 'builtin',
+        shape: 'sharedAcp', steerable: false, reportsCost: true,
+        modelFlag: '-m', effortFlag: '', takesEffort: false,
+        billing: 'No sign-in at all: its own connected provider serves free models. Add a key for the paid ones.',
+        next: 'Ready. No credential is needed for its built-in free models.',
+        note: 'One shared process carries every OpenCode card at once, each conversation told apart inside it. '
+            + 'A message typed mid-turn is HELD until the turn ends — this protocol has no way to speak into a running turn — '
+            + 'but the model and the session mode are changed on the live connection at the next turn boundary, '
+            + 'Stop asks the engine to stop rather than killing it, and it can genuinely stop and ask you before it acts. '
+            + 'It states the price of each turn itself.'
     }
 ];
 
@@ -178,6 +205,20 @@ const data = () => ({
             models: [{ id: '', label: 'Default' }, { id: 'sonnet', label: 'sonnet' }],
             efforts: {}, defaultEffort: {}, source: 'settings',
             note: 'This engine states no model catalog.'
+        },
+        opencode: {
+            models: [
+                { id: '', label: 'Default' },
+                { id: 'opencode/big-pickle', label: 'Big Pickle', detail: 'opencode/big-pickle' },
+                { id: 'opencode/grok-code-free', label: 'Grok Code (free)', detail: 'opencode/grok-code-free' },
+                { id: 'opencode/qwen3-coder-free', label: 'Qwen3 Coder (free)', detail: 'opencode/qwen3-coder-free' }
+            ],
+            // ‼️ NO EFFORT VOCABULARY AT ALL — the measured answer, and the one
+            // the picture has to show: this engine gets no effort box.
+            efforts: { '': [] }, defaultEffort: {}, source: 'catalog',
+            note: '3 models, as OpenCode itself listed them when the session opened — the handshake hands the '
+                + 'whole catalog over, so nothing is spawned to ask. This engine has no reasoning-effort setting '
+                + 'to go with them. Refreshed today.'
         }
     },
     permissions: [
@@ -212,11 +253,21 @@ const composerData = () => Object.assign(data(), {
     selected: '', sessions: [], chipProjectId: '', projectContext: ''
 });
 
+/** ‼️ U-59 — the same composer with the SHARED-ACP engine chosen, which is the
+ *  only state in which the effort box is absent and the permission tooltip says
+ *  the engine can stop and ask. Five boxes become four; that is the picture. */
+const opencodeComposerData = () => Object.assign(composerData(), { engine: 'opencode' });
+
 module.exports = {
     script: 'console.js',
     data,
     variants: () => [
         { id: 'console', label: 'Console — two engines at once', data: data() },
-        { id: 'console-composer', label: 'Console — the engine picker', data: composerData() }
+        { id: 'console-composer', label: 'Console — the engine picker', data: composerData() },
+        {
+            id: 'console-opencode',
+            label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',
+            data: opencodeComposerData()
+        }
     ]
 };

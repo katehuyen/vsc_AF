@@ -61,6 +61,19 @@ export interface EngineTestResult {
     detail: string;
     /** the engine's own words when it failed, trimmed — never invented */
     error?: string;
+    /**
+     * ‼️ U-59 — NOTHING WAS CALLED, AND THAT IS NOT A FAILURE.
+     *
+     * `ok: false` had two meanings in it: "the engine was asked and did not
+     * answer" and "the check refused to run" — and the page drew both as a red
+     * ✗ with the engine's name over it. On OpenCode the second is the ordinary
+     * case (no free model is on offer, so the check would spend money and will
+     * not choose that for you), and a reader saw a broken engine where the row
+     * above it said the engine was ready. `ok` stays false because nothing
+     * proved the call gets through; this says WHY, and the row draws a third
+     * way. A refusal carries no `error` — there is no engine complaint to quote.
+     */
+    refused?: boolean;
 }
 
 /**
@@ -238,7 +251,7 @@ export async function testEngine(
             if (plan.refusal) {
                 // Not a failure of the engine: nothing was tested, and saying
                 // "it did not answer" would be a verdict this never reached.
-                return { id, ok: false, ms: now() - started, at, detail: plan.refusal };
+                return { id, ok: false, refused: true, ms: now() - started, at, detail: plan.refusal };
             }
             if (plan.args) { args = plan.args; }
             if (plan.stdin !== undefined) { stdin = plan.stdin; }

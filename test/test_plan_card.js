@@ -28,12 +28,12 @@ const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'u
     const fx = fixture('planusage');
     const html = runPage(fx.script, fx.data()).html();
     const tabs = html.match(/<button class="pu-tab[^>]*>[^<]*<\/button>/g) || [];
-    ok('one tab per engine', tabs.length === 4);
+    ok('one tab per engine', tabs.length === 5);
 
     // ‼️ THE HANDLE IS A NAME. Nothing else.
     const handleText = tabs.map(t => t.replace(/<[^>]*>/g, '').trim());
     ok('‼️ a handle is the engine\'s name and nothing else',
-        handleText.join(',') === 'Claude,Codex,Gemini,Antigravity');
+        handleText.join(',') === 'Claude,Codex,Gemini,Antigravity,OpenCode');
     ok('‼️ …no percentage in a tab handle',
         !handleText.some(t => /%/.test(t)));
     ok('‼️ …and no explanation in one either (this is what "per-token" was doing)',

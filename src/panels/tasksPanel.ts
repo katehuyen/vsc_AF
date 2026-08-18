@@ -20,7 +20,7 @@ import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
 import { handleAfNav, htmlShell } from './base';
 import { full as afFull } from '../core/aftime';
-import { engineOf } from '../core/consoleEngine';
+import { engineOf, engineTakesEffort } from '../core/consoleEngine';
 
 /**
  * Tasks — the agent-activity CONTROL PANEL.
@@ -720,7 +720,19 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             // engine that cannot run produces an output file full of a shell
             // error discovered hours later. The row carries `ready` and `next`
             // so the form can refuse it the same way every other surface does.
-            engines: deps.engines ? deps.engines() : [],
+            // ‼️ U-59 — …AND THE SHAPE WITH IT. The form's Engine and
+            // Permissions tooltips were written when every non-Claude engine was
+            // the same story ("cannot stop and ask, so the mode is spent up
+            // front, and it states no price"). A shared-ACP engine breaks both
+            // halves — it CAN stop and ask, and it states the price itself — so
+            // the form has to be able to tell them apart rather than printing
+            // one sentence over all of them.
+            engines: (deps.engines ? deps.engines() : []).map(e => ({
+                ...e,
+                shape: engineOf(e.id).shape,
+                reportsCost: engineOf(e.id).reportsCost,
+                takesEffort: engineTakesEffort(e.id)
+            })),
             defaults: deps.launchDefaults(),
             // Only offered when the user actually has profiles: a picker whose
             // only entry is "claude" is a question with one answer.

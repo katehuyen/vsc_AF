@@ -926,6 +926,41 @@ const html = allHtml;
     // is a value, and a blank one would read as a value that is blank.
     ok('a box with no list to name from opens on the explanation, not on a gap',
         /^How hard it thinks/.test(tipOf(/title="([^"]*)"[^>]*>effort/)));
+
+    // ---------- U-59: the THIRD shape, which agreed with neither sentence ----
+    //
+    // ‼️ `steerable` answers ONE question — can this change while a turn is
+    // RUNNING — and a shared-ACP engine says no to it while saying yes to the
+    // question the reader is asking. Reading the permission sentence off
+    // `steerable` alone printed "this engine cannot stop and ask, so the mode
+    // becomes a SANDBOX" over OpenCode: the promise-that-is-not-kept this page
+    // already refuses to make about Antigravity, made about the one engine whose
+    // permission card is on screen while it says it.
+    {
+        const src = require('fs').readFileSync(
+            require('path').resolve(__dirname, '..', 'media', 'console.js'), 'utf8');
+        ok('‼️ the permission sentence asks the SHAPE, not just whether it steers',
+            /const shared = shapeNow === 'sharedAcp';/.test(src)
+            && /really can stop and ask/.test(src)
+            && /once \/ always \/ reject/.test(src));
+        ok('…and it says what unattended costs on that engine — refused, not waiting',
+            /comes back refused rather than pausing/.test(src));
+        ok('…and the model box stops calling a live connection a future process',
+            /sent to the live connection as session config at the next turn boundary/.test(src));
+        // ‼️ A control with no referent is a bug (CONVENTIONS). Two engines have
+        // no reasoning effort at all, and both were handed an empty 82px box.
+        // The question is the ENGINE'S — a catalog that has not answered yet is
+        // not the same fact as a setting that does not exist.
+        ok('‼️ an engine with no effort setting is not given the box',
+            /const drawsEffort = engineId =>/.test(src)
+            && /row\.takesEffort !== false/.test(src));
+        // ‼️ …and the flag in the parenthesis is the engine's own, or there is
+        // no parenthesis: `(--model)` was Claude's name printed over an engine
+        // that carries it on `-m`.
+        ok('‼️ the flag names are the engine\'s own, derived rather than typed',
+            /function flagOf\(engineId, field\)/.test(src)
+            && !/Model for the new session \(--model\)/.test(src));
+    }
 }
 
 // ---------- the card hands its state to the right-click menu ----------

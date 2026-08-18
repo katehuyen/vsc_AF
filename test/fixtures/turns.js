@@ -97,6 +97,27 @@ const rows = () => ([
         tools: 4, errors: 0, models: ['claude-haiku-4-5'],
         sidechain: false, origin: 'auto', active: false,
         engine: 'claude'
+    },
+    {
+        // ‼️ U-59 — AN OPENCODE TURN. Two things about it are unlike every row
+        // above: its session id is the engine's own `ses_…` rather than a UUID,
+        // and its model is a `provider/model` id — the longest value the Model
+        // column has ever been asked to hold. The price is the ENGINE'S own
+        // figure (it publishes `cost`), so it belongs in the same column as
+        // Claude's and not in the derived one.
+        file: '',
+        sessionId: 'ses_7f2c1a90d4e8b6',
+        cwd: 'D:\\zone\\agent\\ajanlar\\manager',
+        agent: 'manager', agentName: 'manager',
+        session: 'queue triage',
+        n: 2, of: 2,
+        label: 'now write the three that are blocked into the queue',
+        ts: min(14), durationMs: 4 * 60000, ms: 2 * 60000,
+        apiCalls: 4, steps: 9, thinking: 2, endCtx: 31_004,
+        tokens: 63_411, wTokens: 0, cost: 0.0184,
+        tools: 3, errors: 0, models: ['opencode/big-pickle'],
+        sidechain: false, origin: 'user', active: false,
+        engine: 'opencode'
     }
 ]);
 
@@ -107,7 +128,7 @@ const data = base;
 /** One picture with the filter panel closed (the Engine column beside Agent) and
  *  one with it open (the new Engines picker beside Agents). */
 const variants = () => ([
-    { id: 'turns', label: 'Turns — four engines, one row per turn', data: base() }
+    { id: 'turns', label: 'Turns — every engine, one row per turn', data: base() }
 ]);
 
 module.exports = { script: 'turns.js', data, variants, rows };

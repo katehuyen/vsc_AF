@@ -2,11 +2,11 @@
 
 Mission control for your **local coding agents** — live fleet status, cost analytics, session explorer, and health/optimization insights, all inside VS Code. Fully local: it reads your agent folders and each CLI's own transcripts on disk. No server, no telemetry, nothing leaves your machine.
 
-**Four engines.** A session, a task, a schedule, a trigger, a workflow step and a mission delegation can each run on **Claude Code**, **Codex**, **Gemini** or **Antigravity**, and Agent Farm reads all four CLIs' histories: `~/.claude/projects` (Claude), Codex rollouts, `~/.gemini/tmp/*/chats` (Gemini) and Antigravity's own conversation index.
+**Five engines.** A session, a task, a schedule, a trigger, a workflow step and a mission delegation can each run on **Claude Code**, **Codex**, **Gemini**, **Antigravity** or **OpenCode**, and Agent Farm reads all five CLIs' histories: `~/.claude/projects` (Claude), Codex rollouts, `~/.gemini/tmp/*/chats` (Gemini), Antigravity's own conversation index and OpenCode's `session list` / `export`.
 
 Two limits are stated rather than hidden, because they follow from what the engines themselves offer:
 
-- **Only Claude Code publishes a price per turn.** The others count tokens and state no dollars, so a cost figure beside them is *derived* from your `agentFarm.pricing` rules — good for comparing runs, not a bill. `$0.00` is never printed where no price exists.
+- **Only Claude Code and OpenCode publish a price per turn.** The others count tokens and state no dollars, so a cost figure beside them is *derived* from your `agentFarm.pricing` rules — good for comparing runs, not a bill. `$0.00` is never printed where no price exists; on OpenCode a free model's zero is the engine's own figure and a real one.
 - **Live hooks are Claude Code's alone.** It fires them itself, so its sessions reach the Live Timeline mid-turn. The per-turn engines have no process between turns to hook: Agent Farm mirrors their lifecycle from the sessions it hosts and launches, which is a turn-granular view rather than a tool-granular one. Some cost/quality/health analytics are therefore Claude-only, and every surface that is says so.
 
 ## Features

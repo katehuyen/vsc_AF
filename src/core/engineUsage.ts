@@ -61,6 +61,19 @@ export interface EngineUsage {
     /** ‼️ ONE line the reader can act on. Never "not configured", and never a
      *  blank where a percentage would have been. */
     note: string;
+    /**
+     * ‼️ U-59 — THE TWO WORDS THAT STAND WHERE A PERCENTAGE WOULD, when the
+     * STATE alone does not say enough.
+     *
+     * `no-plan` is one state reached for two different reasons. Gemini has no
+     * plan because it is billed per token against a key, and `per-token` is
+     * exactly right for it. OpenCode has no plan because each model runs against
+     * its own provider — and it is the one engine here besides Claude that
+     * states a real price per turn, so `per-token` read as "your tokens are
+     * being billed", which is the opposite of what a free model does. Absent =
+     * the state's own word, which is still right for the other four.
+     */
+    headline?: string;
 }
 
 /** Everything this module needs from the outside world. */
@@ -225,6 +238,22 @@ export function readEngineUsage(
             id: 'agy', label: 'Antigravity', state: 'not-published', bars: [], plan: '', fetchedAt: 0,
             note: 'Antigravity publishes no quota figure this machine can read: its CLI refreshes one '
                 + 'internally and writes it to no file. Its usage is visible in the Antigravity app itself.'
+        },
+        {
+            // ‼️ U-59 — THE ROW EXISTS BECAUSE THE ENGINE DOES. This matrix is
+            // what the status-bar hover, the Dashboard card and `engines.usage`
+            // all enumerate, and an engine simply MISSING from it is the failure
+            // this file's own `not-published` row was invented to avoid: the
+            // reader cannot tell "no plan window here" from "this build has
+            // never heard of it". It is `no-plan` and not `not-published`,
+            // because there is nothing being withheld — OpenCode is a client
+            // for whichever provider a model belongs to, and it is the ONE
+            // engine besides Claude that states the price of every turn.
+            id: 'opencode', label: 'OpenCode', state: 'no-plan', bars: [], plan: '', fetchedAt: 0,
+            headline: 'priced per turn',
+            note: 'OpenCode runs each model against whichever provider it belongs to, so there is no single '
+                + 'plan window here to be a percentage of — and no quota to read on a built-in free model. '
+                + 'It states the price of every turn itself, so what it has spent is in the cost figures.'
         }
     ];
 }
@@ -234,6 +263,8 @@ export function usageSummary(u: EngineUsage): string {
     if (u.state === 'ok' && u.bars.length) {
         return u.bars.map(b => `${b.title.replace(/^Current /, '')} ${b.percent}%`).join(' · ');
     }
+    // ‼️ U-59 — the row's own word wins where it has one; see `headline`.
+    if (u.headline) { return `no plan — ${u.headline}`; }
     return u.state === 'no-plan' ? 'no plan — per-token'
         : u.state === 'not-published' ? 'not published'
             : 'not read yet';

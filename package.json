@@ -1,8 +1,8 @@
 {
   "name": "agent-farm",
   "displayName": "Agent Farm",
-  "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini and Antigravity: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.160.0",
+  "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
+  "version": "3.161.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -86,7 +86,7 @@
       },
       {
         "view": "agentfarm.tasks",
-        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nA task runs your prompt in the agent's folder, on the engine you choose — Claude Code, Codex, Gemini or Antigravity — headless into an archived file, or in a terminal you can watch.\n[Open Guide](command:agentfarm.openGuide)"
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nA task runs your prompt in the agent's folder, on the engine you choose — Claude Code, Codex, Gemini, Antigravity or OpenCode — headless into an archived file, or in a terminal you can watch.\n[Open Guide](command:agentfarm.openGuide)"
       },
       {
         "view": "agentfarm.missions",
@@ -8229,16 +8229,18 @@
             "claude",
             "codex",
             "gemini",
-            "agy"
+            "agy",
+            "opencode"
           ],
           "enumDescriptions": [
             "Claude Code — read from Anthropic's own usage endpoint, refreshed on the beat below.",
             "Codex — read from its own transcript, which records the limit the service returned on its last turn. Free, but as old as that turn.",
             "Gemini — billed per token against an API key: there is no plan window, so the indicator says so instead of showing a bar.",
-            "Antigravity — publishes no quota figure this machine can read; the indicator says so rather than showing 0%."
+            "Antigravity — publishes no quota figure this machine can read; the indicator says so rather than showing 0%.",
+            "OpenCode — each model runs against its own provider, so there is no single plan window; it states the price of every turn instead."
           ],
           "default": "claude",
-          "description": "Which engine's remaining limit the status bar shows. Every engine reports differently and only Claude has an endpoint to ask — hover the indicator to see all four at once and switch between them, or use the mini tabs on the Dashboard's Plan usage card. Both write this setting, so the two surfaces always agree."
+          "description": "Which engine's remaining limit the status bar shows. Every engine reports differently and only Claude has an endpoint to ask — hover the indicator to see them all at once and switch between them, or use the mini tabs on the Dashboard's Plan usage card. Both write this setting, so the two surfaces always agree."
         },
         "agentFarm.planUsageWarnPercent": {
           "type": "number",
@@ -8297,7 +8299,7 @@
         "agentFarm.taskExtraArgs": {
           "type": "string",
           "default": "",
-          "description": "Extra CLI arguments appended to a task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model. These are Claude Code's flag vocabulary, so a task queued on another engine (Codex / Gemini / Antigravity) ignores them — set that task's model and effort on the task itself."
+          "description": "Extra CLI arguments appended to a task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model. These are Claude Code's flag vocabulary, so a task queued on another engine (Codex / Gemini / Antigravity / OpenCode) ignores them — set that task's model and effort on the task itself."
         },
         "agentFarm.externalTerminal": {
           "type": "boolean",
@@ -8749,7 +8751,7 @@
             }
           },
           "default": [],
-          "description": "Alternative CLI executors for tasks — an arbitrary command line, for a CLI Agent Farm knows nothing else about. A profile task gets output archiving and exit-code status, and nothing more: no transcript, no cost, no live events. This is a DIFFERENT axis from a task's engine — Codex, Gemini and Antigravity are first-class engines with their own transcripts and token counts, so pick one of those on the task instead of writing a profile for it. Live hooks remain Claude Code's alone, whichever route you take."
+          "description": "Alternative CLI executors for tasks — an arbitrary command line, for a CLI Agent Farm knows nothing else about. A profile task gets output archiving and exit-code status, and nothing more: no transcript, no cost, no live events. This is a DIFFERENT axis from a task's engine — Codex, Gemini, Antigravity and OpenCode are first-class engines with their own transcripts and token counts, so pick one of those on the task instead of writing a profile for it. Live hooks remain Claude Code's alone, whichever route you take."
         },
         "agentFarm.relayFeeds": {
           "type": "array",

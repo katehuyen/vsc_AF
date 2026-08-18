@@ -483,6 +483,23 @@ const by = (list, id) => list.find(e => e.id === id);
                 && paidOnly.calls.length === 1);
             ok('…and it says what the user can do about it, instead of only saying no',
                 /pick a model yourself/.test(refused.detail));
+            // ‼️ U-59 — AND "NOT ATTEMPTED" IS NOT "FAILED". `ok: false` carried
+            // both, so the page drew a red ✗ over an engine whose own row two
+            // lines above said "Ready, with no sign-in needed" — a broken engine
+            // reported for the ordinary case of having no free model on offer.
+            // The flag is what lets the row be a third thing.
+            ok('‼️ a refusal is MARKED as one — nothing was called, so it is not a failure',
+                refused.refused === true && refused.error === undefined);
+            ok('…while a real failure is not marked that way',
+                hollowRes.refused === undefined);
+            {
+                const fx = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8');
+                ok('‼️ …and the page draws it as a third state, in its own colour, with its own mark',
+                    /v\.refused \? 'held'/.test(fx) && /v\.refused \? '⊘ '/.test(fx)
+                    && /\.engv\.held \{ color:var\(--vscode-charts-yellow/.test(fx));
+                ok('…and its hover says the engine was never asked, rather than timing a failure',
+                    /the engine was never asked/.test(fx));
+            }
 
             // The picker itself: the engine's own naming is the signal, and the
             // choice is deterministic so a flaky result cannot be blamed on it.

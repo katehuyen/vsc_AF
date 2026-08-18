@@ -4,6 +4,26 @@
 // have never been switched on — each with ONE action that wakes it up.
 // Pure node (no vscode import): the host gathers the inputs, this ranks them.
 
+import { ENGINES } from './consoleEngine';
+
+/**
+ * ‼️ U-59 — HOW MANY ENGINES THERE ARE, AND WHAT THEY ARE CALLED, ASKED RATHER
+ * THAN TYPED.
+ *
+ * This file said `4` twice and named three engines in a sentence; a fifth
+ * shipped end to end and every one of those was still describing the farm as it
+ * was two engines ago — "0/4 engines ready" on a machine with five, and a
+ * dormant row that recommended installing a list OpenCode was not on. The
+ * registry is one import away and is the only place that ever knew.
+ */
+const BUILTIN_ENGINES = Object.values(ENGINES);
+/** The non-default engines, spelt as people say them: `A, B and C`. */
+function engineRollCall(): string {
+    const names = BUILTIN_ENGINES.filter(e => e.id !== 'claude').map(e => e.label);
+    if (names.length < 2) { return names.join(''); }
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 export type SubsystemState = 'active' | 'ready' | 'dormant';
 
 export interface StatusAction {
@@ -169,7 +189,7 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
     // "unknown" row.
     const readyAll = i.enginesReady ?? [];
     const ready = readyAll.filter(e => e !== 'claude');
-    const engineDetail = `${readyAll.length}/${i.engineCount || 4} engines ready`
+    const engineDetail = `${readyAll.length}/${i.engineCount || BUILTIN_ENGINES.length} engines ready`
         + (ready.length ? ` (${ready.join(', ')} beside Claude)` : '')
         + (extTotal
             ? ` · ${Object.entries(i.externalSessions).map(([s, n]) => `${s} ×${n}`).join(' · ')} session(s) on disk`
@@ -184,13 +204,13 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
         }
         : {
             id: 'engines', label: 'Engines', state: 'dormant',
-            detail: 'only Claude Code is ready here — Codex, Gemini and Antigravity are supported but not installed or not signed in',
+            detail: `only Claude Code is ready here — ${engineRollCall()} are supported but not installed or not signed in`,
             action: { label: 'Engines', kind: 'command', value: 'agentfarm.openEngines' }
         });
     if (i.cliProfileCount === 0) {
         rows.push({
             id: 'cli', label: 'Custom CLI profiles', state: 'dormant',
-            detail: 'none configured — this is for a binary Agent Farm has no built-in support for; the four engines above do not need one',
+            detail: `none configured — this is for a binary Agent Farm has no built-in support for; the ${BUILTIN_ENGINES.length} engines above do not need one`,
             action: { label: 'Configure profiles', kind: 'settings', value: 'agentFarm.cliProfiles' }
         });
     } else {

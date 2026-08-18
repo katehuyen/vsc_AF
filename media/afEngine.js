@@ -45,6 +45,24 @@
         return LABEL[k] || String(v).trim();
     }
 
+    /**
+     * ‼️ U-59 — THE ROLL CALL, SAID ONCE, FOR THE HEADINGS THAT LIST THEM.
+     *
+     * Two column definitions spelt the engines out by hand — "Which CLI ran the
+     * session: Claude · Codex · Gemini · Antigravity" — and a fifth engine
+     * shipped end to end without either sentence noticing, because a list of
+     * names typed into a tooltip is a list nobody goes back to. A heading that
+     * has to enumerate them asks here; the answer grows with LABEL.
+     *
+     * `last` is the word before the final name ("or", "and") for a heading
+     * written as a sentence rather than as a dotted list.
+     */
+    function names(sep, last) {
+        const all = KNOWN.map(function (k) { return LABEL[k]; });
+        if (!last || all.length < 2) { return all.join(sep || ' · '); }
+        return all.slice(0, -1).join(sep || ', ') + ' ' + last + ' ' + all[all.length - 1];
+    }
+
     function esc(s) {
         return String(s === undefined || s === null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -106,6 +124,7 @@
     }
 
     window.AFEngine = {
-        id: id, label: label, badge: badge, cls: cls, known: KNOWN, authBadge: authBadge
+        id: id, label: label, names: names, badge: badge, cls: cls,
+        known: KNOWN, authBadge: authBadge
     };
 })();

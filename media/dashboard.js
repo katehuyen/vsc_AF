@@ -376,10 +376,17 @@
     /** An engine's headline figure, or the honest word for why there is none —
      *  never a 0% for an engine nobody can measure (core/engineUsage.ts). */
     function puFigure(e) {
-        return e.state === 'ok' && (e.bars || []).length
-            ? Math.max.apply(null, e.bars.map(b => b.percent)) + '%'
-            : e.state === 'no-plan' ? 'per-token'
-                : e.state === 'not-published' ? 'not published' : 'not read yet';
+        if (e.state === 'ok' && (e.bars || []).length) {
+            return Math.max.apply(null, e.bars.map(b => b.percent)) + '%';
+        }
+        // ‼️ U-59 — `no-plan` is one state reached for two reasons, and the word
+        // was Gemini's. OpenCode has no plan window because each model runs
+        // against its own provider — and it states a real price per turn, so
+        // "per-token" read as "your tokens are being billed" on the one engine
+        // whose free models cost nothing. A row that knows its own word says it.
+        if (e.headline) { return e.headline; }
+        return e.state === 'no-plan' ? 'per-token'
+            : e.state === 'not-published' ? 'not published' : 'not read yet';
     }
 
     /**

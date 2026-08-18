@@ -46,6 +46,22 @@ const E = sandbox.window.AFEngine;
     ok('a title is escaped, and absent when not passed',
         !/title=/.test(E.badge('codex'))
         && /title="Turns: 3 &quot;x&quot;"/.test(E.badge('codex', 'Turns: 3 "x"')));
+
+    // ‼️ U-59 — THE ROLL CALL. Two column definitions spelt the engines out by
+    // hand ("Which CLI ran the session: Claude · Codex · Gemini · Antigravity")
+    // and a fifth engine shipped end to end without either noticing, because a
+    // list of names typed into a tooltip is a list nobody goes back to.
+    ok('the component can name them all, so a heading never types them',
+        E.names() === E.known.map(E.label).join(' · ')
+        && /OpenCode/.test(E.names()));
+    ok('…as a sentence too, for a heading written as one',
+        E.names(', ', 'or') === 'Claude, Codex, Gemini, Antigravity or OpenCode');
+    {
+        const th = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
+        ok('‼️ …and both engine columns ASK rather than list',
+            /window\.AFEngine\.names\(\)/.test(th('sessionsTable.js'))
+            && /window\.AFEngine\.names\(', ', 'or'\)/.test(th('turns.js')));
+    }
 }
 
 // ---------- the palette ----------
@@ -54,7 +70,11 @@ const E = sandbox.window.AFEngine;
         const m = new RegExp(`\\.af-engc\\.${id}\\s*\\{\\s*--af-engc:\\s*([^;]+);`).exec(CSS);
         return m ? m[1].trim() : '';
     };
-    const ids = ['claude', 'codex', 'gemini', 'agy', 'other'];
+    // ‼️ U-59 — DERIVED, NOT TYPED. This list was five names long and stayed
+    // five names long when a fifth engine shipped, so the one constraint that
+    // matters ("no two engines share a hue") silently stopped covering the newest
+    // one — the exact failure mode this whole file exists to catch.
+    const ids = [...E.known, 'other'];
     ok('every engine this build knows has a declared hue',
         E.known.every(id => hue(id).length > 0) && hue('other').length > 0);
     ok('‼️ no two engines share one — the badge answers WHICH, not "not the default"',

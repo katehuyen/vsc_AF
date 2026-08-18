@@ -157,7 +157,7 @@ export function resolveDefault(
             // sentence that names none, because naming one would be a thing the
             // user could check and find false.
             note: `${farm} — set here for this agent on ${layers.engineLabel}. `
-                + `${layers.engineLabel} has no per-folder settings file, so Agent Farm passes it `
+                + `Nothing is written to a per-folder file ${layers.engineLabel} reads on its own, so Agent Farm passes it `
                 + `${engineFlagFor(engine, field) ? `as ${engineFlagFor(engine, field)} ` : ''}when it starts the session. `
                 + 'A session you start yourself in a terminal will not have it.'
         };

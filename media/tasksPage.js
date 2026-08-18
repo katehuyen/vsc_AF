@@ -1121,7 +1121,16 @@
         // — and passing an effort exits 42. A box with no referent is what
         // docs/CONVENTIONS.md forbids, so it is empty here and the picker
         // hides it rather than collecting a value the run cannot use.
-        if (String(engine || '') === 'gemini') { return []; }
+        //
+        // ‼️ U-59 — AND THE ENGINE IS ASKED, NOT NAMED. This was the word
+        // `gemini`, so the second engine with no effort setting (OpenCode: ACP
+        // declares only model and mode, and no reachable model publishes a
+        // variant) was covered only by its catalog's empty list — which is not
+        // there until a session has opened. `takesEffort` is the same answer the
+        // bridge refuses on, and it is true before anything has connected.
+        const row = ((DATA.launch || {}).engines || []).find(e => e.id === (engine || 'claude'));
+        if (row && row.takesEffort === false) { return []; }
+        if (!row && String(engine || '') === 'gemini') { return []; }
         const em = ntEngineModels(engine);
         const fallback = (DATA.launch || {}).efforts || [];
         if (!em || !em.efforts) { return fallback; }
@@ -1580,8 +1589,33 @@
             const opts = list.map(e => `<option value="${e.id === 'claude' ? '' : C.esc(e.id)}"${
                 e.id === chosen ? ' selected' : ''}${e.ready ? '' : ' disabled'} title="${C.esc(e.next)}"
                 >${C.esc(e.label)}${e.ready ? '' : ' — cannot run here'}</option>`).join('');
-            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). Gemini has no reasoning-effort setting at all, so that box is not drawn for it. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
+            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none, OpenCode has none) is not given that box at all. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
                 <select id="nt-engine">${opts}</select></label>`;
+        };
+        /**
+         * ‼️ U-59 — WHAT "PERMISSIONS" MEANS ON THE ENGINE THIS RUN WILL USE.
+         *
+         * One sentence served every engine and it was written for the two that
+         * behave alike: "one that stops to ask waits until you notice it." A
+         * shared-ACP engine does not wait — with nobody on the other end of its
+         * own question the tool call comes back refused — and a per-turn engine
+         * never asks in the first place. Three shapes, three outcomes, and the
+         * one the reader is choosing is the one printed.
+         */
+        const permTipFor = engineId => {
+            const row = (L.engines || []).find(e => e.id === (engineId || 'claude'));
+            const shape = (row && row.shape) || 'persistent';
+            if (shape === 'sharedAcp') {
+                return 'What it may do without asking. ‼️ This engine really does stop and ask — and unattended there is nobody to answer, '
+                    + 'so a request it would have asked about comes back REFUSED and the run carries on without that tool. '
+                    + 'Choose acceptEdits or bypassPermissions to hand it the auto-approve override instead; both reach the same one flag here. '
+                    + 'plan runs its own plan agent, which is refused every edit tool.';
+            }
+            if (shape === 'perTurn') {
+                return 'What it may do without asking. ‼️ This engine cannot stop and ask at all, so this is not a question it will ever put to you: '
+                    + 'it is fixed for every turn when the run starts — hover the Engine box above for what it becomes there.';
+            }
+            return 'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.';
         };
         const LEDE = {
             task: 'A task is one claude run. Everything except the agent and the prompt is optional — an empty field means no flag, and the agent\'s own settings stay in charge.',
@@ -1665,7 +1699,7 @@
                 ${choiceSel('effort', 'Effort', ntEfforts(c.engine, c.model), c.effort,
                 'How much reasoning per turn — the levels the chosen model actually supports. Mechanical work does not need the expensive end, and a run nobody is watching is exactly where that choice is worth making.')}
                 ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
-                    'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.')}
+                    permTipFor(c.engine))}
                 <label class="ntf" title="${c.kind === 'task'
                         ? 'The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely.'
                         : 'The project its runs belong to. An automation fires with nobody looking at a window, so it has no project unless you declare one here.'}"><span>Project</span>
@@ -2222,7 +2256,7 @@
             <th class="eng" title="Which CLI actually ran this task — the engine the run was queued on (empty = Claude Code)">Engine</th>
             <th class="sess" title="The conversation this run had. A headless run opens a session like any other; its transcript is matched a few minutes after the run ends, which is also where the Cost column comes from. Click one to read it.">Session</th>
             ${sortCell(v, 'dur', 'Took', true, 'Wall clock from the moment the process was spawned to the moment it exited — not time spent working.')}${sortCell(v, 'cost', 'Cost', true,
-                'API-equivalent price of the matched transcript. Only Claude Code reports a price; a plan-billed engine shows its token count instead, because $0.00 there would mean "free" and it does not.')}${sortCell(v, 'when', 'When',
+                'What the matched transcript says the run cost. An engine that publishes a price per turn states its own figure; where none is published this is the API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, never a bill. An engine that states no price at all shows its token count instead, because $0.00 there would mean "free" and it does not — whereas a free model on an engine that DOES publish its price really is a zero.')}${sortCell(v, 'when', 'When',
                     false, 'When it ended — or, for a run that has not, when it started or was made.')}<th class="acts"></th></tr>`;
         const body = !sorted.length
             ? `<tr><td colspan="10" class="empty">${d.runs.length

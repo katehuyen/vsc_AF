@@ -34,6 +34,18 @@ const engines = () => ([
         id: 'agy', label: 'Antigravity', state: 'not-published', plan: '', fetchedAt: 0, bars: [],
         note: 'Antigravity publishes no quota figure this machine can read: its CLI refreshes one '
             + 'internally and writes it to no file. Its usage is visible in the Antigravity app itself.'
+    },
+    {
+        // ‼️ U-59 — THE FIFTH TAB, AND THE WIDTH IS THE POINT. U-40 cut these
+        // handles down to bare NAMES because four of them would not fit a 340px
+        // card and the fourth dropped to a second line, which read as broken
+        // rather than as full. A fifth arrives here; if the strip cannot hold it
+        // the picture says so, and nothing else would have.
+        id: 'opencode', label: 'OpenCode', state: 'no-plan', plan: '', fetchedAt: 0, bars: [],
+        headline: 'priced per turn',
+        note: 'OpenCode runs each model against whichever provider it belongs to, so there is no single '
+            + 'plan window here to be a percentage of — and no quota to read on a built-in free model. '
+            + 'It states the price of every turn itself, so what it has spent is in the cost figures.'
     }
 ]);
 
@@ -72,6 +84,13 @@ const variants = () => ([
         id: 'planusage-agy',
         label: 'Plan usage — Antigravity (‼️ not published, and NOT 0%)',
         data: base('agy')
+    },
+    {
+        // ‼️ U-59 — "no plan window" is a THIRD answer, and it is not the same
+        // as Antigravity's "not published": nothing is being withheld here.
+        id: 'planusage-opencode',
+        label: 'Plan usage — OpenCode (‼️ no single window to be a percentage of — five tabs on one line)',
+        data: base('opencode')
     }
 ]);
 

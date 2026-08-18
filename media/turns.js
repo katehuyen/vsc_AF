@@ -402,7 +402,8 @@
     const HEAD = {
         origin: '<th class="origcell" title="Who started the session this turn belongs to: 🧑 you · 🤖 automation">By</th>',
         agent: '<th title="Agent whose folder the session ran in">Agent</th>',
-        engine: '<th title="Which engine ran this turn — Claude Code, Codex, Gemini or Antigravity. A Claude transcript states no engine; the absence IS Claude.">Engine</th>',
+        engine: '<th title="Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
+            + '. A Claude transcript states no engine; the absence IS Claude.">Engine</th>',
         label: '<th title="The prompt that opened the turn">Turn</th>',
         session: '<th title="The session this turn belongs to">Session</th>',
         n: '<th class="num" title="Turn number / the session\'s turn count">#</th>',
@@ -415,7 +416,15 @@
         ctx: '<th class="num" title="What the model\'s window held when this turn ended">Ctx</th>',
         tools: '<th class="num" title="Tool calls made inside this turn">Tools</th>',
         errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
-        cost: '<th class="num" title="API-equivalent cost of this turn">Cost</th>'
+        // ‼️ U-59 — THE RULE, NOT A LIST OF ENGINES. "API-equivalent cost" was
+        // written when one engine published a price and the rest were priced
+        // here; a second one now states its own, so a heading calling every
+        // figure an equivalent is wrong on two of five rows. The sentence is the
+        // rule, so it stays true whatever ships next.
+        cost: '<th class="num" title="What this turn cost. An engine that publishes a price per turn '
+            + 'states its own figure and that is what is shown; where none is published this is the '
+            + 'API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, '
+            + 'never a bill.">Cost</th>'
     };
     const CELL = {
         origin: r => {

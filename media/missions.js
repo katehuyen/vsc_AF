@@ -161,6 +161,21 @@
                 `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}${e.ready ? '' : ' disabled'}>`
                 + `${C.esc(e.label)}${e.ready ? '' : ' — not ready on this machine'}</option>`))
             .join('');
+        /**
+         * ‼️ U-59 — WHICH ENGINES A DOLLAR CEILING CAN ACTUALLY BIND, ASKED OF
+         * THE MATRIX INSTEAD OF TYPED INTO THE LABEL.
+         *
+         * Both budget fields named engines by hand — "Only Claude Code states a
+         * per-turn price", "the ONLY hard budget for a team delegating on Codex,
+         * Gemini or Antigravity" — and OpenCode arrived stating its own price on
+         * every turn, which made the first sentence false and the second short
+         * by one. Getting that wrong on a BUDGET control is not cosmetic: the
+         * user reads it to decide which of the two ceilings is the real fence.
+         */
+        const engNames = list => list.length < 2 ? list.join('')
+            : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+        const priced = engNames(engines.filter(e => e.reportsCost).map(e => e.label));
+        const unpriced = engNames(engines.filter(e => !e.reportsCost).map(e => e.label));
         // ‼️ The permission vocabulary comes from the host's one list, the same
         // constant the Tasks and Console launchers read — never a copy here.
         const perms = DATA.permissions || [];
@@ -212,8 +227,8 @@
                 <button class="secondary small" id="f-browse">Browse…</button>
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
             <div class="frow limrow">
-                ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent. Only Claude Code states a per-turn price, so on any other engine this limit can never be reached — the token ceiling beside it is what fences that run')}
-                ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. 0 = no token ceiling. This is the ONLY hard budget for a team delegating on Codex, Gemini or Antigravity')}
+                ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent. Only an engine that states a per-turn price can move this figure — ' + priced + ' do; on ' + unpriced + ' it can never be reached, and the token ceiling beside it is what fences that run')}
+                ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. 0 = no token ceiling. This is the ONLY hard budget for a team delegating on ' + unpriced)}
                 ${lim('maxRounds', 'Max rounds', 'Planner decisions')}
                 ${lim('maxTasks', 'Max tasks', 'Total delegations')}
                 ${lim('maxMinutes', 'Max minutes', 'Wall clock; waiting on you does not count')}

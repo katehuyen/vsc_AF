@@ -1,5 +1,5 @@
 /**
- * The Live Timeline with FOUR ENGINES on it (X-35).
+ * The Live Timeline with EVERY ENGINE on it (X-35, U-59).
  *
  * ‼️ THIS FIXTURE IS THE REPORTED BUG, DRAWN. Until X-35 this page could only
  * ever show Claude: it is fed by the hook stream, Claude Code is the only engine
@@ -114,6 +114,27 @@ const sessions = () => ([
         title: '', cost: 0, tokens: 0, wTokens: 0, ctxTokens: 0,
         turns: 0, model: '', filesEdited: 0,
         owner: null
+    },
+    {
+        // ‼️ U-59 — THE FIFTH ENGINE, ON THE ONE PAGE WHERE FIVE BADGES SHARE A
+        // ROW OF SEGMENTS. The engine filter is drawn from what is on screen, so
+        // an engine that never appears in this fixture is an engine whose badge,
+        // colour and segment nobody has ever looked at. It is also the one row
+        // besides Claude that carries a REAL price — a `$` beside a
+        // `provider/model` id is the width case this page has never had.
+        sessionId: 'ses_7f2c1a90d4e8b6',
+        agentName: 'manager', resolved: true, label: 'manager',
+        source: 'opencode',
+        status: 'working',
+        lastPrompt: 'go through the queue and tell me what is blocked',
+        startedAt: min(11), lastEventTs: min(1),
+        prompts: 2, toolCalls: 3, compactions: 0, subagentStops: 0, errors: 0,
+        cwd: 'D:\\zone\\agent\\ajanlar\\manager',
+        transcriptPath: '',
+        title: 'queue triage',
+        cost: 0.0184, tokens: 63_411, wTokens: 0, ctxTokens: 31_004,
+        turns: 2, model: 'opencode/big-pickle', filesEdited: 0,
+        owner: null
     }
 ]);
 
@@ -179,6 +200,18 @@ const events = () => {
     // Gemini in a terminal — the window opening, and nothing else.
     push('cli:gemini:psikolog:1786000000000', 'psikolog', 'gemini', 'start', 7);
 
+    // OpenCode — hosted on the shared ACP process, and still running.
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'start', 11);
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'prompt', 10,
+        { detail: 'go through the queue and tell me what is blocked' });
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'toolStart', 9,
+        { tool: 'Read', detail: 'Backlog.md' });
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'toolEnd', 8, { tool: 'Read' });
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'prompt', 2,
+        { detail: 'now write the three that are blocked into the queue' });
+    push('ses_7f2c1a90d4e8b6', 'manager', 'opencode', 'toolStart', 1,
+        { tool: 'Edit', detail: 'Backlog.md' });
+
     return out.sort((a, b) => a.ts - b.ts);
 };
 
@@ -209,7 +242,7 @@ const data = base;
  *  leaves the other engines' swim lanes above them is the bug, not the fix — so
  *  the lanes have to be in the picture as well. */
 const variants = () => ([
-    { id: 'timeline', label: 'Live Timeline — four engines at once', data: base() },
+    { id: 'timeline', label: 'Live Timeline — every engine at once', data: base() },
     {
         id: 'timeline-one-engine',
         label: 'Live Timeline — Claude only (lifecycle-only wording, single badge)',

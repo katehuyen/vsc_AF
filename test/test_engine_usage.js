@@ -97,7 +97,13 @@ const probe = (files, tails) => ({
         { state: 'ok', bars: [{ id: 'five_hour', title: 'Current session', percent: 86, resetsAt: 0 }],
             plan: 'max', fetchedAt: 123, note: 'from the usage endpoint' });
     const by = Object.fromEntries(all.map(u => [u.id, u]));
-    ok('all four engines answer', all.length === 4 && by.claude && by.codex && by.gemini && by.agy);
+    // ‼️ U-59 — AND THE FIFTH IS HERE TOO. An engine missing from this matrix
+    // is missing from the status-bar hover, the Dashboard's Plan usage card and
+    // the engines.usage op all at once — and a reader then cannot tell "no plan
+    // window here" from "this build has never heard of it", which is the exact
+    // distinction the rest of this file exists to keep.
+    ok('every built-in engine answers',
+        all.length === 5 && by.claude && by.codex && by.gemini && by.agy && by.opencode);
     ok('Claude\'s answer is passed in, never fetched here', by.claude.bars[0].percent === 86);
     ok('Codex reads its own transcript', by.codex.state === 'ok');
 
@@ -108,6 +114,20 @@ const probe = (files, tails) => ({
     ok('…and says where the figure does live', /Antigravity app/.test(by.agy.note));
     ok('‼️ Gemini says there is no plan to be a percentage of',
         by.gemini.state === 'no-plan' && by.gemini.bars.length === 0);
+    // ‼️ …AND OPENCODE IS `no-plan`, NOT `not-published`: nothing is being
+    // withheld here. Each model runs against its own provider and the engine
+    // states the price of every turn itself, so there is no single window to be
+    // a percentage of — Gemini's answer, reached for its own reason.
+    ok('‼️ OpenCode says there is no single plan window, and shows no bar',
+        by.opencode.state === 'no-plan' && by.opencode.bars.length === 0);
+    ok('…and says where what it spent DOES live', /cost figures/.test(by.opencode.note));
+    // ‼️ …and NOT in Gemini's words. `no-plan` is one state reached for two
+    // reasons, and "per-token" on the engine whose free models cost nothing
+    // reads as "your tokens are being billed" — the opposite of the truth.
+    ok('‼️ …in its own words, not the per-token engine\'s',
+        by.opencode.headline === 'priced per turn'
+        && usageSummary(by.opencode) === 'no plan — priced per turn'
+        && usageSummary(by.gemini) === 'no plan — per-token');
 
     ok('a summary never prints a number it does not have',
         usageSummary(by.agy) === 'not published'
