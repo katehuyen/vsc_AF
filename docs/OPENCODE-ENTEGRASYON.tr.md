@@ -430,6 +430,38 @@ Dosyalar: `src/core/launch.ts` (`twoExecutors`, `ONE_EXECUTOR`,
 `test/test_tasks_webview.js` · `test/fixtures/tasks.js` (`tasks-oneexecutor`
 varyantı — ret şeridinin tek bakıldığı yer).
 
+## 8e. M-14 — üretim yüzeylerinin kendi koşuları (ölçüldü)
+
+Motor sözleşmesi iki sürümdür kanıtlı, ama **yalnız kabuktan**. Kalemin asıl
+istediği bu değildi: *her* üretim yüzeyi, uzantının içinden, gerçek binary'ye
+karşı, uçtan uca. Altı yüzey `opencode/nemotron-3.5-lightning-free` ile geçici
+bir klasörde koşturuldu; her birine, modelin tahmin edemeyeceği bir kelime
+içeren bir dosyayı okutup kelimeyi geri istedik — **cevabın kendisi kanıt**.
+
+| Yüzey | Sonuç | Kanıt |
+|---|---|---|
+| Headless task | ✅ | `ses_fead485d8ffe…` ilk olaydan bağlandı · 2 araç çağrısı `completed` · üç `step_finish` **toplandı** (8594+8677+8796 = bildirilen 26.067; farkı alınmıyor) |
+| Trigger (watch) | ✅ | Dosyaya dokununca ateşledi · `fromTrigger` kayıtlı · kendi `ses_…`'i · aynı cevap |
+| Schedule firing | ✅ | Kendi dakikasında kendiliğinden ateşledi · `fromSchedule` kayıtlı · aynı cevap |
+| Interactive task | ✅ | TUI doğru klasörde açıldı · motorun kendi `session list`'i konuşmayı gösteriyor, başlığı **modelin** koyduğu |
+| **Retry** | ❌ → düzeltildi | Prompt'suz koştu: `optStr` yokluğu `''` yapıyor, `retryTask` `??` ile birleştiriyor, `''` kazanıyor. OpenCode reddediyor (`You must provide a message or a command`); boş prompt'u kabul eden bir motorda bu **sessizce koşu harcıyordu**. Workflow-adımı dalını da erişilemez kılıyordu (`newPrompt === undefined` köprüden asla doğru olamazdı) |
+| **Workflow adımı** | ❌ → düzeltildi | `{prev_text}` bir sonraki adıma **transkripti** verdi. Claude'da arşiv gövdesi *cevabın kendisi*; OpenCode'da bilerek motorun kendi JSONL olay akışı. `computeHandoff` artık OpenCode arşivini `readOpencodeRun` ile okuyor — bu iş için zaten var olan ve tek olan okuyucu. Arşiv ham belge olarak kalıyor, saklamanın anlamı o |
+| **Schedule modeli** | ❌ → düzeltildi | `schedules.add`, `opencode/…` modeline *"model must be a model id/alias (e.g. opus, sonnet, haiku)"* diyordu. Karakter kapısı doğru (model komut satırına **string** olarak giriyor), ama sınıfında `/` yoktu — oysa **Claude dışı her motor** modeli `saglayici/model` diye adlandırıyor |
+
+**Model kapısı tek yere alındı:** iki dosyada altı nüsha vardı, hepsi
+`core/launch.ts` → `modelIdOk()`. Ret metni artık iki biçimi de anıyor; eski
+metin yalnız Claude takma adlarını sayıyordu ve okuyucuya modelinin
+*desteklenmediğini* düşündüren tam olarak buydu. `/` üç kabuğun hiçbirinde
+sözdizimi değil; sözdizimi olan her şey (`;` `&&` `|` backtick `$()` boşluk)
+reddedilmeye devam ediyor ve test ediliyor.
+
+> **Ders:** üçü de kabuktan görünmezdi ve üçü de her string testini geçiyordu.
+> "Motor sözleşmesi kanıtlı" ile "yüzeyler çalışıyor" ayrı iddialardır.
+
+**Bu turda ÖLÇÜLMEYEN:** Codex, Gemini ve Antigravity arşivlerinde de aynı
+devir sorunu (3) var mı — arşivleri okunmadı, düzeltme bilerek yalnız koşturulan
+motorla sınırlı tutuldu.
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi

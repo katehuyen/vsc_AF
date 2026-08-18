@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.156.0 — M-14: the five surfaces were run for real, and three of them were broken (2026-08-18)
+
+M-14's engine contract has been proved for two releases, but only from the shell. What was never done is the thing the item actually asks for: **every production surface, run end to end from inside the extension, on the real binary.** Six were run — headless task · retry · trigger · workflow step · schedule firing · interactive task — against `opencode/nemotron-3.5-lightning-free` in a scratch folder, each asked to read a file containing a word no model can guess. Three surfaces came back broken, and none of the three was visible to any string test.
+
+**1. ‼️ `tasks.rerun` over the bridge ran with an EMPTY prompt.** `optStr` returns `''` for an absent argument and `retryTask` merges with `??`, which keeps `''` — so a retry that did not restate the prompt lost it. The op's contract is *"Everything omitted is the ORIGINAL's, which is the point of a retry"*, and the one field that did not honour it was the only one a run cannot do without. OpenCode refuses an empty prompt outright (`You must provide a message or a command`), which is how it finally surfaced; on an engine that accepts one, this had been quietly spending runs that said nothing. It also made the workflow-step branch below it unreachable from the bridge, because that branch asks `newPrompt === undefined` and a bridge call could never be. Blank is folded into absent — a retry with no prompt is not a runnable task, so there is nothing for `""` to mean here.
+
+**2. ‼️ A schedule could not be given an engine model at all.** `schedules.add` answered `model must be a model id/alias (e.g. opus, sonnet, haiku)` to `opencode/nemotron-3.5-lightning-free`. The guard is a charset one — the model is interpolated into a command **string** (`modelArgs`), so a stored value must not be able to smuggle shell syntax — and it is right to exist; it simply never had `/` in its class, and **every engine except Claude names a model `provider/model`**. Six copies of the same regex were drifting apart in two files; they now go through one `modelIdOk()` in `core/launch.ts`, and the refusal names both shapes instead of only Claude's aliases — the old wording is exactly what makes a reader believe their engine model is unsupported rather than mistyped. A slash is not syntax in PowerShell, cmd or a POSIX shell; everything that is (`;` `&&` `|` backticks `$()` whitespace) is still refused, and tested.
+
+**3. ‼️ A workflow step handed the next one its TRANSCRIPT instead of its answer.** `{prev_text}` is built from the archived output body, and on Claude that body *is* the answer. OpenCode's archive is deliberately the engine's own JSONL event stream, so step 2 received a wall of `step_start` / `tool_use` / `step_finish` objects with the answer buried in one of them. `computeHandoff` now reads an OpenCode archive with `readOpencodeRun` — the reader that already existed for exactly this and is the only one — while the archive keeps the raw document, which is the whole point of keeping it. Locked with a fixture taken from a real run rather than a hand-written shape: the bug was that the shape was never read at all.
+
+**What passed, with what evidence.** Headless task: `ses_fead485d8ffe…` bound off the first event, two completed tool calls, the answer the model could not have guessed, and three `step_finish` figures that **sum** to the reported 26 067 — the summed-not-differenced rule holding on a real run. Trigger: fired on a file touch, `fromTrigger` recorded, its own session, same answer. Schedule: fired by itself at its minute, `fromSchedule` recorded, same answer. Interactive: the TUI opened in the right folder and the engine's own `session list` shows the conversation it started, titled by the model. Every run reported `cost: 0` with tokens present — a free model's real zero, not an unparsed price.
+
+*(Not measured in this pass: whether Codex, Gemini or Antigravity archives have the same handoff problem as (3). Their archives were not read; the fix is deliberately scoped to the engine that was run.)*
+
+## 3.155.0 — intermediate build (2026-08-18)
+
+Superseded by 3.156.0 within the same measurement pass; see that entry.
+
 ## 3.154.0 — A run could be given an engine AND a CLI profile, and the profile won without saying so (2026-08-18)
 
 A CLI profile does not add flags to an engine's command line — it **replaces the whole line**. `tasks.ts` says so twice, once on the headless path and once on the terminal one: `const command = profile ? buildCliCommand(…) : …`. So a run carrying both does not blend them, and it does not fail either: the profile runs, `task.engine` is never read, and nothing anywhere reports which of the two the caller lost.

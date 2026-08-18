@@ -17,6 +17,7 @@ import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
+import { modelIdOk } from './launch';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
@@ -2260,7 +2261,7 @@ export class TaskManager implements vscode.Disposable {
     /** Explicit per-task model (mission member override) beats the policy engine.
      *  Strict charset: a stored value can never smuggle shell syntax. */
     private modelArgs(task: FarmTask): { args: string; reason: string } | undefined {
-        if (task.model && /^[\w.:-]+$/.test(task.model)) {
+        if (task.model && modelIdOk(task.model)) {
             return { args: `--model ${task.model}`, reason: `explicit override (${task.model})` };
         }
         return this.opts.modelArgsFor?.(task);
@@ -3428,7 +3429,20 @@ export class TaskManager implements vscode.Disposable {
         try {
             const body = archivedOutputBody(fs.readFileSync(task.outputFile, 'utf8')).trim();
             handoff.text = body;
-            const envelope = extractJson(body);
+            // ‼️ M-14 — THE NEXT STEP IS HANDED THE ANSWER, NOT THE TRANSCRIPT.
+            // On Claude the archive body IS the answer, so `{prev_text}` could be
+            // the body itself. OpenCode's archive is deliberately the engine's own
+            // JSONL event stream (OPENCODE_RUN_OUTPUT_NOTE), so the same line
+            // handed step 2 a wall of `step_start` / `tool_use` / `step_finish`
+            // objects with the answer buried in one of them — measured on a real
+            // two-step chain. `readOpencodeRun` is the reader that already exists
+            // for this and it is the only one; the archive keeps the raw document
+            // either way, which is the point of keeping it.
+            if (engineOf(task.engine).id === 'opencode') {
+                const answer = readOpencodeRun(body).text.trim();
+                if (answer) { handoff.text = answer; }
+            }
+            const envelope = extractJson(handoff.text);
             if (envelope && typeof envelope === 'object') {
                 const env = envelope as { result?: unknown };
                 if (typeof env.result === 'string') {

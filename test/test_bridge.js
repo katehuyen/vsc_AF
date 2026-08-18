@@ -1755,12 +1755,25 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const at = src.indexOf("op: 'tasks.rerun'");
-        const block = src.slice(at, at + 5200);
+        // ‼️ TO THE NEXT OP, not a fixed number of characters — a window that has
+        // to be widened every time the contract gains a sentence fails for the
+        // wrong reason, and this one just did.
+        const block = src.slice(at, src.indexOf("op: 'tasks.history'", at));
         ok('‼️ tasks.rerun takes the retry\'s edits, the way the page\'s retry form does',
             /prompt\?/.test(block) && /model\?/.test(block) && /effort\?/.test(block)
             && /permissionMode\?/.test(block));
         ok('…and it CALLS retryTask rather than rebuilding the lineage',
             /taskManager\.retryTask\(/.test(block));
+        // ‼️ M-14 — THE ONE FIELD "EVERYTHING OMITTED IS THE ORIGINAL'S" DID NOT
+        // COVER. `optStr` returns '' for an absent arg and `retryTask` merges
+        // with `??`, which keeps '', so every bridge retry that did not restate
+        // the prompt ran with an empty one — against this op's own contract, and
+        // silently on any engine that tolerates an empty prompt. It also made the
+        // workflow-step branch (`newPrompt === undefined`) unreachable from here.
+        // Caught by a real run on OpenCode, which refuses an empty prompt.
+        ok('‼️ …and it does not hand `optStr`\'s empty string to it as if it were a prompt',
+            !/retryTask\(t as FarmTask, optStr\(args, 'prompt'\)/.test(block)
+            && /optStr\(args, 'prompt'\) \|\| undefined/.test(block));
     }
 
     // ---------- §19.C: mission-control ops contract (pause/resume/cancel/answer/approve) ----------

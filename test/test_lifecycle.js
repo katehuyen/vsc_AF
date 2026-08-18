@@ -69,6 +69,19 @@ const r2 = mgr.retryTask(r1);
 check('retry: suffix does not stack, bumps to (retry 2)', /İş \(retry 2\)$/.test(r2.title) && r2.attempt === 2);
 const r3 = mgr.retryTask(t1, 'düzeltilmiş prompt');
 check('retry-edit: uses the edited prompt', r3.prompt === 'düzeltilmiş prompt');
+// ‼️ M-14 — AN EMPTY STRING IS NOT "NOT STATED", AND THE MERGE CANNOT TELL.
+// `newPrompt ?? task.prompt` keeps '' because '' is not nullish, so a caller
+// that hands over an empty string gets a task with NO prompt — which OpenCode
+// refuses outright ("You must provide a message or a command") and other
+// engines spend a run on. Found by actually running a bridge retry. The rule is
+// enforced at the caller (`extension.ts` — `optStr(...) || undefined`); this
+// pins the behaviour it has to protect against, so a future merge that starts
+// treating '' as absent does not quietly make that guard look unnecessary.
+const rEmpty = mgr.retryTask(t1, '');
+check('retry: an EMPTY prompt really does win over the original — the caller must '
+    + 'fold blank into absent, because this merge cannot', rEmpty.prompt === '');
+const rAbsent = mgr.retryTask(t1, undefined);
+check('retry: undefined is what "not stated" looks like here', rAbsent.prompt === t1.prompt);
 
 // ---- 3. runTaskNext + priority ----
 const q1 = mgr.addTask(agent, 'A', 'a', 'headless');
@@ -119,6 +132,50 @@ mgr.retryTask(failedStep1);
 const added = mgr.tasks.length - before2;
 check('retry on workflow-step routes to resume (one new step task, no (retry) copy)',
     added === 1 && !mgr.tasks.some(t => /özetle \(retry/.test(t.title)));
+
+// ---- 5b. M-14: the handoff is the ANSWER, not the transcript ----
+// ‼️ On Claude the archived body IS the answer, so `{prev_text}` could be the
+// body itself. OpenCode's archive is deliberately the engine's own JSONL event
+// stream, so that same line handed the next step a wall of `step_start` /
+// `tool_use` / `step_finish` objects with the answer buried in one of them.
+// Measured on a real two-step chain before it was fixed. The lines below are
+// real output from that run, trimmed — a hand-written shape would not have
+// caught it, because the bug was that the shape was never read at all.
+{
+    const oc = [
+        '{"type":"step_start","timestamp":1,"sessionID":"ses_x","part":{"type":"step-start"}}',
+        '{"type":"tool_use","timestamp":2,"sessionID":"ses_x","part":{"type":"tool","tool":"read",'
+        + '"state":{"status":"completed","input":{"filePath":"kanit.txt"},"output":"ZARFIL-M14"}}}',
+        '{"type":"text","timestamp":3,"sessionID":"ses_x","part":{"type":"text","text":"ZARFIL-M14"}}',
+        '{"type":"step_finish","timestamp":4,"sessionID":"ses_x","part":{"type":"step-finish",'
+        + '"reason":"stop","tokens":{"total":10,"input":8,"output":2,"cache":{"read":0,"write":0}},"cost":0}}'
+    ].join('\n');
+    const ocFile = path.join(tmp, 'oc-step0.md');
+    fs.writeFileSync(ocFile, `# OC 1/2\n\n- Agent: yazar\n\n---\n\n${oc}\n\n---\nFinished: now · exit 0 · 0 min\n`);
+    const w2 = mgr.addWorkflow('OC', [
+        { agentId: 'a1', agentName: 'yazar', title: 'oku', prompt: 'oku', mode: 'headless', engine: 'opencode' },
+        { agentId: 'a1', agentName: 'yazar', title: 'ilet', prompt: 'al: {prev_text}', mode: 'headless', engine: 'opencode' }
+    ]);
+    mgr.tasks.push({
+        id: 'oc0', agentId: 'a1', agentName: 'yazar', title: 'OC 1/2: oku', prompt: 'oku',
+        mode: 'headless', status: 'done', engine: 'opencode',
+        createdAt: Date.now() - 1000, endedAt: Date.now() - 500,
+        workflowId: w2.id, workflowRunId: 'ocrun', stepIndex: 0, outputFile: ocFile
+    });
+    const ocFail = {
+        id: 'oc1', agentId: 'a1', agentName: 'yazar', title: 'OC 2/2: ilet', prompt: 'al: {prev_text}',
+        mode: 'headless', status: 'failed', engine: 'opencode', createdAt: Date.now(), endedAt: Date.now(),
+        workflowId: w2.id, workflowRunId: 'ocrun', stepIndex: 1
+    };
+    mgr.tasks.push(ocFail);
+    mgr.resumeWorkflowFromTask(ocFail);
+    const next = mgr.tasks.find(t => t.workflowRunId === 'ocrun' && t.stepIndex === 1
+        && t.status === 'queued' && t.id !== 'oc1');
+    check('M-14: an OpenCode step hands the next one the ANSWER',
+        !!next && next.prompt === 'al: ZARFIL-M14');
+    check('‼️ M-14: …and NOT the JSONL event stream it was archived as',
+        !!next && !/step_finish|"type":"tool"|sessionID/.test(next.prompt));
+}
 
 // resume at first step → empty handoff, no crash
 const failedStep0 = {

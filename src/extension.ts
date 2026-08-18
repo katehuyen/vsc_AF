@@ -124,7 +124,8 @@ import {
 } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
-    LaunchOptions, LaunchProfile, modelChoices, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface,
+    LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices, modelIdOk, ONE_EXECUTOR,
+    PERMISSION_CHOICES, RunSurface,
     twoExecutors, validateLaunch, withDefaults
 } from './core/launch';
 import {
@@ -3136,7 +3137,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const extra = cfg().get<string>('taskExtraArgs', '').trim();
                 // model override rides only on planner calls; strict charset so a
                 // form value can never smuggle shell syntax into the command line
-                const model = spec.plannerModel && /^[\w.:-]+$/.test(spec.plannerModel)
+                const model = spec.plannerModel && modelIdOk(spec.plannerModel)
                     ? `--model ${spec.plannerModel} ` : '';
                 const command = `claude ${extra ? extra + ' ' : ''}${model}` +
                     `--disallowedTools "${MISSION_PLANNER_DISALLOWED_TOOLS}" ` +
@@ -3515,7 +3516,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!goal) { return 'Goal is required.'; }
         const lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
         if (!lead) { return 'Pick a lead agent.'; }
-        const modelOk = (m: string) => /^[\w.:-]+$/.test(m);
+        const modelOk = (m: string) => modelIdOk(m);
         const teamIn = Array.isArray(input.team)
             ? input.team as {
                 agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
@@ -4088,7 +4089,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
                     ...(args.start === false ? { autoStart: false } : {})
                 };
-                const copy = taskManager.retryTask(t as FarmTask, optStr(args, 'prompt'), over);
+                // ‼️ M-14 — "EVERYTHING OMITTED IS THE ORIGINAL'S" HAD ONE
+                // EXCEPTION, AND IT WAS THE PROMPT. `optStr` cannot say "absent"
+                // — it returns '' for a missing arg — and `retryTask` merges with
+                // `??`, which keeps ''. So every bridge retry that did not
+                // restate the prompt ran with an EMPTY one, against this op's own
+                // contract. Measured on OpenCode, which refuses it outright ("You
+                // must provide a message or a command"); an engine that accepts
+                // an empty prompt would have spent a run saying nothing instead
+                // of failing loudly, which is how this survived so long.
+                //
+                // It also disabled the workflow-step rule below it: that branch
+                // asks `newPrompt === undefined`, which a bridge call could never
+                // be, so "a workflow-step task with no edits resumes its chain"
+                // was true from the page and false from here.
+                //
+                // Blank is folded into absent on purpose: a retry with no prompt
+                // is not a runnable task, so there is nothing for "" to mean.
+                const promptIn = optStr(args, 'prompt') || undefined;
+                const copy = taskManager.retryTask(t as FarmTask, promptIn, over);
                 return copy
                     ? {
                         id: copy.id, status: copy.status, title: copy.title, attempt: copy.attempt ?? 1,
@@ -4295,7 +4314,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!taskManager.schedules.some(s => s.title === seeds[0].title),
                     `A schedule titled "${seeds[0].title}" already exists.`);
                 const model = optStr(args, 'model');
-                need(!model || /^[\w.:-]+$/.test(model), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
+                need(!model || modelIdOk(model), MODEL_ID_REFUSAL);
                 const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
                 need(args.fireIf === undefined || fireIf,
                     'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
@@ -8228,7 +8247,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (typeof args.enabled === 'boolean') { patch.enabled = args.enabled; }
                 if (args.model !== undefined) {
                     const m = optStr(args, 'model');
-                    need(!m || /^[\w.:-]+$/.test(m), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
+                    need(!m || modelIdOk(m), MODEL_ID_REFUSAL);
                     patch.model = m || undefined;
                 }
                 // ‼️ THE OTHER SIX DIMENSIONS, WHICH THIS OP COULD NOT CHANGE

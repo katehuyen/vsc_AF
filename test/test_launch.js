@@ -11,7 +11,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     buildLaunchCommand, describeLaunch, quoteArg, withDefaults, validateLaunch,
-    modelChoices, EFFORT_CHOICES, PERMISSION_CHOICES
+    modelChoices, modelIdOk, EFFORT_CHOICES, PERMISSION_CHOICES
 } = require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
 
 // ---------- nothing set = nothing added ----------
@@ -97,6 +97,27 @@ const {
         validateLaunch({ resume: 'a', continueLast: true }).some(e => /mutually exclusive/.test(e)));
     ok('a free-text model is NOT rejected (tomorrow\'s model id is unknown today)',
         validateLaunch({ model: 'claude-something-6' }).length === 0);
+}
+
+// ---------- M-14: the model charset guard, and the slash it was keeping out ----------
+// It asks whether a value may go on a command line, not whether the model
+// exists — a farm that hardcoded the catalogue would refuse every model
+// released after it. ‼️ The slash was missing, and that was a real refusal:
+// every engine except Claude names a model `provider/model`, so `schedules.add`
+// answered "must be a model id/alias (e.g. opus, sonnet, haiku)" to a perfectly
+// good OpenCode model. Found by installing a schedule, not by reading the code.
+{
+    ok('a bare Claude alias passes', modelIdOk('opus') && modelIdOk('haiku'));
+    ok('a dated Claude id passes', modelIdOk('claude-haiku-4-5-20251001'));
+    ok('‼️ an engine model with a provider prefix passes — this was the refusal',
+        modelIdOk('opencode/nemotron-3.5-lightning-free')
+        && modelIdOk('openai/gpt-5') && modelIdOk('google/gemini-3-pro'));
+    ok('a colon-versioned id still passes', modelIdOk('ollama:llama3.1'));
+    // The guard's whole reason: this value is interpolated into a command STRING.
+    for (const bad of ['a; rm -rf /', 'a && b', 'a | b', 'a`b`', 'a$(b)', 'a b', 'a>b', 'a\nb']) {
+        ok(`shell syntax is still refused: ${JSON.stringify(bad)}`, !modelIdOk(bad));
+    }
+    ok('empty is not a model id', !modelIdOk('') && !modelIdOk(undefined) && !modelIdOk(null));
 }
 
 // ---------- the offered vocabulary ----------

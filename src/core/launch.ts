@@ -101,6 +101,35 @@ export const ONE_EXECUTOR =
     + 'profile runs and the engine is silently ignored. Clear one of them.';
 
 /**
+ * ‼️ M-14 — IS THIS A MODEL ID WE MAY PUT ON A COMMAND LINE?
+ *
+ * A charset guard, not a catalogue: the model reaches `--model ${m}` inside a
+ * command STRING (`tasks.ts` — `modelArgs`), so a stored value must never be
+ * able to smuggle shell syntax. It is not asking whether the model exists —
+ * that is the engine's answer, and a farm that hardcoded the list would refuse
+ * every model released after it.
+ *
+ * ‼️ `/` IS PART OF THE CHARSET, and leaving it out was a real refusal: every
+ * engine except Claude names a model `provider/model`, so `schedules.add`
+ * answered "model must be a model id/alias (e.g. opus, sonnet, haiku)" to
+ * `opencode/nemotron-3.5-lightning-free` — a schedule simply could not be given
+ * an OpenCode model. Measured by installing one. A slash is not syntax in
+ * PowerShell, cmd or a POSIX shell; it is an ordinary character in an ordinary
+ * token, which is exactly why it was safe to have been keeping out by accident.
+ */
+export function modelIdOk(m: unknown): boolean {
+    return /^[\w./:-]+$/.test(String(m ?? ''));
+}
+
+/** ‼️ The refusal names BOTH shapes, because the old one named only Claude's
+ *  aliases and that is precisely the reader who then believes an engine model
+ *  is unsupported rather than mistyped. */
+export const MODEL_ID_REFUSAL =
+    'model must be a model id or alias — a bare name like opus / sonnet / haiku, '
+    + 'or an engine model like opencode/nemotron-3.5-lightning-free. '
+    + 'Letters, digits, dot, colon, slash and hyphen only: it goes on a command line.';
+
+/**
  * Do these two say different things about which program runs?
  *
  * The condition lives here once so the panel, the bridge ops and
