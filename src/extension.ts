@@ -1246,9 +1246,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => opencodeExportDir, resolveAgentByCwd, () => pricing);
     const opencodeHarvester = new OpencodeHarvester({
         dir: () => opencodeExportDir,
+        // ‼️ M-14 — AND THE FOLDERS THIS FARM ITSELF RAN IN. The list is
+        // cwd-scoped, so a conversation is only ever found from the folder it
+        // was created in; roots were the open workspace and the agent dirs, and
+        // a task's `workDir` is neither. So Agent Farm would send a run to a
+        // folder IT chose, write that folder on the task, and then be unable to
+        // find the conversation it had just caused: `tasks.add { resume }`
+        // refused every such id — correctly, since continuing a conversation it
+        // cannot find would silently open a new one, but with no way to ever
+        // succeed. Measured by resuming a run this farm had made itself.
+        //
+        // Deduplicated in the harvester, and only folders a run really used, so
+        // this is not a widening of the scan — it is the folders that were
+        // missing from it.
+        //
+        // `taskManager` is declared below this point and read here on purpose:
+        // this is a callback the harvester calls at harvest time (first pass 20s
+        // after activation), never during activation itself, so it is always
+        // initialised by then. A `typeof` guard would be worse than none — on a
+        // `const` still in its temporal dead zone `typeof` THROWS rather than
+        // answering "undefined", so the guard would be the crash it was written
+        // to prevent.
         roots: () => [
             ...(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
-            ...agents.map(a => a.dir)
+            ...agents.map(a => a.dir),
+            ...taskManager.tasks
+                .filter(t => t.workDir && engineOf(t.engine).id === 'opencode')
+                .map(t => t.workDir as string)
         ],
         cli: nodeOpencodeCli(),
         // The engine has to be on this machine at all; `engineMatrix` is the one

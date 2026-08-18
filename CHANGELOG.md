@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.157.0 — verifying the three fixes found two more (2026-08-18)
+
+3.156.0's three fixes were run again through the same paths on the live build, because a passing test is not a working feature. All three held: `tasks.rerun` with no `prompt` now **inherits** the original's; `schedules.add` **accepts** `opencode/nemotron-3.5-lightning-free` while still refusing `opencode/x; rm -rf /` and `opencode/$(whoami)` — the guard was not loosened, a missing character was added to its class; and a two-step chain's second step received `… : ZARFIL-M14`, the answer rather than the transcript. The reload also closed an acceptance row that only a restart can answer: **the launch binding survived it** — every pre-reload run still knows its engine, its `ses_…`, its tokens and its cost.
+
+Verifying them turned up two more.
+
+**‼️ Agent Farm could not find a conversation it had caused itself.** `opencode session list` is cwd-scoped, so a conversation is only ever found from the folder it was created in — and the harvest roots were the open workspace plus the agent directories. A task's own `workDir` is neither. So the farm would send a run to a folder **it chose**, write that folder onto the task, and then be unable to index the conversation it had just created: `tasks.add { resume: <ses_…> }` refused every such id. The refusal was right — continuing a conversation it cannot find would silently open a new one — but there was no way for it to ever succeed. Roots now include the `workDir` of tasks that ran on OpenCode. Found by trying to resume a run this farm had made ten minutes earlier.
+
+**Antigravity had the same handoff fault as OpenCode.** Found by reading every archive on this machine rather than by running the engine again — a cheaper measurement, and one that answers the question 3.156.0 left open. `agy --output-format json` prints **one envelope** and the answer is `response`; the generic unwrap knows only `result`, which is Claude's word, so an Antigravity step handed the next one the whole envelope — conversation id, status and timings included. Keyed on the engine, like the OpenCode branch: a `response` field in somebody's own JSON output contract is their data, not a wrapper for us to unwrap. *(Codex and Gemini have left no archives on this machine, so they remain unmeasured.)*
+
+*One implementation note worth keeping.* The new root list reads `taskManager`, which is declared **below** the harvester — safe, because `roots` is a callback the harvester calls at harvest time (first pass 20s after activation) and never during activation. A `typeof` guard was written there first and removed: on a `const` still in its temporal dead zone `typeof` **throws** rather than answering `"undefined"`, so the guard would have been exactly the crash it was written to prevent.
+
 ## 3.156.0 — M-14: the five surfaces were run for real, and three of them were broken (2026-08-18)
 
 M-14's engine contract has been proved for two releases, but only from the shell. What was never done is the thing the item actually asks for: **every production surface, run end to end from inside the extension, on the real binary.** Six were run — headless task · retry · trigger · workflow step · schedule firing · interactive task — against `opencode/nemotron-3.5-lightning-free` in a scratch folder, each asked to read a file containing a word no model can guess. Three surfaces came back broken, and none of the three was visible to any string test.

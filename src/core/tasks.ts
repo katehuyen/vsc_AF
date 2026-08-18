@@ -3442,6 +3442,22 @@ export class TaskManager implements vscode.Disposable {
                 const answer = readOpencodeRun(body).text.trim();
                 if (answer) { handoff.text = answer; }
             }
+            // ‼️ M-14 — AND THE SAME FAULT ON ANTIGRAVITY, found by reading every
+            // archive on this machine rather than by running it again. `agy
+            // --output-format json` prints ONE envelope
+            // (`{conversation_id, status, response, …}`, see core/agy.ts) and the
+            // answer is `response`. The unwrap below knows only `result`, which is
+            // Claude's `--output-format json` word, so an Antigravity step handed
+            // the next one the whole envelope — id, status, timings and all.
+            // Keyed on the engine, like the OpenCode branch: a bare `response`
+            // field in somebody's own JSON output contract is their data, not a
+            // wrapper for us to unwrap.
+            if (engineOf(task.engine).id === 'agy') {
+                const env = extractJson(body) as { response?: unknown } | undefined;
+                if (env && typeof env.response === 'string' && env.response.trim()) {
+                    handoff.text = env.response.trim();
+                }
+            }
             const envelope = extractJson(handoff.text);
             if (envelope && typeof envelope === 'object') {
                 const env = envelope as { result?: unknown };

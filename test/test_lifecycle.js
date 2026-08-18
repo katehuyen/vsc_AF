@@ -175,6 +175,41 @@ check('retry on workflow-step routes to resume (one new step task, no (retry) co
         !!next && next.prompt === 'al: ZARFIL-M14');
     check('‼️ M-14: …and NOT the JSONL event stream it was archived as',
         !!next && !/step_finish|"type":"tool"|sessionID/.test(next.prompt));
+
+    // ‼️ …AND THE SAME FAULT ON ANTIGRAVITY. `agy --output-format json` prints
+    // ONE envelope and the answer is `response`; the generic unwrap knows only
+    // `result` (Claude's word), so the whole envelope — id, status, timings —
+    // used to travel as `{prev_text}`. Found by reading every archive on this
+    // machine, which is a cheaper measurement than running the engine again.
+    const agyEnv = JSON.stringify({
+        conversation_id: 'd0d65360-326c-4935-a209-94171b00edc3', status: 'SUCCESS',
+        response: 'ZARFIL-M14', duration_seconds: 21.85, num_turns: 1, usage: { input: 10, output: 2 }
+    });
+    const agyFile = path.join(tmp, 'agy-step0.md');
+    fs.writeFileSync(agyFile, `# AGY 1/2\n\n- Agent: yazar\n\n---\n\n${agyEnv}\n\n---\nFinished: now · exit 0 · 0 min\n`);
+    const w3 = mgr.addWorkflow('AGY', [
+        { agentId: 'a1', agentName: 'yazar', title: 'oku', prompt: 'oku', mode: 'headless', engine: 'agy' },
+        { agentId: 'a1', agentName: 'yazar', title: 'ilet', prompt: 'al: {prev_text}', mode: 'headless', engine: 'agy' }
+    ]);
+    mgr.tasks.push({
+        id: 'agy0', agentId: 'a1', agentName: 'yazar', title: 'AGY 1/2: oku', prompt: 'oku',
+        mode: 'headless', status: 'done', engine: 'agy',
+        createdAt: Date.now() - 1000, endedAt: Date.now() - 500,
+        workflowId: w3.id, workflowRunId: 'agyrun', stepIndex: 0, outputFile: agyFile
+    });
+    const agyFail = {
+        id: 'agy1', agentId: 'a1', agentName: 'yazar', title: 'AGY 2/2: ilet', prompt: 'al: {prev_text}',
+        mode: 'headless', status: 'failed', engine: 'agy', createdAt: Date.now(), endedAt: Date.now(),
+        workflowId: w3.id, workflowRunId: 'agyrun', stepIndex: 1
+    };
+    mgr.tasks.push(agyFail);
+    mgr.resumeWorkflowFromTask(agyFail);
+    const agyNext = mgr.tasks.find(t => t.workflowRunId === 'agyrun' && t.stepIndex === 1
+        && t.status === 'queued' && t.id !== 'agy1');
+    check('M-14: an Antigravity step hands the next one `response`, not the envelope',
+        !!agyNext && agyNext.prompt === 'al: ZARFIL-M14');
+    check('‼️ M-14: …so no conversation id, status or timing rides along as if it were the answer',
+        !!agyNext && !/conversation_id|SUCCESS|duration_seconds/.test(agyNext.prompt));
 }
 
 // resume at first step → empty handoff, no crash

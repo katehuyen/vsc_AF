@@ -462,6 +462,43 @@ reddedilmeye devam ediyor ve test ediliyor.
 devir sorunu (3) var mı — arşivleri okunmadı, düzeltme bilerek yalnız koşturulan
 motorla sınırlı tutuldu.
 
+### 8e-2. Düzeltmelerin GERÇEK KOŞU doğrulaması (canlı derlemede)
+
+Üç düzeltme paketlenip kurulduktan ve pencere yeniden yüklendikten sonra aynı
+yollardan tekrar koşuldu — çünkü testin geçmesi, çalıştığı anlamına gelmez:
+
+| Doğrulama | Sonuç |
+|---|---|
+| `tasks.rerun` prompt'suz çağrıldı | ✅ Orijinalin prompt'unu **miras aldı** (eskiden `""` koşuyordu) |
+| `schedules.add` + `opencode/nemotron-3.5-lightning-free` | ✅ **Kabul edildi** (eskiden reddediyordu) |
+| …aynı kapı `opencode/x; rm -rf /` ve `opencode/$(whoami)` ile | ✅ **Hâlâ reddediyor** — kapı gevşetilmedi, sınıfına eksik karakter eklendi |
+| İki adımlı workflow, `{prev_text}` ile | ✅ 2. adımın prompt'u `… : ZARFIL-M14` — **cevap**, transkript değil |
+| **Restart binding** (kabul matrisi satırı) | ✅ Yenileme ÖNCESİ üç koşu da motorunu, `ses_…`'ini, token ve maliyetini korudu |
+
+### 8e-3. Doğrularken çıkan iki şey daha
+
+**(a) Antigravity da devirde aynı hatayı taşıyor — düzeltildi.** Bu makinedeki
+bütün arşivler tarandı (koşu gerektirmeyen, daha ucuz bir ölçüm): `agy
+--output-format json` **tek bir zarf** basıyor ve cevap `response` alanında,
+ama genel açıcı yalnız `result`'ı biliyor — Claude'un kelimesi. Yani bir
+Antigravity adımı sonrakine zarfın tamamını (id, status, süreler) veriyordu.
+Motora göre anahtarlandı: başkasının kendi JSON çıktı sözleşmesindeki `response`
+alanı onun verisidir, bizim açacağımız bir sargı değil.
+*(Codex ve Gemini bu makinede hiç arşiv bırakmamış, ölçülemedi.)*
+
+**(b) ‼️ Agent Farm kendi yarattığı konuşmayı bulamıyordu — düzeltildi.**
+`opencode session list` **cwd'ye bağlı**, hasat kökleri ise yalnız açık
+workspace + ajan klasörleriydi; bir görevin kendi `workDir`'i ikisi de değil.
+Sonuç: Agent Farm koşuyu KENDİ seçtiği klasöre gönderiyor, klasörü göreve
+yazıyor, sonra orada yarattığı konuşmayı indeksleyemiyordu — ve
+`tasks.add { resume: <ses_…> }` böyle bir id'yi **her zaman** reddediyordu.
+Ret'in kendisi doğruydu (bulunamayan konuşmayı sürdürmek sessizce yenisini
+açardı), ama başarılı olmasının hiçbir yolu yoktu. Kökler artık OpenCode'da
+koşmuş görevlerin `workDir`'lerini de içeriyor.
+
+> **Ders (yine):** üç düzeltmeyi doğrulamak, iki yeni hata daha buldurdu. Yüzey
+> ölçümü tek seferlik bir kabul değil, tekrarlanabilir bir yordam olmalı.
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi
