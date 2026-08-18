@@ -133,13 +133,42 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
 }
 
 // ---------- one executor, and both doors say so ----------
+//
+// ‼️ M-22 — THE CONDITION AND THE SENTENCE EXIST ONCE EACH. Both doors used to
+// carry their own copy of `cli && engine && engine !== 'claude'` and their own
+// wording of the refusal, which held only as long as nobody edited one of them:
+// the bridge named the args, the page named the controls, and a third surface
+// would have invented a third. `twoExecutors` / `ONE_EXECUTOR` in core/launch.ts
+// are now the only copy, and this checks that no inline re-spelling comes back.
 {
     const extTs = read('src', 'extension.ts');
-    ok('the bridge refuses an engine and a CLI profile together',
-        /need\(!\(cli && engine && engine !== 'claude'\),/.test(extTs));
+    const launchTs = read('src', 'core', 'launch.ts');
+    ok('the conflict is one exported predicate, not a condition each caller retypes',
+        /export function twoExecutors\(cli: unknown, engine: unknown\): boolean \{/.test(launchTs)
+        && /export const ONE_EXECUTOR =/.test(launchTs));
+    ok('…and `claude` is not a conflict, because an absent engine already means claude',
+        /e !== 'claude'/.test(launchTs));
+    ok('the bridge refuses an engine and a CLI profile together, through that gate',
+        /needOneExecutor\(engine, cli\);/.test(extTs));
     ok('‼️ …and so does the form, which used to accept the pair silently',
-        /if \(str\('cli'\) && str\('engine'\) && str\('engine'\) !== 'claude'\) \{/.test(panelTs)
-        && /A task runs on ONE executor: pick an engine, or a CLI profile — not both\./.test(panelTs));
+        /if \(twoExecutors\(str\('cli'\), str\('engine'\)\)\) \{\s*\n\s*this\.say\(ONE_EXECUTOR\);/.test(panelTs));
+    // The hand-written condition is what drifts; the message is what disagrees.
+    // Neither may reappear inline in a surface file.
+    //
+    // ‼️ THE PAIR, not `engine !== 'claude'` on its own — that comparison is
+    // legitimate and common (engine refusal, lanes, the per-turn split) and
+    // banning it would make this gate cry wolf until somebody deleted it. What
+    // may not come back is the two operands weighed against each other outside
+    // `twoExecutors`. Comments are stripped first: the rule is explained in
+    // prose in several places and prose is not a second implementation.
+    const code = src => src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const [name, src] of [['extension.ts', extTs], ['tasksPanel.ts', panelTs]]) {
+        const body = code(src);
+        ok(`${name} re-spells neither the condition nor the sentence`,
+            !/\bcli\b[^\n]{0,60}&&[^\n]{0,60}\bengine\b/i.test(body)
+            && !/\bengine\b[^\n]{0,60}&&[^\n]{0,60}\bcli\b/i.test(body)
+            && !/runs on ONE executor/.test(body));
+    }
 }
 
 // ------------------------------------------------------------------------

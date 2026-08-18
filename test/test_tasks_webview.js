@@ -1158,6 +1158,27 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     fld('nt-add').click();
     ok('an empty prompt is refused by the form, not by the host',
         !posted.some(p => p.type === 'task-new') && html().includes('A task needs a prompt'));
+
+    // ‼️ M-22 — A REFUSAL LOOKS LIKE ONE, AND A CONFIRMATION DOES NOT.
+    // One strip carries both answers to "did that work?" and it drew them
+    // identically: flat grey, the same weight as the form's own help text three
+    // rows above. Only the duplicate guard looked like a warning, and only
+    // because its flag happened to also carry the style. Measured on the class,
+    // because the words are the one thing a picture cannot check for regression
+    // and the colour is the one thing a string test usually misses.
+    ok('a refusal the form makes itself is drawn LOUD, not as advice',
+        /class="ntmsg warn"/.test(html()));
+    send({ type: 'task-error', text: 'A run has ONE executor: an engine, or a CLI profile.' });
+    ok('…and so is one the host sends back', /class="ntmsg warn"/.test(html())
+        && html().includes('ONE executor'));
+    ok('…without the override button, which belongs to the duplicate alone — '
+        + 'a contradiction is not something you may "add anyway"',
+        !/id="nt-force"/.test(html()));
+    send({ type: 'task-made', id: 'n3', title: 'x', started: true });
+    ok('‼️ a CONFIRMATION is not drawn as a warning — the reader is asking whether '
+        + 'anything was created, and answering "yes" in the voice of a refusal is '
+        + 'the same failure the other way round',
+        !/class="ntmsg warn"/.test(html()) && /class="ntmsg"/.test(html()));
     fld('nt-cancel').click();
     ok('Cancel closes it', !/id="ntbox"/.test(html()));
 

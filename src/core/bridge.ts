@@ -21,6 +21,7 @@
  */
 
 import { ENGINES, engineTakesEffort } from './consoleEngine';
+import { ONE_EXECUTOR, twoExecutors } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 
 export interface BridgeOpSpec {
@@ -231,7 +232,29 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     need(!retryRefusal(args.retry), retryRefusal(args.retry));
     const retry = normalizeRetry(args.retry);
     if (retry) { out.retry = retry; }
+    // ‼️ M-22 — the pair this call states, checked before it is stored. The
+    // ops that lay these dimensions over a run that already exists have to ask
+    // again about the MERGED result (`needOneExecutor`); what this catches is
+    // the caller who names both in one breath.
+    needOneExecutor(out.engine, out.cli);
     return out;
+}
+
+/**
+ * ‼️ M-22 — THE EXECUTOR PAIR OF THE RUN THAT WILL ACTUALLY HAPPEN.
+ *
+ * `bridgeRunDimensions` only sees what this call typed, and half these ops do
+ * not build a run from scratch — they lay an override over a stored task,
+ * template, schedule or trigger. So the contradiction is usually made by ONE
+ * argument: "retry it on OpenCode" against a task still carrying a CLI
+ * profile, or a `cli` set on a schedule that was moved to another engine last
+ * week. Neither side is wrong on its own and neither call mentions both
+ * fields; only the merged run does. Every surface that resolves one calls this
+ * with the values it resolved, which is why the check is here and not inside
+ * the reader.
+ */
+export function needOneExecutor(engine: unknown, cli: unknown): void {
+    need(!twoExecutors(cli, engine), ONE_EXECUTOR);
 }
 
 /**

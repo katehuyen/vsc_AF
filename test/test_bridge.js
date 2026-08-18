@@ -2521,7 +2521,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 /engineRefusal\(engineMatrix\(\), engine\)/.test(addBlock));
             ok('‼️ …and refuses `engine` together with `cli`, rather than silently '
                 + 'ranking two executors and making one argument a no-op',
-                /a task runs on ONE executor/.test(addBlock));
+                /needOneExecutor\(engine, cli\)/.test(addBlock));
             // ‼️ AND IT NAMES ALL THREE MECHANISMS, NOT ONE OF THEM THREE TIMES.
             // The old contract said "a SANDBOX" for every per-turn engine, which
             // told a caller that Antigravity and Gemini have a Codex sandbox.
@@ -4028,6 +4028,111 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             HANDOVER_NOTES_ANCHOR === '<!-- af:handover-notes -->');
 
         try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+
+    // ================= M-22 — ONE EXECUTOR, ON EVERY SURFACE =================
+    //
+    // A CLI profile does not add flags to an engine's command line, it REPLACES
+    // it (`tasks.ts` — `const command = profile ? …`, headless and terminal
+    // alike). So a run carrying both does not blend them: the profile runs and
+    // the engine is dropped without a word. `tasks.add` had refused the pair
+    // since M-14; nine other surfaces accepted it and stored it, and the one
+    // that hurts is a schedule — set to OpenCode, still carrying last month's
+    // profile, firing at 3 a.m. with nobody to notice which binary ran.
+    //
+    // ‼️ AND THE PAIR IS USUALLY NOT TYPED IN ONE CALL. Half these ops lay an
+    // override over something that already exists, so the contradiction is made
+    // by ONE argument against a stored value. Checking the args is therefore not
+    // the same test as checking the run; both are below.
+    {
+        const { twoExecutors, ONE_EXECUTOR } =
+            require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
+        const { bridgeRunDimensions, needOneExecutor } =
+            require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+
+        // ---- the predicate itself ----
+        ok('both stated is a conflict',
+            twoExecutors('my-profile', 'opencode') === true);
+        ok('either alone is not', !twoExecutors('my-profile', '') && !twoExecutors('', 'opencode'));
+        ok('‼️ `claude` is NOT a conflict — an absent engine already means claude, '
+            + 'so naming it beside a profile states nothing the profile does not override',
+            twoExecutors('my-profile', 'claude') === false
+            && twoExecutors('my-profile', ' CLAUDE ') === false);
+        ok('whitespace and non-strings are not an executor',
+            !twoExecutors('   ', 'opencode') && !twoExecutors(undefined, 'opencode')
+            && !twoExecutors('p', null));
+
+        // ---- real dispatch, through a registry, on the shared reader ----
+        const reg = new BridgeRegistry();
+        reg.register([
+            { op: 'm22.dims', describe: 'reads run dimensions', handler: a => bridgeRunDimensions(a) },
+            {
+                op: 'm22.merged', describe: 'lays an override over a stored run',
+                handler: a => {
+                    const stored = { engine: 'opencode', cli: '' };
+                    const over = bridgeRunDimensions(a);
+                    const run = { ...stored, ...over };
+                    needOneExecutor(run.engine, run.cli);
+                    return run;
+                }
+            }
+        ]);
+        const both = await reg.dispatch('m22.dims', { engine: 'opencode', cli: 'my-profile' });
+        ok('a call naming both executors is refused, not stored',
+            !both.ok && /ONE executor/.test(both.error));
+        ok('…and the refusal says WHICH one silently wins, so the reader knows what '
+            + 'would have happened rather than only that it was rejected',
+            /profile runs and the engine is silently ignored/.test(both.error)
+            && both.error === ONE_EXECUTOR);
+        const onlyEngine = await reg.dispatch('m22.dims', { engine: 'opencode' });
+        ok('one executor still passes', onlyEngine.ok && onlyEngine.result.engine === 'opencode');
+        const onlyCli = await reg.dispatch('m22.dims', { cli: 'my-profile' });
+        ok('…and so does a profile on its own', onlyCli.ok && onlyCli.result.cli === 'my-profile');
+        const withClaude = await reg.dispatch('m22.dims', { engine: 'claude', cli: 'my-profile' });
+        ok('claude + a profile is accepted, because it is not a contradiction',
+            withClaude.ok && withClaude.result.cli === 'my-profile');
+
+        // ‼️ THE CASE THE ARGS ALONE CANNOT CATCH: one field named, two set.
+        const sneak = await reg.dispatch('m22.merged', { cli: 'my-profile' });
+        ok('‼️ a `cli` laid over a run already set to an engine is refused too — '
+            + 'the call names one executor and the RUN ends up with two',
+            !sneak.ok && sneak.error === ONE_EXECUTOR);
+
+        // ---- every surface that resolves a run goes through the gate ----
+        const extSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const blockOf = (op) => {
+            const at = extSrc.indexOf(`op: '${op}'`);
+            if (at < 0) { return ''; }
+            const next = extSrc.indexOf("\n            op: '", at + 1);
+            return extSrc.slice(at, next < 0 ? extSrc.length : next);
+        };
+        // The seven M-22 named, plus the two `edit` ops that resolve a run the
+        // same way and were found while measuring. `schedules.add`,
+        // `templates.add`, `workflows.add` and `workflows.step.add` reach it
+        // through `bridgeRunDimensions`, which is checked by dispatch above.
+        for (const op of ['tasks.add', 'tasks.rerun', 'templates.run', 'triggers.add',
+            'schedules.edit', 'triggers.edit']) {
+            ok(`${op} refuses two executors before it starts or stores anything`,
+                /needOneExecutor\(/.test(blockOf(op)));
+        }
+        for (const op of ['schedules.add', 'templates.add', 'workflows.add', 'workflows.step.add']) {
+            const b = blockOf(op);
+            ok(`${op} reads its dimensions through the checked reader`,
+                /bridgeRunDimensions\(|bridgeStep\b/.test(b));
+        }
+
+        // ---- three-state `cli`, so the refusal is not a dead end ----
+        // ‼️ Refusing "retry it on OpenCode" for every task that carries a
+        // profile would trade a silent bug for an unsayable request, and this
+        // op's own contract calls a different engine the commonest reason to
+        // retry at all. `""` clears it, the same three states `project` uses.
+        for (const op of ['tasks.rerun', 'templates.run']) {
+            const b = blockOf(op);
+            ok(`${op} lets a caller CLEAR the inherited profile with an empty cli`,
+                /args\.cli !== undefined/.test(b) && /cliStated/.test(b));
+            ok(`…and ${op} says so in its contract, where the caller reads it`,
+                /three-state/.test(b) && /"" to CLEAR it|"" = clear it/.test(b));
+        }
     }
 
     // ---------- the real catalogue carries the new ops ----------

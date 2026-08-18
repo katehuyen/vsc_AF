@@ -65,6 +65,52 @@ export interface LaunchOptions {
      * opens in the right place and answers about the wrong one.
      */
     cwd?: string;
+    /**
+     * ‼️ THE OTHER EXECUTOR (M-22) — a named `agentFarm.cliProfiles` entry.
+     *
+     * It is the one field here that is NOT a flag, and it is here anyway
+     * because it is the only thing `engine` can contradict. A CLI profile does
+     * not add arguments to an engine's command line, it REPLACES the whole
+     * line (`tasks.ts` — `const command = profile ? …`, on the headless path
+     * and the terminal one alike), so a run carrying both does not blend them:
+     * the profile runs and the engine is dropped without a word. That is the
+     * contradiction `validateLaunch` refuses, and it can only refuse a pair it
+     * can see. The command builders below never emit it (test_launch.js holds
+     * them to that) — it decides WHICH program runs, not how it is called.
+     */
+    cli?: string;
+}
+
+/**
+ * ‼️ M-22 — ONE SENTENCE, READ BY BOTH DOORS. The bridge refused this pair and
+ * the page refused it in different words, which is how two surfaces start
+ * describing the same rule differently and one of them eventually stops
+ * applying it.
+ *
+ * ‼️ NO BACKTICKS, deliberately. The page shows this verbatim in the composer's
+ * message strip (`media/tasksPage.js` — escaped into `.ntmsg`), so markup meant
+ * for an agent reading a bridge error would sit there as literal punctuation.
+ * The two field names are the same word on both doors — `engine` and `cli` are
+ * the args AND the form's rows — so naming them plainly serves both readers.
+ */
+export const ONE_EXECUTOR =
+    'A run has ONE executor: an engine, or a CLI profile — never both. '
+    + 'An engine is a machine Agent Farm understands and can build a command line for; '
+    + 'a CLI profile (cli, from agentFarm.cliProfiles) is a template for a binary it knows '
+    + 'nothing about, and it replaces that command line entirely — so with both set the '
+    + 'profile runs and the engine is silently ignored. Clear one of them.';
+
+/**
+ * Do these two say different things about which program runs?
+ *
+ * The condition lives here once so the panel, the bridge ops and
+ * `validateLaunch` cannot drift apart on what counts as a conflict. `claude`
+ * is deliberately NOT one: an absent engine already means claude, so naming it
+ * beside a profile states nothing the profile does not already override.
+ */
+export function twoExecutors(cli: unknown, engine: unknown): boolean {
+    const e = String(engine ?? '').trim().toLowerCase();
+    return !!String(cli ?? '').trim() && !!e && e !== 'claude';
 }
 
 /** The three dimensions the launcher offers. Kept verbatim from `claude --help`
@@ -274,6 +320,14 @@ export function validateLaunch(o: LaunchOptions): string[] {
     }
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');
+    }
+    // ‼️ M-22 — REFUSED, NOT RANKED. Ranking them is what the runner already
+    // does, and that is the bug: the loser is not reported anywhere, so a
+    // schedule set to OpenCode with an old CLI profile left on it runs the
+    // profile at 3 a.m. and says nothing. One of the caller's two statements
+    // has to be a no-op; the only honest moment to say so is before it starts.
+    if (twoExecutors(o.cli, o.engine)) {
+        errors.push(ONE_EXECUTOR);
     }
     // ‼️ REFUSED, NOT SILENTLY DROPPED — AND ONLY ON THE ENGINE THAT CANNOT DO
     // IT. `codex resume` is its own subcommand with its own flag vocabulary and

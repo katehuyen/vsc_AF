@@ -396,6 +396,40 @@ Dosyalar: `src/core/opencodehistory.ts` (saf: okuyucular + planlayıcı) ·
 `test/test_opencodehistory.js` · `test/test_opencode_sessions.js` ·
 `test/test_opencodeharvest.js`.
 
+## 8d. M-22 — motor mu, CLI profili mi (uygulandı)
+
+Bir CLI profili motorun komut satırına **bayrak eklemez, o satırın yerine
+geçer** (`tasks.ts` → `const command = profile ? …`; headless yolda da terminal
+yolunda da aynı). Yani ikisini birden taşıyan bir koşu onları harmanlamaz:
+**profil çalışır, motor sessizce düşer.** M-14 bu çifti yalnız `tasks.add`'de
+reddediyordu; onu bir koşuya çevirebilen dokuz yüzey daha kabul edip saklıyordu.
+En pahalıya patlayanı schedule: OpenCode'a alınmış ama üzerinde geçen ayın
+profili kalmış bir kayıt, gece 3'te o profili çalıştırır ve hiçbir yerde
+söylemez.
+
+| Karar | Değer | Gerekçe |
+|---|---|---|
+| Çelişki | **Reddedilir, sıralanmaz** | Sıralamayı zaten çalıştırıcı yapıyor; kaybedeni hiçbir yer bildirmiyor. Çağıranın iki ifadesinden biri no-op olacaksa, bunu söylemenin dürüst anı başlamadan öncesidir |
+| Koşul ve cümle | `twoExecutors()` + `ONE_EXECUTOR`, `core/launch.ts`'te **tek nüsha** | Köprü arg'ları, sayfa kontrolleri adlandırıyordu; aynı kuralı farklı anlatan iki kapı, er geç birinin kuralı uygulamayı bırakması demektir |
+| `claude` + profil | Çelişki **değil** | Motorun yokluğu zaten claude demek; profilin yanında claude demek, profilin ezmediği hiçbir şey söylemez |
+| Nerede sorulur | Yazılana değil, **çözülmüş koşuya** | Bu op'ların yarısı var olan bir kaydın üstüne override koyuyor; çelişki genelde **tek** argümanla kuruluyor ("OpenCode'da tekrar dene" ⟶ üzerinde hâlâ profil olan bir görev). Hiçbir çağrı iki alanı da anmıyor; yalnız birleşen koşu anıyor |
+| `cli` üç durumlu | `tasks.rerun` ve `templates.run`'da: yok = mirasın, `""` = temizle, ad = o profil | Aksi hâlde sessiz hata, **söylenemez istekle** takas edilirdi: profil taşıyan bir görev hiçbir zaman başka motora alınamazdı. `project`'in zaten kullandığı üç durum |
+| Metinde backtick yok | Bilerek | Sayfa bu cümleyi olduğu gibi `.ntmsg` şeridine kaçırıyor; köprü okuyucusu için yazılmış imler orada düz noktalama olarak otururdu |
+| Ret **yüksek sesle** çizilir | `composerLoud` | Tek şerit hem "Kuyruğa alındı" hem "bu koşunun iki çalıştırıcısı var" taşıyordu ve ikisini aynı gri ile çiziyordu. Okuyucunun o andaki sorusu bir şey yaratılıp yaratılmadığıdır; kopya uyarısı yalnızca kendi bayrağı o stili de taşıdığı için uyarıya benziyordu |
+
+Kapıdan doğrudan geçen yüzeyler: `tasks.add` · `tasks.rerun` · `templates.run` ·
+`triggers.add` (iç içe birleşme dâhil) · `schedules.edit` · `triggers.edit`.
+`schedules.add` · `templates.add` · `workflows.add` · `workflows.step.add` ise
+`bridgeRunDimensions` üzerinden geçiyor.
+
+Dosyalar: `src/core/launch.ts` (`twoExecutors`, `ONE_EXECUTOR`,
+`LaunchOptions.cli`, `validateLaunch`) · `src/core/bridge.ts`
+(`needOneExecutor`) · `src/extension.ts` (altı yüzey) ·
+`src/panels/tasksPanel.ts` · `media/tasksPage.js` (`composerLoud`) ·
+`test/test_bridge.js` · `test/test_opencode_task.js` ·
+`test/test_tasks_webview.js` · `test/fixtures/tasks.js` (`tasks-oneexecutor`
+varyantı — ret şeridinin tek bakıldığı yer).
+
 ## 9. Bilinen belirsizlikler
 
 1. **`--variant` değer sözlüğü ölçülmedi.** Sağlayıcıya özgü; bu makinedeki yedi

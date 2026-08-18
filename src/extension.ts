@@ -124,8 +124,8 @@ import {
 } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
-    LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, RunSurface,
-    validateLaunch, withDefaults
+    LaunchOptions, LaunchProfile, modelChoices, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface,
+    twoExecutors, validateLaunch, withDefaults
 } from './core/launch';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile, profileFrom,
@@ -232,8 +232,8 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, need, optStr,
-    parseBridgeRequest
+    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, need,
+    needOneExecutor, optStr, parseBridgeRequest
 } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
@@ -3883,9 +3883,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const cli = optStr(args, 'cli') ?? '';
                 // ‼️ TWO EXECUTORS IS NOT A PREFERENCE, IT IS A CONTRADICTION.
                 // Ranking them silently would make one of the two arguments a
-                // no-op that the caller believes took effect.
-                need(!(cli && engine && engine !== 'claude'),
-                    'a task runs on ONE executor: pass `engine` (a machine Agent Farm understands) or `cli` (a command template from agentFarm.cliProfiles), not both');
+                // no-op that the caller believes took effect. M-22 — the words
+                // are `core/launch.ts`'s now, so this door and the page's form
+                // refuse it in one sentence instead of two.
+                needOneExecutor(engine, cli);
                 if (cli) {
                     const known = cfg().get<CliProfile[]>('cliProfiles', []).map(p => p?.name);
                     need(known.includes(cli),
@@ -4034,7 +4035,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'args: id, prompt?, agent? (name|id), title?, mode? (headless|interactive), '
                 + 'engine? (claude|codex|gemini|agy — ‼️ "the same thing on a different engine" is the '
                 + 'commonest reason to retry at all, and this op could not express it), model?, '
-                + 'effort?, permissionMode?, cli?, workDir?, priority?, project?, start? (default true)',
+                + 'effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit it and the original\'s CLI '
+                + 'profile stands, pass "" to CLEAR it, pass a name to change it. A retry may not end up '
+                + 'with both an engine and a profile, whichever of the two it inherited: the profile would '
+                + 'replace the command line and the engine would be dropped silently, so retrying a '
+                + 'profile task on an engine means passing `cli: ""` with it), '
+                + 'workDir?, priority?, project?, start? (default true)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -4051,6 +4057,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...args,
                     engine: optStr(args, 'engine') || (t as FarmTask).engine || ''
                 });
+                // ‼️ M-22 — `cli` IS THREE-STATE HERE, like `project` on
+                // `tasks.add`: absent = the original's, "" = explicitly none, a
+                // name = that profile. Without the middle state "retry it on
+                // OpenCode" — which this op's contract calls the commonest
+                // reason to retry at all — was unsayable for any task carrying
+                // a CLI profile: `retryTask` keeps the original's `cli`, the
+                // profile replaces the command line, and the engine the caller
+                // asked for was dropped without a word.
+                const cliStated = args.cli !== undefined;
+                const cli = optStr(args, 'cli');
+                needOneExecutor(
+                    optStr(args, 'engine') || (t as FarmTask).engine || '',
+                    cliStated ? cli : ((t as FarmTask).cli ?? '')
+                );
                 const over = {
                     ...(optStr(args, 'agent') ? { agent: findAgent(optStr(args, 'agent') as string) } : {}),
                     ...(optStr(args, 'title') ? { title: optStr(args, 'title') as string } : {}),
@@ -4062,7 +4082,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(optStr(args, 'model') ? { model: optStr(args, 'model') as string } : {}),
                     ...(effort ? { effort } : {}),
                     ...(permissionMode ? { permissionMode } : {}),
-                    ...(optStr(args, 'cli') ? { cli: optStr(args, 'cli') as string } : {}),
+                    ...(cliStated ? { cli } : {}),
                     ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
                     ...(optStr(args, 'project') ? { projectId: optStr(args, 'project') as string } : {}),
                     ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
@@ -4656,6 +4676,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...bridgeRunDimensions(args),
                     ...(nested ? bridgeRunDimensions(nested) : {})
                 };
+                // ‼️ M-22 — each level was already checked on its own, and that
+                // is not the same question: `{engine, action:{cli}}` states one
+                // executor per level and two after the merge. The merged pair is
+                // the one that runs.
+                needOneExecutor(dims.engine, dims.cli);
                 let action: FarmTrigger['action'];
                 if (actKind === 'workflow') {
                     const ref = from('workflow') || from('workflowId');
@@ -4909,7 +4934,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'templates.run',
-            describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli?, workDir?, priority?, project?',
+            describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -4926,8 +4951,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const over = bridgeRunDimensions({
                     ...args, engine: optStr(args, 'engine') || t.engine || ''
                 });
-                const task = taskManager.addTask(agent as AgentInfo, t.title, t.prompt, t.mode,
-                    { ...runExtras(t), ...runExtras(over as RunDimensions) });
+                // ‼️ M-22 — same three-state `cli` as `tasks.rerun`, and for the
+                // same reason: the template's saved profile survives an override
+                // that only names an engine (`runExtras` drops what is unset), so
+                // "run this one on OpenCode" would store the engine and go on
+                // running the profile.
+                const cliStated = args.cli !== undefined;
+                const extras = {
+                    ...runExtras(t), ...runExtras(over as RunDimensions),
+                    ...(cliStated ? { cli: optStr(args, 'cli') } : {})
+                };
+                needOneExecutor(extras.engine, extras.cli);
+                const task = taskManager.addTask(agent as AgentInfo, t.title, t.prompt, t.mode, extras);
                 taskManager.startTask(task);
                 return {
                     id: task.id, status: task.status,
@@ -8218,6 +8253,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         for (const k of stated) {
                             patch[k] = (dims[k] as string | undefined) || undefined;
                         }
+                        // ‼️ M-22 — against what the schedule will BE, not what
+                        // this edit mentions. Moving a schedule to another engine
+                        // while an old CLI profile sits on it names one field and
+                        // leaves two; the profile then runs at the scheduled hour
+                        // and the engine is dropped in silence.
+                        needOneExecutor(
+                            'engine' in patch ? patch.engine : cur.engine,
+                            'cli' in patch ? patch.cli : cur.cli
+                        );
                     }
                 }
                 if (args.priority !== undefined) {
@@ -8419,6 +8463,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             engine: optStr(args, 'engine') || action.engine || '',
                             ...Object.fromEntries(stated.map(k => [k, optStr(args, k)]))
                         });
+                        // ‼️ M-22 — the resolved pair, before it is written. Same
+                        // trap as `schedules.edit`: one field named, two left set.
+                        needOneExecutor(
+                            stated.includes('engine') ? dims.engine : action.engine,
+                            stated.includes('cli') ? dims.cli : action.cli
+                        );
                         for (const k of stated) {
                             action[k] = (dims[k] as string | undefined) || undefined;
                             updated.push(k);

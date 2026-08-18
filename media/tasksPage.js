@@ -582,6 +582,18 @@
     let composer = null;      // null = closed; an object = the draft
     let composerMsg = '';     // a refusal or a confirmation, shown in the card
     let composerDup = false;  // the host says an identical task is already queued
+    /**
+     * ‼️ M-22 — DID THE SUBMIT HAPPEN OR NOT? One strip carries both answers —
+     * "Queued “…”" and "this run has two executors" — and it drew them
+     * identically: grey, borderless, the same weight as the form's own help
+     * text three rows above. The duplicate guard was the only message that
+     * looked like one, because its flag happened to also carry the loud style.
+     *
+     * Loud means REFUSED, not "important": the reader's question at that moment
+     * is whether anything was created, and a confirmation answering it in the
+     * voice of a warning is the same failure the other way round.
+     */
+    let composerLoud = false;
     let stepMsg = '';         // a step's own refusal, shown inside the step card
     /**
      * ‼️ A PICKER THAT IS A LIST ON THE PAGE.
@@ -747,6 +759,7 @@
         composer = newDraft(k, seed);
         composerMsg = '';
         composerDup = false;
+        composerLoud = false;
         stepMsg = '';
         tab = (COMPOSE[k] || COMPOSE.task).tab;
         kindMoved = (kind && from && from !== tab) ? from : '';
@@ -759,6 +772,9 @@
     function closeComposer(msg) {
         composer = null;
         composerDup = false;
+        // Everything that CLOSES the form did what was asked of it, so the strip
+        // that outlives it is a confirmation and never wears the refusal style.
+        composerLoud = false;
         stepMsg = '';
         kindMoved = '';
         composerMsg = msg || '';
@@ -1686,7 +1702,7 @@
             ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
             ${c.kind === 'trigger' ? triggerHtml(c) : ''}
             ${c.kind === 'workflow' ? workflowHtml(c) : ''}
-            ${composerMsg ? `<div class="ntmsg${composerDup ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
+            ${composerMsg ? `<div class="ntmsg${composerLoud ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
             <div class="ctl-row">
                 ${ro ? '' : `${c.kind === 'task' ? `<label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
                     <input type="checkbox" id="nt-start"${c.start ? ' checked' : ''}> start it now</label>` : ''}
@@ -1855,7 +1871,7 @@
         // abandoned: saving the workflow folds it in rather than dropping it.
         if (composer.kind === 'workflow' && !commitStep()) { return; }
         const err = composerError(composer);
-        if (err) { composerMsg = err; render(); return; }
+        if (err) { composerMsg = err; composerLoud = true; render(); return; }
         // ‼️ M-3 — the three states become ONE field on the wire, built here so
         // the page and the host cannot disagree about what "use my default"
         // means. Absent = the default; `{max: 0}` = never; anything else = these
@@ -3045,6 +3061,7 @@
             composer = null;
             chooser = null;
             composerMsg = ev.data.note || '';
+            composerLoud = false;
             persist();
             render();
         }
@@ -3059,7 +3076,12 @@
             persist();
             render();
         }
-        if (ev.data.type === 'task-error') { composerMsg = ev.data.text || ''; composerDup = false; render(); }
+        if (ev.data.type === 'task-error') {
+            composerMsg = ev.data.text || '';
+            composerDup = false;
+            composerLoud = true;
+            render();
+        }
         if (ev.data.type === 'plan-saved') {
             closeComposer(ev.data.text || 'Saved.');
         }
@@ -3070,6 +3092,9 @@
             composerMsg = (ev.data.text || 'An identical task is already queued.')
                 + ' Add it anyway, or change the prompt.';
             composerDup = true;
+            // Refused as well — the difference is that this one may be overridden,
+            // which is the button `composerDup` still draws on its own.
+            composerLoud = true;
             render();
         }
         if (ev.data.type === 'task-made') {

@@ -6,7 +6,7 @@ import { AgentInfo } from '../core/agents';
 import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
-import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
+import { EFFORT_CHOICES, modelChoices, ONE_EXECUTOR, PERMISSION_CHOICES, twoExecutors } from '../core/launch';
 import { EngineModels } from '../core/models';
 import {
     describeFailurePhase, FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow,
@@ -1812,14 +1812,16 @@ export class TasksPanel {
                     this.say('A task needs an agent and a prompt.');
                     break;
                 }
-                // ‼️ M-14 — ONE EXECUTOR, and the page refuses it in the page's
-                // own words. `tasks.add` on the bridge has always refused this
-                // pair rather than ranking it silently; the form did not, so the
-                // one axis where the two doors could produce different objects
-                // was the axis that decides which binary runs.
-                if (str('cli') && str('engine') && str('engine') !== 'claude') {
-                    this.say('A task runs on ONE executor: pick an engine, or a CLI profile — not both. '
-                        + 'A CLI profile is a command template for a binary Agent Farm knows nothing about.');
+                // ‼️ M-14 — ONE EXECUTOR, and the page refuses it before it
+                // builds anything. `tasks.add` on the bridge has always refused
+                // this pair rather than ranking it silently; the form did not,
+                // so the one axis where the two doors could produce different
+                // objects was the axis that decides which binary runs.
+                // ‼️ M-22 — and now in the SAME words, from the same condition:
+                // two doors that refuse the same thing differently are two
+                // rules waiting to disagree.
+                if (twoExecutors(str('cli'), str('engine'))) {
+                    this.say(ONE_EXECUTOR);
                     break;
                 }
                 // The dedup guard the dialog had — kept, and asked in the page's

@@ -391,6 +391,54 @@ const variants = () => ([
             draft['nt-resumeid'] = '9c22ab41-0f2d-4a11-9a3e-71c0d5b2e004';
             drive(r, draft, 'nt-resumeid');
         }
+    },
+    // ‼️ M-22 — THE REFUSAL, AS THE PERSON ACTUALLY MEETS IT. The one-executor
+    // sentence is now shared with the bridge, where the reader is an agent
+    // parsing an error string; on this page the very same text is escaped into
+    // the composer's message strip, so anything written for the other reader
+    // (backticks, arg syntax) would sit there as literal punctuation, and a
+    // sentence that grew for the bridge would silently become a wall of grey in
+    // the form. Neither is visible from a string test — this is the only place
+    // the shared text is looked at.
+    {
+        id: 'tasks-oneexecutor',
+        label: 'Tasks → the New-task form refusing an engine AND a CLI profile',
+        // ‼️ THE CLI ROW IS ONLY DRAWN WHEN THERE IS A PROFILE TO PICK
+        // (`L.clis` empty = no row at all), so a fixture with the default launch
+        // payload cannot reach this state — it would draw a refusal about a
+        // control that is not on the form. Found by looking at the first
+        // picture, which is what the picture is for.
+        data: (() => {
+            const d = data();
+            // `{name, detail}`, the shape the panel really sends (tasksPanel.ts
+            // — `clis:`). A list of bare strings drew two options reading
+            // "undefined", which is what the first picture showed.
+            d.launch.clis = [
+                { name: 'gece-tarayici', detail: 'my-cli --headless "{prompt}"' },
+                { name: 'eski-toplu-is', detail: 'batch.exe --run "{prompt}"' }
+            ];
+            d.launch.engines = d.launch.engines.concat([
+                { id: 'opencode', label: 'OpenCode', ready: true, next: 'Ready, on a plan.' }
+            ]);
+            return d;
+        })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-engine': 'opencode' };
+            drive(r, draft, 'nt-engine');
+            // The CLI row is only on the form after the engine change has been
+            // taken, so the profile is picked in a second pass — the same two
+            // presses the person makes.
+            draft['nt-cli'] = 'eski-toplu-is';
+            drive(r, draft, 'nt-cli');
+            // The host answers a submit with this; the page draws whatever it is
+            // handed, so the picture is of the real constant rather than of a
+            // sentence retyped in the fixture.
+            r.send({
+                type: 'task-error',
+                text: require('../../out/core/launch.js').ONE_EXECUTOR
+            });
+        }
     }
 ]);
 
