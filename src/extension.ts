@@ -25,7 +25,10 @@ import {
 import {
     HarvestResult, nodeOpencodeCli, OpencodeHarvester
 } from './core/opencodeharvest';
-import { OPENCODE_SESSION_ID } from './core/opencode';
+import {
+    OPENCODE_EXE, OPENCODE_NEEDS_SHELL, OPENCODE_SESSION_ID,
+    opencodeModelsListArgs, readOpencodeModelList
+} from './core/opencode';
 import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
@@ -10453,12 +10456,107 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         child.stdin?.end();
         return agyInFlight;
     };
+
+    /**
+     * ‼️ X-52 — A CATALOG THAT ONLY EXISTS WHILE A SESSION IS OPEN IS NOT A
+     * CATALOG.
+     *
+     * OpenCode publishes its models on the `session/new` handshake, which is the
+     * cheapest possible source and was therefore made the ONLY one. That is
+     * where the bug lived: choosing OpenCode in the task launcher, in a preset
+     * or in settings — none of which open a session — kept offering
+     * `haiku / sonnet / opus / fable`, four names its CLI can only reject. The
+     * user's case is the ordinary one: write a task for tomorrow, pick its
+     * model, close the window.
+     *
+     * So the list has two sources and neither waits for the other:
+     *   - `opencode models`, read in the background once per window and cached
+     *     for six hours (this function);
+     *   - the handshake, whenever a Console card does open, which carries
+     *     display names the CLI does not print (`rememberOpencodeCatalog`).
+     *
+     * And it is REMEMBERED ACROSS WINDOWS in globalState, because the point is
+     * that the box is right the moment it is drawn — the first draw of a fresh
+     * window happens well before an 8-second warm-up returns.
+     */
+    const OPENCODE_CATALOG_KEY = 'agentFarm.opencodeCatalog';
+    const OPENCODE_CATALOG_TTL = 6 * 60 * 60 * 1000;
+    type OpencodeCatalog = {
+        models?: { id: string; label: string }[]; fetchedAt?: number;
+        via?: 'handshake' | 'cli'; fetching?: boolean;
+    };
+    let opencodeCatalog: OpencodeCatalog = {
+        ...(context.globalState.get<OpencodeCatalog>(OPENCODE_CATALOG_KEY) ?? {}), fetching: false
+    };
+    let opencodeInFlight: Promise<void> | undefined;
+    /**
+     * One place both sources land, so the rule about which wins is written once:
+     * a HANDSHAKE list replaces a CLI one (it has the display names), and a CLI
+     * list does not overwrite a handshake list it agrees with — it only refreshes
+     * its age. A changed list ends in a redraw, an identical one does not.
+     */
+    const rememberOpencodeCatalog = (
+        models: { id: string; label: string }[], via: 'handshake' | 'cli'
+    ): void => {
+        if (!models.length) { return; }
+        const before = (opencodeCatalog.models ?? []).map(m => `${m.id}\t${m.label}`).join('\n');
+        const now = models.map(m => `${m.id}\t${m.label}`).join('\n');
+        const sameIds = (opencodeCatalog.models ?? []).map(m => m.id).join('\n')
+            === models.map(m => m.id).join('\n');
+        // The CLI knows no display names, so letting it flatten a handshake list
+        // that names the same models would lose labels for nothing.
+        const keep = via === 'cli' && opencodeCatalog.via === 'handshake' && sameIds;
+        opencodeCatalog = {
+            models: keep ? opencodeCatalog.models : models,
+            fetchedAt: Date.now(), via: keep ? 'handshake' : via, fetching: false
+        };
+        void context.globalState.update(OPENCODE_CATALOG_KEY, {
+            models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt, via: opencodeCatalog.via
+        });
+        if (!keep && now !== before) { modelPickersChanged(); }
+    };
+    const refreshOpencodeCatalog = (force = false): Promise<void> => {
+        if (opencodeCatalog.fetching) { return opencodeInFlight ?? Promise.resolve(); }
+        if (!force && opencodeCatalog.fetchedAt && Date.now() - opencodeCatalog.fetchedAt < OPENCODE_CATALOG_TTL) {
+            return Promise.resolve();
+        }
+        // Nothing is spawned for an engine this machine does not have.
+        if (!engineProbe.which(OPENCODE_EXE)) { return Promise.resolve(); }
+        opencodeCatalog = { ...opencodeCatalog, fetching: true };
+        let settle = (): void => { /* replaced below */ };
+        opencodeInFlight = new Promise<void>(res => { settle = res; });
+        const child = cp.execFile(OPENCODE_EXE, opencodeModelsListArgs(), {
+            timeout: 30000, windowsHide: true, shell: OPENCODE_NEEDS_SHELL, maxBuffer: 1024 * 1024
+        }, (err, stdout) => {
+            // Parsed even on a non-zero exit — the rows are the answer, not the
+            // code. An empty read after an error keeps whatever was remembered
+            // rather than emptying a picker over one failed spawn; an empty read
+            // with no error is the engine's real answer and is dated so the next
+            // draw does not spawn again.
+            const models = readOpencodeModelList(String(stdout ?? ''));
+            if (models.length) { rememberOpencodeCatalog(models, 'cli'); }
+            else {
+                opencodeCatalog = {
+                    ...opencodeCatalog, fetching: false, ...(err ? {} : { fetchedAt: Date.now() })
+                };
+            }
+            opencodeInFlight = undefined;
+            settle();
+        });
+        // Same handshake trap as `agy models` — a CLI that drains stdin never
+        // exits while the pipe is open, and the timeout is not a diagnosis.
+        child.stdin?.end();
+        return opencodeInFlight;
+    };
+
     const engineModelMatrix = () => {
         refreshAgyCatalog();
+        refreshOpencodeCatalog();
         return readEngineModels(
             engineProbe,
             cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
-            { text: agyCatalog.text, fetchedAt: agyCatalog.fetchedAt }
+            { text: agyCatalog.text, fetchedAt: agyCatalog.fetchedAt },
+            { models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt, via: opencodeCatalog.via }
         );
     };
     // ‼️ WARMED ONCE, OFF THE ACTIVATION PATH (U-31). The first person to open a
@@ -10466,10 +10564,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // list while it runs. Eight seconds after the window settles is late enough
     // not to compete with activation and early enough that the catalog is
     // usually there before anybody chooses an engine. It spawns nothing when
-    // `agy` is not on PATH, and the redraw above covers the case where somebody
-    // is quicker than the timer.
-    const agyWarm = setTimeout(() => refreshAgyCatalog(), 8000);
-    context.subscriptions.push({ dispose: () => clearTimeout(agyWarm) });
+    // `agy` / `opencode` is not on PATH, and the redraw above covers the case
+    // where somebody is quicker than the timer.
+    const catalogWarm = setTimeout(() => { refreshAgyCatalog(); refreshOpencodeCatalog(); }, 8000);
+    context.subscriptions.push({ dispose: () => clearTimeout(catalogWarm) });
 
     /**
      * ‼️ ONE REAL TURN AGAINST AN ENGINE — the only thing that proves a call
@@ -12625,6 +12723,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         scheduleExternalConsoleTranscript(id);
         mirrorConsoleToLive(id);
+        // ‼️ X-52 — THE HANDSHAKE'S LIST IS HARVESTED HERE, not left in the card.
+        // `session/new` answers with every model this machine can reach AND their
+        // display names, which is a better list than `opencode models` prints;
+        // leaving it inside one card meant every OTHER surface kept the alias
+        // fallback until the background read caught up. Kept across windows by
+        // rememberOpencodeCatalog, so it survives closing the card.
+        if (s?.engine === 'opencode') { rememberOpencodeCatalog(consoleHost.opencodeModels(id), 'handshake'); }
         ConsolePanel.refreshIfOpen();
     }));
 
@@ -21740,14 +21845,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`efforts` LIST IS AN ANSWER, NOT A GAP: '
                 + enginesWithoutEffort()
                 + ' have no reasoning-effort setting at all, and passing one is refused rather than ignored. '
-                + 'args: id? (' + ENGINE_ENUM_SPACED + '), refresh? (re-ask agy for its list)',
+                + 'args: id? (' + ENGINE_ENUM_SPACED + '), refresh? (re-ask agy and opencode for their lists)',
             handler: async (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 // ‼️ AWAITED, NOT FIRED AND FORGOTTEN. `refresh:true` used to
                 // start the fetch and answer from the cache it was refreshing
                 // away from — so the caller was handed the stale list and told
                 // it was fresh. It takes ~4 s; the caller asked for it.
-                if (args.refresh === true) { await refreshAgyCatalog(true); }
+                if (args.refresh === true) {
+                    await Promise.all([refreshAgyCatalog(true), refreshOpencodeCatalog(true)]);
+                }
                 const all = engineModelMatrix();
                 need(!id || !!(all as Record<string, unknown>)[id],
                     `no engine called "${id}" — try ${ENGINE_ENUM_SPACED}`);

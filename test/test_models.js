@@ -151,6 +151,41 @@ const CLAUDE_STATE = JSON.stringify({
     ok('Claude with nothing on disk is the alias list', m.claude.source === 'settings');
 }
 
+// ---------- X-52: OpenCode's box, with and without a session ----------
+{
+    const aliases = ['haiku', 'sonnet', 'opus', 'fable'];
+    // The complaint the item was filed for: choosing OpenCode kept offering four
+    // Claude aliases its CLI can only reject, because the ONLY source of its
+    // catalogue was a handshake nobody had made yet.
+    const cold = readEngineModels(probe({}), aliases);
+    ok('‼️ with no catalogue at all the box is honest about being the alias list',
+        cold.opencode.source === 'settings'
+        && /neither the background .opencode models. read nor an open session/.test(cold.opencode.note));
+
+    const CLI = [{ id: 'opencode/big-pickle', label: 'opencode/big-pickle' },
+    { id: 'opencode/hy3-free', label: 'opencode/hy3-free' }];
+    const viaCli = readEngineModels(probe({}), aliases, undefined,
+        { models: CLI, fetchedAt: Date.now(), via: 'cli' });
+    const cliIds = viaCli.opencode.models.map(x => x.id);
+    ok('‼️ a background `opencode models` read is enough — NO session required',
+        viaCli.opencode.source === 'catalog' && cliIds.includes('opencode/big-pickle'));
+    ok('‼️ …and not one Claude alias reaches the OpenCode box',
+        !aliases.some(a => cliIds.includes(a)));
+    ok('the note names the source it actually came from',
+        /opencode models. in the background/.test(viaCli.opencode.note));
+
+    const viaHandshake = readEngineModels(probe({}), aliases, undefined, {
+        models: [{ id: 'opencode/big-pickle', label: 'Big Pickle' }],
+        fetchedAt: Date.now(), via: 'handshake'
+    });
+    ok('the handshake\'s display name survives into the picker',
+        viaHandshake.opencode.models.map(x => x.label).includes('Big Pickle'));
+    ok('…and says it was the session that handed it over',
+        /when the session opened/.test(viaHandshake.opencode.note));
+    ok('‼️ either way there is no effort vocabulary — an empty list is the answer',
+        effortsFor(viaCli.opencode, 'opencode/big-pickle').length === 0);
+}
+
 // ---------- effortsFor: per model, per engine, then the shared list ----------
 {
     const m = readEngineModels(probe({ '.codex/models_cache.json': CODEX_CACHE }), ['sonnet']);

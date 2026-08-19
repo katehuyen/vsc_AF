@@ -425,15 +425,20 @@ export function readEngineModels(
      */
     agyCatalog?: { text?: string; fetchedAt?: number },
     /**
-     * ‼️ …AND THE ONE CATALOG THAT ARRIVES UNASKED. OpenCode answers `session/new`
+     * ‼️ …AND THE ONE CATALOG WITH TWO SOURCES. OpenCode answers `session/new`
      * with every model this machine can reach, their display names and the one
-     * currently selected (measured, A-16) — so shelling out to `opencode models`
-     * for a list the handshake just handed over would be a spawn per picker draw
-     * for no new fact. The Console records it when a session opens and hands it
-     * in here. Absent means "no OpenCode session has been opened yet", which the
-     * note says rather than pretending the engine has no catalog.
+     * currently selected (measured, A-16), so a card that is open has already
+     * been told and nothing is spawned to ask again. But a picker is drawn long
+     * before any card exists — X-52 — so the caller ALSO reads `opencode models`
+     * in the background and remembers the answer across windows; `via` says
+     * which of the two this list came from, because the handshake carries
+     * display names and the CLI does not. Absent means neither has answered yet,
+     * which the note says rather than pretending the engine has no catalog.
      */
-    opencodeCatalog?: { models?: { id: string; label: string }[]; fetchedAt?: number }
+    opencodeCatalog?: {
+        models?: { id: string; label: string }[]; fetchedAt?: number;
+        via?: 'handshake' | 'cli';
+    }
 ): Record<EngineId, EngineModels> {
     const safe = <T>(fn: () => T): T | undefined => { try { return fn(); } catch { return undefined; } };
     // ‼️ PER ENGINE, not one array shared by four of them: the rows carry that
@@ -537,8 +542,11 @@ export function readEngineModels(
             defaultEffort: {},
             source: 'catalog',
             fetchedAt: opencodeCatalog?.fetchedAt,
-            note: `${opencodeRows.length} models, as OpenCode itself listed them when the session opened — `
-                + 'the handshake hands the whole catalog over, so nothing is spawned to ask. '
+            note: `${opencodeRows.length} models, ` + (opencodeCatalog?.via === 'cli'
+                ? 'read from OpenCode\'s own `opencode models` in the background — every model the providers '
+                + 'connected here offer, whether or not a session has ever been opened. '
+                : 'as OpenCode itself listed them when the session opened — '
+                + 'the handshake hands the whole catalog over, so nothing is spawned to ask. ')
                 + 'This engine has no reasoning-effort setting to go with them.'
                 + ageNote(opencodeCatalog?.fetchedAt)
         }
@@ -547,9 +555,9 @@ export function readEngineModels(
             efforts: { '': [] },
             defaultEffort: {},
             source: 'settings',
-            note: 'OpenCode publishes its model list on the connection rather than on disk, and no session has opened yet — '
-                + 'start one and this becomes its own catalog. Until then it is the agentFarm.modelAliases list, '
-                + 'which is almost certainly wrong for this engine.'
+            note: 'OpenCode publishes its model list on the connection rather than on disk, and neither the '
+                + 'background `opencode models` read nor an open session has answered yet. Until one does this '
+                + 'is the agentFarm.modelAliases list, which is almost certainly wrong for this engine.'
         };
 
     return { claude, codex, gemini, agy, opencode };

@@ -334,6 +334,29 @@ export const OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG = true;
 export function opencodeModelsListArgs(): string[] { return ['models']; }
 
 /**
+ * ‼️ X-52 — THE SAME CATALOGUE, WITHOUT A SESSION TO GET IT FROM.
+ *
+ * `session/new` hands the list over with display names and costs no spawn, and
+ * that is still the better source when a card is open (`opencodeModelsFrom`).
+ * But a model box is drawn long before any card exists — a task written for
+ * tomorrow, a preset, the settings page — and "start a session first" is not an
+ * answer a picker can give. `opencode models` answers the same question from a
+ * cold window: one `provider/model` per line, no display names, so the id is
+ * also the label until a handshake supplies a better one.
+ *
+ * Deduplicated and sorted, because two providers can publish the same id and a
+ * picker that lists it twice is a picker nobody trusts.
+ */
+export function readOpencodeModelList(stdout: string): { id: string; label: string }[] {
+    const ids = String(stdout ?? '')
+        .split('\n')
+        .map(l => l.trim())
+        // A model line and nothing else: `provider/model`, no spaces, no prose.
+        .filter(l => /^[\w.:-]+\/[\w.:-]+$/.test(l));
+    return Array.from(new Set(ids)).sort().map(id => ({ id, label: id }));
+}
+
+/**
  * ‼️ U-59 — THE FREE MODEL TO SPEND A HEALTH CHECK ON, PICKED FROM WHAT IS
  * REALLY THERE.
  *
@@ -353,12 +376,7 @@ export function opencodeModelsListArgs(): string[] { return ['models']; }
  * flaky model.
  */
 export function opencodeFreeModel(stdout: string): string {
-    return String(stdout ?? '')
-        .split('\n')
-        .map(l => l.trim())
-        // A model line and nothing else: `provider/model`, no spaces, no prose.
-        .filter(l => /^[\w.:-]+\/[\w.:-]+$/.test(l) && /-free$/.test(l))
-        .sort()[0] ?? '';
+    return readOpencodeModelList(stdout).map(m => m.id).filter(id => /-free$/.test(id))[0] ?? '';
 }
 
 // ---------------------------------------------------------------------------

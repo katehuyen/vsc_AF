@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.168.0 — X-52: OpenCode's model box stops waiting for somebody to open a session (2026-08-19)
+
+**Choosing OpenCode offered `haiku / sonnet / opus / fable` — four names its CLI can only reject.** The same shape of bug U-31 fixed on Antigravity, arrived at from the opposite direction: OpenCode's catalogue is genuinely free, because `session/new` answers with every model this machine can reach AND their display names. That made the handshake the cheapest source, so it was made the ONLY source — and every surface that draws a model box *without* opening a session was left on the alias fallback for ever. Writing tomorrow's task, saving a preset, looking at Settings: none of them start a conversation, and "start a session first" is not an answer a picker can give.
+
+**The list now has two sources and neither waits for the other.**
+
+| | source | when | carries |
+|---|---|---|---|
+| 1 | `opencode models`, spawned in the background | 8 s after the window settles, then at most once per 6 h | ids only (`opencode/big-pickle`) |
+| 2 | the `session/new` handshake | whenever a Console card opens | ids **and** display names |
+
+A handshake list replaces a CLI one, because it knows the names; a CLI list that agrees with a handshake list only refreshes its age rather than flattening the labels. Either way a **changed** list redraws every open picker and an identical one redraws nothing.
+
+**‼️ AND IT IS REMEMBERED ACROSS WINDOWS.** The point of the item is that the box is right *the moment it is drawn* — a fresh window draws its first picker long before an 8-second warm-up returns, so the catalogue is kept in `globalState` and is there at activation. The user's own case is the ordinary one: open VS Code, write a task for tomorrow, pick its model, close the window.
+
+The picker also says which of the two it is reading, and how old that read is; with neither answered yet it still says it is the alias list and that this is almost certainly wrong for this engine. `{ "op": "engines.models", "args": { "refresh": true } }` now re-asks **both** `agy` and `opencode`, awaited, so the caller gets the new list rather than the one it was refreshing away from.
+
+Measured on this machine: `opencode models` answers in 3.6 s with 7 models, exit 0 — and only with its stdin closed, the same handshake trap `agy models` taught us.
+
 ## 3.167.0 — X-40: the fifth engine's acceptance set is a file that RUNS, and it ran (2026-08-19)
 
 **‼️ EVERY OpenCode FIXTURE IN THIS REPO IS WRITTEN AGAINST A TRANSCRIPT SOMEBODY ONCE CAPTURED.** Three and a half thousand lines of them pass on a translation layer that could still produce an empty Console against the binary that actually shipped — that is the exact failure X-15 wrote its Codex smoke to prevent, and OpenCode had no equivalent. `test/smoke_opencode_console.mjs` drives the REAL `ConsoleHost` with the REAL `opencode acp` process, and it proves the seven things X-40 names, in order:

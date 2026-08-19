@@ -344,5 +344,36 @@ ok('the no-transcript note names the CLI route rather than saying "yet"',
         FLAGS.every(f => new RegExp(`(['"\`])${f.replace(/-/g, '\\-')}\\1`).test(owner)));
 }
 
+// ---------- X-52: the same catalogue, read without a session ----------
+{
+    // Real `opencode models` stdout: one `provider/model` per line and nothing
+    // else — no display names, which is why the handshake's list still wins
+    // when there is one. The banner goes to stderr, but a line of prose that
+    // leaked into stdout must not become a model.
+    const OUT = [
+        'opencode/big-pickle',
+        'opencode/nemotron-3-ultra-free',
+        'opencode/deepseek-v4-flash-free',
+        'opencode/big-pickle',
+        '',
+        'Fetching available models…'
+    ].join('\n');
+    const rows = O.readOpencodeModelList(OUT);
+    ok('a model line and nothing else survives the read',
+        rows.length === 3 && !rows.some(r => /\s/.test(r.id)));
+    ok('‼️ the same id twice is one row — a picker that lists it twice is not trusted',
+        rows.filter(r => r.id === 'opencode/big-pickle').length === 1);
+    ok('sorted, so two reads of one catalogue offer the same order',
+        rows.map(r => r.id).join(',') === rows.map(r => r.id).slice().sort().join(','));
+    ok('‼️ the provider stays on the id — that whole string is what goes on the wire',
+        rows.every(r => r.id.startsWith('opencode/')));
+    ok('the CLI prints no display name, so the id is the label',
+        rows.every(r => r.label === r.id));
+    ok('nothing at all is an empty list, not a throw',
+        O.readOpencodeModelList('').length === 0 && O.readOpencodeModelList(undefined).length === 0);
+    ok('…and the free-model pick reads the same list',
+        O.opencodeFreeModel(OUT) === 'opencode/deepseek-v4-flash-free');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
