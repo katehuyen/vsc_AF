@@ -387,9 +387,16 @@ Ve normal yerleşimde (worktree nest'in üstünde) yapılandırmasız **evet**.
 | Konu | OpenCode'daki karşılığı | Karar |
 |---|---|---|
 | Nöbet görevi | `.opencode/command/<slug>.md` (`/slug` olarak çağrılır) | Üretilir. `template` gövdedir; frontmatter'a `template:` yazmak OpenCode'da hatadır. |
-| Beceri | `~/.claude/skills/<ad>/SKILL.md` **kendiliğinden yüklenir** | Hiçbir şey kopyalanmaz. Kopyalamak, aynı hizada tutulacak ikinci bir set üretirdi. |
+| Beceri | `~/.claude/skills/<ad>/SKILL.md` ve `~/.agents/skills/<ad>/SKILL.md` **kendiliğinden yüklenir** | Hiçbir şey kopyalanmaz. Kopyalamak, aynı hizada tutulacak ikinci bir set üretirdi. |
 | MCP | `mcp: { <ad>: { type, command[], environment } }` | `.mcp.json` şeması **değildir**: `command` dizidir, `type` zorunludur, `env` adı `environment`'tır. Çeviri `.opencode/mcp.suggested.json` olarak bırakılır, kullanıcının canlı yapılandırmasına asla yazılmaz. |
 | Gizli değer | — | `environment`/`headers` değerleri hiçbir nota, bildirime veya köprü cevabına girmez; not yalnız kaç sunucunun değer taşıdığını sayar. Test bunu iddia eder. |
+
+Beceri satırı **gerçek bir skill çağrısıyla** doğrulandı, listelemeyle değil:
+`~/.claude/skills/af-x39-probe/SKILL.md` adında tek kullanımlık bir beceri
+yazıldı, `developer` klasöründe tek tur koşuldu, OpenCode `skill` aracını
+`{"name":"af-x39-probe"}` ile çağırdı ve becerinin dikte ettiği `PROBE-OK-4471`
+cevabını verdi; probe sonra silindi. Yani Claude'a özgü beceri klasörü bu motora
+kendiliğinden **görünüyor ve çalışıyor**.
 
 Global config `~/.config/opencode/opencode.jsonc`; bu makinede
 `permission.external_directory` kuralları yazılı. Proje katmanı `opencode.json` +

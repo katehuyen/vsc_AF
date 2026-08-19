@@ -14,6 +14,8 @@ const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds 
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
 const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'codex.js'));
+const { opencodeStatus, syncToOpencode } =
+    require(path.join(__dirname, '..', 'out', 'core', 'opencodesync.js'));
 
 // ---------- parseBridgeRequest ----------
 {
@@ -406,21 +408,37 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
     // functions) and dispatches it, proving the op is catalogued and honours its
     // non-destructive contract — the same wiring extension.ts registers at activate().
     {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-sync-'));
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-sync-'));
+        // A nest: the shared constitution one level up, the agent below it, and
+        // the agent folder as its OWN git worktree — the one layout where
+        // OpenCode's instruction walk cannot reach the constitution. That is the
+        // state the reply has to be able to say out loud.
+        fs.writeFileSync(path.join(base, 'CLAUDE.md'), '# Anayasa\n');
+        fs.writeFileSync(path.join(base, 'AGENTS.md'), '# Anayasa aynasi\n');
+        const dir = path.join(base, 'dev');
+        fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
         fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Ajan\n\nBkz. CLAUDE.md.\n');
-        const agent = { name: 'dev', dir, duties: [] };
+        const agent = { name: 'dev', dir, duties: [], constitutionPath: path.join(base, 'CLAUDE.md') };
         reg.register({
             op: 'agents.sync',
-            describe: 'Cross-engine sync: CLAUDE.md → AGENTS.md + Codex MCP snippet. args: agent, force?',
+            describe: 'Cross-engine sync: CLAUDE.md → AGENTS.md + Codex MCP snippet + the OpenCode lane. args: agent, force?',
             handler: (a) => {
-                const st = antigravityStatus(agent.dir);
+                const st = antigravityStatus(agent.dir, agent.constitutionPath);
                 if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
                     && a.force !== true) {
-                    return { agent: agent.name, state: st.state, synced: false };
+                    return {
+                        agent: agent.name, state: st.state, synced: false,
+                        opencode: opencodeStatus(agent.dir, agent.constitutionPath)
+                    };
                 }
-                const ag = syncToAntigravity(agent.dir, agent.duties, { force: true });
+                const ag = syncToAntigravity(agent.dir, agent.duties, { force: true, constitutionPath: agent.constitutionPath });
                 const cx = syncCodexExtras(agent.dir);
-                return { agent: agent.name, state: 'in-sync', synced: true, written: [...ag.written, ...cx.written] };
+                const oc = syncToOpencode(agent.dir, agent.duties, { force: true, constitutionPath: agent.constitutionPath });
+                return {
+                    agent: agent.name, state: 'in-sync', synced: true,
+                    written: [...ag.written, ...cx.written, ...oc.written],
+                    opencode: opencodeStatus(agent.dir, agent.constitutionPath)
+                };
             }
         });
         ok('agents.sync appears in the catalog', reg.catalog().some(c => c.op === 'agents.sync'));
@@ -428,17 +446,27 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const first = await reg.dispatch('agents.sync', { agent: 'dev' });
         ok('agents.sync forward-syncs a fresh agent', first.ok && first.result.synced === true &&
             fs.existsSync(path.join(dir, 'AGENTS.md')));
+        // ‼️ The reply says where the fifth engine stands, or an agent asking why
+        // a rule was ignored has nothing to read.
+        ok('agents.sync reports the OpenCode lane', !!first.result.opencode &&
+            typeof first.result.opencode.reachesConstitution === 'boolean' &&
+            typeof first.result.opencode.worktree === 'string');
+        ok('agents.sync repaired the out-of-reach constitution',
+            first.result.opencode.configState === 'ours' &&
+            first.result.written.includes('opencode.json'));
 
         // Hand-edit AGENTS.md → antigravity-ahead → guard refuses without force.
         fs.appendFileSync(path.join(dir, 'AGENTS.md'), '\nElle eklenen satır.\n');
         const guarded = await reg.dispatch('agents.sync', { agent: 'dev' });
         ok('agents.sync is non-destructive on divergence (no force)',
             guarded.ok && guarded.result.synced === false && guarded.result.state === 'antigravity-ahead');
+        ok('the OpenCode state is still reported when another lane is in conflict',
+            !!guarded.result.opencode && guarded.result.opencode.identity === 'AGENTS.md');
 
         const forced = await reg.dispatch('agents.sync', { agent: 'dev', force: true });
         ok('agents.sync with force overwrites from CLAUDE.md', forced.ok && forced.result.synced === true);
 
-        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+        try { fs.rmSync(base, { recursive: true, force: true }); } catch {}
     }
 
     // ---------- §19.C: constitution.sync op contract (the shared instructions) ----------
