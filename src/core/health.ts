@@ -5,6 +5,7 @@ import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { claudeOnlyScopeNote } from './engines';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
 import { readMemoryFrontmatter } from './memusage';
+import { opencodeStatus } from './opencodesync';
 import { readAgentSkills, skillUsage } from './skills';
 import { lintPermissions } from './permlint';
 import { looksLikePlaintextSecret } from './secrets';
@@ -329,9 +330,9 @@ export function buildInsights(
                     category: 'antigravity',
                     message: ag.state === 'claude-ahead'
                         ? (ag.constitutionChanged
-                            ? 'The shared constitution changed — this agent\'s .agents/AGENTS.md still carries the old text (Antigravity reads no file above the workspace). Run "Sync Agent with Antigravity + Codex…".'
-                            : 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with Antigravity + Codex…" to update AGENTS.md.')
-                        : 'AGENTS.md was edited (Antigravity/Codex side) — run "Sync Agent with Antigravity + Codex…" to carry the changes back to CLAUDE.md.',
+                            ? 'The shared constitution changed — this agent\'s .agents/AGENTS.md still carries the old text (Antigravity reads no file above the workspace). Run "Sync Agent with the Other Engines…".'
+                            : 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with the Other Engines…" to update AGENTS.md.')
+                        : 'AGENTS.md was edited (Antigravity/Codex side) — run "Sync Agent with the Other Engines…" to carry the changes back to CLAUDE.md.',
                     filePath: agent.claudeMdPath,
                     guideAnchor: 'antigravity-uyumlulugu'
                 });
@@ -343,6 +344,31 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'antigravity',
                     message: '.agents/AGENTS.md (the file Antigravity reads) was edited by hand — it is generated from CLAUDE.md plus the shared constitution, so the next sync skips it and a forced one overwrites it. Carry the gain into CLAUDE.md to keep it.',
+                    filePath: agent.claudeMdPath,
+                    guideAnchor: 'antigravity-uyumlulugu'
+                });
+            }
+        }
+
+        /**
+         * 5e) OpenCode reads the shared constitution by walking UP from the
+         * agent folder to the git worktree — and stops there. An agent folder
+         * that is its own repository is therefore silently running without the
+         * constitution on that engine, which is exactly the kind of failure
+         * nothing else would ever report: every file is present, every sync
+         * says "in sync", and the rule simply is not in the prompt.
+         */
+        if (agent.constitutionPath) {
+            const oc = opencodeStatus(agent.dir, agent.constitutionPath);
+            if (!oc.reachesConstitution && oc.configState !== 'ours') {
+                insights.push({
+                    severity: oc.configState === 'unmergeable' ? 'warning' : 'info',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'antigravity',
+                    message: oc.configState === 'unmergeable'
+                        ? `OpenCode cannot see the shared constitution from this folder (its instruction walk stops at the worktree ${oc.worktree}), and this folder's opencode.json carries comments, so Agent Farm will not rewrite it. Add "instructions": ["../AGENTS.md"] yourself.`
+                        : `OpenCode cannot see the shared constitution from this folder — its instruction walk stops at the worktree ${oc.worktree}. Run the cross-engine sync and it adds the one instructions entry that reaches above it.`,
                     filePath: agent.claudeMdPath,
                     guideAnchor: 'antigravity-uyumlulugu'
                 });

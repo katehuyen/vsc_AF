@@ -307,16 +307,96 @@ turda boş `parts` görüldü) ve altı oturumun üçü hiç konuşulmamış
 (`New session - <ISO>` başlığı, sıfır mesaj) — bunlar silinmez, “boş” diye
 işaretlenir.
 
-## 7. Ajan çalışma alanı (ayrıntı X-39’a aittir)
+## 7. Ajan çalışma alanı (X-39)
 
-Bu turda ölçülen ve X-39’un başlangıç verisi olan iki gerçek:
+### 7.1 Talimat keşfi — motorun kendi kodundan okundu
 
-- OpenCode `available_commands_update` olayında **`~/.claude/skills` altındaki
-  becerileri** listeledi (`account-signup` ölçümde göründü). Yani Claude’a özgü
-  beceri klasörü bu motora kendiliğinden görünüyor; X-39 bunun kapsamını ve
-  yönünü (talimat/anayasa/memory/duty/MCP) ayrıca ölçer.
-- Global config `~/.config/opencode/opencode.jsonc`; bu makinede `permission.external_directory`
-  kuralları yazılı. Proje katmanı `opencode.json` + `.env`.
+Bu bölüm tahmin değil: kural, kurulu `opencode.exe` 1.18.18 içindeki
+`Instruction.systemPaths` ve `Filesystem.findUp` gövdelerinden **okundu**, sonra
+çalışan ikili üzerinde doğrulandı. Uygulaması `src/core/opencodesync.ts`.
+
+```
+systemPaths():
+  GLOBAL : [ <config>/AGENTS.md , ~/.claude/CLAUDE.md ] -> ilk var olan, sonra BREAK
+  LOKAL  : [ AGENTS.md , CLAUDE.md , CONTEXT.md ] adları sırayla denenir;
+           findUp(ad, cwd, worktree) bir sonuç verirse HEPSİ eklenir ve BREAK
+  EK     : opencode.json "instructions" girdileri en sona eklenir
+```
+
+Bundan çıkan ve tasarımı belirleyen dört gerçek:
+
+1. **Global yuvada tek dosya vardır.** `~/.config/opencode/AGENTS.md` yoksa
+   OpenCode kullanıcının **kişisel `~/.claude/CLAUDE.md`** dosyasını yükler —
+   başka bir motor için yazılmış bir dosya, bu makinedeki her OpenCode turunda.
+   Agent Farm oraya yazmaz; `agents.sync` cevabındaki `globalInstruction` bunu
+   söyler.
+2. **`AGENTS.md`, `CLAUDE.md`'yi tamamen gölgeler.** İlk eşleşen *ad* kazanır.
+   Yani Codex hattının `AGENTS.md` yazması, OpenCode'un okuduğu dosyayı da
+   değiştirir — istenen sonuçtur, ama sessiz olmaması gerekir.
+3. **Yürüyüş `worktree`'de durur.** Ölçüm, OpenCode'un kendi `/path` ucundan:
+   git deposu varsa `worktree` = git kökü; **hiç depo yoksa `worktree` = `/`** ve
+   yürüyüş sürücü köküne kadar çıkar. Yani ortak anayasa normal yerleşimde
+   bedavaya gelir ve **yalnız tek bir durumda görünmez**: ajan klasörünün kendisi
+   bir git worktree ise.
+4. **Göreli bir `instructions` girdisi worktree'yi aşar.** Ölçüldü: kendi git
+   kökü olan bir ajan klasöründen `../AGENTS.md` bir üstteki nest dosyasına
+   ulaştı. Mutlak yol da ulaşır.
+
+Canlı doğrulama (aynı ağaç, `opencode/deepseek-v4-flash-free`, tek tur):
+
+| ajan klasörü kendi git worktree'si | ortak anayasayı görüyor mu |
+|---|---|
+| yapılandırma yok | **hayır** |
+| `instructions: ["../AGENTS.md"]` | **evet** |
+| `instructions: ["<mutlak>/AGENTS.md"]` | **evet** |
+
+Ve normal yerleşimde (worktree nest'in üstünde) yapılandırmasız **evet**.
+
+> ‼️ **Ücretsiz modelin kendi rakamları ölçüm aleti değildir.** Aynı ağaçta
+> `tokens.input` üç ayrı çalıştırmada 615 / 8526 / 13710 okundu ve dört farklı
+> ağaç için aynı `13671` toplamı döndü; ayrıca prompt'a "bulamazsan NOTGIVEN de"
+> eklemek modeli gördüğü kuralı yok saymaya itti. Yukarıdaki tablo, kaçış yolu
+> olmayan tek soruyla ve motorun kendi kodundan okunan kuralla birlikte
+> tutulduğu için geçerli — token sayısıyla değil.
+
+### 7.2 Onarım — ne yazılır, ne yazılmaz
+
+- **Kimlik dosyası yazılmaz.** OpenCode, Codex hattının zaten ürettiği
+  `<ajan>/AGENTS.md` dosyasını okur. İkinci bir kopya, kaymaya açık ikinci bir
+  şey demek olurdu.
+- Anayasa yürüyüşle geliyorsa **hiçbir şey yazılmaz** (bu makinedeki sekiz
+  ajanın sekizi de bu durumda).
+- Gelmiyorsa `<ajan>/opencode.json` içine tek satır eklenir:
+  `"instructions": ["../AGENTS.md"]` — **göreli**, çünkü dosya repo ile birlikte
+  yolculuk eder ve makineye özgü yol taşıyamaz.
+- Dosya **yorum taşıyorsa ya da ayrıştırılamıyorsa yeniden serileştirilmez**:
+  `JSON.parse` yorumları düşürür ve geri yazmak kullanıcının kendi notlarını
+  silerdi. O durumda dosya olduğu gibi bırakılır.
+- Bizim başlattığımız süreçlere aynı parça `OPENCODE_CONFIG_CONTENT` ile
+  verilir — **mutlak yolla**, çünkü ortam değişkeni makineden çıkmaz ve görev
+  başka bir `workDir` ile koşabilir. Bu, headless görev ve zamanlama
+  çalıştırmalarını kapsar.
+- **Console kapsanmaz ve bu saklanmaz.** ACP runtime bütün kartlar için tek
+  süreçtir (X-38'in 383 MB kararı), süreç geneli bir değişken ajana göre farklı
+  şey söyleyemez. Console'u dosya kapsar; dosya yazılamadıysa eksik olduğu
+  söylenir.
+- Elle başlatılan bir TUI her hâlükârda dışarıdadır; not bunu adıyla söyler.
+
+### 7.3 Nöbet görevleri, beceriler, MCP
+
+| Konu | OpenCode'daki karşılığı | Karar |
+|---|---|---|
+| Nöbet görevi | `.opencode/command/<slug>.md` (`/slug` olarak çağrılır) | Üretilir. `template` gövdedir; frontmatter'a `template:` yazmak OpenCode'da hatadır. |
+| Beceri | `~/.claude/skills/<ad>/SKILL.md` **kendiliğinden yüklenir** | Hiçbir şey kopyalanmaz. Kopyalamak, aynı hizada tutulacak ikinci bir set üretirdi. |
+| MCP | `mcp: { <ad>: { type, command[], environment } }` | `.mcp.json` şeması **değildir**: `command` dizidir, `type` zorunludur, `env` adı `environment`'tır. Çeviri `.opencode/mcp.suggested.json` olarak bırakılır, kullanıcının canlı yapılandırmasına asla yazılmaz. |
+| Gizli değer | — | `environment`/`headers` değerleri hiçbir nota, bildirime veya köprü cevabına girmez; not yalnız kaç sunucunun değer taşıdığını sayar. Test bunu iddia eder. |
+
+Global config `~/.config/opencode/opencode.jsonc`; bu makinede
+`permission.external_directory` kuralları yazılı. Proje katmanı `opencode.json` +
+`.env`. Yapılandırma kapsamları derin birleştirilir (proje globali ezer) ve
+`opencode.json` içindeki **tanınmayan üst düzey anahtar `ConfigInvalidError` ile
+reddedilir** — yani oraya Agent Farm'a özgü bir işaretçi anahtarı konulamaz;
+parmak izleri `.opencode/af-opencode-sync.json` içinde tutulur.
 
 ## 8. Karar tablosu — motor sözleşmesi (donduruldu)
 

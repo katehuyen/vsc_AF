@@ -46,6 +46,7 @@ import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
 import { syncCodexExtras } from './core/codex';
+import { opencodeStatus, syncToOpencode } from './core/opencodesync';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -7969,7 +7970,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'agents.sync',
-            describe: 'Cross-engine sync for one agent. Writes BOTH lanes, because the engines look in different places: <agent>/AGENTS.md (Codex merges one AGENTS.md per directory from the git root down to its cwd) and <agent>/.agents/AGENTS.md (Antigravity\'s workspace customization root — it reads NOTHING above the workspace, so the shared constitution is embedded in this file). Plus duty workflows and a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if a generated file diverged (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
+            describe: 'Cross-engine sync for one agent. Writes THREE lanes, because the engines look in different places: <agent>/AGENTS.md (Codex merges one AGENTS.md per directory from the git root down to its cwd); <agent>/.agents/AGENTS.md (Antigravity\'s workspace customization root — it reads NOTHING above the workspace, so the shared constitution is embedded in this file); and OpenCode, which reads that SAME AGENTS.md (it shadows CLAUDE.md — first matching name wins) and walks up to the git worktree for the constitution. The reply carries `opencode`: worktree, vcs, reachesConstitution, identity, configState, commandsDiverged — `reachesConstitution:false` means the agent folder is its own worktree, and the lane repairs it with an instructions entry. Plus duty workflows (Antigravity) and duty commands (.opencode/command/*.md), a Codex MCP TOML snippet and an OpenCode MCP JSON snippet when .mcp.json exists. Non-destructive: if a generated file diverged (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const st = antigravityStatus(agent.dir, agent.constitutionPath);
@@ -7978,23 +7979,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     && args.force !== true) {
                     return {
                         agent: agent.name, state: st.state, synced: false,
-                        note: 'AGENTS.md diverged from CLAUDE.md — resolve with the "Sync Agent with Antigravity + Codex" command, or pass force=true to overwrite from CLAUDE.md.'
+                        // The OpenCode lane is READ here even though nothing is
+                        // written: an agent asking why a turn ignored a rule
+                        // needs the worktree answer whether or not some other
+                        // lane happens to be in conflict.
+                        opencode: opencodeStatus(agent.dir, agent.constitutionPath),
+                        note: 'AGENTS.md diverged from CLAUDE.md — resolve with the "Sync Agent with the Other Engines" command, or pass force=true to overwrite from CLAUDE.md.'
                     };
                 }
                 const ag = syncToAntigravity(agent.dir, agent.duties,
                     { force: true, constitutionPath: agent.constitutionPath });
                 const cx = syncCodexExtras(agent.dir);
+                const oc = syncToOpencode(agent.dir, agent.duties,
+                    { force: true, constitutionPath: agent.constitutionPath });
+                const ocState = opencodeStatus(agent.dir, agent.constitutionPath);
                 return {
                     agent: agent.name, state: 'in-sync', synced: true,
                     constitution: agent.constitutionPath ?? null,
-                    written: [...ag.written, ...cx.written],
-                    notes: [...ag.notes, ...cx.notes]
+                    written: [...ag.written, ...cx.written, ...oc.written],
+                    notes: [...ag.notes, ...cx.notes, ...oc.notes],
+                    opencode: ocState
                 };
             }
         },
         {
             op: 'constitution.sync',
-            describe: 'Mirror the SHARED constitution — a nest root\'s own CLAUDE.md, the instructions Claude Code loads for every child agent — to that folder\'s AGENTS.md (which Codex picks up on its git-root→cwd walk) and .agents/AGENTS.md (Antigravity, for when the nest folder itself is the open workspace). Agents get the same text embedded in their own .agents/AGENTS.md via agents.sync, since Antigravity reads no parent folder. CLAUDE.md is read, never written. args: root? (path or folder name — omit when there is only one nest), force? (default false: a foreign or hand-edited AGENTS.md is reported, not overwritten)',
+            describe: 'Mirror the SHARED constitution — a nest root\'s own CLAUDE.md, the instructions Claude Code loads for every child agent — to that folder\'s AGENTS.md (which Codex picks up on its git-root→cwd walk, and which OpenCode picks up on its cwd→worktree walk) and .agents/AGENTS.md (Antigravity, for when the nest folder itself is the open workspace). Agents get the same text embedded in their own .agents/AGENTS.md via agents.sync, since Antigravity reads no parent folder; OpenCode needs no embedded copy but its walk stops at the git worktree, so agents.sync reports per agent whether the walk actually reaches this file. CLAUDE.md is read, never written. args: root? (path or folder name — omit when there is only one nest), force? (default false: a foreign or hand-edited AGENTS.md is reported, not overwritten)',
             handler: (args) => {
                 const { reports } = scanRoots(
                     cfg().get<string[]>('agentRoots', []),
@@ -8026,7 +8036,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     root: nest.root, state: 'in-sync', synced: true,
                     written: [...ag.written, ...cx.written],
                     notes: [...ag.notes, ...cx.notes,
-                        'Agents embed this text in their own .agents/AGENTS.md — run agents.sync for each agent to propagate a change.']
+                        'Agents embed this text in their own .agents/AGENTS.md — run agents.sync for each agent to propagate a change.',
+                        'OpenCode reads this AGENTS.md by walking up from the agent folder to the git worktree, so it needs no embedded copy — agents.sync reports, per agent, whether that walk actually reaches it.']
                 };
             }
         }
@@ -21251,7 +21262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : `Agent Farm dispatch: no agent matched — ${result.reason}`);
         }),
 
-        // ---------- Cross-engine compatibility (Antigravity + Codex sync) ----------
+        // ---------- Cross-engine compatibility: Codex, Antigravity, OpenCode ----------
         // One command, two engines. The Antigravity core owns CLAUDE.md ↔ AGENTS.md
         // (the shared instruction file Codex also reads); withCodex() layers the
         // Codex-only extras (MCP TOML snippet) on top without touching that core.
@@ -21268,11 +21279,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // produced/updated, refresh Codex's MCP snippet from the same folder.
             const withCodex = (r: SyncResult): SyncResult => {
                 const cx = syncCodexExtras(agent.dir);
+                const oc = syncToOpencode(agent.dir, agent.duties,
+                    { constitutionPath: agent.constitutionPath });
                 return {
-                    written: [...r.written, ...cx.written],
-                    skipped: [...r.skipped, ...cx.skipped],
-                    backups: [...r.backups, ...cx.backups],
-                    notes: [...r.notes, ...cx.notes]
+                    written: [...r.written, ...cx.written, ...oc.written],
+                    skipped: [...r.skipped, ...cx.skipped, ...oc.skipped],
+                    backups: [...r.backups, ...cx.backups, ...oc.backups],
+                    notes: [...r.notes, ...cx.notes, ...oc.notes]
                 };
             };
             const showResult = (title: string, r: SyncResult) => {
@@ -21298,15 +21311,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             switch (status.state) {
                 case 'none': {
                     const ok = await vscode.window.showInformationMessage(
-                        `Make "${agent.name}" Antigravity + Codex compatible?\n\n` +
-                        `Creates AGENTS.md from CLAUDE.md (the cross-tool file Codex reads) and ` +
+                        `Make "${agent.name}" readable by the other engines?\n\n` +
+                        `Creates AGENTS.md from CLAUDE.md (the cross-tool file Codex reads, and the one OpenCode reads instead of CLAUDE.md) and ` +
                         `.agents/AGENTS.md (Antigravity's own rules file${agent.constitutionPath ? ', with the shared constitution embedded — Antigravity reads nothing above the workspace root' : ''}), ` +
-                        `.agents/workflows/ from active duties, and MCP merge suggestions if .mcp.json exists ` +
-                        `(JSON for Antigravity, TOML for Codex).\n\n` +
+                        `.agents/workflows/ and .opencode/command/ from active duties, and MCP merge suggestions if .mcp.json exists ` +
+                        `(JSON for Antigravity, TOML for Codex, its own JSON shape for OpenCode).\n\n` +
                         `memory/ is shared as-is — no conversion. From now on, edits on either side are detected and can be synced back.`,
                         { modal: true }, 'Create');
                     if (ok !== 'Create') { return; }
-                    showResult('Antigravity + Codex files created', withCodex(sync()));
+                    showResult('cross-engine files created', withCodex(sync()));
                     return;
                 }
                 case 'foreign': {
@@ -21445,7 +21458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (status.state === 'none') {
                 const ok = await vscode.window.showInformationMessage(
-                    `Make the shared constitution in "${path.basename(nest)}" readable by Antigravity + Codex?\n\n` +
+                    `Make the shared constitution in "${path.basename(nest)}" readable by the other engines?\n\n` +
                     `Creates ${path.basename(nest)}/AGENTS.md (Codex merges it on its walk from the git root down to ` +
                     `whatever agent folder it runs in) and .agents/AGENTS.md (Antigravity, for when this folder itself ` +
                     `is the open workspace).\n\nCLAUDE.md is only read — never written.`,

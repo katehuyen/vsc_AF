@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.166.0 — X-39: the constitution reaches a fifth engine, and where it does not is now a thing you can read (2026-08-19)
+
+**‼️ OpenCode's instruction walk STOPS AT THE GIT WORKTREE, and nothing in this build knew that.** The rule was read out of the shipped `opencode.exe` 1.18.18 — `Instruction.systemPaths` and `Filesystem.findUp`, verbatim — and then confirmed against the running binary: the names `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md` are tried in that order, the first name that matches ANYWHERE wins outright, and for that name every file from the cwd up to the **worktree** is merged. So the shared constitution at the nest root arrives for free in the normal layout, and is **invisible** in exactly one case: an agent folder that is its own git repository. Every file present, every sync saying "in sync", and the rule simply not in the prompt. Measured on the real folders: all eight of this machine's agents reach it, and the lane writes nothing.
+
+**Measured, in a live turn, with a free model, on the real `developer` folder:** asked which language it must use and what ZEN is, OpenCode answered *"(a) Türkçe — (b) Chrome Web Store'da yayınlanmış bir Chrome uzantısı"*. The shared constitution's rule and the agent's own identity, both applied, in one turn, from one file each.
+
+**And where the walk cannot reach, the repair is one line and it is not written into a file that would carry this machine's paths.** `instructions: ["../AGENTS.md"]` goes into the agent's own `opencode.json` — **relative**, because that file travels with the repo — and the same fragment goes to the processes Agent Farm starts through `OPENCODE_CONFIG_CONTENT` with an **absolute** path, because the environment never leaves the machine and a task may run with a `workDir` somewhere else entirely. Both forms were measured escaping the worktree; without either, the same tree answered "None".
+
+**A config with comments in it is never rewritten.** `JSON.parse` drops comments and writing back would delete the user's own notes from the user's own file. Such a file is left byte-for-byte alone, and the note says what is still uncovered rather than implying it is handled.
+
+**‼️ AND THE ONE THING IT DOES NOT COVER IS SAID OUT LOUD.** The Console's ACP runtime is ONE process for every card (X-38's 383 MB decision), so a process-wide variable cannot say something different per agent. The Console is covered by the file, not the environment — and when the file could not be written, the note says `Console cards are NOT covered` instead of letting a reader assume otherwise. A manual `opencode` started outside Agent Farm is outside all of it, and is named.
+
+**`AGENTS.md` shadows `CLAUDE.md` on this engine, which means the Codex lane's file CHANGES what OpenCode reads.** That is the intended outcome; it stopped being a silent one.
+
+**OpenCode is also loading a file nobody configured.** With no `~/.config/opencode/AGENTS.md`, its global slot falls back to the user's personal `~/.claude/CLAUDE.md` — a file written for a different engine, in every OpenCode turn on this machine. `agents.sync` reports it (`globalInstruction`); Agent Farm does not write there.
+
+**Duties get the engine's own equivalent, and skills get nothing on purpose.** A standing duty becomes `.opencode/command/<slug>.md`, invocable as `/slug` — with the body as the template, because OpenCode rejects a `template:` key in the frontmatter. Skills are **not** copied: OpenCode auto-loads `~/.claude/skills/<name>/SKILL.md`, which is where these already live, and a copy would be a second set to keep in step for no gain.
+
+**MCP is translated, not copied — the shapes genuinely differ.** `command` is an ARRAY (executable first), `type` is required (`local`/`remote`), and the env map is called `environment`. The result is a merge-ready `.opencode/mcp.suggested.json`; the live config is never edited. **No credential value leaves through a note, a toast or a bridge reply** — the note counts the servers that carry values instead of showing them, and a test asserts it.
+
+**Insights reports the blind case**, because a rule nothing checks is not a rule: an agent whose OpenCode lane cannot see the constitution gets a line saying which worktree the walk stopped at.
+
+**‼️ A free model's own token figures are not a measuring instrument, and this is recorded so nobody spends the afternoon again.** In one tree `tokens.input` read 615, 8526 and 13710 across three runs; four *different* trees returned the identical total 13671. Adding "if you cannot find one, answer NOTGIVEN" to a prompt made the model take the escape while it was demonstrably holding the file. The findings above stand on the decompiled source plus single-question live runs with no escape hatch — not on counters.
+
+The two sync commands stop naming a subset of engines (`Sync Agent with the Other Engines…`): a static list is the thing that goes stale, and this one already had.
+
 ## 3.165.0 — S-39 is closed: twenty failures, one number, and none of them OpenCode's fault (2026-08-19)
 
 **‼️ `failed: 20 · exported: 0` was a count with four possible causes and no way to tell which.** `session list` that would not run, `export` that would not run, an export whose output could not be found, and a write that threw — every one of them incremented the same integer, and none of them kept the reason. So the diagnosis had to be done by hand, outside the extension, because the extension had thrown away the only thing worth reading. Measured through the bridge on the running build first: **`roots 24 · listed 63 · exported 0 · failed 20 · inTable 2`**.

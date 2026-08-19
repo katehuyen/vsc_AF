@@ -27,6 +27,7 @@ import {
     classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, normalizeRetry,
     resolveRetry, RetryPolicy, retryDecision, RunProgress
 } from './retry';
+import { opencodeSpawnEnv } from './opencodesync';
 import { archiveMonths, readArchive } from './taskstats';
 import { extractJson, sanitizePrompt } from './util';
 
@@ -2473,13 +2474,24 @@ export class TaskManager implements vscode.Disposable {
                 })].join(' ')
                 : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
         const pipePrompt = perTurn && !argv;
+        /**
+         * ‼️ X-39 — OPENCODE'S INSTRUCTION WALK STOPS AT THE GIT WORKTREE, so an
+         * agent folder that is its own repository never sees the shared
+         * constitution one level up. When that is this agent's situation the
+         * launch hands OpenCode the missing entry through its own environment;
+         * in the normal layout the walk already reaches it and this is `{}`.
+         * Everything about why lives in `core/opencodesync.ts`.
+         */
+        const engineEnv = engine.id === 'opencode'
+            ? opencodeSpawnEnv(agent.dir, agent.constitutionPath)
+            : {};
         const child = argv
             ? cp.spawn(engine.exe, argv, {
                 cwd: task.workDir ?? agent.dir,
                 shell: false,
                 windowsHide: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
-                env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
+                env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }
             })
             : cp.spawn(command, {
                 cwd: task.workDir ?? agent.dir,
@@ -2490,7 +2502,7 @@ export class TaskManager implements vscode.Disposable {
                 // pipe, and it is closed immediately after (measured: the CLI waits
                 // for EOF, and an open pipe is a run that never starts).
                 stdio: [pipePrompt ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-                env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
+                env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }
             });
         if (pipePrompt) {
             try {
