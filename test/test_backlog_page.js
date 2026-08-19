@@ -271,18 +271,24 @@ const items = () => [
     {
         code: 'P-1', text: 'the work layer', state: 'open', area: 'P', line: 13,
         section: 'P — Projeler', kinds: ['feat'], priority: 'high', effort: 'M',
-        blockedBy: [], plan: 'afprj-05', from: null, due: null, score: 1, inbox: false
+        blockedBy: [], plan: 'afprj-05', from: null, due: null, score: 1, inbox: false,
+        // ‼️ X-48 — the oldest item on the list and the one worked on most
+        // recently, which is the whole reason "opened" and "touched" are two
+        // orderings and not one.
+        openedAt: Date.parse('2026-06-01T10:00:00Z'), touchedAt: Date.parse('2026-08-18T10:00:00Z')
     },
     {
         code: 'P-2', text: LONG, state: 'open', area: 'P', line: 14,
         section: 'P — Projeler', kinds: ['bug', 'regression'], priority: 'highest', effort: 'S',
-        blockedBy: [], plan: null, from: null, due: '2026-08-09', score: 2.5, inbox: false
+        blockedBy: [], plan: null, from: null, due: '2026-08-09', score: 2.5, inbox: false,
+        openedAt: Date.parse('2026-08-10T10:00:00Z'), touchedAt: Date.parse('2026-08-11T10:00:00Z')
     },
     {
         code: 'K-1', text: 'measure what the counter actually sees', state: 'open', area: 'K',
         line: 18, section: 'K — Konsol', kinds: ['research'],
         priority: 'medium', effort: 'XS', blockedBy: [], plan: null, from: null, due: null,
-        score: 3, inbox: false
+        score: 3, inbox: false,
+        openedAt: Date.parse('2026-07-01T10:00:00Z'), touchedAt: Date.parse('2026-07-02T10:00:00Z')
     },
     {
         code: 'K-2', text: 'end and remove session', state: 'open', area: 'K',
@@ -1017,6 +1023,67 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     cancelledBox.click();
     ok('‼️ …and pressing it REOPENS rather than marking it done',
         (r.posted.filter(m => m.type === 'backlogState').pop() || {}).state === 'open');
+}
+
+// ---------- X-48: "what did I write down last" and "what did I work on last" ----------
+//
+// ‼️ THEY ARE TWO QUESTIONS AND THE FIXTURE MAKES THEM DISAGREE ON PURPOSE. P-1
+// is the OLDEST item on the list and the one worked on most recently; an
+// ordering that answered both with one number would put it in the same place
+// twice and neither would be right.
+//
+// The tail rule is the same one "closed" already obeys: the ledger cannot date
+// every item, and an item nobody has ever recorded is not one that was opened in
+// 1970. It stays behind the dated ones in BOTH directions.
+{
+    const r = run(data());
+    const sort = v => { const s = r.byId('bl-sort'); s.value = v; s.fire('change'); };
+
+    sort('opened');
+    ok('‼️ X-48: the last thing written down is at the top',
+        codesIn(r.html()).slice(0, 3).join() === 'P-2,K-1,P-1');
+    ok('…and an item the ledger never recorded is at the back, not at the front',
+        codesIn(r.html()).slice(3).join() === 'K-2');
+
+    sort('touched');
+    ok('‼️ X-48: last WORKED ON is a different order from last written down',
+        codesIn(r.html()).slice(0, 3).join() === 'P-1,P-2,K-1');
+
+    // The date deciding the order is drawn, and only that one.
+    ok('the row carries the time that is deciding the order',
+        /class="pj-bl-m" title="[^"]*Last touched[^"]*">✎ /.test(r.html()));
+    ok('‼️ …and its hover carries BOTH times, because the pair is the reading',
+        /Opened: [^\\]*\\nLast touched: /.test(r.html())
+        || /Opened: [^"]*Last touched: /.test(r.html()));
+    sort('priority');
+    ok('‼️ …and no date mark at all when a time is not what is being sorted on',
+        !/>✎ /.test(r.html()) && !/>🌱 /.test(r.html()));
+
+    r.els('act').find(e => e.dataset.act === 'blDir').click();
+    sort('opened');
+    ok('the arrow turns the dated ones round…',
+        codesIn(r.html()).slice(0, 3).join() === 'P-1,K-1,P-2');
+    ok('‼️ …and never drags the undated to the front: they are not old openings',
+        codesIn(r.html()).slice(3).join() === 'K-2');
+}
+
+// ---------- ‼️ X-48: the widening that "closed" does has a way back ----------
+// Choosing "closed" opens the state axis so the answer is not an empty list.
+// Coming back to the user's OWN queue order with that axis still open leaves
+// finished work sitting in the list that answers "what is next", which is the
+// one thing that ordering is for.
+{
+    const r = run(data());
+    const sort = v => { const s = r.byId('bl-sort'); s.value = v; s.fire('change'); };
+    sort('closed');
+    ok('closed still widens the state axis', r.ms.ticked('bl-states').join() === 'open,doing,done,cancelled');
+    sort('file');
+    ok('‼️ X-48: queue order puts the state axis back to Active',
+        r.ms.ticked('bl-states').join() === 'open,doing');
+    ok('…and says so, so it is a change the reader can see and undo',
+        /state filter is back to Active/.test(r.html()));
+    ok('…and the list is the user\'s own queue order again',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
 }
 
 // ---------- ‼️ U-60: parked by hand — the ⛔ nobody could write ----------

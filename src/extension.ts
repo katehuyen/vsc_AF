@@ -7118,7 +7118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog',
-            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. ‼️ AN ITEM MAY BE PART OF ANOTHER: `parent` is the code it belongs to (a `[parent:: P-4]` field on ITS line) and `children` are the codes that name it. That is COMPOSITION and it is not ⛔ dependency — a child is not blocked by its parent and a parent is not blocked by its children. The tree lives only in these links: a code stays flat (a `U` item is a child of a `P` epic as often as not), no line moves because of it, and the QUEUE does not know about it at all — every live coded item queues on its own account. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". ‼️ AND WHICH ROUND IT IS ON: an item that has been reopened carries `round` (2 = second go) and `earlierRounds` — the text the item HAD before each reopen, oldest first, snapshotted automatically at the moment it was reopened. The line itself only ever says the latest asking; an item on round 3 was asked for twice before in different words, and that is the context you are missing when you read it. Absent means round 1. Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), parent? (a code = its direct children; "none" = items that belong to nothing), deep? (with parent: the WHOLE subtree including the named item — what "do P-4" means), sort? (file|closed, default file), limit?',
+            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. ‼️ AN ITEM MAY BE PART OF ANOTHER: `parent` is the code it belongs to (a `[parent:: P-4]` field on ITS line) and `children` are the codes that name it. That is COMPOSITION and it is not ⛔ dependency — a child is not blocked by its parent and a parent is not blocked by its children. The tree lives only in these links: a code stays flat (a `U` item is a child of a `P` epic as often as not), no line moves because of it, and the QUEUE does not know about it at all — every live coded item queues on its own account. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". ‼️ AND WHICH ROUND IT IS ON: an item that has been reopened carries `round` (2 = second go) and `earlierRounds` — the text the item HAD before each reopen, oldest first, snapshotted automatically at the moment it was reopened. The line itself only ever says the latest asking; an item on round 3 was asked for twice before in different words, and that is the context you are missing when you read it. Absent means round 1. Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. ‼️ AND WHEN IT APPEARED AND WHEN ANYTHING LAST HAPPENED TO IT: `openedAt` is the first thing the track ledger recorded about that code, `touchedAt` the last of any kind (add, touch, state change, reopen). null on both means the ledger has never heard of it — never "long ago". A line reworded in Obsidian without its checkbox moving is not an event, so `touchedAt` is honestly "last worked on", not a file-modification time. THREE TIME ORDERINGS, three different questions: `sort: "closed"` answers what was FINISHED last, `sort: "opened"` what was WRITTEN DOWN last, `sort: "touched"` what was WORKED ON last — each newest first, with everything the ledger cannot date behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), parent? (a code = its direct children; "none" = items that belong to nothing), deep? (with parent: the WHOLE subtree including the named item — what "do P-4" means), sort? (file|closed|opened|touched, default file), limit?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const sum = parseBacklog(text);
@@ -7158,7 +7158,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the only one the document cannot answer on its own: a closing
                 // time lives in the track ledger. Hunting the last few finished
                 // items down two hundred lines is what it ends.
-                if (optStr(args, 'sort') === 'closed') { items = items.slice().sort(byClosedDesc(closedOf)); }
+                const timesOf = backlogTimes(folder);
+                const sortArg = optStr(args, 'sort');
+                if (sortArg === 'closed') { items = items.slice().sort(byTimeDesc(closedOf)); }
+                else if (sortArg === 'opened') { items = items.slice().sort(byTimeDesc(i => timesOf(i).openedAt)); }
+                else if (sortArg === 'touched') { items = items.slice().sort(byTimeDesc(i => timesOf(i).touchedAt)); }
                 const limit = typeof args.limit === 'number' ? Math.max(1, args.limit) : 200;
                 return {
                     project: project.name, file: relDoc(folder, file),
@@ -7174,6 +7178,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...backlogOut(i),
                         closedAt: closedOf(i),
                         closedOn: closedOf(i) ? localStamp(closedOf(i) as number) : null,
+                        // X-48 — when it first appeared and when anything last
+                        // happened to it. Both from the ledger; null = never
+                        // recorded, which is not "long ago".
+                        openedAt: timesOf(i).openedAt,
+                        touchedAt: timesOf(i).touchedAt,
                         // ‼️ X-36 — see backlogRounds. Round 1 carries nothing:
                         // it is the normal case, and stating it on every item of
                         // a two-hundred-line backlog is a column of noise.
@@ -15648,11 +15657,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
 
-    /** Newest closing first, with everything that has no closing time behind it
-     *  — in either direction, because "not closed" is not "closed long ago". */
-    const byClosedDesc = (closedOf: (i: BacklogItem) => number | null) =>
+    /**
+     * ‼️ X-48 — WHEN AN ITEM APPEARED, AND WHEN ANYTHING LAST HAPPENED TO IT.
+     *
+     * A backlog line carries no clock. What it was, when it was written and when
+     * it was last worked on are three different questions and the document
+     * answers none of them — the LEDGER does, because every add, touch, state
+     * change and reopen is stamped there to the second.
+     *
+     * `openedAt` is the first record of that code and `touchedAt` the last, of
+     * ANY kind. Both are null for a code the ledger has never heard of, and null
+     * means "nobody recorded it" — never "long ago"; every reader keeps those
+     * behind the dated ones rather than sorting them to one end.
+     *
+     * ‼️ WHAT `touchedAt` HONESTLY IS: the last thing RECORDED. Rewording a line
+     * in Obsidian without moving its checkbox is not an event and does not land
+     * here, so the axis answers "last worked on" and the hover says exactly that
+     * rather than promising a file-modification time nothing measures per item.
+     */
+    const backlogTimes = (folder: string): ((i: BacklogItem) => {
+        openedAt: number | null; touchedAt: number | null;
+    }) => {
+        const records = readTracks(folder);
+        const byCode = new Map<string, { openedAt: number; touchedAt: number }>();
+        for (const code of trackedCodes(records)) {
+            const sum = summarizeCode(code, records);
+            if (sum.firstTs || sum.lastTs) {
+                byCode.set(code, { openedAt: sum.firstTs || 0, touchedAt: sum.lastTs || sum.firstTs || 0 });
+            }
+        }
+        return (i: BacklogItem) => {
+            const t = i.code ? byCode.get(i.code) : undefined;
+            return { openedAt: t?.openedAt || null, touchedAt: t?.touchedAt || null };
+        };
+    };
+
+    /** Newest first on whichever time was asked for, with everything that has no
+     *  such time behind it — in either direction, because "never recorded" is not
+     *  "long ago". Shared by `closed`, `opened` and `touched` (X-48). */
+    const byTimeDesc = (timeOf: (i: BacklogItem) => number | null) =>
         (a: BacklogItem, b: BacklogItem): number => {
-            const ta = closedOf(a); const tb = closedOf(b);
+            const ta = timeOf(a); const tb = timeOf(b);
             if (ta && tb) { return tb - ta; }
             if (ta) { return -1; }
             if (tb) { return 1; }
@@ -16228,6 +16273,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // that looked exactly as it had a second earlier. "Nothing changed, as
         // if the door had never opened" was a true report of this surface.
         const rounds = backlogRounds(doc.folder);
+        // X-48 — and WHEN each row appeared and when anything last happened to
+        // it, so "newest first" and "most recently worked on" are orderings the
+        // page can offer without a second idea of where those times come from.
+        const timesOf = backlogTimes(doc.folder);
         return {
             ...doc,
             counts: {
@@ -16238,7 +16287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             items: sum.items.map(i => {
                 const r = rounds(i);
                 return {
-                    ...backlogOut(i), closedAt: closedOf(i),
+                    ...backlogOut(i), closedAt: closedOf(i), ...timesOf(i),
                     // Round 1 carries nothing: it is the normal case, and a
                     // badge on every row of a 200-line backlog is a column of
                     // noise that teaches the reader to stop seeing it.

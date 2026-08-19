@@ -2954,24 +2954,45 @@
      * in docs/CONVENTIONS.md — the changing half first, then the standing
      * explanation), and it is on each option in the open list as well.
      */
+    /**
+     * ‼️ X-48 — THE ORDER OF THE ORDERINGS IS ITSELF A DESIGN. The three that
+     * answer a question about TIME sit together under the user's own queue,
+     * because "what did I just finish / just write down / just work on" is the
+     * commonest thing asked of a two-hundred-line backlog after "what is next".
+     * The two that are pure lookup — alphabetical and code — are last, in that
+     * order: they are how you FIND a known item, not how you read the list.
+     */
     const BL_SORTS = [
         { v: 'file', t: 'queue order', full: 'Queue order (yours) — your own line order in the file' },
+        { v: 'closed', t: 'closed', full: 'Closed — last finished first' },
+        { v: 'opened', t: 'opened', full: 'Opened — last written down first' },
+        { v: 'touched', t: 'last touched', full: 'Last touched — last worked on first' },
         { v: 'family', t: 'family', full: 'Family — each parent followed by its parts' },
         { v: 'score', t: 'score', full: 'Score — priority ÷ effort' },
         { v: 'priority', t: 'priority', full: 'Priority — ⏫ first' },
         { v: 'effort', t: 'size', full: 'Size — the effort estimate, largest first' },
-        { v: 'code', t: 'code', full: 'Code — by area, then by number' },
         { v: 'state', t: 'state', full: 'State — open, doing, done, cancelled' },
         { v: 'type', t: 'work type', full: 'Work type — bug, feat, ux …' },
         { v: 'due', t: 'due date', full: 'Due date — 📅 soonest first' },
-        { v: 'closed', t: 'closed', full: 'Closed — last finished first' },
-        { v: 'text', t: 'alphabetical', full: 'Alphabetical — by the item\'s own words' }
+        { v: 'text', t: 'alphabetical', full: 'Alphabetical — by the item\'s own words' },
+        { v: 'code', t: 'code', full: 'Code — by area, then by number' }
     ];
+    /** The three orderings whose time comes from the track ledger, not the file.
+     *  Each keeps the items it cannot date at the BACK — see blTimeOf. */
+    const BL_TIME_SORTS = {
+        closed: { key: 'closedAt', word: 'closing' },
+        opened: { key: 'openedAt', word: 'opening' },
+        touched: { key: 'touchedAt', word: 'touch' }
+    };
     const BL_SORT_TIP = 'Queue order is your own — it is what "do the top five" follows, and the only '
         + 'one you can drag rows in. "Family" is the one view that NESTS: each parent followed by its '
         + 'parts, families in the order their heads are queued in — a way of looking, which changes '
-        + 'neither the queue nor the file. "Closed" answers what you finished last: newest closing at '
-        + 'the top, and anything still open at the bottom, where it belongs.';
+        + 'neither the queue nor the file. THREE OF THEM ANSWER A QUESTION ABOUT TIME, and they are '
+        + 'three different questions: "closed" is what you finished last, "opened" is what you wrote '
+        + 'down last, "last touched" is what you worked on last — anything recorded about it at all. '
+        + 'All three read the track ledger, so an item nobody has ever recorded sits at the bottom of '
+        + 'them rather than being called ancient; and rewording a line in Obsidian without moving its '
+        + 'checkbox is not something the ledger sees.';
     const blSortTip = () => {
         const now = BL_SORTS.find(s => s.v === blSort);
         return (now ? now.full + '\n\n' : '') + BL_SORT_TIP;
@@ -4108,6 +4129,34 @@
             ? day : `${day} ${String(d.getFullYear()).slice(2)}`;
     }
 
+    /**
+     * ‼️ X-48 — THE TIME THAT IS DECIDING THE ORDER, ON THE ROW.
+     *
+     * Drawn only while `opened` or `touched` IS the ordering: an order the
+     * reader cannot check is a list taken on trust, and a date mark on every row
+     * whatever the sort is a column of noise that teaches them to stop looking.
+     * The hover carries both figures whichever one is showing, because the pair
+     * is the interesting reading — written down in June and last worked on
+     * yesterday is a different item from one that was both this morning.
+     */
+    function blTimeMarkHtml(i) {
+        const spec = BL_TIME_SORTS[blSort];
+        if (!spec || blSort === 'closed') { return ''; }
+        const ts = i[spec.key];
+        if (!ts) { return ''; }
+        const when = t => t
+            ? new Date(t).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            })
+            : 'never recorded';
+        const tip = `Opened: ${when(i.openedAt)}\nLast touched: ${when(i.touchedAt)}\n\n`
+            + 'From the track ledger — every add, touch, state change and reopen is stamped there. '
+            + 'A line reworded in Obsidian without its checkbox moving is not an event, so this is '
+            + 'when it was last WORKED ON.';
+        return `<span class="pj-bl-m" title="${C.esc(tip)}">${blSort === 'opened' ? '🌱' : '✎'} `
+            + `${C.esc(blClosedShort(ts))}</span>`;
+    }
+
     /** The hover behind that mark: the full moment, and where it came from —
      *  the ledger knows the second, a ✅ the Tasks plugin wrote knows the day. */
     function blClosedTip(i) {
@@ -4205,12 +4254,20 @@
             for (const i of list) { walk(i); }
             return blDesc ? out.reverse() : out;
         }
-        if (blSort === 'closed') {
-            const timed = list.filter(i => i.closedAt);
-            const undated = list.filter(i => !i.closedAt && blClosedState(i));
-            const live = list.filter(i => !i.closedAt && !blClosedState(i));
-            timed.sort((a, b) => ((b.closedAt - a.closedAt) * dir) || (a.line - b.line));
-            return timed.concat(undated, live);
+        // ‼️ X-48 — the three ledger-timed orderings share one body. An item the
+        // ledger cannot date is kept BEHIND the dated ones in either direction:
+        // "never recorded" is not "recorded long ago", and flipping the arrow
+        // must not turn one into the other. On "closed" the undated half is
+        // itself split, because a closed item with no stamp and an item that is
+        // still open are two different kinds of "no closing time".
+        if (BL_TIME_SORTS[blSort]) {
+            const key = BL_TIME_SORTS[blSort].key;
+            const timed = list.filter(i => i[key]);
+            const rest = list.filter(i => !i[key]);
+            timed.sort((a, b) => ((b[key] - a[key]) * dir) || (a.line - b.line));
+            return blSort === 'closed'
+                ? timed.concat(rest.filter(blClosedState), rest.filter(i => !blClosedState(i)))
+                : timed.concat(rest);
         }
         const by = {
             score: (a, b) => (b.score - a.score),
@@ -4404,6 +4461,13 @@
                           this is rather than levelling them. */''}
                     ${closed && i.closedAt
                 ? `<span class="pj-bl-m closedat" title="${C.esc(blClosedTip(i))}">✅ ${C.esc(blClosedShort(i.closedAt))}</span>` : ''}
+                    ${/* ‼️ X-48 — AND THE SAME RULE FOR THE OTHER TWO TIMES, but
+                          only while they are the ordering. A list in an order
+                          you have to take on trust is the failure above; three
+                          date marks on every row of a two-hundred-line backlog
+                          is the opposite one. So the mark that is DECIDING the
+                          order is drawn, and the other two stay in the hover. */''}
+                    ${blTimeMarkHtml(i)}
                     ${blRoundHtml(i)}
                     ${blPartOfHtml(i, rel)}
                     ${blPartsHtml(i, rel)}
@@ -7046,6 +7110,24 @@
                     if (!have.includes('done') || !have.includes('cancelled')) {
                         blFilter.states = want.filter(s => have.includes(s) || s === 'done' || s === 'cancelled');
                         flash = { ok: 'Closed items brought into view — the state filter now includes done and cancelled.' };
+                    }
+                }
+                // ‼️ X-48 — AND THE WAY BACK IS THE SAME GESTURE, or the widening
+                // above is a one-way door. "Closed" opens the state axis so the
+                // answer is not empty; coming back to the user's OWN queue order
+                // with that axis still open leaves finished work sitting in the
+                // list that answers "what is next", which is the one thing that
+                // ordering exists for. So queue order restores the default —
+                // Active, the same subset the page opens on — and says so, for
+                // the same reason the widening does: a filter the reader cannot
+                // see change is one they cannot undo.
+                if (blSort === 'file') {
+                    const want = BL_STATE_PRESETS[0].values;
+                    const have = blFilter.states;
+                    const already = !!have && have.length === want.length && want.every(s => have.includes(s));
+                    if (!already) {
+                        blFilter.states = want.slice();
+                        flash = { ok: 'Back to your queue order — the state filter is back to Active (open and doing).' };
                     }
                 }
                 render();

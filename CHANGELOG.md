@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.174.0 — X-48: two more orderings for the backlog, and the widening has a way back (2026-08-19)
+
+**A backlog line carries no clock.** What it says, when it was written down and when it was last worked on are three different questions and the document answers none of them — the **track ledger** does, because every add, touch, state change and reopen is stamped there to the second. So the page can now order by:
+
+- **opened** — what was written down last. The first thing the ledger ever recorded about that code.
+- **last touched** — what was worked on last. The most recent record of any kind.
+
+They are deliberately two orderings and not one: an item written down in June and worked on yesterday sits at opposite ends of them, and that is the fact worth seeing. Both obey the rule `closed` already obeys — an item the ledger cannot date stays **behind** the dated ones in either direction, because "never recorded" is not "recorded long ago". The **date deciding the order is drawn on the row** (🌱 opened · ✎ touched) and nowhere else: an order nobody can check is a list taken on trust, and three date marks on every row of a two-hundred-line backlog is the opposite mistake. The hover carries both figures whichever is showing.
+
+**‼️ `touched` is honestly "last worked on".** Rewording a line in Obsidian without moving its checkbox is not an event the ledger sees, and the hover says so rather than promising a per-item file-modification time nothing measures.
+
+**The ordering box was also reordered.** The three that answer a question about TIME now sit together under the user's own queue order — that is what a long backlog is asked after "what is next" — and the two that are pure lookup, **alphabetical** then **code**, are last.
+
+**And the widening that "closed" does now has a way back.** Choosing `closed` opens the state axis so the answer is not an empty list; returning to queue order with it still open leaves finished work sitting in the list that answers "what is next", which is the one thing that ordering is for. Queue order restores **Active** (open + doing) and says so on the page — a filter the reader cannot see change is one they cannot undo.
+
+On the bridge, `projects.backlog` takes `sort: file|closed|opened|touched` and every item carries `openedAt` / `touchedAt`.
+
 ## 3.173.0 — S-40: the Turns page is the whole farm, not the two engines that happened to build turns (2026-08-19)
 
 **The page said "every user turn across the farm" and listed two engines.** Not because it filtered the others out — because they were never in the data. `buildTurnRows` maps over `SessionInfo.turns`, and three of the five adaptors left that array empty, which does not produce a thin row: it produces **no row**. And the engine picker's options are derived from the rows present, so the missing engines were missing from the filter for exactly the same reason. Measured on this machine after the fix: **48 Antigravity conversations, 15 hosted Antigravity sessions and 122 OpenCode conversations** now unroll into turns that were on disk the whole time.
