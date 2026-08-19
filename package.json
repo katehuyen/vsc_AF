@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.168.0",
+  "version": "3.169.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1529,17 +1529,17 @@
       },
       {
         "command": "agentfarm.ctx.backlogEdit",
-        "title": "Edit the words…",
+        "title": "Edit the words\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.backlogFile",
-        "title": "File it under an area…",
+        "title": "File it under an area\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.backlogQueue",
-        "title": "Put it in the work queue…",
+        "title": "Put it in the work queue\u2026",
         "category": "Agent Farm"
       },
       {
@@ -1574,12 +1574,12 @@
       },
       {
         "command": "agentfarm.ctx.blStateOpen",
-        "title": "Open — not started",
+        "title": "Open \u2014 not started",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blStateDoing",
-        "title": "Started ▶",
+        "title": "Started \u25b6",
         "category": "Agent Farm"
       },
       {
@@ -1594,32 +1594,32 @@
       },
       {
         "command": "agentfarm.ctx.blPrioHighest",
-        "title": "🔺 highest",
+        "title": "\ud83d\udd3a highest",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blPrioHigh",
-        "title": "⏫ high",
+        "title": "\u23eb high",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blPrioMedium",
-        "title": "🔼 medium",
+        "title": "\ud83d\udd3c medium",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blPrioNormal",
-        "title": "normal — no icon on the line",
+        "title": "normal \u2014 no icon on the line",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blPrioLow",
-        "title": "🔽 low",
+        "title": "\ud83d\udd3d low",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blPrioLowest",
-        "title": "⏬ lowest",
+        "title": "\u23ec lowest",
         "category": "Agent Farm"
       },
       {
@@ -1629,72 +1629,72 @@
       },
       {
         "command": "agentfarm.ctx.blEffortXS",
-        "title": "XS — five minutes",
+        "title": "XS \u2014 five minutes",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blEffortS",
-        "title": "S — half an hour",
+        "title": "S \u2014 half an hour",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blEffortM",
-        "title": "M — half a day",
+        "title": "M \u2014 half a day",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blEffortL",
-        "title": "L — a day",
+        "title": "L \u2014 a day",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blEffortXL",
-        "title": "XL — split it before anybody starts",
+        "title": "XL \u2014 split it before anybody starts",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeNone",
-        "title": "no type — your own tags stay",
+        "title": "no type \u2014 your own tags stay",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeBug",
-        "title": "#bug — bug fix",
+        "title": "#bug \u2014 bug fix",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeResearch",
-        "title": "#research — research / measure",
+        "title": "#research \u2014 research / measure",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeFeat",
-        "title": "#feat — development",
+        "title": "#feat \u2014 development",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeUx",
-        "title": "#ux — UI / UX",
+        "title": "#ux \u2014 UI / UX",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeChore",
-        "title": "#chore — chore",
+        "title": "#chore \u2014 chore",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeDebt",
-        "title": "#debt — tech debt",
+        "title": "#debt \u2014 tech debt",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeDoc",
-        "title": "#doc — docs",
+        "title": "#doc \u2014 docs",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.blTypeIdea",
-        "title": "#idea — idea",
+        "title": "#idea \u2014 idea",
         "category": "Agent Farm"
       },
       {
@@ -1729,7 +1729,7 @@
       },
       {
         "command": "agentfarm.ctx.blCopyCode",
-        "title": "The code — quote it at an agent",
+        "title": "The code \u2014 quote it at an agent",
         "category": "Agent Farm"
       },
       {
@@ -1743,28 +1743,23 @@
         "category": "Agent Farm"
       },
       {
-        "command": "agentfarm.ctx.trackOpen",
-        "title": "Open the backlog at this item",
-        "category": "Agent Farm"
-      },
-      {
         "command": "agentfarm.ctx.trackOnly",
         "title": "Show only this item's history",
         "category": "Agent Farm"
       },
       {
-        "command": "agentfarm.ctx.trackBacklog",
-        "title": "Show it in the Backlog tab",
+        "command": "agentfarm.ctx.trackOpen",
+        "title": "Open the backlog document at this item's line",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.trackRecord",
-        "title": "Record an event against it…",
+        "title": "Record an event against it\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.trackFillOne",
-        "title": "Reconstruct its history…",
+        "title": "Reconstruct its history\u2026",
         "category": "Agent Farm"
       },
       {
@@ -1774,7 +1769,7 @@
       },
       {
         "command": "agentfarm.ctx.trkCopyStamp",
-        "title": "Where it was closed — session#turn",
+        "title": "Where it was closed \u2014 session#turn",
         "category": "Agent Farm"
       },
       {
@@ -1789,12 +1784,12 @@
       },
       {
         "command": "agentfarm.ctx.planTick",
-        "title": "Tick it — mark it done",
+        "title": "Tick it \u2014 mark it done",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.planUntick",
-        "title": "Untick it — put it back to open",
+        "title": "Untick it \u2014 put it back to open",
         "category": "Agent Farm"
       },
       {
@@ -1829,7 +1824,7 @@
       },
       {
         "command": "agentfarm.ctx.planCopyId",
-        "title": "Copy its 🆔 id",
+        "title": "Copy its \ud83c\udd94 id",
         "category": "Agent Farm"
       },
       {
@@ -1894,12 +1889,12 @@
       },
       {
         "command": "agentfarm.ctx.projInactive",
-        "title": "It is the active project — clear that",
+        "title": "It is the active project \u2014 clear that",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.projSettings",
-        "title": "Edit it…",
+        "title": "Edit it\u2026",
         "category": "Agent Farm"
       },
       {
@@ -1914,7 +1909,7 @@
       },
       {
         "command": "agentfarm.ctx.projCopyId",
-        "title": "Its id — what an agent quotes",
+        "title": "Its id \u2014 what an agent quotes",
         "category": "Agent Farm"
       },
       {
@@ -1969,12 +1964,12 @@
       },
       {
         "command": "agentfarm.ctx.planEdit",
-        "title": "Edit it…",
+        "title": "Edit it\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.planExport",
-        "title": "Export as a Windows Scheduled Task…",
+        "title": "Export as a Windows Scheduled Task\u2026",
         "category": "Agent Farm"
       },
       {
@@ -1999,17 +1994,17 @@
       },
       {
         "command": "agentfarm.ctx.plCopyId",
-        "title": "Its id — what an agent quotes",
+        "title": "Its id \u2014 what an agent quotes",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.planDelete",
-        "title": "Delete it…",
+        "title": "Delete it\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.wfStepEdit",
-        "title": "Edit this step…",
+        "title": "Edit this step\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2029,7 +2024,7 @@
       },
       {
         "command": "agentfarm.ctx.wfStepDelete",
-        "title": "Delete this step…",
+        "title": "Delete this step\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2074,12 +2069,12 @@
       },
       {
         "command": "agentfarm.ctx.runRetryEdit",
-        "title": "Run it again, with changes…",
+        "title": "Run it again, with changes\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.runClone",
-        "title": "New task like this one…",
+        "title": "New task like this one\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2104,7 +2099,7 @@
       },
       {
         "command": "agentfarm.ctx.runTemplate",
-        "title": "Save the prompt as a template…",
+        "title": "Save the prompt as a template\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2164,7 +2159,7 @@
       },
       {
         "command": "agentfarm.ctx.msnAnswer",
-        "title": "Answer its question…",
+        "title": "Answer its question\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2174,7 +2169,7 @@
       },
       {
         "command": "agentfarm.ctx.msnUnpause",
-        "title": "Withdraw the pause — keep it running",
+        "title": "Withdraw the pause \u2014 keep it running",
         "category": "Agent Farm"
       },
       {
@@ -2184,7 +2179,7 @@
       },
       {
         "command": "agentfarm.ctx.msnRerun",
-        "title": "Run this mission again…",
+        "title": "Run this mission again\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2199,7 +2194,7 @@
       },
       {
         "command": "agentfarm.ctx.msCopyLedger",
-        "title": "The ledger — one line per round",
+        "title": "The ledger \u2014 one line per round",
         "category": "Agent Farm"
       },
       {
@@ -2209,12 +2204,12 @@
       },
       {
         "command": "agentfarm.ctx.msnCancel",
-        "title": "Cancel the mission…",
+        "title": "Cancel the mission\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.msnDelete",
-        "title": "Delete this run from the history…",
+        "title": "Delete this run from the history\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2264,7 +2259,7 @@
       },
       {
         "command": "agentfarm.ctx.msRoundCopy",
-        "title": "Copy the round — the planner's thought and its steps",
+        "title": "Copy the round \u2014 the planner's thought and its steps",
         "category": "Agent Farm"
       },
       {
@@ -2274,7 +2269,7 @@
       },
       {
         "command": "agentfarm.ctx.msTeamTalk",
-        "title": "Talk to it in the Console…",
+        "title": "Talk to it in the Console\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2329,27 +2324,27 @@
       },
       {
         "command": "agentfarm.ctx.ntStars1",
-        "title": "★",
+        "title": "\u2605",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.ntStars2",
-        "title": "★★",
+        "title": "\u2605\u2605",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.ntStars3",
-        "title": "★★★",
+        "title": "\u2605\u2605\u2605",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.ntEdit",
-        "title": "Edit it…",
+        "title": "Edit it\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.ntAnswer",
-        "title": "Answer it…",
+        "title": "Answer it\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2364,7 +2359,7 @@
       },
       {
         "command": "agentfarm.ctx.ntQueue",
-        "title": "Add it to the work queue…",
+        "title": "Add it to the work queue\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2399,7 +2394,7 @@
       },
       {
         "command": "agentfarm.ctx.ntCopyId",
-        "title": "Its id — what an agent quotes",
+        "title": "Its id \u2014 what an agent quotes",
         "category": "Agent Farm"
       },
       {
@@ -2439,12 +2434,12 @@
       },
       {
         "command": "agentfarm.ctx.qAnswer",
-        "title": "Answer it — it is waiting on you…",
+        "title": "Answer it \u2014 it is waiting on you\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.qEdit",
-        "title": "Edit it…",
+        "title": "Edit it\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2454,12 +2449,12 @@
       },
       {
         "command": "agentfarm.ctx.qUrgSoon",
-        "title": "🔼 soon",
+        "title": "\ud83d\udd3c soon",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.qUrgUrgent",
-        "title": "⏫ urgent",
+        "title": "\u23eb urgent",
         "category": "Agent Farm"
       },
       {
@@ -2479,7 +2474,7 @@
       },
       {
         "command": "agentfarm.ctx.qDrop",
-        "title": "Drop it — void this capture",
+        "title": "Drop it \u2014 void this capture",
         "category": "Agent Farm"
       },
       {
@@ -2509,7 +2504,7 @@
       },
       {
         "command": "agentfarm.ctx.ndClear",
-        "title": "Clear this row — it comes back if it happens again",
+        "title": "Clear this row \u2014 it comes back if it happens again",
         "category": "Agent Farm"
       },
       {
@@ -2554,12 +2549,12 @@
       },
       {
         "command": "agentfarm.ctx.tbMcpEdit",
-        "title": "Edit its definition…",
+        "title": "Edit its definition\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.tbPlugOn",
-        "title": "Enable it — for every new claude session",
+        "title": "Enable it \u2014 for every new claude session",
         "category": "Agent Farm"
       },
       {
@@ -2569,12 +2564,12 @@
       },
       {
         "command": "agentfarm.ctx.tbCopyAgent",
-        "title": "Copy it to another agent…",
+        "title": "Copy it to another agent\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.tbScope",
-        "title": "Move it between user and agent scope…",
+        "title": "Move it between user and agent scope\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2589,12 +2584,12 @@
       },
       {
         "command": "agentfarm.ctx.tbCopyInvoke",
-        "title": "How you invoke it — /name",
+        "title": "How you invoke it \u2014 /name",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.tbRemove",
-        "title": "Remove it — a backup is kept beside it",
+        "title": "Remove it \u2014 a backup is kept beside it",
         "category": "Agent Farm"
       },
       {
@@ -2609,7 +2604,7 @@
       },
       {
         "command": "agentfarm.ctx.capCopy",
-        "title": "Copy it to this agent…",
+        "title": "Copy it to this agent\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2659,7 +2654,7 @@
       },
       {
         "command": "agentfarm.ctx.rtAdd",
-        "title": "Add another root…",
+        "title": "Add another root\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2674,17 +2669,17 @@
       },
       {
         "command": "agentfarm.ctx.scValue",
-        "title": "Replace its value…",
+        "title": "Replace its value\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.scDesc",
-        "title": "Edit its description…",
+        "title": "Edit its description\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.scScope",
-        "title": "Choose which agents may use it…",
+        "title": "Choose which agents may use it\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2694,12 +2689,12 @@
       },
       {
         "command": "agentfarm.ctx.scCopyRef",
-        "title": "Copy how a prompt refers to it — {secret:NAME}",
+        "title": "Copy how a prompt refers to it \u2014 {secret:NAME}",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.scDelete",
-        "title": "Delete it from the keychain…",
+        "title": "Delete it from the keychain\u2026",
         "category": "Agent Farm"
       },
       {
@@ -2729,7 +2724,7 @@
       },
       {
         "command": "agentfarm.ctx.tnCopyWhere",
-        "title": "Where it is — session id and turn number",
+        "title": "Where it is \u2014 session id and turn number",
         "category": "Agent Farm"
       },
       {
@@ -2889,7 +2884,7 @@
       },
       {
         "command": "agentfarm.ctx.cqDrop",
-        "title": "Drop it — it is never said",
+        "title": "Drop it \u2014 it is never said",
         "category": "Agent Farm"
       },
       {
@@ -2904,7 +2899,7 @@
       },
       {
         "command": "agentfarm.ctx.caSkip",
-        "title": "Skip the question — the turn carries on",
+        "title": "Skip the question \u2014 the turn carries on",
         "category": "Agent Farm"
       },
       {
@@ -2934,7 +2929,7 @@
       },
       {
         "command": "agentfarm.ctx.insGuide",
-        "title": "What is this? — the guide entry",
+        "title": "What is this? \u2014 the guide entry",
         "category": "Agent Farm"
       },
       {
@@ -2964,12 +2959,12 @@
       },
       {
         "command": "agentfarm.ctx.memCopyTo",
-        "title": "Copy it to another agent…",
+        "title": "Copy it to another agent\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.memDistil",
-        "title": "Distil it — shorter, with a diff first",
+        "title": "Distil it \u2014 shorter, with a diff first",
         "category": "Agent Farm"
       },
       {
@@ -2979,7 +2974,7 @@
       },
       {
         "command": "agentfarm.ctx.evCopyInput",
-        "title": "Copy its input — the prompt that is replayed",
+        "title": "Copy its input \u2014 the prompt that is replayed",
         "category": "Agent Farm"
       },
       {
@@ -2999,12 +2994,12 @@
       },
       {
         "command": "agentfarm.ctx.dutyEdit",
-        "title": "Edit it — title, cadence, watch, what to do",
+        "title": "Edit it \u2014 title, cadence, watch, what to do",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.dutyTo",
-        "title": "Copy it to another agent…",
+        "title": "Copy it to another agent\u2026",
         "category": "Agent Farm"
       },
       {
@@ -3019,7 +3014,7 @@
       },
       {
         "command": "agentfarm.ctx.dutyCopy",
-        "title": "Copy the duty — watch, and what to do",
+        "title": "Copy the duty \u2014 watch, and what to do",
         "category": "Agent Farm"
       },
       {
@@ -3049,7 +3044,7 @@
       },
       {
         "command": "agentfarm.ctx.scStatusApproved",
-        "title": "approved — goes into the export",
+        "title": "approved \u2014 goes into the export",
         "category": "Agent Farm"
       },
       {
@@ -3069,12 +3064,12 @@
       },
       {
         "command": "agentfarm.ctx.asVary",
-        "title": "Make a variation…",
+        "title": "Make a variation\u2026",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.ctx.asFeedback",
-        "title": "Say what was wrong, and make it again…",
+        "title": "Say what was wrong, and make it again\u2026",
         "category": "Agent Farm"
       },
       {
@@ -3089,7 +3084,7 @@
       },
       {
         "command": "agentfarm.ctx.asAssign",
-        "title": "Assign it to a scene…",
+        "title": "Assign it to a scene\u2026",
         "category": "Agent Farm"
       },
       {
@@ -4470,17 +4465,12 @@
           "group": "3_move@3"
         },
         {
-          "command": "agentfarm.ctx.trackOpen",
-          "when": "webviewSection == 'afTrackRow'",
-          "group": "1_open@1"
-        },
-        {
           "command": "agentfarm.ctx.trackOnly",
           "when": "webviewSection == 'afTrackRow'",
           "group": "1_open@2"
         },
         {
-          "command": "agentfarm.ctx.trackBacklog",
+          "command": "agentfarm.ctx.trackOpen",
           "when": "webviewSection == 'afTrackRow'",
           "group": "4_link@1"
         },
@@ -6201,17 +6191,12 @@
           "group": "ctx"
         },
         {
-          "command": "agentfarm.ctx.trackOpen",
-          "when": "false",
-          "group": "ctx"
-        },
-        {
           "command": "agentfarm.ctx.trackOnly",
           "when": "false",
           "group": "ctx"
         },
         {
-          "command": "agentfarm.ctx.trackBacklog",
+          "command": "agentfarm.ctx.trackOpen",
           "when": "false",
           "group": "ctx"
         },

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.169.0 — U-71: pressing a backlog code on the Track tab stays in the extension (2026-08-19)
+
+**The cheap answer was behind a right-click and the expensive one was the default.** Pressing a code on Track left for Obsidian; "Show it in the Backlog tab" — the same item, on the next tab of the page already open, where it can be edited, moved and closed — was a menu entry most readers never saw. The two have swapped:
+
+| | before | now |
+|---|---|---|
+| left click on the code | opens the document | **shows it on the Backlog tab**, narrowed to that code |
+| ↗ beside the code | opens the document | unchanged |
+| right-click | *Open the backlog at this item* · *Show it in the Backlog tab* | *Open the backlog document at this item's line*, in the slot the other line held |
+
+The narrowing is written into the Backlog's own **search box** rather than a hidden focus variable, so the reader can see why they are being shown one item and can clear it in one press; `states` is cleared with it, because an item whose whole history somebody was just reading is very often closed, and landing them on an empty list would be the worst possible answer. The small code chips in **No history at all** behave the same way — a code is a code on every view of this page.
+
 ## 3.168.0 — X-52: OpenCode's model box stops waiting for somebody to open a session (2026-08-19)
 
 **Choosing OpenCode offered `haiku / sonnet / opus / fable` — four names its CLI can only reject.** The same shape of bug U-31 fixed on Antigravity, arrived at from the opposite direction: OpenCode's catalogue is genuinely free, because `session/new` answers with every model this machine can reach AND their display names. That made the handshake the cheapest source, so it was made the ONLY source — and every surface that draws a model box *without* opening a session was left on the alias fallback for ever. Writing tomorrow's task, saving a preset, looking at Settings: none of them start a conversation, and "start a session first" is not an answer a picker can give.

@@ -399,18 +399,17 @@ export const CTX_ITEMS: CtxItem[] = [
 
     // ---- a track row: an item's HISTORY --------------------------------
     // ‼️ Every entry here either opens something or narrows the view. Nothing
-    // edits the item — that is the Backlog tab's job, and "Show it in the
-    // Backlog" is the one line that carries a reader there.
-    {
-        id: 'trackOpen', title: 'Open the backlog at this item', act: 'trkGo',
-        when: TRACK_ROW, group: '1_open@1'
-    },
+    // edits the item — that is the Backlog tab's job, and since U-71 the CODE
+    // ITSELF carries a reader there on an ordinary left click, so the menu no
+    // longer needs a line for it. What the menu keeps is the expensive door the
+    // click gave up: leaving for the document, in the slot that line used to
+    // hold, because a link OUT of the extension belongs with the other links.
     {
         id: 'trackOnly', title: 'Show only this item\'s history', act: 'trkOnly',
         when: TRACK_ROW, group: '1_open@2'
     },
     {
-        id: 'trackBacklog', title: 'Show it in the Backlog tab', act: 'trkBacklog',
+        id: 'trackOpen', title: 'Open the backlog document at this item\'s line', act: 'trkGo',
         when: TRACK_ROW, group: '4_link@1'
     },
     {

@@ -5561,6 +5561,32 @@
     }
 
     /**
+     * ‼️ U-71 — PRESSING A CODE STAYS IN THE EXTENSION.
+     *
+     * It used to leave for Obsidian, and going to another program is the most
+     * expensive answer a click can give: the reader wanted the ITEM, and the
+     * item is on the next tab of the page they are already looking at, where it
+     * can also be edited, moved and closed. Leaving is still one press away —
+     * the ↗ beside the code, and the right-click menu — but it is the exception
+     * now rather than the default.
+     *
+     * The narrowing is written into the Backlog's own SEARCH box rather than
+     * into a hidden focus variable, so the reader can see why they are being
+     * shown one item and can clear it. `states = null` is deliberate: an item
+     * that is closed or cancelled must still be findable this way, or a code
+     * whose whole history the reader was just reading would land on an empty
+     * list.
+     */
+    function trkShowInBacklog(code) {
+        blFilter = blFilterDefaults();
+        blFilter.states = null;
+        blFilter.q = code || '';
+        tab = 'backlog';
+        syncView();
+        render();
+    }
+
+    /**
      * ‼️ A SESSION ID IS A DOOR (A-5), AND ONE DOOR ON EVERY VIEW.
      *
      * It sat on two views as a piece of text with the whole session described in
@@ -5617,8 +5643,8 @@
             data-line="${row.line || 0}" ${trkCtx(row)}>
             <div class="pj-trk-head">
                 ${trkCodeHtml(row, {
-            attrs: `data-trkgo="${C.esc(row.code)}"`,
-            hint: `Opens the backlog at line ${row.line || '?'}`
+            attrs: `data-trkbl="${C.esc(row.code)}"`,
+            hint: 'Shows it in the Backlog tab, where it can be edited — ↗ opens the document itself'
         })}
                 <span class="pj-trk-state s-${C.esc(state)}"
                     title="${C.esc(window.AFTip.lines([
@@ -5665,7 +5691,7 @@
             'tip-block') : ''}
                 ${trkStampHtml(row)}
                 <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
-                    title="Open the backlog at this item's line">↗</button>
+                    title="Open the backlog DOCUMENT at this item's line — the code itself shows it on the Backlog tab">↗</button>
                 <button class="pj-bl-act" data-trkcopy="${C.esc(row.code)}"
                     title="Copy the code">⧉</button>
                 <button class="pj-bl-act" data-trkrec="${C.esc(row.code)}"
@@ -6090,10 +6116,10 @@
                 <div class="pj-card-h">No history at all — <span class="gp-n">${untracked.length}</span></div>
                 ${untracked.length
                 ? `<div class="pj-trk-codes">${untracked.map(u => window.AFTip.wrap(
-                    `<button class="pj-trk-scode c-gap" data-trkgo="${C.esc(u.code)}"${u.text ? '' : ` title="${C.esc(`${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''} · nothing recorded`)}"`}>${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
+                    `<button class="pj-trk-scode c-gap" data-trkbl="${C.esc(u.code)}"${u.text ? '' : ` title="${C.esc(`${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''} · nothing recorded`)}"`}>${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
                     window.AFTip.lines([
                         `${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''}`,
-                        'Nothing recorded against it · press to open the backlog at its line',
+                        'Nothing recorded against it · press to show it in the Backlog tab',
                         u.text ? window.AFTip.sizeNote(u.text) : ''
                     ]), u.text || '', 'tip-block')).join('')}</div>
                     <div class="pj-row">
@@ -6462,9 +6488,14 @@
                 if (trkOpen.has(code)) { trkOpen.delete(code); } else { trkOpen.add(code); }
                 render();
             }));
-        // The code is the link to the backlog LINE. The host re-resolves it from
-        // the code against the file as it is now — this page can have been open
-        // for an hour with Obsidian editing underneath it.
+        // ‼️ U-71 — THE CODE ITSELF STAYS HERE, THE ↗ BESIDE IT LEAVES.
+        // Pressing a code shows the item on the Backlog tab, which is the tab
+        // that can edit it; the arrow is the door out to the document, and the
+        // host re-resolves the LINE from the code against the file as it is now
+        // — this page can have been open for an hour with Obsidian editing
+        // underneath it.
+        document.querySelectorAll('[data-trkbl]').forEach(el =>
+            el.addEventListener('click', () => trkShowInBacklog(el.dataset.trkbl)));
         document.querySelectorAll('[data-trkgo]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({
                 type: 'backlogOpenItem', id: trkId(), code: el.dataset.trkgo
@@ -7816,17 +7847,6 @@
             // to the host in a shape a button does not already use.
             case 'trkGo':
                 vscode.postMessage({ type: 'backlogOpenItem', id: id(), code: ctx.code || '' });
-                return;
-            case 'trkBacklog':
-                // The item, in the tab that can EDIT it. Track deliberately
-                // cannot: two tabs doing the same write differently is the defect
-                // the projects system already paid for once.
-                blFilter = blFilterDefaults();
-                blFilter.states = null;
-                blFilter.q = ctx.code || '';
-                tab = 'backlog';
-                syncView();
-                render();
                 return;
             case 'trkOnly':
                 trkFilter.q = ctx.code || '';

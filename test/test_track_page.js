@@ -278,9 +278,27 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     const go = els(r, 'trkgo')[0];
     go.click();
     const m = r.last();
-    ok('the code opens the backlog at that item', m && m.type === 'backlogOpenItem');
+    ok('the ↗ opens the backlog document at that item', m && m.type === 'backlogOpenItem');
     ok('‼️ it is addressed by code — a line number goes stale the moment Obsidian inserts a paragraph',
         m && m.code === 'U-9' && m.line === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// U-71: pressing the CODE stays in the extension
+// ---------------------------------------------------------------------------
+{
+    const r = run();
+    const code = els(r, 'trkbl')[0];
+    ok('the code is its own control, and it is not the ↗', !!code && !('trkgo' in code.dataset));
+    ok('the door out is still there, one press away', els(r, 'trkgo').length > 0);
+    const beforeMsgs = r.posted.length;
+    code.click();
+    ok('‼️ pressing a code shows it on the Backlog tab rather than leaving for Obsidian',
+        r.html().includes('class="pj-tab tb-backlog on" data-tab="backlog"'));
+    ok('…and what it asks the host for is that tab\'s data, not a document',
+        r.posted.slice(beforeMsgs).some(m => m.type === 'view' && m.tab === 'backlog'));
+    ok('‼️ nothing leaves for Obsidian — going to another program was the expensive answer',
+        r.posted.slice(beforeMsgs).every(m => m.type !== 'backlogOpenItem'));
 }
 
 // ---------------------------------------------------------------------------
@@ -375,8 +393,8 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
         || h.includes('data-trkdoubt="guess"'));
     ok('reconstructed rows are counted separately from observed ones',
         /Reconstructed rather than watched/.test(h));
-    ok('an untracked code still opens the backlog at its line',
-        h.includes('data-trkgo="K-3"'));
+    ok('an untracked code is a code like any other — it shows itself on the Backlog tab',
+        h.includes('data-trkbl="K-3"'));
 }
 
 // ---------------------------------------------------------------------------
@@ -496,9 +514,6 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     r.send({ type: 'afctx', act: 'trkGo', ctx: { code: 'P-2' } });
     ok('"open the backlog at this item" sends the same message the code does',
         r.last().type === 'backlogOpenItem' && r.last().code === 'P-2');
-    r.send({ type: 'afctx', act: 'trkBacklog', ctx: { code: 'P-2' } });
-    ok('"show it in the Backlog" leaves for the tab that can edit it',
-        r.html().includes('class="pj-tab tb-backlog on" data-tab="backlog"'));
 }
 
 // ---------------------------------------------------------------------------
