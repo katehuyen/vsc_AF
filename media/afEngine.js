@@ -15,7 +15,9 @@
 //
 // So: every engine has a badge, every engine has ONE fixed colour, and both
 // come from here. The palette is VS Code's own chart variables, so it survives
-// a theme change and stays legible in light and dark (docs/CONVENTIONS.md).
+// a theme change and stays legible in light and dark (docs/CONVENTIONS.md) —
+// except where the user picked a hue by hand, which is written as a literal and
+// named in `test_engine_mark.js` so a second one cannot arrive quietly.
 (function () {
     'use strict';
 

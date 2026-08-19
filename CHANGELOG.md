@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.172.0 — U-72: the OpenCode badge is the blue the user chose (2026-08-19)
+
+**A hue picked by hand is written down as itself.** OpenCode's engine badge is now `rgb(60, 135, 255)` — a literal, not a `--vscode-charts-*` variable, because the point of a value somebody chose is that a theme cannot move it. Every other engine still reads its hue from VS Code's own chart palette.
+
+The palette test required that *every* engine resolve a VS Code variable, which is a real rule and would have refused this. It now names the exception: the ids allowed to hold a literal are listed, and each is checked against the exact value that was picked — so a sixth engine cannot arrive with a colour of its own without somebody saying whose decision that was.
+
 ## 3.171.0 — U-69: the Turns table is a table again, and Turns is reached from Sessions (2026-08-19)
 
 **Turns leaves the global toolbar for the place it is actually about.** It is the same subject as Sessions one level down — a session unrolled into the turns it is made of — so it is reached from beside **⤢ Open Sessions page**, as **⤢ Open Turns page**, where somebody is already looking at sessions.
