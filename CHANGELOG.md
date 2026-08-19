@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.171.0 — U-69: the Turns table is a table again, and Turns is reached from Sessions (2026-08-19)
+
+**Turns leaves the global toolbar for the place it is actually about.** It is the same subject as Sessions one level down — a session unrolled into the turns it is made of — so it is reached from beside **⤢ Open Sessions page**, as **⤢ Open Turns page**, where somebody is already looking at sessions.
+
+**And the table itself was doing the one thing this codebase's own conventions forbid.**
+
+| | before | now |
+|---|---|---|
+| widths | `table-layout: auto` — every boundary a function of whichever rows happened to be listed | declared shares + a `<colgroup>`, so the table is the same table after every filter |
+| Steps | the widest numeric column, holding whitespace | 6.6% — `31api·84steps` is already the short form |
+| Tokens | narrower than its own value, so `412.9k ⚖ 168.3k` wrapped and the row grew a line | 8.2%, and it fits |
+| rows | as tall as the worst wrap | one line, cut at the column's own edge |
+| a cell's hover | the SAME twenty-line readout of the whole turn, pasted onto twelve cells | that cell's own value in full on the first line, then the figures it implies |
+| a heading's hover | a paragraph in a native `title`, cut wherever the platform liked | an `AFTip`: the column's full name, then its definition |
+
+**‼️ The first line of a cell's panel is that cell, spelled out.** That is what makes cutting safe: a number the column could not finish is one hover from being read in full, and it is drawn at reading size rather than as a faded caption. Under it, after a rule, are the figures that value already implies — Steps now says its API calls, its steps per call and the share of them that was **reasoning**, which is the dearest step there is and was nowhere on this page.
+
+The two columns that hold WORDS keep the shape text needs: the caption names the column and the body opens with the whole prompt, then the figures. And the row lost its own `title` — with every cell opening a panel, a native tooltip underneath was a second hover on top of the first; the hint lives once in the caption, exactly as the sessions table already keeps it.
+
+Two things this cost, both now guarded: a cell that clips its own overflow clips the hover panel inside it (the cut moved to an inner block), and a backtick inside a CSS template literal is a syntax error no text-reading test can see (`test_turns.js` now parses the page).
+
 ## 3.170.0 — U-68: the row that is on every page finally says what it opens (2026-08-19)
 
 **A dozen destinations, most of them one word, and not one of them said where it went.** The global toolbar was the one control shared by every page and the one control with no hovers at all — and it had also run out of width, so it wrapped onto a second line and moved under the pointer. Both halves are the same fix.

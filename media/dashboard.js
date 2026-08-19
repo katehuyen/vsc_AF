@@ -769,11 +769,6 @@
                 // whole farm rather than any single agent.
                 related: [
                     {
-                        nav: 'turns', label: 'Turns',
-                        title: 'Every user turn across the farm, with its sessions unrolled — what each one '
-                            + 'consumed in tokens, cost, tools and errors, and how long it ran.'
-                    },
-                    {
                         action: 'syncConstitution', label: '⚖ Sync Cons.', name: 'Sync Constitution',
                         title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
                     }
@@ -805,6 +800,14 @@
                 <h2>Sessions</h2>
                 <button class="secondary" id="opensessions"
                     title="Open Sessions — the same table on a page of its own: 200 rows by default instead of this corner's ${DATA.sessionTableN || 20}, every column, and the same filters, sorting and right-click menu.">⤢ Open Sessions page</button>
+                ${/* ‼️ U-69 — TURNS BELONGS BESIDE SESSIONS, NOT IN THE GLOBAL ROW.
+                      It is the same subject one level down — a session unrolled
+                      into the turns it is made of — so it is reached from where
+                      somebody is already looking at sessions, and the toolbar
+                      above keeps a place for a destination that is not about
+                      any one section of this page. */''}
+                <button class="secondary" id="openturns"
+                    title="Open Turns — the same sessions unrolled one level down: one row per user turn, with what each one consumed in tokens, cost, tools and errors.">⤢ Open Turns page</button>
             </div>
             <div id="sessblock"></div>
             ${unknown}
@@ -816,6 +819,8 @@
         {
             const os = document.getElementById('opensessions');
             if (os) { os.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: 'sessions' })); }
+            const ot = document.getElementById('openturns');
+            if (ot) { ot.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: 'turns' })); }
         }
         document.querySelectorAll('[data-range]').forEach(b =>
             b.addEventListener('click', () => {

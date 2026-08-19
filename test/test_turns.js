@@ -140,8 +140,41 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
         /ROLE_DEFAULT = \['user', 'assistant'\]/.test(js) &&
         /new Set\(Array\.isArray\(saved\.roles\) \? saved\.roles : ROLE_DEFAULT\)/.test(js) &&
         /data-preset="dialog"/.test(js) && /data-chip=/.test(js));
-    ok('Turn column kept ~70% and Session ~40% of the old widths',
-        /LABEL_CHARS = 77/.test(js) && /SESSION_CHARS = 15/.test(js));
+    // ‼️ U-69 — the widths are DECLARED, not observed. Auto-layout made every
+    // boundary a function of whichever rows happened to be listed, so the same
+    // table moved when a filter changed and Tokens was narrower than its own
+    // value while Steps held whitespace.
+    ok('the table declares its own widths instead of letting the rows decide',
+        /table\.turnstable \{ table-layout:fixed; \}/.test(js)
+        && /colgroupHtml\(COLUMNS\)/.test(js));
+    ok('…and every column it draws has a share, or it would silently get an equal slice',
+        (() => {
+            const cols = /const COLUMNS = \[([^\]]+)\]/.exec(js)[1]
+                .split(',').map(s => s.trim().replace(/'/g, ''));
+            const share = /const SHARE = \{([\s\S]*?)\};/.exec(js)[1];
+            return cols.every(c => c === 'origin' || new RegExp(`\\b${c}:\\s*[\\d.]+`).test(share));
+        })());
+    ok('‼️ Steps gives room back to Tokens — the complaint, as two numbers',
+        (() => {
+            const share = /const SHARE = \{([\s\S]*?)\};/.exec(js)[1];
+            const at = k => Number(new RegExp(`\\b${k}:\\s*([\\d.]+)`).exec(share)[1]);
+            return at('steps') < at('tokens') && at('label') > at('session');
+        })());
+    ok('every cell is one line, cut at the column\'s own edge',
+        /table\.turnstable td, table\.turnstable th \{ white-space:nowrap; \}/.test(js)
+        && /table\.turnstable td > \.tcut \{ display:block; overflow:hidden; text-overflow:ellipsis; \}/.test(js));
+    // ‼️ AND THE CUT IS ON THE INNER BLOCK, NOT ON THE CELL. A hover panel is
+    // absolutely positioned inside its cell, so clipping the cell clips the
+    // panel — which is silent, and cost one render to find.
+    ok('‼️ …on an inner block, so the cell does not clip its own hover panel',
+        (js.match(/table\.turnstable[^{]*\{[^}]*overflow:hidden[^}]*\}/g) || [])
+            .every(rule => /\.tcut/.test(rule)));
+    // The page is only ever executed by a browser, so a syntax error in it ships
+    // green: every test here reads the file as TEXT. One parse is the whole guard
+    // — and it has already caught a backtick inside the CSS template literal.
+    ok('‼️ the page actually parses', (() => {
+        try { new Function(js); return true; } catch (e) { console.log('    · ' + e.message); return false; }
+    })());
     // the TS default must agree with the webview fallback
     const panel = fs.readFileSync(path.join(__dirname, '..', 'out', 'panels', 'turnsPanel.js'), 'utf8');
     ok('TURNS_TABLE_N default is 200 host-side', /TURNS_TABLE_N = 200/.test(panel));

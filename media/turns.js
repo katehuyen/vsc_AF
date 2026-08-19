@@ -79,10 +79,45 @@
     // engine ran any of them — and once a Codex turn appears beside a Claude one,
     // "which agent" stops being enough to identify a row.
     const COLUMNS = ['origin', 'agent', 'engine', 'label', 'session', 'n', 'models', 'steps', 'tokens', 'ctx', 'when', 'took', 'duration', 'tools', 'errors', 'cost'];
-    // How much of a long text a cell shows before it is cut (the full string is
-    // always in the cell's tooltip). The CSS caps match these.
-    const LABEL_CHARS = 77;
-    const SESSION_CHARS = 15;
+    /**
+     * ‼️ U-69 — HOW WIDE A COLUMN IS, DECIDED HERE.
+     *
+     * Same rule and the same mechanism as the sessions table (media/
+     * sessionsTable.js → NARROW/SHARE): `table-layout: fixed` plus a colgroup,
+     * because auto-layout makes every boundary a function of whatever rows are
+     * listed — so the same table moved when a filter changed. The numbers are
+     * chosen from what each column actually holds:
+     *
+     *   · a SHORT FIGURE MUST ALWAYS FIT. `186.4k`, `11m 0s`, `$0.610`, `14/14`
+     *     and `22` are the whole point of the column; a number that has to be
+     *     hovered for is a number the table failed to show.
+     *   · Steps was the widest numeric column and did not need to be
+     *     (`31api·84steps` is already the short form), while Tokens
+     *     (`412.9k ⚖ 168.3k`) was narrower than its own value.
+     *   · every header must read: a column captioned `Dur…` is worse than a
+     *     value cut by one character.
+     *   · what is left goes to the prompt, which is the row's identity.
+     */
+    // px, not a share: these hold one glyph, and a share would grow them on a
+    // wide monitor. `origin` is 30 because its HEADING is what has to fit — a
+    // column captioned `B…` is worse than any value it could ever cut.
+    const NARROW = { fold: 22, origin: 30 };
+    /** Shares of the space the px columns leave behind, summing to 100 for the
+     *  full set and re-normalised over any subset (see colgroupHtml). */
+    const SHARE = {
+        agent: 9.0, engine: 6.0, label: 22.2, session: 8.5, n: 3.2, models: 8.0,
+        steps: 6.6, tokens: 8.2, ctx: 4.4, when: 4.4, took: 4.0, duration: 5.0,
+        tools: 3.4, errors: 2.8, cost: 4.3
+    };
+    function colgroupHtml(cols) {
+        const total = cols.reduce((n, c) => n + (SHARE[c] || 0), 0) || 1;
+        return '<colgroup>'
+            + `<col style="width:${NARROW.fold}px">`
+            + cols.map(c => (NARROW[c]
+                ? `<col style="width:${NARROW[c]}px">`
+                : `<col style="width:${((SHARE[c] || 0) / total * 100).toFixed(3)}%">`)).join('')
+            + '</colgroup>';
+    }
 
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
@@ -113,11 +148,29 @@
         tr.turnrow.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
         tr.turnrow.open > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground); }
         tr.turnbody > td { padding-left:12px; }
-        /* The turn prompt is the row's identity, so it keeps the widest cell;
-           the session is context, so it stays narrow — both cut with an
-           ellipsis and carry the full text in their tooltip. */
-        .turncol { max-width:77ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .sesscol { max-width:15ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.8; }
+        /* ‼️ U-69 — ONE LINE PER ROW, AND THE WIDTHS ARE DECIDED, NOT OBSERVED.
+           The table laid itself out (table-layout: auto), so every column was
+           as wide as whatever happened to be listed: Steps took room it did not
+           need while Tokens got so little that the figure wrapped and the row
+           grew a second line. Now the shares are declared (see SHARE), every
+           cell is a single line, and anything that does not fit is cut at the
+           column's own edge — the whole value is the first line of its hover,
+           which is why cutting is safe here (docs/CONVENTIONS.md → Hover). */
+        table.turnstable { table-layout:fixed; }
+        table.turnstable td, table.turnstable th { white-space:nowrap; }
+        /* ‼️ THE CUT IS ON AN INNER BLOCK, NEVER ON THE CELL. A hover panel is
+           absolutely positioned INSIDE its cell, so overflow:hidden on the
+           td clips the panel as well as the text — every hover on this table
+           vanished the first time the cells clipped, and nothing said so. */
+        table.turnstable td > .tcut { display:block; overflow:hidden; text-overflow:ellipsis; }
+        /* A header's own panel hangs under the header cell, so the cell is what
+           it is measured against — the same trick AFTip.cell plays on a <td>. */
+        table.turnstable th { position:relative; }
+        /* The panel's caption line is normally a faded label over the figures it
+           heads. Here it is the CELL ITSELF, spelled out because the column had
+           to cut it — the one line the reader came for, so it is legible. */
+        table.turnstable .af-tiph { font-size:12px; opacity:.9; }
+        .sesscol { opacity:.8; }
         .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
         .badge { font-size:10px; padding:1px 6px; border-radius:8px;
@@ -358,119 +411,198 @@
     const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
     const termBtn = r =>
         ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
-    const cut = (s, n) => (s || '').length > n ? s.slice(0, n - 1) + '…' : (s || '—');
 
     /**
      * ‼️ SAME RULE AS THE SESSIONS TABLE (docs/CONVENTIONS.md → Hover): the
      * heading defines the column once, and a cell hover is `Label: value` lines
      * — figures, never a sentence. Everything below comes off the row the page
      * already has; nothing here asks the host a second question.
+     *
+     * ‼️ AND NOT THE SAME LINES ON EVERY CELL (U-69). One readout of the whole
+     * turn used to be pasted onto twelve of them, so the answer to "what is
+     * this number" was the same twenty lines wherever you pointed — which is
+     * the hover this page's own conventions exist to prevent. Each column now
+     * answers for itself, in CELL below.
      */
     const line = (k, v) => (v === '' || v === undefined || v === null ? '' : `${k}: ${v}`);
     const round1 = n => Math.round(n * 10) / 10;
     const pctOf = (n, of) => (of > 0 ? Math.round(n / of * 100) + '%' : '');
     const stamp = ts => (ts ? window.AFTime.full(ts) : '');
-    const tip = parts => C.esc(parts.filter(Boolean).join('\n'));
-    /** Everything known about ONE turn — the shared readout its cells share. */
-    const turnTip = r => tip([
-        line('Turn', `${r.n} of ${r.of}`),
-        line('When', stamp(r.ts)),
-        line('Took', r.ms ? C.fmtDur(r.ms) : ''),
-        line('Duration', r.durationMs ? C.fmtDur(r.durationMs) : ''),
-        line('API calls', r.apiCalls || ''),
-        line('Steps', r.steps || ''),
-        line('Steps per call', r.apiCalls && r.steps ? round1(r.steps / r.apiCalls) : ''),
-        // What the total is MADE OF. Thinking is the dearest step there is and
-        // was missing from the total until it was counted (see sessions.ts
-        // SessionTurn.steps); saying its share here is what stops the number
-        // being a black box again.
-        line('…reasoning', r.thinking ? `${r.thinking} (${pctOf(r.thinking, r.steps)})` : ''),
-        line('…tool calls', r.tools ? `${r.tools} (${pctOf(r.tools, r.steps)})` : ''),
-        line('…replies', r.steps - (r.thinking || 0) - (r.tools || 0) > 0
-            ? `${r.steps - (r.thinking || 0) - (r.tools || 0)} (${pctOf(r.steps - (r.thinking || 0) - (r.tools || 0), r.steps)})` : ''),
-        line('Tool calls', r.tools || ''),
-        line('Errors', r.errors || ''),
-        line('Tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
-        line('Weighted', r.wTokens ? C.fmtTok(r.wTokens) : ''),
-        line('Tokens per call', r.apiCalls && r.tokens ? C.fmtTok(Math.round(r.tokens / r.apiCalls)) : ''),
-        line('Cost', r.cost ? C.fmtUSD(r.cost) : ''),
-        line('Models', (r.models || []).map(m => m.replace(/^claude-/, '')).join(', ')),
-        line('Agent', r.agent),
-        line('Session', r.session)
-    ]);
 
+    /**
+     * ‼️ U-69 — A COLUMN IS DEFINED ONCE, ON ITS HEADING, AND IN THE PANEL.
+     *
+     * These definitions are sentences, and a sentence in a native `title` is cut
+     * wherever the platform likes — which is how a paragraph explaining what
+     * `31api·84steps` means ended up unreadable on the one column that needs
+     * explaining (docs/CONVENTIONS.md → Hover). The head is the column's full
+     * name, so a heading the width had to shorten still says what it is.
+     */
+    const th = (cls, label, name, def) =>
+        `<th${cls ? ` class="${cls}"` : ''}>${window.AFTip.wrap(C.esc(label), name, def, 'tip-block')}</th>`;
     const HEAD = {
-        origin: '<th class="origcell" title="Who started the session this turn belongs to: 🧑 you · 🤖 automation">By</th>',
-        agent: '<th title="Agent whose folder the session ran in">Agent</th>',
-        engine: '<th title="Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
-            + '. A Claude transcript states no engine; the absence IS Claude.">Engine</th>',
-        label: '<th title="The prompt that opened the turn">Turn</th>',
-        session: '<th title="The session this turn belongs to">Session</th>',
-        n: '<th class="num" title="Turn number / the session\'s turn count">#</th>',
-        models: '<th title="Model(s) that served the turn">Model</th>',
-        tokens: '<th class="num" title="Raw tokens; after ⚖ weighted against the plan limit">Tokens</th>',
-        when: '<th class="num" title="Time since the turn opened">When</th>',
-        duration: '<th class="num" title="Until the next turn opened (last turn: until the session ended) — includes the time the ball was with you; Took is the turn\'s own running time">Duration</th>',
-        steps: `<th class="num" title="${C.esc(C.STEPS_TIP)}">Steps</th>`,
-        took: '<th class="num" title="How long the turn itself ran — its prompt to its last line">Took</th>',
-        ctx: '<th class="num" title="What the model\'s window held when this turn ended">Ctx</th>',
-        tools: '<th class="num" title="Tool calls made inside this turn">Tools</th>',
-        errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
+        origin: th('origcell', 'By', 'Started by', 'Who started the session this turn belongs to: '
+            + '🧑 you · 🤖 automation.'),
+        agent: th('', 'Agent', 'Agent', 'The agent whose folder the session ran in.'),
+        engine: th('', 'Engine', 'Engine', 'Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
+            + '. A Claude transcript states no engine; the absence IS Claude.'),
+        label: th('', 'Turn', 'Turn — the prompt', 'The prompt that opened the turn.'),
+        session: th('', 'Session', 'Session', 'The session this turn belongs to.'),
+        n: th('num', '#', 'Turn number', 'This turn\'s number, over the session\'s own turn count.'),
+        models: th('', 'Model', 'Model', 'The model, or models, that served this turn.'),
+        tokens: th('num', 'Tokens', 'Tokens', 'Raw tokens the turn consumed; after ⚖, the same turn '
+            + 'weighted against the plan limit.'),
+        when: th('num', 'When', 'When', 'How long ago the turn opened.'),
+        duration: th('num', 'Duration', 'Duration', 'Until the next turn opened (on the last turn: '
+            + 'until the session ended) — so it includes the time the ball was with you. Took is the '
+            + 'turn\'s own running time, and the difference between them is your thinking, not the '
+            + 'model\'s.'),
+        steps: th('num', 'Steps', 'Steps', C.STEPS_TIP),
+        took: th('num', 'Took', 'Took', 'How long the turn itself ran — its prompt to its last line.'),
+        ctx: th('num', 'Ctx', 'Context at the end of the turn',
+            'What the model\'s window held when this turn ended.'),
+        tools: th('num', 'Tools', 'Tool calls', 'Tool calls made inside this turn.'),
+        errors: th('num', 'Err', 'Errors', 'Tool results that came back as errors.'),
         // ‼️ U-59 — THE RULE, NOT A LIST OF ENGINES. "API-equivalent cost" was
         // written when one engine published a price and the rest were priced
         // here; a second one now states its own, so a heading calling every
         // figure an equivalent is wrong on two of five rows. The sentence is the
         // rule, so it stays true whatever ships next.
-        cost: '<th class="num" title="What this turn cost. An engine that publishes a price per turn '
+        cost: th('num', 'Cost', 'Cost', 'What this turn cost. An engine that publishes a price per turn '
             + 'states its own figure and that is what is shown; where none is published this is the '
             + 'API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, '
-            + 'never a bill.">Cost</th>'
+            + 'never a bill.')
     };
+
+    /**
+     * ‼️ U-69 — THE FIRST LINE OF A CELL'S PANEL IS THAT CELL, IN FULL.
+     *
+     * Every column is one line high and cut at its own edge now, so the hover
+     * has one job before any other: say what the cell would have said with room.
+     * Under it, after a blank line, come the figures that value implies — off
+     * the row the page already holds, never a second question to the host.
+     *
+     * The one deliberate exception is the two columns that hold WORDS. A prompt
+     * runs to paragraphs, and a paragraph in the panel's caption line (a 10px
+     * rule-under-it label) is unreadable; so those two put the column's name in
+     * the caption and open the BODY with the whole text, which is the same
+     * promise in the shape the text needs.
+     */
+    const cell = (cls, inner, head, figures) => window.AFTip.cell(
+        cls, '', `<span class="tcut">${inner}</span>`, head, figures.filter(Boolean).join('\n'));
+    const waited = r => (r.durationMs && r.ms && r.durationMs > r.ms
+        ? C.fmtDur(r.durationMs - r.ms) : '');
+    const replies = r => (r.steps || 0) - (r.thinking || 0) - (r.tools || 0);
     const CELL = {
         origin: r => {
             const o = originMeta(originOf(r));
-            return `<td class="origcell ${o.id}" title="${tip([
-                line('Started by', o.id === 'auto' ? '🤖 Automation' : '🧑 You'),
+            return cell(`origcell ${o.id}`, o.glyph,
+                o.id === 'auto' ? '🤖 Automation' : '🧑 You', [
                 line('Agent', r.agent),
-                line('Session', r.session)
-            ])}">${o.glyph}</td>`;
+                line('Session', r.session),
+                line('Turn', `${r.n} of ${r.of}`)
+            ]);
         },
-        agent: r => `<td title="${turnTip(r)}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
-        // The shared badge and the shared palette — never a colour invented here.
-        engine: r => `<td title="${tip([
+        agent: r => cell('', `${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}`,
+            (r.agent || '—') + (r.sidechain ? ' · sub-agent' : '') + (r.active ? ' · active now' : ''), [
+            line('Session', r.session),
             line('Engine', engineLabel(r)),
+            line('Model', (r.models || []).join(', ')),
+            line('Turn', `${r.n} of ${r.of}`),
+            line('When', stamp(r.ts))
+        ]),
+        // The shared badge and the shared palette — never a colour invented here.
+        engine: r => cell('', window.AFEngine.badge(r.engine || 'claude'), engineLabel(r), [
             line('Model', (r.models || []).join(', ') || '—'),
-            line('Turn', r.n + ' of ' + r.of)
-        ])}">${window.AFEngine.badge(r.engine || 'claude')}</td>`,
-        // ‼️ The two TEXT columns hover into the rich panel (media/afTip.js):
-        // a native tooltip cuts wherever the platform likes, which is the worst
-        // possible treatment of the one cell that is actually words.
-        label: r => window.AFTip.cell('turncol', '', C.esc(cut(r.label, LABEL_CHARS)),
-            `Turn ${r.n} of ${r.of} · ${stamp(r.ts)}`, r.label || ''),
-        session: r => window.AFTip.cell('sesscol', '', C.esc(cut(r.session, SESSION_CHARS)),
-            `Session · ${r.agent || ''}`, r.session || ''),
-        n: r => `<td class="num" title="${turnTip(r)}">${r.n}/${r.of}</td>`,
-        models: r => `<td title="${turnTip(r)}">${(r.models || []).map(m =>
-            `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—'}</td>`,
-        tokens: r => `<td class="num" title="${turnTip(r)}">${r.tokens ? C.fmtTokW(r.tokens, r.wTokens) : '—'}</td>`,
-        when: r => `<td class="num" title="${turnTip(r)}">${relTime(r.ts)}</td>`,
-        duration: r => `<td class="num" title="${turnTip(r)}">${r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—'}</td>`,
-        steps: r => `<td class="num" title="${turnTip(r)}">${r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—'}</td>`,
-        took: r => `<td class="num" title="${turnTip(r)}">${r.ms ? C.esc(C.fmtDur(r.ms)) : '—'}</td>`,
-        ctx: r => `<td class="num" title="${tip([
-            line('Ctx at end', r.endCtx ? C.fmtTok(r.endCtx) : '—'),
+            line('Turn', `${r.n} of ${r.of}`),
+            line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
+        ]),
+        label: r => cell('turncol', C.esc(r.label || '—'), 'Turn', [
+            r.label || '(no prompt recorded)',
+            '',
+            line('Turn', `${r.n} of ${r.of}`),
+            line('When', stamp(r.ts)),
+            line('Session', r.session),
+            line('Agent', r.agent)
+        ]),
+        session: r => cell('sesscol', C.esc(r.session || '—'), 'Session', [
+            r.session || '(unnamed)',
+            '',
+            line('Turn', `${r.n} of ${r.of}`),
+            line('Agent', r.agent),
+            line('Engine', engineLabel(r)),
+            line('When', stamp(r.ts))
+        ]),
+        n: r => cell('num', `${r.n}/${r.of}`, `${r.n}/${r.of}`, [
+            line('Turn', `${r.n} of ${r.of} in this session`),
+            line('Session', r.session),
+            line('When', stamp(r.ts))
+        ]),
+        models: r => cell('', (r.models || []).map(m =>
+            `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—',
+            (r.models || []).join(', ') || '—', [
+            line('Engine', engineLabel(r)),
+            line('Tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
+            line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
+        ]),
+        // ‼️ THE COLUMN THE ITEM WAS FILED ABOUT. It was the widest numeric
+        // column and needed the least of it; what it owed the reader was not
+        // width but the breakdown underneath — thinking is the dearest step
+        // there is, and its share was nowhere on this page.
+        steps: r => cell('num', r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—',
+            r.steps || r.apiCalls ? C.fmtSteps(r.apiCalls, r.steps) : '—', [
+            line('API calls', r.apiCalls || ''),
+            line('Steps', r.steps || ''),
+            line('Steps per call', r.apiCalls && r.steps ? round1(r.steps / r.apiCalls) : ''),
+            line('…reasoning', r.thinking ? `${r.thinking} (${pctOf(r.thinking, r.steps)})` : ''),
+            line('…tool calls', r.tools ? `${r.tools} (${pctOf(r.tools, r.steps)})` : ''),
+            line('…replies', replies(r) > 0 ? `${replies(r)} (${pctOf(replies(r), r.steps)})` : '')
+        ]),
+        tokens: r => cell('num', r.tokens ? C.fmtTokW(r.tokens, r.wTokens) : '—',
+            r.tokens ? C.fmtTokWText(r.tokens, r.wTokens) : '—', [
+            line('Raw', r.tokens ? C.fmtTok(r.tokens) : ''),
+            line('Weighted', r.wTokens ? C.fmtTok(Math.round(r.wTokens)) : ''),
+            line('Per API call', r.apiCalls && r.tokens ? C.fmtTok(Math.round(r.tokens / r.apiCalls)) : ''),
+            line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
+        ]),
+        when: r => cell('num', relTime(r.ts), relTime(r.ts), [
+            line('Opened', stamp(r.ts)),
+            line('Took', r.ms ? C.fmtDur(r.ms) : ''),
+            line('Duration', r.durationMs ? C.fmtDur(r.durationMs) : '')
+        ]),
+        duration: r => cell('num', r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—',
+            r.durationMs ? C.fmtDur(r.durationMs) : '—', [
+            line('Took', r.ms ? C.fmtDur(r.ms) : ''),
+            line('Waiting on you', waited(r)),
+            line('Opened', stamp(r.ts))
+        ]),
+        took: r => cell('num', r.ms ? C.esc(C.fmtDur(r.ms)) : '—', r.ms ? C.fmtDur(r.ms) : '—', [
+            line('Duration', r.durationMs ? C.fmtDur(r.durationMs) : ''),
+            line('Waiting on you', waited(r)),
+            line('Steps', r.steps || '')
+        ]),
+        ctx: r => cell('num', r.endCtx ? C.fmtTok(r.endCtx) : '—',
+            r.endCtx ? C.fmtTok(r.endCtx) : '—', [
             line('Of a 200k window', r.endCtx ? pctOf(r.endCtx, 200000) : ''),
             line('Turn tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
             line('Turn', `${r.n} of ${r.of}`)
-        ])}">${r.endCtx ? C.fmtTok(r.endCtx) : '—'}</td>`,
-        tools: r => `<td class="num" title="${turnTip(r)}">${r.tools || 0}</td>`,
-        errors: r => `<td class="num" title="${tip([
+        ]),
+        tools: r => cell('num', String(r.tools || 0), String(r.tools || 0), [
             line('Errors', r.errors || 0),
+            line('Share of steps', r.tools ? pctOf(r.tools, r.steps) : ''),
+            line('Steps', r.steps || '')
+        ]),
+        errors: r => cell('num', r.errors ? String(r.errors) : '', String(r.errors || 0), [
             line('Tool calls', r.tools || 0),
             line('Share', r.errors ? pctOf(r.errors, r.tools) : ''),
             line('Turn', `${r.n} of ${r.of}`)
-        ])}">${r.errors || ''}</td>`,
-        cost: r => `<td class="num" title="${turnTip(r)}"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>`
+        ]),
+        cost: r => cell('num', `<strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong>`,
+            r.cost ? C.fmtUSD(r.cost) : '—', [
+            line('Tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
+            line('Per API call', r.apiCalls && r.cost ? C.fmtUSD(r.cost / r.apiCalls) : ''),
+            line('Model', (r.models || []).join(', '))
+        ])
     };
 
     /** Show chips for the content of unfolded turns (the session viewer's set). */
@@ -506,9 +638,12 @@
             // session family (src/core/ctxmenu.ts), so one right-click offers
             // that session's whole action set AND the four things that are true
             // only of this turn.
+            // ‼️ NO `title` ON THE ROW (U-69). Every cell now opens a panel of
+            // its own, and a native tooltip on the row underneath shows on top
+            // of it — two hovers over one cell. The hint belongs where the
+            // sessions table already keeps it: once, in the caption.
             return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}"
-                ${window.AFSessionCtx.row(r, { webviewSection: 'afTurnRow', turnKey: k, turnN: r.n, turnTs: r.ts || 0 })}
-                title="${window.AFSessionCtx.HINT} — and this turn's own">
+                ${window.AFSessionCtx.row(r, { webviewSection: 'afTurnRow', turnKey: k, turnN: r.n, turnTs: r.ts || 0 })}>
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
                 ${COLUMNS.map(c => CELL[c](r)).join('')}
             </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');
@@ -527,11 +662,12 @@
             <button class="chip af-single${single ? ' on' : ''}" title="Only one turn open at a time: unfolding a turn folds the previous one">Single-open</button>
             <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
             <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by origin, prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
-            <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} turns` : `${rows.length} turns — ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now`}</span>
+            <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} turns · ` : `${rows.length} turns · `}${window.AFSessionCtx.HINT} · hover any cell for its full value and what it implies · ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now</span>
         </div>
         ${contentChipsHtml()}
         ${filterPanelHtml()}
-        <div class="tablewrap"><table>
+        <div class="tablewrap"><table class="turnstable">
+            ${colgroupHtml(COLUMNS)}
             <tr><th></th>${COLUMNS.map(c => HEAD[c]).join('')}</tr>
             ${rowsHtml || `<tr><td colspan="${COLUMNS.length + 1}" class="muted">${rows.length ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
         </table></div>`;
