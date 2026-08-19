@@ -2,7 +2,7 @@ import * as path from 'path';
 import {
     agyAnnouncedCall, agyArg, agyIsToolStep, AgyStep, agyStepFailed, AgyToolCall,
     agyToolDetail, agyToolName,
-    codexPromptTitle, codexUserText, readFarmConsoleTranscript
+    codexPromptTitle, codexUserText, geminiUserOpening, readFarmConsoleTranscript
 } from './cliTranscripts';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
@@ -452,7 +452,9 @@ function parseGemini(raw: string, file: string, pricing: PricingEngine): ParsedC
         if (ts) { if (!firstTs) { firstTs = ts; } lastTs = Math.max(lastTs, ts); }
         const type = String(r.type ?? r.role ?? '');
         if (type === 'user') {
-            const text = asText(r.content ?? r.message ?? r.text).trim();
+            // ‼️ The index opens its turn on exactly this (S-40) — one rule, one
+            // function, or the two number the same file differently.
+            const text = geminiUserOpening(r);
             if (!text) { continue; }
             turn++; prompts[turn] = text; started[turn] = ts; turns[turn] = blankTurn();
             messages.push({ role: 'user', ts, text, turn, turnStart: true });

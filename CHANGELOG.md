@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.173.0 — S-40: the Turns page is the whole farm, not the two engines that happened to build turns (2026-08-19)
+
+**The page said "every user turn across the farm" and listed two engines.** Not because it filtered the others out — because they were never in the data. `buildTurnRows` maps over `SessionInfo.turns`, and three of the five adaptors left that array empty, which does not produce a thin row: it produces **no row**. And the engine picker's options are derived from the rows present, so the missing engines were missing from the filter for exactly the same reason. Measured on this machine after the fix: **48 Antigravity conversations, 15 hosted Antigravity sessions and 122 OpenCode conversations** now unroll into turns that were on disk the whole time.
+
+Each adaptor opens a turn on the boundary its own format states, and bills into it only what that format actually says:
+
+| engine | what opens a turn | what the turn can prove |
+|---|---|---|
+| Gemini | a `user` record with text | its own reply's tokens, weighted tokens, price and model; `apiCalls` per reply |
+| Antigravity (brain log) | `USER_INPUT` | tool calls, planner prose, failures, duration — **no tokens and no price, because the engine publishes none** |
+| Antigravity (hosted here) | a `user` line that is not `steer` | the Console's own `result` row: that turn's tokens, dollars and milliseconds |
+| OpenCode | a message with text, or an attachment-only one named by its file | the assistant message's own spend, `step-finish` as the round trip, `reasoning` counted apart, and the window it ended holding |
+
+**‼️ The number has to be the SAME number.** A row folds open by asking the *viewer* for `turn === n`. Index and viewer therefore have to count the same file the same way or a fold quietly shows somebody else's prompt — so what opens a Gemini turn is now one exported function both of them call, and `test_engine_turns.js` parses every fixture **both ways** and holds the two together.
+
+Two rules the new figures obey and one trap they avoid: a figure the format does not carry stays at an **honest zero** rather than being split out of the session total; `reasoning` is added to output on OpenCode exactly as the session total does it, because it is not inside `output` on that engine; and a **steering line does not move the turn's clock** — it sits inside the open turn, but it arrives after the engine has already said how long that turn took.
+
 ## 3.172.0 — U-72: the OpenCode badge is the blue the user chose (2026-08-19)
 
 **A hue picked by hand is written down as itself.** OpenCode's engine badge is now `rgb(60, 135, 255)` — a literal, not a `--vscode-charts-*` variable, because the point of a value somebody chose is that a theme cannot move it. Every other engine still reads its hue from VS Code's own chart palette.

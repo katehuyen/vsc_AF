@@ -7,8 +7,8 @@ import {
     ImportMarks, importManifestReader, resolveProvenance
 } from './externalImports';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
-import { PricingEngine, Usage, emptyUsage, weightedTokens } from './pricing';
-import { conversationTitle, FIRST_PROMPT_MAX, SessionInfo } from './sessions';
+import { PricingEngine, Usage, emptyUsage, totalTokens, weightedTokens } from './pricing';
+import { conversationTitle, FIRST_PROMPT_MAX, SessionInfo, SessionTurn } from './sessions';
 import { SessionSource } from './sessionSource';
 import { truncate } from './util';
 import { ConsoleMessage, ConsoleSessionState } from './consoleproto';
@@ -310,6 +310,49 @@ export function codexPromptTitle(value: string): string {
         : conversationTitle(text);
 }
 
+/**
+ * ‼️ S-40 — EVERY ENGINE UNROLLS INTO TURNS, OR THE TURNS PAGE IS ONE ENGINE'S.
+ *
+ * `buildTurnRows` maps over `SessionInfo.turns`. A parser that leaves that array
+ * empty does not produce a thin row on the Turns page — it produces NO ROW AT
+ * ALL, and no entry in that page's engine picker either, because the picker's
+ * options are derived from the rows present. So a page that says it is "the
+ * whole farm, one row per turn" silently claimed the farm was two engines wide.
+ * The rows were never missing from the filter; they were missing from the data.
+ *
+ * ‼️ THE BOUNDARY IS THE VIEWER'S BOUNDARY, NOT A SECOND OPINION. `n` here is
+ * the same turn number `cliViewer.ts` gives the same file — the Turns page folds
+ * a row open by asking the viewer for `turn === n`, and a parser that counted
+ * turns its own way would open somebody else's turn. Each adaptor below opens on
+ * exactly the condition its viewer counterpart increments on; `test_engine_turns.js`
+ * holds the two together.
+ *
+ * A figure the format does not carry stays at its honest zero — never split out
+ * of the session total, which is the interpolation this codebase keeps refusing.
+ */
+function turnBuilder(info: SessionInfo) {
+    const open = (label: string, ts: number): SessionTurn => {
+        const t: SessionTurn = {
+            n: info.turns.length + 1, label: truncate(label.replace(/\s+/g, ' ').trim(), 90), ts,
+            tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, thinking: 0,
+            ms: 0, endCtx: 0, tools: 0, errors: 0, models: []
+        };
+        info.turns.push(t);
+        return t;
+    };
+    const now = (): SessionTurn | undefined =>
+        info.turns.length ? info.turns[info.turns.length - 1] : undefined;
+    /** The open turn runs to the last line recorded inside it (Claude semantics). */
+    const touch = (ts: number): void => {
+        const t = now();
+        if (t && ts && t.ts && ts > t.ts) { t.ms = ts - t.ts; }
+    };
+    const model = (t: SessionTurn | undefined, m: string): void => {
+        if (t && m && !t.models.includes(m)) { t.models.push(m); }
+    };
+    return { open, now, touch, model };
+}
+
 function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
     pricing: () => PricingEngine, imports?: () => ExternalImportManifest): SessionInfo | undefined {
     let mtime = 0;
@@ -328,30 +371,15 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     const models = new Set<string>();
 
     /**
-     * ‼️ THE TURNS PAGE COULD NOT SHOW A CODEX TURN — because nothing built one.
-     *
-     * `buildTurnRows` maps over `SessionInfo.turns`, which the Claude parse fills
-     * and every foreign source left empty, so the page that unrolls the whole
-     * farm one row per turn silently held one engine's turns. Widening it to the
-     * external list would have added nothing: the rows were never there.
-     *
-     * A Codex rollout states every boundary the shape needs, and states them
+     * ‼️ A Codex rollout states every boundary the shape needs, and states them
      * plainly: `user_message` opens a turn and carries its label and time,
      * `token_count.last_token_usage` is that request's own spend AND the window
      * it ended holding, `response_item` function/custom calls are its tools,
      * `turn_context` names the model. So the turns are built from what the file
      * says, and the fields it cannot answer stay at their honest zero rather
-     * than being interpolated from the session total.
+     * than being interpolated from the session total (`turnBuilder`).
      */
-    const openTurn = (label: string, ts: number): void => {
-        info.turns.push({
-            n: info.turns.length + 1, label, ts,
-            tokens: 0, wTokens: 0, cost: 0,
-            apiCalls: 0, steps: 0, thinking: 0, ms: 0, endCtx: 0,
-            tools: 0, errors: 0, models: []
-        });
-    };
-    const turnNow = () => (info.turns.length ? info.turns[info.turns.length - 1] : undefined);
+    const { open: openTurn, now: turnNow } = turnBuilder(info);
 
     // ‼️ S-32 — read a chunk at a time, never whole. A rollout grows with the
     // conversation and the file's size must not decide whether the session
@@ -555,6 +583,37 @@ function userText(msg: Record<string, unknown>): string {
     return '';
 }
 
+/**
+ * ‼️ WHAT OPENS A GEMINI TURN, DECIDED ONCE (S-40). The index numbers the turns
+ * and the viewer numbers them again when a row folds open; if the two disagree
+ * about a single record, every later `n` in that session is off by one and the
+ * fold shows somebody else's prompt. So both ask this. The rule is the shape the
+ * files actually take: the first of `content` / `message` / `text` that is
+ * present, coerced the way the viewer coerces every other field, and **no text
+ * means no turn**.
+ */
+export function geminiUserOpening(rec: Record<string, unknown>): string {
+    for (const key of ['content', 'message', 'text']) {
+        const v = rec[key];
+        if (v === undefined || v === null) { continue; }
+        if (typeof v === 'string') { return v.trim(); }
+        if (Array.isArray(v)) {
+            return v.map(x => {
+                if (typeof x === 'string') { return x; }
+                if (!x || typeof x !== 'object') { return ''; }
+                const o = x as Record<string, unknown>;
+                return typeof o.text === 'string' ? o.text
+                    : typeof o.content === 'string' ? o.content : '';
+            }).filter(Boolean).join('\n').trim();
+        }
+        if (typeof v === 'object') {
+            try { return JSON.stringify(v, null, 2).trim(); } catch { return String(v).trim(); }
+        }
+        return String(v).trim();
+    }
+    return '';
+}
+
 function parseGeminiFile(
     file: string,
     agentForHash: (hash: string) => { agentId?: string; agentName?: string },
@@ -577,19 +636,31 @@ function parseGeminiFile(
     let currentModel = '';
     let sawUsage = false;
     let tsMin = Infinity, tsMax = -Infinity;
+    /** The last time a RECORD stated (never the document's own span) — what a
+     *  record with no clock of its own is stamped with. */
+    let atLast = 0;
 
-    const handleUser = (msg: Record<string, unknown>) => {
+    const turn = turnBuilder(info);
+
+    const handleUser = (msg: Record<string, unknown>, at: number) => {
         info.userTurns++;
+        const opening = geminiUserOpening(msg);
+        if (opening) { turn.open(opening, at); }
         const clean = userText(msg).replace(/\s+/g, ' ').trim();
         if (clean && !clean.startsWith('<') && info.title === 'gemini session') {
             info.title = truncate(clean, 80);
             info.autoTitle = info.title;
         }
     };
-    const handleModelTurn = (msg: Record<string, unknown>, modelHint: string) => {
+    const handleModelTurn = (msg: Record<string, unknown>, modelHint: string, at: number) => {
         const model = typeof msg['model'] === 'string' && msg['model'] ? msg['model'] as string : modelHint;
         const tokens = parseGeminiTokens(msg['tokens']);
         info.assistantMsgs++;
+        // A reply is a step of the open turn whether or not it reported usage —
+        // the count of what happened must not depend on whether it was billed.
+        const open = turn.now();
+        if (open) { open.steps++; turn.model(open, model); }
+        turn.touch(at);
         if (!tokens) { return; }
         sawUsage = true;
         const turnUsage = emptyUsage();
@@ -598,6 +669,17 @@ function parseGeminiFile(
         if (model) {
             models.add(model);
             cost += pricing().costFor(model, turnUsage);
+        }
+        // ‼️ The turn's own spend, off the SAME reply the session total is built
+        // from, so the page and the table can never tell two stories. Gemini
+        // publishes no window figure, so `endCtx` stays the honest zero.
+        if (open) {
+            open.tokens += totalTokens(turnUsage);
+            open.apiCalls++;
+            if (model) {
+                open.cost += pricing().costFor(model, turnUsage);
+                open.wTokens += weightedTokens(model, turnUsage);
+            }
         }
     };
     const handleStats = (stats: unknown) => {
@@ -618,21 +700,32 @@ function parseGeminiFile(
         const sid = rec['sessionId'] ?? rec['session_id'];
         if (typeof sid === 'string' && sid) { info.sessionId = sid; }
         if (typeof rec['model'] === 'string' && rec['model']) { currentModel = rec['model'] as string; }
-        const type = rec['type'];
-        if (type === 'user') { handleUser(rec); }
-        else if (type === 'gemini') { handleModelTurn(rec, currentModel); }
-        if (rec['stats']) { handleStats(rec['stats']); }
-        else if (rec['result'] && typeof rec['result'] === 'object') {
-            handleStats((rec['result'] as Record<string, unknown>)['stats']);
-        }
         // B6: start-ish and end-ish keys are tracked separately so a session
         // with startTime + lastUpdated (and no per-message timestamps) still
         // gets its real recency instead of appearing as old as its start.
+        // ‼️ Read BEFORE the record is dispatched (S-40): a turn has to be
+        // stamped with its own line's time, and this is where that time is.
         const tsOf = (k: string) => typeof rec[k] === 'string' ? Date.parse(rec[k] as string) : NaN;
         const start = [tsOf('timestamp'), tsOf('created_at'), tsOf('startTime')].find(v => !Number.isNaN(v));
         const end = [tsOf('lastUpdated'), tsOf('timestamp'), tsOf('created_at')].find(v => !Number.isNaN(v));
         if (start !== undefined) { tsMin = Math.min(tsMin, start); tsMax = Math.max(tsMax, start); }
         if (end !== undefined) { tsMax = Math.max(tsMax, end); }
+        // ‼️ A gemini record is free to carry no time of its own — the fixture
+        // formats do it and so do real files. The turn is then stamped with the
+        // last time the file ITSELF stated, which is where the record sits in a
+        // chronological log; the document's own `lastUpdated` is deliberately
+        // not eligible, or a turn in the middle would be dated at the end.
+        const recTs = [tsOf('timestamp'), tsOf('created_at')].find(v => !Number.isNaN(v));
+        if (recTs !== undefined) { atLast = recTs; }
+        const at = recTs !== undefined ? recTs : atLast;
+
+        const type = rec['type'];
+        if (type === 'user') { handleUser(rec, at); }
+        else if (type === 'gemini') { handleModelTurn(rec, currentModel, at); }
+        if (rec['stats']) { handleStats(rec['stats']); }
+        else if (rec['result'] && typeof rec['result'] === 'object') {
+            handleStats((rec['result'] as Record<string, unknown>)['stats']);
+        }
     };
 
     let doc: unknown;
@@ -800,12 +893,45 @@ function parseFarmConsoleFile(
     if (snap.contextTokens > 0) { info.lastCtxTokens = snap.contextTokens; }
     info.userTurns = snap.messages.filter(m => m.role === 'user' && !m.steer).length;
     info.assistantMsgs = snap.messages.filter(m => m.role === 'agent').length;
+    // ‼️ S-40 — the hosted conversation unrolled into turns. This snapshot is
+    // the richest of the foreign shapes: it carries the turn's own `result` row,
+    // which states what that turn cost, spent and took. `steer` text said INTO a
+    // running turn does not open a new one — the same rule the viewer applies,
+    // and the reason a steered turn is one row here and not two.
+    const turn = turnBuilder(info);
     for (const m of snap.messages) {
+        if (m.role === 'user' && (!m.steer || !info.turns.length)) {
+            turn.open(m.text ?? '', m.ts);
+            turn.model(turn.now(), snap.model);
+            continue;
+        }
+        const open = turn.now();
+        // ‼️ A STEERING LINE IS NOT THE TURN WORKING. It stays inside the open
+        // turn (that is what `steer` means) but it arrives after the engine has
+        // already stated how long that turn took, so letting it move the clock
+        // would overwrite the engine's own figure with the moment somebody typed.
+        if (m.role !== 'user') { turn.touch(m.ts); }
         if (m.role === 'tool' && m.tool) {
             info.toolCalls++;
             info.tools[m.tool.name] = (info.tools[m.tool.name] ?? 0) + 1;
+            if (open) { open.tools++; open.steps++; }
         }
-        if (m.isError || m.role === 'error') { info.errors++; }
+        if (m.role === 'agent' && open) {
+            open.steps++;
+            if (m.kind === 'think') { open.thinking++; }
+        }
+        if (m.isError || m.role === 'error') {
+            info.errors++;
+            if (open) { open.errors++; }
+        }
+        // The Console closes a turn with a `result` row carrying that turn's own
+        // numbers — read them rather than dividing the session total.
+        if (m.role === 'result' && open) {
+            open.apiCalls++;
+            if (typeof m.tokens === 'number' && m.tokens > 0) { open.tokens += m.tokens; }
+            if (typeof m.cost === 'number' && m.cost > 0) { open.cost += m.cost; }
+            if (typeof m.ms === 'number' && m.ms > 0) { open.ms = Math.max(open.ms, m.ms); }
+        }
     }
     const first = snap.messages.find(m => m.role === 'user' && m.text?.trim());
     const title = first?.text ? conversationTitle(first.text) : '';
@@ -1028,15 +1154,27 @@ function parseAgyTranscript(
 
     let firstPrompt = '';
     let pending: AgyToolCall | undefined;
+    // ‼️ S-40 — the conversation unrolled into turns. Antigravity's step log
+    // states the boundary (`USER_INPUT`) and the work (announcements, planner
+    // prose, tool steps, failures) but publishes NO tokens and NO price, so the
+    // money columns of these rows stay at zero rather than borrowing a figure.
+    const turn = turnBuilder(info);
     for (const s of steps) {
-        if (agyStepFailed(s)) { info.errors++; }
+        const at = Date.parse(String(s.created_at ?? ''));
+        const stepTs = at > 0 ? at : 0;
+        const failed = agyStepFailed(s);
+        if (failed) { info.errors++; }
         if (s.type === 'USER_INPUT') {
             const text = agyPromptText(String(s.content ?? ''));
             if (!text) { continue; }
             info.userTurns++;
+            turn.open(text, stepTs);
             if (!firstPrompt) { firstPrompt = text; }
             continue;
         }
+        const open = turn.now();
+        if (open && failed) { open.errors++; }
+        turn.touch(stepTs);
         const announced = agyAnnouncedCall(s);
         if (announced) {
             pending = announced;
@@ -1050,13 +1188,17 @@ function parseAgyTranscript(
         if (s.type === 'PLANNER_RESPONSE') {
             // An announcement carries no prose; only a step that actually SAID
             // something is a message the model addressed to the reader.
-            if (String(s.content ?? '').trim()) { info.assistantMsgs++; }
+            if (String(s.content ?? '').trim()) {
+                info.assistantMsgs++;
+                if (open) { open.steps++; }
+            }
             continue;
         }
         if (agyIsToolStep(s)) {
             info.toolCalls++;
             const name = agyToolName(s, pending);
             info.tools[name] = (info.tools[name] ?? 0) + 1;
+            if (open) { open.tools++; open.steps++; }
             pending = undefined;
         }
     }
@@ -1250,19 +1392,64 @@ function parseOpencodeFile(
     // deliberately not used to overwrite a figure the engine published.
     void pricing;
     info.cost = doc.cost;
+    // ‼️ S-40 — the export unrolled into turns. OpenCode states more per turn
+    // than any other foreign format: the assistant message carries THAT turn's
+    // tokens and the price the engine itself published, and its parts say which
+    // of the steps were reasoning. The turn opens on exactly what the viewer
+    // opens on — text, or an attachment-only message named by its file.
+    const turn = turnBuilder(info);
     for (const m of doc.messages) {
         if (m.role === 'user') {
-            if (m.parts.some(p => p.kind === 'text' && p.text?.trim())) { info.userTurns++; }
+            const text = m.parts.filter(p => p.kind === 'text' && p.text?.trim())
+                .map(p => p.text as string).join('\n').trim();
+            if (text) { info.userTurns++; }
+            const opening = text || m.parts.filter(p => p.kind === 'file')
+                .map(p => p.filename || p.text || 'attachment').join(', ');
+            if (opening) { turn.open(opening, m.ts); }
             continue;
         }
+        const open = turn.now();
+        turn.touch(m.endTs || m.ts);
+        turn.model(open, m.model || doc.model);
         if (m.parts.some(p => p.kind === 'text' && p.text?.trim())) { info.assistantMsgs++; }
         for (const p of m.parts) {
+            if (p.kind === 'text' && p.text?.trim()) { if (open) { open.steps++; } continue; }
+            if (p.kind === 'reasoning' && p.text?.trim()) {
+                if (open) { open.steps++; open.thinking++; }
+                continue;
+            }
+            // One `step-finish` is one round trip to the model — the same thing
+            // `apiCalls` counts on every other engine.
+            if (p.kind === 'step-finish') { if (open) { open.apiCalls++; } continue; }
             if (p.kind !== 'tool') { continue; }
             info.toolCalls++;
             const name = p.tool || 'tool';
             info.tools[name] = (info.tools[name] ?? 0) + 1;
-            if (p.isError) { info.errors++; }
+            if (open) { open.tools++; open.steps++; }
+            if (p.isError) {
+                info.errors++;
+                if (open) { open.errors++; }
+            }
         }
+        // ‼️ THE MESSAGE'S OWN SPEND, READ THE SAME WAY THE SESSION TOTAL IS —
+        // `reasoning` is NOT inside `output` on this engine (see above), so the
+        // two sums are written identically or the row and the table disagree.
+        if (open && m.tokens) {
+            const u: Usage = {
+                input: m.tokens.input,
+                output: m.tokens.output + m.tokens.reasoning,
+                cacheRead: m.tokens.cacheRead,
+                cacheWrite: m.tokens.cacheWrite
+            };
+            open.tokens += totalTokens(u);
+            // What the window HELD when this call ended — the engine's own
+            // total, which is what every other Ctx figure in this codebase means.
+            if (m.tokens.total > 0) { open.endCtx = m.tokens.total; }
+            const model = m.model || doc.model;
+            if (model) { open.wTokens += weightedTokens(model, u); }
+        }
+        // The engine publishes its own dollars; a free model's 0 is a real zero.
+        if (open && typeof m.cost === 'number' && m.cost > 0) { open.cost += m.cost; }
     }
     // The window's occupancy after the last call — the last assistant message's
     // own total, which is what every other Ctx cell in this codebase means.
