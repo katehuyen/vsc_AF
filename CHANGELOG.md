@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.165.0 — S-39 is closed: twenty failures, one number, and none of them OpenCode's fault (2026-08-19)
+
+**‼️ `failed: 20 · exported: 0` was a count with four possible causes and no way to tell which.** `session list` that would not run, `export` that would not run, an export whose output could not be found, and a write that threw — every one of them incremented the same integer, and none of them kept the reason. So the diagnosis had to be done by hand, outside the extension, because the extension had thrown away the only thing worth reading. Measured through the bridge on the running build first: **`roots 24 · listed 63 · exported 0 · failed 20 · inTable 2`**.
+
+**‼️ Nine of this machine's roots were folders that no longer exist.** `learned` grows from the `directory` of every conversation a listing names, and **a conversation outlives its folder**: nine of them were `%TEMP%\af-oc-contract-*` directories a previous *measuring* run had created and deleted the moment it finished. Each one cost a two-second spawn that could only fail — and because the walk stops at `HARVEST_MAX_ROOTS`, a dead folder near the front was pushing a live one off the end of the list. They are dropped by a `stat` before anything spawns, and counted as `skippedRoots`, which is **not** a failure: it is a machine that has moved on, not an engine that is broken.
+
+**‼️ And every export was being handed one of those dead folders as its working directory — which is the whole of `exported: 0`.** Measured against the real binary: OpenCode's store is machine-wide, and `opencode export <id>` run from an unrelated **live** folder returns a conversation whose own directory was deleted, in full — exit 0, valid JSON. The cwd only has to *exist*. It uses the conversation's own folder when that folder is still there, and a live root otherwise.
+
+**The result, on the same machine, same roots, same conversations:**
+
+| | roots | skipped | listed | exported | failed |
+|---|---|---|---|---|---|
+| before | 24 | — | 63 | **0** | **20** |
+| after | 13 | 1 | 63 | **12** (the per-pass ceiling) | **0** |
+
+A second pass exported twelve more; the cache went from 22 conversations to 46.
+
+**A failure that is only ever counted cannot be fixed, so it is not only counted any more.** `failures[]` carries `{stage: list|export|read|write, where, reason}`, capped at eight — enough to see that the twentieth is the same sentence as the fourth without turning a background errand into a log file. Both surfaces report it: `sessions.opencodeSync` returns it, and the **Refresh OpenCode History** toast quotes one reason instead of saying `20 call(s) failed` and stopping there.
+
 ## 3.164.0 — B-12: closing a card promised a file on the one engine that keeps none (2026-08-19)
 
 **‼️ `console.close` said "its transcript stays on disk and stays resumable" — and the first half is false on exactly the engine a reader would go hunting for a file on.** OpenCode keeps its conversations in SQLite and publishes no transcript; what it publishes is `session list` and `export`, so the history really is readable, through the CLI. Promising a path that does not exist is worse than saying nothing, and `noTranscriptNote` — the sentence the Console already prints — knew this. The contract asks it now, so the panel and the catalogue cannot disagree about one engine.

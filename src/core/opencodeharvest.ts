@@ -55,6 +55,30 @@ export const HARVEST_MAX_EXPORTS = 12;
  *  errand on a machine the user is working on. */
 export const HARVEST_CONCURRENCY = 2;
 
+/**
+ * ‼️ S-39 — WHY A HARVEST FAILED, WHICH `failed: 20` COULD NOT SAY.
+ *
+ * The count was reached from four different places — a listing that would not
+ * run, an export that would not run, an export whose output could not be found,
+ * and a write that threw — and every one of them incremented the same number.
+ * A failure that is only ever counted cannot be diagnosed: the measurement that
+ * closed this item had to be done by hand, outside the extension, because the
+ * extension had thrown the reason away. It is kept now, capped, and it is the
+ * first thing the panel and `sessions.opencodeSync` report.
+ */
+export interface HarvestFailure {
+    /** which part of the errand: a listing, or one conversation's export */
+    stage: 'list' | 'export' | 'read' | 'write';
+    /** the folder a listing ran in, or the conversation an export was for */
+    where: string;
+    reason: string;
+}
+
+/** How many reasons one result will carry. Enough to see the PATTERN — the
+ *  twentieth is the same sentence as the fourth — without turning a background
+ *  errand's answer into a log file. */
+export const HARVEST_MAX_FAILURES = 8;
+
 export interface HarvestResult {
     /** false when the floor held it back — nothing was spawned */
     ran: boolean;
@@ -63,6 +87,19 @@ export interface HarvestResult {
     listed: number;
     exported: number;
     failed: number;
+    /** ‼️ S-39 — the reasons behind `failed`, newest first, capped at
+     *  HARVEST_MAX_FAILURES. Empty when nothing failed. */
+    failures: HarvestFailure[];
+    /**
+     * ‼️ S-39 — folders that were NOT spawned in because they no longer exist,
+     * which is neither a failure nor a silence: measured, nine of this machine's
+     * learned roots were `%TEMP%\af-oc-contract-*` directories from a previous
+     * measuring run, deleted the moment it ended. Spawning in a folder that is
+     * gone costs two seconds and produces an error that says nothing about
+     * OpenCode. Counting them separately keeps `failed` meaning "something went
+     * wrong" rather than "this machine has moved on".
+     */
+    skippedRoots: number;
     /** the reason nothing could be done at all, if there is one */
     error?: string;
 }
@@ -93,19 +130,42 @@ export class OpencodeHarvester {
     private now(): number { return this.o.now ? this.o.now() : Date.now(); }
 
     /** Every folder worth listing from, most specific first, capped. */
-    roots(): string[] {
+    roots(): string[] { return this.walk().roots; }
+
+    /**
+     * ‼️ S-39 — …AND A FOLDER THAT IS NO LONGER THERE IS NOT ONE OF THEM.
+     *
+     * `learned` grows from the `directory` of every conversation a listing
+     * names, and a conversation outlives its folder: measured on this machine,
+     * nine of the learned roots were `%TEMP%\af-oc-contract-*` directories a
+     * previous measuring run had created and deleted. Each one cost a spawn
+     * that could only fail, and the failure was counted as OpenCode's.
+     *
+     * Dropping them is also what makes the cap mean something — the walk stops
+     * at HARVEST_MAX_ROOTS, so a dead folder near the front of the list was
+     * pushing a live one off the end.
+     */
+    private walk(): { roots: string[]; gone: number } {
         const seen = new Set<string>();
         const out: string[] = [];
+        let gone = 0;
         for (const r of [...this.o.roots(), ...this.learned]) {
             const clean = String(r ?? '').trim();
             if (!clean) { continue; }
             const key = clean.toLowerCase();
             if (seen.has(key)) { continue; }
             seen.add(key);
+            // ‼️ A stat, not a spawn. The check that replaces a two-second
+            // process is the cheapest call in this file.
+            if (!this.exists(clean)) { gone++; continue; }
             out.push(clean);
             if (out.length >= HARVEST_MAX_ROOTS) { break; }
         }
-        return out;
+        return { roots: out, gone };
+    }
+
+    private exists(dir: string): boolean {
+        try { return fs.statSync(dir).isDirectory(); } catch { return false; }
     }
 
     /** What the cache already holds, and WHEN each piece was written.
@@ -137,7 +197,10 @@ export class OpencodeHarvester {
      * overlap — the second is answered `ran: false` rather than queued.
      */
     async harvest(force = false): Promise<HarvestResult> {
-        const blank: HarvestResult = { ran: false, roots: 0, listed: 0, exported: 0, failed: 0 };
+        const blank: HarvestResult = {
+            ran: false, roots: 0, listed: 0, exported: 0, failed: 0,
+            failures: [], skippedRoots: 0
+        };
         if (!this.o.enabled()) { return blank; }
         if (this.running) { return blank; }
         const now = this.now();
@@ -150,9 +213,17 @@ export class OpencodeHarvester {
             try { fs.mkdirSync(dir, { recursive: true }); }
             catch (e) { return { ...blank, ran: true, error: String((e as Error)?.message ?? e) }; }
 
-            const roots = this.roots();
+            const walked = this.walk();
+            const roots = walked.roots;
             const lists: OpencodeListRow[][] = [];
             let failed = 0;
+            const failures: HarvestFailure[] = [];
+            const note = (stage: HarvestFailure['stage'], where: string, reason: string) => {
+                failed++;
+                if (failures.length < HARVEST_MAX_FAILURES) {
+                    failures.push({ stage, where, reason: reason || 'no reason given' });
+                }
+            };
             await this.pool(roots, async root => {
                 const r = await this.o.cli.run(
                     ['session', 'list', '--format', 'json'], root, HARVEST_TIMEOUT_MS);
@@ -160,7 +231,7 @@ export class OpencodeHarvester {
                 // directory away from the project, the listing is empty — that
                 // is the cwd scoping working, not an error, and counting it as
                 // one would make every harvest look broken.
-                if (r.error) { failed++; return; }
+                if (r.error) { note('list', root, r.error); return; }
                 lists.push(opencodeListJson(r.stdout));
             });
             const rows = opencodeMergeRows(lists);
@@ -172,19 +243,34 @@ export class OpencodeHarvester {
             let exported = 0;
             await this.pool(wanted, async id => {
                 if (!OPENCODE_SESSION_ID.test(id)) { return; }
-                const cwd = byId.get(id)?.directory || roots[0] || '';
+                // ‼️ S-39 — THE CONVERSATION'S OWN FOLDER, BUT ONLY IF IT IS
+                // STILL THERE. `export` was handed the directory the listing
+                // named, and a conversation outlives its folder — so every
+                // export of a run from a deleted temp folder failed, which is
+                // the whole of this machine's `exported: 0`. MEASURED: the
+                // store is machine-wide and `opencode export <id>` run from an
+                // unrelated live folder returns that conversation in full
+                // (exit 0, valid JSON). The cwd only has to EXIST.
+                const own = byId.get(id)?.directory;
+                const cwd = (own && this.exists(own) ? own : roots[0]) || '';
                 const r = await this.o.cli.run(['export', id], cwd, HARVEST_TIMEOUT_MS);
-                if (r.error) { failed++; return; }
+                if (r.error) { note('export', id, r.error); return; }
                 // The banner goes to stderr on 1.18.18, but a build that moves
                 // it back must not write a file that will not parse.
                 const start = r.stdout.indexOf('{');
-                if (start < 0) { failed++; return; }
+                if (start < 0) {
+                    note('read', id, 'the export printed no JSON object');
+                    return;
+                }
                 try {
                     fs.writeFileSync(path.join(dir, `${id}.json`), r.stdout.slice(start), 'utf8');
                     exported++;
-                } catch { failed++; }
+                } catch (e) { note('write', id, String((e as Error)?.message ?? e)); }
             });
-            return { ran: true, roots: roots.length, listed: rows.length, exported, failed };
+            return {
+                ran: true, roots: roots.length, listed: rows.length, exported, failed,
+                failures, skippedRoots: walked.gone
+            };
         } finally {
             this.running = false;
         }

@@ -5447,13 +5447,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.opencodeSync',
-            describe: 'Read OpenCode\'s own history back into the sessions tables — the same refresh the "Refresh OpenCode History" command runs. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this SPAWNS its CLI (`session list --format json` in each known folder, then `export` for whatever has moved) and caches each export; it is the only history source here that costs a process, which is why it has a slow automatic beat and this op. The listing is cwd-scoped, so folders matter: the walk is the open workspace, every registered agent root, and any directory a previous listing named. Reads only — nothing is written to OpenCode\'s store. args: force? (default true — ignore the quiet floor between automatic harvests)',
+            describe: 'Read OpenCode\'s own history back into the sessions tables — the same refresh the "Refresh OpenCode History" command runs. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this SPAWNS its CLI (`session list --format json` in each known folder, then `export` for whatever has moved) and caches each export; it is the only history source here that costs a process, which is why it has a slow automatic beat and this op. The listing is cwd-scoped, so folders matter: the walk is the open workspace, every registered agent root, and any directory a previous listing named. ‼️ S-39 — A FOLDER THAT IS GONE IS DROPPED BEFORE ANYTHING SPAWNS and counted as `skippedRoots`, NOT as a failure: a conversation outlives its directory, so the learned walk fills up with folders that were deleted after the run that made them, and spawning in one costs two seconds to produce an error about nothing. ‼️ AND `failed` NOW SAYS WHY — `failures[]` carries {stage: list|export|read|write, where, reason}, capped, because a failure that is only ever counted cannot be diagnosed. Reads only — nothing is written to OpenCode\'s store. args: force? (default true — ignore the quiet floor between automatic harvests)',
             handler: async (args) => {
                 const force = typeof args.force === 'boolean' ? args.force : true;
                 const r = await harvestOpencode(force);
                 return {
                     ran: r.ran, roots: r.roots, listed: r.listed,
                     exported: r.exported, failed: r.failed,
+                    // ‼️ S-39 — the two figures that make the four above legible:
+                    // WHY anything failed, and how many folders were skipped
+                    // rather than failed. Measured on this machine before the
+                    // fix: `roots 24 · listed 63 · exported 0 · failed 20`, with
+                    // no way to tell from here that nine of those roots were
+                    // deleted temp folders and every export was being handed one
+                    // of them as its cwd.
+                    failures: r.failures,
+                    skippedRoots: r.skippedRoots,
                     ...(r.error ? { error: r.error } : {}),
                     inTable: index.external().filter(s => s.source === 'opencode').length
                 };
@@ -18265,10 +18274,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const total = index.external().filter(s => s.source === 'opencode').length;
+            // ‼️ S-39 — "20 call(s) failed" IS NOT A SENTENCE SOMEBODY CAN ACT ON,
+            // and it was the only thing this line said. A count with no reason
+            // sends the user (or the agent reading the same figures over the
+            // bridge) to the source, which is where the reason had already been
+            // thrown away. One example is enough to act on — the twentieth
+            // failure is the same sentence as the fourth — so the first one is
+            // quoted and the rest are counted behind it. Skipped folders are
+            // named separately because they are NOT a fault: a conversation
+            // outlives its directory, and a walk that has learned a deleted one
+            // is a machine that has moved on, not an engine that is broken.
+            const why = r.failures[0];
             void vscode.window.showInformationMessage(
                 `Agent Farm: OpenCode — ${r.listed} conversation(s) across ${r.roots} folder(s), `
                 + `${r.exported} newly read, ${total} in the sessions table`
-                + (r.failed ? ` · ${r.failed} call(s) failed` : ''));
+                + (r.skippedRoots ? ` · ${r.skippedRoots} folder(s) skipped (gone)` : '')
+                + (r.failed
+                    ? ` · ${r.failed} call(s) failed`
+                        + (why ? ` — ${why.stage} ${why.where}: ${why.reason}` : '')
+                    : ''));
         }),
         /**
          * ‼️ TWO EXPORTS, AND THE DIFFERENCE IS SAID OUT LOUD.

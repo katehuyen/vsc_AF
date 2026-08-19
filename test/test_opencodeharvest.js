@@ -149,6 +149,86 @@ function finish() {
             ok('a CLI that cannot be run is a counted failure, never a throw',
                 b.ran === true && b.failed === 1 && b.listed === 0);
 
+            // ---------- S-39: a failure that is only counted cannot be fixed ----
+            //
+            // ‼️ MEASURED BEFORE ANY OF THIS WAS WRITTEN, through the bridge on
+            // the running build: `roots 24 · listed 63 · exported 0 · failed
+            // 20`. Twenty failures, one number, four possible causes, and no way
+            // from inside the extension to tell which — the diagnosis had to be
+            // done by hand, outside it. That is the defect; the two fixes below
+            // fall out of what the diagnosis found.
+            ok('‼️ a failure carries WHERE it happened and WHY, not just a count',
+                b.failures.length === 1
+                && b.failures[0].stage === 'list'
+                && b.failures[0].where === REPO
+                && b.failures[0].reason === 'ENOENT');
+
+            // ---------- S-39: a folder that is gone is not a failure ----------
+            //
+            // ‼️ `learned` grows from the `directory` of every conversation a
+            // listing names, and a conversation OUTLIVES its folder: nine of
+            // this machine's roots were `%TEMP%/af-oc-contract-*` directories a
+            // previous measuring run had deleted. Each cost a two-second spawn
+            // that could only fail, and — because the walk stops at
+            // HARVEST_MAX_ROOTS — pushed a live folder off the end of the list.
+            {
+                const gonePath = path.join(os.tmpdir(), 'af-harvest-gone-' + Date.now());
+                const d2 = tmp();
+                const c2 = cli({ ['list:' + REPO]: '[]' });
+                const h2 = new OpencodeHarvester({
+                    dir: () => d2, roots: () => [REPO, gonePath], cli: c2, enabled: () => true
+                });
+                const r2 = await h2.harvest(true);
+                ok('‼️ a root that no longer exists is skipped, not spawned in and not failed',
+                    r2.roots === 1 && r2.skippedRoots === 1 && r2.failed === 0
+                    && !c2.calls.some(x => x.cwd === gonePath));
+                fs.rmSync(d2, { recursive: true, force: true });
+            }
+
+            // ---------- S-39: an export does not need its own folder ----------
+            //
+            // ‼️ MEASURED against the real binary: OpenCode's store is
+            // machine-wide, and `opencode export <id>` run from an unrelated
+            // LIVE folder returns a conversation whose own directory has been
+            // deleted, in full (exit 0, valid JSON). The cwd only has to EXIST.
+            // Handing the spawn the dead directory the listing named is the
+            // whole of this machine's `exported: 0`.
+            {
+                const d3 = tmp();
+                const dead = path.join(os.tmpdir(), 'af-harvest-dead-' + Date.now());
+                const c3 = cli({
+                    ['list:' + REPO]: JSON.stringify([
+                        { id: SES, title: 't', updated: 9e12, created: 1, directory: dead }
+                    ]),
+                    ['export:' + SES]: exportDoc(SES, 9e12)
+                });
+                const h3 = new OpencodeHarvester({
+                    dir: () => d3, roots: () => [REPO], cli: c3, enabled: () => true
+                });
+                const r3 = await h3.harvest(true);
+                const call = c3.calls.find(x => /^export /.test(x.args));
+                ok('‼️ an export whose conversation folder is gone runs from a live root instead',
+                    r3.exported === 1 && r3.failed === 0 && !!call && call.cwd === REPO);
+                fs.rmSync(d3, { recursive: true, force: true });
+            }
+
+            // ---------- S-39: and BOTH surfaces say the reason ----------
+            //
+            // ‼️ The panel–bridge equivalence rule (`_REF/agentfarm-dev.md`) cuts
+            // both ways here: the command's toast and `sessions.opencodeSync`
+            // report the same harvest, so a reason added to one and not the
+            // other leaves whichever surface you happen to be on saying "20
+            // call(s) failed" and nothing else.
+            {
+                const ext = fs.readFileSync(
+                    path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+                ok('‼️ the bridge hands the reasons back, not just the count',
+                    /failures: r\.failures/.test(ext) && /skippedRoots: r\.skippedRoots/.test(ext));
+                ok('…and the command\'s own message quotes one of them',
+                    /const why = r\.failures\[0\]/.test(ext)
+                    && /folder\(s\) skipped \(gone\)/.test(ext));
+            }
+
             fs.rmSync(dir, { recursive: true, force: true });
             console.log(`${pass} passed, ${fail} failed`);
             process.exit(fail ? 1 : 0);
