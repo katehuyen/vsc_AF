@@ -46,16 +46,20 @@
            quieter than the name above them even under the row's hover. */
         .lane-sid { font-family:var(--vscode-editor-font-family, monospace); letter-spacing:-0.2px; }
         .lanelabel:hover .lane-sid { opacity:.8; }
-        /* ‼️ U-67 — the gutter's hover/click box. It is HTML over an SVG because
-           an AFTip is HTML; the wrapper carries the box (afTip measures the panel
-           against it) and the trigger fills it. The highlight is the affordance
-           the SVG's own :hover used to give and can no longer, since this sits
-           on top of it. */
+        /* ‼️ U-67 — the hover/click boxes laid over the drawing: the gutter
+           label, every tool bar and every dot. They are HTML over an SVG
+           because an AFTip is HTML; the wrapper carries the box (afTip measures
+           the panel against it) and the trigger fills it. The highlight is the
+           affordance the SVG's own :hover used to give and can no longer, since
+           these sit on top of it. A dot's box is deliberately wider than the
+           dot, so it lights up as a soft circle rather than as a rectangle
+           around something round. */
         .lanes-wrap { position:relative; }
         .lanes-wrap .af-tipw.lane-hotw { position:absolute; display:block; }
         .lane-hot { display:block; width:100%; height:100%; border-radius:4px;
             transition:background-color .08s linear; }
         .lane-hot:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.18)); }
+        .lane-hotw.lane-dot .lane-hot { border-radius:50%; }
     </style>`;
 
     /**
@@ -343,90 +347,221 @@
         return { money, work, time };
     }
 
-    /**
-     * ‼️ U-67 — WHAT A LANE SAYS ABOUT ITSELF, IN THE PANEL THAT CAN CARRY IT.
+    /* ================= U-67 — WHAT THIS PAGE SAYS WHEN YOU POINT AT IT =======
      *
-     * The old hover opened with the AGENT and never named the CONVERSATION —
-     * "developer · 3f8a1c2b · working" on a page whose whole subject is which
-     * conversation is doing what. The session's own name is now the first line
-     * of the panel's head, in full and at reading size (SHORTHAND: the row is
-     * cut to thirteen characters, so the long form belongs here), and the head
-     * also states the one thing a row cannot draw — how many sessions this
-     * track is packing.
-     */
-    function laneTipHead(lane, primary) {
-        const s = LIVE_BY_ID.get(primary && primary.id);
-        const name = (s && (s.title || s.label)) || (lane.anon ? '' : lane.agent) || 'session';
-        const more = lane.sessions.length - 1;
-        return name + (more > 0 ? ` · +${more} earlier session${more > 1 ? 's' : ''} on this row` : '');
-    }
+     * ‼️ EVERY POINT ON A LANE IS A MOMENT IN A CONVERSATION, so every point
+     * answers the same four questions in the same order and in the same words:
+     *
+     *      WHICH conversation — its own name, not the agent's folder
+     *      WHAT was said      — the prompt, the command, the answer, whole
+     *      WHERE in the talk  — turn, clock, the gap back to the point before
+     *      WHAT pressing does — click and right-click, spelled out
+     *
+     * One shape for all of them, so the eye learns it once and then only reads
+     * the part it came for. `SAID` in src/core/live.ts is why there is anything
+     * to read: an event used to keep ninety characters, which is a row's worth
+     * and not a panel's.
+     *
+     * A native `title` could carry none of this — it is TEXT, so it is AFTip's
+     * (docs/CONVENTIONS.md → Hover) — and an `<svg>` cannot hold HTML, so each
+     * trigger is a transparent HTML box laid over the drawing. `.chartbox svg`
+     * is `width:100%; height:auto` on a viewBox, so the drawing scales with no
+     * letterboxing and a percentage of the wrapper IS the SVG's own coordinate.
+     * ==================================================================== */
 
-    /**
-     * The body: every session this row holds, newest last, with the notes that
-     * say what the row IS and what pressing it does. `AFTip.lines` drops the
-     * empties, so a session that cannot answer a question simply says less.
-     */
-    function laneTipBody(lane, laneEng) {
-        return window.AFTip.lines([
-            'Engine: ' + window.AFEngine.label(laneEng),
-            'Row: ' + lane.name + (lane.sessions.length > 1
-                ? ` — ${lane.sessions.length} sessions, packed in sequence` : ''),
-            '',
-            lane.sessions.map(s => sessionTip(s.id)).join('\n\n'),
-            '',
-            lane.anon
-                ? 'This row is labelled by its session id because the folder it runs in is not one of your agent folders.'
-                : '',
-            lane.file ? 'Click to open this session\'s transcript.' : 'No transcript to open yet.',
-            'Right-click for this session\'s actions — and for everything the agent can be asked to do.'
-        ]);
-    }
-
-    /**
-     * The transparent trigger over one gutter label. It is the row's HOVER, its
-     * CLICK and its RIGHT-CLICK: `mark` is what the page's own click delegate
-     * listens for, and `laneCtx` is the same context the bars carry.
-     */
-    function laneHotHtml(lane, primary, laneEng, box) {
-        // ‼️ THE BOX IS THE WRAPPER'S, not the trigger's: `tip-free` measures the
-        // panel against the WRAPPER (afTip.js `place`), so a wrapper collapsed to
-        // nothing would open the panel in the corner of the page.
-        const attrs = `style="left:0;width:${box.width.toFixed(3)}%;`
-            + `top:${box.top.toFixed(3)}%;height:${box.height.toFixed(3)}%;`
-            + `cursor:${lane.file ? 'pointer' : 'default'}"`;
-        const trigger = `<span class="lane-hot mark" data-file="${C.esc(lane.file || '')}" data-ts="0" `
-            + laneCtx(primary && primary.id, lane.agent, 'afTimelineAgent')
-            + ` role="button" aria-label="${C.esc(lane.name + ' — session details')}"></span>`;
-        return window.AFTip.wrap(trigger, laneTipHead(lane, primary),
-            laneTipBody(lane, laneEng), 'tip-free lane-hotw', attrs);
-    }
-
-    /** Multi-line text for an SVG <title>: everything known about one session. */
-    function sessionTip(sid) {
+    /** A conversation's own name, and the words for not having one yet. */
+    function convName(sid) {
         const s = LIVE_BY_ID.get(sid);
-        if (!s) { return `session ${shortId(sid)} — no longer tracked (its events are history)`; }
-        const meta = STATUS_META[s.status] || STATUS_META.idle;
-        const st = statLines(s, true);
-        // ‼️ U-67 — THE SESSION'S OWN NAME FIRST, AND NOT ONLY IF IT HAS ONE.
-        // This opened with the AGENT and put the conversation's name on the
-        // second line behind quotation marks, so a row on the page whose entire
-        // subject is "which conversation is doing what" answered with the folder
-        // it ran in. The name leads; a session that has not earned a title yet
-        // says so in those words rather than by leaving the line out, because an
-        // absent line reads as an absent session.
-        const lines = [
-            `Session: ${s.title || s.label || '(not titled yet — no first prompt recorded)'}`,
-            `Agent: ${s.agentName}${s.label && s.label !== s.agentName ? ` (shown as ${s.label})` : ''}`,
-            `Id: ${shortId(s.sessionId)} · ${meta.label}${s.currentTool ? ' · ' + s.currentTool : ''}`,
-            // The prompt it is ON is a different fact from the name it was GIVEN,
-            // and on a long session they stop being the same thing after turn 1.
-            s.lastPrompt && s.lastPrompt !== s.title ? `Now: “${s.lastPrompt}”` : '',
-            st.money, st.work, st.time,
-            isGone(s) ? 'no live process — this session is over (Clear it below)'
-                : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : ''),
-            s.cwd
+        if (!s) { return `#${shortId(sid)} — no longer tracked (its events are history)`; }
+        return s.title || s.label || '(not named yet — nothing said in it so far)';
+    }
+
+    /**
+     * ‼️ A PANEL IS BLOCKS, NOT A LIST OF LINES. `AFTip.lines` drops empties,
+     * which is right for a list of figures and wrong here: a panel that answers
+     * four different questions and runs them together as one paragraph is the
+     * wall this item was reopened for. Each block is its own subject and they
+     * are separated by a blank line, so the eye can jump to the one it came
+     * for. An empty block is dropped whole — a heading with nothing under it is
+     * worse than silence.
+     */
+    function panelBody(blocks) {
+        return (blocks || [])
+            .map(b => (Array.isArray(b) ? b.filter(Boolean).join('\n') : String(b || '')).trim())
+            .filter(Boolean).join('\n\n');
+    }
+
+    /** WHOSE moment this is. Every panel opens with it, in this order, so the
+     *  answer is always in the same place. The name is left out where the head
+     *  already IS the name — no fact in two places on one panel. */
+    function whoBlock(sid, lane, laneEng, named) {
+        const s = LIVE_BY_ID.get(sid);
+        const meta = s ? (STATUS_META[s.status] || STATUS_META.idle) : null;
+        return [
+            named ? '' : 'Conversation: ' + convName(sid),
+            'Agent: ' + (lane.anon ? lane.who : lane.agent)
+                + ' · ' + window.AFEngine.label(laneEng)
+                + (s && s.model ? ' · ' + String(s.model).replace(/^claude-/, '') : ''),
+            'Session: ' + shortId(sid) + (meta ? ' · ' + meta.label : '')
         ];
-        return lines.filter(Boolean).join('\n');
+    }
+
+    /** A block of quoted text under its own heading, or nothing at all. Quoted
+     *  because it is somebody's words and not the panel's own sentence. */
+    function saidBlock(label, text) {
+        const t = String(text || '').trim();
+        return t ? `${label}\n“${t}”` : '';
+    }
+
+    /** Where in the talk. `since` is the gap back to the previous event of the
+     *  SAME session — the figure a chart of dots cannot draw. */
+    function whenLine(ts, turn, since) {
+        return 'At ' + fmtClock(ts)
+            + (turn ? ' · turn ' + turn : '')
+            + (since ? ' · ' + fmtDur(since) + ' after the point before it' : '');
+    }
+
+    /** The two gestures, always last and always both, so a row never has to be
+     *  guessed at. A point opens the transcript AT ITS MOMENT; the row's own
+     *  label has no moment to open at and says the plainer thing. */
+    function pressBlock(file, moment) {
+        return [
+            file
+                ? (moment ? 'Click opens the transcript at this moment.'
+                    : 'Click opens this session\'s transcript.')
+                : 'No transcript to open yet.',
+            'Right-click for this session\'s actions.'
+        ];
+    }
+
+    /**
+     * ‼️ WHAT ONE POINT IS, IN THE READER'S WORDS AND NOT THE HOOK'S.
+     * `said` names the text the event carries, which differs per kind: a prompt
+     * carries what was sent, a permission carries what is being asked for. An
+     * event whose kind has no text says nothing rather than an empty heading.
+     */
+    const MARK_WORDS = {
+        prompt: { title: 'You wrote', said: 'What you sent' },
+        permission: { title: 'Waiting for permission', said: 'What it is asking for' },
+        stop: { title: 'The agent finished its turn', said: '' },
+        notify: { title: 'Notification', said: 'What it said' },
+        compact: { title: 'Context compacted', said: 'What triggered it' },
+        subagent: { title: 'A subagent finished', said: '' },
+        start: { title: 'Session started', said: 'How it was opened' },
+        end: { title: 'Session ended', said: 'Why' }
+    };
+
+    /** One point on a lane: head says what and when, body says the rest. */
+    function markTip(m, lane, laneEng) {
+        const w = MARK_WORDS[m.kind] || { title: m.kind, said: 'Detail' };
+        return {
+            head: w.title + ' · ' + fmtClock(m.ts),
+            body: panelBody([
+                whoBlock(m.sid, lane, laneEng),
+                [
+                    whenLine(m.ts, m.turn, m.since),
+                    // The turn's own arithmetic, on the event that closes it:
+                    // this is what "the agent answered" amounts to on a chart
+                    // that has the timings and not the words.
+                    m.kind === 'stop' && m.turnMs
+                        ? `That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`
+                        : ''
+                ],
+                w.said ? saidBlock(w.said + ':', m.detail) : '',
+                m.tool ? 'Tool: ' + m.tool : '',
+                pressBlock(m.file || lane.file, true)
+            ])
+        };
+    }
+
+    /** One tool bar: what it was asked for, what it answered, how long it took. */
+    function segTip(seg, lane, laneEng) {
+        const ran = seg.unfinished
+            ? `Started ${fmtClock(seg.start)} — no end event ever arrived; the session's last sign of life was ${fmtClock(seg.end)}.`
+            : `${fmtClock(seg.start)} → ${seg.live
+                ? (seg.stale ? 'still running? nothing heard since ' + fmtClock(seg.end) : 'still running')
+                : fmtClock(seg.end)} · ${fmtDur(Math.max(1000, seg.end - seg.start))}`;
+        return {
+            head: seg.tool + ' · ' + (seg.unfinished ? 'never finished'
+                : fmtDur(Math.max(1000, seg.end - seg.start))),
+            body: panelBody([
+                whoBlock(seg.sid, lane, laneEng),
+                'Ran ' + ran + (seg.turn ? ' · turn ' + seg.turn : ''),
+                saidBlock('What it was asked for:', seg.said),
+                seg.result ? saidBlock('What it answered:', seg.result)
+                    : (seg.unfinished
+                        ? 'What it answered: nothing came back — the closing event never arrived.'
+                        : 'What it answered was not recorded for this call.'),
+                pressBlock(seg.file || lane.file, true)
+            ])
+        };
+    }
+
+    /**
+     * The row's own panel — the label in the gutter. It is about the ROW: which
+     * conversation it is drawing, and what else it is packing. The moments on
+     * it have their own panels, so nothing is said twice (ONE SUBJECT).
+     */
+    function laneTip(lane, primary, laneEng) {
+        const more = lane.sessions.length - 1;
+        return {
+            head: convName(primary && primary.id)
+                + (more > 0 ? ` · +${more} earlier session${more > 1 ? 's' : ''} on this row` : ''),
+            body: panelBody([
+                whoBlock(primary && primary.id, lane, laneEng, true),
+                ...sessionFigures(primary && primary.id),
+                more > 0
+                    ? `This row is ${lane.sessions.length} sessions packed in sequence — they never overlap, so they share a track. The head above is the newest of them; every bar and dot answers for its own.`
+                    : '',
+                lane.anon
+                    ? 'The row is labelled by its session id because the folder it runs in is not one of your agent folders.'
+                    : '',
+                pressBlock(lane.file, false)
+            ])
+        };
+    }
+
+    /** What a session HAS — what it is on, its figures, and where it runs, as
+     *  three separate blocks. Figures only: what was SAID at a given moment
+     *  belongs to the point that was said at (ONE SUBJECT). */
+    function sessionFigures(sid) {
+        const s = LIVE_BY_ID.get(sid);
+        if (!s) { return []; }
+        const st = statLines(s, true);
+        return [
+            // The prompt it is ON is a different fact from the name it was
+            // GIVEN, and on a long session the two stop agreeing after turn 1.
+            [
+                s.lastPrompt && s.lastPrompt !== s.title ? saidBlock('On right now:', s.lastPrompt) : '',
+                s.currentTool ? 'Inside a tool: ' + s.currentTool : ''
+            ],
+            [st.money, st.work, st.time],
+            [
+                isGone(s) ? 'No live process — this session is over (Clear it below).'
+                    : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : ''),
+                s.cwd
+            ]
+        ];
+    }
+
+    /**
+     * A transparent trigger laid over the drawing, carrying a panel — and, for
+     * the ones that name a session, that session's click and right-click too.
+     * `box` is in PERCENT of the chart, which is the SVG's own coordinate.
+     *
+     * ‼️ THE BOX IS THE WRAPPER'S, not the trigger's: `tip-free` measures the
+     * panel against the WRAPPER (afTip.js `place`), so a wrapper collapsed to
+     * nothing would open the panel in the corner of the page.
+     */
+    function hotHtml(box, tip, o) {
+        const attrs = `style="left:${box.left.toFixed(3)}%;width:${box.width.toFixed(3)}%;`
+            + `top:${box.top.toFixed(3)}%;height:${box.height.toFixed(3)}%;`
+            + `cursor:${o.file ? 'pointer' : 'default'}"`;
+        const trigger = `<span class="lane-hot mark" data-file="${C.esc(o.file || '')}"`
+            + ` data-ts="${o.ts || 0}" ${o.ctx || ''}`
+            + ` role="button" aria-label="${C.esc(o.label)}"></span>`;
+        return window.AFTip.wrap(trigger, tip.head, tip.body,
+            'tip-free lane-hotw' + (o.cls ? ' ' + o.cls : ''), attrs);
     }
 
     // One row per CONCURRENT session: each agent's sessions are packed into
@@ -445,7 +580,17 @@
         const sessOf = (id, agent, ts) => {
             let s = bySession.get(id);
             if (!s) {
-                s = { id, agent, first: ts, last: ts, live: false, segments: [], marks: [], file: '' };
+                s = {
+                    id, agent, first: ts, last: ts, live: false, segments: [], marks: [], file: '',
+                    // ‼️ U-67 — WHERE IN THE CONVERSATION THIS POINT FELL. A dot
+                    // on a chart is a moment, and a moment nobody can place in
+                    // the talk around it is trivia. Counted here because the
+                    // stream is already being walked in order: `turn` steps on
+                    // every prompt, `turnStart`/`turnTools` are what the turn
+                    // has cost so far, and `lastAny` gives every point the gap
+                    // back to the one before it.
+                    turn: 0, turnStart: 0, turnTools: 0, lastAny: 0
+                };
                 bySession.set(id, s);
             }
             s.first = Math.min(s.first, ts);
@@ -469,18 +614,38 @@
             if (!e.agentName) { unresolved.add(e.sessionId.slice(0, 8)); }
             const s = sessOf(e.sessionId, e.agentName || e.sessionId.slice(0, 8), e.ts);
             if (e.transcriptPath) { s.file = e.transcriptPath; }
+            const since = s.lastAny ? e.ts - s.lastAny : 0;
+            s.lastAny = e.ts;
+            if (e.kind === 'prompt') { s.turn++; s.turnStart = e.ts; s.turnTools = 0; }
             if (e.kind === 'toolStart') {
-                open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', file: e.transcriptPath || '' });
+                s.turnTools++;
+                open.set(e.sessionId, {
+                    start: e.ts, tool: e.tool || '?', file: e.transcriptPath || '',
+                    detail: e.detail || '', turn: s.turn
+                });
             } else if (e.kind === 'toolEnd') {
                 const o = open.get(e.sessionId);
                 if (o) {
                     open.delete(e.sessionId);
                     if (e.ts >= from) {
-                        s.segments.push({ start: Math.max(o.start, from), end: e.ts, tool: o.tool, file: o.file });
+                        s.segments.push({
+                            start: Math.max(o.start, from), end: e.ts, tool: o.tool, file: o.file,
+                            // What it was asked for and what it answered. The
+                            // answer only exists on the closing event, which is
+                            // the one event a bar is built out of two of.
+                            sid: s.id, turn: o.turn, said: o.detail, result: e.detail || ''
+                        });
                     }
                 }
             } else if (e.ts >= from) {
-                s.marks.push({ ts: e.ts, kind: e.kind, detail: e.detail || '', tool: e.tool || '', file: e.transcriptPath || '' });
+                s.marks.push({
+                    ts: e.ts, kind: e.kind, detail: e.detail || '', tool: e.tool || '',
+                    file: e.transcriptPath || '', sid: s.id, turn: s.turn, since,
+                    // A turn's own arithmetic, and only on the event that closes
+                    // one: how long it ran and how much work it took.
+                    turnMs: e.kind === 'stop' && s.turnStart ? e.ts - s.turnStart : 0,
+                    turnTools: e.kind === 'stop' ? s.turnTools : 0
+                });
             }
         }
         // A tool call with no end event. It only keeps GROWING while its session
@@ -500,6 +665,7 @@
             const end = busy ? now : Math.max(o.start, ls ? ls.lastEventTs : s.last);
             s.segments.push({
                 start: Math.max(o.start, from), end, tool: o.tool, file: o.file,
+                sid: s.id, turn: o.turn, said: o.detail, result: '',
                 live: busy,
                 stale: busy && ls.status === 'stalled',
                 unfinished: !busy
@@ -661,9 +827,14 @@
                 (sidLine
                     ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
                     : '') + '</g>';
-            hots.push(laneHotHtml(lane, primary, laneEng, {
-                top: ((y - 2) / H) * 100, height: (30 / H) * 100, width: (labelW / W) * 100
-            }));
+            hots.push(hotHtml(
+                { left: 0, top: ((y - 2) / H) * 100, height: (30 / H) * 100, width: (labelW / W) * 100 },
+                laneTip(lane, primary, laneEng),
+                {
+                    file: lane.file, ts: 0,
+                    ctx: laneCtx(primary && primary.id, lane.agent, 'afTimelineAgent'),
+                    label: lane.name + ' — what this row is'
+                }));
             // ‼️ THE CONTROLS BELONG TO THIS ROW'S SESSION AND TO NOTHING ELSE
             // (U-66). They used to carry `data-agent`, so an agent with three
             // concurrent rows showed one setting three times and a click on any
@@ -753,23 +924,45 @@
                 const style = seg.unfinished
                     ? 'fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.7"'
                     : `fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.stale ? 0.6 : seg.live ? 0.95 : 0.55}"`;
-                const when = seg.unfinished
-                    ? `${fmtClock(seg.start)} → unfinished: no end event ever arrived (the session stopped at ${fmtClock(seg.end)})`
-                    : `${fmtClock(seg.start)} → ${seg.live ? (seg.stale ? 'running? — nothing heard since ' + fmtClock(seg.end) : 'running') : fmtClock(seg.end)} (${Math.max(1, Math.round((seg.end - seg.start) / 1000))}s)`;
-                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style} class="mark" data-file="${C.esc(fileOf(seg.file))}" data-ts="${seg.start}">` +
-                    `<title>${C.esc(seg.tool)} — ${C.esc(when)}</title></rect>`;
+                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style}/>`;
+                // ‼️ U-67 — THE BAR IS DRAWN IN SVG AND ANSWERED IN HTML. The
+                // hover box is also the click and the right-click, so a bar
+                // cannot disagree with its own panel about which session it is.
+                hots.push(hotHtml(
+                    {
+                        left: (x1 / W) * 100, width: (Math.max(x2 - x1, 5) / W) * 100,
+                        top: ((y + rowH / 2 - 8) / H) * 100, height: (16 / H) * 100
+                    },
+                    segTip(seg, lane, laneEng),
+                    {
+                        file: fileOf(seg.file), ts: seg.start,
+                        ctx: laneCtx(seg.sid, lane.agent),
+                        label: `${seg.tool} at ${fmtClock(seg.start)}`
+                    }));
             }
             for (const m of lane.marks) {
                 const st = MARK_STYLE[m.kind] || MARK_STYLE.notify;
                 const mx = x(m.ts), my = y + rowH / 2;
-                const tip = `<title>${C.esc(st.label)}${m.tool ? ' · ' + C.esc(m.tool) : ''}${m.detail ? ' — ' + C.esc(m.detail) : ''} (${fmtClock(m.ts)})</title>`;
                 if (st.shape === 'diamond') {
-                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</path>`;
+                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}"/>`;
                 } else if (st.shape === 'tick') {
-                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</line>`;
+                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2"/>`;
                 } else {
-                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}" class="mark" data-file="${C.esc(fileOf(m.file))}" data-ts="${m.ts}">${tip}</circle>`;
+                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}"/>`;
                 }
+                // A dot is 8px across and a moment is worth reading, so the box
+                // that answers for it is wider than the dot is drawn.
+                hots.push(hotHtml(
+                    {
+                        left: ((mx - 6) / W) * 100, width: (12 / W) * 100,
+                        top: ((my - 9) / H) * 100, height: (18 / H) * 100
+                    },
+                    markTip(m, lane, laneEng),
+                    {
+                        file: fileOf(m.file), ts: m.ts,
+                        ctx: laneCtx(m.sid, lane.agent),
+                        label: `${st.label} at ${fmtClock(m.ts)}`, cls: 'lane-dot'
+                    }));
             }
         });
 
@@ -1017,7 +1210,7 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click</b> gives the session's actions (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}

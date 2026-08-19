@@ -180,7 +180,47 @@ function toolDetail(input: Record<string, unknown> | undefined): string {
     if (!input) { return ''; }
     const cand = input['file_path'] ?? input['command'] ?? input['description'] ??
         input['pattern'] ?? input['query'] ?? input['url'] ?? input['prompt'] ?? '';
-    return truncate(String(cand), 90);
+    return truncate(String(cand), SAID);
+}
+
+/**
+ * ‼️ U-67 — HOW MUCH OF WHAT WAS SAID IS KEPT.
+ *
+ * Ninety characters is a ROW's worth: enough to tell two events apart in a
+ * table and not enough to read. The Live Timeline's points are hovered to find
+ * out what actually happened at that moment — the prompt that was sent, the
+ * command that ran, what it answered — and a panel that can scroll has no use
+ * for a sentence cut mid-word. The store is one line of JSON per event and is
+ * already capped and pruned by count, so the cost of this is a few hundred
+ * bytes on the events a person actually reads.
+ *
+ * The session's OWN `lastPrompt` stays short: it is drawn on cards and in
+ * strips, where the row is the whole space there is.
+ */
+const SAID = 1200;
+
+/**
+ * What a tool ANSWERED, in one readable line or two.
+ *
+ * A tool response is whatever the engine put in it — a string, a file, an
+ * object with a flag — so this asks the fields that actually carry the answer
+ * in the order they mean something, and falls back to the shape itself rather
+ * than to silence. A failure says so first: "it ran" and "it worked" are
+ * different facts and the point on the chart only ever showed the first.
+ */
+function toolResult(resp: unknown): string {
+    if (resp === undefined || resp === null || resp === '') { return ''; }
+    if (typeof resp === 'string') { return truncate(resp, SAID); }
+    if (typeof resp !== 'object') { return truncate(String(resp), SAID); }
+    const r = resp as Record<string, unknown>;
+    const err = r['error'] ?? r['stderr'] ?? (r['success'] === false ? 'the tool reported failure' : '');
+    const body = r['stdout'] ?? r['output'] ?? r['content'] ?? r['result'] ??
+        r['message'] ?? r['filePath'] ?? r['file_path'] ?? '';
+    const say = (v: unknown): string =>
+        typeof v === 'string' ? v : (v === undefined || v === null || v === '' ? '' : JSON.stringify(v));
+    const parts = [err ? 'error: ' + say(err) : '', say(body)].filter(Boolean);
+    if (parts.length) { return truncate(parts.join(' · '), SAID); }
+    try { return truncate(JSON.stringify(r), SAID); } catch { return ''; }
 }
 
 export class LiveMonitor implements vscode.Disposable {
@@ -671,7 +711,8 @@ export class LiveMonitor implements vscode.Disposable {
                 s.status = 'working';
                 s.prompts++;
                 s.lastPrompt = truncate(payload.prompt ?? '', 90);
-                this.push(s, 'prompt', undefined, s.lastPrompt);
+                // The card gets the row's worth; the event keeps what was said.
+                this.push(s, 'prompt', undefined, truncate(payload.prompt ?? '', SAID));
                 break;
             case 'PreToolUse':
                 s.status = 'tool';
@@ -682,22 +723,22 @@ export class LiveMonitor implements vscode.Disposable {
             case 'PostToolUse':
                 s.status = 'working';
                 s.currentTool = undefined;
-                this.push(s, 'toolEnd', payload.tool_name);
+                this.push(s, 'toolEnd', payload.tool_name, toolResult(payload.tool_response));
                 break;
             case 'Notification': {
                 const msg = payload.message ?? '';
                 if (/permission|approv|allow/i.test(msg)) {
                     s.status = 'waiting-permission';
-                    this.push(s, 'permission', undefined, truncate(msg, 90));
+                    this.push(s, 'permission', undefined, truncate(msg, SAID));
                     cfg.forward?.('permission', `${this.labelOf(s)}: ${truncate(msg, 120)}`);
                     if (cfg.notifyPermission) {
                         this.notify('warn', `${this.labelOf(s)} is waiting for permission`, msg);
                     }
                 } else if (/waiting|input|idle/i.test(msg)) {
                     s.status = 'waiting-input';
-                    this.push(s, 'notify', undefined, truncate(msg, 90));
+                    this.push(s, 'notify', undefined, truncate(msg, SAID));
                 } else {
-                    this.push(s, 'notify', undefined, truncate(msg, 90));
+                    this.push(s, 'notify', undefined, truncate(msg, SAID));
                 }
                 break;
             }

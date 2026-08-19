@@ -17,7 +17,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     function elemsForSelector(sel) {
         if (sel !== '.mark') { return []; }
         const els = [];
-        const re = /class="mark" data-file="([^"]*)" data-ts="([^"]*)"/g;
+        // U-67: the click target is the HTML box laid over the drawing, so its
+        // class list has the page's own class in front of `mark`.
+        const re = /class="[^"]*\bmark\b[^"]*" data-file="([^"]*)" data-ts="([^"]*)"/g;
         let m;
         while ((m = re.exec(lastHtml))) {
             const el = { dataset: { file: m[1], ts: m[2] } };
@@ -58,8 +60,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox); // runs render() once
 
-    ok('prompt mark carries data-ts', new RegExp('<circle[^>]*class="mark" data-file="C:/t/x.jsonl" data-ts="' + T + '"').test(lastHtml));
-    ok('tool segment is clickable with file+ts', new RegExp('<rect[^>]*class="mark" data-file="C:/t/x.jsonl" data-ts="' + (T + 1000) + '"').test(lastHtml));
+    ok('prompt mark carries data-ts', new RegExp('lane-dot"[^>]*><span class="lane-hot mark" data-file="C:/t/x.jsonl" data-ts="' + T + '"').test(lastHtml));
+    ok('tool segment is clickable with file+ts', new RegExp('class="lane-hot mark" data-file="C:/t/x.jsonl" data-ts="' + (T + 1000) + '"').test(lastHtml));
 
     posted = [];
     const seg = markEls.find(e => e.dataset.ts === String(T + 1000));

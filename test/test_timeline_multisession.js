@@ -77,8 +77,13 @@ const sandbox = {
                 { sessionId: 'S1', agentName: 'dev', ts: NOW - 30 * MIN, kind: 'prompt', detail: 'p1' },
                 // still running: the session says it is inside this tool
                 { sessionId: 'S1', agentName: 'dev', ts: NOW - 5 * MIN, kind: 'toolStart', tool: 'Read' },
-                { sessionId: 'S2', agentName: 'dev', ts: NOW - 15 * MIN, kind: 'toolStart', tool: 'Bash' },
-                { sessionId: 'S2', agentName: 'dev', ts: NOW - 14 * MIN, kind: 'toolEnd', tool: 'Bash' },
+                // ‼️ U-67 — a whole turn on one row: what was asked, what ran,
+                // what it answered, and the turn closing. Every one of those is
+                // a point somebody hovers to find out what happened there.
+                { sessionId: 'S2', agentName: 'dev', ts: NOW - 16 * MIN, kind: 'prompt', detail: 'list the temp folder for me' },
+                { sessionId: 'S2', agentName: 'dev', ts: NOW - 15 * MIN, kind: 'toolStart', tool: 'Bash', detail: 'ls -la /tmp' },
+                { sessionId: 'S2', agentName: 'dev', ts: NOW - 14 * MIN, kind: 'toolEnd', tool: 'Bash', detail: 'total 12 drwxr-xr-x 3 root' },
+                { sessionId: 'S2', agentName: 'dev', ts: NOW - 14 * MIN + 2000, kind: 'stop' },
                 // an EARLIER, ended ops session — sequential, so it must SHARE the ops row
                 { sessionId: 'SOLD', agentName: 'ops', ts: NOW - 50 * MIN, kind: 'prompt', detail: 'old' },
                 { sessionId: 'SOLD', agentName: 'ops', ts: NOW - 45 * MIN, kind: 'end' },
@@ -152,9 +157,10 @@ ok('‼️ …in an AFTip and not a native title, because it is text',
     && !/class="mark lanelabel"/.test(lastHtml));
 ok('‼️ …whose head is the CONVERSATION\'s name, which is what the row is about',
     /<span class="af-tiph">the S1 job<\/span>/.test(lastHtml));
-ok('…and the session\'s own name leads its block, never the folder it ran in',
-    /Session: the S1 job/.test(lastHtml) && /Agent: dev/.test(lastHtml));
-ok('…and its figures are in there', /Id: #S1 · TOOL · Read/.test(lastHtml)
+ok('…and the conversation\'s own name leads its block, never the folder it ran in',
+    /Conversation: the S1 job/.test(lastHtml) && /Agent: dev/.test(lastHtml));
+ok('…and its figures are in there', /Session: #S1 · TOOL/.test(lastHtml)
+    && /Inside a tool: Read/.test(lastHtml)
     && lastHtml.indexOf('$0.50 · 48.2k tok') !== -1);
 
 // ---- a row is a session: right-click it for that session's commands ----
@@ -216,7 +222,7 @@ ok('…and its figures are in there', /Id: #S1 · TOOL · Read/.test(lastHtml)
     ok('…hollow and dashed, not as work in progress',
         !!ghost && ghost[3].indexOf('fill="none"') !== -1 && ghost[3].indexOf('stroke-dasharray') !== -1);
     ok('…and stops where the session did (≈1 minute, not 9)', !!ghost && Number(ghost[2]) < 60);
-    ok('…and says so on hover', lastHtml.indexOf('unfinished: no end event ever arrived') !== -1);
+    ok('…and says so on hover', lastHtml.indexOf('no end event ever arrived') !== -1);
     // row 0 (dev #1): the session says it IS inside this tool — that one grows
     const live = /<rect x="([\d.]+)" y="40" width="([\d.]+)" height="14" rx="3" fill="var\(--vscode-charts-green/.exec(lastHtml);
     ok('a tool the session is still on keeps growing', !!live && Number(live[1]) + Number(live[2]) > 880);
@@ -324,17 +330,22 @@ ok('S1 asks to turn its own sound OFF',
 // file, its events do not. The path does not change inside a session, so the
 // lane's own is not a guess.
 {
-    const markOf = re => (re.exec(lastHtml) || [])[1];
+    // The drawing carries no data now: a dot is a dot and the box laid over it
+    // is what is hovered, clicked and right-clicked (U-67). So the path is read
+    // off the box, which is where it has to be right.
+    const boxes = re => (lastHtml.match(re) || []).map(s => /data-file="([^"]*)" data-ts="(\d+)"/.exec(s))
+        .filter(Boolean).map(m => ({ file: m[1], ts: Number(m[2]) }));
+    const dots = boxes(/lane-hotw lane-dot" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g);
+    // A bar and the row's own label are the same wrapper; the row's box is the
+    // one that names no moment (`data-ts="0"`), which is exactly what it means.
+    const bars = boxes(/lane-hotw" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g)
+        .filter(b => b.ts > 0);
     ok('‼️ X-41 — a mark whose EVENT carried no path takes its lane\'s',
-        markOf(/<circle cx="[\d.]+" cy="47" r="4\.2" fill="[^"]*" class="mark" data-file="([^"]*)"/)
-        === 'D:/t/S1.jsonl');
-    ok('…and so does a tool bar', (() => {
-        const files = (lastHtml.match(/<rect x="[\d.]+" y="\d+" width="[\d.]+" height="14"[^>]*data-file="([^"]*)"/g) || [])
-            .map(s => /data-file="([^"]*)"/.exec(s)[1]);
-        return files.length > 0 && files.some(f => f === 'D:/t/S1.jsonl');
-    })());
+        dots.length > 0 && dots.some(d => d.file === 'D:/t/S1.jsonl'));
+    ok('…and so does a tool bar',
+        bars.length > 0 && bars.some(b => b.file === 'D:/t/S1.jsonl'));
     ok('‼️ …and a lane with no file anywhere still draws no link rather than a dead one',
-        /class="lane-hot mark" data-file=""[\s\S]{0,900}?aria-label="dev #2 — session details"/.test(lastHtml));
+        /class="lane-hot mark" data-file=""[\s\S]{0,900}?aria-label="dev #2 — what this row is"/.test(lastHtml));
 
     // The host half: where the lane's file comes from when the hook could not
     // carry one. The record has known where a foreign conversation lives since
@@ -344,6 +355,49 @@ ok('S1 asks to turn its own sound OFF',
         /transcriptPath: s\.transcriptPath \|\| row\?\.file \|\| undefined/.test(host));
     ok('…reading the wide pool, the same one the title and the cost come from',
         /const rows = new Map\(deps\.index\.allWithExternal\(\)/.test(host));
+}
+
+// ---- ‼️ U-67: every point on a lane says what happened THERE ----------------
+//
+// The page's whole subject is which conversation is doing what, and until this
+// it could only be asked about the ROW. A dot was a native `<title>` reading
+// "prompt — p1 (14:23)": the kind, ninety characters, and a clock. What a
+// person hovers a dot for is the moment itself — which conversation, what was
+// said, where in the talk it fell — and that is TEXT, so it is an AFTip.
+//
+// One shape for every point, so the eye learns it once: who, what was said,
+// where in the talk, what pressing it does.
+{
+    const panels = lastHtml.match(/<span class="af-tiph">[\s\S]*?<\/span><span class="af-tipb">[\s\S]*?<\/span>/g) || [];
+    const withHead = h => panels.filter(p => p.indexOf('<span class="af-tiph">' + h) === 0);
+    const prompt = withHead('You wrote · ').find(p => p.indexOf('temp folder') !== -1) || '';
+    const turnEnd = withHead('The agent finished its turn · ')[0] || '';
+    const bar = panels.filter(p => /^<span class="af-tiph">Bash · /.test(p))[0] || '';
+
+    ok('‼️ a prompt dot opens with what it IS and when', !!prompt);
+    ok('‼️ …and carries what was actually sent, whole and quoted',
+        prompt.indexOf('What you sent:') !== -1
+        && prompt.indexOf('“list the temp folder for me”') !== -1);
+    ok('…named by its conversation, not by the folder it ran in',
+        prompt.indexOf('Conversation: ') !== -1 && prompt.indexOf('Agent: dev · Claude') !== -1);
+    ok('‼️ …and placed in the talk: the turn it opened, and the gap back',
+        /At \d\d:\d\d(:\d\d)? · turn 1/.test(prompt));
+    ok('…with both gestures spelled out, every time',
+        prompt.indexOf('Right-click for this session\'s actions.') !== -1);
+
+    ok('‼️ a tool bar says what it was asked for AND what it answered', !!bar
+        && bar.indexOf('“ls -la /tmp”') !== -1
+        && bar.indexOf('“total 12 drwxr-xr-x 3 root”') !== -1);
+    ok('…and how long it took, in the head, where a bar is read from',
+        /^<span class="af-tiph">Bash · 1m/.test(bar));
+
+    ok('‼️ the point that closes a turn says what the turn cost', !!turnEnd
+        && /That turn ran .* and made 1 tool call\./.test(turnEnd));
+
+    ok('‼️ nothing is left on a native title — the drawing carries no hover at all',
+        !/<circle[^>]*><title>/.test(lastHtml) && !/height="14"[^>]*><title>/.test(lastHtml));
+    ok('…and a point is its own click target, at its own moment',
+        /lane-hotw lane-dot" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="[1-9]/.test(lastHtml));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
