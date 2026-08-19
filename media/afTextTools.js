@@ -285,13 +285,38 @@
      * that snapped back snapped back a little taller each time until it could
      * cover the page. A ceiling only the stylesheet knows is not a ceiling.
      *
-     *   el       the textarea being dragged
+     * ‼️ AND THE THIRD HALF: WHO IS ALLOWED TO DO THE DRAGGING.
+     *
+     * A `resize:vertical` textarea is resized by the ENGINE, and the engine's
+     * arithmetic assumes the box's top-left corner stands still: it converts
+     * the pointer into the box's OWN coordinates and takes the height from
+     * there. The console composer is the one box on which that assumption is
+     * false — it is the last child of a bottom-anchored flex column, so every
+     * pixel the box gains moves its own top UP by a pixel, which moves the
+     * pointer further down in the box's coordinates, which asks for another
+     * pixel. Pull down and it runs away from you; let go and it settles
+     * wherever the loop stopped. That is "sometimes it snaps back", that is
+     * "the ceiling keeps climbing", and no amount of clamping downstream can
+     * fix it, because the number arriving was never the number asked for.
+     *
+     * So the box with that layout is given a `handle` and its `resize` is taken
+     * away. Nothing writes an inline height any more; the drag is OUR
+     * arithmetic — one anchor taken at pointerdown, and every move measured
+     * against that anchor and against nothing that moves. `grow:'up'` says
+     * which way the pointer makes it taller. A box in ordinary flow keeps the
+     * engine's own handle and the observer below; there is nothing wrong with
+     * it there.
+     *
+     *   el       the box whose height is kept
      *   varName  the custom property the stylesheet reads
      *   min      the floor in px — the box's own css min-height
      *   cap      the ceiling in px, or a function returning it; 70% of the
      *            window by default, which is the `max-height:70vh` rule
      *   read     () => the stored px (0 = never dragged)
      *   write    px => store it; where that is belongs to the page
+     *   handle   the element dragged instead of the engine's own grip
+     *   grow     'up' when the pointer must travel UP to make it taller
+     *   onDrag   px => told on every change, so a label can mirror the figure
      *
      * Returns a stop(). A page calls this again on every rebuild, and an
      * observer left on a dead box writes the height THAT box had into the same
@@ -316,8 +341,78 @@
             else if (root.style.removeProperty) { root.style.removeProperty(o.varName); }
         };
         apply();
+        const told = px => { if (typeof o.onDrag === 'function') { o.onDrag(px, min, capOf()); } };
+        told(stored() || 0);
+
+        // ---- the handle path: we do the arithmetic, the engine does none ----
+        const handle = o.handle;
+        let offHandle = null;
+        if (handle && typeof handle.addEventListener === 'function'
+            && typeof handle.removeEventListener === 'function') {
+            // Which way is taller. The composer grows UPWARDS out of the bottom
+            // of the window, so its bar is dragged up; a box in ordinary flow
+            // would be dragged down.
+            const dir = o.grow === 'up' ? -1 : 1;
+            let anchorY = 0, anchorH = 0, held = null;
+            // The height to measure the drag FROM. A box that was never dragged
+            // has no stored figure and is whatever the layout gave it — that
+            // measured height is the anchor, so the first pull starts where the
+            // box visibly is instead of jumping to the floor.
+            const shownH = () => {
+                const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                return Math.round((r && r.height) || 0) || min;
+            };
+            const put = px => {
+                const want = clamp(px);
+                if (want !== stored() && o.write) { o.write(want); apply(); }
+                told(want);
+            };
+            const onDown = ev => {
+                anchorY = ev.clientY;
+                anchorH = stored() || shownH();
+                held = ev.pointerId;
+                if (held !== undefined && handle.setPointerCapture) {
+                    try { handle.setPointerCapture(held); } catch (e) { /* not captured; move still fires */ }
+                }
+                if (ev.preventDefault) { ev.preventDefault(); }
+            };
+            // ‼️ MEASURED FROM THE ANCHOR, NEVER FROM THE CURRENT HEIGHT. An
+            // increment per move ("+3 since last time") is the same runaway the
+            // engine has, one level up: the box moves, the next delta is read
+            // against the moved box, and the error compounds. One subtraction
+            // against a number taken before anything moved cannot drift.
+            const onMove = ev => {
+                if (held === null) { return; }
+                put(anchorH + (ev.clientY - anchorY) * dir);
+            };
+            const onUp = () => {
+                if (held === null) { return; }
+                if (held !== undefined && handle.releasePointerCapture) {
+                    try { handle.releasePointerCapture(held); } catch (e) { /* already gone */ }
+                }
+                held = null;
+            };
+            // Double-click gives the height back to the layout — the way out of
+            // a size you no longer want, without hunting for the original one.
+            const onReset = () => { if (o.write) { o.write(0); apply(); } told(0); };
+            handle.addEventListener('pointerdown', onDown);
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+            handle.addEventListener('pointercancel', onUp);
+            handle.addEventListener('dblclick', onReset);
+            offHandle = () => {
+                handle.removeEventListener('pointerdown', onDown);
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                handle.removeEventListener('pointercancel', onUp);
+                handle.removeEventListener('dblclick', onReset);
+            };
+        }
+
         let obs = null;
-        if (typeof ResizeObserver === 'function') {
+        // A box with a handle has no engine grip to watch, and watching it
+        // anyway would read an inline height nobody wrote.
+        if (!offHandle && typeof ResizeObserver === 'function') {
             obs = new ResizeObserver(() => {
                 // The inline height is written by the resize handle and by
                 // nothing else now, so it says exactly one thing: a person
@@ -334,13 +429,14 @@
         }
         // A narrower window lowers the ceiling and the box follows it down. The
         // number that was dragged is kept as it is, so widening gives it back.
-        const onWindow = () => apply();
+        const onWindow = () => { apply(); told(stored() || 0); };
         const canListen = typeof window.addEventListener === 'function'
             && typeof window.removeEventListener === 'function';
         if (canListen) { window.addEventListener('resize', onWindow); }
         return () => {
             if (obs && typeof obs.disconnect === 'function') { obs.disconnect(); }
             obs = null;
+            if (offHandle) { offHandle(); offHandle = null; }
             if (canListen) { window.removeEventListener('resize', onWindow); }
         };
     }

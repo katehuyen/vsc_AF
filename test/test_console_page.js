@@ -1885,24 +1885,24 @@ const html = allHtml;
 
 // ---------- K-9: the height you drag is a SETTING, not a side effect --------
 //
-// ‼️ THREE THINGS THREW IT AWAY, WHICH IS WHY IT LOOKED RANDOM. The ceiling was
-// 30vh, so a drag past a third of the window did nothing and the handle stopped
-// under the cursor. The height a drag sets is an INLINE style, which
-// `buildShell` replaces — so it had to be put back by hand after every rebuild
-// (another session picked, a turn ending, an agent pinned) and whatever ran in
-// between won instead. And the figure being put back was never checked against
-// the ceiling, so the box that snapped back came back a little TALLER every
-// time until it could cover the page — the symptom the item was reopened for.
+// ‼️ THE HEIGHT IS `--af-boxh` ON THE DOCUMENT ROOT, which no rebuild of the
+// composer reaches, and `AFTextTools.keepHeight` clamps it on the way in and on
+// the way out — so a figure that went into storage above the ceiling can never
+// be read back as the new normal.
 //
-// The height is `--af-boxh` on the document root now, which no rebuild reaches,
-// and `AFTextTools.keepHeight` clamps it on the way in and on the way out.
-// keepHeight's own behaviour is measured in test_texttools.js — here: that this
-// page uses it, stops the old box's observer, and states the same ceiling.
+// ‼️ AND THE BOX HAS NO RESIZE GRIP OF ITS OWN. It is the last child of a
+// bottom-anchored flex column, so every pixel it gains moves its own top up by
+// a pixel — and the engine's resize takes the height from where the pointer
+// falls inside the box it is moving. The gesture belongs to the page instead: a
+// grab bar on the composer's top edge, which is the edge that moves. The
+// arithmetic is measured in test_texttools_height.js; here: that this page
+// really hands the bar over, stops the old keeper, and states the ceiling once.
 {
     const src = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
     ok('‼️ the writing box has room to be dragged into',
-        /max-height:70vh; resize:vertical/.test(src)
-        && !/max-height:30vh/.test(src));
+        /max-height:70vh/.test(src) && !/max-height:30vh/.test(src));
+    ok('‼️ …and no resize grip: the engine cannot measure a box that moves as it grows',
+        !/\.composer textarea \{[^}]*resize:vertical/.test(src));
     ok('the dragged height is part of the page\'s own state, next to the draft',
         /boxH: 0,/.test(src));
     ok('‼️ …and it is a NUMBER — a css length from an older build is read as one',
@@ -1912,10 +1912,14 @@ const html = allHtml;
         && !/text\.style\.height = st\.boxH/.test(src));
     ok('…recorded through the shared keeper, so there is one answer to "how tall"',
         /window\.AFTextTools\.keepHeight\(\{\s*\n\s*el: text, varName: '--af-boxh', min: 64,/.test(src));
-    // An observer left on an earlier box holds the height THAT box had and
-    // writes it into the same slot — a height coming back on its own.
-    ok('‼️ …and the previous box\'s observer is stopped before a new one starts',
-        /if \(stopBoxH\) \{ stopBoxH\(\); \}\s*\n\s*stopBoxH = window\.AFTextTools\.keepHeight/.test(src));
+    ok('‼️ …and dragged by the composer\'s own bar, on the edge that actually moves',
+        /handle: grab, grow: 'up',/.test(src) && /id="c-grab"/.test(src));
+    ok('…the bar states the figure it sets and keeps it true through the drag (MIRROR)',
+        /function boxHeadline/.test(src) && /onDrag: \(px, min, cap\)/.test(src));
+    // A keeper left on an earlier box holds the height THAT box had and writes
+    // it into the same slot — a height coming back on its own.
+    ok('‼️ …and the previous box\'s keeper is stopped before a new one starts',
+        /if \(stopBoxH\) \{ stopBoxH\(\); \}[\s\S]{0,600}?stopBoxH = window\.AFTextTools\.keepHeight/.test(src));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

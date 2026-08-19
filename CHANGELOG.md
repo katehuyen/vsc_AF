@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.178.0 — K-9: the writing box is resized by a bar of our own, because the engine cannot measure it (2026-08-20)
+
+**Storing the height was never the problem — the number arriving was wrong.** A `resize:vertical` textarea is resized by the browser, and the browser's arithmetic assumes the box's top-left corner stands still: it converts the pointer into the box's OWN coordinates and reads the height from there. The Console composer is the one box in the extension where that assumption is false. It is the last child of a bottom-anchored flex column, so **every pixel it gains moves its own top up by a pixel** — which puts the pointer a pixel deeper in the box's coordinates, which asks for another pixel. Pull down and it runs away from you; let go and it settles wherever the loop stopped. That is "sometimes it snaps back", that is "the ceiling keeps climbing", and no clamp downstream can repair a number that was already wrong when it was written.
+
+**So the textarea has no resize grip any more, and the composer has a grab bar on its top edge** — the edge that actually moves when the box grows, so the bar stays under the pointer one-for-one for the whole drag. The arithmetic is ours: **one anchor taken at pointerdown**, and every move measured against that anchor and against nothing that moves. A pointer that has not moved cannot make the box grow, which is exactly what could not be said before.
+
+The bar carries an `AFTip` that states the height it is setting and **keeps it true during the drag** (MIRROR), with the floor and the ceiling beside it; **double-click hands the height back to the layout**. The clamp now bites while the drag is happening rather than after it, so the box never passes the ceiling even for a frame.
+
+Nothing writes an inline height any longer, which removes the whole class: there is one place this figure lives (`--af-boxh` on the document root, `st.boxH` in the page's state) and one gesture that sets it. The Backlog capture box sits in ordinary flow — it does not move while it is measured — so it keeps the browser's own grip and the observer that reads it; `AFTextTools.keepHeight` is still one mechanism, now with two ways in. Storage is written once the hand stops, not sixty times a second.
+
 ## 3.177.0 — K-9: the writing box stays where it was dragged, and stops growing (2026-08-19)
 
 **This was closed once and came back, so the fault was in the arrangement, not the wording.** The height a drag sets is an INLINE style on the textarea, and both pages that have one rewrite their whole markup — so the height had to be *put back by hand* after every rebuild, and whatever ran between the two won instead. That is why it looked random: whether it survived depended on what happened to repaint next, and on the Console only some things repaint.
