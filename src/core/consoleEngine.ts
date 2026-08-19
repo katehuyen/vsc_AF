@@ -296,6 +296,33 @@ export function codexModeNote(mode: string | undefined): string {
             : 'Codex runs with no sandbox at all. Nothing will stop and ask you.';
 }
 
+/**
+ * ‼️ B-12 — CLAUDE'S OWN SENTENCE, WHICH IT DID NOT HAVE.
+ *
+ * `engineModeNote` routed `claude` to `codexModeNote`, so asking it what a
+ * Claude session's permission mode means answered *"Codex cannot stop and ask,
+ * so this turn runs read-only"* — the wrong engine's name on the wrong claim
+ * about the one engine that CAN stop and ask. Nothing had reached that branch
+ * yet: every caller guarded it with `shape !== 'persistent'` first, so the fault
+ * sat there until a contract asked every engine the same question. It is here
+ * rather than left unreachable, because the next caller to forget the guard is
+ * the one that would ship it.
+ */
+export function claudeModeNote(mode: string | undefined): string {
+    switch (String(mode ?? '').trim()) {
+        case 'plan':
+            return 'Claude Code is in plan mode: it reads and proposes, and writes nothing until you accept a plan.';
+        case 'acceptEdits':
+            return 'Claude Code applies file edits without asking; anything else still stops and asks you.';
+        case 'bypassPermissions':
+            return 'Claude Code asks for nothing at all. Every tool runs on sight.';
+        default:
+            return 'Claude Code stops and asks before anything it is not already allowed to do — '
+                + 'the question arrives in the panel and the turn waits on your answer. '
+                + '‼️ Its own settings can resolve this into a wider mode; `enforcedPermissionMode` is the one to trust.';
+    }
+}
+
 export interface CodexTurnInit {
     /** The thread to continue. Absent = this is the first turn. */
     thread?: string;
@@ -703,6 +730,84 @@ export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
 }
 
 /**
+ * ‼️ B-12 — THE ENGINE ENUM A `describe` PRINTS, BUILT ONCE.
+ *
+ * Fourteen bridge contracts spelt the ids out by hand — `claude|codex|gemini|agy`
+ * — and every one of them was still saying it after a fifth engine had shipped
+ * end to end. That is worse on the bridge than on a page: `farm.ops` IS the
+ * contract an agent reads before it calls, so a caller with a real OpenCode job
+ * read the catalogue, concluded the engine was unsupported and never tried it —
+ * while `bridgeRunDimensions` would have accepted it and run it. A list typed
+ * into a sentence is a list nobody goes back to; this one cannot go stale.
+ *
+ * Two spellings because both are already in use and neither is worth a churn:
+ * `claude|codex|…` inside a compact `args:` line, `claude | codex | …` where the
+ * sentence has room.
+ */
+export const ENGINE_ENUM = Object.keys(ENGINES).join('|');
+export const ENGINE_ENUM_SPACED = Object.keys(ENGINES).join(' | ');
+
+/**
+ * ‼️ B-12 — IS THIS ROW'S DOLLAR FIGURE THE ENGINE'S OWN, OR OURS?
+ *
+ * `measured: !s.source` was the test, and it read "is this a Claude transcript"
+ * — right for as long as Claude was the only engine that quoted a price. It is
+ * not any more: OpenCode publishes `cost` on the wire and in its headless JSONL,
+ * so its dollars are as real as Claude's and were being left OUT of every
+ * project total and every budget comparison. An under-count of money the user
+ * actually spent is the wrong way round to be wrong.
+ *
+ * ‼️ NOT `engineOf(...).reportsCost` — that falls back to Claude for a name it
+ * has never heard of, and a session whose `source` is a custom CLI profile would
+ * have its derived dollars counted as measured ones. An unknown source answers
+ * NO, which is the same conservative direction the old test had.
+ */
+export function engineQuotesPrice(source: string | undefined): boolean {
+    const key = String(source ?? '').trim().toLowerCase();
+    // A Claude transcript states no engine at all — the absence IS Claude.
+    if (!key) { return true; }
+    const spec = (ENGINES as Record<string, EngineTransport | undefined>)[key];
+    return !!spec?.reportsCost;
+}
+
+/**
+ * ‼️ B-12 — WHERE A MID-CONVERSATION CHANGE ACTUALLY LANDS, said back to the
+ * caller instead of assumed.
+ *
+ * `console.setModel` and `console.setEffort` both answered `applied: "from the
+ * next turn"` on every engine, which is true of all three shapes and useless on
+ * two of them: it does not say whether anything was SENT anywhere. On a
+ * persistent engine the running process is told; on a shared-ACP engine a live
+ * connection is told at the next turn boundary; on a per-turn engine nothing is
+ * told at all — the value is a flag on a process that does not exist yet. A
+ * caller deciding whether to wait for a confirmation needs to know which.
+ */
+export function engineChangeNote(engine: string | undefined): string {
+    const e = engineOf(engine);
+    if (e.shape === 'persistent') {
+        return 'sent to the running process — it applies from the next turn';
+    }
+    if (e.shape === 'sharedAcp') {
+        return 'sent to the live connection as session config at the next turn boundary';
+    }
+    return 'recorded here — this engine has no running process to tell, so it is the flag the NEXT turn is spawned with';
+}
+
+/**
+ * ‼️ …AND WHICH OF THEM REFUSE AN EFFORT, for the notes that said "not on
+ * gemini". A second engine with no reasoning-effort setting arrived (OpenCode:
+ * ACP declares only `model` and `mode`, and no reachable model publishes a
+ * variant), so the parenthetical named one of the two and a caller reading it
+ * concluded the other took one. `bridgeRunDimensions` refuses both; this is the
+ * same answer, in the words the contract prints.
+ */
+export function enginesWithoutEffort(): string {
+    const ids = Object.keys(ENGINES).filter(id => !engineTakesEffort(id));
+    if (ids.length < 2) { return ids.join(''); }
+    return `${ids.slice(0, -1).join(', ')} or ${ids[ids.length - 1]}`;
+}
+
+/**
  * ‼️ U-59 — WHICH FLAG THIS ENGINE ACTUALLY CARRIES A MODEL OR AN EFFORT ON,
  * ASKED OF THE BUILDER RATHER THAN WRITTEN DOWN AGAIN.
  *
@@ -829,7 +934,10 @@ export function engineModeNote(engine: string | undefined, mode: string | undefi
         case 'agy': return agyModeNote(mode);
         case 'gemini': return geminiModeNote(mode);
         case 'codex': return codexModeNote(mode);
-        case 'claude': return codexModeNote(mode);
+        // ‼️ B-12 — NOT `codexModeNote` (see claudeModeNote). This line answered
+        // "what does this permission mode mean on Claude" with Codex's name and
+        // Codex's claim, on the one engine that really does stop and ask.
+        case 'claude': return claudeModeNote(mode);
         case 'opencode': return opencodeModeNote(mode);
         default: return unknownEngine(spec.id, 'engineModeNote');
     }

@@ -485,11 +485,14 @@ export interface ProjectRollupSession extends ProjectSessionRef {
     /**
      * ‼️ DOES THIS SESSION'S DOLLAR FIGURE MEAN ANYTHING? (X-35)
      *
-     * Only Claude Code quotes a price per turn. A Codex or Gemini row's `cost`
+     * Not every engine quotes a price per turn. A Codex or Gemini row's `cost`
      * is DERIVED from a token count and a price table, and an Antigravity row
-     * has neither — so adding all three into one number produces a total whose
-     * units are three different things and whose comparison against a budget is
-     * meaningless.
+     * has neither — so adding those into one number produces a total whose units
+     * are three different things and whose comparison against a budget is
+     * meaningless. ‼️ Claude Code and OpenCode DO quote one, and theirs belong in
+     * the total: the caller decides with `engineQuotesPrice`, never by asking
+     * whether the row happens to be Claude's, which is the test this field
+     * shipped with and which quietly dropped real money (B-12).
      *
      * Absent = true, because every caller that existed before this field passed
      * only Claude rows.

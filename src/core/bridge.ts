@@ -20,8 +20,8 @@
  * new feature ships its bridge access by adding one registration.
  */
 
-import { ENGINES, engineTakesEffort } from './consoleEngine';
-import { ONE_EXECUTOR, twoExecutors } from './launch';
+import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
+import { ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 
 export interface BridgeOpSpec {
@@ -199,6 +199,22 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
         const v = optStr(args, k);
         if (v) { out[k] = v; }
     }
+    // ‼️ B-12 — AND THE VALUES ARE CHECKED WHERE THEY ARE WRITTEN DOWN TOO.
+    // The engine NAME was refused here (above) and the effort and the permission
+    // mode were not: `schedules.add { permissionMode: "sudo" }` was stored
+    // happily and failed at 3 a.m. in a terminal nobody was watching — the exact
+    // failure this function exists to move forward in time, left half-done
+    // because `tasks.add` happens to call `validateLaunch` afterwards and a
+    // schedule, a trigger, a template and a workflow step do not. It is the SAME
+    // list and the same words the launcher refuses with; nothing new is decided
+    // here, it is only asked earlier.
+    {
+        const bad = validateLaunch({
+            effort: out.effort as string | undefined,
+            permissionMode: out.permissionMode as string | undefined
+        });
+        need(!bad.length, bad.join(' · '));
+    }
     // ‼️ AN EFFORT THE ENGINE HAS NO FLAG FOR IS REFUSED, NOT DROPPED. Gemini
     // has no reasoning-effort setting at all (core/gemini.ts) and exits 42 when
     // handed one. Accepting the field and silently ignoring it would let a
@@ -273,6 +289,18 @@ export function needOneExecutor(engine: unknown, cli: unknown): void {
  * distinguishing "not stated" from "the key does not exist in this build" is
  * the difference between a default and a missing feature.
  */
+/**
+ * ‼️ B-12 — WHAT EVERY READ-BACK CARRIES, in the words the contracts print.
+ * It lives beside the serializer rather than in each `describe`, because a
+ * sentence typed into five contracts is a sentence four of them stop matching.
+ */
+export const DIMS_OUT_NOTE =
+    ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '
+    + 'reportsCost, costSource, takesEffort) — read those before the figures beside '
+    + 'them: a cost from a costSource:"cli" engine is the engine\'s own and may be '
+    + 'added to a budget, one from a "tokens" engine is derived from your pricing '
+    + 'rules and may not, and an effort is refused outright where takesEffort is false.';
+
 export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
@@ -286,6 +314,26 @@ export function bridgeDimsOut(
         // run on" has an answer for every run ever recorded, and it is `claude`
         // for the ones made before there was a second one.
         engine: o.engine ?? 'claude',
+        // ‼️ B-12 — AND WHAT THAT ENGINE CAN DO, beside the dimensions it was
+        // set with. Every field below means something different per engine —
+        // `effort` is refused outright where `takesEffort` is false, and
+        // `costUSD` on the reply beside this one is the engine's own figure on
+        // a `costSource:"cli"` row and derived from the user's pricing rules on
+        // a `"tokens"` one — so a caller could read the whole reply and not
+        // know which set of rules it was reading under. It is answered HERE
+        // rather than op by op for the same reason the dimensions are: one
+        // serializer means a sixth engine is described everywhere at once.
+        engineLabel: engineOf(o.engine).label,
+        // one long-lived process | one process per turn | one shared for every
+        // card on this engine (see EngineShape)
+        turnShape: engineOf(o.engine).shape,
+        reportsCost: engineOf(o.engine).reportsCost,
+        costSource: engineOf(o.engine).costSource,
+        takesEffort: engineTakesEffort(o.engine),
+        // ‼️ THE WHOLE STRING OR NOTHING. OpenCode names models
+        // `provider/model` (`opencode/big-pickle`) and that is what goes on the
+        // wire — a reader that splits it or strips the provider has invented a
+        // model id no engine has.
         model: o.model ?? null,
         effort: o.effort ?? null,
         permissionMode: o.permissionMode ?? null,

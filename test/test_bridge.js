@@ -2499,8 +2499,23 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // learns that by watching its message disappear has been told a lie by
         // omission, so the contract says it on the way in.
         ok('console.start takes an engine', /engine\?/.test(consoleStart));
-        ok('…and says what changes about talking to it',
-            /ONE PROCESS PER TURN/.test(consoleStart) && /HELD/.test(consoleStart));
+        // ‼️ B-12 — AND IT SAYS IT PER ENGINE, DERIVED. The sentence used to be
+        // one per SHAPE, written when there were two: "Claude is one long-lived
+        // process; every other engine here is ONE PROCESS PER TURN." A
+        // shared-ACP engine is neither — its message is held like a per-turn
+        // engine's and its controls reach a LIVE connection like a persistent
+        // one's — so a caller driving it off that sentence believed it was
+        // talking to a process that dies every turn. `engineNote` and
+        // `engineModeNote` are the same words the Console panel prints beside
+        // the picker, so the contract and the surface cannot disagree.
+        ok('…and says what changes about talking to it, in each engine\'s own words',
+            /engineNote\(e\.id\)/.test(consoleStart) && /engineModeNote\(e\.id, ''\)/.test(consoleStart));
+        // ‼️ …and the price sentence is derived too. "Only Claude Code states a
+        // per-turn price" was true until a second engine published one, and a
+        // caller reading it would have treated a real figure as a derived guess.
+        ok('…and which engines state a price is read off the registry, not asserted',
+            /filter\(e => e\.reportsCost\)/.test(consoleStart)
+            && !/Only Claude Code states a per-turn price/.test(consoleStart));
         ok('‼️ …and REFUSES one this machine cannot run, with the one thing to do '
             + 'about it — a session started on a missing CLI dies on its first turn '
             + 'with a shell error, which is a worse answer than "it is not installed"',
@@ -2546,16 +2561,30 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             // told a caller that Antigravity and Gemini have a Codex sandbox.
             // They do not: Gemini has an approval mode and Antigravity's real
             // restraint is its own app's setting.
-            ok('…it names what changes on a per-turn engine: the up-front permission, '
-                + 'the missing system-prompt channel, and the absent dollar figure',
-                /Codex SANDBOX/.test(addBlock)
-                && /Gemini APPROVAL MODE/.test(addBlock)
-                && /Antigravity/.test(addBlock)
+            // ‼️ B-12 — NAMED BY THE ENGINE, NOT LISTED IN THE SENTENCE. This
+            // used to assert the literal words "Codex SANDBOX", "Gemini APPROVAL
+            // MODE" and so on: a list that was complete when it was typed and
+            // silently short of the fifth engine ever after. The contract now
+            // asks each engine what its own mode means (`engineModeNote`), which
+            // is the same answer the Tasks form and the task archive print — so
+            // an engine added tomorrow describes itself here without anybody
+            // remembering to come back.
+            ok('…it names what changes per engine by ASKING the engine, not by listing them',
+                /engineModeNote\(e\.id, ''\)/.test(addBlock)
+                && /filter\(e => e\.id !== 'claude'\)/.test(addBlock)
                 && /has such a channel|has no such channel|none of these engines has such a channel/.test(addBlock)
                 && /and no dollar figure/.test(addBlock.replace(/\s+/g, ' ')));
-            ok('‼️ …and says that gemini takes no effort, rather than accepting one and dropping it',
-                /Gemini has NO/.test(addBlock)
-                && /reasoning-effort flag/.test(addBlock.replace(/'\s*\+\s*'/g, '')));
+            // ‼️ …and the OPPOSITE problem gets its own paragraph: an engine that
+            // CAN stop and ask has nobody to ask, unattended, so its request comes
+            // back refused rather than waiting. That is the one fact an agent
+            // queueing OpenCode work has to know before it queues it.
+            ok('‼️ …and says what an engine that CAN ask does when nobody is there',
+                /comes back\\n?\s*\+? ?.?REFUSED|REFUSED/.test(addBlock)
+                && /--auto/.test(addBlock)
+                && /opencode run --format json/.test(addBlock));
+            ok('‼️ …and that an engine with no effort refuses one, rather than accepting and dropping it',
+                /enginesWithoutEffort\(\)/.test(addBlock)
+                && /refused rather than/.test(addBlock.replace(/'\s*\+\s*'/g, '')));
             ok('…and answers with the engine and whether it reports a price at all',
                 /engine: task\.engine \?\? 'claude'/.test(addBlock)
                 && /reportsCost: engineOf\(task\.engine\)\.reportsCost/.test(addBlock));
@@ -2584,8 +2613,15 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             ok('‼️ …and says out loud that the PLANNER stays on Claude Code, with why',
                 /THE PLANNER ALWAYS RUNS ON CLAUDE CODE/.test(misBlock)
                 && /--disallowedTools/.test(misBlock));
+            // ‼️ B-12 — WHICH ENGINES THOSE ARE IS NOW READ OFF THE REGISTRY.
+            // The sentence said "a subscription engine", which was a synonym for
+            // "not Claude" until an engine arrived that runs on an account AND
+            // states its own price; a caller reading it would have concluded
+            // maxCostUSD was useless on OpenCode, where it is the working brake.
             ok('‼️ …and offers the ceiling that still binds when the engine states no price',
-                /maxTokens\?/.test(misBlock) && /can never be reached by/.test(misBlock.replace(/\s+/g, ' ')));
+                /maxTokens\?/.test(misBlock)
+                && /can never reach maxCostUSD/.test(misBlock.replace(/\s+/g, ' '))
+                && /filter\(e => !e\.reportsCost\)/.test(misBlock));
             ok('…and missions.status reports the tokens beside the dollars',
                 /tokens: r\.totalTokens \?\? 0/.test(src));
         }
@@ -3588,7 +3624,11 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         // 20k rather than 12k: `tasks.add`'s contract grew when S-19 gave it a
         // `resume` argument and M-10 gave its retry policy five more fields, and
         // a window that no longer reaches the handler silently stops testing it.
-        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 20000);
+        // ‼️ 26000, not 20000 (B-12). `tasks.add`'s contract grew again — it now
+        // spells out what a permission mode becomes on every engine — and a
+        // window too small silently stops covering the handler, which is an
+        // assertion that passes by not looking rather than by holding.
+        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 26000);
 
         // ---------- S-31: which run produced which transcript ----------
         // The op exists so a person (or an agent) who knows a run happened and

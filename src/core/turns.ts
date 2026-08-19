@@ -1,4 +1,5 @@
 import { BridgeRegistry, optStr } from './bridge';
+import { ENGINE_ENUM } from './consoleEngine';
 import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
 
 /**
@@ -117,7 +118,7 @@ export function registerTurnsOps(
 ): void {
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (claude|codex|gemini|agy — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
         handler: (args) => {
             const agent = optStr(args, 'agent').toLowerCase();
             const engine = optStr(args, 'engine').toLowerCase();

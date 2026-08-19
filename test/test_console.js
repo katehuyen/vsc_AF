@@ -1063,17 +1063,30 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 
     // Everything the panel can do to a held message, an agent can do too
     // (_REF/agentfarm-dev.md: the bridge is part of the feature, not a follow-up)
+    // ‼️ 2600, not 900 (B-12). `console.send`'s contract grew when it stopped
+    // printing Claude's steering sentence for every engine and started naming
+    // which ones can be spoken into mid-turn; a window that no longer reaches
+    // `hold?` is an assertion that passes by not looking.
     ok('holding, and acting on what is held, reach the bridge in the same commit',
         ext.includes("op: 'console.queue'")
-        && /console\.send[\s\S]{0,900}hold\?/.test(ext)
+        && /console\.send[\s\S]{0,2600}hold\?/.test(ext)
         && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true/.test(ext));
     // Attachments went the same way in the same commit — an agent can hand a
     // screenshot to a console session, not just the person at the keyboard.
     ok('attaching files reaches the bridge too',
-        /console\.send[\s\S]{0,1400}attach\?/.test(ext)
+        /console\.send[\s\S]{0,3000}attach\?/.test(ext)
         && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true, attach\)/.test(ext));
     ok('…and console.send no longer promises the old "sent when the turn ends"',
         !/QUEUED and sent when that turn ends/.test(ext));
+    // ‼️ B-12 — …NOR THE OPPOSITE PROMISE, WHICH IS THE ONE IT WAS MAKING. "While
+    // a turn is running this goes INTO that turn" is true of a persistent engine
+    // and false of the other four: their message is HELD, which the host has
+    // always done correctly and the contract described as steering. A caller
+    // reading it waited for a redirect that could never arrive.
+    ok('‼️ …and says WHICH engines can be steered rather than claiming all of them can',
+        /filter\(e => e\.liveControls\)/.test(ext)
+        && /heldBecause/.test(ext)
+        && !/While a turn is running this goes INTO that turn/.test(ext));
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('the panel carries the same three verbs to the host',
         /case 'queueTake'/.test(panel) && /case 'queueSend'/.test(panel)

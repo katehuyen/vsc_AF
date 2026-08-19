@@ -289,8 +289,14 @@ const base = read('src/panels/base.ts');
     ok('sessions.start takes the engine too, named from the registry',
         /engine\? \('/.test(startOp)
         && /Object\.values\(ENGINES\)\.map\(e => `\$\{e\.id\} = \$\{e\.label\}`\)/.test(startOp));
-    ok('‼️ …and states resume-in-terminal as a per-engine FACT rather than a rule',
-        /Codex does NOT/.test(startOp) && /--resume <id>/.test(startOp));
+    // ‼️ B-12 — THE FACT IS NOW READ OFF THE REGISTRY, not typed. The sentence
+    // named three engines that resume in a terminal and one that does not; a
+    // fifth arrived that DOES (`opencode -s <ses_...>`) and was in neither half,
+    // so a caller reading the contract concluded it could not be continued.
+    ok('‼️ …and states resume-in-terminal as a per-engine FACT read off the registry',
+        /filter\(e => e\.resumeInTerminal\)/.test(startOp)
+        && /filter\(e => !e\.resumeInTerminal\)/.test(startOp)
+        && /--resume <id>/.test(startOp));
     ok('…refusing one that cannot run, in the RESPONSE',
         /const engineRefused = engineRefusal\(engineMatrix\(\), merged\.engine\);/.test(startOp));
     ok('…and stating what that engine changes about a turn',

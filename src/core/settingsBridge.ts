@@ -4,6 +4,7 @@ import { AgentInfo } from './agents';
 import { AgentEngineDefault } from './agentDefaults';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { CCItem } from './claudesettings';
+import { ENGINE_ENUM } from './consoleEngine';
 import {
     parseImportedProfiles, sanitizeValue, SettingsCategory, SettingsProfile
 } from './settingsops';
@@ -459,7 +460,7 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
         },
         {
             op: 'agents.defaults.set',
-            describe: '‼️ WHAT THIS AGENT RUNS ON BY DEFAULT, per engine — the model and the effort a new session or task gets when nobody says otherwise. `agents.defaults` READS the resolution; this is the write it had no counterpart for. The engine must be one this build knows, and at least one of `model` / `effort` must be given. Passing an empty string clears that half back to the fleet default. args: agent (name|id), engine (claude|codex|gemini|agy), model?, effort?',
+            describe: '‼️ WHAT THIS AGENT RUNS ON BY DEFAULT, per engine — the model and the effort a new session or task gets when nobody says otherwise. `agents.defaults` READS the resolution; this is the write it had no counterpart for. The engine must be one this build knows, and at least one of `model` / `effort` must be given. Passing an empty string clears that half back to the fleet default. args: agent (name|id), engine (' + ENGINE_ENUM + '), model?, effort?',
             handler: async (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = argStr(args, 'engine').trim().toLowerCase();

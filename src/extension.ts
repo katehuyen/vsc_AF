@@ -137,7 +137,8 @@ import {
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import {
-    ENGINES, engineModeNote, engineNote, engineOf, enginePermissionSetting,
+    ENGINE_ENUM, ENGINE_ENUM_SPACED, ENGINES, engineChangeNote, engineModeNote, engineNote,
+    engineOf, enginePermissionSetting, engineQuotesPrice, enginesWithoutEffort, engineTakesEffort,
     headlessResumeRefusal, noTranscriptNote, runArgs
 } from './core/consoleEngine';
 import {
@@ -233,7 +234,7 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, need,
+    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, DIMS_OUT_NOTE, need,
     needOneExecutor, optStr, parseBridgeRequest
 } from './core/bridge';
 import {
@@ -3762,8 +3763,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'tasks.list',
             describe: 'Current task queue/board rows. Each row says which ENGINE it runs on and whether that '
-                + 'engine reports a price at all — a `costUSD` of 0 on a plan-billed engine is not a cheap '
-                + 'run, it is a run with no dollar figure to report (`tokens` is the measure there). '
+                + 'engine reports a price at all (`reportsCost`, `costSource`). ‼️ READ THOSE BEFORE `costUSD`: '
+                + 'on a `costSource:"tokens"` row a 0 is not a cheap run, it is a run with no dollar figure to '
+                + 'report and `tokens` is the measure there — while on a `"cli"` row the engine stated that '
+                + 'figure itself, so a 0 from it (a free model) is a real zero. '
                 + '‼️ S-19 — `resume` is the conversation a row CONTINUES (null = it opened its own), and '
                 + 'its `costUSD` is then the difference this turn made rather than the conversation\'s '
                 + 'total. ‼️ M-11 — `heldBy` is the sentence a parked row shows (live figures and all) and '
@@ -3775,6 +3778,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 tokens: t.tokens ?? 0,
                 engine: t.engine ?? 'claude',
                 reportsCost: engineOf(t.engine).reportsCost,
+                // ‼️ B-12 — WHOSE FIGURE `costUSD` IS. `reportsCost` alone says
+                // yes-or-no; this says where the number came from, which is what
+                // decides whether it may be added to a budget total.
+                costSource: engineOf(t.engine).costSource,
+                // …and what it runs on. A provider-qualified id (OpenCode names
+                // models `provider/model`) is the whole string or it is nothing,
+                // and a row that dropped it could not be read back as itself.
+                model: t.model ?? null,
                 resume: t.resumeSessionId ?? null,
                 resumedFrom: t.resumedFrom ?? null,
                 heldBy: t.deferredReason ?? null,
@@ -3807,20 +3818,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'profile executes it, how urgent it is, and where it runs. '
                 + 'args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), '
                 + 'engine? (' + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ ON A PER-TURN ENGINE THE RUN IS SHAPED '
-                + 'DIFFERENTLY: `permissionMode` is spent UP FRONT because the engine cannot stop and ask, '
-                + 'and what it becomes differs per engine — a Codex SANDBOX, a Gemini APPROVAL MODE whose '
-                + '"ask the user" resolves to deny with nobody watching, or on agy a request the Antigravity '
-                + 'app\'s own setting can overrule. "Default" therefore means "refuse what would have asked" '
-                + 'rather than "it will ask". The project brief travels inside the prompt rather than as a '
-                + 'system prompt (none of these engines has such a channel), '
+                + '; default claude. ‼️ A TASK IS UNATTENDED, AND THAT IS WHERE THE ENGINES DIFFER MOST — '
+                + 'nobody is there to answer a question. `permissionMode` is spent UP FRONT on an engine '
+                + 'that cannot stop and ask, and what it becomes is the engine\'s own mechanism: '
+                + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
+                + ' ‼️ AND ONE OF THEM CAN GENUINELY STOP AND ASK, WHICH IS THE OPPOSITE PROBLEM: on OpenCode '
+                + 'an unattended run has nobody to answer, so a request it would have asked about comes back '
+                + 'REFUSED and the run carries on without that tool. Pass acceptEdits or bypassPermissions to '
+                + 'hand it the `--auto` auto-approve override instead — both reach the same one flag there, '
+                + 'and it does not override an explicit deny in the user\'s opencode.json. Its headless '
+                + 'contract is `opencode run --format json` with the prompt on stdin; the finished run '
+                + 'states its own cost, and a zero on a free model is a real zero. '
+                + 'On the others: the project brief travels inside the prompt rather than as a system prompt '
+                + '(none of these engines has such a channel), '
                 + 'agentFarm.taskExtraArgs and the model-policy rules do NOT apply (they are Claude\'s '
                 + 'vocabulary), outputContract:"json" is not available, and the finished run reports TOKENS '
-                + 'and no dollar figure — that is the engine, not a missing measurement. ‼️ Gemini has NO '
-                + 'reasoning-effort flag: passing `effort` with engine:"gemini" is refused rather than '
+                + 'and no dollar figure — that is the engine, not a missing measurement. Which engines DO '
+                + 'state a price: '
+                + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
+                + '. ‼️ Not every engine has a reasoning effort ('
+                + enginesWithoutEffort()
+                + ' have none): passing `effort` with one of them is refused rather than '
                 + 'ignored. An engine that is not installed or not signed in is refused before anything '
                 + 'spawns — ask engines.status), '
-                + 'model? (alias or id), effort? (low|medium|high|xhigh|max — not on gemini), '
+                + 'model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), '
                 + 'permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), '
                 + 'cli? (a name from agentFarm.cliProfiles — a DIFFERENT axis from `engine`: a CLI profile is '
                 + 'a command template for a binary Agent Farm knows nothing about, so passing both is refused), '
@@ -4058,7 +4079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'you pass is what you are CHANGING, the way the page\'s retry form does. A workflow-step '
                 + 'task with no edits resumes its chain instead. '
                 + 'args: id, prompt?, agent? (name|id), title?, mode? (headless|interactive), '
-                + 'engine? (claude|codex|gemini|agy — ‼️ "the same thing on a different engine" is the '
+                + 'engine? (' + ENGINE_ENUM + ' — ‼️ "the same thing on a different engine" is the '
                 + 'commonest reason to retry at all, and this op could not express it), model?, '
                 + 'effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit it and the original\'s CLI '
                 + 'profile stands, pass "" to CLEAR it, pass a name to change it. A retry may not end up '
@@ -4319,7 +4340,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'schedules.list',
-            describe: 'Installed schedules, each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. ‼️ The engine is part of the answer to "what will this do at 3 a.m.": a list that omitted it let a caller read a Codex schedule back as a Claude one and write it away again. args: none',
+            describe: 'Installed schedules, each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. ‼️ The engine is part of the answer to "what will this do at 3 a.m.": a list that omitted it let a caller read a Codex schedule back as a Claude one and write it away again.'
+                + DIMS_OUT_NOTE + ' args: none',
             handler: () => taskManager.schedules.map(s => ({
                 id: s.id, title: s.title, agent: s.agentName, kind: s.kind,
                 hour: s.hour, minute: s.minute, dow: s.dow, enabled: s.enabled, missed: s.missed,
@@ -4329,7 +4351,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'schedules.add',
-            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), and the SAME run dimensions a task takes — model?, effort?, permissionMode?, cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
+            // ‼️ B-12 — THE ENGINE WAS ACCEPTED HERE AND NEVER MENTIONED.
+            // `bridgeRunDimensions` has read it off these args since X-18 and
+            // `schedules.edit` names it; this contract listed every other
+            // dimension and left it out, so a caller reading `farm.ops` before
+            // installing a nightly OpenCode run could only conclude that a
+            // schedule cannot pick an engine — and would go and build it as a
+            // task instead. Two contracts for one handler is the drift the
+            // catalogue exists to prevent.
+            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), and the SAME run dimensions a task takes — engine? ('
+                + ENGINE_ENUM
+                + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
+                + enginesWithoutEffort()
+                + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -4418,7 +4452,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.list',
-            describe: 'Mission runs, newest first — with the engine the DELEGATIONS run on and the tokens they spent. ‼️ `costUSD: 0` on a mission whose delegates run on a subscription engine is not a cheap run, it is an engine that states no price: read `tokens` beside it. The planner is always Claude Code and is a separate axis (`plannerEngine`). args: none',
+            describe: 'Mission runs, newest first — with the engine the DELEGATIONS run on and the tokens they spent. ‼️ WHAT `costUSD: 0` MEANS DEPENDS ON THAT ENGINE: on one that states no price ('
+                + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
+                + ') it is not a cheap run at all, it is a run with no dollar figure — read `tokens` beside it; on one that states its own ('
+                + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
+                + ') a zero is a real zero, which a free model genuinely produces. The planner is always Claude Code and is a separate axis (`plannerEngine`). args: none',
             handler: () => missionStore.runs.slice().reverse().map(r => {
                 const sp = missionStore.spec(r.specId);
                 return {
@@ -4467,8 +4505,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'refused before the mission is created), '
                 + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
                 + 'maxTokens? (‼️ THE CEILING THAT STILL BINDS WHEN THE ENGINE STATES NO PRICE — a delegate on '
-                + 'a subscription engine reports tokens and no dollars, so maxCostUSD can never be reached by '
-                + 'it; default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?, '
+                + 'an engine that reports tokens and no dollars ('
+                + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
+                + ') can never reach maxCostUSD, so that budget is not a brake there and this one is; '
+                + 'default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?, '
                 + 'project? (id or name — the mission AND every delegation it makes are filed under it, so the '
                 + 'project\'s Work tab shows the whole run; pass "" for deliberately none. Omit it and the '
                 + 'window\'s active project is used, which is only right when a person just started this)',
@@ -4656,7 +4696,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.list',
-            describe: 'Installed triggers (watch/hook/webhook), each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. A workflow trigger has none of its own: its steps carry them. args: none',
+            describe: 'Installed triggers (watch/hook/webhook), each with the run dimensions it will fire with — engine, model, effort, permission mode, CLI, working folder, priority and project. A workflow trigger has none of its own: its steps carry them.'
+                + DIMS_OUT_NOTE + ' args: none',
             handler: () => taskManager.triggers.map(t => ({
                 id: t.id, title: t.title, type: t.type, enabled: t.enabled,
                 fireIf: t.fireIf ?? null,
@@ -4685,7 +4726,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // duplicate; this handler is the UNION of the two, so nothing the
             // older shape accepted has been taken away.
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (claude|codex|gemini|agy — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ not on gemini, which has no such flag), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -4799,7 +4840,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'templates.list',
-            describe: 'Saved task templates, each with the launch it was saved with — engine, model, effort, permission mode, CLI, working folder, priority and project. args: none',
+            describe: 'Saved task templates, each with the launch it was saved with — engine, model, effort, permission mode, CLI, working folder, priority and project.'
+                + DIMS_OUT_NOTE + ' args: none',
             handler: () => taskManager.templates.map(t => ({
                 id: t.id, title: t.title, mode: t.mode, agent: t.agentName ?? null,
                 ...bridgeDimsOut(t, (pid: string) => projectStore.get(pid)?.name)
@@ -4807,7 +4849,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'templates.add',
-            describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (claude|codex|gemini|agy), model?, effort? (not on gemini), permissionMode?, cli?, workDir?, priority?, project?',
+            describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -5056,7 +5098,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'window — it states the price of every turn instead. '
                 + '‼️ NEVER TREAT A MISSING FIGURE AS 0% — that is the one mistake this op is shaped to '
                 + 'prevent. `shown` is the engine the status bar is currently displaying '
-                + '(agentFarm.planUsageEngine). args: id? (claude | codex | gemini | agy | opencode)',
+                + '(agentFarm.planUsageEngine). args: id? (' + ENGINE_ENUM_SPACED + ')',
             handler: (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 const all = engineUsageMatrix();
@@ -5109,7 +5151,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, wholeWord? (a BARE word must match a whole word too — what quotes already do, without the quotes), '
                 + 'roles? (array of user|automation|assistant|delegator|handler|tool|toolResult; default user+automation+assistant = the conversation. ‼️ `delegator` is one agent\'s handover text inside a subagent lane and `handler` is that subagent\'s reply, and `automation` is a prompt a PROGRAM wrote on the same input channel a person uses — a mission/task/schedule/trigger brief, a headless run with no launcher on record, or an imported transcript whose author cannot be verified. All three used to arrive as `user`, so ["user"] now really is only what a PERSON asked), '
                 + 'file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), '
-                + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (claude|codex|gemini|agy…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
+                + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (' + ENGINE_ENUM + '…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
                 + 'from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). '
                 + 'Each hit carries file, sessionId, engine, agentName, title, ts, role, speaker (the agent that wrote a delegation), turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources. '
                 + '‼️ It also carries author (human|automation|unknown) with authorLabel/launcher, and — when the session is not a native one — provenance (imported|imported-unknown-source), producer (the engine that DID the work) and canonicalSessionId (the id of the run). The scan is unique on canonicalSessionId, so a transcript and an imported copy of it are ONE session and one set of counters, not two. '
@@ -5255,7 +5297,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (claude | codex | gemini | agy), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -5347,7 +5389,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule: Claude, Gemini (--resume <id>) and Antigravity (--conversation <id>) all resume in a terminal; Codex does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Gemini has no reasoning-effort flag. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — not on gemini), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions; on a per-turn engine this is spent up front because it cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on agy a request its app can overrule), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -5767,9 +5809,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // catalog concluded Gemini was unsupported and never tried it. A
             // contract written by hand goes stale the day a row is added; one
             // built from `ENGINES` cannot.
+            //
+            // ‼️ B-12 — AND SO IS WHAT EACH ONE *DOES*, for the same reason the
+            // list is. The paragraph below used to be one sentence per SHAPE
+            // ("Claude is one long-lived process; every other engine here is ONE
+            // PROCESS PER TURN"), written when there were two shapes. A
+            // shared-ACP engine is neither: its message is held like a per-turn
+            // engine's, its controls reach a LIVE connection like a persistent
+            // one's, its Stop asks rather than kills, and it can genuinely stop
+            // and ask before it acts. Read off that sentence, an agent driving
+            // OpenCode would have believed it was talking to a process that
+            // dies every turn. `engineNote` and `engineModeNote` are the same
+            // words the Console panel prints beside the picker, so the contract
+            // and the surface cannot say different things about one engine.
             describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; every other engine here is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends and the controls apply to the NEXT turn. What a permission mode MEANS also differs per engine — on Codex it becomes a sandbox chosen up front; on Gemini an approval mode whose "ask the user" resolves to DENY when nobody is watching, and whose plan mode switches to yolo on exit in a headless run; on agy — Antigravity, Google\'s agent app, NOT the separate "gemini" CLI — it is a request the Antigravity app\'s own tool-permission setting can overrule. Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Gemini has NO reasoning-effort setting: pass no effort for it. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Only Claude Code states a per-turn price; every other engine reports tokens and no dollars — that is the engine, not a missing figure.',
+                + '; default claude. ‼️ THE ENGINE CHANGES WHAT A SESSION IS, and each one says so in its own measured words — '
+                + Object.values(ENGINES).map(e => `[${e.id}] ${engineNote(e.id)}`).join(' ')
+                + ' ‼️ WHAT A PERMISSION MODE MEANS ALSO DIFFERS PER ENGINE, and one of them really can stop and ask you mid-turn — '
+                + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
+                + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
+                + enginesWithoutEffort()
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
+                + ' publish what each turn cost and the figure is theirs; '
+                + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
+                + ' report tokens and no dollars — that is the engine, not a missing figure. A zero from an engine that DOES publish (a free model) is a real zero.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
@@ -5829,7 +5894,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.send',
-            describe: 'Say something in a hosted Console session. While a turn is running this goes INTO that turn — the CLI delivers it at the turn\'s next step, the same steering a terminal does — so it can still redirect work in progress. args: id (console id from console.start), text, hold? (default false — true parks it instead: it waits, editable via console.queue, and is handed over when the turn ends), attach? (array of absolute paths to hang on the message: an image — png/jpg/gif/webp — is embedded in the message so the model can SEE it, anything else including a folder is handed over as a path for the agent to open with Read. Limits: 5 MB per image, 20 MB and 20 files per message; over them the send is refused, never shrunk. A message with attachments cannot be held.)',
+            // ‼️ B-12 — "IT GOES INTO THE RUNNING TURN" IS ONE ENGINE'S
+            // ANSWER, AND IT WAS PRINTED AS EVERY ENGINE'S. Only a persistent
+            // engine can be steered mid-turn; a per-turn engine's stdin is
+            // already closed and a shared-ACP engine declares no way to speak
+            // into a turn that is running, so on both the message is HELD and
+            // handed over when the turn ends. `consoleHost.send` has always
+            // done the right thing — this contract described one third of it,
+            // and a caller that read it would wait for a redirect that never
+            // came. The reply now says which of the two happened AND why.
+            describe: 'Say something in a hosted Console session. ‼️ WHETHER IT REACHES THE TURN THAT IS RUNNING DEPENDS ON THE ENGINE, and the reply says which happened: on a steerable engine ('
+                + Object.values(ENGINES).filter(e => e.liveControls).map(e => e.id).join(', ')
+                + ') it goes INTO that turn — the CLI delivers it at the turn\'s next step, the same steering a terminal does, so it can still redirect work in progress. On every other engine there is nowhere to put the words (a per-turn run has its stdin closed; a shared-ACP run declares no mid-turn channel), so the message is HELD and handed over when the turn ends — `held: true` with `heldBecause` saying so. It is never accepted and lost. args: id (console id from console.start), text, hold? (default false — true parks it instead: it waits, editable via console.queue, and is handed over when the turn ends; on a non-steerable engine a running turn parks it whether you ask or not), attach? (array of absolute paths to hang on the message: an image — png/jpg/gif/webp — is embedded in the message so the model can SEE it, anything else including a folder is handed over as a path for the agent to open with Read. Limits: 5 MB per image, 20 MB and 20 files per message; over them the send is refused, never shrunk. A message with attachments cannot be held.)',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const paths = Array.isArray(args.attach) ? args.attach as unknown[] : [];
@@ -5843,8 +5919,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // A refusal is an answer, not a success with a note.
                 if (r!.refused) { throw new Error(r!.refused); }
                 ConsolePanel.refreshIfOpen();
+                const row = consoleHost.list().find(s => s.id === id);
                 return {
                     id, held: r!.queued, deliveredInto: r!.queued ? null : 'the running turn',
+                    engine: engineOf(row?.engine).id,
+                    // ‼️ B-12 — WHY it was held, which is the difference between
+                    // "you asked me to" and "this engine cannot be steered".
+                    // A caller that reads only `held` cannot tell the two apart
+                    // and will keep trying to redirect a turn that is deaf.
+                    heldBecause: !r!.queued ? null
+                        : (args.hold === true ? 'you asked for it to be held'
+                            : `${engineOf(row?.engine).label} cannot be spoken into mid-turn — it goes in when the turn ends`),
                     attached: attach.map(a => ({ name: a.name, kind: a.kind })),
                     ...(missing ? { skipped: `${missing} path(s) did not exist` } : {})
                 };
@@ -5852,7 +5937,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.queue',
-            describe: 'The messages HELD back in a Console session (console.send with hold:true) — read them, or act on one before it is ever said. args: id, action? (list | edit | drop | send | clear, default list), index? (0-based, required for edit/drop/send), text? (the new wording, for edit). "send" stops holding it and says it into the running turn.',
+            describe: 'The messages HELD back in a Console session — read them, or act on one before it is ever said. ‼️ A message is held either because you asked (console.send hold:true) or because THE ENGINE CANNOT BE SPOKEN INTO MID-TURN, which is every engine but '
+                + Object.values(ENGINES).filter(e => e.liveControls).map(e => e.id).join(', ')
+                + ' — so this queue fills by itself there and is the normal way a turn is followed, not an exception. args: id, action? (list | edit | drop | send | clear, default list), index? (0-based, required for edit/drop/send), text? (the new wording, for edit). "send" stops holding it: on a steerable engine it goes into the turn that is running, and on the others it is the next turn\'s first message — the same difference console.send reports.',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const s = consoleHost.get(id);
@@ -5879,13 +5966,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts. ‼️ EVERY ROW SAYS WHICH ENGINE IT IS AND WHAT THAT ENGINE CAN DO (`engine`, `engineLabel`, `turnShape`, `steerable`, `reportsCost`, `costSource`, `takesEffort`) — read them BEFORE the figures beside them, because each one changes what a figure means: `cost` is the engine\'s own on a `costSource:"cli"` row and derived from your pricing rules on a `"tokens"` one; `effort` is refused outright where `takesEffort` is false; a message sent now is HELD until the turn ends unless `steerable`; and `asking.kind === "permission"` can only ever happen on an engine that stops and asks. ‼️ `steerable:false` does NOT mean the controls are dead — on `turnShape:"sharedAcp"` they reach a LIVE connection at the next turn boundary, which is a different thing from becoming a flag on a process that does not exist yet. Then: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
                 const rows = consoleHost.list().filter(s => !want || s.id === want);
                 return rows.map(s => ({
                     id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
+                    // ‼️ B-12 — WHICH ENGINE THIS CARD IS, WHICH THIS REPLY HAS
+                    // NEVER SAID. Every field below means something different
+                    // per engine — `effort` is refused on two of them, `cost` is
+                    // the engine's own figure on two and derived on three, a
+                    // message sent now is HELD on three, and `asking.kind =
+                    // 'permission'` only ever happens on the two that can stop
+                    // and ask. A caller could read all of it and not know which
+                    // set of rules it was reading under. The capability fields
+                    // travel with the id so nothing has to look them up in
+                    // another op to interpret this one.
+                    engine: engineOf(s.engine).id,
+                    engineLabel: engineOf(s.engine).label,
+                    // one long-lived process | one per turn | one shared for all
+                    // this engine's cards (see EngineShape)
+                    turnShape: engineOf(s.engine).shape,
+                    // ‼️ ONE question only: can this change while a turn is
+                    // RUNNING. `false` does NOT mean "the controls are dead" —
+                    // on a sharedAcp engine they reach a live connection at the
+                    // next turn boundary. Read it with `turnShape`, never alone.
+                    steerable: engineOf(s.engine).liveControls,
+                    // does the engine publish dollars itself (`cli`) or are the
+                    // dollars beside its tokens ours (`tokens`)
+                    reportsCost: engineOf(s.engine).reportsCost,
+                    costSource: engineOf(s.engine).costSource,
+                    takesEffort: engineTakesEffort(s.engine),
                     status: s.status, model: s.model ?? null, effort: s.effort ?? null,
                     // ‼️ …and what the CLI says is REALLY in force, which is the
                     // only one of the two that survives "the user chose nothing"
@@ -5960,38 +6072,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.interrupt',
-            describe: 'Stop the turn a hosted session is running. The session and its context survive — this is the CLI\'s own interrupt over the control channel, not a killed process. args: id',
+            // ‼️ B-12 — STOPPING A TURN IS THREE DIFFERENT ACTS, and this
+            // said one of them. On a persistent engine it is the CLI's own
+            // interrupt over the control channel; on a per-turn engine the
+            // process IS the turn, so stopping it is killing it; on a shared
+            // one the process is shared with every other card, so killing is
+            // out of the question and Stop ASKS (`session/cancel`, measured to
+            // end with `stopReason: "cancelled"`, a zero usage and the next
+            // turn accepted on the same `ses_…`). What survives is the same in
+            // all three — the session and its context — and that is the part
+            // the sentence got right.
+            describe: 'Stop the turn a hosted session is running. The session and its context survive in every case — the conversation is resumable and the next message carries on. ‼️ HOW it stops depends on the engine, and the reply\'s `how` says which: a persistent engine is interrupted over its own control channel; a per-turn engine\'s turn IS its process, so the process is ended; a shared-ACP engine is ASKED to stop (its process is shared with every other card, so nothing is killed) and it stops cooperatively — if it does not answer within the grace window the blunt path follows and is reported. args: id',
             handler: (args) => {
                 const id = argStr(args, 'id');
+                const row = consoleHost.list().find(s => s.id === id);
+                const shape = engineOf(row?.engine).shape;
                 const ok = consoleHost.interrupt(id);
                 need(ok, 'no such live console session');
                 ConsolePanel.refreshIfOpen();
-                return { id, interrupted: true };
+                return {
+                    id, interrupted: true, engine: engineOf(row?.engine).id,
+                    how: shape === 'persistent' ? 'interrupted over the control channel — the process stays'
+                        : shape === 'sharedAcp' ? 'asked to stop (session/cancel) — the shared process stays and every other card is untouched'
+                            : 'the turn was its process, so the process was ended — the conversation is resumed by id'
+                };
             }
         },
         {
             op: 'console.setModel',
-            describe: 'Switch the model a hosted session answers with, mid-conversation — the same thing /model does in a terminal. It applies from the next turn; the session, its context and its transcript are untouched. args: id, model (e.g. claude-opus-5, sonnet, haiku)',
+            // ‼️ B-12 — WHAT "SWITCHING" IS DEPENDS ON THE ENGINE, AND THE
+            // ANSWER IS RETURNED RATHER THAN ASSERTED. This said "the same thing
+            // /model does in a terminal" for every engine: on a per-turn engine
+            // there is no process to say it to — the value becomes a flag on the
+            // next spawn — and on a shared-ACP engine it is neither, it is
+            // `session/set_config_option` sent to a LIVE connection at the next
+            // turn boundary. `applied` now says which of the three happened.
+            describe: 'Switch the model a hosted session answers with. The session, its context and its transcript are untouched. ‼️ HOW it takes effect depends on the engine, and the reply\'s `applied` says which: on a persistent engine it is the same thing /model does in a terminal and reaches the running process; on a shared-ACP engine it is session config sent to the LIVE connection at the next turn boundary; on a per-turn engine there is no process to tell, so it is the flag the NEXT turn is spawned with. In all three it applies from the next turn. The model vocabulary belongs to the engine (engines.models), and this op does not check it — a name that engine has never heard of comes back as its own refusal. args: id, model (e.g. claude-opus-5, sonnet, haiku, opencode/big-pickle)',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const model = argStr(args, 'model');
                 need(!!model, 'model is required');
+                const row = consoleHost.list().find(s => s.id === id);
                 need(consoleHost.setModel(id, model), 'no such live console session');
                 ConsolePanel.refreshIfOpen();
-                return { id, model, applied: 'from the next turn' };
+                return { id, model, engine: engineOf(row?.engine).id, applied: engineChangeNote(row?.engine) };
             }
         },
         {
             op: 'console.setEffort',
-            describe: 'Switch how hard a hosted session thinks, mid-conversation — the same thing /effort does in a terminal (low | medium | high | xhigh | max; empty = back to the CLI default). It applies from the next turn. A model with no effort levels accepts it and it means nothing. args: id, effort',
+            describe: 'Switch how hard a hosted session thinks (low | medium | high | xhigh | max; empty = back to the CLI default). It applies from the next turn, and the reply\'s `applied` says how it got there — see console.setModel. ‼️ AN ENGINE WITH NO REASONING-EFFORT SETTING REFUSES THIS RATHER THAN SWALLOWING IT ('
+                + enginesWithoutEffort()
+                + '): pretending to throttle a run that is not throttled is the one answer worse than saying no. A model with no effort levels on an engine that HAS the setting accepts it and it means nothing. args: id, effort',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const effort = argStr(args, 'effort');
                 need(!effort || EFFORT_CHOICES.some(c => c.id === effort),
                     `unknown effort "${effort}" — one of: ${EFFORT_CHOICES.filter(c => c.id).map(c => c.id).join(', ')}`);
+                const row = consoleHost.list().find(s => s.id === id);
+                // ‼️ B-12 — THE SAME REFUSAL `bridgeRunDimensions` ALREADY MAKES
+                // AT WRITE TIME, made here at change time. Two engines have no
+                // reasoning-effort setting at all (gemini exits 42 when handed
+                // one; OpenCode's ACP declares only model and mode), so this op
+                // accepted a value, reported `applied`, and changed nothing —
+                // a caller could believe a session was throttled when nothing
+                // was. Refusing a queued task for it and accepting it on a live
+                // card was the two surfaces disagreeing about one engine.
+                need(!effort || !row || engineTakesEffort(row.engine),
+                    `engine "${engineOf(row?.engine).id}" has no reasoning-effort setting — leave effort out.`);
                 need(consoleHost.setEffort(id, effort), 'no such live console session');
                 ConsolePanel.refreshIfOpen();
-                return { id, effort, applied: 'from the next turn' };
+                return { id, effort, engine: engineOf(row?.engine).id, applied: engineChangeNote(row?.engine) };
             }
         },
         {
@@ -6004,7 +6154,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * A question the agent asked its user is the opposite case, and it
              * is the same op `missions.answer` already is.
              */
-            describe: 'Answer the question a hosted Console session parked its turn on (AskUserQuestion) — the turn is still open and carries on with the answer. console.sessions reports it as `asking`. args: id, answers? ({ "<question text>": "<option label>" | ["label","label"] }), response? (free text — "neither, do this instead"), skip? (true answers nothing and lets the turn go on). Tool PERMISSION requests are not answerable here: they are the user\'s own call, in the panel.',
+            describe: 'Answer the question a hosted Console session parked its turn on (AskUserQuestion) — the turn is still open and carries on with the answer. console.sessions reports it as `asking`. args: id, answers? ({ "<question text>": "<option label>" | ["label","label"] }), response? (free text — "neither, do this instead"), skip? (true answers nothing and lets the turn go on). ‼️ TOOL PERMISSION REQUESTS ARE NOT ANSWERABLE HERE and this is a security decision, not a gap: an agent that could settle its own permission request would be granting itself the tool it was just refused. Two engines really do stop and ask ('
+                + Object.values(ENGINES).filter(e => e.shape !== 'perTurn').map(e => e.id).join(' and ')
+                + ' — OpenCode raises its own once / always / reject card over ACP), so this is a live case rather than a theoretical one. The request IS readable (console.sessions → `asking.kind === "permission"`, `pendingPermission`), so an agent can report what its session is stuck on; the decision stays with the user, in the panel.',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const s = consoleHost.get(id);
@@ -6038,7 +6190,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.permissionMode',
-            describe: 'Change a hosted session\'s standing permission RULE, live and mid-conversation (default | acceptEdits | plan | dontAsk | bypassPermissions) — how much it may do without stopping to ask at all. ‼️ The CLI has the last word and can refuse: the answer comes back on the wire, so this op reports the request as SENT, and the session\'s own line (console.sessions → permissionMode, or the conversation) says what was accepted. For a tool it HAS stopped to ask about, the one-off decision is the user\'s, in the Console panel. args: id, mode, retry? (default false — true also tells the agent to try a refused action again, and only once the CLI has agreed)',
+            // ‼️ B-12 — THE SECURITY LINE IS UNCHANGED AND IS NOW SAID OUT LOUD.
+            // OpenCode's Console permission card is user-triggerable, so the SOP
+            // asks whether it belongs on the bridge. The STANDING rule does (it
+            // is a session dimension like model and effort, and the launcher
+            // already sets it). The ONE-OFF answer to a question the engine has
+            // stopped to ask does NOT: that is an agent granting itself the tool
+            // permission it was just refused, in one call, with nobody looking.
+            // It stays where `console.answer` already leaves it — with the user,
+            // in the panel — and the pending request is READABLE
+            // (console.sessions → `asking`, `pendingPermission`) so an agent can
+            // report what it is waiting on without being able to settle it.
+            describe: 'Change a hosted session\'s standing permission RULE, mid-conversation (default | acceptEdits | plan | dontAsk | bypassPermissions) — how much it may do without stopping to ask at all. ‼️ THE WORDS ARE SHARED AND THE MEANINGS ARE NOT: each engine has its own restraint, so ask what this mode becomes there — [' + ENGINE_ENUM_SPACED + ']. On an engine that cannot stop and ask, the mode is a sandbox spent up front and this is the NEXT turn\'s; on one that can, it is the standing rule behind the questions it will still ask. ‼️ The engine has the last word and can refuse: the answer comes back on the wire, so this op reports the request as SENT, and the session\'s own line (console.sessions → permissionMode / enforcedPermissionMode) says what was accepted. ‼️ FOR A TOOL IT HAS STOPPED TO ASK ABOUT, THE ONE-OFF DECISION IS THE USER\'S, in the Console panel — deliberately not on this bridge, because an agent settling its own permission request is an agent granting itself the tool it was just refused. What it is waiting on IS readable (console.sessions → `asking`, `pendingPermission`). args: id, mode, retry? (default false — true also tells the agent to try a refused action again, and only once the engine has agreed)',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const mode = argStr(args, 'mode');
@@ -6052,7 +6215,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : undefined);
                 need(ok, 'no such live console session');
                 ConsolePanel.refreshIfOpen();
-                return { id, mode, sent: true, note: 'the CLI answers on the wire — read permissionMode back to see what it accepted' };
+                // ‼️ B-12 — AND WHAT THAT MODE MEANS ON THIS ENGINE, in the
+                // engine's own words. `mode: "plan"` alone is a word that
+                // resolves to a Codex sandbox, a Gemini approval mode, an
+                // Antigravity request its own app may overrule, or an OpenCode
+                // agent that is refused every edit tool — four different
+                // guarantees behind one string.
+                return {
+                    id, mode, sent: true,
+                    engine: engineOf(consoleHost.list().find(s => s.id === id)?.engine).id,
+                    means: engineModeNote(consoleHost.list().find(s => s.id === id)?.engine, mode),
+                    note: 'the engine answers on the wire — read permissionMode / enforcedPermissionMode back to see what it accepted'
+                };
             }
         },
         {
@@ -6315,7 +6489,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.sessions',
-            describe: 'The sessions that belong to one project, newest first, on EVERY engine, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. Each row carries its `engine`; `cost` covers the Claude-shaped rows only (`measured` counts them), because a plan-billed engine states no price. args: project (id or name), limit? (default 50), all? (true ignores limit)',
+            describe: 'The sessions that belong to one project, newest first, on EVERY engine, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. Each row carries its `engine`; `cost` covers the rows whose ENGINE QUOTED a price (`measured` counts them — '
+                + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
+                + '), because a figure derived from a price table and one the engine stated are different units and must not be added together. args: project (id or name), limit? (default 50), all? (true ignores limit)',
             handler: (args) => {
                 const key = argStr(args, 'project');
                 const p = projectStore.get(key);
@@ -6331,7 +6507,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     project: (p as Project).name,
                     total: rows.length,
-                    measured: rows.filter(s => !s.source).length,
+                    // ‼️ B-12 — "measured" is "the ENGINE quoted this price",
+                    // which is no longer the same question as "is this a
+                    // Claude row": OpenCode publishes its own cost, so its
+                    // real dollars were being dropped out of this count.
+                    measured: rows.filter(s => engineQuotesPrice(s.source)).length,
                     cost: Math.round(rows.reduce((n, s) => n + s.cost, 0) * 10000) / 10000,
                     sessions: shown.map(s => ({
                         sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
@@ -8213,7 +8393,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'schedules.edit',
-            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (claude|codex|gemini|agy)/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails)',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
@@ -8343,7 +8523,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.get',
-            describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project), what it cost in dollars AND tokens, its archived output, and `events`: WHAT HAPPENED TO IT, in order, each stamped. ‼️ Read `events` before concluding anything from `status`: a run held at a ceiling, released, held again and finally started leaves exactly the same three timestamps as one that simply sat there, and the reason it was held is only written down here. args: id, tail? (max output chars, default 4000)',
+            describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project)'
+                + DIMS_OUT_NOTE + ' Then what it cost in dollars AND tokens, its archived output, and `events`: WHAT HAPPENED TO IT, in order, each stamped. ‼️ Read `events` before concluding anything from `status`: a run held at a ceiling, released, held again and finally started leaves exactly the same three timestamps as one that simply sat there, and the reason it was held is only written down here. args: id, tail? (max output chars, default 4000)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -8437,7 +8618,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.edit',
-            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (claude|codex|gemini|agy)/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
@@ -8562,7 +8743,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (claude|codex|gemini|agy — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (not on gemini, which has no such flag), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
+            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -8597,8 +8778,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'workflows.step.add',
             describe: 'Append one step to a workflow. args: workflow (id or title), step ({agent (name|id — '
-                + 'omit on a webhook/media/approval/select step), title, prompt, mode?, engine? (per step), '
-                + 'model?, effort?, permissionMode?, cli?, workDir?, priority?, project?, onFail? ("continue"|'
+                + 'omit on a webhook/media/approval/select step), title, prompt, mode?, engine? ('
+                + ENGINE_ENUM + ' — per STEP, so one chain can hand work from one engine to another; '
+                + 'an unknown one is refused HERE rather than at fire time), '
+                + 'model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort()
+                + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("continue"|'
                 + '1-based step), runIf?, outputContract? ("json"), verify? ({criteria, retries?}), parallel?, '
                 + 'webhook?, media?, browser?, approval?, select?})',
             handler: (args) => {
@@ -13781,9 +13965,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 cost: s.cost, tokens: totalTokens(s.usage),
                 todayCost: s.daily[today]?.cost ?? 0,
                 lastTs: s.lastTs || s.mtime || 0,
-                // A foreign row's dollars are derived from a price table, not
-                // quoted by the engine — they must not join a budget total.
-                measured: !s.source
+                // ‼️ B-12 — a row whose dollars are DERIVED from a price table
+                // must not join a budget total; a row whose engine QUOTED them
+                // must. That was one question with two answers and this test only
+                // ever asked the first (see engineQuotesPrice).
+                measured: engineQuotesPrice(s.source)
             })),
             projectStore.links());
         return rolled.map(r => ({
@@ -21456,16 +21642,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Which agent CLIs this machine can run, and HOW each one is paid for — the same '
                 + 'matrix Farm Settings → Engines draws. Per engine: whether the command is on PATH, '
                 + 'the auth mode ("subscription" = signed in with a plan and no key involved, "apikey" '
-                + '= billed per token, "none" = nothing set up), the file that says so, the env var name '
+                + '= billed per token, "builtin" = this engine needs no credential at all and is READY without one — do NOT read it as "none", they are opposite answers, "none" = nothing set up), the file that says so, the env var name '
                 + 'the engine reads and whether the vault holds a secret under it, and `next` — the one '
                 + 'thing to do. ‼️ NO CREDENTIAL VALUE IS EVER RETURNED and none can be set from here: '
                 + 'signing in is the CLI\'s own command in a terminal, and keys are the panel-only vault '
-                + '(the deliberate secrets exception). args: id? (claude | codex | gemini | agy)',
+                + '(the deliberate secrets exception). args: id? (' + ENGINE_ENUM_SPACED + ')',
             handler: (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 const all = engineMatrix();
                 const list = id ? all.filter(e => e.id === id) : all;
-                need(!id || list.length > 0, `no engine called "${id}" — try claude, codex, gemini or agy`);
+                need(!id || list.length > 0, `no engine called "${id}" — try ${ENGINE_ENUM_SPACED}`);
                 return { ...enginesSummary(all), engines: list };
             }
         },
@@ -21480,13 +21666,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'efforts keyed by model id ("" = the list to use for a model with no stated '
                 + 'vocabulary), defaultEffort, `source` ("catalog" = the engine\'s own answer, '
                 + '"settings" = it published nothing and this is agentFarm.modelAliases) and `note` '
-                + 'saying which of those it was and how old it is. ‼️ ONE ENGINE\'S CATALOG IS NOT ON '
-                + 'DISK: Antigravity publishes nothing, so `agy` is asked directly (`agy models`, ~3s, '
-                + 'no tokens — it is a list, not a turn) and the answer is kept for six hours. Until the '
-                + 'first answer arrives its `source` is "settings" and the note says the list is almost '
-                + 'certainly wrong for it; pass `refresh` to fetch it again now, which is what to do '
-                + 'after a model is granted or withdrawn. '
-                + 'args: id? (claude | codex | gemini | agy), refresh? (re-ask agy for its list)',
+                + 'saying which of those it was and how old it is. ‼️ TWO ENGINES KEEP NO CATALOG ON '
+                + 'DISK, and they are not absent for the same reason: Antigravity publishes nothing, so '
+                + '`agy` is asked directly (`agy models`, ~3s, no tokens — it is a list, not a turn) and '
+                + 'the answer is kept for six hours; OpenCode hands its whole catalog over ON THE '
+                + 'CONNECTION, so nothing is spawned to ask and its list is there from the moment a '
+                + 'session opens — before that, `source` is "settings" for it too. Until the first '
+                + 'answer arrives `source` is "settings" and the note says the list is almost '
+                + 'certainly wrong for that engine; pass `refresh` to fetch it again now, which is what '
+                + 'to do after a model is granted or withdrawn. ‼️ A MODEL ID IS THE ENGINE\'S OWN SHAPE: '
+                + 'OpenCode names models `provider/model` (`opencode/big-pickle`) and that whole string '
+                + 'is what goes on the wire — do not split it or strip the provider. ‼️ AND AN EMPTY '
+                + '`efforts` LIST IS AN ANSWER, NOT A GAP: '
+                + enginesWithoutEffort()
+                + ' have no reasoning-effort setting at all, and passing one is refused rather than ignored. '
+                + 'args: id? (' + ENGINE_ENUM_SPACED + '), refresh? (re-ask agy for its list)',
             handler: async (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 // ‼️ AWAITED, NOT FIRED AND FORGOTTEN. `refresh:true` used to
@@ -21496,7 +21690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (args.refresh === true) { await refreshAgyCatalog(true); }
                 const all = engineModelMatrix();
                 need(!id || !!(all as Record<string, unknown>)[id],
-                    `no engine called "${id}" — try claude, codex, gemini or agy`);
+                    `no engine called "${id}" — try ${ENGINE_ENUM_SPACED}`);
                 return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
             }
         },
@@ -21519,7 +21713,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Create a launch profile, or REPLACE what the one with that name stores — which '
                 + 'is also how a profile is EDITED: pass the whole setup you want it to have, because '
                 + 'what you leave out is cleared rather than kept. args: name (required), engine? '
-                + '(claude|codex|gemini|agy — empty means the default engine), model?, effort?, '
+                + '(' + ENGINE_ENUM + ' — empty means the default engine), model?, effort?, '
                 + 'permissionMode?, prompt?, surface? (console|terminal — omit it and the profile says '
                 + 'nothing about where, so the launcher keeps the surface it is on) — each empty means '
                 + '"no flag", exactly as it does in the launcher. Replacing keeps the row\'s place in '
@@ -21602,7 +21796,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '"cli" = nothing is set anywhere) and a `note` saying so in one line. Read this '
                 + 'before assuming a model: an agent tuned for Claude is not tuned for the engine you '
                 + 'are about to start it on. args: agent? (name or id; omitted = every agent), '
-                + 'engine? (claude | codex | gemini | agy)',
+                + 'engine? (' + ENGINE_ENUM_SPACED + ')',
             handler: (args) => {
                 const who = (optStr(args, 'agent') ?? '').trim();
                 const wantEngine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -21645,11 +21839,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'engine\'s smallest model, a four-word prompt, and read-only sandboxing where the '
                 + 'engine offers it, so it can never touch a file. Returns ok, how long it took, and '
                 + 'the engine\'s OWN words when it failed — never an invented reason. No credential '
-                + 'is read or returned. args: id (claude | codex | gemini | agy)',
+                + 'is read or returned. args: id (' + ENGINE_ENUM_SPACED + ')',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
                 const engine = engineMatrix().find(e => e.id === id);
-                need(!!engine, `no engine called "${id}" — try claude, codex, gemini or agy`);
+                need(!!engine, `no engine called "${id}" — try ${ENGINE_ENUM_SPACED}`);
                 // Refuse rather than spend: there is nothing to call.
                 need(engine!.cli.found,
                     `${engine!.label} is not installed — ${engine!.next}`);
