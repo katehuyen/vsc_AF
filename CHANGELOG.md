@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.180.0 — X-49: a queued item can say who should take it — engine, model, effort (2026-08-20)
+
+**The queue was written when there was one engine.** `target` answers "which repo or which agent", and with five engines the question an item could not answer was *which engine, on which model, at what effort* — so a task could only ever be told "do the queue", never "do the work meant for me and leave the rest".
+
+**Three optional axes now sit beside `target`: `engine` · `model` · `effort`.** They are set when the item is captured, changed later from the row or with `queue.route`, and filtered on in `queue.list`. Each axis moves **on its own** — filling one in from a row never wipes what somebody set from the other surface — and `""` unclaims one.
+
+**‼️ AN EMPTY AXIS IS A REAL ANSWER, NOT A MISSING ONE:** the item does not care. That is why nothing is defaulted at capture: a value invented here would be indistinguishable from one the user chose. So "the work for me, and the work nobody claimed" is **two** questions and two calls (`engine:"codex"`, then `engine:"(none)"`), while omitting the axis is a third thing — every item, claimed or not.
+
+**Nothing is dispatched from a route.** The queue does not start work and this does not make it start any; it is a hint the task prompt reads to pick its own share out of the pile.
+
+On the page: three placeholder selects that ask for nothing — `— engine —`, `— model —`, `— effort —`, in the row and in the capture box, in the manner of the Backlog capture box's own `— area —`. **They narrow each other**, because the engine decides what the other two can mean: no engine means no model box (a model without an engine names nothing), an engine with no effort setting draws no effort box rather than an empty one, and the choices come from the same `launch` contract the Tasks form reads — two surfaces disagreeing about what `codex` can run is the bug S-20 was filed for. A claimed item wears the engine's own badge with its model and effort beside it; an unclaimed one says so in the row's hover. The filter strip gains **Engines**, with "(none)" in the list as a first-class choice.
+
 ## 3.179.0 — U-67: every point on the Live Timeline says what happened there (2026-08-20)
 
 **The page's whole subject is which conversation is doing what, and it could only ever be asked about the ROW.** A dot was a native `<title>` reading `prompt — p1 (14:23)`: a kind, ninety characters and a clock. What a person hovers a dot for is the moment itself — which conversation, what was actually said, what came back, where in the talk it fell — and that is TEXT, so it is an `AFTip`.

@@ -11,8 +11,12 @@
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Target / author are multi-pick: null = all (no filter), an array = exactly
     // that subset, [] = none. See media/afFilters.js.
-    const DEF = { fTarget: null, fAuthor: null, fProject: null, query: '', showDropped: false, agentLaneOpen: false };
+    /** The engine filter's word for "nobody asked for one" — the page's own
+     *  half of core/workqueue.ts NO_ROUTE, and never a real engine id. */
+    const NO_ENGINE = '(none)';
+    const DEF = { fTarget: null, fEngine: null, fAuthor: null, fProject: null, query: '', showDropped: false, agentLaneOpen: false };
     let fTarget = Array.isArray(st.fTarget) ? st.fTarget : null;
+    let fEngine = Array.isArray(st.fEngine) ? st.fEngine : null;
     let fAuthor = Array.isArray(st.fAuthor) ? st.fAuthor : null;
     // Which projects to list. Picked by ID rather than by name so a rename does
     // not silently empty the filter — the picker prints the name.
@@ -34,7 +38,7 @@
     // (core/tasks.ts addTask). It is a visible, changeable box and not a silent
     // stamp: the whole reason automatic filing is safe is that both the box and
     // the row can take it off again.
-    let addDraft = { text: '', target: '', urgency: 'normal', project: DATA.activeProjectId || '' };
+    let addDraft = { text: '', target: '', engine: '', model: '', effort: '', urgency: 'normal', project: DATA.activeProjectId || '' };
     let refocusSearch = false;
     let focusItem = DATA.focusItem || null;   // cross-link highlight (one shot)
 
@@ -80,7 +84,7 @@
         return `<a href="#" class="q-live q-live-${m[2]} q-afnav" data-to="${to}" title="Live ${esc(lv.kind)} status — click to open${lv.title ? ': ' + esc(lv.title) : ''}">${m[0]} ${esc(m[1])}</a>`;
     }
 
-    function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fAuthor, query, showDropped, agentLaneOpen }); } }
+    function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fEngine, fAuthor, query, showDropped, agentLaneOpen }); } }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function fileBase(p) { return String(p || '').split(/[\\/]/).pop(); }
     function authorChip(a) { return a === 'user' ? '🧑 you' : '🤖 ' + esc(a); }
@@ -111,10 +115,11 @@
     function matchesQuery(n) {
         // the box is a QUERY, not a substring — media/afQuery.js
         return window.AFQuery.compile(query).test(
-            [n.text, n.target || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')].join(' '));
+            [n.text, n.target || '', n.engine || '', n.model || '', n.effort || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')].join(' '));
     }
     function passesFilters(n) {
         return (!fTarget || fTarget.indexOf(n.target || '') >= 0) &&
+            (!fEngine || fEngine.indexOf(n.engine || NO_ENGINE) >= 0) &&
             (!fAuthor || fAuthor.indexOf(n.author) >= 0) &&
             // An unfiled item answers to the explicit "(none)" bucket, so a
             // project filter never makes rows disappear without a name for
@@ -255,7 +260,7 @@
             body = `${sourceLink(n)}
                 <div class="q-fulltext">${mdToHtml(n.text)}</div>
                 ${n.target ? `<div class="muted small">target: <strong>${esc(n.target)}</strong></div>` : ''}
-                ${delegationLink(n)}${outcomeBlock(n)}${projectPicker(n)}
+                ${delegationLink(n)}${outcomeBlock(n)}${routePicker(n)}${projectPicker(n)}
                 <div class="btnrow q-actions">
                     ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="Answer this — records your reply and sends it back into the pipeline">💬 Answer</button>` : ''}
                     <button data-act="handoff" data-id="${esc(n.id)}" title="Open the responsible agent and type this into its terminal (not sent)">🔗 Hand to agent</button>
@@ -278,11 +283,13 @@
                      flex share; the ellipsis stays on the span inside it. -->
                 ${window.AFTip.wrap(`<span class="q-text">${esc(n.text)}</span>`,
                 `${n.author === 'user' ? 'Your entry' : 'Agent entry'} · ${timeLabel(n.ts)}`
-                + `${n.target ? ` · for ${n.target}` : ''} · ${window.AFTip.sizeNote(n.text)}`,
+                + `${n.target ? ` · for ${n.target}` : ''}`
+                + `${routeWords(n) ? ` · asks for ${routeWords(n)}` : ' · unclaimed'} · ${window.AFTip.sizeNote(n.text)}`,
                 n.text)}
                 ${liveChip(n)}
                 ${urgencyBadge(n)}
                 ${n.target ? `<span class="q-target">${esc(n.target)}</span>` : ''}
+                ${routeChip(n)}
                 ${projectChip(n)}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
                 ${n.sourceNoticeId ? '<span class="q-badge src" title="Spawned from a notice">🔔</span>' : ''}
@@ -337,6 +344,101 @@
         return `<div class="q-cat cat-${opts.id}">${head}${body}</div>`;
     }
 
+    /**
+     * ‼️ X-49 — WHO SHOULD TAKE THIS, IN THREE BOXES THAT ASK FOR NOTHING.
+     *
+     * This section was written when there was one engine, so `target` — a repo
+     * or an agent name — was the whole of "who". With five engines the question
+     * a queued item cannot answer is *which engine, on which model, at what
+     * effort*, and without it a task can only be told "do the queue", never "do
+     * the work meant for me and leave the rest".
+     *
+     * All three are OPTIONAL and stay out of the way: they are placeholder
+     * selects, exactly like the Backlog capture box's `— area —` and `— type —`,
+     * and an item written without touching them is unclaimed — which is a real
+     * answer, and one an agent can ask for by name (`engine:"(none)"`).
+     *
+     * ‼️ THE BOXES NARROW EACH OTHER, because the engine decides what the other
+     * two can even mean (S-20, X-30): no engine means no model box, since a
+     * model without an engine names nothing; an engine with no effort setting
+     * draws no effort box at all rather than an empty one; and a model whose
+     * levels do not include what was chosen takes that model's own default.
+     * `AFEngine` holds those rules so this page and the Tasks form cannot come
+     * to different conclusions.
+     */
+    function routeBoxes(prefix, d, kind, itemId) {
+        const L = DATA.launch || {};
+        const engines = (L.engines || []);
+        if (!engines.length) { return ''; }
+        const opt = (v, t, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`;
+        const eng = d.engine || '';
+        const models = eng ? window.AFEngine.models(L, eng) : [];
+        const efforts = eng ? window.AFEngine.efforts(L, eng, d.model || '') : [];
+        const at = `data-kind="${esc(kind)}" data-item="${esc(itemId || '')}"`;
+        let h = `<span><select id="${prefix}-engine" data-route="engine" ${at}
+            title="${esc(routeTitle('engine', eng ? window.AFEngine.label(eng) : ''))}">
+            ${opt('', '— engine —', eng)}${engines.map(e => opt(e.id, e.label, eng)).join('')}</select></span>`;
+        if (eng && models.length) {
+            h += `<span><select id="${prefix}-model" data-route="model" ${at}
+                title="${esc(routeTitle('model', d.model || ''))}">
+                ${opt('', '— model —', d.model || '')}${models.map(m => opt(m.id, m.label || m.id, d.model || '')).join('')}</select></span>`;
+        }
+        if (eng && efforts.length) {
+            h += `<span><select id="${prefix}-effort" data-route="effort" ${at}
+                title="${esc(routeTitle('effort', d.effort || ''))}">
+                ${opt('', '— effort —', d.effort || '')}${efforts.filter(e => e.id).map(e => opt(e.id, e.label || e.id, d.effort || '')).join('')}</select></span>`;
+        }
+        return h;
+    }
+
+    /** MIRROR — a box narrow enough to cut its own text says its CURRENT value
+     *  first, then what the box is for. */
+    function routeTitle(axis, cur) {
+        const what = axis === 'engine'
+            ? 'Which engine should take this item.'
+            : axis === 'model' ? 'Which model that engine should use.' : 'What effort it should run at.';
+        return `${cur ? axis + ': ' + cur : 'no ' + axis + ' asked for'}\n\n${what}\n\n`
+            + 'Optional. Nothing is started from here — the queue does not dispatch. '
+            + 'It is what a task reads to pick out the work meant for it, so leaving it empty '
+            + 'is itself an answer: the item is unclaimed and anyone can take it.';
+    }
+
+    /** The route in words, for a line of prose. '' when nobody claimed it. */
+    function routeWords(n) {
+        return [n.engine ? window.AFEngine.label(n.engine) : '', n.model || '', n.effort || '']
+            .filter(Boolean).join(' · ');
+    }
+
+    /** The route as it is READ — the engine's own badge, so it is the same mark
+     *  this thing carries on every other page (U-26), then the two words that
+     *  narrow it. Nothing is drawn for an item nobody claimed. */
+    function routeChip(n) {
+        if (!n.engine && !n.model && !n.effort) { return ''; }
+        const rest = [n.model, n.effort].filter(Boolean).join(' · ');
+        const figures = [
+            n.engine ? 'Engine: ' + window.AFEngine.label(n.engine) : 'Engine: any',
+            n.model ? 'Model: ' + n.model : 'Model: any',
+            n.effort ? 'Effort: ' + n.effort : 'Effort: any'
+        ].join('\n');
+        return `<span class="q-route" title="${esc(figures)}">`
+            + `${n.engine ? window.AFEngine.badge(n.engine) : ''}`
+            + `${rest ? `<span class="q-route-rest">${esc(rest)}</span>` : ''}</span>`;
+    }
+
+    /** The same three boxes on an OPEN row, beside the project picker — the one
+     *  place an item's route is changed after it was written. */
+    function routePicker(n) {
+        const boxes = routeBoxes('q-rt-' + n.id, n, 'row', n.id);
+        if (!boxes) { return ''; }
+        return `<div class="q-routerow" data-id="${esc(n.id)}">
+            <label class="muted small">Who takes it</label>${boxes}
+            ${(n.engine || n.model || n.effort)
+                ? `<button class="secondary" data-act="routeclear" data-id="${esc(n.id)}"
+                     title="Unclaim this item — it goes back to being work anyone can take">✕ unclaim</button>`
+                : '<span class="muted small">unclaimed — anyone can take it</span>'}
+        </div>`;
+    }
+
     function addForm() {
         if (!addOpen) { return `<div class="q-addbar"><button data-add="open">＋ Add to queue</button></div>`; }
         const targets = (DATA.targets || []);
@@ -346,6 +448,7 @@
             <textarea id="q-add-text" rows="2" placeholder="What needs doing? (one line is enough — friction-free)">${esc(addDraft.text)}</textarea>
             <div class="q-erow">
                 <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="Target (optional): a repo or agent"><datalist id="q-targets">${dl}</datalist></span>
+                ${routeBoxes('q-add', addDraft, 'add')}
                 <span><select id="q-add-urg">${urgOpts}</select></span>
                 <span><select id="q-add-project" title="Which project this is work for. It opens on the window's active project because that is what you are working on; change it here, or take it off later from the item's own row.">${window.AFProject.options(DATA.projects, addDraft.project, { anyLabel: '— no project' })}</select></span>
             </div>
@@ -360,6 +463,15 @@
             { id: 'q-target', label: 'Targets', get: () => fTarget, set: v => { fTarget = v; },
                 title: 'Which targets to list — tick any combination',
                 options: (DATA.targets || []).slice() },
+            // ‼️ X-49 — "Unclaimed" is an OPTION here for the same reason "No
+            // project" is one below: without it, filtering to an engine makes
+            // the items nobody asked anyone for vanish with nothing on screen
+            // saying they exist — and those are exactly the ones somebody
+            // looking for work to hand out is about to want.
+            { id: 'q-engine', label: 'Engines', get: () => fEngine, set: v => { fEngine = v; },
+                title: 'Which engine the item asks for — tick any combination. This is what it WANTS, not where it ran; the queue starts nothing.',
+                options: [{ v: NO_ENGINE, t: '— Unclaimed' }].concat(
+                    ((DATA.launch || {}).engines || []).map(e => ({ v: e.id, t: e.label }))) },
             // U-52 — "mine" is one option, so a click on its name already gives
             // you it. Its opposite — everything the fleet put here — is as many
             // options as there are agents and had no name at all.
@@ -384,7 +496,7 @@
     function controls() {
         return `<div class="q-controls">
             <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}"
-                title="${esc(window.AFQuery.tip('Searched against the item, its target, its author, its resolution, its stamp and its tags.'))}">
+                title="${esc(window.AFQuery.tip('Searched against the item, its target, the engine/model/effort it asks for, its author, its resolution, its stamp and its tags.'))}">
             ${filterPickers().map(p => window.AFFilter.multi({
                 id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title,
                 presets: p.presets
@@ -424,6 +536,13 @@
         .q-row > .af-tipw { flex:1 1 auto; min-width:0; }
         .q-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .q-target { flex-shrink:0; font-size:10px; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:1px 5px; opacity:.85; }
+        /* X-49 — what the item ASKS FOR, beside where it belongs. The engine
+           keeps its own badge (U-26) and only the two words that narrow it are
+           drawn here, so an unclaimed item costs no width at all. */
+        .q-route { flex-shrink:0; display:inline-flex; align-items:center; gap:4px; }
+        .q-route-rest { font-size:10px; opacity:.75; }
+        .q-routerow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+        .q-routerow select { font-size:11px; padding:2px 4px; max-width:150px; }
         .q-urg { flex-shrink:0; font-size:10px; }
         .q-urg.u-urgent { color:var(--vscode-charts-red,#f14c4c); font-weight:700; }
         .q-meta { margin-left:auto; flex-shrink:0; white-space:nowrap; }
@@ -563,7 +682,11 @@
      *  project as the last, and re-picking it every time is the friction this
      *  box exists to avoid. */
     function freshDraft() {
-        return { text: '', target: '', urgency: 'normal', project: DATA.activeProjectId || '' };
+        // ‼️ The route starts EMPTY and is never seeded from the window (X-49).
+        // A project is stamped from what you are looking at because that is a
+        // fact about where you are; which engine should take a thing is not,
+        // and a guess here would be indistinguishable from a choice.
+        return { text: '', target: '', engine: '', model: '', effort: '', urgency: 'normal', project: DATA.activeProjectId || '' };
     }
 
     /** Open the reply box on a blocked item. */
@@ -580,7 +703,7 @@
             onChange: sel => { p.set(sel); saveState(); render(); }
         }));
         bind('q-showdropped', 'change', e => { showDropped = e.target.checked; saveState(); render(); });
-        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fAuthor = DEF.fAuthor; fProject = DEF.fProject; query = DEF.query; saveState(); render(); });
+        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fEngine = DEF.fEngine; fAuthor = DEF.fAuthor; fProject = DEF.fProject; query = DEF.query; saveState(); render(); });
 
         // add form
         document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
@@ -596,8 +719,15 @@
                 // "no project" chosen in the box has to arrive as the empty
                 // string it is.
                 const project = (document.getElementById('q-add-project') || {}).value || '';
+                // X-49 — the three route boxes. Read off the draft rather than
+                // the DOM: the model and effort boxes are only DRAWN once an
+                // engine is picked, so reading elements that may not exist
+                // would silently drop what was chosen a moment earlier.
                 if (text.trim()) {
-                    vscode.postMessage({ type: 'add', text: text.trim(), target: target.trim(), urgency, project });
+                    vscode.postMessage({
+                        type: 'add', text: text.trim(), target: target.trim(), urgency, project,
+                        engine: addDraft.engine || '', model: addDraft.model || '', effort: addDraft.effort || ''
+                    });
                     addOpen = false; addDraft = freshDraft();
                 }
             }
@@ -610,6 +740,40 @@
             el.addEventListener('input', () => { addDraft[key] = el.value; });
             el.addEventListener('change', () => { addDraft[key] = el.value; });
         });
+
+        /**
+         * ‼️ X-49 — THE THREE ROUTE BOXES, ON BOTH SURFACES AT ONCE.
+         *
+         * The capture box and an open row draw the same control, so they are
+         * wired once: `data-kind` says whether the answer goes into the draft
+         * or straight onto an item. Both then REDRAW, because the boxes narrow
+         * each other — picking an engine is what makes the model box exist, and
+         * a model can take the effort beside it out of the vocabulary (X-30).
+         * Narrowing happens here rather than only on the host, or the box would
+         * show `low` while the item was saved with `medium`.
+         */
+        document.querySelectorAll('[data-route]').forEach(sel => sel.addEventListener('change', e => {
+            e.stopPropagation();
+            const axis = sel.dataset.route;
+            const id = sel.dataset.item || '';
+            const cur = sel.dataset.kind === 'row'
+                ? ((DATA.items || []).find(x => x.id === id) || {})
+                : addDraft;
+            const want = {
+                engine: axis === 'engine' ? sel.value : (cur.engine || ''),
+                model: axis === 'model' ? sel.value : (cur.model || ''),
+                effort: axis === 'effort' ? sel.value : (cur.effort || '')
+            };
+            const fixed = window.AFEngine.narrow(DATA.launch || {}, want.engine, want.model, want.effort);
+            const route = { engine: want.engine, model: fixed.model, effort: fixed.effort };
+            if (sel.dataset.kind === 'row') {
+                if (!id) { return; }
+                vscode.postMessage(Object.assign({ type: 'setRoute', id }, route));
+            } else {
+                Object.assign(addDraft, route);
+                render();
+            }
+        }));
 
         // Filing, from the row's own picker and from the mark on the row.
         document.querySelectorAll('.q-pjsel').forEach(sel => sel.addEventListener('change', e => {
@@ -643,7 +807,7 @@
         }));
 
         // item actions
-        document.querySelectorAll('.q-actions [data-act], .q-edit [data-act], .q-outcome [data-act], .q-answer [data-act]').forEach(b => b.addEventListener('click', ev => {
+        document.querySelectorAll('.q-actions [data-act], .q-edit [data-act], .q-outcome [data-act], .q-answer [data-act], .q-routerow [data-act]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'handoff') { vscode.postMessage({ type: 'handoff', id }); }
@@ -660,6 +824,9 @@
                 const next = n.urgency === 'normal' ? 'soon' : n.urgency === 'soon' ? 'urgent' : 'normal';
                 vscode.postMessage({ type: 'setUrgency', id, urgency: next });
             }
+            // X-49 — all three axes at once, because "unclaim it" is one
+            // thought and clearing them one box at a time is three.
+            else if (act === 'routeclear') { vscode.postMessage({ type: 'setRoute', id, engine: '', model: '', effort: '' }); }
             else if (act === 'edit') { startEdit(id); }
             else if (act === 'editcancel') { captureEdit(id); editing.delete(id); delete editDrafts[id]; render(); }
             else if (act === 'editsave') {

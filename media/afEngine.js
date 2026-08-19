@@ -125,8 +125,63 @@
         return { tone: 'warn', text: 'not signed in' };
     }
 
+    /**
+     * ‼️ X-49 — WHAT AN ENGINE OFFERS, ASKED IN ONE PLACE.
+     *
+     * A page that lets somebody name an engine and then a model has to know
+     * which models that engine has, and which efforts THAT model has, or it
+     * collects a pair the engine refuses (`gemini-3.1-pro has no "medium"
+     * effort` — S-20 and X-30, both filed off exactly that). `launch` is the
+     * shape every panel already ships: `{ engines[], engineModels{}, efforts[] }`.
+     *
+     * This lives beside the engine badge because it is the same subject — what
+     * an engine IS — and because the alternative is what the repo already has:
+     * the Tasks form, the Console and Settings each carrying their own copy of
+     * these four functions, free to drift apart. Those three are not moved here
+     * in this commit (they are heavily-tested surfaces and that is its own
+     * job); anything NEW asks here.
+     */
+    function launchModels(launch, engine) {
+        const map = (launch && launch.engineModels) || {};
+        const em = map[engine || 'claude'];
+        return (em && em.models) || (launch && launch.models) || [];
+    }
+    /** The effort rows for that engine+model — [] when the engine takes none. */
+    function launchEfforts(launch, engine, model) {
+        // ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS. Asked of the
+        // engine row rather than named (`gemini`, then OpenCode), so the answer
+        // holds before any catalog has been fetched. A control with no referent
+        // is a bug, so the caller draws nothing rather than an empty box.
+        const row = ((launch && launch.engines) || []).find(function (e) { return e.id === (engine || 'claude'); });
+        if (row && row.takesEffort === false) { return []; }
+        const map = (launch && launch.engineModels) || {};
+        const em = map[engine || 'claude'];
+        const fallback = (launch && launch.efforts) || [];
+        if (!em || !em.efforts) { return fallback; }
+        return em.efforts[String(model || '')] || em.efforts[''] || fallback;
+    }
+    /**
+     * The pair, made coherent — the page-side mirror of core/models.ts
+     * `narrowLaunch`. A model this engine does not offer is dropped, and an
+     * effort the resulting model does not offer becomes that model's own
+     * default, or nothing, which is the only value safe on every engine.
+     */
+    function launchNarrow(launch, engine, model, effort) {
+        const models = launchModels(launch, engine);
+        const keptModel = models.some(function (m) { return m.id === (model || ''); }) ? (model || '') : '';
+        const rows = launchEfforts(launch, engine, keptModel);
+        if (rows.some(function (e) { return e.id === (effort || ''); })) {
+            return { model: keptModel, effort: effort || '' };
+        }
+        const map = (launch && launch.engineModels) || {};
+        const em = map[engine || 'claude'];
+        const def = (em && em.defaultEffort && em.defaultEffort[String(keptModel)]) || '';
+        return { model: keptModel, effort: rows.some(function (e) { return e.id === def; }) ? def : '' };
+    }
+
     window.AFEngine = {
         id: id, label: label, names: names, badge: badge, cls: cls,
-        known: KNOWN, authBadge: authBadge
+        known: KNOWN, authBadge: authBadge,
+        models: launchModels, efforts: launchEfforts, narrow: launchNarrow
     };
 })();

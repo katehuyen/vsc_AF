@@ -17,6 +17,19 @@ export interface QueueDeps {
     /** Known routing targets (products / agent names) for the filter + add form. */
     targets: () => string[];
     agentNames: () => string[];
+    /**
+     * ‼️ X-49 — the engines an item can ASK FOR, and what each one offers.
+     *
+     * The queue does not start anything, so this is a vocabulary and not a
+     * launcher: it is here so the three little boxes on a row offer the models
+     * that engine actually has instead of a free-text field where `sonet` and
+     * `sonnet` are the same amount of true. Same shape the Tasks form is given
+     * (`launch` in tasksPanel), because two surfaces disagreeing about what
+     * `codex` can run is the bug S-20 was filed for.
+     */
+    engineChoices?: () => { id: string; label: string; takesEffort?: boolean }[];
+    engineModels?: () => Record<string, { models: { id: string; label: string }[]; efforts: Record<string, { id: string; label: string }[]>; defaultEffort?: Record<string, string>; note?: string }>;
+    efforts?: () => { id: string; label: string }[];
     /** Open projects, for the capture box, the row picker and the filter. */
     projects: () => ProjectRef[];
     /** The window's active project — what a capture made here is stamped with. */
@@ -70,6 +83,13 @@ function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown>
         active: deps.store.active(),
         targets: deps.targets(),
         agents: deps.agentNames(),
+        // X-49 — the same `launch` contract the Tasks form reads, so the two
+        // pages cannot come to different conclusions about what an engine offers.
+        launch: {
+            engines: deps.engineChoices ? deps.engineChoices() : [],
+            engineModels: deps.engineModels ? deps.engineModels() : null,
+            efforts: deps.efforts ? deps.efforts() : []
+        },
         projects: deps.projects(),
         activeProjectId: deps.activeProjectId(),
         live: buildLiveMap(deps, items),
@@ -158,6 +178,9 @@ export class QueuePanel {
                         text: msg.text,
                         author: 'user',
                         target: typeof msg.target === 'string' ? msg.target : undefined,
+                        engine: typeof msg.engine === 'string' ? msg.engine : undefined,
+                        model: typeof msg.model === 'string' ? msg.model : undefined,
+                        effort: typeof msg.effort === 'string' ? msg.effort : undefined,
                         urgency: typeof msg.urgency === 'string' ? msg.urgency : undefined,
                         projectId: picked !== undefined ? picked : this.deps.activeProjectId()
                     });
@@ -183,6 +206,20 @@ export class QueuePanel {
             case 'edit':
                 if (typeof msg.id === 'string' && msg.patch && typeof msg.patch === 'object') {
                     s.edit(msg.id, msg.patch as Record<string, unknown>);
+                    this.mutated();
+                }
+                break;
+            // X-49 — WHO should take it. One axis at a time: the row draws three
+            // little boxes and each sends only itself, so filling one in never
+            // wipes what is in the others. An empty string is "unclaim it",
+            // which is why the value is passed through rather than dropped.
+            case 'setRoute':
+                if (typeof msg.id === 'string' && msg.id) {
+                    s.setRoute(msg.id, {
+                        engine: typeof msg.engine === 'string' ? msg.engine : undefined,
+                        model: typeof msg.model === 'string' ? msg.model : undefined,
+                        effort: typeof msg.effort === 'string' ? msg.effort : undefined
+                    });
                     this.mutated();
                 }
                 break;

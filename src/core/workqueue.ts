@@ -63,6 +63,27 @@ export interface WorkItem {
     text: string;
     /** Free-text routing hint: a repo/area or an agent name. */
     target?: string;
+    /**
+     * ‼️ X-49 — WHO SHOULD TAKE THIS, WHEN THE ANSWER IS AN ENGINE.
+     *
+     * `target` was written when there was one engine, so it answers "which repo
+     * or which agent" and nothing else. These three answer the question a fleet
+     * of five engines asks instead: which engine, on which model, at what
+     * effort. All three are OPTIONAL and an empty one is a real answer — "the
+     * item does not care" — which is why nothing is defaulted here: a value
+     * invented at capture time would be indistinguishable from one the user
+     * chose, and the whole point is that an agent can be told *do the ones for
+     * my engine, or the ones nobody claimed, and leave the rest*.
+     *
+     * They are a HINT, not an assignment: the queue does not dispatch, so
+     * nothing here starts anything. What reads them is `queue.list`'s filter
+     * and whatever the task prompt tells the agent to do with it.
+     */
+    engine?: string;
+    /** The model that engine should use — see `engine`. */
+    model?: string;
+    /** The reasoning effort that model should run at — see `engine`. */
+    effort?: string;
     tags?: string[];
     /** default 'normal'. */
     urgency: QueueUrgency;
@@ -123,6 +144,10 @@ export interface WorkItemInput {
     text: string;
     author?: string;
     target?: string;
+    /** Which engine / model / effort should take it — see WorkItem.engine. */
+    engine?: string;
+    model?: string;
+    effort?: string;
     tags?: string[] | string;
     urgency?: string;
     dependsOn?: string[] | string;
@@ -138,6 +163,15 @@ export interface WorkItemFilter {
     active?: boolean;
     author?: string;
     target?: string;
+    /**
+     * ‼️ X-49 — the route filter, and the reason `NO_ROUTE` exists. "Do the
+     * items for my engine" and "do the ones nobody claimed" are different
+     * questions, and an absent filter answers neither: it means *every* item.
+     * Pass `(none)` to ask for the unclaimed ones on that axis.
+     */
+    engine?: string;
+    model?: string;
+    effort?: string;
     urgency?: string;
     groupId?: string;
     tag?: string;
@@ -151,6 +185,11 @@ export interface WorkItemFilter {
 /** The filter value that asks for items carrying NO project. A real id can
  *  never collide with it: ids are `prj_…`. */
 export const NO_PROJECT = '(none)';
+
+/** The same word on the three route axes (X-49): "the ones nobody claimed".
+ *  Spelled the same as NO_PROJECT deliberately — one sentinel to remember, and
+ *  no engine, model or effort is ever called `(none)`. */
+export const NO_ROUTE = '(none)';
 
 /** What a stamp writes onto an item when the manager handles it. */
 export interface StampInput {
@@ -214,6 +253,23 @@ export function isTerminal(item: WorkItem): boolean {
     return (TERMINAL_STATUSES as string[]).includes(item.status);
 }
 
+/** The three route fields off any input, trimmed and capped (X-49). An empty
+ *  one is left OFF the object rather than stored as '': "nobody said" and "the
+ *  user cleared it" are the same state, and a filter must not have to know
+ *  which of two spellings it is looking at. Engine is lower-cased because it is
+ *  an id (`claude`); a model name is not, because `GPT-5.6-Terra` is a name. */
+export function coerceRoute(v: { engine?: unknown; model?: unknown; effort?: unknown })
+    : { engine?: string; model?: string; effort?: string } {
+    const out: { engine?: string; model?: string; effort?: string } = {};
+    const engine = String(v.engine ?? '').trim().toLowerCase().slice(0, NAME_MAX);
+    const model = String(v.model ?? '').trim().slice(0, NAME_MAX);
+    const effort = String(v.effort ?? '').trim().toLowerCase().slice(0, NAME_MAX);
+    if (engine) { out.engine = engine; }
+    if (model) { out.model = model; }
+    if (effort) { out.effort = effort; }
+    return out;
+}
+
 /** Validate an input into a fresh WorkItem (throws on empty text). */
 export function makeWorkItem(input: WorkItemInput, now = Date.now()): WorkItem {
     const text = String(input.text ?? '').trim().slice(0, TEXT_MAX);
@@ -229,6 +285,7 @@ export function makeWorkItem(input: WorkItemInput, now = Date.now()): WorkItem {
     };
     const target = String(input.target ?? '').trim().slice(0, TARGET_MAX);
     if (target) { item.target = target; }
+    Object.assign(item, coerceRoute(input));
     const deps = coerceDeps(input.dependsOn, item.id);
     if (deps) { item.dependsOn = deps; }
     const srcId = String(input.sourceNoticeId ?? '').trim();
@@ -254,11 +311,20 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
     const urgency = (f.urgency ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
     const project = (f.projectId ?? '').trim();
+    // X-49 — one axis, asked the same way three times: a value matches that
+    // value, and `(none)` matches the items that carry nothing there.
+    const axis = (want: string | undefined, has: string | undefined): boolean => {
+        const w = (want ?? '').trim().toLowerCase();
+        if (!w) { return true; }
+        const h = (has ?? '').trim().toLowerCase();
+        return w === NO_ROUTE ? !h : h === w;
+    };
     let out = sortItems(list).filter(n =>
         (!status || n.status === status) &&
         (!f.active || !isTerminal(n)) &&
         (!author || n.author.toLowerCase() === author) &&
         (!target || (n.target ?? '').toLowerCase() === target) &&
+        axis(f.engine, n.engine) && axis(f.model, n.model) && axis(f.effort, n.effort) &&
         (!urgency || n.urgency === urgency) &&
         (!f.groupId || n.groupId === f.groupId) &&
         (!f.sourceNoticeId || n.sourceNoticeId === f.sourceNoticeId) &&
@@ -507,11 +573,20 @@ export class WorkQueueStore {
         if (c) { this.save(); } return c;
     }
 
-    /** Free-form field edits (text / target / urgency / tags / dependsOn). */
-    edit(id: string, patch: { text?: string; target?: string; urgency?: string; tags?: string[] | string; dependsOn?: string[] | string }): boolean {
+    /** Free-form field edits (text / target / route / urgency / tags / dependsOn). */
+    edit(id: string, patch: {
+        text?: string; target?: string; urgency?: string;
+        engine?: string; model?: string; effort?: string;
+        tags?: string[] | string; dependsOn?: string[] | string
+    }): boolean {
         const n = this.find(id); if (!n) { return false; }
         if (typeof patch.text === 'string' && patch.text.trim()) { n.text = patch.text.trim().slice(0, TEXT_MAX); }
         if (patch.target !== undefined) { const t = String(patch.target).trim(); n.target = t ? t.slice(0, TARGET_MAX) : undefined; }
+        // X-49 — each axis is edited on its own: passing engine alone must not
+        // silently clear a model somebody set from the other surface.
+        if (patch.engine !== undefined || patch.model !== undefined || patch.effort !== undefined) {
+            this.applyRoute(n, patch);
+        }
         if (patch.urgency !== undefined) { n.urgency = coerceUrgency(patch.urgency); }
         if (patch.tags !== undefined) { n.tags = coerceTags(patch.tags); }
         if (patch.dependsOn !== undefined) { n.dependsOn = coerceDeps(patch.dependsOn, n.id); }
@@ -528,6 +603,35 @@ export class WorkQueueStore {
         const n = this.find(id); if (!n) { return false; }
         const t = String(target ?? '').trim(); n.target = t ? t.slice(0, TARGET_MAX) : undefined;
         this.save(); return true;
+    }
+
+    /**
+     * ‼️ X-49 — which engine / model / effort should take this item.
+     *
+     * Only the axes NAMED in the patch move; an axis left out is left alone, so
+     * the row's three little boxes can be filled in one at a time without each
+     * one wiping the last. An axis passed as an empty string is a real
+     * instruction — "unclaim it" — and that is what the row's blank option
+     * sends.
+     */
+    setRoute(id: string, patch: { engine?: string; model?: string; effort?: string }): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        this.applyRoute(n, patch);
+        this.save(); return true;
+    }
+
+    /** The shared half of setRoute and edit — see setRoute for the rules. */
+    private applyRoute(n: WorkItem, patch: { engine?: string; model?: string; effort?: string }): void {
+        const want = coerceRoute(patch);
+        if (patch.engine !== undefined) {
+            if (want.engine) { n.engine = want.engine; } else { delete n.engine; }
+        }
+        if (patch.model !== undefined) {
+            if (want.model) { n.model = want.model; } else { delete n.model; }
+        }
+        if (patch.effort !== undefined) {
+            if (want.effort) { n.effort = want.effort; } else { delete n.effort; }
+        }
     }
 
     pin(id: string, pinned: boolean): boolean {
@@ -703,7 +807,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
     bridge.register([
         {
             op: 'queue.add',
-            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint), author? (defaults to the agent name for agent-queued items; "user" for user captures), project? (id or name — files the item under a project so it shows on that project\'s Work tab; an unknown name is reported back and the item is captured unfiled rather than guessed at). The manager scans, groups and batch-delegates these.',
+            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), engine?/model?/effort? (X-49 — WHO should take it: an engine id (claude|codex|gemini|agy|opencode), the model it should run on, the effort it should run at. All three optional and independent; an axis left out means the item does not care about it, which is a real answer queue.list can filter on with "(none)"), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint), author? (defaults to the agent name for agent-queued items; "user" for user captures), project? (id or name — files the item under a project so it shows on that project\'s Work tab; an unknown name is reported back and the item is captured unfiled rather than guessed at). The manager scans, groups and batch-delegates these.',
             handler: (args) => {
                 const projectKey = optStr(args, 'project');
                 let projectId: string | undefined;
@@ -718,6 +822,9 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                     text: argStr(args, 'text'),
                     author: optStr(args, 'author') || undefined,
                     target: optStr(args, 'target') || undefined,
+                    engine: optStr(args, 'engine') || undefined,
+                    model: optStr(args, 'model') || undefined,
+                    effort: optStr(args, 'effort') || undefined,
                     urgency: optStr(args, 'urgency') || undefined,
                     tags: (args.tags as string[] | string | undefined),
                     dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined,
@@ -752,12 +859,15 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.list',
-            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
+            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, engine?/model?/effort? (X-49 — WHO the item asks for: pass your own engine id / model / effort to get the items meant for you, or "(none)" on any axis for the ones nobody claimed there. Omitting an axis does NOT mean "unclaimed" — it means every item, claimed or not. So "the work for me and the work nobody asked anyone for" is TWO calls: engine="codex" then engine="(none)"), urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
             handler: (args) => store.list({
                 status: optStr(args, 'status') || undefined,
                 active: args.active === true ? true : undefined,
                 author: optStr(args, 'author') || undefined,
                 target: optStr(args, 'target') || undefined,
+                engine: optStr(args, 'engine') || undefined,
+                model: optStr(args, 'model') || undefined,
+                effort: optStr(args, 'effort') || undefined,
                 urgency: optStr(args, 'urgency') || undefined,
                 groupId: optStr(args, 'groupId') || undefined,
                 tag: optStr(args, 'tag') || undefined,
@@ -777,11 +887,14 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.edit',
-            describe: 'Edit a work item\'s fields. args: id, text?, target?, urgency?, tags?, dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint for the manager when it sequences a batch; pass [] or "" to clear).',
+            describe: 'Edit a work item\'s fields. args: id, text?, target?, engine?/model?/effort? (X-49 — who should take it; each axis moves on its own and "" clears that one), urgency?, tags?, dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint for the manager when it sequences a batch; pass [] or "" to clear).',
             handler: (args) => {
                 need(store.edit(argStr(args, 'id'), {
                     text: optStr(args, 'text') || undefined,
                     target: args.target !== undefined ? optStr(args, 'target') : undefined,
+                    engine: args.engine !== undefined ? optStr(args, 'engine') : undefined,
+                    model: args.model !== undefined ? optStr(args, 'model') : undefined,
+                    effort: args.effort !== undefined ? optStr(args, 'effort') : undefined,
                     urgency: optStr(args, 'urgency') || undefined,
                     tags: (args.tags as string[] | string | undefined),
                     dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined
@@ -886,6 +999,18 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
             describe: 'Set an item\'s urgency. args: id, urgency (normal|soon|urgent)',
             handler: (args) => {
                 need(store.setUrgency(argStr(args, 'id'), argStr(args, 'urgency')), 'Work item not found — queue.list shows current ids.');
+                changed(); return { ok: true };
+            }
+        },
+        {
+            op: 'queue.route',
+            describe: 'X-49 — say WHO should take an item: which engine, on which model, at what effort. args: id, engine? (claude|codex|gemini|agy|opencode), model?, effort?. Each axis moves ON ITS OWN: an axis you do not pass is left as it was, and an axis you pass as "" is unclaimed. Nothing is dispatched by this — the queue does not start work; it is what queue.list filters on so a task can be told "do the items for my engine, and the ones nobody claimed, and leave the rest".',
+            handler: (args) => {
+                need(store.setRoute(argStr(args, 'id'), {
+                    engine: args.engine !== undefined ? optStr(args, 'engine') : undefined,
+                    model: args.model !== undefined ? optStr(args, 'model') : undefined,
+                    effort: args.effort !== undefined ? optStr(args, 'effort') : undefined
+                }), 'Work item not found — queue.list shows current ids.');
                 changed(); return { ok: true };
             }
         },

@@ -459,6 +459,74 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
             && !store.get(byId.result.id).projectId);
     }
 
+    // ---------- X-49: WHO should take an item -------------------------------
+    //
+    // ‼️ THE FILTER IS THE WHOLE POINT, AND ITS TWO NEGATIVES ARE DIFFERENT.
+    // `target` was written when there was one engine, so it answers "which repo
+    // or which agent" and nothing else; a fleet of five needs "which engine, on
+    // which model, at what effort" — and an agent must be able to ask both "the
+    // work meant for me" and "the work nobody claimed", which are not the same
+    // question and neither of which is "no filter".
+    {
+        const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'afq-route-'));
+        const store = new WorkQueueStore(dir3);
+        const reg = new BridgeRegistry();
+        registerQueueOps(reg, { store });
+
+        const mine = await reg.dispatch('queue.add', {
+            text: 'the codex one', engine: ' CODEX ', model: 'GPT-5.6-Terra', effort: ' LOW '
+        });
+        const other = await reg.dispatch('queue.add', { text: 'the claude one', engine: 'claude' });
+        const nobodys = await reg.dispatch('queue.add', { text: 'anyone can take this' });
+        ok('an engine is stored as an id, lower-cased and trimmed',
+            store.get(mine.result.id).engine === 'codex');
+        ok('‼️ …but a MODEL keeps its case, because it is a name and not an id',
+            store.get(mine.result.id).model === 'GPT-5.6-Terra');
+        ok('an effort is an id too', store.get(mine.result.id).effort === 'low');
+        ok('‼️ an item nobody claimed carries no empty strings — absent is absent',
+            !('engine' in store.get(nobodys.result.id)) && !('model' in store.get(nobodys.result.id)));
+
+        const forMe = await reg.dispatch('queue.list', { engine: 'codex' });
+        ok('an agent can ask for the work meant for its engine',
+            forMe.ok && forMe.result.length === 1 && forMe.result[0].id === mine.result.id);
+        const free = await reg.dispatch('queue.list', { engine: '(none)' });
+        ok('‼️ …and for the work NOBODY claimed, which is a different question',
+            free.ok && free.result.length === 1 && free.result[0].id === nobodys.result.id);
+        const all = await reg.dispatch('queue.list', {});
+        ok('‼️ …and no filter is a THIRD answer: every item, claimed or not',
+            all.ok && all.result.length === 3);
+        ok('the other engine\'s item is not in either', other.ok
+            && !forMe.result.some(n => n.id === other.result.id)
+            && !free.result.some(n => n.id === other.result.id));
+        const byEffort = await reg.dispatch('queue.list', { effort: 'low' });
+        ok('the same question on the effort axis', byEffort.ok && byEffort.result.length === 1);
+        const byModel = await reg.dispatch('queue.list', { model: 'gpt-5.6-terra' });
+        ok('…and on the model axis, matched without minding case',
+            byModel.ok && byModel.result.length === 1);
+
+        // The row draws three boxes and each sends only itself, so an axis that
+        // was not named must survive the ones that were.
+        await reg.dispatch('queue.route', { id: other.result.id, model: 'opus-5' });
+        ok('‼️ setting one axis leaves the others exactly as they were',
+            store.get(other.result.id).engine === 'claude' && store.get(other.result.id).model === 'opus-5');
+        await reg.dispatch('queue.route', { id: other.result.id, engine: '' });
+        ok('…and an empty string is a real instruction: unclaim that axis',
+            !store.get(other.result.id).engine && store.get(other.result.id).model === 'opus-5');
+        const gone = await reg.dispatch('queue.route', { id: 'nope', engine: 'claude' });
+        ok('routing an item that is not there is refused, not silently ignored', !gone.ok);
+
+        await reg.dispatch('queue.edit', { id: mine.result.id, effort: '' });
+        ok('the edit op moves the same axes', !store.get(mine.result.id).effort
+            && store.get(mine.result.id).engine === 'codex');
+        ok('‼️ …and editing something else does not touch the route at all',
+            (await reg.dispatch('queue.edit', { id: mine.result.id, text: 'renamed' })).ok
+            && store.get(mine.result.id).engine === 'codex');
+
+        ok('queue.route is on the bridge, so an agent can do this too',
+            reg.catalog().some(o => o.op === 'queue.route'));
+        try { fs.rmSync(dir3, { recursive: true, force: true }); } catch {}
+    }
+
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(cevapDir, { recursive: true, force: true }); } catch {}
 

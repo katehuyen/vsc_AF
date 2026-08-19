@@ -9298,6 +9298,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: workQueueStore,
         targets: queueTargets,
         agentNames: () => agents.map(a => a.name),
+        // X-49 — the engine axis of an item's route, from the same two places
+        // the Tasks form and the Console read it: a queue row must not offer a
+        // model the engine it names has never had.
+        engineChoices: () => engineOptions(engineMatrix())
+            .map(e => ({ id: e.id, label: e.label, takesEffort: engineTakesEffort(e.id) })),
+        engineModels: () => engineModelMatrix(),
+        efforts: () => EFFORT_CHOICES,
         // ‼️ The whole list, closed ones included. A picker wants the open
         // projects; a ROW that is already stamped with a finished one still has
         // to draw its name, and dropping it would print an item's project as

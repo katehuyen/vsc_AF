@@ -4099,6 +4099,15 @@
       }
     },
     {
+      "capability": "queuePanel.ts#setRoute",
+      "ui": [
+        "page:queuePanel.ts#setRoute"
+      ],
+      "ops": [
+        "queue.route"
+      ]
+    },
+    {
       "capability": "queuePanel.ts#setUrgency",
       "ui": [
         "page:queuePanel.ts#setUrgency"
