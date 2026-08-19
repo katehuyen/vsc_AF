@@ -83,15 +83,18 @@
         /** sessionId → that card's own `show`, once it has been set (K-21) */
         kindsBy: {},
         /**
-         * How tall the writing box was dragged, as a css length ('220px').
+         * How tall the writing box was dragged, in whole pixels.
          *
-         * The drag handle writes an inline height, and `buildShell` writes the
-         * whole composer from scratch — so the two disagreed and the rebuild
-         * always won. This is the box's own answer to "how tall", kept next to
-         * the draft it holds: it outlives a rebuild, a session change and the
-         * panel being closed. Empty means "never dragged" — the css min-height.
+         * ‼️ K-9 — A NUMBER THE PAGE OWNS, NOT AN INLINE STYLE IT HOPES SURVIVES.
+         * The drag handle writes an inline height and `buildShell` writes the
+         * whole composer from scratch, so the height had to be put back by hand
+         * after every rebuild and anything landing between the two won instead.
+         * It is applied as a custom property on the document root now, which no
+         * rebuild touches, and it is clamped on the way in and on the way out so
+         * a stored figure can never raise the ceiling the css sets — the two
+         * halves of K-9, in `AFTextTools.keepHeight`. 0 means "never dragged".
          */
-        boxH: '',
+        boxH: 0,
         // is the miniature filter open, and what is it asking for
         showRFilter: false, rq: EMPTY_RQ(),
         // is the card-order panel open, and what has it been told (see ORDER)
@@ -110,6 +113,9 @@
     }, saved.afConsole);
     st.rq = Object.assign(EMPTY_RQ(), st.rq);
     st.order = Object.assign(ORDER_DEFAULT(), st.order);
+    // An earlier build stored the box's height as a css length ('220px').
+    // parseInt reads both that and the number, so nothing below has to care.
+    st.boxH = parseInt(st.boxH, 10) || 0;
     if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
@@ -511,17 +517,24 @@
         .pbadge { font-size:9px; opacity:.75; padding:0 4px; border-radius:7px;
             border:1px solid var(--vscode-widget-border,#4443); }
         /* ‼️ THE HEIGHT YOU DRAG IS A SETTING, NOT A SIDE EFFECT (see st.boxH).
-           Two things used to throw it away. The ceiling was 30vh, so a drag past
-           a third of the window did nothing and the handle just stopped under
-           the cursor — it read as "it snapped back". And the height a drag sets
-           is an INLINE style on the element, which buildShell replaces: any
-           rebuild (another session selected, a turn ending, an agent pinned) put
-           the box back to 64px, so whether it survived depended on whether a
-           rebuild happened to land between the drag and the next look.
+           Three things used to throw it away. The ceiling was 30vh, so a drag
+           past a third of the window did nothing and the handle just stopped
+           under the cursor — it read as "it snapped back". The height a drag
+           sets is an INLINE style on the element, which buildShell replaces, so
+           it had to be put back by hand after every rebuild and whatever ran in
+           between won instead. And the figure that was put back was never
+           checked against the ceiling, so a box that snapped back came back
+           taller each time until it could cover the page.
            Now: the ceiling is 70vh — the conversation above is a min-height:0
-           flex scroller, so it simply yields the room and the composer never
-           leaves the window — and the dragged height is saved and restored. */
-        .composer textarea { width:100%; min-height:64px; max-height:70vh; resize:vertical; font:inherit;
+           flex scroller, so it yields the room and the composer never leaves the
+           window — and the height is --af-boxh, a custom property on the
+           document root that no rebuild can touch, clamped both ways by
+           AFTextTools.keepHeight. The box is born its own size. The fallback is
+           auto and not a figure: a box that was never dragged must keep the
+           size the layout gives it, exactly as it did before there was a
+           property at all. */
+        .composer textarea { width:100%; height:var(--af-boxh, auto);
+            min-height:64px; max-height:70vh; resize:vertical; font:inherit;
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
@@ -2377,6 +2390,8 @@
 
     /** What the shell was built for; when this changes, the shell is rebuilt. */
     let shellKey = null;
+    /** Stops watching the PREVIOUS writing box's height (K-9, see keepHeight). */
+    let stopBoxH = null;
     /** Last html written into each slot — nothing is touched unless it differs. */
     const written = {};
 
@@ -3001,21 +3016,19 @@
                     }
                 }
             });
-            // The height survives the rebuild that just destroyed the element
-            // it was set on. Restored BEFORE focus, so the box is already its
-            // real size when the caret lands in it and nothing is seen to jump.
-            if (st.boxH) { text.style.height = st.boxH; }
-            // …and a drag is recorded. Inline `height` is written by the resize
-            // handle and by the line above and by nothing else, so watching the
-            // element and reading its INLINE height tells a user drag apart
-            // from a re-layout (a window resize changes the rendered height and
-            // leaves the inline one alone, and must not be saved as a choice).
-            if (typeof ResizeObserver === 'function') {
-                new ResizeObserver(() => {
-                    const h = text.style.height;
-                    if (h && h !== st.boxH) { st.boxH = h; save(); }
-                }).observe(text);
-            }
+            // ‼️ K-9 — NOTHING IS RESTORED HERE, AND THAT IS THE FIX. The box is
+            // already its dragged height: `--af-boxh` is on the document root
+            // and the rebuild that just made this element could not reach it.
+            // What is wired is the RECORD, and the ceiling — see keepHeight.
+            // The previous box's observer is stopped first: one left alive
+            // writes the height ITS box had into the same slot, and that is a
+            // height coming back on its own long after the box it belonged to.
+            if (stopBoxH) { stopBoxH(); }
+            stopBoxH = window.AFTextTools.keepHeight({
+                el: text, varName: '--af-boxh', min: 64,
+                read: () => st.boxH,
+                write: px => { st.boxH = px; save(); }
+            });
             // Only here — never on a data update. Focusing scrolls the element
             // into view, which is exactly the "it dragged me back down" bug.
             try { text.focus({ preventScroll: true }); } catch (e) { text.focus(); }

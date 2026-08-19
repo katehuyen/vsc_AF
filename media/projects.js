@@ -2247,7 +2247,13 @@
                 .pj-bl-capreset:hover { opacity:1; border-color:var(--vscode-focusBorder);
                     background:var(--vscode-toolbar-hoverBackground,#8882); }
                 .pj-bl-cap { display:flex; gap:10px; align-items:stretch; flex-wrap:wrap; }
-                .pj-bl-cap textarea { flex:1 1 340px; min-width:220px; min-height:86px;
+                /* the dragged height is --pj-blh and the ceiling is stated here
+                   as well as in the js that clamps it (K-9). ‼️ The fallback is
+                   auto on purpose: this is a stretch flex row, and a box that
+                   was never dragged must go on taking its height from the row —
+                   pinning it to a figure is the regression the reset once had */
+                .pj-bl-cap textarea { flex:1 1 340px; min-width:220px;
+                    height:var(--pj-blh, auto); min-height:86px; max-height:70vh;
                     font-family:inherit; font-size:13px; resize:vertical; padding:6px 8px; }
                 .pj-bl-capf { flex:1 1 240px; max-width:340px; display:flex; flex-wrap:wrap;
                     gap:6px; align-content:flex-start; }
@@ -2770,6 +2776,8 @@
         family: ''
     });
     let blFilter = blFilterDefaults();
+    /** Stops watching the PREVIOUS capture box's height (K-9, see keepHeight). */
+    let stopBlH = null;
     let blSort = 'file';
     let blDesc = false;
     let blFiltersOpen = false;
@@ -6865,19 +6873,20 @@
             // same reason: a box you widened to write a long item is a choice,
             // and this page repaints on a filter chip, a tab, an area, a queue
             // position and every host push.
-            const capH = blCapture();
-            if (capH.boxH) { blNew.style.height = capH.boxH; }
-            // A drag is then recorded. Inline `height` is written by the resize
-            // handle and by the line above and by nothing else, so reading the
-            // INLINE height tells a user drag apart from a re-layout — a panel
-            // being made narrower changes the rendered height and leaves the
-            // inline one alone, and must not be saved as a choice.
-            if (typeof ResizeObserver === 'function') {
-                new ResizeObserver(() => {
-                    const h = blNew.style.height;
-                    if (h && h !== blCapture().boxH) { blCapture().boxH = h; }
-                }).observe(blNew);
-            }
+            //
+            // ‼️ K-9 — IT IS THE CONSOLE COMPOSER'S MECHANISM, NOT A SECOND ONE.
+            // These were the same eight lines twice, and the fault they shared
+            // is the one K-9 was reopened for: a height put back by hand after
+            // every rebuild is a height whatever repaints next can take away,
+            // and a figure that goes back into storage unchecked raises the
+            // ceiling it was supposed to obey. `--pj-blh` sits on the document
+            // root, where no repaint of this page reaches it.
+            if (stopBlH) { stopBlH(); }
+            stopBlH = window.AFTextTools.keepHeight({
+                el: blNew, varName: '--pj-blh', min: 86,
+                read: () => parseInt(blCapture().boxH, 10) || 0,
+                write: px => { blCapture().boxH = px; }
+            });
         }
         // The box's four text tools — the same component the console composer
         // uses (media/afTextTools.js), so paste lands with the same space rule.

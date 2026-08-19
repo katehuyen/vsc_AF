@@ -171,13 +171,25 @@ function run(data) {
     // a list the test can fire by hand: a drag is a user gesture, and there is
     // nothing in a stub DOM that would produce one on its own.
     const observed = [];
+    /** The document root's own style map — where the dragged height ends up. */
+    const rootVars = {};
+    const rootStyle = {
+        setProperty: (k, v) => { rootVars[k] = v; },
+        removeProperty: k => { delete rootVars[k]; },
+        getPropertyValue: k => rootVars[k]
+    };
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: m => posted.push(m), getState: () => ({}), setState() { } }),
         ResizeObserver: function (fn) { this.observe = el => observed.push({ el, fn }); },
         CSS: { escape: s => String(s).replace(/["\\]/g, '\\$&') },
         window: {
             __DATA__: data,
+            // ‼️ K-9 — the box's ceiling is 70% of the window, so a window with
+            // no height at all would make every drag clamp to the floor and the
+            // height tests would pass by accident, asserting nothing.
+            innerHeight: 1000,
             addEventListener: (ev, fn) => { if (ev === 'message') { onMessage.push(fn); } },
+            removeEventListener: () => { },
             AFCharts: {
                 esc: s => String(s === undefined || s === null ? '' : s)
                     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
@@ -197,6 +209,12 @@ function run(data) {
         // the menu" is only true if that listener exists and does not also eat the
         // click that opened it.
         document: {
+            // ‼️ K-9 — WHERE THE DRAGGED HEIGHT ACTUALLY LIVES. It is a custom
+            // property on the document root, which is the one element this page
+            // never rewrites; the box itself carries no inline height once the
+            // drag is over. A stub without a root would make the mechanism
+            // untestable and the assertions below would be checking nothing.
+            documentElement: { style: rootStyle },
             getElementById: id => (id === 'app' ? app : (dom ? dom.byId(id) : null)),
             querySelectorAll: sel => remember(sel, dom ? dom.all(sel) : []),
             querySelector: sel => (sel.indexOf('[data-afms') === 0
@@ -230,6 +248,8 @@ function run(data) {
             hit.fn();
             return true;
         },
+        /** How tall the box is being drawn — the property, not the element. */
+        boxH: () => rootVars['--pj-blh'] || '',
         html: () => html,
         all: sel => dom.all(sel),
         one: sel => dom.one(sel),
@@ -609,29 +629,39 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 // made it look random is that only SOME gestures repaint: typing does not, but
 // picking an area or a queue position does — so the box snapped back mid-item,
 // while the controls beside it were being filled in.
+//
+// ‼️ K-9 — AND IT IS NO LONGER PUT BACK BY HAND. The height is a custom
+// property on the document root, which this page never rewrites, so the box is
+// born its own size and there is no moment between the rebuild and the restore
+// for anything to land in. The element's own inline height is the DRAG and
+// nothing else. The keeper is shared with the console composer
+// (AFTextTools.keepHeight), and its clamping is measured in
+// test_texttools_height.js.
 {
     const r = run(data());
     ok('the box is watched for a drag at all', r.drag('bl-new', '260px'));
+    ok('‼️ …and what it was dragged to is published where a repaint cannot reach it',
+        r.boxH() === '260px');
 
     const area = r.byId('bl-area');
     area.value = 'K';
     area.fire('change');                                   // the reported repaint
-    ok('‼️ picking an area does not snap the box back',
-        (r.byId('bl-new').style.height || '') === '260px');
+    ok('‼️ picking an area does not snap the box back', r.boxH() === '260px');
 
     const at = r.byId('bl-at');
     if (at) { at.value = '1'; at.fire('change'); }          // the other reported one
-    ok('…nor does picking a queue position',
-        (r.byId('bl-new').style.height || '') === '260px');
+    ok('…nor does picking a queue position', r.boxH() === '260px');
 
     r.send({ type: 'data', data: data() });                 // a host push
-    ok('…nor does a push from the host', (r.byId('bl-new').style.height || '') === '260px');
+    ok('…nor does a push from the host', r.boxH() === '260px');
+    ok('‼️ …and the box it rebuilt carries no inline height of its own to disagree with',
+        (r.byId('bl-new').style.height || '') === '');
 
     // A second drag replaces the first: the box remembers the LAST answer, not
     // the first one it was ever given.
     r.drag('bl-new', '120px');
     r.els('blarea').find(e => e.dataset.blarea === '').click();
-    ok('a later drag wins', (r.byId('bl-new').style.height || '') === '120px');
+    ok('a later drag wins', r.boxH() === '120px');
 
     // The ↺ on the heading is about the five AXES. Height is part of the
     // writing surface, like the words — and its tooltip promises those are not
@@ -646,7 +676,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const reset = r.els('act').find(e => e.dataset.act === 'blCapReset');
     if (reset) { reset.click(); }
     ok('‼️ the axes reset does not shrink the box — it resets choices, not the surface',
-        (r.byId('bl-new').style.height || '') === '120px');
+        r.boxH() === '120px');
 }
 
 // ---------- S-12: say WHERE it goes in the same gesture as writing it ----------

@@ -265,9 +265,89 @@
         } catch { /* nothing claimed, nothing shown */ }
     }
 
+    /**
+     * ‼️ K-9 — HOW TALL THE BOX WAS DRAGGED, AS CSS THE PAGE OWNS.
+     *
+     * A textarea's own resize handle writes an INLINE height, and both pages
+     * that use these tools redraw their markup from scratch — so the height was
+     * put back by hand after every rebuild, and whatever ran between the drag
+     * and the next repaint won instead. It looked random because it WAS random:
+     * whether the height survived depended on what happened to repaint next.
+     *
+     * Here the height is a custom property on the document root, which no
+     * rebuild touches, so a box is already its remembered size the moment it
+     * exists: there is nothing to restore and nothing to lose. The stylesheet
+     * reads it (`height:var(--af-boxh, 64px)`).
+     *
+     * And the number is CLAMPED both on the way in and on the way out. That is
+     * the other half of K-9 — the value goes back into storage, so one figure
+     * let through above the ceiling is read back as the new normal, and a box
+     * that snapped back snapped back a little taller each time until it could
+     * cover the page. A ceiling only the stylesheet knows is not a ceiling.
+     *
+     *   el       the textarea being dragged
+     *   varName  the custom property the stylesheet reads
+     *   min      the floor in px — the box's own css min-height
+     *   cap      the ceiling in px, or a function returning it; 70% of the
+     *            window by default, which is the `max-height:70vh` rule
+     *   read     () => the stored px (0 = never dragged)
+     *   write    px => store it; where that is belongs to the page
+     *
+     * Returns a stop(). A page calls this again on every rebuild, and an
+     * observer left on a dead box writes the height THAT box had into the same
+     * slot — which is one of the two ways the setting used to be thrown away.
+     */
+    function keepHeight(o) {
+        const el = o && o.el;
+        if (!el) { return () => { /* nothing to keep */ }; }
+        const min = Number(o.min) || 0;
+        const capOf = () => {
+            const c = typeof o.cap === 'function' ? o.cap() : o.cap;
+            const n = Number(c) || Math.round((window.innerHeight || 0) * 0.7);
+            return Math.max(min, n);
+        };
+        const clamp = px => Math.min(Math.max(Math.round(Number(px) || 0), min), capOf());
+        const stored = () => Number(o.read ? o.read() : 0) || 0;
+        const apply = () => {
+            const root = document.documentElement;
+            if (!root || !root.style) { return; }
+            const px = stored();
+            if (px) { root.style.setProperty(o.varName, clamp(px) + 'px'); }
+            else if (root.style.removeProperty) { root.style.removeProperty(o.varName); }
+        };
+        apply();
+        let obs = null;
+        if (typeof ResizeObserver === 'function') {
+            obs = new ResizeObserver(() => {
+                // The inline height is written by the resize handle and by
+                // nothing else now, so it says exactly one thing: a person
+                // dragged this. A re-layout changes the RENDERED height and
+                // leaves the inline one alone, and is not a choice.
+                const px = parseInt(el.style.height, 10);
+                if (!px) { return; }
+                const want = clamp(px);
+                if (want === stored()) { return; }
+                if (o.write) { o.write(want); }
+                apply();
+            });
+            obs.observe(el);
+        }
+        // A narrower window lowers the ceiling and the box follows it down. The
+        // number that was dragged is kept as it is, so widening gives it back.
+        const onWindow = () => apply();
+        const canListen = typeof window.addEventListener === 'function'
+            && typeof window.removeEventListener === 'function';
+        if (canListen) { window.addEventListener('resize', onWindow); }
+        return () => {
+            if (obs && typeof obs.disconnect === 'function') { obs.disconnect(); }
+            obs = null;
+            if (canListen) { window.removeEventListener('resize', onWindow); }
+        };
+    }
+
     // `insert` is `pasteAtCursor` under its public name: anything that puts
     // text into one of these boxes from outside (the Console's saved-prompt
     // picker) must land it the way a paste lands, or the box would have two
     // different ideas about where a space belongs.
-    window.AFTextTools = { html, wire, paint, insert: pasteAtCursor, copyFrom, TOOLS };
+    window.AFTextTools = { html, wire, paint, insert: pasteAtCursor, copyFrom, keepHeight, TOOLS };
 })();

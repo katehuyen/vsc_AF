@@ -1885,28 +1885,37 @@ const html = allHtml;
 
 // ---------- K-9: the height you drag is a SETTING, not a side effect --------
 //
-// ‼️ TWO THINGS THREW IT AWAY, WHICH IS WHY IT LOOKED RANDOM. The ceiling was
+// ‼️ THREE THINGS THREW IT AWAY, WHICH IS WHY IT LOOKED RANDOM. The ceiling was
 // 30vh, so a drag past a third of the window did nothing and the handle stopped
-// under the cursor. And the height a drag sets is an INLINE style, which
-// `buildShell` replaces — so any rebuild (another session picked, a turn
-// ending, an agent pinned) put the box back to 64px, and whether it survived
-// depended on whether a rebuild happened to land between the drag and the next
-// look. Both are gone: the box is saved and restored with the draft it holds.
+// under the cursor. The height a drag sets is an INLINE style, which
+// `buildShell` replaces — so it had to be put back by hand after every rebuild
+// (another session picked, a turn ending, an agent pinned) and whatever ran in
+// between won instead. And the figure being put back was never checked against
+// the ceiling, so the box that snapped back came back a little TALLER every
+// time until it could cover the page — the symptom the item was reopened for.
+//
+// The height is `--af-boxh` on the document root now, which no rebuild reaches,
+// and `AFTextTools.keepHeight` clamps it on the way in and on the way out.
+// keepHeight's own behaviour is measured in test_texttools.js — here: that this
+// page uses it, stops the old box's observer, and states the same ceiling.
 {
     const src = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
     ok('‼️ the writing box has room to be dragged into',
         /max-height:70vh; resize:vertical/.test(src)
         && !/max-height:30vh/.test(src));
     ok('the dragged height is part of the page\'s own state, next to the draft',
-        /boxH: '',/.test(src));
-    ok('‼️ …restored after the rebuild that just destroyed the element it was on',
-        /if \(st\.boxH\) \{ text\.style\.height = st\.boxH; \}/.test(src));
-    ok('…and restored BEFORE focus, so the box is its real size when the caret lands',
-        src.indexOf('text.style.height = st.boxH') < src.indexOf('text.focus({ preventScroll: true })'));
-    // A window resize changes the RENDERED height and leaves the inline one
-    // alone — so reading the inline value tells a user drag from a re-layout.
-    ok('‼️ a drag is recorded, a re-layout is not',
-        /new ResizeObserver\(\(\) => \{\s*\n\s*const h = text\.style\.height;\s*\n\s*if \(h && h !== st\.boxH\) \{ st\.boxH = h; save\(\); \}/.test(src));
+        /boxH: 0,/.test(src));
+    ok('‼️ …and it is a NUMBER — a css length from an older build is read as one',
+        /st\.boxH = parseInt\(st\.boxH, 10\) \|\| 0;/.test(src));
+    ok('‼️ …carried by a custom property the rebuild cannot touch, not restored by hand',
+        /height:var\(--af-boxh, auto\)/.test(src)
+        && !/text\.style\.height = st\.boxH/.test(src));
+    ok('…recorded through the shared keeper, so there is one answer to "how tall"',
+        /window\.AFTextTools\.keepHeight\(\{\s*\n\s*el: text, varName: '--af-boxh', min: 64,/.test(src));
+    // An observer left on an earlier box holds the height THAT box had and
+    // writes it into the same slot — a height coming back on its own.
+    ok('‼️ …and the previous box\'s observer is stopped before a new one starts',
+        /if \(stopBoxH\) \{ stopBoxH\(\); \}\s*\n\s*stopBoxH = window\.AFTextTools\.keepHeight/.test(src));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

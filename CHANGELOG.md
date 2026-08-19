@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.177.0 — K-9: the writing box stays where it was dragged, and stops growing (2026-08-19)
+
+**This was closed once and came back, so the fault was in the arrangement, not the wording.** The height a drag sets is an INLINE style on the textarea, and both pages that have one rewrite their whole markup — so the height had to be *put back by hand* after every rebuild, and whatever ran between the two won instead. That is why it looked random: whether it survived depended on what happened to repaint next, and on the Console only some things repaint.
+
+**The height is `--af-boxh` on the document root now** — the one element no rebuild reaches — so a new box is already the right size the moment it exists. There is nothing to restore and therefore nothing to lose. The fallback is `auto`, so a box that was never dragged still takes its height from the layout exactly as before.
+
+**‼️ AND THE CEILING IS ENFORCED WHERE THE NUMBER IS STORED.** That is the half that was missing, and the reason the box crept: the figure goes back into storage, so one value let through above `max-height` is read back as the new normal — the box snapped back a little taller every time, until it could cover the page. It is clamped on the way in and on the way out, against the same 70% of the window the stylesheet states. A ceiling only the stylesheet knows is not a ceiling.
+
+Two smaller pieces of the same fault: the observer watching for a drag is **stopped** when its box is replaced (one left alive holds the height *its* box had and writes it into the same slot), and the value is stored as a **number** rather than a css string, so there is one thing to compare and clamp. A narrower window lowers the box with it and gives the dragged height back when it widens.
+
+It is one mechanism for both boxes — `AFTextTools.keepHeight`, beside the four text tools they already share. These were the same eight lines twice; the Backlog tab's capture box, which repaints on a filter chip, a tab, an area, a queue position and every host push, had the identical defect waiting.
+
 ## 3.176.0 — U-67: a swim lane finally says which CONVERSATION it is (2026-08-19)
 
 **The row's hover opened with the agent and never named the session.** "developer · 3f8a1c2b · working", on the one page whose entire subject is which conversation is doing what. It was also a native `<title>` — the wrong surface for what a lane has to say, since a prompt, a name and a path are TEXT and a platform tooltip repeats what is already drawn and then stops wherever it likes.
