@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.167.0 — X-40: the fifth engine's acceptance set is a file that RUNS, and it ran (2026-08-19)
+
+**‼️ EVERY OpenCode FIXTURE IN THIS REPO IS WRITTEN AGAINST A TRANSCRIPT SOMEBODY ONCE CAPTURED.** Three and a half thousand lines of them pass on a translation layer that could still produce an empty Console against the binary that actually shipped — that is the exact failure X-15 wrote its Codex smoke to prevent, and OpenCode had no equivalent. `test/smoke_opencode_console.mjs` drives the REAL `ConsoleHost` with the REAL `opencode acp` process, and it proves the seven things X-40 names, in order:
+
+| | proved on the live binary |
+|---|---|
+| 1 | a fresh turn carries a nonce the model could not have known — and a real `ses_…` id comes back |
+| 2 | a SECOND turn on the SAME id recalls it: one conversation, not two runs |
+| 3 | a second card in a different folder gets its own conversation under the SAME process |
+| 4 | `session/cancel` mid-turn closes the turn and leaves the card usable and the conversation intact |
+| 5 | a session created OUTSIDE, by `opencode run`, loads through ACP and is continued — it recalled a token said before Agent Farm ever saw it |
+| 6 | the shared runtime is killed under the cards and they come back **on the same conversation** |
+| 7 | none of it spends a cent |
+
+**‼️ A SMOKE SET THAT QUIETLY BILLS THE USER IS A SMOKE SET NOBODY RUNS TWICE.** The model is chosen at run time from the connected provider's `*-free` list, the way the Engines page's Test button already does; with no free model on offer the set **refuses to run and says so** (`exit 2`) rather than falling back to a priced one.
+
+**‼️ AND IT NEVER KILLS A PROCESS BY NAME.** "The runtime crashed" is produced by restarting the runtime **the host owns** — because `opencode.exe` on this machine may well be the user's own TUI, and killing that is the one thing this set must never do. Sessions live in a disposable folder under TEMP, only the `ses_` ids this run created are closed, and the user's own sessions, auth/config/provider files and open TUI are never read, written or killed.
+
+**Two faults the set found in its first minute, which is the whole argument for having it.** A `ConsoleHost` built without the shared-ACP io answers every OpenCode card with *"this build was not given a way to start `opencode acp`"* — correct, and it would have made a smoke set prove nothing while looking like it ran; the set now wires the io exactly as `extension.ts` does. And a fresh card is `starting`, not `idle`: on this engine alone that status means real work (a handshake plus `session/new` over a shared connection), so the set waits for it instead of sending into a socket that is not open yet.
+
+**The SOP now points at files, not at a list.** Its general closing matrix is unchanged; what was added is the rule that each engine's own acceptance set is a **runnable file** — `smoke_codex_console.mjs`, `smoke_agy_console.mjs`, `smoke_opencode_console.mjs` — with the three rules above stated once for whatever ships next.
+
+README, both BLUEPRINTs and the cross-engine section were brought level: three engines in the sync table, the duty command lane, the third MCP suggestion, why skills are deliberately not copied, and the sentence about the walk stopping at the git worktree.
+
 ## 3.166.0 — X-39: the constitution reaches a fifth engine, and where it does not is now a thing you can read (2026-08-19)
 
 **‼️ OpenCode's instruction walk STOPS AT THE GIT WORKTREE, and nothing in this build knew that.** The rule was read out of the shipped `opencode.exe` 1.18.18 — `Instruction.systemPaths` and `Filesystem.findUp`, verbatim — and then confirmed against the running binary: the names `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md` are tried in that order, the first name that matches ANYWHERE wins outright, and for that name every file from the cwd up to the **worktree** is merged. So the shared constitution at the nest root arrives for free in the normal layout, and is **invisible** in exactly one case: an agent folder that is its own git repository. Every file present, every sync saying "in sync", and the rule simply not in the prompt. Measured on the real folders: all eight of this machine's agents reach it, and the lane writes nothing.

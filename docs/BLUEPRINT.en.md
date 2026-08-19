@@ -68,7 +68,7 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | Watch the fleet on my laptop from here too | Sync folder + `extraClaudeDirs` ([details](#multiple-machines)) |
 | Send the daily scorecard to Telegram | `agentFarm.dailyDigest` = "21:30" ([details](#daily-digest-card)) |
 | Move / share an agent to another machine | Right-click agent → `Export Agent Pack…` ([details](#agent-packs)) |
-| Have the agent work under Antigravity too | Right-click agent → `Sync Agent with Antigravity…` ([details](#antigravity-uyumlulugu)) |
+| Have the agent work under Antigravity too | Right-click agent → `Sync Agent with the Other Engines…` ([details](#antigravity-uyumlulugu)) |
 
 ### Concepts (in 30 Seconds)
 
@@ -2469,7 +2469,7 @@ Your agents are optimized for Claude; but if you like, the same agent runs under
 
 So the sync writes both: `AGENTS.md` in the agent folder (Codex's cross-tool file) **and** `.agents/AGENTS.md` (Antigravity's rules file, its workspace customization root). Same source, different addressees.
 
-**Set up:** right-click an agent → **Sync Agent with Antigravity + Codex…**
+**Set up:** right-click an agent → **Sync Agent with the Other Engines…**
 
 - `CLAUDE.md` → `AGENTS.md` is produced (self-references adapted; a sync marker at the top of the file).
 - `CLAUDE.md` (+ the shared constitution, see below) → `.agents/AGENTS.md`, the file Antigravity actually reads.
@@ -2520,7 +2520,7 @@ There are two deliberately different paths. **Claude Code · Codex · Gemini · 
 **Set up and run a first-class engine.**
 
 1. Open **Engines** and install/sign in to the CLI there; **⚡ Test** spends one read-only turn and records the engine's own verdict.
-2. Run **Sync Agent with Antigravity + Codex…** once for the agent. Codex reads `AGENTS.md`; Antigravity reads `.agents/AGENTS.md` and its generated workflows. The same sync keeps the shared constitution parallel.
+2. Run **Sync Agent with the Other Engines…** once for the agent. Codex reads `AGENTS.md`; Antigravity reads `.agents/AGENTS.md` and its generated workflows. The same sync keeps the shared constitution parallel.
 3. Pick the engine where the work starts. `agentFarm.launchDefaults.engine` makes one the fleet default; an agent can remember its own model/effort default per engine.
 4. Resume from **Console** when the engine's terminal CLI has no safe resume form. Codex and Gemini are per-turn engines; Claude is a persistent process; Antigravity is driven through its `agy` CLI when Agent Farm hosts it. The panel explains the difference instead of translating one engine's flags into another's.
 
@@ -2743,7 +2743,7 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Generate Weekly Summary Now** — a three-sentence smart fleet summary (cheap model)
 - **Send Daily Digest Now** — send the daily digest card to the webhook/notification
 - **Export Agent Pack… / Import Agent Pack…** — move/share an agent with a single file (memory and secrets excluded)
-- **Sync Agent with Antigravity…** — AGENTS.md + workflow generation and two-way diff sync
+- **Sync Agent with the Other Engines…** — AGENTS.md + workflow generation and two-way diff sync
 - **Natural Language Command…** — approved task/schedule/chain setup from a sentence (cheap model)
 - **Test Dispatcher…** — show who the dispatcher would give a text to
 - **Build Semantic Index** — build/refresh the session vector index for semantic search
@@ -3000,7 +3000,7 @@ The first real user-feedback round. Four requests, four features:
 
 ### 1.3.0 — Antigravity Compatibility (2026-07-09)
 
-- **Sync Agent with Antigravity…:** CLAUDE.md → AGENTS.md generation (sync-marked), active duties → `.agents/workflows/` slash commands, a merge suggestion for `.mcp.json` → the global gemini configuration; `memory/` untouched (both tools read plain markdown)
+- **Sync Agent with the Other Engines…:** CLAUDE.md → AGENTS.md generation (sync-marked), active duties → `.agents/workflows/` slash commands, a merge suggestion for `.mcp.json` → the global gemini configuration; `memory/` untouched (both tools read plain markdown)
 - **Directional sync:** which side moved ahead is detected via fingerprint tracking — Claude→Antigravity refresh, Antigravity→Claude carry-back (backed up), Diff/direction choice on conflict; hand-edited files preserved
 - **Insights:** the `antigravity` category — an info reminder if one side moved ahead, a warning if both changed
 - Tests: 27 checks — conversion/reconversion, the full lifecycle (none→in-sync→ahead→conflict→resolution), foreign-file protection, zero noise

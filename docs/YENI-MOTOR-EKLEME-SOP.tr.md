@@ -1654,3 +1654,37 @@ Aşağıdaki liste entegrasyon kalemine kopyalanır ve kanıt bağlantılarıyla
 
 Bir kutu işaretlenemiyorsa yanına “neden” ve gereken karar/engel yazılır. Kutuyu
 silmek veya kapsam dışı saymak tamamlanma yöntemi değildir.
+
+### Motora özgü gerçek smoke — çalıştırılabilir dosya, liste değil
+
+Yukarıdaki genel matris her motor için aynıdır. Motorun **kendi** kabul seti
+ayrıca ve **koşulabilir bir dosya** olarak yazılır; belgeye yazılmış bir liste
+kimsenin koşmadığı bir listedir.
+
+| motor | dosya |
+|---|---|
+| Codex | `test/smoke_codex_console.mjs` |
+| Antigravity | `test/smoke_agy_console.mjs` |
+| OpenCode | `test/smoke_opencode_console.mjs` |
+
+OpenCode'unki (X-40) yedi şeyi bu sırayla kanıtlıyor ve hepsi **canlı ikili**
+üzerinde geçti: taze turda nonce · aynı `ses_` kimliğiyle ikinci turda hatırlama
+· iki kart tek süreç altında ayrı konuşmalar · çalışan turda `session/cancel`
+sonrası konuşmanın sağ kalması · CLI'ın kendi oluşturduğu oturumun ACP ile
+yüklenip devam ettirilmesi · paylaşılan runtime öldürüldükten sonra kartların
+aynı konuşmayla dönmesi · ve bunların hiçbirinin para harcamaması.
+
+Üç kural, motor ne olursa olsun:
+
+1. **Model çalışma anında seçilir.** Bağlı sağlayıcının `*-free` listesinden ilk
+   uygun olan alınır; hiç yoksa set **koşmaz ve bunu söyler** (`exit 2`), ücretli
+   bir modele düşmez. Sessizce fatura çıkaran bir smoke setini kimse iki kez
+   koşmaz.
+2. **Yalnız kendi yaptığını yok eder.** Oturumlar TEMP altındaki tek kullanımlık
+   bir klasörde açılır ve yalnız o çalıştırmanın kendi `ses_` kimlikleri
+   kapatılır. Kullanıcının oturumları, auth/config/provider dosyaları ve açık
+   TUI'si asla okunmaz, yazılmaz, öldürülmez.
+3. **Süreç adına göre öldürme yoktur.** “Runtime çöktü” durumu, host'un **kendi**
+   sahip olduğu runtime yeniden başlatılarak üretilir. `opencode.exe` adını
+   arayıp öldürmek, kullanıcının kendi TUI'sini öldürmek demek olabilir — bu
+   setin asla yapmaması gereken tek şey.

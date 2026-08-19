@@ -68,7 +68,7 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Laptop'taki filoyu da buradan izle | Senkron klasör + `extraClaudeDirs` ([detay](#coklu-makine)) |
 | Günlük karne Telegram'a düşsün | `agentFarm.dailyDigest` = "21:30" ([detay](#gunluk-ozet-karti-cebe)) |
 | Ajanı başka makineye taşı / paylaş | Ajana sağ tık → `Export Agent Pack…` ([detay](#ajan-paketleri)) |
-| Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with Antigravity…` ([detay](#antigravity-uyumlulugu)) |
+| Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with the Other Engines…` ([detay](#antigravity-uyumlulugu)) |
 
 ### Kavramlar (30 Saniyede)
 
@@ -2501,26 +2501,30 @@ Ajanı şablonlaştırıp başka makineye taşımak veya paylaşmak için tek do
 
 Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Gemini) ve OpenAI Codex altında da çalışır. `memory/` dosyaları düz markdown olduğundan **iki taraf da olduğu gibi kullanır — dönüşüm gerekmez**.
 
-**İki motor, iki talimat dosyası — çünkü farklı yerlere bakıyorlar.** Bu bir tercih değil, motorların davranışı:
+**Üç motor, iki talimat dosyası — çünkü farklı yerlere bakıyorlar.** Bu bir tercih değil, motorların ölçülmüş davranışı:
 
 | | Okuduğu | Üst klasöre çıkar mı? |
 |---|---|---|
 | **Codex** | her klasörden bir `AGENTS.md`, **git kökünden cwd'ye kadar** birleştirilerek (32 KiB tavanı) | **Evet** — bir üstteki ortak dosya kendiliğinden ulaşır |
 | **Antigravity** | `<workspace kökü>/.agents/AGENTS.md` + global `~/.gemini/config/AGENTS.md` | **Hayır** — açık workspace'in üstündeki hiçbir şey yüklenmez |
+| **OpenCode** | **aynı** `AGENTS.md` — cwd'den **git worktree'sine** kadar bulunan hepsi. `AGENTS.md`, `CLAUDE.md`'yi tamamen gölgeler (ilk eşleşen *ad* kazanır) | **Evet, ama git worktree'sinde durur** |
 
-Bu yüzden senkron ikisini birden yazar: ajan klasöründe `AGENTS.md` (Codex'in araçlar-arası dosyası) **ve** `.agents/AGENTS.md` (Antigravity'nin kural dosyası — workspace customization root'u). Aynı kaynak, farklı muhataplar.
+Bu yüzden senkron ikisini birden yazar: ajan klasöründe `AGENTS.md` (Codex'in araçlar-arası dosyası — OpenCode da onu okur) **ve** `.agents/AGENTS.md` (Antigravity'nin kural dosyası — workspace customization root'u). Aynı kaynak, farklı muhataplar; üçüncü motor için üçüncü bir kopya yok.
 
-**Kur:** ajana sağ tık → **Sync Agent with Antigravity + Codex…**
+**Kur:** ajana sağ tık → **Sync Agent with the Other Engines…**
 
 - `CLAUDE.md` → `AGENTS.md` üretilir (öz-referanslar uyarlanır; dosya başında senkron işareti).
 - `CLAUDE.md` (+ aşağıdaki ortak anayasa) → `.agents/AGENTS.md`, Antigravity'nin gerçekten okuduğu dosya.
-- Aktif nöbet görevleri → `.agents/workflows/` dosyaları (Antigravity'de `/nobet-adi` diye çağrılır).
-- `.mcp.json` varsa → `.agents/mcp_config.suggested.json` önerisi (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz) ve Codex için `.agents/codex/mcp.suggested.toml`.
+- Aktif nöbet görevleri → `.agents/workflows/` (Antigravity'de `/nobet-adi`) **ve** `.opencode/command/` (OpenCode'da `/nobet-adi`).
+- `.mcp.json` varsa → `.agents/mcp_config.suggested.json` (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz), Codex için `.agents/codex/mcp.suggested.toml`, OpenCode için `.opencode/mcp.suggested.json`. Üçü de **öneri**; hiçbirinin canlı yapılandırması bizim tarafımızdan düzenlenmez.
+- Beceriler **kopyalanmaz**: OpenCode `~/.claude/skills/<ad>/SKILL.md` dosyalarını kendiliğinden yükler — gerçek bir skill çağrısıyla ölçüldü.
 
 **Ortak anayasa.** Ajanlar bir *nest* içindeyse — ajan klasörlerini tutan ve kendi `CLAUDE.md`'si olan kök klasör — o dosya her ajanın yüklediği anayasadır. Claude Code üst klasördeki talimat dosyasını bedavaya yükler; diğer motorlar yüklemez, her biri kendi yolundan:
 
 - **Codex** için nest klasörünün kendi `AGENTS.md`'si yeterli: **Dashboard'daki ⚖ Sync constitution düğmesi** (3.40.0 — komut paleti ve `constitution.sync` bridge op'u da aynı komutu çağırır) anayasayı oraya aynalar, Codex de hangi ajan klasöründe çalışıyorsa oraya inen yürüyüşünde onu birleştirir. Tek kopya, tekrar yok — ajanın kendi `AGENTS.md`'si bu yüzden anayasayı bilerek **tekrarlamaz**.
 - **Antigravity**'ye bu yoldan ulaşılamaz; bu yüzden her ajanın `.agents/AGENTS.md` dosyası anayasayı **içine gömülü** taşır: `agent-farm:shared-constitution` bloğu içinde, ajanın kendi talimatından önce.
+- **OpenCode** aynı nest aynasını yürüyüşünde bulur — **ama yürüyüşü git worktree'sinde durur.** Ajan klasörünün kendisi bir git deposuysa anayasa görünmez olur: bütün dosyalar yerinde, senkron “in sync” der ve kural sadece prompt'ta yoktur. Senkron bunu tespit edip o ajanın `opencode.json`'ına tek satır ekler (`"instructions": ["../AGENTS.md"]`, göreli — dosya repo ile yolculuk eder); dosya yorum taşıyorsa yeniden yazılmaz, bizim başlattığımız süreçlere `OPENCODE_CONFIG_CONTENT` ile verilir ve kalan boşluk adıyla söylenir. `agents.sync` cevabındaki `opencode.reachesConstitution` bunu ajan ajan söyler.
+- OpenCode ayrıca **kimsenin ayarlamadığı bir global dosya** da yükler: `~/.config/opencode/AGENTS.md` yoksa kullanıcının kişisel `~/.claude/CLAUDE.md`'si. Agent Farm oraya yazmaz, ama `globalInstruction` ile bildirir.
 - Anayasa **okunur, asla yazılmaz**: ters senkron, ajanın `CLAUDE.md`'sine bir şey yazmadan önce bu bloğu söker; hiçbir komut nest `CLAUDE.md`'sini yazmaz. Anayasa değiştiğinde Insights hangi ajanların hâlâ eski metni taşıdığını söyler.
 
 **Yaşat (yönlü senkron):** Bu tek seferlik bir dışa aktarım değil. Her senkronda içerik parmak izleri `.agents/af-antigravity-sync.json`'a yazılır; sonraki çalıştırmada hangi taraf ilerlemiş anlaşılır:
@@ -2561,7 +2565,7 @@ Artık iki ayrı ve bilinçli yol var. **Claude Code · Codex · Gemini · Antig
 **Birinci sınıf motoru kur ve çalıştır.**
 
 1. **Engines** sayfasını aç; CLI'ı oradan kur/giriş yap. **⚡ Test** salt-okunur tek tur harcar ve motorun kendi hükmünü kaydeder.
-2. Ajan için bir kez **Sync Agent with Antigravity + Codex…** çalıştır. Codex `AGENTS.md`'yi; Antigravity `.agents/AGENTS.md` ile üretilen workflow'ları okur. Aynı senkron ortak anayasayı da paralel tutar.
+2. Ajan için bir kez **Sync Agent with the Other Engines…** çalıştır. Codex `AGENTS.md`'yi; Antigravity `.agents/AGENTS.md` ile üretilen workflow'ları okur. Aynı senkron ortak anayasayı da paralel tutar.
 3. İşin başladığı yüzeyde motoru seç. `agentFarm.launchDefaults.engine` filo varsayılanını belirler; bir ajan motor başına kendi model/efor varsayılanını hatırlayabilir.
 4. Motorun terminal CLI'ında güvenli bir devam biçimi yoksa **Console** üzerinden devam et. Codex ve Gemini tur başına süreçtir; Claude kalıcı süreçtir; Agent Farm Antigravity'yi barındırdığında `agy` CLI'ını sürer. Panel bir motorun bayraklarını ötekine çevirmeye kalkmak yerine farkı açıklar.
 
@@ -2783,7 +2787,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Generate Weekly Summary Now** — üç cümlelik akıllı filo özeti (ucuz model)
 - **Send Daily Digest Now** — günlük özet kartını webhook'a/bildirime gönder
 - **Export Agent Pack… / Import Agent Pack…** — ajanı tek dosyayla taşı/paylaş (hafıza ve sırlar hariç)
-- **Sync Agent with Antigravity…** — AGENTS.md + workflow üretimi ve iki yönlü fark senkronu
+- **Sync Agent with the Other Engines…** — AGENTS.md + workflow üretimi ve iki yönlü fark senkronu
 - **Natural Language Command…** — cümleden onaylı görev/zamanlama/zincir kurulumu (ucuz model)
 - **Test Dispatcher…** — bir metni dispatcher kimin alacağını göster
 - **Build Semantic Index** — anlamsal arama için oturum vektör indeksini kur/tazele
@@ -3040,7 +3044,7 @@ Skills/MCP'ye gelen "bir bakışta gör + tek tıkla yönet" olgunluğu hafıza 
 
 ### 1.3.0 — Antigravity Uyumluluğu (2026-07-09)
 
-- **Sync Agent with Antigravity…:** CLAUDE.md → AGENTS.md üretimi (senkron işaretli), aktif nöbetler → `.agents/workflows/` slash-komutları, `.mcp.json` → global gemini yapılandırması için birleştirme önerisi; `memory/` dokunulmaz (iki araç da düz markdown okur)
+- **Sync Agent with the Other Engines…:** CLAUDE.md → AGENTS.md üretimi (senkron işaretli), aktif nöbetler → `.agents/workflows/` slash-komutları, `.mcp.json` → global gemini yapılandırması için birleştirme önerisi; `memory/` dokunulmaz (iki araç da düz markdown okur)
 - **Yönlü senkron:** parmak izi takibiyle hangi tarafın ilerlediği algılanır — Claude→Antigravity tazeleme, Antigravity→Claude geri taşıma (yedekli), çakışmada Diff/yön seçimi; elle düzenlenen dosyalar korunur
 - **Insights:** `antigravity` kategorisi — tek taraf ilerlemişse info hatırlatma, iki taraf da değiştiyse warning
 - Testler: 27 kontrol — dönüşüm/geri dönüşüm, tam yaşam döngüsü (none→in-sync→ahead→conflict→çözüm), yabancı dosya koruması, sıfır gürültü
