@@ -2994,7 +2994,12 @@ export class TaskManager implements vscode.Disposable {
         try {
             if (process.platform === 'win32' && child.pid) {
                 // shell:true wraps claude in cmd.exe — kill the whole tree.
-                cp.exec(`taskkill /pid ${child.pid} /T /F`);
+                // ‼️ X-47 — `execFile` with `windowsHide`, never `exec`: `exec`
+                // is a cmd.exe with a console, and a console owned by a
+                // windowless extension host is a black rectangle that flashes on
+                // the user's screen. `test_no_console_flash.js` measures it.
+                cp.execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'],
+                    { windowsHide: true }, () => { /* best effort */ });
             } else {
                 child.kill();
             }

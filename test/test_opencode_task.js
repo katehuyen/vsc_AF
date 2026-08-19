@@ -124,9 +124,13 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
 
 // ---------- cancel stops what this task owns, and nothing else ----------
 {
+    // ‼️ X-47 — the kill is an `execFile` with `windowsHide`, not an `exec`: the
+    // shell form is a cmd.exe with a console, which flashes a black rectangle
+    // over whatever the user was looking at. Same tree, same /T /F, no window.
     ok('cancel kills the task\'s OWN process tree',
         /private killProcess\(taskId: string, child: cp\.ChildProcess\): void \{/.test(tasksTs)
-        && /taskkill \/pid \$\{child\.pid\} \/T \/F/.test(tasksTs));
+        && /cp\.execFile\('taskkill', \['\/pid', String\(child\.pid\), '\/T', '\/F'\]/.test(tasksTs)
+        && /windowsHide: true/.test(tasksTs));
     ok('…and it is looked up by task id, never by engine or by name',
         /const child = this\.processes\.get\(task\.id\);\s*\n\s*if \(child\) \{ this\.killProcess\(task\.id, child\); \}/
             .test(tasksTs));

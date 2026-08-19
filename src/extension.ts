@@ -3188,7 +3188,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // leaves the real process running (and billing) forever.
                         try {
                             if (process.platform === 'win32' && child.pid) {
-                                cp.exec(`taskkill /pid ${child.pid} /T /F`);
+                                // X-47 — hidden, or the kill flashes a console.
+                                cp.execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'],
+                                    { windowsHide: true }, () => { /* best effort */ });
                             } else { child.kill(); }
                         } catch { /* already gone */ }
                         done({
@@ -17428,7 +17430,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (yes !== 'End session') { return; }
         try {
             if (process.platform === 'win32') {
-                cp.execFile('taskkill', ['/PID', String(owner.pid), '/T', '/F'], () => { /* best effort */ });
+                // X-47 — `windowsHide`, or ending a session flashes a console.
+                cp.execFile('taskkill', ['/PID', String(owner.pid), '/T', '/F'],
+                    { windowsHide: true }, () => { /* best effort */ });
             } else {
                 process.kill(owner.pid, 'SIGTERM');
             }

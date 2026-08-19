@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.175.0 — X-47: no spawn of this extension's can flash a console window any more, and it is measured (2026-08-19)
+
+**The extension host is a windowless process, so every console program it starts gets a console of its own** — a black rectangle that appears and disappears over whatever the user was looking at — unless the spawn asks for `windowsHide`. Three calls did not ask: the two `taskkill`s that end a task's process tree and the one that ends a session, all written as `exec`, which is a `cmd.exe` with a console around the thing being run. They are `execFile` with `windowsHide` now, killing exactly the same tree with the same `/T /F`.
+
+**‼️ And the rule is now measured rather than remembered.** `test_no_console_flash.js` reads every child-process call in `src/` — through the source with comments and string literals stripped, and matching each call's OWN argument list by balanced parentheses rather than "the next few hundred characters" — and fails the build if one does not pass `windowsHide`. Three files are exempted by name, each with the reason a window is the POINT of it: the external terminal, revealing a file in Explorer, and launching the app the user chose to open a document with.
+
+**What this does not fix, stated plainly:** the two paths that actually run Antigravity — the model-catalog fetch at startup and the per-turn spawn — were already hidden, and still are. If a window still flashes when `agy` starts, it belongs to a process `agy.exe` starts for itself, which nothing on this side can suppress.
+
 ## 3.174.0 — X-48: two more orderings for the backlog, and the widening has a way back (2026-08-19)
 
 **A backlog line carries no clock.** What it says, when it was written down and when it was last worked on are three different questions and the document answers none of them — the **track ledger** does, because every add, touch, state change and reopen is stamped there to the second. So the page can now order by:
