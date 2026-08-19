@@ -26,6 +26,20 @@
            than the page's own body buttons, which keep their normal size. */
         .af-head-bar button { font-size:11px; padding:3px 8px; }
         .af-head-bar .af-nav-n { opacity:.85; }
+        /* ‼️ U-68 — THE FIVE THAT ARE THE SAME EVERYWHERE ARE DRAWN AS THEIR
+           ICON ALONE. Evals, ⌕, ⚙, ⟳ and ? are on every page in the same order,
+           so they are the row's cheapest width: nobody reads them, they are
+           aimed at. Fixed width so the cluster's right edge does not move from
+           page to page, and the whole name is one hover away (SHORTHAND). */
+        .af-head-bar .af-ico { min-width:24px; padding:3px 0; text-align:center; }
+        /* An AFTip wrapper is the flex child once a button is wrapped, so it
+           has to sit in the row exactly as the bare button did. */
+        .af-head-bar .af-tipw-nav { display:inline-flex; align-items:center; }
+        /* ‼️ HERE THE FIRST LINE IS THE NAME, NOT A FIGURE. The panel's head is
+           normally a faded caption above the figures it heads; on this row it
+           is the one thing the control may not be showing at all, so it is read
+           first and drawn that way. */
+        .af-tipw-nav .af-tiph { font-size:12px; opacity:.95; }
         /* A nav button a page has claimed (see navActions): ONE button, whose
            two meanings live in a menu under it. Two buttons side by side ate a
            quarter of the toolbar's width for a destination nobody reaches twice. */
@@ -47,22 +61,119 @@
     // talk, the three vital signs, what is happening right now, then who does
     // the work and what the work is. New pages take their place in that
     // sequence — they do not pile up on the left.
+    //
+    // ‼️ U-68 — `tip` IS PART OF THE ENTRY, NOT A DECORATION. This row is the
+    // one control every page shares, and it was the one control with no hovers:
+    // a dozen destinations, most of them a single word, and nothing anywhere
+    // said what any of them opened. `name` is the FULL name — it opens the
+    // hover panel, so a button that is shortened to an icon (or that will be)
+    // still says what it is; `tip` is what the page is for, in one sentence a
+    // reader can act on. A new destination without both is an unfinished one.
     const NAV = [
-        { id: 'dashboard', label: 'Dashboard' },
-        { id: 'projects', label: '◧ Projects' },
-        { id: 'console', label: '💬 Console' },
-        { id: 'living', label: '💓 Living' },
-        { id: 'notices', label: '🔔 Notices' },
-        { id: 'queue', label: '📥 Queue' },
-        { id: 'timeline', label: 'Live Timeline' },
-        { id: 'portfolio', label: 'Agents' },
-        { id: 'tasks', label: 'Tasks' },
-        { id: 'missions', label: 'Missions' },
-        { id: 'studio', label: '🎬 Studio' },
-        { id: 'toolbox', label: 'Toolbox' },
+        {
+            id: 'dashboard', label: 'Dashboard',
+            tip: 'The board you start from: every engine\'s sessions in one table, with the day\'s spend, '
+                + 'what is running and what needs you. The cost, token and model figures are read from '
+                + 'Claude transcripts only.'
+        },
+        {
+            id: 'projects', label: '◧ Projects',
+            tip: 'Every project you run — its charter, plan, backlog, worklog and documents, and the '
+                + 'sessions, tasks and missions filed to it.'
+        },
+        {
+            id: 'console', label: '💬 Console',
+            tip: 'Talk to any engine in a panel inside VS Code — a hosted conversation rather than a '
+                + 'terminal, so its turns, cost and transcript are recorded like every other session.'
+        },
+        {
+            id: 'living', label: '💓 Living',
+            tip: 'Is the system alive? Your own loops — a file that should exist, a folder that should be '
+                + 'empty, a queue that should be short — each one a row that passes or fails.'
+        },
+        {
+            id: 'notices', label: '🔔 Notices',
+            tip: 'What the agents want to tell you: questions waiting on an answer, results and reports. '
+                + 'The number beside the name is how many are still unread.'
+        },
+        {
+            id: 'queue', label: '📥 Queue',
+            tip: 'The shared work queue — what is waiting, what has been taken, and what is blocked until '
+                + 'somebody answers it. The number is how many need you.'
+        },
+        {
+            id: 'timeline', label: 'Live Timeline',
+            tip: 'Every turn of every session on one clock: fed by Claude Code\'s hooks and by every '
+                + 'conversation the Console hosts, on any engine.'
+        },
+        {
+            id: 'portfolio', label: 'Agents',
+            tip: 'The fleet, agent by agent — what each one costs, when it last worked, whether it has '
+                + 'gone dormant, and which project it belongs to.'
+        },
+        {
+            id: 'tasks', label: 'Tasks',
+            tip: 'Plan what runs and see what ran: schedules, triggers and one-off runs, with their '
+                + 'output, their cost and why a run did not happen.'
+        },
+        {
+            id: 'missions', label: 'Missions',
+            tip: 'Dynamic orchestration — a lead agent plans round by round, delegates to the team under a '
+                + 'budget, and finishes with an honest verdict.'
+        },
+        {
+            id: 'studio', label: '🎬 Studio',
+            tip: 'Media production: productions and their scenes, the prompts and renders behind each one, '
+                + 'the providers used and what the month has cost.'
+        },
+        {
+            id: 'toolbox', label: 'Toolbox',
+            tip: 'Everything that extends Claude Code — skills, subagents, slash commands, hooks, plugins '
+                + 'and MCP servers, in user and agent scope. This is Claude Code\'s own extension model; '
+                + 'the other engines do not read it.'
+        },
         // U-14: evals had no page at all until the sweep built one.
-        { id: 'evals', label: '🧪 Evals' }
+        {
+            id: 'evals', label: '🧪 Evals', icon: '🧪',
+            tip: 'Scored runs against an agent\'s own cases — what still passes after a change to a '
+                + 'prompt, a model or an engine, and what it cost to find out.'
+        }
     ];
+
+    /** The full name behind a label that carries an icon: '🔔 Notices' → 'Notices'.
+     *  One rule, so a menu item, an aria-label and a hover panel can never
+     *  disagree about what a destination is called. */
+    function plainName(label) {
+        return String(label || '').replace(/^[^\w]+\s*/, '');
+    }
+
+    /**
+     * ‼️ U-68 — A BUTTON IN THIS ROW IS BUILT HERE OR IT IS BUILT WRONG.
+     *
+     * Every one of them carries the same three things: what it draws, its FULL
+     * name, and one sentence saying what it opens. The name goes on the panel's
+     * first line because this row is where text gets cut — some of these are an
+     * icon and nothing else, and the rest are one word that will be shortened
+     * the next time the toolbar runs out of width (SHORTHAND + MIRROR,
+     * docs/CONVENTIONS.md → The five names).
+     *
+     * The native `title` is the fallback and only the fallback: AFTip.wrap hands
+     * the trigger straight back when there is no body, which would otherwise
+     * leave a button with no hover at all — the exact state this item was filed
+     * about.
+     */
+    function navBtn(o) {
+        const name = o.name || plainName(o.label);
+        const inner = o.icon || o.label;
+        const cls = 'secondary' + (o.icon ? ' af-ico' : '') + (o.cls ? ' ' + o.cls : '');
+        // Icon-only means the name is not on screen at all, so it has to be in
+        // the accessibility tree instead of only in a hover.
+        const aria = o.icon ? ` aria-label="${name}"` : '';
+        const tip = String(o.tip || '').trim();
+        const btn = `<button class="${cls}" ${o.attrs || ''}${aria}`
+            + `${tip ? '' : ` title="${name}"`}>${inner}${o.after || ''}</button>`;
+        return window.AFTip ? window.AFTip.wrap(btn, name, tip, 'af-tipw-nav') : btn;
+    }
 
     // Notices ↔ Queue read as two tabs of ONE inbox. Both pages render this strip
     // at the very top; the inactive tab is an afnav button that opens the other
@@ -183,10 +294,19 @@
             if (claim) {
                 // "Open Notices" — the bare page name, from the plain label:
                 // the menu item names a destination, not a count.
-                const plain = n.label.replace(/^[^\w]+\s*/, '');
+                const plain = plainName(n.label);
+                // The claimed button keeps the row's one hover contract: its own
+                // full name first, then what THIS page has made it mean, then
+                // the destination it still is underneath.
+                const trigger = navBtn({
+                    label: label, name: plain, icon: n.icon,
+                    attrs: `data-afclaim="${n.id}" aria-haspopup="true" aria-expanded="false"`,
+                    after: ' ▾',
+                    tip: (claim.title ? claim.title + '\n\n' : '')
+                        + `A menu: “${claim.label}”, or ${plain} itself.\n\n${n.tip || ''}`
+                });
                 cluster.push(`<span class="af-claim">
-                    <button class="secondary" data-afclaim="${n.id}" aria-haspopup="true" aria-expanded="false"
-                        title="${claim.title || ''}">${label} ▾</button>
+                    ${trigger}
                     <div class="af-claim-menu" data-afclaimmenu="${n.id}" hidden>
                         <button data-afclaimgo="${n.id}">${claim.label}</button>
                         <button data-afnav="${n.id}">Open ${plain}</button>
@@ -194,23 +314,55 @@
                 </span>`);
                 continue;
             }
-            cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
+            // `label` already carries the count badge where there is one, and it
+            // is still the same element the live push repaints (see afCounts).
+            cluster.push(navBtn({
+                label: label, name: plainName(n.label), icon: n.icon,
+                attrs: `data-afnav="${n.id}"`, tip: n.tip
+            }));
         }
         for (const r of o.related || []) {
             if (r.action) {
-                cluster.push(`<button class="secondary" data-afact="${r.action}"${r.title ? ` title="${r.title}"` : ''}>${r.label}</button>`);
+                cluster.push(navBtn({
+                    label: r.label, name: r.name, attrs: `data-afact="${r.action}"`, tip: r.title || ''
+                }));
                 continue;
             }
-            cluster.push(`<button class="secondary" data-afnav="${r.nav}">${r.label}</button>`);
+            // A related entry pointing at a page the global row already knows
+            // inherits its sentence rather than restating it — one description
+            // per destination, wherever the button to it happens to sit.
+            const known = NAV.find(n => n.id === r.nav);
+            cluster.push(navBtn({
+                label: r.label, name: r.name, attrs: `data-afnav="${r.nav}"`,
+                tip: r.title || (known && known.tip) || ''
+            }));
         }
         if (o.page !== 'search') {
-            cluster.push(`<button class="secondary" data-afnav="search" title="${o.searchTitle || 'Search across the whole farm'}">⌕ Search</button>`);
+            cluster.push(navBtn({
+                name: 'Search', icon: '⌕', attrs: 'data-afnav="search"',
+                tip: o.searchTitle || 'Search across the whole farm — sessions, tasks, agents, notices, '
+                    + 'documents and the transcripts themselves, in one query.'
+            }));
         }
         if (o.page !== 'settings') {
-            cluster.push('<button class="secondary" data-afnav="settings" title="All agentFarm settings in one page, with saveable setting sets">⚙ Settings</button>');
+            cluster.push(navBtn({
+                name: 'Settings', icon: '⚙', attrs: 'data-afnav="settings"',
+                tip: 'All agentFarm settings in one page, with saveable setting sets.'
+            }));
         }
-        if (o.refresh !== false) { cluster.push('<button class="secondary af-refresh">Refresh</button>'); }
-        if (o.guide) { cluster.push(`<button class="secondary" data-afguide="${o.guide}">? Guide</button>`); }
+        if (o.refresh !== false) {
+            cluster.push(navBtn({
+                name: 'Refresh', icon: '⟳', cls: 'af-refresh',
+                tip: 'Read this page\'s data again from where it lives. It re-reads what is already '
+                    + 'recorded — nothing is started, nothing is spent.'
+            }));
+        }
+        if (o.guide) {
+            cluster.push(navBtn({
+                name: 'Guide', icon: '?', attrs: `data-afguide="${o.guide}"`,
+                tip: 'The built-in guide, opened at this page\'s own section.'
+            }));
+        }
         // Two logical halves, each in its own wrapping group so they break onto
         // a second line cleanly instead of shuffling buttons past one another.
         // The divider rides on the nav group's left edge (only when there are

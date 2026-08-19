@@ -1290,7 +1290,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 // ---------- the nav is ordered by meaning ----------
 {
     const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
-    const order = (nav.match(/\{ id: '([a-z]+)'/g) || []).map(s => s.replace(/.*'([a-z]+)'.*/, '$1'));
+    // ‼️ Matched on `id: 'x', label:` rather than on the opening brace: U-68 gave
+    // every entry a `tip` and broke them onto their own lines, and a test that
+    // reads a list by its indentation is a test that fails on formatting.
+    const order = (nav.match(/id: '([a-z]+)', label:/g) || []).map(s => s.replace(/.*'([a-z]+)'.*/, '$1'));
     ok('Dashboard leads', order[0] === 'dashboard');
     // Projects sits second on purpose: it is the umbrella the rest of the work
     // hangs under, so it comes before the places that work happens.
@@ -1381,7 +1384,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /Choose an agent…/.test(js) && !/choose an agent/.test(js));
     ok('file writes offer open + diff', /data-open=/.test(js) && /data-diff=/.test(js));
     const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
-    ok('Console is the first thing in the global nav', /\{ id: 'console'/.test(nav));
+    ok('Console is the first thing in the global nav', /id: 'console', label:/.test(nav));
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     ok('it has a command', pkg.contributes.commands.some(c => c.command === 'agentfarm.openConsole'));
     ok('…and a key', pkg.contributes.keybindings.some(k => k.command === 'agentfarm.openConsole'));

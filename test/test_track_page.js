@@ -743,9 +743,12 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
         const swallowed = /(title|data-[a-z]+)="[^"]*<[a-z/]/i.exec(h);
         ok(`${view}: no attribute swallows the markup after it`, !swallowed);
 
-        // every rich panel on this page is anchored to its row or card
+        // every rich panel on this page is anchored to its row or card. The
+        // shared header's own buttons (af-tipw-nav, U-68) are the exception and
+        // are meant to be: a toolbar button IS the block its panel hangs under,
+        // so it keeps the wrapper's own positioning rather than a row's.
         const loose = [...h.matchAll(/class="af-tipw([^"]*)"/g)]
-            .filter(m => !/\btip-block\b|\btip-free\b/.test(m[1]));
+            .filter(m => !/\btip-block\b|\btip-free\b|\baf-tipw-nav\b/.test(m[1]));
         ok(`${view}: every rich hover is measured against its block`, loose.length === 0);
 
         // ‼️ ON A ROW a native tooltip is for FIGURES and nothing else. The

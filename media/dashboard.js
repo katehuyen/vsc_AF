@@ -768,9 +768,13 @@
                 // you could not click. It belongs on the board that is about the
                 // whole farm rather than any single agent.
                 related: [
-                    { nav: 'turns', label: 'Turns' },
                     {
-                        action: 'syncConstitution', label: '⚖ Sync Cons.',
+                        nav: 'turns', label: 'Turns',
+                        title: 'Every user turn across the farm, with its sessions unrolled — what each one '
+                            + 'consumed in tokens, cost, tools and errors, and how long it ran.'
+                    },
+                    {
+                        action: 'syncConstitution', label: '⚖ Sync Cons.', name: 'Sync Constitution',
                         title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
                     }
                 ],

@@ -722,7 +722,23 @@
                 // Antigravity reads none of them, and a page that just said
                 // "extends claude" in lower case left that as a guess.
                 sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends Claude Code — this is Claude Code's extension model, and the other engines do not read it`,
-                related: [{ nav: 'airtable', label: '🗄️ Airtable Engine' }, { nav: 'capabilities', label: 'Capability Matrix' }, { nav: 'secrets', label: '🔑 Secrets' }],
+                related: [
+                    {
+                        nav: 'airtable', label: '🗄️ Airtable Engine',
+                        title: 'Your data engine as a farm module — its bases, tables and sync state, '
+                            + 'and what the agents are allowed to read and write there.'
+                    },
+                    {
+                        nav: 'capabilities', label: 'Capability Matrix',
+                        title: 'Who has which skill and MCP server, and which of them are actually used '
+                            + '(last 30 days) — the place to copy one agent\'s capability onto another.'
+                    },
+                    {
+                        nav: 'secrets', label: '🔑 Secrets',
+                        title: 'Named values kept in the OS keychain — never in settings files or git — '
+                            + 'with what each is for and which agents may use it.'
+                    }
+                ],
                 guide: 'toolbox'
             })}
             <div class="btnrow" style="margin-bottom:10px">${tabBar}</div>

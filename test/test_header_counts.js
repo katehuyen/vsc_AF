@@ -47,6 +47,10 @@ sandbox.window.addEventListener = (ev, fn) => { if (ev === 'message') { onMessag
 sandbox.window.window = sandbox.window;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
+// U-68 put every nav button's full name in a rich panel, so the component the
+// panels come from has to be here too — the header degrades to a bare button
+// without it, which is exactly the state that must not pass unnoticed.
+vm.runInContext(read('media/afTip.js'), sandbox);
 vm.runInContext(read('media/pageHeader.js'), sandbox);
 const AFHeader = sandbox.window.AFHeader;
 
@@ -119,6 +123,49 @@ const push = afui => onMessage({ data: { type: 'afui', afui } });
     });
     ok('the claimed button keeps its count', /data-afcount="notices"> \(4\)<\/span> ▾/.test(html));
     ok('…and its menu item stays a plain destination', /<button data-afnav="notices">Open Notices<\/button>/.test(html));
+}
+
+// ---------- U-68: every button in this row says its own full name ----------
+//
+// This row is on every page and it was the one control with no hovers at all:
+// a dozen destinations, most of them a single word, and nothing anywhere saying
+// what any of them opened. It also ran out of width and wrapped onto a second
+// line, so a toolbar moved under the pointer. Both halves are the same fix —
+// the five that are identical on every page are drawn as their ICON, and the
+// name they no longer show is the first line of the panel (SHORTHAND + MIRROR).
+{
+    const rx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    sandbox.window.__AFUI__ = { notices: { unread: 0 }, queue: { blocked: 0 } };
+    const html = AFHeader.html({ page: 'dashboard', title: 'x', guide: 'dash' });
+
+    const buttons = (html.match(/<button /g) || []).length;
+    const panels = (html.match(/class="af-tipw af-tipw-nav"/g) || []).length;
+    ok('‼️ every button in the global row carries a rich hover, and there are a dozen of them',
+        buttons > 12 && panels === buttons);
+    ok('…whose FIRST line is the destination\'s full name',
+        /aria-label="Search">⌕<\/button><span class="af-tip"><span class="af-tiph">Search<\/span>/.test(html));
+    ok('…and whose body says what that page is for',
+        /<span class="af-tiph">Toolbox<\/span><span class="af-tipb">Everything that extends/.test(html));
+
+    for (const [name, icon] of [['Evals', '🧪'], ['Search', '⌕'], ['Settings', '⚙'],
+    ['Refresh', '⟳'], ['Guide', '?']]) {
+        ok(`${name} is its icon alone, at icon width, and still named for a screen reader`,
+            new RegExp(`class="secondary af-ico[^"]*"[^>]*aria-label="${name}"[^>]*>${rx(icon)}</button>`).test(html));
+    }
+    ok('‼️ …and it is exactly those five — shortening the rest is a decision, not a drift',
+        (html.match(/class="secondary af-ico/g) || []).length === 5);
+    ok('nothing in the row is left with a paragraph in a native title (that is what the panel is for)',
+        !/<button[^>]*title="[^"]{60,}"/.test(html));
+
+    // A page that claims a nav button still owes the same three things.
+    const claimed = AFHeader.html({
+        page: 'queue', title: 'x',
+        navActions: { console: { label: 'Talk to this agent', title: 'Opens a card for it.' } }
+    });
+    ok('a claimed button keeps its own name on the panel\'s first line',
+        /data-afclaim="console"[\s\S]{0,120}<span class="af-tiph">Console<\/span>/.test(claimed));
+    ok('…and the panel says what the menu under it will offer',
+        /A menu: “Talk to this agent”, or Console itself\./.test(claimed));
 }
 
 // ---------- the host half of the contract ----------

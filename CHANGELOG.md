@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.170.0 — U-68: the row that is on every page finally says what it opens (2026-08-19)
+
+**A dozen destinations, most of them one word, and not one of them said where it went.** The global toolbar was the one control shared by every page and the one control with no hovers at all — and it had also run out of width, so it wrapped onto a second line and moved under the pointer. Both halves are the same fix.
+
+**Every button in the row now carries an `AFTip` whose FIRST line is its own full name**, then one sentence saying what that page is for — the row where text gets cut is the row that must state its long form (SHORTHAND + MIRROR). A `tip` is now part of a nav entry's definition; a destination added without one is an unfinished one, and the test says so by name.
+
+**Five of them are drawn as their icon alone**, at a fixed 24px so the cluster's right edge stops moving from page to page: **🧪 Evals · ⌕ Search · ⚙ Settings · ⟳ Refresh · ? Guide**. They are identical on every page and in the same order, so nobody reads them — they are aimed at. Each keeps an `aria-label`, because a name that is not on screen has to be in the accessibility tree and not only in a hover.
+
+A **related** button pointing at a page the row already knows inherits that page's sentence rather than restating it, and one that carries a shortened label (`⚖ Sync Cons.`) states its long form on the panel's first line. A **claimed** nav button — where a page has made "Console" mean *talk to THIS agent* — says its own name, then what this page made it mean, then that it is still a menu with the plain destination under it.
+
+Measured on the dashboard at 1400px: the cluster was on two rows and is now on one.
+
 ## 3.169.0 — U-71: pressing a backlog code on the Track tab stays in the extension (2026-08-19)
 
 **The cheap answer was behind a right-click and the expensive one was the default.** Pressing a code on Track left for Obsidian; "Show it in the Backlog tab" — the same item, on the next tab of the page already open, where it can be edited, moved and closed — was a menu entry most readers never saw. The two have swapped:
