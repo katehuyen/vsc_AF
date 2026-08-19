@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.164.0 — B-12: closing a card promised a file on the one engine that keeps none (2026-08-19)
+
+**‼️ `console.close` said "its transcript stays on disk and stays resumable" — and the first half is false on exactly the engine a reader would go hunting for a file on.** OpenCode keeps its conversations in SQLite and publishes no transcript; what it publishes is `session list` and `export`, so the history really is readable, through the CLI. Promising a path that does not exist is worse than saying nothing, and `noTranscriptNote` — the sentence the Console already prints — knew this. The contract asks it now, so the panel and the catalogue cannot disagree about one engine.
+
+**And "resumable" without an id is not an answer.** The reply carries the engine, the `ses_…`/thread id, the exact `console.start { resume: … }` call that takes the conversation up again in its own seat, and where its history lives — a file this build can open, or the engine's own export command.
+
 ## 3.163.0 — B-12: three answers where the contract offered two, and a flag name that fails if you type it (2026-08-19)
 
 **‼️ `engines.test` had a third answer since U-59 and the bridge contract described two.** Agent Farm will not pick a *billed* model for a health check, so on an engine whose cheapest turn depends on which providers are connected the check can come back `refused: true` — nothing spent, nothing proved. The page was taught that in 3.159.0 and given its own `⊘`; the contract still said "returns ok, how long it took, and the engine's own words when it failed", so an agent reading `ok:false` off a refusal reports a **working engine as broken**. That is the fault the page was fixed for, surviving on the surface agents actually read. Three states are now named, and a test asserts the function really returns the flag rather than the contract describing a wish.

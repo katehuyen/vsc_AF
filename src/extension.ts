@@ -6250,12 +6250,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.close',
-            describe: 'End a hosted Console session (its transcript stays on disk and stays resumable). args: id, forget? (true also drops it from the Console list — the same thing the card\'s "End & Remove Session" does)',
+            // ‼️ B-12 — "STAYS ON DISK" IS NOT TRUE OF EVERY ENGINE, and the one
+            // it is false for is the one a reader would go looking for a file
+            // on. OpenCode keeps its conversations in SQLite and publishes no
+            // transcript — it publishes `session list` and `export` instead, so
+            // the history really is readable, through the CLI. Saying "on disk"
+            // there sends somebody hunting for a path that does not exist;
+            // `noTranscriptNote` is the sentence that already knows this and is
+            // the same one the Console prints.
+            describe: 'End a hosted Console session. ‼️ THE CONVERSATION SURVIVES ON EVERY ENGINE — closing a card never ends a conversation, and the reply\'s `resumable` says how it is picked up again. Where the transcript LIVES is the engine\'s business and not always a file: '
+                + Object.values(ENGINES).filter(e => !e.readableTranscript).map(e => e.id).join(' and ')
+                + ' keep theirs in SQLite rather than as a readable transcript, so `sessions.open` has nothing to open for them — see the reply\'s `transcript` line for what to use instead. args: id, forget? (true also drops it from the Console list — the same thing the card\'s "End & Remove Session" does)',
             handler: (args) => {
                 const id = argStr(args, 'id');
+                const row = consoleHost.list().find(s => s.id === id);
+                const spec = engineOf(row?.engine);
                 if (args.forget === true) { consoleHost.forget(id); } else { consoleHost.close(id); }
                 ConsolePanel.refreshIfOpen();
-                return { id, closed: true };
+                return {
+                    id, closed: true, engine: spec.id,
+                    sessionId: row?.sessionId ?? null,
+                    // ‼️ The id, not the promise: a caller told "it is resumable"
+                    // with no id to resume it BY has been told nothing.
+                    resumable: row?.sessionId
+                        ? 'console.start { resume: "' + row.sessionId + '" } takes it up again in its own seat'
+                        : 'no engine session id was ever issued — there is nothing to resume',
+                    transcript: spec.readableTranscript
+                        ? 'a transcript file on this disk — sessions.open reads it'
+                        : noTranscriptNote(spec.id)
+                };
             }
         },
         {

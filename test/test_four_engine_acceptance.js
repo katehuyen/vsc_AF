@@ -479,6 +479,24 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
         ok('‼️ sessions.end no longer says "the claude process" about any engine\'s session',
             !/the claude process that owns it/.test(ext));
 
+        // ---- "the transcript stays on disk" is false on one engine ----
+        //
+        // ‼️ AND IT IS FALSE ON EXACTLY THE ENGINE A READER WOULD GO LOOKING FOR
+        // A FILE ON. OpenCode keeps its conversations in SQLite and publishes no
+        // transcript; what it publishes is `session list` and `export`, so the
+        // history really is readable — through the CLI. Promising a file there
+        // sends somebody hunting for a path that does not exist, which is worse
+        // than saying nothing. `noTranscriptNote` already knew this and is the
+        // sentence the Console prints, so the contract and the panel cannot
+        // disagree about one engine.
+        const close = at('console.close', 3000);
+        ok('‼️ console.close does not promise a transcript file on an engine that has none',
+            !/its transcript stays on disk/.test(close)
+            && /readableTranscript/.test(close)
+            && /noTranscriptNote\(spec\.id\)/.test(close));
+        ok('…and it hands back the id the conversation is resumed BY, not just the promise',
+            /console\.start \{ resume: "/.test(close));
+
         // ---- ‼️ AND THE CONTRACT NAMES EVERY DIMENSION THE HANDLER TAKES ----
         //
         // `schedules.add` read `engine` off its args through
