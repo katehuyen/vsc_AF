@@ -44,6 +44,7 @@
 
 import { agyDefaultEffort } from './agy';
 import { EngineId, EngineProbe } from './engines';
+import { engineFlagFor } from './consoleEngine';
 import { EFFORT_CHOICES, LaunchChoice } from './launch';
 
 const CODEX_CATALOG = '.codex/models_cache.json';
@@ -88,10 +89,31 @@ const DEFAULT_ROW: LaunchChoice = {
     id: '', label: 'Default', detail: "the agent's own model setting / the CLI default"
 };
 
+/**
+ * ‼️ B-12 — WHICH FLAG THIS ROW WOULD ACTUALLY RIDE ON.
+ *
+ * The fallback list said `passed as --model` on every engine. That is Claude's
+ * flag name, and U-59 measured it wrong on three of the other four: Codex `-m`,
+ * Gemini `-m`, OpenCode `-m`, Antigravity `--model`. This list is what a reader
+ * sees on exactly the engines whose OWN catalogue has not arrived yet — so the
+ * one moment they are told least about the engine was also the moment they were
+ * told a flag that fails if they type it. `engineFlagFor` runs the engine's own
+ * argument builder and reads the token back, so nothing here knows a flag name.
+ */
+function modelFlagNote(engine: EngineId): string {
+    // ‼️ Claude is asked separately, and not out of special-casing: it is the
+    // persistent engine and never goes through `runArgs` (`spawnHeadless` builds
+    // its line as a string), so `engineFlagFor` declines to answer for it rather
+    // than hand back another engine's vocabulary wearing Claude's name.
+    const flag = engine === 'claude' ? '--model' : engineFlagFor(engine, 'model');
+    return flag ? `passed as ${flag}` : 'this engine carries the model without a flag of its own';
+}
+
 /** The user's own list, the shape every picker takes. */
-function fromAliases(aliases: string[]): LaunchChoice[] {
+function fromAliases(aliases: string[], engine: EngineId): LaunchChoice[] {
+    const detail = modelFlagNote(engine);
     return aliases.filter(a => typeof a === 'string' && a.trim())
-        .map(a => ({ id: a.trim(), label: a.trim(), detail: 'passed as --model' }));
+        .map(a => ({ id: a.trim(), label: a.trim(), detail }));
 }
 
 /**
@@ -414,7 +436,11 @@ export function readEngineModels(
     opencodeCatalog?: { models?: { id: string; label: string }[]; fetchedAt?: number }
 ): Record<EngineId, EngineModels> {
     const safe = <T>(fn: () => T): T | undefined => { try { return fn(); } catch { return undefined; } };
-    const settingsModels = [DEFAULT_ROW, ...fromAliases(aliases)];
+    // ‼️ PER ENGINE, not one array shared by four of them: the rows carry that
+    // engine's own flag name (see modelFlagNote), so a single shared list would
+    // put Claude's `--model` on the three engines that take `-m`.
+    const settingsModelsFor = (engine: EngineId): LaunchChoice[] =>
+        [DEFAULT_ROW, ...fromAliases(aliases, engine)];
     const staticEfforts = { '': EFFORT_CHOICES };
 
     const codexCatalog = safe(() => readCodexCatalog(probe.readHome(CODEX_CATALOG)));
@@ -429,7 +455,7 @@ export function readEngineModels(
                 + `(~/${CODEX_CATALOG}) — the same rows its /model offers.${ageNote(codexCatalog.fetchedAt)}`
         }
         : {
-            models: settingsModels,
+            models: settingsModelsFor('codex'),
             efforts: staticEfforts,
             defaultEffort: {},
             source: 'settings',
@@ -442,7 +468,7 @@ export function readEngineModels(
     // short, version-free names are the ones that end up on the command line;
     // the CLI's rows lend their label and description, and a row that is only a
     // VARIANT of one already listed is drawn as the variant it is.
-    const claudeRows = mergeModelRows([...fromAliases(aliases), ...extras]);
+    const claudeRows = mergeModelRows([...fromAliases(aliases, 'claude'), ...extras]);
     const claude: EngineModels = {
         models: [DEFAULT_ROW, ...claudeRows],
         efforts: staticEfforts,
@@ -458,7 +484,7 @@ export function readEngineModels(
     };
 
     const gemini: EngineModels = {
-        models: settingsModels,
+        models: settingsModelsFor('gemini'),
         efforts: staticEfforts,
         defaultEffort: {},
         source: 'settings',
@@ -482,7 +508,7 @@ export function readEngineModels(
                 + ageNote(agyCatalog?.fetchedAt)
         }
         : {
-            models: settingsModels,
+            models: settingsModelsFor('agy'),
             efforts: staticEfforts,
             defaultEffort: {},
             source: 'settings',
@@ -517,7 +543,7 @@ export function readEngineModels(
                 + ageNote(opencodeCatalog?.fetchedAt)
         }
         : {
-            models: settingsModels,
+            models: settingsModelsFor('opencode'),
             efforts: { '': [] },
             defaultEffort: {},
             source: 'settings',

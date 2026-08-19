@@ -5763,7 +5763,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.end',
-            describe: 'End a live session — not its turn (that is sessions.interrupt) but the session: the claude process that owns it is stopped, and it leaves the Live Timeline. A Console-hosted session is closed through the Console instead. The transcript stays on disk and can be resumed. Asks the user to confirm first. Pass sessionIds to end a whole set (it asks once, per session). args: sessionId or sessionIds (array)',
+            describe: 'End a live session — not its turn (that is sessions.interrupt) but the session: the process that owns it is stopped, whichever engine it is, and it leaves the Live Timeline. A Console-hosted session is closed through the Console instead. The transcript stays on disk and can be resumed. Asks the user to confirm first. Pass sessionIds to end a whole set (it asks once, per session). args: sessionId or sessionIds (array)',
             handler: async (args) => {
                 const ids = argSessionIds(args);
                 need(ids.length, 'sessionId (or sessionIds) required');
@@ -21836,10 +21836,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'grant sat in ~/.codex/auth.json while every Codex turn died at the socket. ‼️ THIS '
                 + 'COSTS A TURN of that engine\'s plan or key, so it is never run on a schedule, on a '
                 + 'refresh or on a page open — a person or an agent asks for it, once. It uses the '
-                + 'engine\'s smallest model, a four-word prompt, and read-only sandboxing where the '
-                + 'engine offers it, so it can never touch a file. Returns ok, how long it took, and '
-                + 'the engine\'s OWN words when it failed — never an invented reason. No credential '
-                + 'is read or returned. args: id (' + ENGINE_ENUM_SPACED + ')',
+                + 'cheapest turn that engine can be asked for — usually its smallest model, and on an '
+                + 'engine whose prices depend on which providers are connected the model is worked out '
+                + 'at press time from the engine\'s own catalogue (a listing, not a turn, so it costs '
+                + 'nothing) — with a four-word prompt and read-only sandboxing where the engine offers '
+                + 'it, so it can never touch a file. ‼️ THREE ANSWERS, NOT TWO, and reading the third '
+                + 'as the second is what calls a working engine broken: `ok:true` (the call got '
+                + 'through), `ok:false` (the engine WAS asked and did not answer — `detail`, plus the '
+                + 'engine\'s OWN words in `error`, never an invented reason), and `ok:false, '
+                + 'refused:true` (‼️ THE CHECK NEVER RAN. Nothing was spent and nothing was proved: '
+                + 'Agent Farm will not pick a BILLED model for a health check, so an engine with no '
+                + 'free model on offer is refused rather than quietly charged. Read it as "not '
+                + 'tested", never as "failed"). No credential is read or returned. '
+                + 'args: id (' + ENGINE_ENUM_SPACED + ')',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
                 const engine = engineMatrix().find(e => e.id === id);

@@ -242,7 +242,16 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
     // is the failure the whole block is about: fourteen describes carried
     // `claude|codex|gemini|agy` long after a fifth engine had shipped end to end.
     {
-        const files = ['src/extension.ts', 'src/core/turns.ts', 'src/core/settingsBridge.ts'];
+        // ‼️ EVERY FILE THAT REGISTERS AN OP, not the three that happened to be
+        // wrong. A subset typed into a contract is invisible until somebody reads
+        // that contract, so a scan of the places already fixed only proves they
+        // stayed fixed — the catalogue is what has to be clean.
+        const files = [
+            'src/extension.ts', 'src/core/bridge.ts', 'src/core/docopen.ts',
+            'src/core/infraBridge.ts', 'src/core/memoryBridge.ts', 'src/core/notices.ts',
+            'src/core/reportBridge.ts', 'src/core/settingsBridge.ts', 'src/core/studioBridge.ts',
+            'src/core/toolboxBridge.ts', 'src/core/turns.ts', 'src/core/workqueue.ts'
+        ];
         const ids = Object.keys(ENGINES);
         const stale = [];
         for (const f of files) {
@@ -382,6 +391,32 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
         threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'low' }))
         && threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'max' })));
 
+    // ---- the fallback model list said Claude's flag name on every engine ----
+    //
+    // ‼️ FOUND BY RUNNING `engines.models` AGAINST THE LIVE BRIDGE, not by
+    // reading the source: OpenCode's rows came back as `haiku / sonnet / opus /
+    // fable`, each one captioned "passed as --model". The list itself is honest
+    // — the engine publishes its catalogue on the connection and no session had
+    // opened, which the note says out loud — but the caption was Claude's flag
+    // on the three engines U-59 measured taking `-m`. So the one moment a
+    // reader is told least about an engine was also the moment they were handed
+    // a flag that fails if they type it.
+    {
+        const { readEngineModels } = require(path.join(__dirname, '..', 'out/core/models.js'));
+        const matrix = readEngineModels({ readHome: () => undefined }, ['haiku', 'sonnet']);
+        const caption = id => (matrix[id].models.find(r => r.id) || {}).detail;
+        ok('‼️ the fallback model rows carry each ENGINE\'s own flag, not Claude\'s',
+            caption('claude') === 'passed as --model'
+            && caption('codex') === 'passed as -m'
+            && caption('gemini') === 'passed as -m'
+            && caption('agy') === 'passed as --model'
+            && caption('opencode') === 'passed as -m');
+        // …and every engine falls back to the same honest source, so none of
+        // them is silently handed another engine's catalogue.
+        ok('…and each says the list is the alias setting rather than its own catalogue',
+            Object.keys(ENGINES).every(id => matrix[id].source === 'settings'));
+    }
+
     // ---- ‼️ NO CREDENTIAL LEAVES THROUGH THE BRIDGE ----
     //
     // The one security promise this whole surface makes (`_REF/bridge.md`: the
@@ -422,6 +457,28 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
             && /turnShape: engineOf\(s\.engine\)\.shape/.test(sessions)
             && /steerable: engineOf\(s\.engine\)\.liveControls/.test(sessions)
             && /takesEffort: engineTakesEffort\(s\.engine\)/.test(sessions));
+        // ---- ‼️ A CHECK THAT NEVER RAN IS NOT A CHECK THAT FAILED ----
+        //
+        // U-59 gave the Engines PAGE a third state (⊘) when `engines.test`
+        // refuses — Agent Farm will not spend a paid turn on a health check, so
+        // an engine with no free model on offer is refused rather than charged.
+        // The bridge contract still described two answers, so an agent reading
+        // `ok:false` off a refusal would report a working engine as broken: the
+        // exact fault the page was fixed for, surviving on the surface agents
+        // actually read. `testEngine` has always returned the flag.
+        const engTest = at('engines.test', 3500);
+        ok('‼️ engines.test says a refusal is its own answer, not a failure',
+            /refused:true/.test(engTest.replace(/\s+/g, ''))
+            && /THE CHECK NEVER RAN/.test(engTest));
+        {
+            const src = fs.readFileSync(path.join(__dirname, '..', 'src/core/engineTest.ts'), 'utf8');
+            ok('…and the function really returns it, so the contract is not describing a wish',
+                /return \{ id, ok: false, refused: true/.test(src));
+        }
+        // ---- …and no op describes one engine's mechanism as every engine's ----
+        ok('‼️ sessions.end no longer says "the claude process" about any engine\'s session',
+            !/the claude process that owns it/.test(ext));
+
         // ---- ‼️ AND THE CONTRACT NAMES EVERY DIMENSION THE HANDLER TAKES ----
         //
         // `schedules.add` read `engine` off its args through

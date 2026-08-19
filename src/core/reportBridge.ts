@@ -145,7 +145,7 @@ export function registerReportOps(bridge: BridgeRegistry, deps: ReportBridgeDeps
         },
         {
             op: 'reports.cost',
-            describe: '‼️ WHY WAS TODAY EXPENSIVE — today against a trailing 14-day median with a robust σ, per agent and for the fleet, plus the heavy hitters of the last 7 days. The report states its own scope: the figures are computed off Claude transcripts, because a plan-billed engine states no price, and a document that hid that read as the farm halving its spend. args: file?, save?',
+            describe: '‼️ WHY WAS TODAY EXPENSIVE — today against a trailing 14-day median with a robust σ, per agent and for the fleet, plus the heavy hitters of the last 7 days. The report states its own scope: the figures are computed off Claude transcripts, and a document that hid that read as the farm halving its spend. ‼️ The reason is the MEASUREMENT, not the money: this series is defined against Claude\'s transcript format and would read zero or read wrong on a foreign one. It is NOT "the others state no price" — two engines state one, and OpenCode\'s dollars are as real as Claude\'s. Those sessions are on the Sessions page. args: file?, save?',
             handler: (args) => deliver(args, deps.costReport(), `AgentFarm-Cost-${stamp()}.md`)
         },
         {
