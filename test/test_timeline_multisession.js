@@ -123,8 +123,8 @@ ok('S2 segment drawn in second dev row', /<rect x="[\d.]+" y="90" width="[\d.]+"
 ok('‼️ the row carries its session id, under the agent name',
     /<text class="lane-sid" x="16" y="46" font-size="9\.5"[^>]*>\(S1\)<\/text>/.test(lastHtml));
 ok('…each row its own', /<text class="lane-sid"[^>]*>\(S2\)<\/text>/.test(lastHtml));
-ok('…and it is part of the label group, so it opens and right-clicks like the name',
-    /class="mark lanelabel" data-file="D:\/t\/S1.jsonl"[\s\S]{0,2500}?class="lane-sid"[\s\S]{0,120}?\(S1\)/.test(lastHtml));
+ok('…and it is part of the label group, so it is drawn with the name',
+    /<g class="lanelabel">[\s\S]{0,2500}?class="lane-sid"[\s\S]{0,120}?\(S1\)/.test(lastHtml));
 ok('…set in monospace, because ids are read against each other',
     /\.lane-sid \{ font-family:var\(--vscode-editor-font-family/.test(lastHtml));
 // A packed row holds several sessions in sequence: naming one of them without
@@ -138,10 +138,24 @@ ok('…and says why', lastHtml.indexOf('not one of your agent folders') !== -1);
 ok('‼️ …and gets NO second line repeating it — a repeated fact is not information',
     !/<text class="lane-sid"[^>]*>\(abcdef12\)/.test(lastHtml));
 
-// ---- the row label is a handle: rich tooltip + click ----
-ok('lane labels are clickable groups', lastHtml.indexOf('class="mark lanelabel"') !== -1);
-ok('…carrying the session\'s own transcript', lastHtml.indexOf('class="mark lanelabel" data-file="D:/t/S1.jsonl"') !== -1);
-ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(lastHtml) && lastHtml.indexOf('$0.50 · 48.2k tok') !== -1);
+// ---- the row label is a handle: rich panel + click ----
+//
+// ‼️ U-67 — THE HANDLE IS HTML LAID OVER THE DRAWING, and it has to be: what
+// this hover carries is TEXT (the conversation's name, the prompt it is on,
+// where it runs), an `AFTip` is HTML, and an `<svg>` cannot hold HTML. The box
+// is the same element for all three gestures — hover, click, right-click — so
+// they cannot disagree about which session the row means.
+ok('lane labels are clickable', lastHtml.indexOf('class="lane-hot mark"') !== -1);
+ok('…carrying the session\'s own transcript', lastHtml.indexOf('class="lane-hot mark" data-file="D:/t/S1.jsonl"') !== -1);
+ok('‼️ …in an AFTip and not a native title, because it is text',
+    /class="af-tipw tip-free lane-hotw"/.test(lastHtml)
+    && !/class="mark lanelabel"/.test(lastHtml));
+ok('‼️ …whose head is the CONVERSATION\'s name, which is what the row is about',
+    /<span class="af-tiph">the S1 job<\/span>/.test(lastHtml));
+ok('…and the session\'s own name leads its block, never the folder it ran in',
+    /Session: the S1 job/.test(lastHtml) && /Agent: dev/.test(lastHtml));
+ok('…and its figures are in there', /Id: #S1 · TOOL · Read/.test(lastHtml)
+    && lastHtml.indexOf('$0.50 · 48.2k tok') !== -1);
 
 // ---- a row is a session: right-click it for that session's commands ----
 {
@@ -149,7 +163,7 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
         const m = /sessionId&quot;:&quot;([^&]*)&quot;/.exec(s);
         return m ? m[1] : '';
     };
-    const label = /<g class="mark lanelabel" data-file="D:\/t\/S1.jsonl" data-ts="0" data-vscode-context="([^"]*)"/.exec(lastHtml);
+    const label = /<span class="lane-hot mark" data-file="D:\/t\/S1.jsonl" data-ts="0" data-vscode-context="([^"]*)"/.exec(lastHtml);
     ok('the row label carries the right-click contract', !!label);
     // ‼️ The label is BOTH a session and an agent — its name is what is written
     // there. The section it publishes is in both families in
@@ -320,7 +334,7 @@ ok('S1 asks to turn its own sound OFF',
         return files.length > 0 && files.some(f => f === 'D:/t/S1.jsonl');
     })());
     ok('‼️ …and a lane with no file anywhere still draws no link rather than a dead one',
-        /class="mark lanelabel" data-file=""[\s\S]{0,900}?>dev #2</.test(lastHtml));
+        /class="lane-hot mark" data-file=""[\s\S]{0,900}?aria-label="dev #2 — session details"/.test(lastHtml));
 
     // The host half: where the lane's file comes from when the hook could not
     // carry one. The record has known where a foreign conversation lives since

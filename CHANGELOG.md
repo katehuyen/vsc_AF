@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.176.0 — U-67: a swim lane finally says which CONVERSATION it is (2026-08-19)
+
+**The row's hover opened with the agent and never named the session.** "developer · 3f8a1c2b · working", on the one page whose entire subject is which conversation is doing what. It was also a native `<title>` — the wrong surface for what a lane has to say, since a prompt, a name and a path are TEXT and a platform tooltip repeats what is already drawn and then stops wherever it likes.
+
+**It is an `AFTip` now**, and the panel's head is the **conversation's own name**, in full: the row is cut to thirteen characters, so the long form belongs in the hover (SHORTHAND). A packed track says so there too — "+2 earlier sessions on this row" — rather than naming one of them and implying the row is it. Under the head, per session: the agent, the id and status, **the prompt it is on right now** (a different fact from the name it was given, and on a long session they stop agreeing after turn one), its money, its work, its clock, its pid and its folder. A session with no title yet says *that*, in those words — an absent line reads as an absent session.
+
+**‼️ HOW HTML GOT ONTO AN SVG.** An `AFTip` is HTML and an `<svg>` cannot hold HTML, so the trigger is a transparent HTML box laid over the gutter: `.chartbox svg` is `width:100%; height:auto` on a viewBox, so the drawing scales with no letterboxing and a percentage of the wrapper **is** the SVG's own coordinate. That box carries the row's **click and right-click** as well — one element answering for the label instead of two that can disagree about which session they mean — and it wears the hover highlight the SVG's own `:hover` used to give.
+
+One thing this found on the way: `statLines` builds the weighted-token figure as a `<span>` with a hover of its own, which is right on a card and is a wall of escaped markup inside a panel whose body is text. It takes `plain` and returns the existing plain-text twin — not a stripped copy, which would have been a second answer to "how many tokens".
+
 ## 3.175.0 — X-47: no spawn of this extension's can flash a console window any more, and it is measured (2026-08-19)
 
 **The extension host is a windowless process, so every console program it starts gets a console of its own** — a black rectangle that appears and disappears over whatever the user was looking at — unless the spawn asks for `windowsHide`. Three calls did not ask: the two `taskkill`s that end a task's process tree and the one that ends a session, all written as `exec`, which is a `cmd.exe` with a console around the thing being run. They are `execFile` with `windowsHide` now, killing exactly the same tree with the same `/T /F`.

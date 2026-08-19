@@ -46,6 +46,16 @@
            quieter than the name above them even under the row's hover. */
         .lane-sid { font-family:var(--vscode-editor-font-family, monospace); letter-spacing:-0.2px; }
         .lanelabel:hover .lane-sid { opacity:.8; }
+        /* ‼️ U-67 — the gutter's hover/click box. It is HTML over an SVG because
+           an AFTip is HTML; the wrapper carries the box (afTip measures the panel
+           against it) and the trigger fills it. The highlight is the affordance
+           the SVG's own :hover used to give and can no longer, since this sits
+           on top of it. */
+        .lanes-wrap { position:relative; }
+        .lanes-wrap .af-tipw.lane-hotw { position:absolute; display:block; }
+        .lane-hot { display:block; width:100%; height:100%; border-radius:4px;
+            transition:background-color .08s linear; }
+        .lane-hot:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.18)); }
     </style>`;
 
     /**
@@ -303,11 +313,20 @@
         return !s.source || s.prompts > 0 || s.toolCalls > 0;
     }
 
-    /** The figures a session card and a lane tooltip both want, in one place. */
-    function statLines(s) {
+    /**
+     * The figures a session card and a lane panel both want, in one place.
+     *
+     * ‼️ U-67 — AND ONE OF THEM CANNOT TAKE MARKUP. `fmtTokW` builds a `<span>`
+     * carrying the weighted-token explanation as a hover of its own, which is
+     * right on a card and is a wall of escaped HTML inside an `AFTip`, whose
+     * body is TEXT printed whole. `plain` asks for the twin that says the same
+     * figures in words (`fmtTokWText`) rather than for a stripped copy — a
+     * second formatter would be a second answer to "how many tokens".
+     */
+    function statLines(s, plain) {
         const money = [
             s.cost ? C.fmtUSD(s.cost) : '',
-            s.tokens ? C.fmtTokW(s.tokens, s.wTokens) + ' tok' : '',
+            s.tokens ? (plain ? C.fmtTokWText(s.tokens, s.wTokens) : C.fmtTokW(s.tokens, s.wTokens)) + ' tok' : '',
             s.ctxTokens ? 'ctx ' + C.fmtTok(s.ctxTokens) : '',
             s.turns ? s.turns + ' turns' : '',
             s.model ? String(s.model).replace(/^claude-/, '') : ''
@@ -324,15 +343,84 @@
         return { money, work, time };
     }
 
+    /**
+     * ‼️ U-67 — WHAT A LANE SAYS ABOUT ITSELF, IN THE PANEL THAT CAN CARRY IT.
+     *
+     * The old hover opened with the AGENT and never named the CONVERSATION —
+     * "developer · 3f8a1c2b · working" on a page whose whole subject is which
+     * conversation is doing what. The session's own name is now the first line
+     * of the panel's head, in full and at reading size (SHORTHAND: the row is
+     * cut to thirteen characters, so the long form belongs here), and the head
+     * also states the one thing a row cannot draw — how many sessions this
+     * track is packing.
+     */
+    function laneTipHead(lane, primary) {
+        const s = LIVE_BY_ID.get(primary && primary.id);
+        const name = (s && (s.title || s.label)) || (lane.anon ? '' : lane.agent) || 'session';
+        const more = lane.sessions.length - 1;
+        return name + (more > 0 ? ` · +${more} earlier session${more > 1 ? 's' : ''} on this row` : '');
+    }
+
+    /**
+     * The body: every session this row holds, newest last, with the notes that
+     * say what the row IS and what pressing it does. `AFTip.lines` drops the
+     * empties, so a session that cannot answer a question simply says less.
+     */
+    function laneTipBody(lane, laneEng) {
+        return window.AFTip.lines([
+            'Engine: ' + window.AFEngine.label(laneEng),
+            'Row: ' + lane.name + (lane.sessions.length > 1
+                ? ` — ${lane.sessions.length} sessions, packed in sequence` : ''),
+            '',
+            lane.sessions.map(s => sessionTip(s.id)).join('\n\n'),
+            '',
+            lane.anon
+                ? 'This row is labelled by its session id because the folder it runs in is not one of your agent folders.'
+                : '',
+            lane.file ? 'Click to open this session\'s transcript.' : 'No transcript to open yet.',
+            'Right-click for this session\'s actions — and for everything the agent can be asked to do.'
+        ]);
+    }
+
+    /**
+     * The transparent trigger over one gutter label. It is the row's HOVER, its
+     * CLICK and its RIGHT-CLICK: `mark` is what the page's own click delegate
+     * listens for, and `laneCtx` is the same context the bars carry.
+     */
+    function laneHotHtml(lane, primary, laneEng, box) {
+        // ‼️ THE BOX IS THE WRAPPER'S, not the trigger's: `tip-free` measures the
+        // panel against the WRAPPER (afTip.js `place`), so a wrapper collapsed to
+        // nothing would open the panel in the corner of the page.
+        const attrs = `style="left:0;width:${box.width.toFixed(3)}%;`
+            + `top:${box.top.toFixed(3)}%;height:${box.height.toFixed(3)}%;`
+            + `cursor:${lane.file ? 'pointer' : 'default'}"`;
+        const trigger = `<span class="lane-hot mark" data-file="${C.esc(lane.file || '')}" data-ts="0" `
+            + laneCtx(primary && primary.id, lane.agent, 'afTimelineAgent')
+            + ` role="button" aria-label="${C.esc(lane.name + ' — session details')}"></span>`;
+        return window.AFTip.wrap(trigger, laneTipHead(lane, primary),
+            laneTipBody(lane, laneEng), 'tip-free lane-hotw', attrs);
+    }
+
     /** Multi-line text for an SVG <title>: everything known about one session. */
     function sessionTip(sid) {
         const s = LIVE_BY_ID.get(sid);
         if (!s) { return `session ${shortId(sid)} — no longer tracked (its events are history)`; }
         const meta = STATUS_META[s.status] || STATUS_META.idle;
-        const st = statLines(s);
+        const st = statLines(s, true);
+        // ‼️ U-67 — THE SESSION'S OWN NAME FIRST, AND NOT ONLY IF IT HAS ONE.
+        // This opened with the AGENT and put the conversation's name on the
+        // second line behind quotation marks, so a row on the page whose entire
+        // subject is "which conversation is doing what" answered with the folder
+        // it ran in. The name leads; a session that has not earned a title yet
+        // says so in those words rather than by leaving the line out, because an
+        // absent line reads as an absent session.
         const lines = [
-            `${s.label || s.agentName} · ${shortId(s.sessionId)} · ${meta.label}${s.currentTool ? ' · ' + s.currentTool : ''}`,
-            s.title ? `“${s.title}”` : (s.lastPrompt ? `“${s.lastPrompt}”` : ''),
+            `Session: ${s.title || s.label || '(not titled yet — no first prompt recorded)'}`,
+            `Agent: ${s.agentName}${s.label && s.label !== s.agentName ? ` (shown as ${s.label})` : ''}`,
+            `Id: ${shortId(s.sessionId)} · ${meta.label}${s.currentTool ? ' · ' + s.currentTool : ''}`,
+            // The prompt it is ON is a different fact from the name it was GIVEN,
+            // and on a long session they stop being the same thing after turn 1.
+            s.lastPrompt && s.lastPrompt !== s.title ? `Now: “${s.lastPrompt}”` : '',
             st.money, st.work, st.time,
             isGone(s) ? 'no live process — this session is over (Clear it below)'
                 : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : ''),
@@ -492,6 +580,8 @@
         const from = now - winMs;
         const x = ts => labelW + ((ts - from) / winMs) * (W - labelW - 8);
         let out = '';
+        /** U-67 — the HTML hover/click boxes laid over the SVG gutter. */
+        const hots = [];
 
         // time grid: 6 ticks
         for (let i = 0; i <= 6; i++) {
@@ -514,10 +604,6 @@
             // The label is not decoration: hovering it tells you everything about
             // the session behind the row (id, status, cost, tokens, turns, where
             // it runs), and clicking opens that session's transcript.
-            const tip = lane.sessions.map(s => sessionTip(s.id)).join('\n\n') +
-                (lane.anon ? '\n\nThis row is labelled by its session id because the folder it runs in is not one of your agent folders.' : '') +
-                (lane.file ? '\n\nClick to open this session.' : '') +
-                '\n\nRight-click for this session\'s actions.';
             // The row's "current" session: the live one, else the last it drew.
             const primary = lane.sessions.filter(s => LIVE_BY_ID.has(s.id)).pop() ||
                 lane.sessions[lane.sessions.length - 1];
@@ -554,16 +640,30 @@
             const sidLine = lane.anon ? ''
                 : sid ? `(${sid.slice(0, 8)})${more > 0 ? ` +${more}` : ''}`
                     : '(not named yet)';
-            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ` +
-                laneCtx(primary.id, lane.agent, 'afTimelineAgent') +
-                ` style="cursor:${lane.file ? 'pointer' : 'default'}">` +
+            // ‼️ U-67 — THE GUTTER IS DRAWN IN SVG AND ANSWERED IN HTML.
+            //
+            // The label carried a native `<title>`, which is the wrong surface
+            // twice over: what a row has to say is TEXT (a session's name, the
+            // prompt it is on, where it runs) and a platform tooltip repeats
+            // what is already on the row and then stops wherever it likes — the
+            // rule docs/CONVENTIONS.md → Hover exists for. `AFTip` is HTML and
+            // an `<svg>` cannot hold HTML, so the trigger is a transparent HTML
+            // box laid over the gutter: the `.chartbox svg` rule is
+            // `width:100%; height:auto` on a viewBox, so the drawing scales with
+            // no letterboxing and a percentage of the wrapper IS the SVG's own
+            // coordinate. The box carries the row's click and its right-click
+            // too — one element answering for the label rather than two that
+            // can disagree about which session they mean.
+            out += `<g class="lanelabel">` +
                 `<circle class="${C.esc(window.AFEngine.cls(laneEng))}" cx="7.5" cy="${y + 10}" r="3.5"` +
                 ` fill="var(--af-engc, currentColor)" opacity="0.95"/>` +
                 `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 13 ? name.slice(0, 12) + '…' : name)}</text>` +
                 (sidLine
                     ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
-                    : '') +
-                `<title>${C.esc('Engine: ' + window.AFEngine.label(laneEng) + '\n\n' + tip)}</title></g>`;
+                    : '') + '</g>';
+            hots.push(laneHotHtml(lane, primary, laneEng, {
+                top: ((y - 2) / H) * 100, height: (30 / H) * 100, width: (labelW / W) * 100
+            }));
             // ‼️ THE CONTROLS BELONG TO THIS ROW'S SESSION AND TO NOTHING ELSE
             // (U-66). They used to carry `data-agent`, so an agent with three
             // concurrent rows showed one setting three times and a click on any
@@ -675,7 +775,11 @@
 
         // now line
         out += `<line x1="${x(now)}" y1="${padT - 4}" x2="${x(now)}" y2="${H - 6}" stroke="var(--vscode-charts-red, #f14c4c)" stroke-width="1.5" opacity="0.8"/>`;
-        return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
+        // ‼️ U-67 — the gutter's hover/click boxes ride OVER the drawing, in a
+        // relatively positioned wrapper, so their percentages resolve against
+        // exactly the box the SVG was scaled into.
+        return `<div class="lanes-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`
+            + hots.join('') + '</div>';
     }
 
     // Density view: per-lane bucket bars (tools green + prompts blue stacked,
