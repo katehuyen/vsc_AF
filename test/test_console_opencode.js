@@ -361,7 +361,7 @@ const rows = (s, role) => s.messages.filter(m => m.role === role);
         // Take the auto-answer off this one call so the refusal can be staged.
         const original = c._auto;
         c._auto = () => { };
-        host.setModel(id, 'nope');
+        host.setModel(id, 'opencode/nemotron-3.5-lightning-free');
         await settle(2);
         const cfg = c.sent('session/set_config_option').pop();
         c.push({ jsonrpc: '2.0', id: cfg.id, error: { code: -32602, message: 'Invalid params', data: { configId: { _errors: ['expected string'] } } } });
@@ -369,7 +369,17 @@ const rows = (s, role) => s.messages.filter(m => m.role === role);
         c._auto = original;
         ok('‼️ a refused model change becomes a line in the conversation, not a silent stderr',
             rows(host.get(id), 'error').some(m => /refused the model change/.test(m.text || '') && /configId/.test(m.text || '')));
-        ok('…and the card does NOT claim the model it did not get', host.get(id).model !== 'nope');
+        ok('…and the card does NOT claim the model it did not get',
+            host.get(id).model !== 'opencode/nemotron-3.5-lightning-free');
+
+        // ‼️ K-28 — and a model the engine never published is refused HERE,
+        // without a round trip that could only ever come back "model not found".
+        const sentBefore = c.sent('session/set_config_option').length;
+        host.setModel(id, 'nope');
+        await settle(2);
+        ok('‼️ K-28 — a model the engine does not offer is never sent to it',
+            c.sent('session/set_config_option').length === sentBefore
+            && rows(host.get(id), 'error').some(m => /does not offer "nope"/.test(m.text || '')));
         host.dispose();
     }
 
@@ -428,6 +438,28 @@ const rows = (s, role) => s.messages.filter(m => m.role === role);
         await settle();
         ok('…and the card keeps the id it was resuming',
             host.get(id).sessionId === 'ses_OLD' && host.get(id).status === 'idle');
+        host.dispose();
+    }
+
+    // ---------- ‼️ K-28: a resume is not a model change ----------
+    {
+        // The reported failure, exactly: an indexed OpenCode transcript carries
+        // `info.model.id` — the BARE `big-pickle` — while `session/load` reports
+        // `opencode/big-pickle`, so the card asked for a "change" the engine
+        // then refused: *Invalid params: model not found: big-pickle*.
+        const io = fakeRuntimeIo();
+        const host = new ConsoleHost(() => 'claude', undefined, undefined, undefined, undefined, io);
+        const id = host.start(init({ resume: 'ses_OLD', model: 'big-pickle' }));
+        await settle();
+        const c = io.children[0];
+        c.answer('session/load', { configOptions: CONFIG });
+        await settle(2);
+        ok('‼️ K-28 — resuming on the model it is already on sends NOTHING',
+            c.sent('session/set_config_option').length === 0);
+        ok('…and prints no refusal, because none was provoked',
+            rows(host.get(id), 'error').length === 0);
+        ok('…while the card takes the engine\'s own spelling, so the picker has a row',
+            host.get(id).model === 'opencode/big-pickle');
         host.dispose();
     }
 

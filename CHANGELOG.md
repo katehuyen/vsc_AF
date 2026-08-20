@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.188.0 — K-28: resuming an OpenCode session stops inventing a model change (2026-08-20)
+
+**A red line on every resume, for a change nobody asked for:** *error OpenCode refused the model change — session/set_config_option: Invalid params: model not found: big-pickle — {"providerId":"big-pickle","modelId":"big-pickle"}*.
+
+**Two spellings of one model, and the Console compared them raw.** OpenCode names a model `provider/model` and `session/load` reports `opencode/big-pickle`. Its own **export** does not: `info.model` is `{ id: "big-pickle", providerID: "opencode", variant: "default" }` — measured on this machine’s cached exports — so an indexed transcript carries the bare id. A resumed card therefore asked for `big-pickle`, the live connection said `opencode/big-pickle`, the two did not match, and `applyOpencodeConfig` read that as “the user changed the model” and sent the bare id. The engine had never published that name, so it refused it — every time.
+
+**The wanted value is now resolved against the engine’s OWN option list before anything is compared or sent.** Already published → itself. The tail of exactly one published value → that one, which is the completion the export made necessary. The tail of several → refused, never guessed: two providers offering the same model is a real shape and picking one by luck would quietly answer with a different engine’s model. Not offered at all → refused here, with a line naming what was asked and what the session is actually on, instead of a round trip that could only come back “model not found”.
+
+**So a resume on the model it is already on sends nothing at all** — and the card takes the engine’s spelling, so the model picker has a selected row instead of a name that is in no list.
+
 ## 3.187.0 — K-27: “last turn interrupted” after turns nobody interrupted (2026-08-20)
 
 **The strip above the composer said `⎋ last turn interrupted` on turns the agent had finished normally.** No Stop was pressed, the reply was complete, and the Console called it an interruption anyway — on Antigravity most visibly, and on three other engines for the same reason.

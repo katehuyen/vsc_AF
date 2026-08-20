@@ -25,7 +25,9 @@ import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
-import { OpencodeConfigOption, opencodeModelsFrom, opencodePermissionFor } from './opencode';
+import {
+    OpencodeConfigOption, opencodeModelsFrom, opencodePermissionFor, opencodeResolveOption
+} from './opencode';
 import {
     AcpChild, OpencodePermissionRequest, OpencodeRuntime, OpencodeRuntimeIo,
     opencodePromptBlocks, opencodeRuntimeArgs
@@ -1290,12 +1292,48 @@ export class ConsoleHost {
         const sessionId = h?.state.sessionId;
         if (!rt || !h?.opencode || !sessionId) { return; }
         for (const [configId, value] of [['model', want.model], ['mode', want.mode]] as const) {
-            const v = String(value ?? '').trim();
-            if (!v) { continue; }
-            // Already what the engine says it is: a call that changes nothing is
-            // a round trip and a chance to fail for no gain.
+            const asked = String(value ?? '').trim();
+            if (!asked) { continue; }
             const current = h.opencode.options.find(o => o.id === configId)?.currentValue;
-            if (current === v) { continue; }
+            /**
+             * ‼️ K-28 — IN THE ENGINE'S OWN SPELLING, BEFORE ANYTHING IS
+             * COMPARED OR SENT (see `opencodeResolveOption`). A resumed session
+             * asks for the bare `big-pickle` its transcript recorded while the
+             * connection is already on `opencode/big-pickle`, and comparing the
+             * two raw made a resume look like a model change.
+             */
+            const v = opencodeResolveOption(h.opencode.options, configId, asked);
+            if (!v) {
+                // Nothing the engine published matches. Saying so is only useful
+                // when a PERSON asked; on the startup application it means a
+                // stale name off a transcript and the engine's own current value
+                // is the right answer — the card is aligned to it instead.
+                if (quiet) {
+                    if (configId === 'model' && current && current !== h.state.model) {
+                        this.mutate(id, s => ({ ...s, model: current, pendingModel: undefined }));
+                    }
+                    continue;
+                }
+                this.mutate(id, s => ({
+                    ...s, pendingModel: undefined, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                        text: `OpenCode does not offer "${asked}" as a ${configId} on this session, so `
+                            + `nothing was changed — it is still "${current ?? 'whatever it was'}".`
+                    }]
+                }));
+                continue;
+            }
+            // Already what the engine says it is: a call that changes nothing is
+            // a round trip and a chance to fail for no gain. ‼️ K-28 — and this
+            // is where the resume now stops: same model, different spelling. The
+            // card takes the engine's spelling so the picker has a selected row.
+            if (current === v) {
+                if (configId === 'model' && h.state.model !== v) {
+                    this.mutate(id, s => ({ ...s, model: v, pendingModel: undefined }));
+                }
+                continue;
+            }
             try {
                 const options = await rt.setConfig(sessionId, configId, v);
                 this.withOpencode(id, c => ({ ...c, options }));

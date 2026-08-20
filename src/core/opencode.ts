@@ -453,6 +453,48 @@ export function opencodeModelsFrom(options: OpencodeConfigOption[]): { id: strin
     return (model?.options ?? []).map(o => ({ id: o.value, label: o.name || o.value }));
 }
 
+/**
+ * ‼️ K-28 — A VALUE THE ENGINE WILL RECOGNISE, OR NOTHING.
+ *
+ * OpenCode names a model `provider/model` — `opencode/big-pickle` — and that is
+ * what `session/new` and `session/load` report as the current value. Its own
+ * EXPORT does not: `info.model` is `{ id: "big-pickle", providerID: "opencode" }`
+ * and the id alone is what an indexed transcript carries. So a RESUMED session
+ * arrived at the Console asking for `big-pickle`, the connection said
+ * `opencode/big-pickle`, and the two not matching read as "the user changed the
+ * model" — `session/set_config_option` went out with the bare id and the engine
+ * refused a name it had never published: *Invalid params: model not found:
+ * big-pickle — {"providerId":"big-pickle","modelId":"big-pickle"}*. A red row on
+ * every resume, for a change nobody asked for.
+ *
+ * The engine's own option list is the only authority on the spelling, so the
+ * wanted value is resolved against it rather than patched with a guessed prefix:
+ *
+ * - already one of the published values → itself;
+ * - the tail of exactly one of them (`big-pickle` → `opencode/big-pickle`) →
+ *   that one, which is the completion the export made necessary;
+ * - the tail of several → **undefined**. Two providers offering the same model
+ *   is a real shape, and picking one of them by luck would silently answer with
+ *   a different engine's model;
+ * - not offered at all → undefined, because sending it is a refusal with extra
+ *   steps.
+ *
+ * An option this session never declared is left alone (returned as asked), so a
+ * config key nobody has modelled here is not swallowed by this rule.
+ */
+export function opencodeResolveOption(
+    options: OpencodeConfigOption[], configId: string, want: string
+): string | undefined {
+    const v = String(want ?? '').trim();
+    if (!v) { return undefined; }
+    const group = options.find(o => o.id === configId);
+    if (!group) { return v; }
+    const values = group.options.map(o => o.value);
+    if (values.includes(v)) { return v; }
+    const tails = values.filter(x => x.slice(x.lastIndexOf('/') + 1) === v);
+    return tails.length === 1 ? tails[0] : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Usage — SPEND and CONTEXT, and they are not the same event
 // ---------------------------------------------------------------------------

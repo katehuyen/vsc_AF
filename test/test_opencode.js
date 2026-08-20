@@ -121,6 +121,44 @@ const cfg = O.opencodeSetConfigParams('ses_x', 'model', 'opencode/hy3-free');
 ok('set_config_option says configId, not id',
     cfg.configId === 'model' && cfg.id === undefined && cfg.value === 'opencode/hy3-free');
 
+// --- K-28: the bare model id an export leaves behind ----------------------
+// Measured on this machine's own exports: `info.model` is
+// `{ id: "big-pickle", providerID: "opencode", variant: "default" }`, so an
+// indexed OpenCode transcript carries `big-pickle` while the live connection is
+// on `opencode/big-pickle`. Comparing the two raw made every RESUME look like a
+// model change, and the bare id came back as *Invalid params: model not found*.
+{
+    ok('‼️ K-28 — a bare model id is completed to the engine\'s own spelling',
+        O.opencodeResolveOption(opts, 'model', 'big-pickle') === 'opencode/big-pickle');
+    ok('…a value the engine already published is itself',
+        O.opencodeResolveOption(opts, 'model', 'opencode/big-pickle') === 'opencode/big-pickle');
+    ok('…a model nobody offers resolves to nothing, rather than to a refusal',
+        O.opencodeResolveOption(opts, 'model', 'gpt-9-turbo') === undefined);
+    ok('…a mode is resolved by the same rule', O.opencodeResolveOption(opts, 'mode', 'plan') === 'plan');
+    // ‼️ Two providers offering the same model is a real shape; guessing one
+    // would silently answer with a different engine's model.
+    const twoProviders = [{
+        id: 'model', name: 'Model', category: 'c', currentValue: 'a/shared',
+        options: [{ value: 'a/shared', name: 'A' }, { value: 'b/shared', name: 'B' }]
+    }];
+    ok('‼️ …and an ambiguous tail is refused, never guessed at',
+        O.opencodeResolveOption(twoProviders, 'model', 'shared') === undefined);
+    ok('…while a config key this session never declared is left exactly as asked',
+        O.opencodeResolveOption(opts, 'reasoning', 'high') === 'high');
+    ok('…and nothing asked for is nothing to send',
+        O.opencodeResolveOption(opts, 'model', '  ') === undefined);
+}
+
+// --- K-28: and the Console compares AFTER resolving, so a resume is quiet ---
+{
+    const fs = require('fs');
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('‼️ K-28 — the wanted value is resolved before it is compared or sent',
+        /const v = opencodeResolveOption\(h\.opencode\.options, configId, asked\)/.test(host));
+    ok('…and a same-model resume takes the engine\'s spelling instead of calling it',
+        /if \(current === v\) \{[\s\S]{0,220}model: v, pendingModel: undefined/.test(host));
+}
+
 ok('initialize params declare the fs capability',
     O.opencodeInitializeParams().protocolVersion === 1
     && O.opencodeInitializeParams().clientCapabilities.fs.readTextFile === true);
