@@ -55,6 +55,7 @@
     const expanded = new Set();          // row keys with detail open
     const selected = new Set();          // "kind:id" of ticked plan rows
     let refocus = null;                  // element id to refocus after render
+    let taskGuideOpen = false;           // floating architecture guide popup
 
     const KIND = {
         schedule: { icon: '⏰', label: 'Schedule', hint: 'runs at a set time' },
@@ -1701,7 +1702,118 @@
         </div>`;
     }
 
+    function taskGuideHtml() {
+
+        return `<div class="af-snipwrap" id="af-taskguidewrap">
+            <div class="af-snipbox" style="width: min(780px, 92vw); max-height: 82vh;">
+                <div class="af-sniphead">
+                    <span style="font-weight:600; font-size:13px;">📖 Tasks, Sessions & Retry Architecture Guide</span>
+                    <span class="spacer"></span>
+                    <button class="secondary mini" id="af-taskguide-close" title="Close (Esc)">✕</button>
+                </div>
+                <div style="overflow-y: auto; padding: 14px 18px; font-size: 11.5px; line-height: 1.55; color: var(--vscode-foreground);">
+                    <div style="margin-bottom: 14px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">1. Three Core Pillars</b>
+                        <div style="margin-top: 4px;">
+                            Every unattended task or automation answers three essential questions:
+                            <ul>
+                                <li><b>Conversation:</b> Starts fresh (<code>a new session</code>) or resumes an existing thread (<code>continue an existing conversation</code>).</li>
+                                <li><b>When to Retry:</b> Waits for the 5-hour quota window reset (<code>Limit reset</code>), waits fixed intervals (1st/2nd/3rd wait), or scales via backoff/formula.</li>
+                                <li><b>What to Say:</b> Re-runs cleanly from scratch (<code>Simple</code>) or picks up an interrupted task right where it stopped (<code>Smart</code>).</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">2. Conversation & Session Continuity (S-19)</b>
+                        <table style="width:100%; border-collapse:collapse; margin-top:6px; font-size:11px;">
+                            <tr style="background:var(--vscode-editor-inactiveSelectionBackground, #3333);">
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Option</th>
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Behavior & Context</th>
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">When to Use</th>
+                            </tr>
+                            <tr>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);"><b>a new session</b></td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Starts with zero memory and a fresh Session UUID. Fully billed for all tokens.</td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Independent, routine, or clean tasks.</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);"><b>continue existing...</b></td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Resumes an existing Session ID (<code>--resume</code>). Inherits full context and files read. Only bills the delta cost of this turn (<code>resumeCostBefore</code>).</td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Continuing work previously planned or discussed in Console.</td>
+                            </tr>
+                        </table>
+                        <div style="font-size:10.5px; opacity:0.8; margin-top:4px;">
+                            <i>Note on Retry:</i> If a resumed turn hits a 5-hour quota limit, Retry ensures it sleeps until quota reset and delivers the turn to the same thread without failing.
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">3. Rate Limits, Timing & Formulas (M-3, M-10)</b>
+                        <div style="margin-top: 4px;">
+                            <ul>
+                                <li><b>Limit Reset (<code>resetAware</code>):</b> When a 5-hour usage limit is hit, the engine reads the exact reset timestamp (e.g. <i>"resets 5am"</i>) and sleeps until <code>resetAt + safetyBufferMin</code> (e.g. 05:03). <b>Applies ONLY to attempt 1</b>; subsequent attempts use interval minutes in case of transient network/API issues.</li>
+                                <li><b>1st / 2nd / 3rd Wait:</b> Set explicit wait minutes for initial attempts (e.g. 5m &rarr; 20m &rarr; 60m). Empty boxes inherit the backoff curve below.</li>
+                                <li><b>Backoff Strategy:</b> For attempt 4+ (<code>same</code>: fixed, <code>double</code>: 2x exponential, <code>linear</code>: base &times; n, <code>formula</code>: custom expression).</li>
+                                <li><b>Formula Syntax:</b> Variables <code>n</code> (attempt number), <code>prev</code> (previous wait in mins), <code>base</code> (1st wait). Functions <code>min(a,b)</code>, <code>max(a,b)</code>. Examples: <code>min(prev * 1.5, 120)</code> or <code>min(prev + 15, 60)</code>.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">4. Failure Phases & Three Prompt Types (M-10, M-12)</b>
+                        <table style="width:100%; border-collapse:collapse; margin-top:6px; font-size:11px;">
+                            <tr style="background:var(--vscode-editor-inactiveSelectionBackground, #3333);">
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Prompt Field</th>
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">When It Executes</th>
+                                <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Empty Box Behavior</th>
+                            </tr>
+                            <tr>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);"><b>1. Prompt (Initial)</b></td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Sent on the very first run of the task.</td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Required (cannot be empty).</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);"><b>2. Retry Prompt</b></td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Sent when retrying in <code>Simple</code> mode or when a task failed before doing any work (<code>not-started</code>).</td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Re-sends the <b>Initial Prompt</b> from scratch.</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);"><b>3. Continuation Prompt</b></td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Sent in <code>Smart</code> mode when a task did real work (edited files) but was cut off by a limit (<code>interrupted</code>). Injected into the SAME conversation.</td>
+                                <td style="padding:5px 8px; border:1px solid var(--vscode-widget-border, #4443);">Sends default instruction: <i>"Carry on from where you stopped. Read the transcript above and the working folder first, then finish the ORIGINAL task without redoing work already done."</i></td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">5. Safety Brakes: "If it cannot tell"</b>
+                        <div style="margin-top: 4px;">
+                            Applies when a failed task's transcript has not yet been indexed (<code>unknown</code> phase):
+                            <ul>
+                                <li><b><code>park</code> (Recommended):</b> Holds the task in yellow <code>parked</code> state until the transcript binds, then intelligently continues or retries. Zero lost or repeated work.</li>
+                                <li><b><code>simple</code>:</b> Assumes no work was done and retries immediately from scratch.</li>
+                                <li><b><code>ask</code>:</b> Posts a Notice asking you to choose whether to resume or start fresh.</li>
+                                <li><b><code>stop</code>:</b> Aborts retry entirely to prevent potential duplicate work.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">6. Quick Decision Matrix</b>
+                        <ul style="margin-top:4px;">
+                            <li><b>Overnight Heavy Task:</b> <code>Limit reset: ON</code>, <code>What a retry is: smart</code>, leave prompt boxes <b>empty</b>.</li>
+                            <li><b>Fresh Start with Alternative Prompt:</b> <code>What a retry is: simple</code>, enter instructions in <code>Retry prompt</code>.</li>
+                            <li><b>Continue Prior Conversation:</b> <code>Conversation: continue existing...</code>, enter the next step in <code>Prompt</code>.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
     function composerHtml() {
+
         if (!composer) { return ''; }
         const L = DATA.launch || {};
         const c = composer;
@@ -1919,6 +2031,7 @@
                 ${c.kind === 'schedule' || c.kind === 'trigger' ? `<label class="cbx" title="Off = it is saved but does not fire until you switch it on.">
                     <input type="checkbox" id="nt-enabled"${c.enabled ? ' checked' : ''}> switched on</label>` : ''}`}
                 <span class="spacer"></span>
+                <button class="secondary mini" id="nt-guide-btn" title="Guide: Tasks, Sessions & Retry Architecture">?</button>
                 ${ro ? '' : composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
                 ${ro ? '' : `<button id="nt-add">${c.kind === 'task'
                 ? (retry
@@ -2774,7 +2887,8 @@
             })}
             ${headerHtml(d)}
             ${tabsHtml(d)}
-            ${tab === 'plan' ? planHtml(d) : runHtml(d)}`;
+            ${tab === 'plan' ? planHtml(d) : runHtml(d)}
+            ${taskGuideOpen ? taskGuideHtml() : ''}`;
 
         window.AFHeader.wire(vscode);
         wire();
@@ -2928,6 +3042,23 @@
         byId('nt-cancel', 'click', () => closeComposer());
         byId('nt-add', 'click', () => submitComposer(false));
         byId('nt-force', 'click', () => submitComposer(true));
+        byId('nt-guide-btn', 'click', () => { taskGuideOpen = true; render(); });
+        byId('af-taskguide-close', 'click', () => { taskGuideOpen = false; render(); });
+        const guideWrap = document.getElementById('af-taskguidewrap');
+        if (guideWrap) {
+            guideWrap.addEventListener('click', e => {
+                if (e.target === guideWrap) { taskGuideOpen = false; render(); }
+            });
+        }
+        if (!window.__guideEscBound) {
+            window.__guideEscBound = true;
+            window.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && taskGuideOpen) {
+                    taskGuideOpen = false;
+                    render();
+                }
+            });
+        }
         if (composer) {
             // M-24 — a right-click in any prompt box opens the saved prompts.
             // Re-bound on every render because the form's fields come and go

@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.192.0 — in-webview task & retry architecture guide popup (2026-08-20)
+
+**The New-task form now carries its own architectural guide directly inside the webview.** A mini `?` button is placed on the action bar next to the submit buttons.
+
+**One click opens the complete architectural guide in a floating modal popover.** It details:
+- **Conversation & Session Continuity (S-19):** Fresh vs resumed session models, context inheritance, and cost isolation (`resumeCostBefore`).
+- **Timing & Quota Resolution (M-3, M-10):** Limit reset (`resetAware`) timing against 5-hour rolling windows, 1st/2nd/3rd wait intervals, and backoff growth curves & AST formulas.
+- **Failure Phases & 3-Prompt Routing (M-10, M-12):** `not-started` vs `interrupted` vs `unknown`, `Simple` vs `Smart` recovery, and Initial vs Retry vs Continuation prompts.
+- **Safety Brakes:** "If it cannot tell" resolution choices (`park`, `simple`, `ask`, `stop`).
+- **Quick Decision Matrix:** Rules of thumb for overnight heavy tasks, fresh alternative prompts, and resumed console sessions.
+
+**Dismissible without losing your draft:** Clicking outside on the backdrop, clicking the `✕` close button, or pressing `Escape` dismisses the guide immediately while keeping all half-written fields intact. Pure UI addition — zero functional backend logic touched.
+
 ## 3.191.0 — M-25: the Plan table answers when you hover it (2026-08-20)
 
 *“The tooltips in the tables don’t give anywhere near enough detail — they don’t follow our design principles.”* M-8 answered that for the **Runs** table. The **Plan** table beside it never got the same pass, and this is it, against the five names (`docs/CONVENTIONS.md`).
