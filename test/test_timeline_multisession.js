@@ -264,7 +264,7 @@ ok('cards show start time', /started \d{2}:\d{2}/.test(lastHtml));
     ok('…and any session can be cleared', lastHtml.indexOf('data-dropsess="S1"') !== -1);
     ok('the money line is on the card', lastHtml.indexOf('$0.50 · 48.2k tok · ctx 24.1k · 3 turns · opus-5') !== -1);
     ok('the work line is on the card', lastHtml.indexOf('1 prompts · 1 tools') !== -1);
-    ok('the prompt row carries full prompt in tooltip', lastHtml.indexOf('title="“fix the memory issue in auth module”"') !== -1);
+    ok('the prompt row carries full prompt in AFTip hover panel', lastHtml.indexOf('fix the memory issue in auth module') !== -1);
     ok('where it runs is on the card', lastHtml.indexOf('pid 4242 · terminal') !== -1);
     ok('the folder can be revealed', lastHtml.indexOf('data-cwd="D:/a/dev"') !== -1);
 }
