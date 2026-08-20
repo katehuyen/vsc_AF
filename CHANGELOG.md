@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.183.0 — U-78: the Live Timeline shows both sides of the conversation (2026-08-20)
+
+**A transcript with one speaker in it.** Every point on the page could say what was ASKED and none of them what came back. The page had known how to draw a reply since U-67 — the body is quoted as speech, the legend is derived from the same table — but the text never arrived: `Stop` was pushed with no detail at all, and an agent's reply had no event kind to arrive as, so it was dropped or fell into the `notify` box.
+
+**`say` is a first-class event now, and there are two sources because there are two kinds of session:**
+- **A hosted conversation is Agent Farm's own**, so each reply is mirrored in as it arrives, and the turn's last one rides on its `Stop` — a turn end says what the turn ANSWERED, not only how long it took.
+- **Claude fires its own hooks and none of them carries the assistant's text.** So at a turn end the reply is read from the **tail** of the transcript the hook already names — a quarter of a megabyte, which is comfortably more than the last lines of any turn and a cost nobody notices. A sidechain line is a subagent talking to itself and is skipped; a `text` block from before the last real user prompt belongs to a previous turn and is not claimed.
+
+**Nothing is invented.** A reply with no text draws no point, and a turn end with nothing to quote is exactly what it was before: its duration and its tool count.
+
+**‼️ And the reply is no longer drawn in the tool's colour.** Green is what a TOOL is on this page — the bars above the axis, the badge, the running segment — so a green dot for a reply put two subjects in one colour and gave the legend two entries nobody could tell apart. A tenth hue was not the answer either (the theme publishes eight chart colours and all eight are spoken for; a literal reads on one theme and not the other). **A reply is the other side of a prompt, so it is the same blue and the opposite fill:** a filled dot is what you said, a hollow ring is what came back.
+
 ## 3.182.0 — U-74: a hover panel yields to the hand (2026-08-20)
 
 **A tooltip was standing in front of a control and the control could not be used.** `Console` in the toolbar is one button that drops a two-item menu **under itself**, in exactly the place its own hover panel opens. Reach for the button and the panel is already there; press it and the panel **stays** — the pointer never left the trigger, so `:hover` never ended — with the menu behind it.

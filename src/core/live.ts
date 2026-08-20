@@ -42,6 +42,12 @@ export interface LiveSession {
 
 export type LiveEventKind =
     | 'start' | 'prompt' | 'toolStart' | 'toolEnd' | 'permission'
+    // ‼️ U-78 — `say` is HALF THE CONVERSATION, and it was the missing half.
+    // Every other kind here is something that HAPPENED to a session; this is
+    // the agent answering, which is what a reader hovering a turn came for.
+    // Without it the Live Timeline could show what was asked and never what
+    // was said back — a transcript with one speaker in it.
+    | 'say'
     | 'notify' | 'stop' | 'subagent' | 'compact' | 'end';
 
 export interface LiveEvent {
@@ -224,6 +230,81 @@ function toolResult(resp: unknown): string {
     try { return truncate(JSON.stringify(r), SAID); } catch { return ''; }
 }
 
+/* ------------------------------------------------------------------
+   ‼️ U-78 — WHAT THE AGENT SAID, FOR THE ONE ENGINE THAT DOES NOT SAY IT.
+
+   A hosted conversation is Agent Farm's own, so its replies are mirrored in
+   as they arrive (`AssistantMessage`, see `handle`). Claude fires its own
+   hooks instead, and no Claude hook carries the assistant's text — `Stop`
+   says only that a turn ended. So the one place the answer exists is the
+   transcript the hook already names, and a turn boundary is exactly when it
+   has just been written.
+
+   The read is a TAIL, not a file: a long session is tens of megabytes and
+   this runs at every turn end, on every session. A quarter of a megabyte is
+   comfortably more than the last few lines of any turn while staying a cost
+   nobody notices; if the answer is not in there, nothing is claimed.
+
+   Two things it must not do, and both are what makes a reply the SESSION's:
+   a sidechain line is a subagent talking to itself, and a `text` block that
+   comes before the last real user prompt belongs to a previous turn.
+   ------------------------------------------------------------------ */
+const TAIL_BYTES = 256 * 1024;
+
+/** The last thing the agent actually said in this transcript, or nothing. */
+export function lastSaid(file: string, read: (f: string, bytes: number) => string | undefined): string {
+    let tail: string | undefined;
+    try { tail = read(file, TAIL_BYTES); } catch { return ''; }
+    if (!tail) { return ''; }
+    const lines = tail.split('\n');
+    // The first line of a tail is normally cut in half; it is never the one.
+    for (let i = lines.length - 1; i > 0; i--) {
+        const raw = lines[i].trim();
+        if (!raw || raw[0] !== '{') { continue; }
+        let o: Record<string, unknown>;
+        try { o = JSON.parse(raw) as Record<string, unknown>; } catch { continue; }
+        if (o['isSidechain'] === true) { continue; }
+        const msg = o['message'] as { role?: string; content?: unknown } | undefined;
+        if (o['type'] === 'user') {
+            // A tool result is also a `user` line; a real prompt ends the turn
+            // we are looking back through.
+            const c = msg?.content;
+            const isToolResult = Array.isArray(c)
+                && c.some(b => (b as { type?: string })?.type === 'tool_result');
+            if (!isToolResult) { return ''; }
+            continue;
+        }
+        if (o['type'] !== 'assistant' || !msg) { continue; }
+        const c = msg.content;
+        const text = typeof c === 'string'
+            ? c
+            : (Array.isArray(c)
+                ? c.filter(b => (b as { type?: string })?.type === 'text')
+                    .map(b => String((b as { text?: string }).text ?? ''))
+                    .join('\n').trim()
+                : '');
+        if (text) { return truncate(text, SAID); }
+    }
+    return '';
+}
+
+/** The tail reader used in production — the same shape `readTail` has
+ *  everywhere else, kept injectable so the tests never touch a disk. */
+function readTailSync(file: string, bytes: number): string | undefined {
+    let fd: number | undefined;
+    try {
+        const size = fs.statSync(file).size;
+        const start = Math.max(0, size - bytes);
+        const len = size - start;
+        if (len <= 0) { return ''; }
+        fd = fs.openSync(file, 'r');
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, start);
+        return buf.toString('utf8');
+    } catch { return undefined; }
+    finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already gone */ } } }
+}
+
 export class LiveMonitor implements vscode.Disposable {
     private server?: http.Server;
     private sessionsMap = new Map<string, LiveSession>();
@@ -257,7 +338,10 @@ export class LiveMonitor implements vscode.Disposable {
         /** X-7: the running extension's version, stamped on every event and
          *  carried on the session. Optional so a test can leave it out; when it
          *  is absent nothing is written rather than a placeholder. */
-        private afVersion?: string
+        private afVersion?: string,
+        /** U-78: how the last few lines of a transcript are read at a turn end.
+         *  Injected so a test never touches a disk; production uses `fs`. */
+        private readTail: (file: string, bytes: number) => string | undefined = readTailSync
     ) {
         this.stuckTimer = setInterval(() => this.checkStuck(), 30_000);
         this.loadCleared();
@@ -752,14 +836,30 @@ export class LiveMonitor implements vscode.Disposable {
                 }
                 break;
             }
-            case 'Stop':
+            // ‼️ U-78 — THE OTHER HALF OF THE CONVERSATION. Not a Claude hook:
+            // a hosted conversation is Agent Farm's own, so its replies are
+            // mirrored in as they arrive (mirrorConsoleToLive). Empty is
+            // dropped rather than drawn — a point with nothing to say is worse
+            // than no point.
+            case 'AssistantMessage': {
+                const said = truncate((payload.message ?? '').trim(), SAID);
+                if (said) { this.push(s, 'say', undefined, said); }
+                break;
+            }
+            case 'Stop': {
                 s.status = 'waiting-input';
                 s.currentTool = undefined;
-                this.push(s, 'stop');
+                // What the turn ENDED with. The mirror hands it over; Claude's
+                // own hook does not carry it, so it is read from the transcript
+                // the hook already names (lastSaid).
+                const ended = truncate((payload.message ?? '').trim(), SAID)
+                    || (s.transcriptPath ? lastSaid(s.transcriptPath, this.readTail) : '');
+                this.push(s, 'stop', undefined, ended || undefined);
                 if (cfg.notifyTurnEnd) {
                     this.notify('info', `${this.labelOf(s)} finished its turn`, s.lastPrompt ?? '');
                 }
                 break;
+            }
             case 'SubagentStop':
                 s.subagentStops++;
                 this.push(s, 'subagent');

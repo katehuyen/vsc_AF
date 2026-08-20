@@ -699,7 +699,16 @@
 
     const MARK_STYLE = {
         prompt:     { color: 'var(--vscode-charts-blue, #3794ff)',   shape: 'circle',  label: 'prompt' },
-        say:        { color: 'var(--vscode-charts-green, #4caf50)',  shape: 'circle',  label: 'agent reply' },
+        // ‼️ U-78 — A REPLY IS THE PROMPT'S OWN COLOUR, HOLLOW. It was green,
+        // which is what a TOOL is on this page (the bars above the axis, the
+        // tool badge, the running segment) — two different subjects in one
+        // colour, and a legend with two entries nobody could tell apart. A
+        // tenth hue was not the answer either: the theme publishes eight chart
+        // colours and all eight are spoken for, so a literal would have been a
+        // colour that reads on one theme and not the other. A reply is the
+        // other side of a PROMPT, so it is the SAME blue and the opposite
+        // fill: one conversation, two directions, legible on any theme.
+        say:        { color: 'var(--vscode-charts-blue, #3794ff)',   shape: 'ring',    label: 'agent reply' },
         permission: { color: 'var(--vscode-charts-red, #f14c4c)',    shape: 'diamond', label: 'permission wait' },
         stop:       { color: 'var(--vscode-charts-foreground, #ccc)',shape: 'tick',    label: 'turn end' },
         notify:     { color: 'var(--vscode-charts-yellow, #cca700)', shape: 'circle',  label: 'notification' },
@@ -924,6 +933,9 @@
                     out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}"/>`;
                 } else if (st.shape === 'tick') {
                     out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2"/>`;
+                } else if (st.shape === 'ring') {
+                    // The same dot, unfilled — a reply against its prompt.
+                    out += `<circle cx="${mx}" cy="${my}" r="3.6" fill="none" stroke="${st.color}" stroke-width="2"/>`;
                 } else {
                     out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}"/>`;
                 }
@@ -1150,7 +1162,9 @@
               `<span><i style="background:var(--vscode-charts-red,#f14c4c);width:16px;border-radius:3px"></i>permission waits (top strip)</span>` +
               `<span class="muted">bar height = activity (√ scale) per ${Math.round((winMs / 168) / 60000)}min bucket</span>`
             : Object.entries(MARK_STYLE).map(([k, v]) =>
-                `<span><i style="background:${v.color};${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
+                `<span><i style="${v.shape === 'ring'
+                    ? `background:transparent;border:2px solid ${v.color};box-sizing:border-box;`
+                    : `background:${v.color};`}${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
               `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
 
         document.getElementById('app').innerHTML = `${STYLE}

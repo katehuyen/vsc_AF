@@ -12674,7 +12674,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *   · **The engine is stated** (`HookPayload.engine`), because a hosted
      *     thread id is minted by the engine and cannot be parsed for one.
      */
-    const liveMirror = new Map<string, { status: string; msgs: number; openTool?: string }>();
+    const liveMirror = new Map<string, { status: string; msgs: number; openTool?: string; said?: string }>();
     const mirrorConsoleToLive = (id: string): void => {
         const s = consoleHost.get(id);
         if (!s) { return; }
@@ -12710,6 +12710,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...base, hook_event_name: 'PreToolUse',
                     tool_name: m.tool.name, tool_input: { description: m.tool.detail }
                 });
+            } else if (m.role === 'agent') {
+                // ‼️ U-78 — WHAT THE AGENT SAID. Half the conversation was
+                // never mirrored at all, so the Live Timeline could show what
+                // was asked and never what came back. The last one is kept so
+                // the turn's closing point can carry the ANSWER rather than
+                // only its duration.
+                closeTool();
+                const said = (m.text ?? '').trim();
+                if (said) {
+                    seen.said = said;
+                    live.handle({ ...base, hook_event_name: 'AssistantMessage', message: said });
+                }
             } else if (m.role === 'error' || m.isError) {
                 closeTool();
             }
@@ -12725,7 +12737,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 liveMirror.delete(id);
             } else if (s.status === 'idle' && (seen.status === 'working' || seen.status === 'starting')) {
                 closeTool();
-                live.handle({ ...base, hook_event_name: 'Stop' });
+                // The turn's closing point says what the turn ANSWERED, not
+                // only how long it took (U-78). Consumed, so the next turn's
+                // end cannot repeat the previous turn's reply.
+                live.handle({ ...base, hook_event_name: 'Stop', message: seen.said });
+                seen.said = undefined;
             }
             seen.status = s.status;
         }

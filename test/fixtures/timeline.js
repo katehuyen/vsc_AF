@@ -195,7 +195,12 @@ const events = () => {
     push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'toolStart', 16,
         { tool: 'Read', detail: 'Backlog.md' });
     push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'toolEnd', 14, { tool: 'Read' });
-    push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'stop', 2);
+    // U-78: the other half of the conversation. A hosted session's replies are
+    // mirrored in as they arrive, and the turn's last one rides on its `stop`.
+    push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'say', 10,
+        { detail: 'There are 31 open items. The top of the queue is U-74, U-78 and U-76 — all three are interface work.' });
+    push('agy-9d21c4e7-55ab-4f01-8c33-77e0a1b2c3d4', 'basit', 'agy', 'stop', 2,
+        { detail: 'There are 31 open items. The top of the queue is U-74, U-78 and U-76 — all three are interface work.' });
 
     // Gemini in a terminal — the window opening, and nothing else.
     push('cli:gemini:psikolog:1786000000000', 'psikolog', 'gemini', 'start', 7);
