@@ -85,15 +85,14 @@
         /**
          * How tall the writing box was dragged, in whole pixels.
          *
-         * ‼️ K-9 — A NUMBER THE PAGE OWNS, FROM A GESTURE THE PAGE OWNS.
-         * It is applied as a custom property on the document root, which no
-         * rebuild of the composer can touch, and it is clamped on the way in
-         * and on the way out so a stored figure can never raise the ceiling.
-         * The gesture is the composer's own grab bar, not the textarea's
-         * `resize` grip: this box grows upward out of the bottom of the window,
-         * and the engine's own resize arithmetic cannot survive a box that
-         * moves while it is being measured (`AFTextTools.keepHeight`).
-         * 0 means "never dragged — the layout decides".
+         * ‼️ K-9 — A NUMBER THE PAGE OWNS, NOT AN INLINE STYLE IT HOPES SURVIVES.
+         * The drag handle writes an inline height and `buildShell` writes the
+         * whole composer from scratch, so the height had to be put back by hand
+         * after every rebuild and anything landing between the two won instead.
+         * It is applied as a custom property on the document root now, which no
+         * rebuild touches, and it is clamped on the way in and on the way out so
+         * a stored figure can never raise the ceiling the css sets — the two
+         * halves of K-9, in `AFTextTools.keepHeight`. 0 means "never dragged".
          */
         boxH: 0,
         // is the miniature filter open, and what is it asking for
@@ -475,17 +474,6 @@
         .msg.ask .body { border-left:2px solid var(--vscode-focusBorder,#3794ff); padding-left:7px; }
         .composer { margin-top:8px; flex:none; border:1px solid var(--vscode-widget-border,#4443);
             border-radius:8px; padding:8px; }
-        /* ‼️ K-9 — THE ONE PLACE THIS BOX'S HEIGHT IS SET. It rides on the
-           composer's top edge, which is the edge that actually moves when the
-           box grows, so the bar stays under the pointer one-for-one. It bleeds
-           into the padding so the whole edge is grabbable rather than a corner
-           the size of a fingernail. */
-        .cgrabw { display:block; margin:-8px -8px 6px; }
-        .cgrab { display:flex; align-items:center; justify-content:center; height:10px;
-            cursor:ns-resize; touch-action:none; border-radius:7px 7px 0 0; }
-        .cgrab i { display:block; width:34px; height:3px; border-radius:2px;
-            background:currentColor; opacity:.2; transition:opacity .1s linear, width .1s linear; }
-        .cgrab:hover i, .cgrab:active i { opacity:.62; width:56px; }
         /* The project chip. Quiet by design — it is a statement of fact about
            every message sent from this box, not a control. It is what the user
            hovers to READ THE TEXT the session is being given, which is the only
@@ -529,22 +517,24 @@
         .pbadge { font-size:9px; opacity:.75; padding:0 4px; border-radius:7px;
             border:1px solid var(--vscode-widget-border,#4443); }
         /* ‼️ THE HEIGHT YOU DRAG IS A SETTING, NOT A SIDE EFFECT (see st.boxH).
-           The ceiling is 70vh — the conversation above is a min-height:0 flex
-           scroller, so it yields the room and the composer never leaves the
+           Three things used to throw it away. The ceiling was 30vh, so a drag
+           past a third of the window did nothing and the handle just stopped
+           under the cursor — it read as "it snapped back". The height a drag
+           sets is an INLINE style on the element, which buildShell replaces, so
+           it had to be put back by hand after every rebuild and whatever ran in
+           between won instead. And the figure that was put back was never
+           checked against the ceiling, so a box that snapped back came back
+           taller each time until it could cover the page.
+           Now: the ceiling is 70vh — the conversation above is a min-height:0
+           flex scroller, so it yields the room and the composer never leaves the
            window — and the height is --af-boxh, a custom property on the
            document root that no rebuild can touch, clamped both ways by
            AFTextTools.keepHeight. The box is born its own size. The fallback is
-           auto and not a figure: a box that was never dragged keeps the size
-           the layout gives it, exactly as it would with no property at all.
-
-           ‼️ AND IT HAS NO RESIZE GRIP OF ITS OWN. It is the last child of a
-           bottom-anchored flex column: every pixel it gains moves its own top
-           up by a pixel, and the engine's resize measures the pointer inside
-           the box it is moving — so a pull downwards asked for a pixel, got a
-           pixel, and then asked for it again. The grab bar below is the only
-           thing that sets this height. */
+           auto and not a figure: a box that was never dragged must keep the
+           size the layout gives it, exactly as it did before there was a
+           property at all. */
         .composer textarea { width:100%; height:var(--af-boxh, auto);
-            min-height:64px; max-height:70vh; font:inherit;
+            min-height:64px; max-height:70vh; resize:vertical; font:inherit;
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
@@ -2783,38 +2773,6 @@
         return (em && em.note) || '';
     }
 
-    /**
-     * ‼️ K-9 — THE WRITING BOX'S GRAB BAR.
-     *
-     * The composer sits on the floor of the window and grows upwards, so the
-     * edge that moves is its TOP edge and that is where the grip belongs — the
-     * bar stays under the pointer for the whole drag instead of running away
-     * from it, and "make it taller" is a pull towards the conversation you are
-     * making room for. `boxHeadline` is MIRROR: the control's current value on
-     * the panel's first line, kept true during the drag by `onDrag`.
-     */
-    function boxHeadline(px, min, cap) {
-        return px ? `Writing box — ${px} px (of ${min}–${cap})`
-            : `Writing box — the size the layout gives it (${min}–${cap} once dragged)`;
-    }
-
-    function grabHtml() {
-        return window.AFTip.wrap(
-            '<span class="cgrab" id="c-grab" role="separator" aria-orientation="horizontal"'
-            + ' aria-label="Drag to resize the writing box"><i></i></span>',
-            boxHeadline(st.boxH, 64, Math.round((window.innerHeight || 0) * 0.7)),
-            window.AFTip.lines([
-                'Drag up for a taller writing box, down for a shorter one.',
-                'Double-click to hand the height back to the layout.',
-                '',
-                'The size you set is yours: it survives a repaint, a change of session,'
-                + ' a reload of this page and a restart of the editor.',
-                'The ceiling is 70% of the window — the conversation above gives up its'
-                + ' room, so the box can never push the controls off the bottom.'
-            ]),
-            'cgrabw');
-    }
-
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
             `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(o.detail || '')}">${C.esc(o.label || o.id)}</option>`).join('');
@@ -3009,7 +2967,6 @@
                     <div class="askbox" id="c-ask"></div>
                     <div class="working" id="c-working"></div>
                     <div class="composer" id="c-composer">
-                        ${grabHtml()}
                         <div id="c-project"></div>
                         <div class="qwait" id="c-queue"></div>
                         <div class="chips" id="c-chips"></div>
@@ -3067,25 +3024,10 @@
             // writes the height ITS box had into the same slot, and that is a
             // height coming back on its own long after the box it belonged to.
             if (stopBoxH) { stopBoxH(); }
-            const grab = document.getElementById('c-grab');
-            const grabHead = grab && grab.parentElement
-                && grab.parentElement.querySelector('.af-tiph');
-            // A drag is sixty writes a second and each one is a read-modify-write
-            // of the whole page state; the figure is live in `st` immediately and
-            // reaches storage once the hand stops.
-            let saveT = null;
             stopBoxH = window.AFTextTools.keepHeight({
                 el: text, varName: '--af-boxh', min: 64,
-                handle: grab, grow: 'up',
                 read: () => st.boxH,
-                write: px => {
-                    st.boxH = px;
-                    if (saveT) { clearTimeout(saveT); }
-                    saveT = setTimeout(() => { saveT = null; save(); }, 150);
-                },
-                onDrag: (px, min, cap) => {
-                    if (grabHead) { grabHead.textContent = boxHeadline(px, min, cap); }
-                }
+                write: px => { st.boxH = px; save(); }
             });
             // Only here — never on a data update. Focusing scrolls the element
             // into view, which is exactly the "it dragged me back down" bug.

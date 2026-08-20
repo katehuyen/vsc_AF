@@ -66,21 +66,6 @@ function sandbox() {
         ctx, root, win, observers,
         keep: o => ctx.window.AFTextTools.keepHeight(o),
         box: () => ({ style: { height: '' } }),
-        /** A grab bar: listens, forgets, and reports what it was pointed at. */
-        handle: () => {
-            const l = {};
-            return {
-                addEventListener: (t, fn) => { (l[t] = l[t] || []).push(fn); },
-                removeEventListener: (t, fn) => {
-                    const a = l[t] || [];
-                    const i = a.indexOf(fn);
-                    if (i >= 0) { a.splice(i, 1); }
-                },
-                setPointerCapture: () => { /* the real one keeps moves coming */ },
-                releasePointerCapture: () => { /* … and this gives them back */ },
-                fire: (t, ev) => (l[t] || []).slice().forEach(fn => fn(ev || {}))
-            };
-        },
         /** what a real resize handle does, then what the browser does after it */
         drag: (el, px) => { el.style.height = px + 'px'; observers.forEach(o => { if (!o.dead && o.targets.indexOf(el) >= 0) { o.fn(); } }); }
     };
@@ -189,84 +174,6 @@ const varOf = s => s.root.style.map['--af-boxh'];
         && !/new ResizeObserver\(\(\) => \{\s*\n\s*const h = \w+\.style\.height;/.test(projects));
     ok('…and each states its ceiling in css as well, so the two cannot disagree',
         /max-height:70vh/.test(console_) && /max-height:70vh/.test(projects));
-}
-
-// ---- the bar the page drags itself, for the box the engine cannot measure ---
-//
-// ‼️ THE COMPOSER GROWS UPWARDS OUT OF THE BOTTOM OF THE WINDOW, so its own top
-// moves while it is being dragged — and the engine's resize takes the height
-// from where the pointer falls INSIDE the box it is moving. Pull down: the box
-// gains a pixel, its top rises a pixel, the pointer is a pixel deeper, and it
-// gains another. Here the arithmetic is ours: one anchor at pointerdown, every
-// move measured against that anchor and against nothing that moves.
-{
-    const s = sandbox();
-    let stored = 0;
-    const el = s.box();
-    el.getBoundingClientRect = () => ({ height: 120 });
-    const bar = s.handle();
-    const seen = [];
-    const stop = s.keep({
-        el, handle: bar, grow: 'up', varName: '--af-boxh', min: 64,
-        read: () => stored, write: px => { stored = px; },
-        onDrag: px => seen.push(px)
-    });
-    // Never dragged: the anchor is the height the layout gave it.
-    bar.fire('pointerdown', { clientY: 500, pointerId: 1 });
-    bar.fire('pointermove', { clientY: 400 });
-    ok('‼️ dragging the bar UP makes the box taller, one pixel for one pixel',
-        stored === 220 && varOf(s) === '220px');
-    // The runaway this replaces: the same pointer position asked for twice must
-    // ask for the same height, however far the box has already travelled.
-    bar.fire('pointermove', { clientY: 400 });
-    bar.fire('pointermove', { clientY: 400 });
-    ok('‼️ …and a pointer that has not moved cannot make it grow', stored === 220);
-    bar.fire('pointermove', { clientY: 450 });
-    ok('…coming back down is the same subtraction, not an undo of a total',
-        stored === 170);
-    bar.fire('pointermove', { clientY: -700 });
-    ok('‼️ …and the ceiling holds DURING the drag, not after it',
-        stored === 700 && varOf(s) === '700px');
-    bar.fire('pointermove', { clientY: 900 });
-    ok('…as does the floor', stored === 64);
-    ok('the bar is told every figure it sets, so its panel can say the truth',
-        seen.length > 3 && seen[seen.length - 1] === 64);
-    bar.fire('pointerup', { pointerId: 1 });
-    bar.fire('pointermove', { clientY: 100 });
-    ok('‼️ …and with the button up the bar is deaf: a stray move resizes nothing',
-        stored === 64);
-    ok('‼️ nothing wrote an inline height — this figure lives in one place',
-        el.style.height === '');
-    // A later drag starts from the STORED figure rather than the measured one:
-    // the same number when nothing is going on, and not the same while a
-    // repaint is still catching up.
-    bar.fire('pointerdown', { clientY: 300, pointerId: 2 });
-    bar.fire('pointermove', { clientY: 200 });
-    ok('a later drag picks up from the height that was set, not from the layout',
-        stored === 164);
-    bar.fire('dblclick', {});
-    ok('‼️ double-click hands the height back to the layout',
-        stored === 0 && varOf(s) === undefined);
-    stop();
-    bar.fire('pointerdown', { clientY: 300, pointerId: 3 });
-    bar.fire('pointermove', { clientY: 100 });
-    ok('…and a stopped keeper lets go of the bar as well as of the window',
-        stored === 0);
-}
-
-// ---- a box with a bar keeps no observer, so nothing reads a height nobody set
-{
-    const s = sandbox();
-    let stored = 0;
-    const el = s.box();
-    el.getBoundingClientRect = () => ({ height: 100 });
-    s.keep({
-        el, handle: s.handle(), grow: 'up', varName: '--af-boxh', min: 64,
-        read: () => stored, write: px => { stored = px; }
-    });
-    s.drag(el, 900);
-    ok('‼️ an inline height from anywhere else is not a setting and is not stored',
-        stored === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
