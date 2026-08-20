@@ -406,6 +406,7 @@
 
     const MARK_WORDS = {
         prompt: 'You wrote',
+        say: 'The agent replied',
         permission: 'Waiting for permission',
         stop: 'The agent finished its turn',
         notify: 'Notification',
@@ -421,7 +422,7 @@
         const head = title + ' · ' + fmtClock(m.ts);
         const bodyParts = [];
         if (m.detail) {
-            bodyParts.push(m.kind === 'prompt' ? `“${m.detail}”` : m.detail);
+            bodyParts.push((m.kind === 'prompt' || m.kind === 'say' || m.kind === 'stop') ? `“${m.detail}”` : m.detail);
         }
         if (m.kind === 'stop' && m.turnMs) {
             bodyParts.push(`That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`);
@@ -440,23 +441,28 @@
 
     /** One tool bar: concise execution time and target, without huge payload dumps or boilerplate. */
     function segTip(seg, lane, laneEng) {
-        const when = seg.unfinished
-            ? `${fmtClock(seg.start)} → unfinished: no end event ever arrived (last event ${fmtClock(seg.end)})`
+        const timeRange = seg.unfinished
+            ? `${fmtClock(seg.start)} → unfinished (no end event ever arrived)`
             : `${fmtClock(seg.start)} → ${seg.live
-                ? (seg.stale ? 'still running? last event ' + fmtClock(seg.end) : 'running')
-                : fmtClock(seg.end)} (${fmtDur(Math.max(1000, seg.end - seg.start))})`;
+                ? (seg.stale ? 'stalled? last ' + fmtClock(seg.end) : 'running')
+                : fmtClock(seg.end)}`;
+        const head = `${seg.tool} · ${fmtDur(Math.max(1000, seg.end - seg.start))} (${timeRange})`;
 
-        const bodyParts = [when];
-        if (seg.said) { bodyParts.push(seg.said); }
+        const bodyParts = [];
+        if (seg.said) {
+            bodyParts.push(seg.said);
+        } else if (!seg.unfinished && !seg.result) {
+            bodyParts.push(seg.tool);
+        }
         if (seg.unfinished) {
-            bodyParts.push('Status: Unfinished / in-progress.');
+            bodyParts.push('Status: Unfinished / in-progress (no end event ever arrived).');
         } else if (seg.result && /error|failed|stderr|exit code [1-9]/i.test(seg.result)) {
             bodyParts.push('Error: ' + seg.result);
         }
 
         return {
-            head: seg.tool + ' · ' + fmtDur(Math.max(1000, seg.end - seg.start)),
-            body: bodyParts.join(' · ')
+            head: head,
+            body: panelBody(bodyParts)
         };
     }
 
@@ -693,6 +699,7 @@
 
     const MARK_STYLE = {
         prompt:     { color: 'var(--vscode-charts-blue, #3794ff)',   shape: 'circle',  label: 'prompt' },
+        say:        { color: 'var(--vscode-charts-green, #4caf50)',  shape: 'circle',  label: 'agent reply' },
         permission: { color: 'var(--vscode-charts-red, #f14c4c)',    shape: 'diamond', label: 'permission wait' },
         stop:       { color: 'var(--vscode-charts-foreground, #ccc)',shape: 'tick',    label: 'turn end' },
         notify:     { color: 'var(--vscode-charts-yellow, #cca700)', shape: 'circle',  label: 'notification' },
