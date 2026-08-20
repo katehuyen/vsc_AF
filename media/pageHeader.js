@@ -172,7 +172,7 @@
         const tip = String(o.tip || '').trim();
         const btn = `<button class="${cls}" ${o.attrs || ''}${aria}`
             + `${tip ? '' : ` title="${name}"`}>${inner}${o.after || ''}</button>`;
-        return window.AFTip ? window.AFTip.wrap(btn, name, tip, 'af-tipw-nav') : btn;
+        return window.AFTip ? window.AFTip.wrap(btn, name, tip, 'af-tipw-nav', o.wrapAttrs || '') : btn;
     }
 
     // Notices ↔ Queue read as two tabs of ONE inbox. Both pages render this strip
@@ -301,6 +301,13 @@
                 const trigger = navBtn({
                     label: label, name: plain, icon: n.icon,
                     attrs: `data-afclaim="${n.id}" aria-haspopup="true" aria-expanded="false"`,
+                    // ‼️ U-74 — WHILE THE MENU IS OPEN THE BUTTON HAS NOTHING TO
+                    // EXPLAIN. Its panel and its menu occupy the same few pixels
+                    // under the button, so a panel here is a paragraph standing
+                    // in front of the choice being made. The press itself is
+                    // handled by afTip.js; this covers coming BACK to the button
+                    // with the menu still down.
+                    wrapAttrs: 'data-aftip-mute=".af-claim.af-claim-open"',
                     after: ' ▾',
                     tip: (claim.title ? claim.title + '\n\n' : '')
                         + `A menu: “${claim.label}”, or ${plain} itself.\n\n${n.tip || ''}`
@@ -413,16 +420,26 @@
         // above). Any click elsewhere, or Escape, closes it.
         const closeClaims = () => document.querySelectorAll('[data-afclaimmenu]').forEach(m => {
             m.hidden = true;
+            if (m.parentElement) { m.parentElement.classList.remove('af-claim-open'); }
             const btn = m.parentElement && m.parentElement.querySelector('[data-afclaim]');
             if (btn) { btn.setAttribute('aria-expanded', 'false'); }
         });
         document.querySelectorAll('[data-afclaim]').forEach(b =>
             b.addEventListener('click', ev => {
                 ev.stopPropagation();
-                const menu = b.parentElement.querySelector('[data-afclaimmenu]');
+                // The button is wrapped in an AFTip wrapper, so the menu is not
+                // its sibling any more — it is the wrapper's.
+                const box = b.closest('.af-claim') || b.parentElement;
+                const menu = box && box.querySelector('[data-afclaimmenu]');
                 const open = menu && menu.hidden;
                 closeClaims();
-                if (menu && open) { menu.hidden = false; b.setAttribute('aria-expanded', 'true'); }
+                if (menu && open) {
+                    menu.hidden = false;
+                    // U-74: the state the button's own hover panel reads to know
+                    // it is standing in front of a choice.
+                    box.classList.add('af-claim-open');
+                    b.setAttribute('aria-expanded', 'true');
+                }
             }));
         document.querySelectorAll('[data-afclaimgo]').forEach(b =>
             b.addEventListener('click', () => {

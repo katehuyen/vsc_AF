@@ -373,6 +373,32 @@ span.af-tipw { display: inline; }
    the edge it applies to. */
 .af-tipw.af-up > .af-tip { top: auto; bottom: 100%; }
 .af-tipw.af-left > .af-tip { left: auto; right: 0; }
+/* ‼️ U-74 — A PANEL YIELDS THE MOMENT THE HAND STARTS WORKING (afTip.js).
+   `Console` in the toolbar is one button that drops a menu under itself, in
+   exactly the place its own panel opens: press it and the panel was still
+   standing — the pointer never left the trigger, so `:hover` never ended — and
+   the menu was behind it. The control could not be used at all. So a press
+   mutes the trigger under it until the pointer leaves: no fade (it is not
+   closing, it is getting out of the way) and no box, because a box that is
+   merely invisible still widens the document (A-12).
+
+   ‼️ `!important`, and it is the one place in this sheet that earns it —
+   MEASURED, not assumed. Coming last is not enough: `:not(.tip-free)` counts as
+   a class, so the ordinary show rule is 0,4,0 against this one's 0,3,0 and won
+   the cascade outright. Every string test passed and a real browser computed
+   `visible`. Chasing that with more classes would leave the same trap for the
+   next rule somebody adds above it, and the meaning here really is absolute:
+   the reader is doing something else, so NOTHING else gets to say the panel is
+   open. */
+.af-tipw.af-mute > .af-tip, .af-tipw.af-mute > .af-tip:hover {
+    visibility: hidden !important; opacity: 0 !important; transition-delay: 0s !important;
+    min-width: 0 !important; max-width: 0 !important; max-height: 0 !important;
+    padding: 0 !important; border-width: 0 !important; overflow: hidden !important;
+}
+/* ‼️ U-74 — AND A TRIGGER YOU PRESS OPENS SLOWER, so aiming at a control and
+   pressing it never sees a panel in the first place. afTip.js writes the class
+   from what the pointer is actually on; no page asks for it. */
+.af-tipw.tip-act:not(.tip-free):hover > .af-tip { transition-delay: .6s; }
 .af-tiph {
     display: block; margin-bottom: 6px; padding-bottom: 5px;
     font-size: 10px; opacity: .6; white-space: normal;

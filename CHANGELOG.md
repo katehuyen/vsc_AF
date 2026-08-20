@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.182.0 — U-74: a hover panel yields to the hand (2026-08-20)
+
+**A tooltip was standing in front of a control and the control could not be used.** `Console` in the toolbar is one button that drops a two-item menu **under itself**, in exactly the place its own hover panel opens. Reach for the button and the panel is already there; press it and the panel **stays** — the pointer never left the trigger, so `:hover` never ended — with the menu behind it.
+
+**A panel answers a question the reader has while they are LOOKING.** The moment they stop looking and start WORKING it has nothing left to say and everything to be in the way of. So `media/afTip.js` now does this for every hover surface in the extension, with nothing asked of the page:
+
+- **A press mutes the trigger under it**, with no fade and no box, until the pointer **leaves that wrapper**. Coming back is a new hover and waits the full delay again — a panel that reopens under a hand mid-gesture is the bug, not the fix.
+- **A press INSIDE the panel is exempt.** Selecting a line of a prompt is reading, not leaving.
+- **A key does the same** — Escape, or typing anywhere: the pointer is only resting.
+- **A trigger you can press opens slower** (.6s against the ordinary .25s; 700ms against 420ms on `tip-free`), so aiming at a control and pressing it never sees a panel at all. Written from what the pointer is actually on — a `button`, an `a[href]`, a menu item, or anything carrying `data-aftipact`.
+- **A control whose own list is open has nothing to explain**: `data-aftip-mute` is now honoured on the ordinary panel as well as on `tip-free`, and the claimed nav button uses it, so coming back to `Console` while its menu is down stays silent.
+
+**And the menu itself was broken, which nothing had noticed.** Wrapping the button in a hover panel made the menu the WRAPPER's sibling rather than the button's, and the handler still looked at `parentElement` — so `Console ▾` opened nothing at all. It opens now, and says so in `aria-expanded`.
+
+**‼️ This is a design principle, not a fix to one button:** `docs/CONVENTIONS.md` → "Hover" now opens with it, and it is the first question when a new hover surface is designed — *what will the reader press under this, and will the panel be gone before their hand arrives?*
+
+New: `node test/live_header.js [--check]` — the real header running in a real browser, because `:hover` needs a pointer no string test has. It is what caught this release's own second defect: the mute rule lost the cascade to `:not(.tip-free)` (which counts as a class) while every string assertion passed.
+
 ## 3.181.0 — U-67: Live Timeline tooltips streamlined per Design Principles (2026-08-20)
 
 **The lane header and timeline points each answer for their own role (ONE SUBJECT & DENSITY):**

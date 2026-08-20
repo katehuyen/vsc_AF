@@ -109,6 +109,101 @@
     const doc = typeof document === 'object' && document ? document : null;
 
     /* ------------------------------------------------------------------
+       ‼️ U-74 — A HOVER PANEL YIELDS TO THE HAND. THIS IS THE FIRST RULE OF
+       THIS COMPONENT, BEFORE ANYTHING ABOUT WHERE IT OPENS OR HOW IT LOOKS.
+
+       A panel exists to answer a question the reader has while they are LOOKING.
+       The moment they stop looking and start WORKING — a press, a key — it has
+       nothing left to say and everything to be in the way of. The toolbar
+       proved it: `Console` is one button that drops a two-item menu under
+       itself, and the panel explaining the button opens in exactly the same
+       place. Reach for the button, the panel is already there; press it, the
+       panel stays (the pointer never left the trigger, so `:hover` never
+       ended) and the menu is behind it. The control could not be used at all.
+
+       Two halves, both of them here rather than at the call sites, because a
+       rule a page has to remember is a rule the next page will not have:
+
+       1. A PRESS MUTES THE TRIGGER UNDER IT. `af-mute` closes the panel with no
+          fade and takes its box away, and it lasts until the pointer LEAVES
+          that wrapper — so the panel does not simply reopen under the hand that
+          is mid-gesture. Coming back later is a new hover and waits the full
+          delay again. A press INSIDE the panel is exempt: selecting a line of a
+          prompt is reading, not leaving.
+       2. A TRIGGER YOU CAN PRESS OPENS SLOWER. `tip-act` is written from what
+          the pointer is actually on — a button, a link, a menu item — and
+          doubles the delay, so the ordinary act of aiming at a control and
+          pressing it never sees a panel at all. Nothing is passed in for this;
+          the DOM already says which things are pressed.
+
+       `data-aftip-mute` (below, U-61) is honoured on this path too, not only on
+       `tip-free`: a control whose own list is open covers its explanation, and
+       that is true whichever kind of panel explains it.
+       ------------------------------------------------------------------ */
+    /** What "you press this" looks like in the DOM. Anything a page invents gets
+     *  in by carrying `data-aftipact` rather than by editing this list. */
+    const CLICKY = 'button,a[href],summary,select,input,textarea,label,'
+        + '[role="button"],[role="menuitem"],[role="tab"],[role="link"],'
+        + '[data-afnav],[data-afclaim],[data-afclaimgo],[data-afact],[data-afmenugo],[data-aftipact]';
+
+    const closestW = el => (el && typeof el.closest === 'function' ? el.closest('.af-tipw') : null);
+    /** A press inside the panel is the reader using the panel. */
+    const inPanel = el => !!(el && typeof el.closest === 'function' && el.closest('.af-tip'));
+
+    /** Each open-panel mechanism below registers how it forgets what it had
+     *  open, so muting is one act rather than three that can disagree. */
+    const closers = [];
+    let mutedW = null, hoverW = null;
+
+    function unmute() {
+        if (mutedW) { mutedW.classList.remove('af-mute'); mutedW = null; }
+    }
+    function mute(w) {
+        if (!w || !w.classList) { return; }
+        if (mutedW && mutedW !== w) { mutedW.classList.remove('af-mute'); }
+        mutedW = w;
+        w.classList.add('af-mute');
+        // The three stand-ins for a `:hover` this component keeps alive are all
+        // "it is already open"; none of them survives a press.
+        w.classList.remove('af-on');
+        w.classList.remove('af-hold');
+        w.classList.remove('af-open');
+        for (let i = 0; i < closers.length; i++) { closers[i](w); }
+    }
+
+    if (doc && typeof doc.addEventListener === 'function') {
+        // Registered FIRST, so `tip-act` and `af-mute` are already decided by the
+        // time the two opening mechanisms below read them on the same event.
+        doc.addEventListener('pointerover', function (e) {
+            const w = closestW(e.target);
+            if (mutedW && w !== mutedW) { unmute(); }
+            hoverW = w;
+            if (!w) { return; }
+            if (w !== mutedW && tipMuted(w)) { mute(w); return; }
+            if (w === mutedW) { return; }
+            const c = e.target && typeof e.target.closest === 'function' ? e.target.closest(CLICKY) : null;
+            const act = (!!c && w.contains(c) && !inPanel(c))
+                || !!(w.matches && w.matches(CLICKY));
+            w.classList.toggle('tip-act', act);
+        }, true);
+
+        // `pointerdown`, not `click`: the panel has to be gone before the
+        // control's own handler draws whatever it draws under the pointer.
+        doc.addEventListener('pointerdown', function (e) {
+            if (inPanel(e.target)) { return; }
+            const w = closestW(e.target);
+            if (w) { mute(w); } else { unmute(); for (let i = 0; i < closers.length; i++) { closers[i](null); } }
+        }, true);
+
+        // A key is the other way a hand says it has moved on — Escape most
+        // obviously, but typing anywhere means the pointer is only resting.
+        doc.addEventListener('keydown', function () {
+            if (hoverW) { mute(hoverW); return; }
+            for (let i = 0; i < closers.length; i++) { closers[i](null); }
+        }, true);
+    }
+
+    /* ------------------------------------------------------------------
        ‼️ K-18 — A PANEL NEVER OPENS TOWARDS THE EDGE IT IS ALREADY ON.
 
        The default panel hangs under its trigger (`top:100%`), which is right
@@ -180,7 +275,6 @@
     if (doc && typeof doc.addEventListener === 'function'
         && typeof MutationObserver === 'function' && typeof doc.elementFromPoint === 'function') {
 
-        const closestW = el => (el && typeof el.closest === 'function' ? el.closest('.af-tipw') : null);
         /** The wrapper the pointer is over, where it entered, how far the panel
          *  had been scrolled — the three things a rebuild would otherwise lose. */
         let over = null, atX = -1, atY = -1, scrolled = 0;
@@ -240,6 +334,9 @@
             return !!tip && typeof window.getComputedStyle === 'function'
                 && window.getComputedStyle(tip).visibility === 'visible';
         };
+
+        // U-74: a press takes the two stand-ins with it.
+        closers.push(function () { drop(); release(); });
 
         doc.addEventListener('pointerover', function (e) {
             const w = closestW(e.target);
@@ -364,10 +461,15 @@
        paragraph standing behind that list — already open, so no waiting period
        was ever going to help, and saying nothing about the choice being made.
        ------------------------------------------------------------------ */
+    /** U-74 — a trigger you press waits longer, so aiming at a control and
+     *  pressing it never sees a panel. The call site still wins where it has
+     *  named its own number. */
+    const ACT_OPEN_MS = 700;
     /** A trigger's own open delay, or the component's. */
     function tipOpenMs(w) {
         const n = Number(w && w.getAttribute ? w.getAttribute('data-aftip-open') : 0);
-        return Number.isFinite(n) && n > 0 ? n : FREE_OPEN_MS;
+        if (Number.isFinite(n) && n > 0) { return n; }
+        return w && w.classList && w.classList.contains('tip-act') ? ACT_OPEN_MS : FREE_OPEN_MS;
     }
     /** Is this trigger inside something that says "not now"? */
     function tipMuted(w) {
@@ -418,13 +520,18 @@
             openW = null;
         };
 
+        // U-74: a press closes a free panel and forgets it.
+        closers.push(function () { clearTimeout(openT); clearTimeout(closeT); close(); });
+
         doc.addEventListener('pointerover', function (e) {
             const t = e.target;
             const w = t && typeof t.closest === 'function' ? t.closest('.af-tipw.tip-free') : null;
             // Muted is checked before "already open": the point is to get rid of
             // a panel the control has since covered, not to leave it standing
             // because the pointer never went anywhere.
-            if (w && tipMuted(w)) { clearTimeout(openT); clearTimeout(closeT); close(); return; }
+            if (w && (tipMuted(w) || w.classList.contains('af-mute'))) {
+                clearTimeout(openT); clearTimeout(closeT); close(); return;
+            }
             // Inside the panel itself: that is the reader arriving, not leaving.
             if (w && w === openW) { clearTimeout(closeT); return; }
             clearTimeout(openT);
@@ -436,7 +543,7 @@
             openT = setTimeout(function () {
                 // Re-asked at the end of the wait, not only at the start: the
                 // control can have been opened during it, pointer still still.
-                if (!w.isConnected || tipMuted(w)) { return; }
+                if (!w.isConnected || tipMuted(w) || w.classList.contains('af-mute')) { return; }
                 close();
                 openW = w;
                 w.classList.add('af-open');

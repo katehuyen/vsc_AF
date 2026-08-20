@@ -24,8 +24,16 @@ function mkEl(cls) {
     el.classList = {
         add: c => el.cls.add(c),
         remove: c => el.cls.delete(c),
-        contains: c => el.cls.has(c)
+        contains: c => el.cls.has(c),
+        toggle: (c, on) => (on ? el.cls.add(c) : el.cls.delete(c))
     };
+    el.attrs = {};
+    el.getAttribute = n => (n in el.attrs ? el.attrs[n] : null);
+    // A selector here is a comma list of bare names — `.class`, a tag, an
+    // `[attr]` — and this stub answers it out of the element's class set, which
+    // is how every element in this file declares what it is.
+    el.matches = sel => String(sel).split(',').some(
+        s => el.cls.has(s.trim().replace(/^[.[]|]$/g, '')));
     el.closest = sel => {
         const want = sel.replace(/^\./, '');
         for (let n = el; n; n = n.parent) { if (n.cls.has(want)) { return n; } }
@@ -102,13 +110,17 @@ new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
 
 ok('the component still exports its two shapes',
     typeof windowStub.AFTip.wrap === 'function' && typeof windowStub.AFTip.cell === 'function');
-// ‼️ TWO `pointerover` listeners, and they are two different mechanisms: the
-// repaint bridge below, and the `tip-free` placer (U-43) that takes a panel out
-// of a scrolling menu. Counted rather than ignored so a THIRD one cannot appear
-// unnoticed — this file is the only thing watching what the component binds.
+// ‼️ THREE `pointerover` listeners, and they are three different mechanisms: the
+// yield-to-the-hand gate (U-74) which runs FIRST because the other two read what
+// it writes, the repaint bridge below, and the `tip-free` placer (U-43) that
+// takes a panel out of a scrolling menu. Counted rather than ignored so a FOURTH
+// one cannot appear unnoticed — this file is the only thing watching what the
+// component binds.
 ok('and it installed the pointer bridge rather than trusting :hover alone',
-    (listeners.pointerover || []).length === 2 && (listeners.pointermove || []).length === 1
+    (listeners.pointerover || []).length === 3 && (listeners.pointermove || []).length === 1
     && (listeners.pointerout || []).length === 1 && observers.length === 1);
+ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
+    (listeners.pointerdown || []).length === 1 && (listeners.keydown || []).length === 1);
 
 // ---- the bug: a repaint under a stationary pointer -------------------------
 {
@@ -237,6 +249,92 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     ok('a tip-free panel is left to its own placer and its own timers',
         !f.w.classList.contains('af-hold'));
     timers.clear();
+}
+
+// ---- U-74: a panel yields to the hand --------------------------------------
+// The complaint, verbatim: the toolbar's `Console` button drops a two-item menu
+// under itself, its own hover panel opens in the same few pixels, and pressing
+// the button did not take the panel away — the pointer never left the trigger,
+// so `:hover` never ended. The menu was behind a paragraph and the control could
+// not be used at all. Two halves: a press mutes, and a thing you press waits
+// longer before it says anything.
+{
+    at = {}; timers.clear();
+
+    // 1. the press
+    const nav = mkTip(true);
+    const btn = mkEl('nav-btn');
+    btn.parent = nav.w; nav.w.children.push(btn);
+    at[key(300, 300)] = nav.w;
+    fire('pointerover', { target: btn, clientX: 300, clientY: 300 });
+    ok('a trigger the pointer is merely over is not muted', !nav.w.classList.contains('af-mute'));
+    fire('pointerdown', { target: btn });
+    ok('‼️ pressing the trigger mutes its panel at once — the menu under it is the subject now',
+        nav.w.classList.contains('af-mute'));
+
+    // …and it STAYS muted while the hand is still there: reopening under a
+    // gesture in progress is the whole bug.
+    fire('pointerover', { target: btn, clientX: 300, clientY: 300 });
+    ok('‼️ …and moving within the same trigger does not bring it back',
+        nav.w.classList.contains('af-mute'));
+
+    // Leaving is what ends it; coming back is a new hover and waits the delay.
+    const other = mkTip();
+    at[key(400, 400)] = other.w;
+    fire('pointerover', { target: other.w, clientX: 400, clientY: 400 });
+    ok('leaving the trigger ends the mute', !nav.w.classList.contains('af-mute'));
+
+    // 2. a press INSIDE the panel is reading, not leaving — selecting a line of
+    // a prompt must not close the thing it is in.
+    const read = mkTip(true);
+    at[key(500, 500)] = read.w;
+    fire('pointerover', { target: read.w, clientX: 500, clientY: 500 });
+    fire('pointerdown', { target: read.t });
+    ok('‼️ pressing INSIDE the panel leaves it open — that is the reader using it',
+        !read.w.classList.contains('af-mute'));
+
+    // 3. the stand-ins for a lost :hover do not survive a press either — a
+    // panel still standing on its grace period is still in the way.
+    const held2 = mkTip(true);
+    at[key(600, 600)] = held2.w;
+    fire('pointerover', { target: held2.w, clientX: 600, clientY: 600 });
+    fire('pointerout', { target: held2.w, relatedTarget: null });
+    ok('the walk-out hold is on', held2.w.classList.contains('af-hold'));
+    fire('pointerdown', { target: mkEl('somewhere-else') });
+    ok('‼️ a press anywhere ends a held panel rather than leaving it over the page',
+        !held2.w.classList.contains('af-hold'));
+
+    // 4. a key is the other way a hand says it has moved on
+    const typed = mkTip(true);
+    at[key(700, 700)] = typed.w;
+    fire('pointerover', { target: typed.w, clientX: 700, clientY: 700 });
+    fire('keydown', { key: 'Escape' });
+    ok('‼️ a key mutes the panel the pointer is resting on', typed.w.classList.contains('af-mute'));
+
+    // 5. `tip-act` — the class the delay is written from, and nothing asks for it
+    const plain = mkTip();
+    at[key(800, 800)] = plain.w;
+    fire('pointerover', { target: plain.w, clientX: 800, clientY: 800 });
+    ok('a trigger nobody presses keeps the ordinary delay', !plain.w.classList.contains('tip-act'));
+
+    const press = mkTip();
+    press.w.cls.add('button');
+    at[key(900, 900)] = press.w;
+    fire('pointerover', { target: press.w, clientX: 900, clientY: 900 });
+    ok('‼️ …and one you press is marked, from the DOM rather than from a call site',
+        press.w.classList.contains('tip-act'));
+
+    // 6. `data-aftip-mute` is honoured on the ordinary path too, not only on
+    // tip-free: a control whose own list is open covers its explanation.
+    const covered = mkTip();
+    covered.w.attrs['data-aftip-mute'] = '.af-claim-open';
+    covered.w.cls.add('af-claim-open');
+    at[key(950, 950)] = covered.w;
+    fire('pointerover', { target: covered.w, clientX: 950, clientY: 950 });
+    ok('‼️ data-aftip-mute silences an ordinary panel as well as a free one',
+        covered.w.classList.contains('af-mute'));
+
+    at = {}; timers.clear();
 }
 
 // ---- K-18: it opens towards the middle, never towards the edge -------------
@@ -373,6 +471,27 @@ ok('and it installed the pointer bridge rather than trusting :hover alone',
     // box the moment `:hover` goes.
     ok('‼️ U-57 — common.css keeps a held panel visible while the pointer walks to it',
         /\.af-tipw\.af-hold\s*>\s*\.af-tip\s*\{[^}]*visibility:\s*visible/.test(css));
+
+    // U-74 — the mute is a class the script writes; the sheet is the half that
+    // actually gets the panel out of the way, and it has to win over every
+    // "it is already open" rule above it.
+    const muted = /\.af-tipw\.af-mute\s*>\s*\.af-tip[^{]*\{([^}]*)\}/.exec(css);
+    ok('‼️ U-74 — common.css takes a muted panel away', !!muted
+        && /visibility:\s*hidden/.test(muted[1]) && /transition-delay:\s*0s/.test(muted[1]));
+    ok('‼️ …with no box either, or A-12 comes back for the length of the gesture',
+        !!muted && /min-width:\s*0/.test(muted[1]) && /max-width:\s*0/.test(muted[1]));
+    ok('…declared after every open state, so it is the last word',
+        !!muted && css.indexOf('.af-tipw.af-mute') > css.indexOf('.af-tipw.af-hold')
+        && css.indexOf('.af-tipw.af-mute') > css.indexOf('.af-tipw.af-on')
+        && css.indexOf('.af-tipw.af-mute') > css.indexOf('.af-tipw.af-up'));
+    // ‼️ AND COMING LAST IS NOT ENOUGH, which a real browser had to say out
+    // loud: `:not(.tip-free)` counts as a class, so the ordinary show rule is
+    // 0,4,0 against this one's 0,3,0 and won outright while every string
+    // assertion above passed. `test/live_header.js --check` is what caught it.
+    ok('‼️ …and says so with !important — order lost this cascade once already',
+        !!muted && /visibility:\s*hidden\s*!important/.test(muted[1]));
+    ok('‼️ U-74 — and a trigger you press opens slower than one you only read',
+        /\.af-tipw\.tip-act[^{]*\{[^}]*transition-delay:\s*\.6s/.test(css));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -57,7 +57,44 @@ repeat. The human-facing copy of this page lives in the project folder
 ## Hover
 
 **A hover is the most valuable surface on a page** — the pointer is already
-there, and it costs the reader nothing. Two rules, and they are not negotiable.
+there, and it costs the reader nothing. The rules below are not negotiable, and
+this one comes before all of them.
+
+### ‼️ FIRST OF ALL: A HOVER PANEL YIELDS TO THE HAND (U-74)
+
+A panel answers a question the reader has **while they are looking**. The moment
+they stop looking and start **working** — a press, a key — it has nothing left
+to say and everything to be in the way of. It is not a decoration that fades on
+its own schedule; it is a guest that leaves when the room is needed.
+
+The toolbar proved what happens when it does not. `Console` is one button that
+drops a two-item menu **under itself**, in exactly the place its own panel
+opens. Reach for the button: the panel is already there. Press it: the panel
+stays — the pointer never left the trigger, so `:hover` never ended — and the
+menu is behind a paragraph. The control could not be used at all.
+
+So, and this is `media/afTip.js`'s own behaviour, not something a page asks for:
+
+- **A press mutes the trigger under it** (`af-mute`), with no fade and no box,
+  and the mute lasts until the pointer **leaves that wrapper**. Coming back is a
+  new hover and waits the full delay again — a panel that reopens under a hand
+  mid-gesture is the bug, not the fix.
+- **A press INSIDE the panel is exempt.** Selecting a line of a prompt is
+  reading, not leaving.
+- **A key does the same.** Escape, or typing anywhere: the pointer is only
+  resting.
+- **A trigger you can press opens slower** (`tip-act`, .6s against the ordinary
+  .25s; 700ms against 420ms on `tip-free`), so the ordinary act of aiming at a
+  control and pressing it never sees a panel at all. The class is written from
+  what the pointer is on — a `button`, an `a[href]`, a menu item, or anything
+  carrying `data-aftipact`. **No call site asks for it**; a rule a page has to
+  remember is a rule the next page will not have.
+- **A control whose own list is open has nothing to explain**: put
+  `data-aftip-mute="<selector>"` on the wrapper naming the state, and no panel
+  opens while the trigger sits inside it. Honoured on both panel kinds.
+
+**Designing a new hover surface starts here:** ask what the reader will PRESS
+under it, and make sure the panel is gone before their hand arrives.
 
 ### 0. The thing has a name, and the name is `AFTip`
 
