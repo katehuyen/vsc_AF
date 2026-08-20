@@ -82,6 +82,18 @@ export interface AgyState {
     open: Record<string, { name: string; detail: string }>;
     /** True once an `init` has been seen and no `result` has closed it. */
     running: boolean;
+    /**
+     * ‼️ K-27 — DID THE AGENT ACTUALLY ANSWER THIS TURN?
+     *
+     * The CLI reports `status` for the whole run, and it reports a run in which
+     * ANY tool failed as not-SUCCESS — a `grep` that Windows does not have, a
+     * search that timed out, a task it refused to kill. The agent catches those
+     * in its own transcript and finishes its reply. So the status alone cannot
+     * say whether the turn produced anything, and this can: it is set by the
+     * first `agent_response` step that carries text, and cleared by `init` when
+     * the next turn opens.
+     */
+    said?: boolean;
 }
 
 export const newAgyState = (): AgyState => ({ turn: 0, text: {}, open: {}, running: false });
@@ -294,7 +306,10 @@ export function translateAgy(
             ...(str(init.model) || opts.model ? { model: str(init.model) || opts.model } : {})
         });
         return {
-            state: { ...state, conversationId, turn: state.turn + 1, running: true, text: {}, open: {} },
+            state: {
+                ...state, conversationId, turn: state.turn + 1, running: true,
+                text: {}, open: {}, said: false
+            },
             events
         };
     }
@@ -312,10 +327,39 @@ export function translateAgy(
             // broken" and one flag too many, and a tidied message throws exactly
             // that away.
             const message = str(result.error) || 'the turn failed';
-            events.push({
-                type: 'result', subtype: 'error_during_execution',
-                is_error: true, error: message, result: message
-            });
+            /**
+             * ‼️ K-27 — AND IT IS NOT AN INTERRUPTION, WHICH IS WHAT THIS USED
+             * TO SAY.
+             *
+             * This branch emitted Claude Code's `error_during_execution`, whose
+             * one meaning in that engine's contract is "a person stopped it" —
+             * so the strip above the composer read `⎋ last turn interrupted`
+             * after turns nobody had touched. Measured over this machine's own
+             * Antigravity conversations: 25 of 67 turns ended not-SUCCESS and
+             * every single one carried a TOOL's complaint (14× `exec: "grep":
+             * executable file not found in %PATH%`, 9× a schedule-task conflict,
+             * 2× a task that was already finished), and in every one of them the
+             * agent had already produced its reply.
+             *
+             * A user Stop cannot even reach here: `agy` is a per-turn engine, so
+             * stopping it kills the process (ConsoleHost.interrupt) and no
+             * `result` line is ever read. `interrupted: false` therefore states
+             * a fact rather than a preference.
+             *
+             * So the turn is closed by WHAT IT PRODUCED. It answered → the turn
+             * is done, and the engine's complaint rides on the closing line as
+             * the warning it is. It produced nothing → the turn really did fail,
+             * and it says so with the engine's own words.
+             */
+            events.push(state.said
+                ? {
+                    type: 'result', subtype: 'success',
+                    is_error: false, interrupted: false, warning: message
+                }
+                : {
+                    type: 'result', subtype: 'error',
+                    is_error: true, interrupted: false, error: message, result: message
+                });
         } else {
             events.push({
                 type: 'result', subtype: 'success', is_error: false
@@ -324,7 +368,7 @@ export function translateAgy(
                 // note 1) — reporting it again would double the turn.
             });
         }
-        return { state: { ...state, running: false, text: {}, open: {} }, events };
+        return { state: { ...state, running: false, text: {}, open: {}, said: false }, events };
     }
 
     return { state, events };
@@ -361,12 +405,13 @@ function translateStep(state: AgyState, step: Row, events: unknown[]): AgyTransl
             return { state: { ...next, text: { ...next.text, [id]: carried } }, events };
         }
         if (usage) { events.push({ type: 'assistant', message: { content: [], usage } }); }
-        if (carried.trim()) {
+        const answered = !!carried.trim();
+        if (answered) {
             events.push({ type: 'assistant', message: { content: [{ type: 'text', text: carried }] } });
         }
         const text = { ...next.text };
         delete text[id];
-        return { state: { ...next, text }, events };
+        return { state: { ...next, text, said: next.said || answered }, events };
     }
 
     if (type === 'checkpoint' || type === 'user_input' || type === 'unknown') {

@@ -1529,15 +1529,44 @@ export class ConsoleHost {
     /** Close a per-turn engine's turn that ended without saying so. The SESSION
      *  survives — the thread is in the CLI's store and the next message resumes
      *  it, which is exactly the state a reader should be left in. */
-    private endTurn(id: string, why: string): void {
-        this.mutate(id, s => ({
-            ...s, status: 'idle', lastTs: Date.now(),
-            turnStartedAt: undefined, turnTokensAt: undefined,
-            messages: [...s.messages, {
-                id: `err-${Date.now().toString(36)}`, ts: Date.now(),
-                role: 'error', text: why
-            }]
-        }));
+    /**
+     * ‼️ K-27 — AND IT SAYS HOW THE TURN ENDED, which it used to leave to the
+     * turn BEFORE it.
+     *
+     * A turn that dies here never reaches the `result` reducer — on a per-turn
+     * engine there is no result line to read, because Stop kills the process —
+     * so `lastTurn` kept whatever the previous turn had put there and the strip
+     * above the composer described a turn that was two turns old. The word is
+     * passed in rather than guessed: only the caller knows whether a person
+     * pressed Stop or the engine fell over.
+     */
+    private endTurn(id: string, why: string, outcome: 'interrupted' | 'failed' = 'failed'): void {
+        this.mutate(id, s => {
+            const now = Date.now();
+            const spent = s.turnTokensAt !== undefined
+                ? Math.max(0, s.tokens - s.turnTokensAt)
+                : undefined;
+            return {
+                ...s, status: 'idle', lastTs: now,
+                turnStartedAt: undefined, turnTokensAt: undefined,
+                lastTurn: {
+                    endedAt: now,
+                    ms: s.turnStartedAt ? Math.max(0, now - s.turnStartedAt) : undefined,
+                    tokens: spent || undefined,
+                    wTokens: Math.round(s.turnWTokens ?? 0) || undefined,
+                    cost: 0,
+                    apiCalls: s.turnApiCalls || undefined,
+                    steps: s.turnSteps || undefined,
+                    thinking: s.turnThinking || undefined,
+                    outcome,
+                    model: s.turnModel, effort: s.turnEffort
+                },
+                messages: [...s.messages, {
+                    id: `err-${now.toString(36)}`, ts: now,
+                    role: 'error', text: why
+                }]
+            };
+        });
     }
 
     /**
@@ -1951,7 +1980,7 @@ export class ConsoleHost {
             if (!h.child) { return false; }
             killTree(h.child);
             h.child = undefined;
-            this.endTurn(id, 'turn interrupted');
+            this.endTurn(id, 'turn interrupted', 'interrupted');
             return true;
         }
         /**

@@ -514,19 +514,24 @@ export function translateOpencodeResult(
         // and the next turn accepted on the same `ses_…`. It is reported as an
         // interruption because that is what the user did, and `is_error` is what
         // makes the row say so without claiming the engine broke.
+        // ‼️ K-27 — THE ONE ENDING ON THIS ENGINE THAT REALLY IS AN
+        // INTERRUPTION, and it now says so rather than being read off a Claude
+        // subtype: `stopReason: "cancelled"` is the answer to Stop.
         events.push({
-            type: 'result', subtype: 'error_during_execution', is_error: true,
+            type: 'result', subtype: 'error_during_execution', is_error: true, interrupted: true,
             error: 'turn cancelled — the engine stopped where it was and the conversation is intact',
             total_cost_usd: charged
         });
     } else if (stop === 'refusal') {
+        // ‼️ K-27 — the MODEL refused. Nobody pressed anything.
         events.push({
-            type: 'result', subtype: 'error_during_execution', is_error: true,
+            type: 'result', subtype: 'error', is_error: true, interrupted: false,
             error: 'the model refused this turn', total_cost_usd: charged
         });
     } else if (stop === 'max_tokens' || stop === 'max_turn_requests') {
+        // ‼️ K-27 — a ceiling, not a person: the turn stopped part-way on its own.
         events.push({
-            type: 'result', subtype: 'error_during_execution', is_error: true,
+            type: 'result', subtype: 'error', is_error: true, interrupted: false,
             error: stop === 'max_tokens'
                 ? 'the turn hit the model\'s output limit and stopped part-way'
                 : 'the turn hit OpenCode\'s own limit on requests per turn and stopped part-way',

@@ -206,6 +206,11 @@ function translateAll(lines, opts) {
     ok('‼️ a failure carries the ENGINE\'S own words — "os error 10013" is the '
         + 'difference between a broken engine and a firewall, and a tidied message throws that away',
         result && result.is_error === true && /10013/.test(result.error));
+    // ‼️ K-27 — and it is a FAILURE. This used to be reported with Claude
+    // Code's `error_during_execution`, whose one meaning there is "a person
+    // stopped it", so a turn Codex gave up on read as `⎋ last turn interrupted`.
+    ok('‼️ K-27 — a turn the engine failed is not reported as interrupted',
+        result.interrupted === false && result.subtype !== 'error_during_execution');
 }
 
 // ---------- the item kinds ----------

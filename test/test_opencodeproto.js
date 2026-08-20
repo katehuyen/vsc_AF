@@ -266,6 +266,9 @@ const CANCELLED = {
     ok('‼️ cancel closes the turn and does NOT claim the engine broke',
         r.is_error === true && r.subtype === 'error_during_execution'
         && /conversation is intact/.test(r.error));
+    // ‼️ K-27 — this is the ONE ending on this engine that really is an
+    // interruption, and it says so outright instead of being read off a subtype.
+    ok('‼️ K-27 — …and a cancel is the one ending that IS an interruption', r.interrupted === true);
     ok('…and a zero usage carries no spend block at all',
         !t.events.some(e => e.type === 'assistant'));
 }
@@ -275,6 +278,12 @@ const CANCELLED = {
     const r = P.translateOpencodeResult(P.newOpencodeState(), { stopReason: 'max_tokens', usage: {} })
         .events.find(e => e.type === 'result');
     ok('a turn that hit the output limit says which limit', /output limit/.test(r.error));
+    // ‼️ K-27 — a ceiling is not a person.
+    ok('‼️ K-27 — …but a ceiling is not an interruption', r.interrupted === false);
+    const refused = P.translateOpencodeResult(P.newOpencodeState(), { stopReason: 'refusal', usage: {} })
+        .events.find(e => e.type === 'result');
+    ok('…and neither is the model refusing', refused.interrupted === false
+        && refused.subtype !== 'error_during_execution');
 }
 
 // ---------- ‼️ THE ECHO AND THE REPLAY, which are two different silences ----------

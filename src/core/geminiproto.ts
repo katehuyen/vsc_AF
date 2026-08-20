@@ -331,9 +331,11 @@ export function translateGemini(
             });
             return { state, events };
         }
+        // ‼️ K-27 — the engine broke; nobody stopped it. See consoleproto.ts →
+        // `interrupted` for why the Claude subtype is not borrowed for this.
         events.push({
-            type: 'result', subtype: 'error_during_execution',
-            is_error: true, error: message, result: message
+            type: 'result', subtype: 'error',
+            is_error: true, interrupted: false, error: message, result: message
         });
         return { state: { ...state, running: false, open: {}, reply: '' }, events };
     }
@@ -368,7 +370,8 @@ export function translateGemini(
         const failed = str(o.status) === 'error';
         events.push(failed
             ? {
-                type: 'result', subtype: 'error_during_execution', is_error: true,
+                // ‼️ K-27 — a turn the engine ended in error, not one a person cut.
+                type: 'result', subtype: 'error', is_error: true, interrupted: false,
                 error: str(obj(o.error).message) || 'the turn failed',
                 result: str(obj(o.error).message) || 'the turn failed'
             }

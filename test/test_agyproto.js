@@ -193,6 +193,79 @@ function runAll(lines) {
     // ‼️ "conflicts with --effort=medium" names the flag. A tidied "the turn
     // failed" throws away the only sentence that fixes it.
     ok('‼️ …carrying the engine\'s own sentence, whole', /conflicts with --effort=medium/.test(ev.error));
+    // ‼️ K-27 — …and it is a FAILURE, not something a person did. The adaptor
+    // used to reach for Claude Code's `error_during_execution`, whose one
+    // meaning in that contract is "the user stopped it".
+    ok('‼️ K-27 — a turn the engine failed is not reported as interrupted',
+        ev.interrupted === false && ev.subtype !== 'error_during_execution');
+}
+
+// ---------- K-27: a tool that failed inside a turn the agent finished ----------
+{
+    // Measured over this machine's own Antigravity conversations: 25 of 67 turns
+    // came back not-SUCCESS and every one of them carried a TOOL's complaint —
+    // 14× `exec: "grep": executable file not found in %PATH%` — with the agent's
+    // reply already written. Nobody had pressed anything, and the strip above
+    // the composer said `⎋ last turn interrupted` on all 25.
+    const GREP = 'exec: "grep": executable file not found in %PATH%';
+    let s = A.translateAgy(A.newAgyState(), { event: 'init', conversation_id: 'c1', init: {} }).state;
+    ok('a fresh turn has said nothing yet', s.said === false);
+    s = A.translateAgy(s, step({
+        step_index: 2, state: 'DONE', step_type: 'agent_response',
+        text_delta: 'grep yoktu, Select-String ile baktım — dosya duruyor.'
+    })).state;
+    ok('…and the reply is remembered as an answer having been given', s.said === true);
+    const t = A.translateAgy(s, {
+        event: 'result',
+        result: { conversation_id: 'c1', status: 'ERROR', error: GREP }
+    });
+    const ev = t.events.find(e => e.type === 'result');
+    ok('‼️ K-27 — a turn that ANSWERED closes as a success, whatever a tool did',
+        ev.is_error === false && ev.subtype === 'success' && ev.interrupted === false);
+    ok('…and the tool\'s complaint is still carried, as a warning', ev.warning === GREP);
+    ok('…and the next turn starts having said nothing again', t.state.said === false);
+
+    // The same failure with nothing to show for it really did fail.
+    const silent = A.translateAgy(
+        { ...A.newAgyState(), turn: 1, said: false },
+        { event: 'result', result: { conversation_id: 'c1', status: 'ERROR', error: GREP } }
+    ).events.find(e => e.type === 'result');
+    ok('…while a turn that produced nothing is a failure, in the engine\'s words',
+        silent.is_error === true && silent.interrupted === false && silent.error === GREP);
+}
+
+// ---------- K-27: and what the Console makes of both ----------
+{
+    const GREP = 'exec: "grep": executable file not found in %PATH%';
+    const run = (evts) => {
+        let s = P.newSessionState({ id: 'c', agentId: 'a', agentName: 'dev', cwd: '.', now: 1000 });
+        s = { ...s, status: 'working', turnStartedAt: 1000 };
+        for (const e of evts) { s = P.reduceEvent(s, e, 2000).state; }
+        return s;
+    };
+    const answered = run([{
+        type: 'result', subtype: 'success', is_error: false, interrupted: false, warning: GREP
+    }]);
+    ok('‼️ K-27 — the strip no longer says a turn nobody touched was interrupted',
+        answered.lastTurn.outcome === 'done');
+    ok('…and the closing line still carries the tool\'s complaint',
+        answered.messages[answered.messages.length - 1].text === GREP);
+    const failed = run([{
+        type: 'result', subtype: 'error', is_error: true, interrupted: false,
+        error: GREP, result: GREP
+    }]);
+    ok('…a turn with nothing to show for it is failed, not interrupted',
+        failed.lastTurn.outcome === 'failed');
+    const stopped = run([{
+        type: 'result', subtype: 'error_during_execution', is_error: true, result: 'stopped'
+    }]);
+    ok('‼️ …and Claude\'s own word for a Stop still means a Stop',
+        stopped.lastTurn.outcome === 'interrupted');
+    const saidStop = run([{
+        type: 'result', subtype: 'anything', is_error: true, interrupted: true, result: 'cancelled'
+    }]);
+    ok('…as does an engine that says so outright, whatever it calls the subtype',
+        saidStop.lastTurn.outcome === 'interrupted');
 }
 
 // ---------- the shapes nobody measured are skipped, never guessed ----------

@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.187.0 — K-27: “last turn interrupted” after turns nobody interrupted (2026-08-20)
+
+**The strip above the composer said `⎋ last turn interrupted` on turns the agent had finished normally.** No Stop was pressed, the reply was complete, and the Console called it an interruption anyway — on Antigravity most visibly, and on three other engines for the same reason.
+
+**`error_during_execution` is CLAUDE CODE’s word, and its one meaning there is “a person stopped it.”** Every translator that needed to report a failure of its own had reached for the nearest-looking Claude subtype, and inherited a verdict it never meant: Antigravity’s adaptor mapped *any* not-`SUCCESS` run to it, Codex’s `turn.failed` did, Gemini’s error result did, and so did OpenCode’s refusal and its two ceilings.
+
+**Measured on this machine’s own Antigravity conversations before changing anything:** 25 of 67 turns ended not-`SUCCESS`, and every single one carried a **tool’s** complaint — 14× `exec: "grep": executable file not found in %PATH%`, 9× a schedule-task conflict, 2× a task that had already finished — with the agent’s reply already written. (That schedule-conflict line is the one seen in the console flow and wondered about: it is this, not a transcript problem.)
+
+**A translator now SAYS which it is, and is believed.** `interrupted` is stated on the result rather than guessed from a subtype; only an event that does not answer falls back to Claude’s word, which is the engine that owns it. OpenCode’s `cancelled` says `true` — it is the one ending in the fleet that really is a Stop — and refusals, ceilings, engine faults and tool faults say `false`.
+
+**And an Antigravity turn is now closed by what it PRODUCED.** It answered → the turn is done, and the engine’s complaint rides on the closing line as the warning it is, in the engine’s own words, exactly where it was drawn before. It produced nothing → the turn really did fail, and says so.
+
+**The other half of the pair, which had never worked:** a real Stop on a per-turn engine kills the process, so no `result` line is ever read — `lastTurn` kept whatever the turn **before** it had put there and the strip described a turn two turns old. A turn that ends that way now records its own outcome, and the caller passes the word rather than the code guessing it.
+
 ## 3.186.0 — U-75: resuming an Antigravity conversation stops eating its own transcript (2026-08-20)
 
 **A transcript whose “turn 1” was a turn from the middle.** Reopening a resumed Antigravity session showed a page that began with a stray paragraph under no turn heading, then “Tur 1” — a turn that had a couple of dozen turns before it. Resume it once more and most of what was left went too.

@@ -420,9 +420,15 @@ export function translateCodex(
         // ‼️ THE ENGINE'S OWN WORDS. `os error 10013` is the difference between
         // "Codex is broken" and "your security software is refusing the socket",
         // and a tidied-up message throws exactly that away.
+        // ‼️ K-27 — AND IT IS A FAILURE, NOT AN INTERRUPTION. This used to be
+        // reported with Claude Code's `error_during_execution`, whose one
+        // meaning in that engine's contract is "a person stopped it", so a turn
+        // Codex itself gave up on read as `⎋ last turn interrupted`. A user
+        // Stop on this engine kills the process (ConsoleHost.interrupt) and no
+        // `turn.failed` is ever read, so `interrupted: false` is a fact.
         events.push({
-            type: 'result', subtype: 'error_during_execution',
-            is_error: true, error: message, result: message
+            type: 'result', subtype: 'error',
+            is_error: true, interrupted: false, error: message, result: message
         });
         return { state: { ...state, running: false, open: {} }, events };
     }

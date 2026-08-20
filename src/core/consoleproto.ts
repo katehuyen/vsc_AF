@@ -1248,6 +1248,26 @@ export function reduceEvent(
         const cost = typeof o.total_cost_usd === 'number' ? o.total_cost_usd : 0;
         const isError = o.is_error === true;
         const sub = String(o.subtype ?? '');
+        /**
+         * ‼️ K-27 — "INTERRUPTED" MEANS A PERSON STOPPED IT, AND NOTHING ELSE.
+         *
+         * `error_during_execution` is CLAUDE CODE's word for that, and reading
+         * the subtype was the whole test — so any translator that reached for
+         * the nearest-looking Claude subtype for its own failures inherited a
+         * verdict it never meant. `agyproto.ts` did exactly that and the strip
+         * above the composer said `⎋ last turn interrupted` after turns nobody
+         * had touched, because one tool inside them had failed.
+         *
+         * A translator now SAYS which it is and is believed. Only an event that
+         * does not answer falls back to Claude's subtype, which is the engine
+         * that owns the word.
+         */
+        const interrupted = typeof o.interrupted === 'boolean'
+            ? o.interrupted
+            : sub === 'error_during_execution';
+        /** …and the engine's complaint about a turn that still ANSWERED: kept on
+         *  the closing line, where it always was, without failing the turn. */
+        const warning = typeof o.warning === 'string' ? o.warning.trim() : '';
         // What the turn actually cost you, closed off where it ended: the time
         // it took and the tokens it spent were both already known — they were
         // just never told. A turn is the unit you think in, so it gets a line.
@@ -1272,8 +1292,8 @@ export function reduceEvent(
         const next = push({
             role: 'result',
             text: isError
-                ? (said || (sub === 'error_during_execution' ? 'turn interrupted' : `turn failed (${sub})`))
-                : '',
+                ? (said || (interrupted ? 'turn interrupted' : `turn failed (${sub})`))
+                : warning,
             isError,
             cost,
             ms,
@@ -1309,8 +1329,7 @@ export function reduceEvent(
                     // say the same pair the running strip said a second ago.
                     steps: state.turnSteps || undefined,
                     thinking: state.turnThinking || undefined,
-                    outcome: !isError ? 'done'
-                        : sub === 'error_during_execution' ? 'interrupted' : 'failed',
+                    outcome: !isError ? 'done' : interrupted ? 'interrupted' : 'failed',
                     model: state.turnModel, effort: state.turnEffort
                 },
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId
