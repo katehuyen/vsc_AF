@@ -15,10 +15,11 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
+import { PromptSnippetsSnapshot } from '../core/prompts';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
-import { handleAfNav, htmlShell } from './base';
+import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
 import { full as afFull } from '../core/aftime';
 import { engineOf, engineTakesEffort } from '../core/consoleEngine';
 
@@ -112,6 +113,18 @@ export interface TasksDeps {
     /** Export-MD remembers the last save folder (shared farm-wide). */
     lastExportDir?: () => string | undefined;
     setLastExportDir?: (dir: string) => void;
+    /**
+     * ‼️ M-24 — THE PROMPTS YOU SAVED, IN THE FORM THAT WRITES PROMPTS.
+     *
+     * The picker began on the Console's send buttons, where the question "what
+     * do I say" is asked at the moment of sending. This form asks it four more
+     * times — the task's prompt, the retry prompt, the continuation prompt and
+     * a workflow step's prompt — and those are the ones nobody is sitting in
+     * front of when they run, so the wording matters more here, not less.
+     * Optional so a caller written before this still type-checks; absent means
+     * a right-click in a prompt box does nothing.
+     */
+    promptSnippets?(): PromptSnippetsSnapshot;
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1562,6 +1575,12 @@ export class TasksPanel {
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
+        // The saved-prompt picker answers for itself, the same way it does on
+        // the Console (see promptSnippetMessage in ./base).
+        if (this.deps.promptSnippets && await promptSnippetMessage(
+            this.panel.webview, () => this.deps.promptSnippets!(), msg.type)) {
+            return;
+        }
         switch (msg.type) {
             case 'refresh':
                 this.refresh();

@@ -616,43 +616,8 @@
             color:var(--vscode-textLink-foreground); text-decoration:underline; }
         .qbadge { font-size:10px; padding:1px 7px; border-radius:8px;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
-        /* SAVED PROMPTS. A window inside the window: the composer is at the
-           bottom of the page, so a list that dropped out of the button would
-           have nowhere to go. Centred, capped at two thirds of the height, and
-           the backdrop closes it — the same shape VS Code's own quick pick has,
-           because that is the gesture a hand already knows. */
-        .snipwrap { position:fixed; inset:0; z-index:60; display:flex; align-items:center;
-            justify-content:center; background:#0006; }
-        .snipbox { width:min(680px, 88vw); max-height:66vh; display:flex; flex-direction:column;
-            border-radius:8px; overflow:hidden; box-shadow:0 8px 30px #0007;
-            border:1px solid var(--vscode-widget-border,#4444);
-            background:var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
-        .sniphead { display:flex; gap:8px; align-items:center; padding:8px 10px;
-            border-bottom:1px solid var(--vscode-widget-border,#4443); }
-        .sniphead input { flex:1 1 auto; padding:3px 24px 3px 7px; width:100%; }
-        /* The filter box and its ✕ are one control: the button sits INSIDE the
-           box's right edge, so clearing is where the text is rather than a
-           second widget somewhere along the row. Hidden while the box is
-           empty — a clear button on nothing is furniture. */
-        .snipq { position:relative; flex:0 1 240px; display:flex; }
-        .snipqx { position:absolute; right:2px; top:50%; transform:translateY(-50%);
-            background:transparent; border:none; padding:2px 5px; cursor:pointer;
-            font-size:11px; line-height:1; color:var(--vscode-descriptionForeground); }
-        .snipqx:hover { color:var(--vscode-foreground); }
-        .sniplist { overflow:auto; padding:4px 0; }
-        .snipgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.55;
-            padding:8px 12px 3px; }
-        .snipitem { display:flex; flex-direction:column; gap:2px; width:100%; text-align:left;
-            background:none; border:none; cursor:pointer; padding:6px 12px;
-            color:var(--vscode-foreground); }
-        .snipitem:hover { background:var(--vscode-list-hoverBackground); }
-        .sniplbl { font-size:12px; }
-        .snipprev { font-size:10px; opacity:.6; white-space:nowrap; overflow:hidden;
-            text-overflow:ellipsis; font-family:var(--vscode-editor-font-family); }
-        .snipnone { padding:22px 14px; font-size:12px; color:var(--vscode-descriptionForeground); }
-        .snipfoot { padding:6px 10px; font-size:10px; opacity:.55;
-            border-top:1px solid var(--vscode-widget-border,#4443);
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* SAVED PROMPTS — the picker's own rules live with the shared
+           component, in media/common.css (.af-snip*). */
         .fixed { font-size:11px; opacity:.75; }
         /* the same word, but on a composer that has NOT started yet: it reads as
            a chosen value rather than a fact, so it gets a border and a way out */
@@ -2405,185 +2370,15 @@
     }
 
     // ---- the saved prompts: a right-click on any button that SENDS ----------
-    /**
-     * ‼️ THE PHRASES YOU TYPE EVERY DAY, ONE CLICK FROM THE BOX.
-     *
-     * The same handful of instructions get retyped into this composer several
-     * times a day — "read the file before you change it", "answer in Turkish,
-     * code in English", the review checklist. Retyping them is not just slow:
-     * a phrase retyped from memory comes out slightly different each time, so
-     * the instruction that was carefully worded once is worse every time after.
-     *
-     * They live in a markdown file the user owns (agentFarm.promptSnippetsFile,
-     * parsed by core/prompts.ts) — not in extension settings, because that file
-     * is edited in Obsidian with the rest of their notes and can carry as much
-     * commentary around the blocks as they like.
-     *
-     * ‼️ IT HANGS OFF THE SEND BUTTONS, AND THAT IS THE WHOLE DESIGN. The
-     * question "what do I say" is asked at the moment of sending, so the
-     * gesture belongs on the control that sends: LEFT-click still sends, and
-     * only right-click opens this. That is also why it is on ALL of them —
-     * Send · Send into turn · Send after turn · Start session are one button in
-     * four states, and a feature that appeared in only some of them would read
-     * as broken in the others. Nothing here sends anything: a snippet is PASTED
-     * at the caret, still yours to edit, and the press that sends is still your
-     * own.
-     */
-    let snip = null;
-
-    const snipOpen = () => {
-        snip = { loading: true, q: '', file: '', source: 'none', items: [], error: '' };
-        renderSnip();
-        vscode.postMessage({ type: 'promptSnippets' });
-    };
-    const snipClose = () => { snip = null; renderSnip(); };
-
-    /** Insert one snippet at the caret and give the box back. Uses the shared
-     *  paste rule (afTextTools) so a block landing beside half a sentence
-     *  behaves exactly like Ctrl+V does. */
-    function snipUse(text) {
-        const box = document.getElementById('c-text');
-        if (!box) { return; }
-        window.AFTextTools.insert(box, text);
-        st.draft = box.value;
-        save();
-        snipClose();
-        renderLive();
-        try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
-    }
-
-    function snipHtml() {
-        if (!snip) { return ''; }
-        // the box is a QUERY, not a substring — media/afQuery.js
-        const q = window.AFQuery.compile(snip.q || '');
-        const all = snip.items || [];
-        const shown = q.empty ? all
-            : all.filter(x => q.test(x.label + ' ' + x.group + ' ' + x.text));
-        let body;
-        if (snip.loading) {
-            body = '<div class="snipnone">Reading the file…</div>';
-        } else if (snip.error || !snip.file) {
-            body = `<div class="snipnone">${C.esc(snip.error || 'No prompts file yet.')}<br><br>
-                Press <b>📁 Choose a file…</b> above and pick a markdown file — your machine's own
-                file picker opens. Put each prompt inside a <code>\`\`\`</code> block; everything
-                around the blocks is yours to write notes in and is never offered.<br><br>
-                The same thing lives on the <b>Farm Settings</b> page under <b>Saved prompts</b>, where
-                you can also see everything that was read out of the file.</div>`;
-        } else if (!all.length) {
-            body = `<div class="snipnone">No blocks in that file yet. Anything you put inside a
-                <code>\`\`\`</code> fence shows up here; the text around the fences is yours to
-                write notes in and is never offered.</div>`;
-        } else if (!shown.length) {
-            body = '<div class="snipnone">Nothing matches that.</div>';
-        } else {
-            let group = null;
-            const rows = [];
-            for (let i = 0; i < shown.length; i++) {
-                const it = shown[i];
-                if (it.group !== group) {
-                    group = it.group;
-                    if (group) { rows.push(`<div class="snipgrp">${C.esc(group)}</div>`); }
-                }
-                // ‼️ NO HOVER ON A ROW INSIDE A WINDOW THAT IS ALREADY OPEN.
-                // The hover rule in docs/CONVENTIONS.md is about a row you
-                // merely pass over on a page; this list is a window the user
-                // opened on purpose, and sweeping it flashed a panel over the
-                // very rows being compared. The row carries the label and a
-                // 120-character preview; the whole text is one click away in
-                // the box, and ✎ Edit the file opens the source.
-                rows.push(`<button class="snipitem" data-snip="${i}">
-                    <span class="sniplbl">${C.esc(it.label)}</span>
-                    <span class="snipprev">${C.esc(it.text.replace(/\s+/g, ' ').slice(0, 120))}</span>
-                </button>`);
-            }
-            body = rows.join('');
-        }
-        return `<div class="snipwrap" id="c-snipwrap">
-            <div class="snipbox">
-                <div class="sniphead">
-                    <b>Saved prompts</b>
-                    <span class="snipq">
-                        <input id="snip-q" type="text" placeholder="filter…" value="${C.esc(snip.q || '')}">
-                        ${snip.q ? '<button class="snipqx" id="snip-qx" title="Clear the filter (Esc closes the window)">✕</button>' : ''}
-                    </span>
-                    <span class="grow"></span>
-                    ${snip.file ? `<button class="secondary" id="snip-file"
-                        title="Open the file this list is read from — add a \`\`\` block and it is here the next time you right-click">✎ Edit the file</button>` : ''}
-                    <button class="secondary" id="snip-pick" title="${snip.file
-        ? 'Point at a different file — your machine\'s own file picker opens'
-        : 'Choose the markdown file your prompts live in — your machine\'s own file picker opens'}">📁 ${snip.file ? 'Change file…' : 'Choose a file…'}</button>
-                    <button class="secondary" id="snip-x" title="Close (Esc)">✕</button>
-                </div>
-                <div class="sniplist">${body}</div>
-                <div class="snipfoot">${snip.file
-        ? `${C.esc(snip.file)} · ${all.length} prompt${all.length === 1 ? '' : 's'}${snip.source === 'built-in' ? ' · built-in path' : ''}`
-        : 'Farm Settings → Saved prompts'} · clicking one PASTES it into the box — nothing is sent</div>
-            </div>
-        </div>`;
-    }
-
-    function renderSnip() {
-        if (!slot('c-snip', snipHtml())) { return; }
-        if (!snip) { return; }
-        byId('snip-x', 'click', snipClose);
-        byId('snip-file', 'click', () => vscode.postMessage({ type: 'openPromptSnippets' }));
-        // ‼️ The OS's own file picker, not a settings page. The panel stays
-        // open: the answer comes back as a fresh promptSnippets message and the
-        // list you were looking at is simply the new file's.
-        byId('snip-pick', 'click', () => {
-            snip.loading = true;
-            renderSnip();
-            vscode.postMessage({ type: 'pickPromptSnippets' });
-        });
-        // Clicking the backdrop closes it; clicking the panel must not.
-        byId('c-snipwrap', 'click', ev => { if (ev.target && ev.target.id === 'c-snipwrap') { snipClose(); } });
-        const q = document.getElementById('snip-q');
-        if (q) {
-            q.addEventListener('input', () => {
-                snip.q = q.value;
-                renderSnip();
-                const again = document.getElementById('snip-q');
-                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
-            });
-            q.addEventListener('keydown', ev => { if (ev.key === 'Escape') { snipClose(); } });
-            try { q.focus({ preventScroll: true }); } catch (e) { q.focus(); }
-        }
-        // ‼️ CLEARS, NEVER CLOSES. Esc already closes the whole window, so the
-        // one gesture the filter box was missing is "show me everything again"
-        // without losing the window — and without backspacing a typed phrase
-        // one character at a time. The caret goes back into the box, because
-        // clearing a filter is nearly always the start of typing another one.
-        byId('snip-qx', 'click', () => {
-            snip.q = '';
-            renderSnip();
-            const again = document.getElementById('snip-q');
-            if (again) { try { again.focus({ preventScroll: true }); } catch (e) { again.focus(); } }
-        });
-        const list = (snip.items || []);
-        // the same filter snipHtml drew with — the indices have to agree
-        const shownQ = window.AFQuery.compile(snip.q || '');
-        const shown = shownQ.empty ? list
-            : list.filter(x => shownQ.test(x.label + ' ' + x.group + ' ' + x.text));
-        document.querySelectorAll('[data-snip]').forEach(el =>
-            el.addEventListener('click', () => {
-                const it = shown[Number(el.dataset.snip)];
-                if (it) { snipUse(it.text); }
-            }));
-    }
-
-    /** Hang the picker off a button that sends. Left-click is untouched. */
-    function wireSnipMenu(id) {
-        const el = document.getElementById(id);
-        if (!el) { return; }
-        el.addEventListener('contextmenu', ev => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            snipOpen();
-        });
-    }
-    /** The tail every sending button's tooltip carries — a menu nobody knows
-     *  about is not a feature. */
-    const SNIP_HINT = 'right-click for your saved prompts';
+    // The picker itself is media/afSnippets.js — shared, because the Tasks
+    // page asks the same question in four more boxes. Here it is bound to the
+    // buttons that send (see wireSnipMenu at the point each one is drawn) and
+    // every pick lands in `c-text`; the paste fires an `input` event, which is
+    // the same listener that records every keystroke, so the draft, the
+    // autosize and Send's enabled state all follow without a second path.
+    window.AFSnippets.init(vscode);
+    const wireSnipMenu = id => window.AFSnippets.bind(id, 'c-text');
+    const SNIP_HINT = window.AFSnippets.HINT;
 
     /**
      * ‼️ THE AGENT, FIXED — a composer opened FROM an agent is about that agent.
@@ -2978,8 +2773,7 @@
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
                     </div>
                 </div>
-            </div>
-            <div id="c-snip"></div>`;
+            </div>`;
         // A rebuild starts every slot over — including the conversation's own
         // "nothing changed" key, or the new empty #talkinner would keep the old
         // key and never be filled (see paint's talkKey).
@@ -4045,17 +3839,9 @@
             return;
         }
         // The saved prompts, read off the file at the moment they were asked
-        // for. A late answer to a picker the user already closed is dropped.
-        if (ev.data && ev.data.type === 'promptSnippets') {
-            if (!snip) { return; }
-            snip = {
-                loading: false, q: snip.q || '',
-                file: ev.data.file || '', source: ev.data.source || 'none',
-                items: ev.data.items || [], error: ev.data.error || ''
-            };
-            renderSnip();
-            return;
-        }
+        // for. The picker owns the answer (media/afSnippets.js) — including
+        // dropping a late one for a window the user already closed.
+        if (window.AFSnippets.receive(ev.data)) { return; }
         // A refused send gives the message back whole — text and files — so
         // nothing has to be retyped or re-attached.
         if (ev.data && ev.data.type === 'restore') {

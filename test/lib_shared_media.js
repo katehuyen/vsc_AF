@@ -20,7 +20,12 @@ const fs = require('fs');
 const path = require('path');
 
 const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
-    'afTextTools.js', 'afTip.js', 'afForm.js', 'afQuery.js', 'afTime.js',
+    'afTextTools.js',
+    // afSnippets.js was the twelfth — the saved prompts, one right-click from
+    // any box that takes a prompt (M-24). Shared the moment a second surface
+    // wanted it: the Console's send buttons and the Tasks form's four boxes.
+    'afSnippets.js',
+    'afTip.js', 'afForm.js', 'afQuery.js', 'afTime.js',
     // afEngine.js was the tenth — which engine ran a thing, drawn one way (U-26)
     'afEngine.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn

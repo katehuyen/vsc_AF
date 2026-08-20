@@ -627,6 +627,36 @@ decide what the object actually does.
 destructive (a page-side warning can be missed while the focus is elsewhere),
 and the **OS file picker** (`showOpenDialog`), which has no webview equivalent.
 
+### A box that takes a prompt offers the saved ones — `media/afSnippets.js`
+
+**Never write a second prompt picker.** The window, its filter, its file dialog
+and the paste rule are one component; it ships to every page from `htmlShell`
+and its CSS is in `common.css` (`.af-snip*`), so there is nothing to wire but
+the trigger.
+
+```js
+window.AFSnippets.init(vscode);              // once, with this page's api
+window.AFSnippets.bind('c-send', 'c-text');  // a BUTTON, landing in a box elsewhere
+window.AFSnippets.bindAll(['nt-prompt', 'nt-retryprompt']);  // the BOXES themselves
+if (window.AFSnippets.receive(ev.data)) { return; }          // in the message listener
+```
+
+- **The trigger is a right-click, and left-click is untouched** — on a send
+  button it still sends, in a text box the caret still lands where you pressed.
+  `bind(trigger)` with no target means the trigger IS the box.
+- **`AFSnippets.HINT` goes in the trigger's tooltip.** A menu nobody knows
+  about is not a feature; every surface that has the gesture says so.
+- **A pick is PASTED, never sent** — through `AFTextTools.insert`, so a block
+  landing beside half a sentence behaves exactly like `Ctrl+V`.
+- **…and the box is told with an `input` event**, so the page's own listener
+  records it into whatever draft it keeps. No page passes a callback, and no
+  page can forget to.
+- **The window hangs off `<body>`**, because every page redraws its own `#app`
+  and a picker inside one would be taken away by the next host push.
+- **The host answers in one place** — `promptSnippetMessage` in
+  `panels/base.ts`. A panel that wants the picker calls it before its own
+  switch and supplies a `promptSnippets()` dep; it never grows its own cases.
+
 ### The form is a component — `media/afForm.js`
 
 **Never hand-roll a form card again.** The Tasks page proved the shape and then

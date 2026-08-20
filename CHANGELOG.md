@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.190.0 — M-24: the prompts you saved, in the form that writes prompts (2026-08-20)
+
+**The Console has had this since S-11: right-click a send button and the phrases you keep get pasted at the caret.** The New-task form asks the same question in four more boxes — the task’s own prompt, the retry prompt, the continuation prompt and a workflow step’s prompt — and had none of it. Those are the prompts nobody is sitting in front of when they run, so a wording that was got right once and then retyped from memory costs more here, not less.
+
+**Right-click any of those four boxes and the same window opens.** Same list, same filter, same *✎ Edit the file* and *📁 Change file…*, same rule that a pick is **pasted** and never sent. Left-click is untouched everywhere.
+
+**It is the SAME window, not a second one** (`media/afSnippets.js`). The picker was lifted out of `media/console.js` whole and the Console now uses the component; the three messages behind it are answered in one place too (`promptSnippetMessage` in `src/panels/base.ts`), so the file dialog’s rules cannot drift between two surfaces. It ships to every page, like the hover panel and the query grammar do — a component a page has to opt into is the component the next prompt box does without.
+
+**The window hangs off the body rather than off the page.** Every page redraws its own `#app`, and this page repaints on every host push: a picker living inside the form would be taken away by a task finishing somewhere else.
+
+**And the paste is recorded the way a keystroke is.** It fires the same `input` event, so the composer’s own listener writes it into the draft — no page needs a callback to stay in step with itself.
+
+**‼️ M-21 (part) — one box on this form was never doing that.** Every field records itself as it is touched, because the page repaints on every host push and a form that lived only in the DOM would lose a half-written prompt to a task somewhere else finishing. **The continuation prompt was read at submit time and nowhere else**: type one, wait for any push, and it was silently gone — the longest text on the card, and the one that only matters when nobody is watching. It is wired now.
+
+**The filter box in the picker offers the query grammar**, which it never did on the Console either — the sweep that requires it was passing at file level because the page around it had other boxes that did.
+
 ## 3.189.0 — M-21 (part): the Tasks page — where “New task” lives, and what a run burned (2026-08-20)
 
 **“New task” was on the wrong bar, and invisible from the tab you think on.** It sat in the **Runs** filter row next to `Cancel queued` and `Clear finished` — things you do TO a list of runs — while the form it opens is a planning act. Worse: from the **Plan** tab, the one page you are on while deciding what to set up, there was no way to start one. It is now on the page’s own bar beside 📊 Analytics, reachable from either tab; the composer already moves the tab under itself, so pressing it from Plan lands on the form.

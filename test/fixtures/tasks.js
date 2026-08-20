@@ -439,6 +439,39 @@ const variants = () => ([
                 text: require('../../out/core/launch.js').ONE_EXECUTOR
             });
         }
+    },
+    // ‼️ M-24 — the saved prompts, over the form that writes prompts. The
+    // window is the whole change and it exists in no other state, so a picture
+    // of the form with it shut would show none of it. It is drawn LAST because
+    // it hangs off the body: an `#app` repaint after this would take it away.
+    {
+        id: 'tasks-prompts',
+        label: 'Tasks → the saved prompts, right-clicked out of a prompt box',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-prompt': 'gece taraması — ' }, 'nt-prompt');
+            r.query('#nt-prompt')[0].fire('contextmenu');
+            r.send({
+                type: 'promptSnippets',
+                file: 'D:/zone/know/note/obsidian/00_AGENT_AREA/00_INPUT/10_DATA/50_Prompts/Agent Farm Prompts.md',
+                source: 'setting',
+                items: [
+                    {
+                        label: 'Devir notu', group: 'Oturum',
+                        text: 'Kaldığın yeri, açık kalemleri ve sonraki ajanın ilk beş dakikasını yaz.'
+                    },
+                    {
+                        label: 'Kök nedeni bul', group: 'Geliştirme',
+                        text: 'Yamayı yazmadan önce akışı oku ve kök nedeni söyle; belirsizsen sor.'
+                    },
+                    {
+                        label: 'Türkçe cevap ver', group: 'Geliştirme',
+                        text: 'Bana Türkçe cevap ver; kod ve tanımlayıcılar kendi hâlinde kalsın.'
+                    }
+                ]
+            });
+        }
     }
 ]);
 

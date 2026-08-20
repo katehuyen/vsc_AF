@@ -27,6 +27,11 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     // …and the hover panel (media/afTip.js) — M-8 turned every column of both
     // tables into one, so a stub here would be testing a different page
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTip.js'), 'utf8')
+    // …and the saved-prompt picker (M-24), which the page binds to every box
+    // that takes a prompt as it wires the form — a stub would not be the window
+    // that actually opens
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTextTools.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afSnippets.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
@@ -46,28 +51,60 @@ function mkEl(tag, dataset, attrs) {
         addEventListener(ev, fn) { this._listeners[ev] = fn; },
         focus() { },
         setSelectionRange() { },
-        click() { if (this._listeners.click) { this._listeners.click({ currentTarget: this, preventDefault() { } }); } },
-        fire(ev, extra) { if (this._listeners[ev]) { this._listeners[ev](Object.assign({ currentTarget: this, preventDefault() { } }, extra)); } }
+        click() { if (this._listeners.click) { this._listeners.click({ currentTarget: this, preventDefault() { }, stopPropagation() { } }); } },
+        // A component that stops a bubble (the right-click picker does, so the
+        // page's own menu is not offered under it) must not crash the shim.
+        dispatchEvent(ev) { this.fire(ev && ev.type, { target: this }); return true; },
+        fire(ev, extra) {
+            if (this._listeners[ev]) {
+                this._listeners[ev](Object.assign({
+                    currentTarget: this, target: this,
+                    preventDefault() { }, stopPropagation() { }
+                }, extra));
+            }
+        }
     };
     return el;
 }
+// NOTE: defined with defineProperty, not Object.assign — assign COPIES the
+// value a getter returns instead of the accessor itself, which would leave
+// innerHTML a dead plain property and the page silently unrendered.
+function mkNode(tag) {
+    const el = mkEl(tag, {}, {});
+    el._html = '';
+    Object.defineProperty(el, 'innerHTML', {
+        get() { return this._html; },
+        // ‼️ ONLY A WHOLE-PAGE REPAINT EMPTIES THE ELEMENT CACHE — the same rule
+        // lib_page_dom.js states. Writing `#app` IS the repaint: everything
+        // before it is gone and the page is about to wire the new markup.
+        // A write to anything else replaces one region, and clearing on it
+        // orphaned every element the page had already wired — which is how the
+        // picker opening (it writes its own host) silently unwired the very box
+        // it was about to paste into.
+        set(v) { this._html = v; if (this.id === 'app') { elCache.clear(); } }
+    });
+    return el;
+}
 function getEl(id) {
-    // NOTE: defined with defineProperty, not Object.assign — assign COPIES the
-    // value a getter returns instead of the accessor itself, which would leave
-    // innerHTML a dead plain property and the page silently unrendered.
     if (!els[id]) {
-        const el = mkEl('div', {}, {});
+        const el = mkNode('div');
         el.id = id;
-        el._html = '';
-        Object.defineProperty(el, 'innerHTML', {
-            get() { return this._html; },
-            set(v) { this._html = v; elCache.clear(); }
-        });
         els[id] = el;
     }
     return els[id];
 }
-const html = () => getEl('app')._html;
+/** ‼️ WHAT THE PAGE HUNG OFF THE BODY. The saved-prompt picker (M-24) puts its
+ *  window there on purpose: every page redraws its own `#app`, and a host push
+ *  repainting the form under an OPEN picker would take the picker with it. So
+ *  the shim has a body, and what lands in it is part of the page. */
+const loose = [];
+const bodyEl = {
+    appendChild(el) {
+        if (el) { loose.push(el); if (el.id) { els[el.id] = el; } }
+        return el;
+    }
+};
+const html = () => getEl('app')._html + loose.map(e => e._html || '').join('');
 const ms = createAfmsDom(html);
 
 /** Parse the rendered HTML into shim elements matching a CSS-ish selector. */
@@ -163,10 +200,13 @@ const sandbox = {
         querySelectorAll: query,
         // the shared multi-pick control has its own shim (lib_afms_dom.js)
         querySelector: (s) => (s.indexOf('[data-afms') === 0 ? ms.querySelector(s) : query(s)[0] || null),
+        createElement: (t) => mkNode(t),
+        get body() { return bodyEl; },
         get hidden() { return false; },
         get activeElement() { return null; }
     },
     setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { },
+    Event: class Event { constructor(type, opts) { this.type = type; this.bubbles = !!(opts && opts.bubbles); } },
     console, Date, Math, JSON, String, Number, Object, Array, RegExp, Set, Map, isNaN, parseInt, parseFloat
 };
 sandbox.globalThis = sandbox;
@@ -1740,6 +1780,69 @@ clickData('tab', 'run');
     ok('…and picking a month asks the host for that month',
         posted.slice(post1).some(p => p.type === 'runs-archive' && p.month === '2026-07'));
     onMessage.forEach(fn => fn({ type: 'x', data: { type: 'data', data: DATA } }));
+}
+
+// ------------------------------------------------- M-24: the saved prompts
+// ‼️ THE GESTURE IS THE POINT, so it is made rather than described. Right-click
+// the box, answer with a list, click a row — and the text has to be IN the box
+// and IN the draft, because a paste the composer never recorded is a paste the
+// next repaint throws away (which is the whole reason the continuation prompt
+// below is wired at all).
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    clickData('tab', 'run');
+    query('#nt-open')[0].click();
+
+    const box = () => sandbox.document.getElementById('nt-prompt');
+    ok('the New-task form has a prompt box to right-click', !!box());
+    posted = [];
+    box().fire('contextmenu');
+    ok('‼️ a right-click in a prompt box asks the host for the saved prompts',
+        posted.some(p => p.type === 'promptSnippets'));
+    ok('…and nothing is sent, queued or started by the gesture',
+        !posted.some(p => p.type === 'task-add' || p.type === 'task-new'));
+
+    send({
+        type: 'promptSnippets', file: 'C:/notes/prompts.md', source: 'setting',
+        items: [
+            { label: 'Devir notu', group: 'Oturum', text: 'Kaldığın yeri yaz.' },
+            { label: 'Kök nedeni bul', group: 'Geliştirme', text: 'Önce akışı oku.' }
+        ]
+    });
+    ok('the window draws what came back, grouped', html().includes('Devir notu')
+        && html().includes('af-snipbox') && html().includes('Oturum'));
+    ok('…and says which file it read, and how many blocks were in it',
+        html().includes('C:/notes/prompts.md') && html().includes('2 prompts'));
+
+    const rows = query('[data-snip]');
+    ok('every prompt in the list is a row you can press', rows.length === 2);
+    box().value = 'gece taraması';
+
+    // ‼️ …AND THE DRAFT IS TOLD. This is the half a callback-free component
+    // could have got silently wrong: the paste fires the same `input` event a
+    // keystroke fires, and the composer's OWN listener is what records it — so
+    // the next host push repaints the form with the pasted text still in it.
+    // The page's listener is chained rather than replaced, because what is
+    // being proved is that it exists AND that the paste reaches it.
+    let told = 0;
+    const pageInput = box()._listeners.input;
+    box()._listeners.input = (ev) => { told++; if (pageInput) { pageInput(ev); } };
+
+    rows[1].click();
+    ok('‼️ choosing one PASTES it at the caret — it does not replace the box',
+        box().value.indexOf('gece taraması') === 0 && box().value.includes('Önce akışı oku.'));
+    ok('‼️ …and the box is TOLD, the way a keystroke tells it',
+        !!pageInput && told === 1);
+    ok('…and the window closes behind it', !html().includes('af-snipbox'));
+
+    // ‼️ M-21 — the box that was NOT telling the draft. Typing a continuation
+    // prompt and waiting for any host push emptied it: every other field on the
+    // form records itself as it is touched, and this one was read at submit
+    // time only. A source check, because the box exists in one retry state and
+    // the wiring is what was missing.
+    ok('the continuation prompt records itself as it is typed, like every other field',
+        /byId\('nt-continuationprompt', 'input'/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8')));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

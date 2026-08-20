@@ -3628,11 +3628,22 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ Both doors to "which file?" open the SAME thing: the machine's own
         // picker. Sending somebody to VS Code's settings editor is the
         // extension talking about itself instead of doing the job.
-        const cons = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
-        ok('the Console picks the prompts file with a file dialog',
-            /case 'pickPromptSnippets'/.test(cons) && /showOpenDialog\(\{/.test(cons));
+        // M-24 — the picker's three messages are answered in ONE place now
+        // (promptSnippetMessage in src/panels/base.ts), because the Tasks form
+        // opens the same window and a second copy of the dialog's rules would
+        // be a second set of rules.
+        const base = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'base.ts'), 'utf8');
+        ok('the prompts file is picked with a file dialog',
+            /case 'pickPromptSnippets'/.test(base) && /showOpenDialog\(\{/.test(base));
         ok('…and never sends anybody to the settings editor for it',
-            !/workbench\.action\.openSettings/.test(cons));
+            !/workbench\.action\.openSettings/.test(base));
+        // …and both surfaces that offer the picker really route into it, rather
+        // than growing a case of their own again.
+        for (const panel of ['consolePanel.ts', 'tasksPanel.ts']) {
+            const src2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', panel), 'utf8');
+            ok(`${panel} answers the picker through the shared handler`,
+                /promptSnippetMessage\(/.test(src2) && !/case 'pickPromptSnippets'/.test(src2));
+        }
 
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
     }

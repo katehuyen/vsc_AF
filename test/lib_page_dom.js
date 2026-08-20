@@ -122,6 +122,10 @@ function runPage(scriptFile, DATA, extraWindow) {
                     ? ms.querySelector(sel) : (query(sel)[0] || null);
             },
             click() { this.fire('click'); },
+            // A component that puts text into somebody else's box tells the box
+            // the way a keystroke does (the saved-prompt picker, M-24), so the
+            // page's own `input` listener is what records it.
+            dispatchEvent(ev) { this.fire(ev && ev.type); return true; },
             fire(ev, extra) {
                 (this._listeners[ev] || []).forEach(fn => fn(Object.assign({
                     currentTarget: this, target: this,
@@ -139,6 +143,16 @@ function runPage(scriptFile, DATA, extraWindow) {
         }
         return els[id];
     }
+    /** What `document.body` is for a page script: somewhere to append to. An
+     *  element that lands here is registered by id, so it is queryable and it
+     *  is drawn — see the `body` getter below for why this exists. */
+    const bodyEl = {
+        appendChild(el) {
+            if (el && el.id) { els[el.id] = el; }
+            return el;
+        }
+    };
+
     /** Everything currently on the page: #app plus whatever any other element
      *  has been given. The pieces never overlap — a slot's own markup is empty
      *  in its parent's html. */
@@ -230,7 +244,20 @@ function runPage(scriptFile, DATA, extraWindow) {
             querySelector: (s) => (s.indexOf('[data-afms') === 0 ? ms.querySelector(s) : query(s)[0] || null),
             addEventListener: () => { },
             createElement: (t) => mkEl(t, {}, {}, ''),
-            get body() { return null; },
+            /**
+             * ‼️ A COMPONENT IS ALLOWED TO HANG OFF THE BODY, so the shim has a
+             * body to hang off. The saved-prompt picker (media/afSnippets.js)
+             * does exactly that, and for a reason a page cannot work around:
+             * every page redraws its own `#app`, and a host push repainting a
+             * form under an OPEN picker would take the picker with it.
+             *
+             * An appended element joins `els` under its id, which is what makes
+             * it visible to `html()` and to `query()` — so a fixture can drive
+             * the window open and it really is in the picture. Like every other
+             * slot, an `#app` repaint clears it; that is the shim's own rule
+             * about a whole-page repaint and not a claim about the browser.
+             */
+            get body() { return bodyEl; },
             get hidden() { return false; },
             get activeElement() { return active; }
         },
@@ -239,7 +266,8 @@ function runPage(scriptFile, DATA, extraWindow) {
         clearTimeout: extraWindow && typeof extraWindow.clearTimeout === 'function'
             ? extraWindow.clearTimeout : () => { },
         setInterval: () => 0, clearInterval: () => { },
-        console, Date, Math, JSON, String, Number, Object, Array, RegExp, Set, Map, isNaN,
+        Event: class Event { constructor(type, opts) { this.type = type; this.bubbles = !!(opts && opts.bubbles); } },
+    console, Date, Math, JSON, String, Number, Object, Array, RegExp, Set, Map, isNaN,
         parseInt, parseFloat
     };
     sandbox.globalThis = sandbox;

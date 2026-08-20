@@ -225,13 +225,22 @@ function main() {
         // them their width. So the slots are put back where they belong first.
         const app = r.els.app && r.els.app.innerHTML;
         const body = app && app.trim() ? inlineSlots(app, r.els) : r.html();
+        // ‼️ AND WHAT THE PAGE HUNG OFF THE BODY, which is not in `#app` and so
+        // is invisible to both branches above. A component that outlives a page
+        // repaint lives there on purpose (the saved-prompt picker, M-24), and a
+        // picture that dropped it would say the window does not exist.
+        const loose = Object.keys(r.els)
+            .filter(id => id !== 'app' && body.indexOf(`id="${id}"`) < 0)
+            .map(id => String(r.els[id].innerHTML || ''))
+            .filter(h => h.trim())
+            .join('\n');
         // ‼️ AND IT GOES BACK INSIDE `#app`. The shim hands back what a page WROTE
         // into #app, not the element itself — so a page that caps its own width
         // there (`#app{max-width:1180px}`, which the Search page does) was drawn
         // at the full window instead, and every picture of it was of a layout the
         // user cannot produce. A width argued about off a render is a width
         // measured on the wrong page.
-        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div></div>`;
+        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
     }).join('\n');
 
     const html = `<!doctype html>
@@ -246,7 +255,12 @@ body { margin: 0; padding: 0 0 60px;
 .rndr-h { margin: 0; padding: 6px 16px;
     font-size: 11px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase;
     background: #7c3aed; color: #fff; }
-.rndr-page { padding: 12px 16px 28px; }
+.rndr-page { padding: 12px 16px 28px; position: relative; }
+/* …and for the same reason, an overlay that covers the WINDOW covers only its
+   own section here: several variants are stacked in one file, and a real
+   fixed-position backdrop would draw the last one's picker over all of them.
+   The backdrop is the extension's; the box it is measured against is ours. */
+.rndr-page > .af-snipwrap { position: absolute; min-height: 320px; }
 /* ‼️ NOTHING STICKS IN A PHOTOGRAPH. A full-page screenshot draws a sticky or
    fixed element AGAIN where the viewport would have ended, so a page header
    appears a second time halfway down the picture and reads as the page having

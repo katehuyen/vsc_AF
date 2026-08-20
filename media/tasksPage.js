@@ -22,6 +22,19 @@
     const post = (m) => vscode.postMessage(m);
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
 
+    // ‼️ M-24 — THE PROMPTS YOU SAVED, IN THE FORM THAT WRITES PROMPTS.
+    // Four boxes here take one (the task's own prompt, the retry prompt, the
+    // continuation prompt, a workflow step's prompt) and they are the prompts
+    // nobody is sitting in front of when they run — so a phrase worded once and
+    // retyped from memory afterwards is worse here than it is on the Console.
+    // The picker is the same window the Console's send buttons open
+    // (media/afSnippets.js); here the box IS the trigger, because there is no
+    // send button to hang it off. SNIP_BOXES is the list, and it is the only
+    // place a fifth prompt box has to be added.
+    window.AFSnippets.init(vscode);
+    const SNIP_HINT = window.AFSnippets.HINT;
+    const SNIP_BOXES = ['nt-prompt', 'nt-retryprompt', 'nt-continuationprompt', 'nt-st-prompt'];
+
     let tab = DATA.tab || saved.tab || 'plan';
     let cmdText = '';
     let pendingCommand = false;
@@ -1010,7 +1023,7 @@
             ${c.retryResetAware ? `
             <label class="ntf thin" title="Minutes added to the stated reset time before the first retry actually goes. The window reopening and the CLI agreeing that it has are not the same instant."><span>Safety buffer</span>
                 <input type="number" id="nt-retrysafety" min="0" max="240" step="1" value="${C.esc(String(c.retrySafetyMin))}"></label>` : ''}
-            <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to."><span>Retry prompt</span>
+            <label class="ntf wide" title="Sent INSTEAD of the prompt above, on every retry. Leave it empty to send the same work again. ‼️ A retry is a fresh headless run with no memory of the last one, so this has to stand on its own — “and this time do it properly” would arrive with nothing to refer to.&#10;${C.esc(SNIP_HINT)}"><span>Retry prompt</span>
                 <input type="text" id="nt-retryprompt" value="${C.esc(c.retryPrompt || '')}" placeholder="(optional) — empty sends the same prompt again"></label>
             ${/**
               * ‼️ M-10 — WHAT A RETRY *IS*, WHICH IS THE OTHER HALF OF THE POLICY.
@@ -1040,7 +1053,7 @@
             + 'you stopped, read the transcript and the working folder first, and finish the ORIGINAL '
             + 'task without redoing work that is already done." Placeholders: {taskTitle}, {attempt}, '
             + '{failureReason}, {resetAt}, {progressSummary} — an unknown one is left in the text rather '
-            + 'than silently blanked.')}"><span>Continuation prompt</span>
+            + 'than silently blanked.\n' + SNIP_HINT)}"><span>Continuation prompt</span>
                 <input type="text" id="nt-continuationprompt" value="${C.esc(c.retryContinuation || '')}"
                     placeholder="(optional) — empty uses the built-in “carry on, don’t redo” wording"></label>
             <label class="ntf wide" title="${C.esc(
@@ -1374,7 +1387,10 @@
                     </select></label>` : ''}
             </div>
             ${s.stype === 'agent' ? `<div class="ntgrid">
-                <label class="ntf wide"><span>Prompt <em>required</em></span>
+                <label class="ntf wide" title="${C.esc(
+            'What this one step asks its agent to do. Each step is its own headless run with no '
+            + 'memory of the ones before it — what it needs from them arrives as the file '
+            + PREV + ' names.\n' + SNIP_HINT)}"><span>Prompt <em>required</em></span>
                     <textarea id="nt-st-prompt" rows="3"
                         placeholder="What should this step do? ${PREV} inserts the previous step's output file.">${C.esc(s.prompt)}</textarea></label>
             </div>` : ''}
@@ -1681,7 +1697,10 @@
                 ${kindMoved === 'run' ? 'Runs' : 'Plan'} tab to ${tab === 'run' ? 'Runs' : 'Plan'}, where that kind
                 lives. Everything you had typed came with it.</div>` : ''}
             <div class="ntgrid">
-                ${wantsRun ? `<label class="ntf wide"><span>Prompt <em>required</em></span>
+                ${wantsRun ? `<label class="ntf wide" title="${C.esc(
+            'What the agent is asked to do. It runs with nobody watching, so it has to stand on '
+            + 'its own: name the files, say what "done" looks like, and say where the answer goes.'
+            + '\n' + SNIP_HINT)}"><span>Prompt <em>required</em></span>
                     <textarea id="nt-prompt" rows="4"
                         placeholder="What should the agent do? Ctrl+Enter saves it.">${C.esc(c.prompt)}</textarea></label>` : ''}
                 <label class="ntf wide"><span>${c.kind === 'task' ? 'Title' : 'Name'}${c.kind === 'task' ? '' : ' <em>required</em>'}</span>
@@ -2736,6 +2755,10 @@
         byId('nt-add', 'click', () => submitComposer(false));
         byId('nt-force', 'click', () => submitComposer(true));
         if (composer) {
+            // M-24 — a right-click in any prompt box opens the saved prompts.
+            // Re-bound on every render because the form's fields come and go
+            // with the kind being made; bindAll skips whatever is not drawn.
+            window.AFSnippets.bindAll(SNIP_BOXES);
             ['prompt', 'title', 'workdir', 'priority', 'watchPath', 'token', 'time', 'onceAt',
                 'debounceSec', 'cooldownSec', 'maxPerHour',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
@@ -2822,6 +2845,15 @@
             });
             typeAhead('nt-retryformula');
             byId('nt-retryprompt', 'input', () => readComposer());
+            // ‼️ M-21 — THE ONE BOX THAT WAS NOT WRITING INTO THE DRAFT. Every
+            // other field on this form records itself as it is touched, for the
+            // reason stated where the wiring starts: a host push repaints the
+            // page and a form that lived only in the DOM loses what was typed.
+            // The continuation prompt was read at submit time and nowhere else,
+            // so a task finishing somewhere else while you were writing one
+            // silently emptied the box — the longest text on the card, and the
+            // one that only matters when nobody is watching.
+            byId('nt-continuationprompt', 'input', () => readComposer());
             // ‼️ S-19 — the picker, the filter and the chosen row all change
             // what is drawn below them, so all three repaint.
             byId('nt-conversation', 'change', () => { readComposer(); render(); });
@@ -3107,6 +3139,10 @@
     window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
+        // The saved-prompt picker owns its own answer, and must be offered it
+        // BEFORE the page acts — a `data` push repaints the form under an open
+        // window (media/afSnippets.js).
+        if (window.AFSnippets.receive(ev.data)) { return; }
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
         // ‼️ "OPEN THIS TASK" HAS TO LAND ON THE TASK. A project's Work tab and

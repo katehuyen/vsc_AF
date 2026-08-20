@@ -11093,7 +11093,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             }
             return out;
-        }
+        },
+        // M-24 — the saved prompts, for the four boxes in the New-task form
+        // that take one. The same reader the Console and Farm Settings use.
+        promptSnippets: () => readPromptSnippets()
     };
 
     needsEmitter.event(() => {

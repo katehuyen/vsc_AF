@@ -948,9 +948,9 @@
       }
     },
     {
-      "capability": "consolePanel.ts#openPromptSnippets",
+      "capability": "base.ts#openPromptSnippets",
       "ui": [
-        "page:consolePanel.ts#openPromptSnippets"
+        "page:base.ts#openPromptSnippets"
       ],
       "exempt": {
         "kind": "navigation",
@@ -978,9 +978,9 @@
       ]
     },
     {
-      "capability": "consolePanel.ts#pickPromptSnippets",
+      "capability": "base.ts#pickPromptSnippets",
       "ui": [
-        "page:consolePanel.ts#pickPromptSnippets"
+        "page:base.ts#pickPromptSnippets"
       ],
       "exempt": {
         "kind": "file-picker",
@@ -988,9 +988,9 @@
       }
     },
     {
-      "capability": "consolePanel.ts#promptSnippets",
+      "capability": "base.ts#promptSnippets",
       "ui": [
-        "page:consolePanel.ts#promptSnippets"
+        "page:base.ts#promptSnippets"
       ],
       "exempt": {
         "kind": "visual",

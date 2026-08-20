@@ -818,48 +818,72 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // actions together) — a `contextmenu` listener that opened a rename box
     // straight away is exactly what this forbids.
     //
-    // ‼️ ONE listener is allowed, and only in `wireSnipMenu`: the SEND buttons
-    // (Send · Send into turn · Send after turn · Start session) hang the saved
-    // prompts off a right-click. Those are buttons, not rows — they publish no
-    // `data-vscode-context`, so nothing is taken away from VS Code's menu. The
-    // count is checked rather than the mere absence, because "no contextmenu
-    // anywhere" was the crude form of a rule that is really about ROWS.
+    // ‼️ NOT ONE listener is allowed in this file any more. The saved prompts
+    // used to hang their right-click off the SEND buttons from here; since M-24
+    // the gesture belongs to the shared picker (media/afSnippets.js) and this
+    // page only names the trigger. So the count is back to zero — and the one
+    // allowed listener is checked where it now lives, below.
     const ctxHooks = (js.match(/addEventListener\('contextmenu'/g) || []).length;
     ok('…and right-click hands the row to VS Code\'s context menu, not to a rename box',
         /data-vscode-context/.test(js) && !/type: 'rename'/.test(js)
-        && ctxHooks === 1
-        && /function wireSnipMenu\(id\) \{[\s\S]{0,400}addEventListener\('contextmenu'/.test(js));
+        && ctxHooks === 0);
     ok('…keeping the default Copy/Paste items in it',
         /preventDefaultContextMenuItems: false/.test(js));
 
-    // ---- S-11: the saved prompts, hung off the buttons that send ----
+    // ---- S-11 · M-24: the saved prompts, hung off the buttons that send ----
+    // ‼️ THE PICKER IS SHARED NOW. The window, its filter, its file dialog and
+    // the paste rule live in media/afSnippets.js, because the Tasks form asks
+    // the same question in four more boxes and a second copy would be a second
+    // thing to get wrong. What stays this page's own business is WHICH triggers
+    // it hangs off and whether they say so — everything below that is checked
+    // against the component.
+    const snip = fs.readFileSync(path.join(__dirname, '..', 'media', 'afSnippets.js'), 'utf8');
     ok('the picker is on EVERY sending button, not just one of them',
         /wireSnipMenu\('c-send'\)/.test(js) && /wireSnipMenu\('c-hold'\)/.test(js));
+    ok('…and each of them lands its pick in the composer\'s own box',
+        /wireSnipMenu = id => window\.AFSnippets\.bind\(id, 'c-text'\)/.test(js));
     ok('‼️ …and both of them say so, or the menu is a feature nobody finds',
-        /const SNIP_HINT = 'right-click for your saved prompts'/.test(js)
+        /const HINT = 'right-click for your saved prompts'/.test(snip)
+        && /const SNIP_HINT = window\.AFSnippets\.HINT/.test(js)
         && (js.match(/SNIP_HINT/g) || []).length >= 3);
+    // ‼️ …and exactly ONE contextmenu listener in the whole feature, in the
+    // component's bind(). Those triggers are buttons and boxes, not rows — they
+    // publish no `data-vscode-context`, so nothing is taken from VS Code's menu.
+    ok('‼️ the right-click itself is the component\'s, and there is one of it',
+        (snip.match(/addEventListener\('contextmenu'/g) || []).length === 1
+        && /function bind\(trigger, into\)/.test(snip));
     ok('‼️ choosing a snippet PASTES it — nothing is sent behind your back',
-        /function snipUse\(text\)/.test(js)
-        && /window\.AFTextTools\.insert\(box, text\)/.test(js)
-        && !/snipUse[\s\S]{0,400}postMessage\(\{ type: 'send'/.test(js));
+        /function use\(text\)/.test(snip)
+        && /window\.AFTextTools\.insert\(box, text\)/.test(snip)
+        && !/function use\(text\)[\s\S]{0,600}postMessage\(\{ type: 'send'/.test(snip));
+    // …and the page hears about it the way it hears about a keystroke, so no
+    // page needs a callback to keep its own draft in step.
+    ok('…and the box is told, with the event every listener already watches',
+        /dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/.test(snip));
     ok('the list is read when the menu opens, never carried on the payload',
-        /snipOpen = \(\) => \{[\s\S]{0,300}postMessage\(\{ type: 'promptSnippets' \}\)/.test(js)
+        /function open\(where\) \{[\s\S]{0,300}post\(\{ type: 'promptSnippets' \}\)/.test(snip)
         && !/DATA\.snippets/.test(js));
     // ‼️ U-54: the rows in this picker carry NO hover. The window is already
     // open — the reader asked for it — so a panel opening again on every row
     // swept past covers the neighbouring prompts being compared against. The
     // hover rule in docs/CONVENTIONS.md is about a row you merely pass over.
     ok('‼️ a prompt row in the open picker carries no hover, rich or native',
-        /class="snipitem" data-snip=/.test(js)
-        && !/AFTip\.wrap\([\s\S]{0,120}snipitem/.test(js)
-        && !/class="snipitem"[^>]*title=/.test(js));
+        /class="af-snipitem" data-snip=/.test(snip)
+        && !/AFTip\.wrap\([\s\S]{0,120}af-snipitem/.test(snip)
+        && !/class="af-snipitem"[^>]*title=/.test(snip));
     ok('an empty list and a missing file are two different sentences',
-        /No blocks in that file yet/.test(js) && /snip\.error/.test(js));
+        /No blocks in that file yet/.test(snip) && /state\.error/.test(snip));
     ok('…and either way the file itself is one click away',
-        /type: 'openPromptSnippets'/.test(js));
+        /type: 'openPromptSnippets'/.test(snip));
     ok('‼️ choosing the file is the OS file dialog, not a trip to a settings page',
-        /type: 'pickPromptSnippets'/.test(js)
-        && /Choose a file…/.test(js) && /Change file…/.test(js));
+        /type: 'pickPromptSnippets'/.test(snip)
+        && /Choose a file…/.test(snip) && /Change file…/.test(snip));
+    // ‼️ THE WINDOW DOES NOT LIVE IN THE PAGE. It hangs off <body>, because
+    // every page redraws its own app div — a host push repainting the Tasks
+    // form under an open picker is exactly the case that made this shared.
+    ok('‼️ the picker outlives the page render that happens under it',
+        /const body = document\.body;[\s\S]{0,240}body\.appendChild\(host\)/.test(snip)
+        && !/id="c-snip"/.test(js));
     ok('…on the hosted rows and the resumable ones alike',
         /webviewSection: 'afConsoleSession'/.test(js) && /webviewSection: 'afConsoleResumable'/.test(js));
 }

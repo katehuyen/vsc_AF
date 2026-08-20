@@ -20,7 +20,7 @@ import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
-import { handleAfNav, htmlShell } from './base';
+import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
 
 /**
  * The composer's chip list, back as attachments.
@@ -798,6 +798,11 @@ export class ConsolePanel {
         const host = this.deps.host;
         const str = (k: string) => (typeof msg[k] === 'string' ? msg[k] as string : '');
         const idx = (k: string) => (typeof msg[k] === 'number' ? Math.floor(msg[k] as number) : -1);
+        // The saved-prompt picker answers for itself, on every page that has one
+        // (see promptSnippetMessage in ./base).
+        if (await promptSnippetMessage(this.panel.webview, () => this.deps.promptSnippets(), msg.type)) {
+            return;
+        }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'select':
@@ -1199,51 +1204,6 @@ export class ConsolePanel {
             case 'clearQueue':
                 host.clearQueue(str('id'));
                 break;
-            // A right-click on one of the SEND buttons. The answer carries the
-            // file it came from and the error when there is one, because "the
-            // menu was empty" and "the file you pointed at is gone" are two
-            // different things and only one of them is your fault.
-            case 'promptSnippets':
-                void this.panel.webview.postMessage({
-                    type: 'promptSnippets', ...this.deps.promptSnippets()
-                });
-                break;
-            case 'openPromptSnippets': {
-                const file = this.deps.promptSnippets().file;
-                if (file) { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
-                break;
-            }
-            /**
-             * ‼️ CHOOSING THE FILE IS A FILE DIALOG, NOT A TRIP TO A SETTINGS
-             * PAGE. This used to open VS Code's own settings editor at the key,
-             * which is the extension talking about itself instead of doing the
-             * thing: the answer to "which file?" is a path on this disk, and
-             * the only control that answers it honestly is the operating
-             * system's own picker. It is the same gesture the Browse… button on
-             * the Farm Settings page makes, so both doors behave alike.
-             *
-             * The picker is answered in place afterwards — the list is re-read
-             * and pushed back, so the file you just chose is on screen without
-             * closing anything.
-             */
-            case 'pickPromptSnippets': {
-                const current = this.deps.promptSnippets().file;
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
-                    openLabel: 'Use this file',
-                    filters: { 'Markdown / text': ['md', 'markdown', 'txt'], 'All files': ['*'] },
-                    ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
-                });
-                const chosen = picked?.[0]?.fsPath;
-                if (chosen) {
-                    await vscode.workspace.getConfiguration().update(
-                        'agentFarm.promptSnippetsFile', chosen, vscode.ConfigurationTarget.Global);
-                }
-                void this.panel.webview.postMessage({
-                    type: 'promptSnippets', ...this.deps.promptSnippets()
-                });
-                break;
-            }
             // ‼️ K-23 — READING FURTHER BACK IS A READ, AND NOTHING ELSE.
             // No process is touched, no token is spent and the session is not
             // disturbed: the transcript is a file on this disk and this puts

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { PromptSnippetsSnapshot } from '../core/prompts';
 
 /**
  * The global nav's 🔔 Notices button shows the current unread count in
@@ -263,6 +264,11 @@ export function htmlShell(
     const ctx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCtx.js'));
     const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
     const textTools = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTextTools.js'));
+    // The saved-prompt picker. Ships everywhere for the reason it was made
+    // shared (M-24): the rule is "a box that takes a prompt offers the prompts
+    // you saved", and a component a page had to opt into is the component the
+    // next prompt box does without.
+    const snippets = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSnippets.js'));
     // The rich hover panel. Ships everywhere for the same reason the others do:
     // the rule is "any hover carrying TEXT uses this", and a rule that needs a
     // script tag added first is a rule that gets skipped.
@@ -330,6 +336,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${ctx}"></script>
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
+<script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
@@ -340,4 +347,68 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;
+}
+
+/**
+ * ‼️ THE SAVED PROMPTS, ANSWERED THE SAME WAY WHEREVER THEY ARE ASKED FOR.
+ *
+ * The three messages `media/afSnippets.js` sends — read the list, open the
+ * file, choose a different file. Here rather than in each panel because the
+ * picker is shared (M-24): the Console's send buttons and every prompt box on
+ * the Tasks page open the same window, and a second copy of these three cases
+ * would be a second place for the file dialog's rules to drift.
+ *
+ * Returns true when the message was one of the picker's, so a panel can hand
+ * anything it does not recognise straight over and stop caring.
+ */
+export async function promptSnippetMessage(
+    webview: vscode.Webview,
+    read: () => PromptSnippetsSnapshot,
+    type: unknown
+): Promise<boolean> {
+    switch (type) {
+        // A right-click. The answer carries the file it came from and the error
+        // when there is one, because "the menu was empty" and "the file you
+        // pointed at is gone" are two different things and only one of them is
+        // your fault.
+        case 'promptSnippets':
+            void webview.postMessage({ type: 'promptSnippets', ...read() });
+            return true;
+        case 'openPromptSnippets': {
+            const file = read().file;
+            if (file) { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
+            return true;
+        }
+        /**
+         * ‼️ CHOOSING THE FILE IS A FILE DIALOG, NOT A TRIP TO A SETTINGS PAGE.
+         * This used to open VS Code's own settings editor at the key, which is
+         * the extension talking about itself instead of doing the thing: the
+         * answer to "which file?" is a path on this disk, and the only control
+         * that answers it honestly is the operating system's own picker. It is
+         * the same gesture the Browse… button on the Farm Settings page makes,
+         * so both doors behave alike.
+         *
+         * The picker is answered in place afterwards — the list is re-read and
+         * pushed back, so the file you just chose is on screen without closing
+         * anything.
+         */
+        case 'pickPromptSnippets': {
+            const current = read().file;
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+                openLabel: 'Use this file',
+                filters: { 'Markdown / text': ['md', 'markdown', 'txt'], 'All files': ['*'] },
+                ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
+            });
+            const chosen = picked?.[0]?.fsPath;
+            if (chosen) {
+                await vscode.workspace.getConfiguration().update(
+                    'agentFarm.promptSnippetsFile', chosen, vscode.ConfigurationTarget.Global);
+            }
+            void webview.postMessage({ type: 'promptSnippets', ...read() });
+            return true;
+        }
+        default:
+            return false;
+    }
 }
