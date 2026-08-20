@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.186.0 — U-75: resuming an Antigravity conversation stops eating its own transcript (2026-08-20)
+
+**A transcript whose “turn 1” was a turn from the middle.** Reopening a resumed Antigravity session showed a page that began with a stray paragraph under no turn heading, then “Tur 1” — a turn that had a couple of dozen turns before it. Resume it once more and most of what was left went too.
+
+**It was not the engine and it was not the viewer: the record was being overwritten with a window onto itself.** `external-console-transcripts/<id>.json` is the only transcript in the farm written as a whole file out of memory — every other engine appends to a log it owns — and it is written from the Console card’s own message list. A resume rebuilds that list from the **last ~150 messages** of the very same file (`historyWindowIndices`), the next turn writes the card back over the file, and everything above the window is gone. Measured on the reported conversation: 292 rows on record starting at `xh221`, under a head row still saying “↑ 221 older message(s) are in the transcript” — they were not; that row **was** the stray paragraph at the top, and the message under it was the false “Tur 1”.
+
+**A write MERGES now.** The record is kept whole and stays first; the card contributes only rows the record does not have, matched by message id, so the merge is safe to run on every write and on a card that took over a seat. Rows the card **read back** out of the record are dropped — the record already holds them, in the form they were written in — unless there is no record to merge into, in which case they are all the history there is and they are kept. Sentences **about** a read (“↑ 412 older message(s)…”, “— read back from the transcript · resumed here —”) are true of one reading of one file at one moment and are never written down at all. `startedAt` comes off the record too: a conversation that began on Tuesday is no longer filed as having started when somebody reopened it.
+
+**Only Antigravity could have this bug**, and the answer is structural rather than a guess: `farmConsoleTranscript` is `agy`-only, and Claude, Codex, Gemini and OpenCode are read from append-only logs their own engines write, which a Console card cannot shorten.
+
+**What was already lost is still on disk and is not restored by this.** Antigravity’s own step log for that conversation holds 35 user turns against the record’s 17, so the head can be recovered — as its own piece of work, because joining two differently-shaped sources is not something to bolt onto the write path.
+
 ## 3.185.0 — U-73: the Live Timeline's tooltips stop flickering (2026-08-20)
 
 **A tooltip that opens and closes while the pointer sits perfectly still.** The Live Timeline rewrites `#app` whole on every data event **and** every five seconds, so the wrapper under the pointer is destroyed and rebuilt — and a browser does not put `:hover` back on the node that replaced the one you were on until you move again.

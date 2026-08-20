@@ -854,6 +854,86 @@ export function farmConsoleTranscript(state: ConsoleSessionState): FarmConsoleTr
     };
 }
 
+/**
+ * ‼️ U-75 — A ROW THE CONSOLE READ BACK, NOT A ROW THE CONVERSATION HAD.
+ *
+ * Resuming rebuilds the scrollback from this very file, and the rebuilt rows are
+ * named by where they came from: `xh<n>` is a message re-rendered out of the
+ * transcript at position n, `h<n>` the same from the native reader. Everything
+ * the conversation itself produced carries a live id — `cm…`, `sys-…`, `err-…`,
+ * `perm-…` — so the two are told apart by the id and not by guessing at text.
+ */
+export function isReadBackRow(m: ConsoleMessage): boolean {
+    return /^x?h\d/.test(String(m?.id ?? ''));
+}
+
+/**
+ * ‼️ U-75 — AND A SENTENCE **ABOUT** A READ, which is not conversation at all.
+ *
+ * "↑ 412 older message(s) are in the transcript", "— read back from the
+ * transcript · snapshot 2.1 MB · resumed here —", the notes that explain why a
+ * scrollback could not be rebuilt. They are true of one reading of one file at
+ * one moment; written into the record they become permanent scars that every
+ * later resume adds another of.
+ */
+export function isReadNoteRow(m: ConsoleMessage): boolean {
+    return /^x?h-/.test(String(m?.id ?? ''));
+}
+
+/**
+ * ‼️ U-75 — THE RECORD IS NEVER SHORTENED BY A READ OF IT.
+ *
+ * This mirror is the ONLY transcript in the farm written as a whole file out of
+ * memory. Every other engine appends to a log it owns, so a Console card holding
+ * a windowed view of a conversation cannot damage it. Here the card WAS the
+ * file: a resume rebuilt the scrollback from the last ~150 messages
+ * (`historyWindowIndices`), the next turn wrote the card back over the file, and
+ * everything above that window was gone — from Agent Farm's own record, which is
+ * the only copy there is, Antigravity's store being unreadable protobuf.
+ * Reported as a transcript whose "turn 1" was a turn from the middle, opening on
+ * a stray paragraph with no turn heading above it: that paragraph was wherever
+ * the window happened to start. A second resume cut what was left again.
+ *
+ * So a write MERGES rather than replaces:
+ *
+ * - `carried` — the record as it stands — is kept WHOLE and stays first.
+ * - The card contributes only what it has that the record does not, matched by
+ *   message id. That is what makes the merge safe to run on every write and on a
+ *   card that took over a seat: a row already in the record is never appended a
+ *   second time.
+ * - Rows the card READ BACK out of the record are dropped, because the record
+ *   already holds those same messages in the form they were written in. When
+ *   there is no record to merge into they are all the history there is, so they
+ *   are kept — a conversation first hosted from the CLI's own log must not lose
+ *   its past to this rule.
+ * - Notes about a read are never written down at all.
+ *
+ * `startedAt` comes from the record too: a resumed card starts its clock now, and
+ * a conversation that began on Tuesday must not be filed as having started when
+ * somebody reopened it.
+ */
+export function mergeFarmConsoleTranscript(
+    carried: Pick<FarmConsoleTranscript, 'messages' | 'startedAt'> | undefined,
+    next: FarmConsoleTranscript
+): FarmConsoleTranscript {
+    const prev = carried?.messages ?? [];
+    const held = new Set(prev.map(m => m.id));
+    const own = next.messages.filter(m => {
+        if (isReadNoteRow(m)) { return false; }
+        if (isReadBackRow(m)) { return prev.length === 0; }
+        return !held.has(m.id);
+    });
+    if (!prev.length) { return { ...next, messages: own }; }
+    const messages = [...prev, ...own];
+    const started = carried?.startedAt ?? 0;
+    return {
+        ...next,
+        startedAt: started > 0 ? Math.min(started, next.startedAt || started) : next.startedAt,
+        lastTs: Math.max(next.lastTs || 0, messages[messages.length - 1]?.ts ?? 0),
+        messages
+    };
+}
+
 export function readFarmConsoleTranscript(raw: string): FarmConsoleTranscript | undefined {
     let v: unknown;
     try { v = JSON.parse(raw); } catch { return undefined; }

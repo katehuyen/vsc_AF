@@ -20,7 +20,8 @@ import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
 import {
     agySessionsSource, codexSessionsSource, farmConsoleSessionsSource,
-    farmConsoleTranscript, geminiSessionsSource, opencodeSessionsSource
+    farmConsoleTranscript, FarmConsoleTranscript, geminiSessionsSource,
+    mergeFarmConsoleTranscript, opencodeSessionsSource, readFarmConsoleTranscript
 } from './core/cliTranscripts';
 import {
     HarvestResult, nodeOpencodeCli, OpencodeHarvester
@@ -12659,6 +12660,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // — the 383 MB measurement is the whole argument for the shape.
         nodeOpencodeIo(() => ENGINES.opencode.exe));
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
+    const externalTranscriptFile = (sessionId: string): string =>
+        path.join(farmExternalTranscriptDir, `${sessionId.replace(/[^a-z0-9._-]/gi, '_')}.json`);
+    /**
+     * ‼️ U-75 — THE RECORD THIS CARD IS ADDING TO, held so the file is not
+     * re-parsed on every write.
+     *
+     * The disk is read ONCE per card, and after that this is what was last
+     * written for it. It is only an optimisation, not the correctness: the merge
+     * matches on message id, so handing it a stale record appends the rows that
+     * are missing from it and nothing else. Keyed by the CARD, which a resume
+     * into the same seat deliberately reuses — that card is continuing the same
+     * conversation and must go on adding to the same record.
+     *
+     * Why it merges at all: `mergeFarmConsoleTranscript`.
+     */
+    const carriedTranscripts = new Map<string, FarmConsoleTranscript>();
+    const carriedTranscriptFor = (id: string, file: string): FarmConsoleTranscript | undefined => {
+        const held = carriedTranscripts.get(id);
+        if (held) { return held; }
+        try {
+            return readFarmConsoleTranscript(fs.readFileSync(file, 'utf8'));
+        } catch { return undefined; }   // no record yet — this card starts one
+    };
     const writeExternalConsoleTranscript = (id: string): void => {
         const s = consoleHost.get(id);
         if (!s) { return; }
@@ -12666,9 +12690,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!snap) { return; }
         try {
             fs.mkdirSync(farmExternalTranscriptDir, { recursive: true });
-            const safeId = snap.sessionId.replace(/[^a-z0-9._-]/gi, '_');
-            fs.writeFileSync(path.join(farmExternalTranscriptDir, `${safeId}.json`),
-                JSON.stringify(snap), 'utf8');
+            const file = externalTranscriptFile(snap.sessionId);
+            const merged = mergeFarmConsoleTranscript(carriedTranscriptFor(id, file), snap);
+            fs.writeFileSync(file, JSON.stringify(merged), 'utf8');
+            carriedTranscripts.set(id, merged);
             // The transcript is a Sessions row and an openable page as soon as
             // the first turn lands; waiting for the minute scan would recreate
             // the "empty Antigravity session" gap this file exists to close.
@@ -12695,6 +12720,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             for (const timer of externalTranscriptTimers.values()) { clearTimeout(timer); }
             externalTranscriptTimers.clear();
             for (const s of consoleHost.list()) { writeExternalConsoleTranscript(s.id); }
+            carriedTranscripts.clear();
             // Snapshot first: dispose() clears the in-memory sessions after
             // closing their processes, so reversing this order can drop the
             // final sub-second Agy turn when the VS Code window shuts down.
