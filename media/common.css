@@ -288,11 +288,11 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     font-size: 12px; line-height: 1.55; font-weight: normal; text-align: left;
     white-space: pre-wrap; word-break: break-word; text-decoration: none;
     cursor: auto;
-    border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
-    background-color: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #252526));
-    background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #252526));
-    color: var(--vscode-foreground, #ccc);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--vscode-widget-border, #454545);
+    background-color: var(--vscode-editor-background, #1e1e1e) !important;
+    background: var(--vscode-editor-background, #1e1e1e) !important;
+    color: var(--vscode-foreground, #cccccc);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
 }
 /* ‼️ A-12 — A CLOSED PANEL MUST NOT MAKE THE PAGE WIDER.
    `visibility: hidden` hides a box; it does not remove it from layout, and an
