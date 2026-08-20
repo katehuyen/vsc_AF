@@ -1120,7 +1120,7 @@
                     <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
                 </div>
                 ${s.title ? `<div class="sub" style="margin-top:3px"><span${open}>${C.esc(s.title)}</span></div>` : ''}
-                <div class="sub" style="margin-top:4px">${s.lastPrompt ? window.AFTip.wrap('“' + C.esc(s.lastPrompt) + '”', `${s.label || s.agentName} · ${window.AFTip.sizeNote(s.firstPrompt || s.lastPrompt)}`, (s.firstPrompt || s.lastPrompt)) : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
+                <div class="sub" style="margin-top:4px">${s.lastPrompt ? window.AFTip.wrap('“' + C.esc(s.lastPrompt) + '”', `${s.label || s.agentName} · ${window.AFTip.sizeNote(s.firstPrompt || s.lastPrompt)}`, (s.firstPrompt || s.lastPrompt), 'tip-block') : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
                 ${st.money ? `<div class="sub" style="margin-top:6px" title="From this session's transcript: what it has spent, the tokens that bought, what its context window is holding now, and the model of its last reply">${st.money}</div>` : ''}
                 <div class="sub" style="margin-top:${st.money ? '2' : '6'}px">${st.work}</div>
                 <div class="sub" style="margin-top:2px">${st.time}</div>
