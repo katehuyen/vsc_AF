@@ -32,11 +32,13 @@ function mkEl(cls) {
     // A selector here is a comma list of bare names — `.class`, a tag, an
     // `[attr]` — and this stub answers it out of the element's class set, which
     // is how every element in this file declares what it is.
-    el.matches = sel => String(sel).split(',').some(
-        s => el.cls.has(s.trim().replace(/^[.[]|]$/g, '')));
+    el.matches = sel => hits(el, sel);
+    /** `.a`, `.a.b`, or a comma list of either — everything this component asks
+     *  for. A token is matched against the element's class set. */
+    const hits = (node, sel) => String(sel).split(',').some(part => part.trim().split('.')
+        .filter(Boolean).every(c => node.cls.has(c.replace(/^\[|\]$/g, ''))));
     el.closest = sel => {
-        const want = sel.replace(/^\./, '');
-        for (let n = el; n; n = n.parent) { if (n.cls.has(want)) { return n; } }
+        for (let n = el; n; n = n.parent) { if (hits(n, sel)) { return n; } }
         return null;
     };
     el.contains = other => {
@@ -116,9 +118,13 @@ ok('the component still exports its two shapes',
 // takes a panel out of a scrolling menu. Counted rather than ignored so a FOURTH
 // one cannot appear unnoticed — this file is the only thing watching what the
 // component binds.
+// TWO observers, and they are the two KINDS of panel: the ordinary one is put
+// back with `af-on`, a `tip-free` one is re-opened and re-placed (U-73). One
+// observer could not serve both — they have different state and different ways
+// of being open.
 ok('and it installed the pointer bridge rather than trusting :hover alone',
     (listeners.pointerover || []).length === 3 && (listeners.pointermove || []).length === 1
-    && (listeners.pointerout || []).length === 1 && observers.length === 1);
+    && (listeners.pointerout || []).length === 1 && observers.length === 2);
 ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
     (listeners.pointerdown || []).length === 1 && (listeners.keydown || []).length === 1);
 
@@ -249,6 +255,73 @@ ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
     ok('a tip-free panel is left to its own placer and its own timers',
         !f.w.classList.contains('af-hold'));
     timers.clear();
+}
+
+// ---- U-73: a tip-free panel survives a repaint too --------------------------
+// The complaint: on the Live Timeline a tooltip flickers while the pointer sits
+// perfectly still. That page rewrites `#app` whole on every data event AND every
+// five seconds, and every trigger on it is `tip-free` — which the bridge at the
+// top of this file never knew about. It watches the ORDINARY path's state, so a
+// free panel's wrapper was destroyed, `openW` became an orphan and the panel
+// closed; the pointer had not moved, `:hover` never came back, nothing reopened
+// it, and the next redraw did it again.
+{
+    at = {}; timers.clear();
+    documentStub.documentElement.clientWidth = 1000;
+    documentStub.documentElement.clientHeight = 800;
+
+    /** A free trigger with the measurements its placer asks for. */
+    const mkFree = () => {
+        const t = mkTip();
+        t.w.cls.add('tip-free');
+        t.w.getBoundingClientRect = () => ({ left: 100, top: 200, right: 180, bottom: 214, width: 80 });
+        t.t.style = {};
+        t.t.offsetHeight = 120;
+        return t;
+    };
+
+    const one = mkFree();
+    at[key(50, 60)] = one.w;
+    fire('pointerover', { target: one.w, clientX: 50, clientY: 60 });
+    ok('a free panel waits its own delay rather than opening at a touch',
+        !one.w.classList.contains('af-open'));
+    runTimers();
+    ok('…and then it opens', one.w.classList.contains('af-open'));
+
+    // the reader had scrolled into a long body
+    one.t.scrollTop = 90;
+    fire('scroll', { target: one.t });
+
+    // the page redraws itself under a pointer that never moved
+    const two = mkFree();
+    one.w.isConnected = false;
+    at[key(50, 60)] = two.w;
+    repaint();
+
+    ok('‼️ U-73 — the free panel is re-opened on the node that replaced its trigger',
+        two.w.classList.contains('af-open'));
+    ok('…placed again rather than left at the corner of the window',
+        two.t.style.left === '100px');
+    ok('…and back at the line the reader had reached', two.t.scrollTop === 90);
+    ok('the dead wrapper does not stay open behind it', !one.w.classList.contains('af-open'));
+
+    // ‼️ AND THE OTHER HALF OF THE SAME BUG: the ordinary bridge must NOT put a
+    // free panel back, because `af-on` shows one with no delay at all — a
+    // repaint during the opening wait flashed the panel, unplaced, at 0,0.
+    at = {}; timers.clear();
+    const three = mkFree();
+    at[key(70, 80)] = three.w;
+    fire('pointerover', { target: three.w, clientX: 70, clientY: 80 });   // delay still running
+    const four = mkFree();
+    three.w.isConnected = false;
+    at[key(70, 80)] = four.w;
+    repaint();
+    ok('‼️ a repaint mid-wait does not flash a free panel open',
+        !four.w.classList.contains('af-on') && !four.w.classList.contains('af-open'));
+
+    at = {}; timers.clear();
+    documentStub.documentElement.clientWidth = undefined;
+    documentStub.documentElement.clientHeight = undefined;
 }
 
 // ---- U-74: a panel yields to the hand --------------------------------------

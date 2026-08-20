@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.185.0 — U-73: the Live Timeline's tooltips stop flickering (2026-08-20)
+
+**A tooltip that opens and closes while the pointer sits perfectly still.** The Live Timeline rewrites `#app` whole on every data event **and** every five seconds, so the wrapper under the pointer is destroyed and rebuilt — and a browser does not put `:hover` back on the node that replaced the one you were on until you move again.
+
+**The component already had a bridge for exactly this, and it only knew about one kind of panel.** It watches the ordinary path's state (`af-on`), while every trigger on the Live Timeline is `tip-free` — a panel that is taken out of the flow and placed by its own placer. So a free panel's wrapper went, `openW` became an orphan, the panel closed, nothing reopened it, and the next redraw did it again. **A `tip-free` panel is now re-opened on the node that replaced its trigger, re-placed from real measurements, and put back at the line the reader had scrolled to.**
+
+**‼️ And the other half of the same bug, which was the ordinary bridge being too eager:** `af-on` shows a panel with **no delay at all**, and it was being applied to free wrappers too — so a redraw that landed while the pointer was still inside a free trigger's opening wait **flashed the panel open**, unplaced, in the corner of the window. Each kind of panel is now put back by its own bridge and by nothing else.
+
+**Deferring the page's own redraws was the other way out, and it is worse:** a live page that stops telling the truth while you rest a pointer on it is a page that lies. The panel is what has to survive, and it survives in the component rather than in each page.
+
 ## 3.184.0 — U-76: Copy Corpus — what that point said, in one click (2026-08-20)
 
 **The gesture that existed was four steps long.** Left-click a dot on the Live Timeline, the viewer opens on that exact moment, find the step's copy button, press it — two clicks and a lost place, for one line of text somebody wanted to paste into a message.

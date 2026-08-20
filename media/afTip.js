@@ -154,6 +154,11 @@
      *  open, so muting is one act rather than three that can disagree. */
     const closers = [];
     let mutedW = null, hoverW = null;
+    /** How far into a long body the reader had got. One number, because only
+     *  one panel is ever open — and both repaint bridges below put it back: a
+     *  long prompt jumping to its first line is the same interruption as the
+     *  panel closing, in a quieter form. */
+    let lastScroll = 0;
 
     function unmute() {
         if (mutedW) { mutedW.classList.remove('af-mute'); mutedW = null; }
@@ -174,9 +179,17 @@
     if (doc && typeof doc.addEventListener === 'function') {
         // Registered FIRST, so `tip-act` and `af-mute` are already decided by the
         // time the two opening mechanisms below read them on the same event.
+        // Whichever panel is open, its scroll position is remembered here once
+        // rather than in each of the two bridges below.
+        doc.addEventListener('scroll', function (e) {
+            const t = e.target;
+            if (t && t.classList && t.classList.contains('af-tip')) { lastScroll = t.scrollTop || 0; }
+        }, true);
+
         doc.addEventListener('pointerover', function (e) {
             const w = closestW(e.target);
             if (mutedW && w !== mutedW) { unmute(); }
+            if (w !== hoverW) { lastScroll = 0; }
             hoverW = w;
             if (!w) { return; }
             if (w !== mutedW && tipMuted(w)) { mute(w); return; }
@@ -277,7 +290,7 @@
 
         /** The wrapper the pointer is over, where it entered, how far the panel
          *  had been scrolled — the three things a rebuild would otherwise lose. */
-        let over = null, atX = -1, atY = -1, scrolled = 0;
+        let over = null, atX = -1, atY = -1;
         /** Set only while the class is standing in for a lost `:hover`. */
         let bridged = null;
 
@@ -344,7 +357,7 @@
             // panel the grace period was buying time to reach — ends the walk.
             if (w) { cancelHold(w); }
             if (!w || w === over) { return; }
-            over = w; atX = e.clientX; atY = e.clientY; scrolled = 0;
+            over = w; atX = e.clientX; atY = e.clientY;
             // Which way it opens is decided now, while the open delay is still
             // running: a panel that jumps to the other side after it is visible
             // is worse than one that opened in the wrong place.
@@ -375,12 +388,6 @@
             }
         }, true);
 
-        // Remember how far into a long body the reader had got.
-        doc.addEventListener('scroll', function (e) {
-            const t = e.target;
-            if (t && t.classList && t.classList.contains('af-tip')) { scrolled = t.scrollTop || 0; }
-        }, true);
-
         let queued = false;
         const restore = () => {
             queued = false;
@@ -388,13 +395,21 @@
             const w = closestW(doc.elementFromPoint(atX, atY));
             over = w;
             if (!w) { return; }
+            // ‼️ U-73 — `tip-free` IS NOT THIS BRIDGE'S BUSINESS, and putting it
+            // back here was actively wrong: `af-on` shows a panel with NO delay,
+            // so a repaint that landed while the pointer was still inside a free
+            // trigger's opening wait flashed the panel — at `left:0; top:0`,
+            // because its placer had not run. A free panel has its own bridge
+            // at the bottom of this file, which re-opens it only if it was
+            // actually open and places it before it is seen.
+            if (w.classList.contains('tip-free')) { return; }
             w.classList.add('af-on');
             bridged = w;
             // The replacement node is a different element in a redrawn section;
             // it may not sit exactly where the old one did.
             flip(w);
             const tip = w.querySelector('.af-tip');
-            if (tip && scrolled) { tip.scrollTop = scrolled; }
+            if (tip && lastScroll) { tip.scrollTop = lastScroll; }
         };
 
         new MutationObserver(function () {
@@ -479,6 +494,9 @@
 
     if (doc && typeof doc.addEventListener === 'function') {
         let openW = null, openT = 0, closeT = 0;
+        /** Where the pointer entered the wrapper whose panel is open — the
+         *  repaint bridge at the bottom of this block needs it (U-73). */
+        let freeAtX = -1, freeAtY = -1;
 
         const panelOf = w => (w ? w.querySelector('.af-tip') : null);
 
@@ -540,12 +558,18 @@
                 return;
             }
             clearTimeout(closeT);
+            // U-73: where the pointer ENTERED, kept for the repaint bridge below
+            // — not where it is when the panel dies, which may be inside the
+            // panel, and a `tip-free` panel floats over rows it does not belong
+            // to.
+            const ex = e.clientX, ey = e.clientY;
             openT = setTimeout(function () {
                 // Re-asked at the end of the wait, not only at the start: the
                 // control can have been opened during it, pointer still still.
                 if (!w.isConnected || tipMuted(w) || w.classList.contains('af-mute')) { return; }
                 close();
                 openW = w;
+                freeAtX = ex; freeAtY = ey;
                 w.classList.add('af-open');
                 place(w);
             }, tipOpenMs(w));
@@ -568,6 +592,59 @@
         doc.addEventListener('scroll', function () {
             if (openW) { openW.isConnected ? place(openW) : close(); }
         }, true);
+
+        /* --------------------------------------------------------------
+           ‼️ U-73 — A `tip-free` PANEL SURVIVES A REPAINT TOO.
+
+           The bridge above this file (`af-on`) was built for the ordinary
+           panel and only ever knew about it: the observer watches `over`,
+           and `over` is the ORDINARY path's state. `tip-free` opens through
+           `af-open` and its own placer, so on a page that redraws itself on
+           a timer — the Live Timeline rewrites `#app` whole on every data
+           event AND every five seconds — the wrapper under a stationary
+           pointer was destroyed, `openW` became an orphan, and the panel
+           closed. The pointer had not moved, so `:hover` never came back and
+           nothing reopened it; a moment later the next redraw did the same
+           thing again. That is the flicker, and every trigger on that page
+           is `tip-free`, which is why it was the page it was reported on.
+
+           Deferring the page's own redraws was the other way, and it is
+           worse: a live page that stops telling the truth while you rest a
+           pointer on it is a page that lies. The panel is what has to
+           survive, and it survives here rather than in each page.
+
+           The same three facts as the ordinary bridge: where the pointer
+           ENTERED (not where it is — it may be inside the panel, which is
+           `position:fixed` over other rows), the panel's scroll position,
+           and the wrapper itself. Re-opened in the same frame, so nothing is
+           seen closing.
+           -------------------------------------------------------------- */
+        if (typeof MutationObserver === 'function' && typeof doc.elementFromPoint === 'function') {
+            let queued = false;
+            const rescue = () => {
+                queued = false;
+                if (!openW || openW.isConnected) { return; }
+                const at = doc.elementFromPoint(freeAtX, freeAtY);
+                const w = at && typeof at.closest === 'function' ? at.closest('.af-tipw.tip-free') : null;
+                // The orphan gives its class up first: a detached node carrying
+                // an open panel is the kind of thing that comes back to life the
+                // day somebody reuses the markup.
+                close();
+                if (!w || w.classList.contains('af-mute') || tipMuted(w)) { return; }
+                openW = w;
+                w.classList.add('af-open');
+                // The replacement is a different element in a redrawn section:
+                // measured again rather than given the old box.
+                place(w);
+                const tip = panelOf(w);
+                if (tip && lastScroll) { tip.scrollTop = lastScroll; }
+            };
+            new MutationObserver(function () {
+                if (queued || !openW || openW.isConnected) { return; }
+                queued = true;
+                if (typeof requestAnimationFrame === 'function') { requestAnimationFrame(rescue); } else { rescue(); }
+            }).observe(doc.documentElement || doc, { childList: true, subtree: true });
+        }
     }
 
     window.AFTip = { wrap: wrap, cell: cell, lines: lines, sizeNote: sizeNote, esc: esc };
