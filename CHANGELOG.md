@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.189.0 — M-21 (part): the Tasks page — where “New task” lives, and what a run burned (2026-08-20)
+
+**“New task” was on the wrong bar, and invisible from the tab you think on.** It sat in the **Runs** filter row next to `Cancel queued` and `Clear finished` — things you do TO a list of runs — while the form it opens is a planning act. Worse: from the **Plan** tab, the one page you are on while deciding what to set up, there was no way to start one. It is now on the page’s own bar beside 📊 Analytics, reachable from either tab; the composer already moves the tab under itself, so pressing it from Plan lands on the form.
+
+**The Runs table could tell you a run took four minutes and not what those four minutes burned.** Tokens are the figure EVERY engine publishes and the only spend figure three of the four have — and they were on no surface of this page: the Cost column borrowed them for the plan-billed engines and hid them for Claude. **Tokens is a column now**, sortable, beside Cost. Each answers one question (ONE SUBJECT): this one what was spent, Cost what it was worth. A plan-billed engine’s Cost is an honest empty rather than `$0.00`, which reads as “free”, and its heading says where the tokens went instead.
+
+**The rate moved with them.** “… tokens a minute” was in the *Took* panel; how fast something spent is a fact about the spending, and one fact belongs in one panel.
+
+**‼️ This is part of M-21, not the whole of it.** The item asks for the entire Tasks page to be swept, functionally and in its UI, and the rest of what it names is filed as its own work: saved prompts on right-click in every composer prompt box (M-24), the page’s tooltips brought up to the five design principles (M-25), and the sweep itself — placements, state mismatches, stuck states, edge cases — which stays on M-21.
+
 ## 3.188.0 — K-28: resuming an OpenCode session stops inventing a model change (2026-08-20)
 
 **A red line on every resume, for a change nobody asked for:** *error OpenCode refused the model change — session/set_config_option: Invalid params: model not found: big-pickle — {"providerId":"big-pickle","modelId":"big-pickle"}*.

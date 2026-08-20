@@ -474,6 +474,13 @@ ok('tab counts come from the data', html().includes('📅 Plan <span class="tab-
     && html().includes('▶ Runs <span class="tab-n">4</span>'));
 ok('analytics is a link OUT, not a tab', html().includes('data-open="open-analytics"')
     && !/data-tab="analytics"/.test(html()));
+// ‼️ M-21 — MAKING A TASK BELONGS TO THE PAGE, NOT TO THE RUNS LIST. The button
+// lived in the Runs filter bar beside "Cancel queued" and "Clear finished" —
+// things you do TO a list of runs — and was invisible from Plan, which is the
+// tab you are on while deciding what to set up. This asserts it from the tab
+// the page OPENS on, which is the half that was missing.
+ok('‼️ M-21 — "+ New task" is on the page bar, reachable from the Plan tab',
+    /id="nt-open"/.test(html()) && /class="tabs"[\s\S]*id="nt-open"[\s\S]*open-analytics/.test(html()));
 
 // ------------------------------------------------------- PLAN: one table
 ok('a schedule appears', html().includes('AGENT_AREA batch'));
@@ -670,9 +677,20 @@ ok('the natural-language command bar is here, not on the plan tab', html().inclu
     ok('…and the Engine column exists at all', table().includes('>Engine</th>'));
     // …in the CELL. The column's own heading explains why $0.00 is not written
     // there, so the string legitimately appears once, in a `title`.
-    ok('‼️ a plan-billed run shows TOKENS where a dollar would be a lie',
-        table().includes('93.6k tok') && !/<td class="num">[^<]*\$0\.00/.test(table()));
+    ok('‼️ a plan-billed run never shows a dollar, because $0.00 would be a lie',
+        !/<td class="num">[^<]*\$0\.00/.test(table()));
     ok('…and a priced run still shows its dollar', table().includes('$0.22'));
+    // ‼️ M-21 — AND THE TOKENS HAVE THEIR OWN COLUMN. The page could say a run
+    // took four minutes and not what those four minutes burned — the figure
+    // EVERY engine publishes, and the only spend figure three of the four have.
+    // Cost used to borrow it for those three and hide it for Claude, so the one
+    // number that compares runs across engines was on no surface of this page.
+    ok('‼️ M-21 — the Runs table has a Tokens column of its own',
+        table().includes('>Tokens</th>') && table().includes('data-sort="tokens"'));
+    ok('‼️ M-21 — …and a PRICED run shows both what it burned and what that cost',
+        table().includes('500.0k') && table().includes('$0.22'));
+    ok('…while a plan-billed run shows its tokens and an honest empty Cost',
+        table().includes('93.6k'));
     // A run that has not been measured yet keeps the plain dash — the two must
     // stay distinguishable, which is the whole point of the tokens above.
     ok('…and an unmeasured run is still a bare dash',

@@ -225,6 +225,16 @@
         return `<div class="tabs">${T.map(([id, label, n]) =>
             `<button class="tab ${id === tab ? 'on' : ''}" data-tab="${id}">${label} <span class="tab-n">${n}</span></button>`).join('')}
             <span class="spacer"></span>
+            ${/* ‼️ M-21 — MAKING A TASK IS NOT A THING YOU DO ON THE RUNS TAB.
+                  The button lived in the Runs filter bar, beside "Cancel queued"
+                  and "Clear finished", which are things you do TO a list of runs
+                  — while the form it opens is a Plan-shaped act. Worse, it was
+                  invisible from the Plan tab, so the one page you would be on
+                  while thinking about what to set up was the page that could not
+                  start it. Up here it belongs to the PAGE, like Analytics, and
+                  is reachable from either tab; `openComposer` already moves the
+                  tab under it, so pressing it from Plan lands on the form. */''}
+            <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
             <button class="secondary" data-open="open-analytics" title="30-day throughput, agent scorecards, task families and the forecast — reading, not managing">📊 Analytics</button>
         </div>`;
     }
@@ -1998,9 +2008,13 @@
      */
     function runSpend(r) {
         if (r.reportsCost === false) {
-            return r.tokens
-                ? `<span title="${C.esc(engineLabel(r) + ' bills a plan and states no price per run — tokens are what it does report')}">${C.fmtTok(r.tokens)} tok</span>`
-                : '—';
+            // ‼️ M-21 — AND IT NO LONGER BORROWS THE TOKEN FIGURE. Tokens have
+            // their own column now, so this said the same thing twice on three
+            // engines out of four and nothing at all on the fourth. What is left
+            // is the honest answer to "what was it worth": this engine does not
+            // say, and the row says so rather than printing a zero.
+            return `<span class="muted" title="${C.esc(engineLabel(r)
+                + ' bills a plan and publishes no price per run. Its tokens are in the column beside this one; $0.00 here would read as "free", which is a different claim.')}">—</span>`;
         }
         return fmtUSD(r.costUSD);
     }
@@ -2175,8 +2189,23 @@
                 window.AFTip.lines([
                     'Started: ' + (r.events || []).filter(e => e.kind === 'started').map(e => window.AFTime.full(e.ts))[0] || '—',
                     'Ended: ' + (r.events || []).filter(e => e.kind === 'finished' || e.kind === 'cancelled').map(e => window.AFTime.full(e.ts)).pop() || '—',
-                    tokPerMin ? 'Rate: ' + C.fmtTok(tokPerMin) + ' tokens per minute' : ''
+                    ''
                 ])) : '—'}</td>
+            ${/* ‼️ M-21 — WHAT IT BURNED, in its own column. The rate came with
+                  it out of the "Took" panel: how fast it spent is a fact about
+                  the spending, and one fact belongs to one panel. */''}
+            <td class="num">${r.tokens
+            ? tipw(C.fmtTok(r.tokens), `${r.tokens.toLocaleString()} tokens`,
+                window.AFTip.lines([
+                    `${r.tokens.toLocaleString()} tokens in total — input, output, cache reads and cache writes together.`,
+                    tokPerMin ? `Rate: ${C.fmtTok(tokPerMin)} tokens a minute, over ${r.durMin} minute(s).` : '',
+                    r.reportsCost === false
+                        ? `${engineLabel(r)} bills a plan and publishes no price per run, so this is the only spend figure it states — the Cost column beside it is empty for that reason, not because the run was free.`
+                        : 'The Cost column beside this is what these tokens were worth in money.'
+                ]))
+            : `<span class="muted" title="${C.esc(live
+                ? 'The transcript is matched a few minutes after a run ends, and the tokens come off it — a run still going has nothing to count yet.'
+                : 'No transcript was matched to this run, so nothing was counted. It does not mean the run spent nothing.')}">—</span>`}</td>
             <td class="num">${runSpend(r)}</td>
             <td class="when"><span title="${C.esc(window.AFTime.tip(r.when, 'This row\'s clock — when it ended, or when it started, or when it was made'))}">${C.esc(rel(r.when))}</span></td>
             <td class="acts">
@@ -2189,7 +2218,7 @@
                 ${r.hasOutput ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}" title="Take it off this list. It is filed in the task archive either way, and ↶ Undo puts it straight back.">✕</button>` : ''}`}
             </td>
-        </tr>${open ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+        </tr>${open ? `<tr class="detail"><td colspan="11"><div class="detailbox">
             ${/* ‼️ M-8 — THE TRIANGLE SAYS THE WHOLE SETUP. It used to say the
                   word "schedule" and stop, which is the one thing the row above
                   it already said. */''}
@@ -2245,7 +2274,10 @@
         const rows = runRows(d);
         const sorted = applySort(rows, v, {
             when: r => r.when, title: r => r.title.toLowerCase(),
-            cost: r => r.costUSD || 0, dur: r => r.durMin || 0
+            cost: r => r.costUSD || 0, dur: r => r.durMin || 0,
+            // ‼️ M-21 — and by what it BURNED, which is the question the Cost
+            // column cannot answer on three of the four engines.
+            tokens: r => r.tokens || 0
         });
         // ‼️ A COLUMN IS DEFINED ONCE, ON ITS <th> (docs/CONVENTIONS.md). The
         // rows carry the figures; the heading carries what the figures mean.
@@ -2255,11 +2287,22 @@
             <th title="What put this run in the queue — a schedule, a trigger, a workflow step, or you. Hover it for that thing's whole setup.">Started by</th>
             <th class="eng" title="Which CLI actually ran this task — the engine the run was queued on (empty = Claude Code)">Engine</th>
             <th class="sess" title="The conversation this run had. A headless run opens a session like any other; its transcript is matched a few minutes after the run ends, which is also where the Cost column comes from. Click one to read it.">Session</th>
-            ${sortCell(v, 'dur', 'Took', true, 'Wall clock from the moment the process was spawned to the moment it exited — not time spent working.')}${sortCell(v, 'cost', 'Cost', true,
-                'What the matched transcript says the run cost. An engine that publishes a price per turn states its own figure; where none is published this is the API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, never a bill. An engine that states no price at all shows its token count instead, because $0.00 there would mean "free" and it does not — whereas a free model on an engine that DOES publish its price really is a zero.')}${sortCell(v, 'when', 'When',
+            ${sortCell(v, 'dur', 'Took', true, 'Wall clock from the moment the process was spawned to the moment it exited — not time spent working.')
+            }${/* ‼️ M-21 — HOW MUCH IT BURNED, WHICH THE TABLE DID NOT SAY AT ALL.
+                  The page could tell you a run took four minutes and not what
+                  those four minutes cost in tokens — the figure that decides
+                  whether a schedule is affordable, and the ONLY spend figure
+                  three of the four engines publish. It was reachable nowhere on
+                  this page: Cost borrowed it for those engines and hid it for
+                  Claude. Each column answers one question now (ONE SUBJECT) —
+                  this one what was spent, Cost what it was worth. */''
+            }${sortCell(v, 'tokens', 'Tokens', true,
+                'Every token the matched transcript counted for this run — input, output, cache reads and cache writes together. It is the figure EVERY engine publishes, so it is the one that compares runs across all four of them, and it is what a plan-billed engine charges you in. Empty means no transcript has been matched to the run yet, not that it spent nothing.')
+            }${sortCell(v, 'cost', 'Cost', true,
+                'What that spend was worth in money. An engine that publishes a price per turn states its own figure; where none is published this is the API-equivalent of the tokens at your agentFarm.pricing rates — good for comparing runs, never a bill. An engine that states no price AT ALL leaves this empty rather than printing $0.00, which would read as "free": the tokens it did report are in the column beside this one.')}${sortCell(v, 'when', 'When',
                     false, 'When it ended — or, for a run that has not, when it started or was made.')}<th class="acts"></th></tr>`;
         const body = !sorted.length
-            ? `<tr><td colspan="10" class="empty">${d.runs.length
+            ? `<tr><td colspan="11" class="empty">${d.runs.length
                 ? 'Nothing matches these filters.'
                 : (d.archive && d.archive.on)
                     ? 'Nothing here — neither the live list nor the archive month you are reading holds a run.'
@@ -2295,7 +2338,10 @@
         }])}
                 ${sel('engine', 'Engines', v.engine, runEngines(d), otherEnginePresets(runEngines(d)))}
                 <span class="spacer"></span>
-                <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
+                ${/* ‼️ M-21 — "+ New task" is no longer here: it is on the page's
+                      own bar beside Analytics (see tabsHtml). What is left on
+                      this row is what it always should have been — the things
+                      you do TO this list of runs. */''}
                 ${/* ‼️ M-8 — the ✕ on a row is the one deletion a HAND makes, and
                       it was the only one with no way back. It files the row in
                       the task archive now, and this puts it straight back. */''}
