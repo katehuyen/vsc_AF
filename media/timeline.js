@@ -391,39 +391,20 @@
             .filter(Boolean).join('\n\n');
     }
 
-    /** WHOSE moment this is. Every panel opens with it, in this order, so the
-     *  answer is always in the same place. The name is left out where the head
-     *  already IS the name — no fact in two places on one panel. */
-    function whoBlock(sid, lane, laneEng, named) {
-        const s = LIVE_BY_ID.get(sid);
-        const meta = s ? (STATUS_META[s.status] || STATUS_META.idle) : null;
-        return [
-            named ? '' : 'Conversation: ' + convName(sid),
-            'Agent: ' + (lane.anon ? lane.who : lane.agent)
-                + ' · ' + window.AFEngine.label(laneEng)
-                + (s && s.model ? ' · ' + String(s.model).replace(/^claude-/, '') : ''),
-            'Session: ' + shortId(sid) + (meta ? ' · ' + meta.label : '')
-        ];
-    }
-
-    /** A block of quoted text under its own heading, or nothing at all. Quoted
-     *  because it is somebody's words and not the panel's own sentence. */
+    /** A block of quoted text under its own heading, or clean quoted text without heading. */
     function saidBlock(label, text) {
         const t = String(text || '').trim();
-        return t ? `${label}\n“${t}”` : '';
+        return t ? (label ? `${label}\n“${t}”` : `“${t}”`) : '';
     }
 
-    /** Where in the talk. `since` is the gap back to the previous event of the
-     *  SAME session — the figure a chart of dots cannot draw. */
+    /** Where in the talk. `since` is the gap back to the previous event of the SAME session. */
     function whenLine(ts, turn, since) {
         return 'At ' + fmtClock(ts)
             + (turn ? ' · turn ' + turn : '')
-            + (since ? ' · ' + fmtDur(since) + ' after the point before it' : '');
+            + (since ? ' · ' + fmtDur(since) + ' after previous event' : '');
     }
 
-    /** The two gestures, always last and always both, so a row never has to be
-     *  guessed at. A point opens the transcript AT ITS MOMENT; the row's own
-     *  label has no moment to open at and says the plainer thing. */
+    /** The two gestures, always last and always both. */
     function pressBlock(file, moment) {
         return [
             file
@@ -434,114 +415,114 @@
         ];
     }
 
-    /**
-     * ‼️ WHAT ONE POINT IS, IN THE READER'S WORDS AND NOT THE HOOK'S.
-     * `said` names the text the event carries, which differs per kind: a prompt
-     * carries what was sent, a permission carries what is being asked for. An
-     * event whose kind has no text says nothing rather than an empty heading.
-     */
     const MARK_WORDS = {
-        prompt: { title: 'You wrote', said: 'What you sent' },
-        permission: { title: 'Waiting for permission', said: 'What it is asking for' },
-        stop: { title: 'The agent finished its turn', said: '' },
-        notify: { title: 'Notification', said: 'What it said' },
-        compact: { title: 'Context compacted', said: 'What triggered it' },
-        subagent: { title: 'A subagent finished', said: '' },
-        start: { title: 'Session started', said: 'How it was opened' },
-        end: { title: 'Session ended', said: 'Why' }
+        prompt: 'You wrote',
+        permission: 'Waiting for permission',
+        stop: 'The agent finished its turn',
+        notify: 'Notification',
+        compact: 'Context compacted',
+        subagent: 'A subagent finished',
+        start: 'Session started',
+        end: 'Session ended'
     };
 
-    /** One point on a lane: head says what and when, body says the rest. */
+    /** One point on a lane: clean, direct dialog/event text without duplicate identity boilerplate. */
     function markTip(m, lane, laneEng) {
-        const w = MARK_WORDS[m.kind] || { title: m.kind, said: 'Detail' };
+        const title = MARK_WORDS[m.kind] || m.kind;
         return {
-            head: w.title + ' · ' + fmtClock(m.ts),
+            head: title + ' · ' + fmtClock(m.ts),
             body: panelBody([
-                whoBlock(m.sid, lane, laneEng),
-                [
-                    whenLine(m.ts, m.turn, m.since),
-                    // The turn's own arithmetic, on the event that closes it:
-                    // this is what "the agent answered" amounts to on a chart
-                    // that has the timings and not the words.
-                    m.kind === 'stop' && m.turnMs
-                        ? `That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`
-                        : ''
-                ],
-                w.said ? saidBlock(w.said + ':', m.detail) : '',
+                m.detail ? (m.kind === 'prompt' ? saidBlock('What you sent:', m.detail) : saidBlock('', m.detail)) : '',
+                m.kind === 'stop' && m.turnMs
+                    ? `That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`
+                    : '',
+                whenLine(m.ts, m.turn, m.since),
                 m.tool ? 'Tool: ' + m.tool : '',
                 pressBlock(m.file || lane.file, true)
             ])
         };
     }
 
-    /** One tool bar: what it was asked for, what it answered, how long it took. */
+    /** One tool bar: concise execution time and target, without huge payload dumps. */
     function segTip(seg, lane, laneEng) {
         const ran = seg.unfinished
-            ? `Started ${fmtClock(seg.start)} — no end event ever arrived; the session's last sign of life was ${fmtClock(seg.end)}.`
+            ? `Started ${fmtClock(seg.start)} — no end event ever arrived; last event ${fmtClock(seg.end)}.`
             : `${fmtClock(seg.start)} → ${seg.live
                 ? (seg.stale ? 'still running? nothing heard since ' + fmtClock(seg.end) : 'still running')
-                : fmtClock(seg.end)} · ${fmtDur(Math.max(1000, seg.end - seg.start))}`;
+                : fmtClock(seg.end)} · ${fmtDur(Math.max(1000, seg.end - seg.start))}${seg.turn ? ' · turn ' + seg.turn : ''}`;
+
+        let res = '';
+        if (seg.unfinished) {
+            res = 'Status: Unfinished / in-progress.';
+        } else if (seg.result && /error|failed|stderr|exit code [1-9]/i.test(seg.result)) {
+            res = 'Error: ' + seg.result;
+        }
+
         return {
             head: seg.tool + ' · ' + (seg.unfinished ? 'never finished'
                 : fmtDur(Math.max(1000, seg.end - seg.start))),
             body: panelBody([
-                whoBlock(seg.sid, lane, laneEng),
-                'Ran ' + ran + (seg.turn ? ' · turn ' + seg.turn : ''),
-                saidBlock('What it was asked for:', seg.said),
-                seg.result ? saidBlock('What it answered:', seg.result)
-                    : (seg.unfinished
-                        ? 'What it answered: nothing came back — the closing event never arrived.'
-                        : 'What it answered was not recorded for this call.'),
+                'Ran ' + ran,
+                seg.said ? 'Target: ' + seg.said : '',
+                res,
                 pressBlock(seg.file || lane.file, true)
             ])
         };
     }
 
     /**
-     * The row's own panel — the label in the gutter. It is about the ROW: which
-     * conversation it is drawing, and what else it is packing. The moments on
-     * it have their own panels, so nothing is said twice (ONE SUBJECT).
+     * The row's own panel — the label in the gutter. It is the SESSION's identity card.
+     * Full initial prompt (session purpose), session identity, economics, live status.
      */
     function laneTip(lane, primary, laneEng) {
+        const sid = primary && primary.id;
+        const s = sid ? LIVE_BY_ID.get(sid) : null;
+        const meta = s ? (STATUS_META[s.status] || STATUS_META.idle) : null;
         const more = lane.sessions.length - 1;
+
+        const identBlock = [
+            'Conversation: ' + convName(sid),
+            'Agent: ' + (lane.anon ? lane.who : lane.agent)
+                + ' · ' + window.AFEngine.label(laneEng)
+                + (s && s.model ? ' · ' + String(s.model).replace(/^claude-/, '') : ''),
+            'Session: ' + shortId(sid) + (meta ? ' · ' + meta.label : '')
+                + (s && s.projectId ? ' · Project: ' + s.projectId : ''),
+            s && s.cwd ? 'Folder: ' + s.cwd : ''
+        ];
+
+        let purposeBlock = '';
+        if (s && s.firstPrompt) {
+            purposeBlock = saidBlock('Opening prompt (purpose):', s.firstPrompt);
+        } else if (s && s.lastPrompt && s.lastPrompt !== s.title) {
+            purposeBlock = saidBlock('On right now:', s.lastPrompt);
+        }
+
+        const st = s ? statLines(s, true) : null;
+        const statsBlock = st ? [
+            st.money,
+            st.work,
+            st.time,
+            s.currentTool ? 'Inside a tool: ' + s.currentTool : '',
+            isGone(s)
+                ? 'No live process — this session is over (Clear it below).'
+                : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : '')
+        ] : [];
+
+        const packingBlock = more > 0
+            ? `This row is ${lane.sessions.length} sessions packed in sequence — they never overlap, so they share a track. The head above is the newest of them; every bar and dot answers for its own.`
+            : (lane.anon ? 'The row is labelled by its session id because the folder it runs in is not one of your agent folders.' : '');
+
         return {
-            head: convName(primary && primary.id)
+            head: convName(sid)
                 + (more > 0 ? ` · +${more} earlier session${more > 1 ? 's' : ''} on this row` : ''),
             body: panelBody([
-                whoBlock(primary && primary.id, lane, laneEng, true),
-                ...sessionFigures(primary && primary.id),
-                more > 0
-                    ? `This row is ${lane.sessions.length} sessions packed in sequence — they never overlap, so they share a track. The head above is the newest of them; every bar and dot answers for its own.`
-                    : '',
-                lane.anon
-                    ? 'The row is labelled by its session id because the folder it runs in is not one of your agent folders.'
-                    : '',
+                identBlock,
+                purposeBlock,
+                statsBlock,
+                packingBlock,
                 pressBlock(lane.file, false)
             ])
         };
-    }
-
-    /** What a session HAS — what it is on, its figures, and where it runs, as
-     *  three separate blocks. Figures only: what was SAID at a given moment
-     *  belongs to the point that was said at (ONE SUBJECT). */
-    function sessionFigures(sid) {
-        const s = LIVE_BY_ID.get(sid);
-        if (!s) { return []; }
-        const st = statLines(s, true);
-        return [
-            // The prompt it is ON is a different fact from the name it was
-            // GIVEN, and on a long session the two stop agreeing after turn 1.
-            [
-                s.lastPrompt && s.lastPrompt !== s.title ? saidBlock('On right now:', s.lastPrompt) : '',
-                s.currentTool ? 'Inside a tool: ' + s.currentTool : ''
-            ],
-            [st.money, st.work, st.time],
-            [
-                isGone(s) ? 'No live process — this session is over (Clear it below).'
-                    : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : ''),
-                s.cwd
-            ]
-        ];
     }
 
     /**

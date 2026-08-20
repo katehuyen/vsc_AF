@@ -126,6 +126,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 transcriptPath: s.transcriptPath || row?.file || undefined,
                 // From the transcript (absent until the session's first turn lands).
                 title: row?.title ?? '',
+                firstPrompt: row?.firstPrompt ?? '',
+                projectId: row?.projectId ?? '',
                 cost: row?.cost ?? 0,
                 tokens: row ? totalTokens(row.usage) : 0,
                 wTokens: row ? Math.round(row.wTokens) : 0,

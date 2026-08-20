@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.181.0 — U-67: Live Timeline tooltips streamlined per Design Principles (2026-08-20)
+
+**The lane header and timeline points each answer for their own role (ONE SUBJECT & DENSITY):**
+- **Lane Header (Gutter) as Session Overview:** Displays the comprehensive session identity card — including the **opening prompt (purpose)** whole and quoted, agent, engine, model, session ID, project, folder (`cwd`), totals (tokens, cost, duration, turns, tools), and live PID/status.
+- **Dialogue / Turn Points:** Focus purely on the conversation text without repeating duplicate session identity headers on every dot. Shows what was sent/requested whole, the turn number, clock time, and interval.
+- **Tool Spans:** Kept short, concise, and clean. Displays the tool name, run duration, target (file/command), and explicit failure/error if any, without bloated multi-paragraph JSON/stdout dumps.
+
 ## 3.180.0 — X-49: a queued item can say who should take it — engine, model, effort (2026-08-20)
 
 **The queue was written when there was one engine.** `target` answers "which repo or which agent", and with five engines the question an item could not answer was *which engine, on which model, at what effort* — so a task could only ever be told "do the queue", never "do the work meant for me and leave the rest".

@@ -65,7 +65,7 @@ const sandbox = {
             stuckMs: 240000,
             sessions: [
                 // the SAME agent, two concurrent sessions
-                { sessionId: 'S1', agentName: 'dev', resolved: true, label: 'dev #1', status: 'tool', currentTool: 'Read', prompts: 1, toolCalls: 1, compactions: 0, subagentStops: 0, startedAt: NOW - 40 * MIN, lastEventTs: NOW - 5 * MIN, cost: 0.5, tokens: 48200, ctxTokens: 24100, turns: 3, model: 'claude-opus-5', owner: { pid: 4242, entrypoint: 'cli' }, cwd: 'D:/a/dev', transcriptPath: 'D:/t/S1.jsonl', title: 'the S1 job' },
+                { sessionId: 'S1', agentName: 'dev', resolved: true, label: 'dev #1', status: 'tool', currentTool: 'Read', prompts: 1, toolCalls: 1, compactions: 0, subagentStops: 0, startedAt: NOW - 40 * MIN, lastEventTs: NOW - 5 * MIN, cost: 0.5, tokens: 48200, ctxTokens: 24100, turns: 3, model: 'claude-opus-5', owner: { pid: 4242, entrypoint: 'cli' }, cwd: 'D:/a/dev', transcriptPath: 'D:/t/S1.jsonl', title: 'the S1 job', firstPrompt: 'fix the memory issue in auth module' },
                 { sessionId: 'S2', agentName: 'dev', resolved: true, label: 'dev #2', status: 'waiting-input', prompts: 1, toolCalls: 1, compactions: 0, subagentStops: 0, startedAt: NOW - 20 * MIN, lastEventTs: NOW - 14 * MIN, owner: { pid: 77, entrypoint: 'cli' } },
                 // another agent with one live session — its tool call never got
                 // an end event, and the session has since moved on
@@ -159,6 +159,8 @@ ok('‼️ …whose head is the CONVERSATION\'s name, which is what the row is a
     /<span class="af-tiph">the S1 job<\/span>/.test(lastHtml));
 ok('…and the conversation\'s own name leads its block, never the folder it ran in',
     /Conversation: the S1 job/.test(lastHtml) && /Agent: dev/.test(lastHtml));
+ok('…and the lane panel shows the opening prompt purpose',
+    /Opening prompt \(purpose\):[\s\S]*?fix the memory issue in auth module/.test(lastHtml));
 ok('…and its figures are in there', /Session: #S1 · TOOL/.test(lastHtml)
     && /Inside a tool: Read/.test(lastHtml)
     && lastHtml.indexOf('$0.50 · 48.2k tok') !== -1);
@@ -378,16 +380,15 @@ ok('S1 asks to turn its own sound OFF',
     ok('‼️ …and carries what was actually sent, whole and quoted',
         prompt.indexOf('What you sent:') !== -1
         && prompt.indexOf('“list the temp folder for me”') !== -1);
-    ok('…named by its conversation, not by the folder it ran in',
-        prompt.indexOf('Conversation: ') !== -1 && prompt.indexOf('Agent: dev · Claude') !== -1);
+    ok('…and leaves out duplicate session identity boilerplate (ONE SUBJECT)',
+        prompt.indexOf('Conversation: ') === -1 && prompt.indexOf('Agent: dev') === -1);
     ok('‼️ …and placed in the talk: the turn it opened, and the gap back',
         /At \d\d:\d\d(:\d\d)? · turn 1/.test(prompt));
     ok('…with both gestures spelled out, every time',
         prompt.indexOf('Right-click for this session\'s actions.') !== -1);
 
-    ok('‼️ a tool bar says what it was asked for AND what it answered', !!bar
-        && bar.indexOf('“ls -la /tmp”') !== -1
-        && bar.indexOf('“total 12 drwxr-xr-x 3 root”') !== -1);
+    ok('‼️ a tool bar says what tool ran and its concise target', !!bar
+        && bar.indexOf('Target: ls -la /tmp') !== -1);
     ok('…and how long it took, in the head, where a bar is read from',
         /^<span class="af-tiph">Bash · 1m/.test(bar));
 
