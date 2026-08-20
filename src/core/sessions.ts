@@ -665,7 +665,7 @@ export function parseSessionFile(
                 }
                 if (ts) {
                     info.events.push({
-                        ts, kind: 'prompt', detail: truncate(text, 90), sessionFile: file
+                        ts, kind: 'prompt', detail: truncate(text, FIRST_PROMPT_MAX), sessionFile: file
                     });
                 }
             };

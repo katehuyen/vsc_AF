@@ -404,17 +404,6 @@
             + (since ? ' · ' + fmtDur(since) + ' after previous event' : '');
     }
 
-    /** The two gestures, always last and always both. */
-    function pressBlock(file, moment) {
-        return [
-            file
-                ? (moment ? 'Click opens the transcript at this moment.'
-                    : 'Click opens this session\'s transcript.')
-                : 'No transcript to open yet.',
-            'Right-click for this session\'s actions.'
-        ];
-    }
-
     const MARK_WORDS = {
         prompt: 'You wrote',
         permission: 'Waiting for permission',
@@ -429,44 +418,45 @@
     /** One point on a lane: clean, direct dialog/event text without duplicate identity boilerplate. */
     function markTip(m, lane, laneEng) {
         const title = MARK_WORDS[m.kind] || m.kind;
+        const head = title + ' · ' + fmtClock(m.ts);
+        const bodyParts = [];
+        if (m.detail) {
+            bodyParts.push(m.kind === 'prompt' ? `“${m.detail}”` : m.detail);
+        }
+        if (m.kind === 'stop' && m.turnMs) {
+            bodyParts.push(`That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`);
+        }
+        if (m.turn || m.since) {
+            bodyParts.push(whenLine(m.ts, m.turn, m.since));
+        }
+        if (m.tool) {
+            bodyParts.push('Tool: ' + m.tool);
+        }
         return {
-            head: title + ' · ' + fmtClock(m.ts),
-            body: panelBody([
-                m.detail ? (m.kind === 'prompt' ? saidBlock('What you sent:', m.detail) : saidBlock('', m.detail)) : '',
-                m.kind === 'stop' && m.turnMs
-                    ? `That turn ran ${fmtDur(m.turnMs)} and made ${m.turnTools} tool call${m.turnTools === 1 ? '' : 's'}.`
-                    : '',
-                whenLine(m.ts, m.turn, m.since),
-                m.tool ? 'Tool: ' + m.tool : '',
-                pressBlock(m.file || lane.file, true)
-            ])
+            head: head,
+            body: panelBody(bodyParts)
         };
     }
 
-    /** One tool bar: concise execution time and target, without huge payload dumps. */
+    /** One tool bar: concise execution time and target, without huge payload dumps or boilerplate. */
     function segTip(seg, lane, laneEng) {
-        const ran = seg.unfinished
-            ? `Started ${fmtClock(seg.start)} — no end event ever arrived; last event ${fmtClock(seg.end)}.`
+        const when = seg.unfinished
+            ? `${fmtClock(seg.start)} → unfinished: no end event ever arrived (last event ${fmtClock(seg.end)})`
             : `${fmtClock(seg.start)} → ${seg.live
-                ? (seg.stale ? 'still running? nothing heard since ' + fmtClock(seg.end) : 'still running')
-                : fmtClock(seg.end)} · ${fmtDur(Math.max(1000, seg.end - seg.start))}${seg.turn ? ' · turn ' + seg.turn : ''}`;
+                ? (seg.stale ? 'still running? last event ' + fmtClock(seg.end) : 'running')
+                : fmtClock(seg.end)} (${fmtDur(Math.max(1000, seg.end - seg.start))})`;
 
-        let res = '';
+        const bodyParts = [when];
+        if (seg.said) { bodyParts.push(seg.said); }
         if (seg.unfinished) {
-            res = 'Status: Unfinished / in-progress.';
+            bodyParts.push('Status: Unfinished / in-progress.');
         } else if (seg.result && /error|failed|stderr|exit code [1-9]/i.test(seg.result)) {
-            res = 'Error: ' + seg.result;
+            bodyParts.push('Error: ' + seg.result);
         }
 
         return {
-            head: seg.tool + ' · ' + (seg.unfinished ? 'never finished'
-                : fmtDur(Math.max(1000, seg.end - seg.start))),
-            body: panelBody([
-                'Ran ' + ran,
-                seg.said ? 'Target: ' + seg.said : '',
-                res,
-                pressBlock(seg.file || lane.file, true)
-            ])
+            head: seg.tool + ' · ' + fmtDur(Math.max(1000, seg.end - seg.start)),
+            body: bodyParts.join(' · ')
         };
     }
 
@@ -519,8 +509,7 @@
                 identBlock,
                 purposeBlock,
                 statsBlock,
-                packingBlock,
-                pressBlock(lane.file, false)
+                packingBlock
             ])
         };
     }

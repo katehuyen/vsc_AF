@@ -194,7 +194,7 @@ ok('…and its figures are in there', /Session: #S1 · TOOL/.test(lastHtml)
             web.some(e => e.command === 'agentfarm.endSession' && draws(e.when, 'afTimelineAgent'))
             && web.some(e => e.command === 'agentfarm.openAgentDetail' && draws(e.when, 'afTimelineAgent')));
     }
-    ok('…and the tooltip says so', lastHtml.indexOf("Right-click for this session's actions") !== -1);
+    ok('…and the lane tooltip carries session info', lastHtml.indexOf('Conversation: the S1 job') !== -1);
 
     // Transparent hit areas: the whole row answers for its live session, and a
     // packed row's earlier session answers for itself.
@@ -378,17 +378,16 @@ ok('S1 asks to turn its own sound OFF',
 
     ok('‼️ a prompt dot opens with what it IS and when', !!prompt);
     ok('‼️ …and carries what was actually sent, whole and quoted',
-        prompt.indexOf('What you sent:') !== -1
-        && prompt.indexOf('“list the temp folder for me”') !== -1);
+        prompt.indexOf('“list the temp folder for me”') !== -1);
     ok('…and leaves out duplicate session identity boilerplate (ONE SUBJECT)',
         prompt.indexOf('Conversation: ') === -1 && prompt.indexOf('Agent: dev') === -1);
     ok('‼️ …and placed in the talk: the turn it opened, and the gap back',
         /At \d\d:\d\d(:\d\d)? · turn 1/.test(prompt));
-    ok('…with both gestures spelled out, every time',
-        prompt.indexOf('Right-click for this session\'s actions.') !== -1);
+    ok('…and leaves out repetitive gesture boilerplate',
+        prompt.indexOf('Right-click for this session\'s actions.') === -1);
 
     ok('‼️ a tool bar says what tool ran and its concise target', !!bar
-        && bar.indexOf('Target: ls -la /tmp') !== -1);
+        && bar.indexOf('ls -la /tmp') !== -1);
     ok('…and how long it took, in the head, where a bar is read from',
         /^<span class="af-tiph">Bash · 1m/.test(bar));
 

@@ -75,7 +75,7 @@ function eventsFromLines(sessionId: string, lines: string[]): RelayEvent[] {
         };
         if (line.type === 'user' && !line.isMeta && typeof line.message?.content === 'string' &&
             !line.message.content.startsWith('<')) {
-            out.push({ ...base, kind: 'prompt', detail: line.message.content.slice(0, 90) });
+            out.push({ ...base, kind: 'prompt', detail: line.message.content.slice(0, 4000) });
         } else if (line.type === 'assistant' && Array.isArray(line.message?.content)) {
             for (const b of line.message!.content as { type?: string; name?: string; text?: string }[]) {
                 if (b?.type === 'tool_use' && b.name) {

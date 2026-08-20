@@ -23,6 +23,7 @@ export interface LiveSession {
     source?: string;
     status: LiveStatus;
     currentTool?: string;
+    firstPrompt?: string;
     lastPrompt?: string;
     startedAt: number;
     lastEventTs: number;
@@ -389,7 +390,12 @@ export class LiveMonitor implements vscode.Disposable {
             }
             switch (e.kind) {
                 case 'start': s.status = 'idle'; s.startedAt = e.ts; break;
-                case 'prompt': s.status = 'working'; s.prompts++; s.lastPrompt = e.detail; break;
+                case 'prompt':
+                    s.status = 'working';
+                    s.prompts++;
+                    if (!s.firstPrompt && e.detail?.trim()) { s.firstPrompt = e.detail.trim(); }
+                    s.lastPrompt = e.detail;
+                    break;
                 case 'toolStart': s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++; break;
                 case 'toolEnd': s.status = 'working'; s.currentTool = undefined; break;
                 case 'permission': s.status = 'waiting-permission'; break;
@@ -707,13 +713,17 @@ export class LiveMonitor implements vscode.Disposable {
                 s.startedAt = now;
                 this.push(s, 'start', undefined, payload.source);
                 break;
-            case 'UserPromptSubmit':
+            case 'UserPromptSubmit': {
                 s.status = 'working';
                 s.prompts++;
-                s.lastPrompt = truncate(payload.prompt ?? '', 90);
-                // The card gets the row's worth; the event keeps what was said.
-                this.push(s, 'prompt', undefined, truncate(payload.prompt ?? '', SAID));
+                const rawPrompt = (payload.prompt ?? '').trim();
+                if (!s.firstPrompt && rawPrompt) {
+                    s.firstPrompt = truncate(rawPrompt, 4000);
+                }
+                s.lastPrompt = truncate(rawPrompt, 4000);
+                this.push(s, 'prompt', undefined, truncate(rawPrompt, 4000));
                 break;
+            }
             case 'PreToolUse':
                 s.status = 'tool';
                 s.currentTool = payload.tool_name;
