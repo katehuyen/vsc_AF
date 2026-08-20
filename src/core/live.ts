@@ -478,7 +478,7 @@ export class LiveMonitor implements vscode.Disposable {
                     s.status = 'working';
                     s.prompts++;
                     if (!s.firstPrompt && e.detail?.trim()) { s.firstPrompt = e.detail.trim(); }
-                    s.lastPrompt = e.detail;
+                    s.lastPrompt = e.detail ? truncate(e.detail, 90) : undefined;
                     break;
                 case 'toolStart': s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++; break;
                 case 'toolEnd': s.status = 'working'; s.currentTool = undefined; break;
@@ -804,8 +804,8 @@ export class LiveMonitor implements vscode.Disposable {
                 if (!s.firstPrompt && rawPrompt) {
                     s.firstPrompt = truncate(rawPrompt, 4000);
                 }
-                s.lastPrompt = truncate(rawPrompt, 4000);
-                this.push(s, 'prompt', undefined, truncate(rawPrompt, 4000));
+                s.lastPrompt = truncate(rawPrompt, 90);
+                this.push(s, 'prompt', undefined, truncate(rawPrompt, SAID));
                 break;
             }
             case 'PreToolUse':

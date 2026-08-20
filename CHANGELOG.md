@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.193.0 — U-80: Live sessions cards prompt truncation restored (2026-08-21)
+
+**Live session cards on the Live Timeline page are compact and proportional again.**
+- **90-char row limit restored:** `s.lastPrompt` on the session record is truncated to 90 characters, preventing raw 4,000-character prompts from blowing out the card height and breaking the grid layout.
+- **Full prompt on hover:** The card prompt line carries the complete opening/last prompt in its tooltip (`title="“...”"`), keeping the full context instantly readable on hover without cluttering the card face.
+- **Swim lanes untouched:** All swimlane drawing, markers, segments, and toolbars remain completely unaffected.
+
 ## 3.192.0 — in-webview task & retry architecture guide popup (2026-08-20)
 
 **The New-task form now carries its own architectural guide directly inside the webview.** A mini `?` button is placed on the action bar next to the submit buttons.
