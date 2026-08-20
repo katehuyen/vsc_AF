@@ -273,6 +273,7 @@ import {
     PERMISSION_MODES_LIVE, transcriptPos
 } from './core/consoleproto';
 import { CodexContextProbe, isStale } from './core/codexctx';
+import { corpusAt, CorpusStep } from './core/corpus';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -5299,6 +5300,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // unread zero. Null on a session that was read.
                     scanLimit: s.scanLimit ?? null
                 }));
+            }
+        },
+        {
+            /**
+             * ‼️ U-76 — THE WORDS OF ONE MOMENT. The page's right-click puts
+             * them on the clipboard; this hands them back, which is the same
+             * question an agent asks ("what did that point say?") without a
+             * clipboard to ask it through.
+             */
+            op: 'timeline.corpus',
+            describe: 'The WORDS of one step of a transcript, whole — what the Live Timeline\'s right-click "Copy Corpus" copies and what the viewer\'s own copy button gives. A tool step answers with its input, everything else with its text. '
+                + 'This is NOT the chart\'s shortened event text: it is read from the transcript, so newlines and full length survive. '
+                + 'args: file (the transcript path — sessions.find gives it as `file`), ts (the instant, epoch ms; the nearest step that actually has words wins, and `offBy` says how far that was). Returns { text, role, tool?, ts, offBy } or an error saying why there is nothing there.',
+            handler: (args) => {
+                const file = optStr(args, 'file');
+                if (!file) { throw new Error('Missing required string arg "file".'); }
+                const ts = typeof args.ts === 'number' ? args.ts : 0;
+                const got = corpusFor(file, ts);
+                if (!got.text) { throw new Error(got.why); }
+                return { text: got.text, what: got.what, ts: got.ts ?? null };
             }
         },
         {
@@ -10733,6 +10754,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const s = index.byId(sessionId);
             return s ? { origin: sessionOrigin(s), headless: sessionHeadless(s) } : undefined;
         }
+    };
+
+    /**
+     * ‼️ U-76 — ONE ANSWER TO "WHAT WAS SAID AT THAT MOMENT", for the Live
+     * Timeline's right-click and for `timeline.corpus` on the bridge alike.
+     *
+     * It goes through `buildViewerData`, which is the SAME parse the transcript
+     * page runs — Claude's schema and every foreign one, one message vocabulary
+     * out the other side. Reimplementing the read here would be a second parser
+     * that could quietly disagree with the page a copy is a shortcut for.
+     */
+    const corpusFor = (file?: string, ts?: number): { text: string; what: string; why: string; ts?: number } => {
+        if (!file) {
+            return {
+                text: '', what: '',
+                why: 'that point has no transcript on this machine — the engine mirrors its lifecycle in, but the conversation itself lives elsewhere'
+            };
+        }
+        let data: Record<string, unknown>;
+        try { data = buildViewerData(file, viewerDeps); } catch (e) {
+            return { text: '', what: '', why: `that transcript could not be read — ${String(e)}` };
+        }
+        const got = corpusAt(data['messages'] as CorpusStep[] | undefined, ts || 0);
+        if (!got) {
+            return { text: '', what: '', why: 'nothing in that transcript has any words at that moment' };
+        }
+        // What it IS, in the vocabulary of the page it came from — and how far
+        // off it was, because a point and its line are written in the same
+        // second and anything larger is a fact rather than a detail.
+        const what = (got.role === 'tool' ? `${got.tool || 'tool'} input` : got.role || 'step')
+            + (got.offBy > 5000 ? ` (${Math.round(got.offBy / 1000)}s from the point)` : '');
+        return { text: got.text, what, why: '', ts: got.ts };
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -17989,6 +18042,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await vscode.env.clipboard.writeText(ids.join('\n'));
                 void vscode.window.setStatusBarMessage(
                     `$(clippy) Agent Farm: ${ids.length === 1 ? ids[0].slice(0, 8) : `${ids.length} ids`} copied`, 4000);
+            }),
+        // ‼️ U-76 — WHAT THAT POINT SAID, ON THE CLIPBOARD, WITHOUT LEAVING THE
+        // PAGE. Left-click opens the transcript at the moment and the step's own
+        // copy button is two clicks further on; this is the same text one click
+        // in. The words come from the TRANSCRIPT, never from the chart's event,
+        // because the store shortens what it keeps and flattens its newlines —
+        // a copy that handed over a clipped one-line prompt while looking whole
+        // would be the worst of the two.
+        vscode.commands.registerCommand('agentfarm.copyCorpus',
+            async (arg?: { afCorpusFile?: string; afCorpusTs?: number }) => {
+                const got = corpusFor(arg?.afCorpusFile, Number(arg?.afCorpusTs) || 0);
+                if (!got.text) {
+                    void vscode.window.showInformationMessage('Agent Farm: ' + got.why);
+                    return;
+                }
+                await vscode.env.clipboard.writeText(got.text);
+                // The receipt says WHAT was copied and how big, because two
+                // points a second apart look identical on a chart.
+                void vscode.window.setStatusBarMessage(
+                    `$(clippy) Agent Farm: ${got.what} copied — ${got.text.length.toLocaleString()} characters`, 4000);
             }),
 
         // The four below are the same idea one step out: the things you reach

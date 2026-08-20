@@ -1176,6 +1176,16 @@
       }
     },
     {
+      "capability": "copyCorpus",
+      "ui": [
+        "cmd:agentfarm.copyCorpus",
+        "ctx:agentfarm.copyCorpus"
+      ],
+      "ops": [
+        "timeline.corpus"
+      ]
+    },
+    {
       "capability": "copyDuty",
       "ui": [
         "cmd:agentfarm.copyDuty"

@@ -76,11 +76,29 @@
      * live session when it is still tracked; a row that outlived its card still
      * knows its id and the agent it belongs to, which is what Clear needs.
      */
-    function laneCtx(sid, agentName, section) {
+    /**
+     * ‼️ U-76 — `item` IS WHAT MAKES A POINT MORE THAN ITS SESSION.
+     *
+     * Right-clicking a lane gives that session's actions, and that is right for
+     * the ROW. On a dot or a bar the reader is pointing at one MOMENT, and the
+     * thing they wanted was the moment's own words: left-click already opens
+     * the transcript there and the viewer's copy button is two clicks further
+     * on, which is two clicks and a lost place for a line of text. So a point
+     * carries the file and the instant it stands for, and the menu grows one
+     * entry that copies exactly what that step's copy button would.
+     *
+     * The text itself is NOT put in here. A context attribute is HTML on every
+     * dot on the page, and a four-thousand-character prompt on each of them is
+     * a page nobody can afford; the host reads the step back out of the
+     * transcript, which is also the only way the copy can be the WHOLE thing
+     * rather than the shortened line the chart keeps.
+     */
+    function laneCtx(sid, agentName, section, item) {
         const s = LIVE_BY_ID.get(sid);
         return ctxAttr({
             webviewSection: section || 'afTimelineSession', preventDefaultContextMenuItems: false,
             sessionId: sid,
+            ...(item && item.file ? { afCorpus: true, afCorpusFile: item.file, afCorpusTs: item.ts || 0 } : {}),
             title: (s && s.title) || '',
             // The agent's NAME is all a lane knows — the host resolves the rest
             // (see resolveAgent), which is what lets the label carry the agent
@@ -922,7 +940,8 @@
                     segTip(seg, lane, laneEng),
                     {
                         file: fileOf(seg.file), ts: seg.start,
-                        ctx: laneCtx(seg.sid, lane.agent),
+                        ctx: laneCtx(seg.sid, lane.agent, '',
+                            { file: fileOf(seg.file), ts: seg.start }),
                         label: `${seg.tool} at ${fmtClock(seg.start)}`
                     }));
             }
@@ -949,7 +968,7 @@
                     markTip(m, lane, laneEng),
                     {
                         file: fileOf(m.file), ts: m.ts,
-                        ctx: laneCtx(m.sid, lane.agent),
+                        ctx: laneCtx(m.sid, lane.agent, '', { file: fileOf(m.file), ts: m.ts }),
                         label: `${st.label} at ${fmtClock(m.ts)}`, cls: 'lane-dot'
                     }));
             }
@@ -1201,7 +1220,7 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click</b> gives the session's actions (rename · terminal · interrupt · end · clear).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}

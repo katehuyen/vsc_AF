@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.183.0",
+  "version": "3.184.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -612,6 +612,12 @@
       {
         "command": "agentfarm.copySessionId",
         "title": "Copy Session ID",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copyCorpus",
+        "title": "Copy Corpus",
         "category": "Agent Farm",
         "icon": "$(clippy)"
       },
@@ -4373,6 +4379,11 @@
           "command": "agentfarm.consoleForgetSession",
           "when": "webviewSection == 'afConsoleSession'",
           "group": "2_run@4"
+        },
+        {
+          "command": "agentfarm.copyCorpus",
+          "when": "webviewSection == 'afTimelineSession' && afCorpus",
+          "group": "0_corpus@1"
         },
         {
           "command": "agentfarm.renameSession",

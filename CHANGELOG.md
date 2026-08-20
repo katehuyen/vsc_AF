@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.184.0 — U-76: Copy Corpus — what that point said, in one click (2026-08-20)
+
+**The gesture that existed was four steps long.** Left-click a dot on the Live Timeline, the viewer opens on that exact moment, find the step's copy button, press it — two clicks and a lost place, for one line of text somebody wanted to paste into a message.
+
+**Right-click a dot or a tool bar and the menu opens with `Copy Corpus`.** It copies what that step's own copy button copies: a tool step's payload is its **input**, everything else says what it has to say in its **text** — the same rule as the viewer, stated once, so a shortcut cannot become a second and quieter answer to the same question.
+
+**It reads the TRANSCRIPT, not the chart.** The event store shortens what it keeps and flattens its newlines, so copying that would have handed over a clipped one-line version of a prompt while looking like the whole thing. The file has the whole thing. The entry is absent — rather than present and unable to answer — on a lane with no transcript behind it, and the receipt says what was copied and how big it was.
+
+**On the bridge as `timeline.corpus`** (`file`, `ts`), which is the same question an agent asks without a clipboard to ask it through. Both doors go through one function; nobody re-parses a transcript of their own.
+
 ## 3.183.0 — U-78: the Live Timeline shows both sides of the conversation (2026-08-20)
 
 **A transcript with one speaker in it.** Every point on the page could say what was ASKED and none of them what came back. The page had known how to draw a reply since U-67 — the body is quoted as speech, the legend is derived from the same table — but the text never arrived: `Stop` was pushed with no detail at all, and an agent's reply had no event kind to arrive as, so it was dropped or fell into the `notify` box.

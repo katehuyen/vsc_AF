@@ -292,6 +292,11 @@ export const CTX_ITEMS: CtxItem[] = [
     // ---------------------------------------------------------------------
     // The Live Timeline's lanes and cards.
     // ---------------------------------------------------------------------
+    // ‼️ U-76 — FIRST, because on a dot or a bar the pointer is on a MOMENT, not
+    // on the row's session. `afCorpus` is set only where the point knows which
+    // transcript and which instant it stands for, so the entry is absent on a
+    // lane with no file behind it rather than present and unable to answer.
+    { command: 'agentfarm.copyCorpus', when: `${TIMELINE_SESSION} && afCorpus`, group: '0_corpus@1' },
     { command: 'agentfarm.renameSession', when: TIMELINE_SESSION, group: '1_session@1' },
     { command: 'agentfarm.openSession', when: TIMELINE_SESSION, group: '1_session@2' },
     { command: 'agentfarm.focusSessionTerminal', when: TIMELINE_SESSION, group: '1_session@3' },
