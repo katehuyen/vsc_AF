@@ -990,6 +990,85 @@ clickData('tab', 'plan');
 ok('plan filters survived the tab round-trip (kind still grouped)', html().includes('class="grouphead"'));
 ok('the plan tab does NOT inherit the run tab filters', !html().includes('status: failed'));
 
+// ------------------------------- M-25: the Plan table's hovers, by the rules
+// ‼️ THE COMPLAINT WAS "THE TOOLTIPS IN THE TABLES SAY NOTHING". The Runs table
+// was answered by M-8; the Plan table beside it still had a column whose hover
+// repeated the words the cell had just drawn, three cells with no hover at all,
+// and headings with no definition on them. These assertions are the five names
+// (docs/CONVENTIONS.md) turned into checks: a column is defined ONCE on its
+// <th>, a cell carries FIGURES the row already implies, a control opens on its
+// CURRENT value, and no fact is in two panels.
+{
+    clickData('tab', 'plan');
+    const plan = html();
+    const cellOf = (cls) => (plan.match(new RegExp('<td class="' + cls + '"[\\s\\S]*?</td>')) || [''])[0];
+
+    // — a column is defined once, on its heading
+    for (const [label, word] of [['What runs', 'definition'], ['Agent', 'CLAUDE.md'],
+    ['Guard', 'precondition'], ['Cost 7d', 'definition'], ['Last run', 'never'], ['On', 'manual']]) {
+        // the label may carry a sort arrow, so the match stops at the label
+        const th = (plan.match(new RegExp('<th[^>]*>' + label.replace(/ /g, '\\s'))) || [''])[0];
+        const attrs = th ? plan.slice(plan.indexOf(th), plan.indexOf(th) + th.length) : '';
+        ok(`the ${label} column defines itself on its heading`,
+            /title="/.test(attrs) && attrs.length > label.length + 20);
+        ok(`…and says something specific (${word})`, attrs.indexOf(word) >= 0 || plan.indexOf(word) >= 0);
+    }
+    ok('‼️ no heading is left with the bare word "sort" for a definition',
+        !/title="sort"/.test(plan));
+
+    // — the guard cell: an AFTip, and not a copy of its own text
+    ok('‼️ the guard is an AFTip, not a native title repeating the cell',
+        /class="guardcell"[\s\S]{0,80}af-tipw/.test(plan)
+        && !/<span title="files in/.test(plan));
+    ok('…and it carries what it has actually saved',
+        plan.includes('wake-up(s) in 7 days') && plan.includes('never started, never paid for'));
+
+    // — the money cell: derived figures, not one number
+    ok('‼️ the 7-day cost divides into a per-run figure', plan.includes('Per run:'));
+    // ‼️ …AND THE ONE READING THAT MUST NOT BE LEFT ALONE: runs behind a figure
+    // of nothing. Driven with a row the fixture does not otherwise have, and
+    // put back straight away.
+    onMessage.forEach(fn => fn({
+        data: {
+            type: 'data', data: Object.assign({}, DATA, {
+                plan: DATA.plan.map(p => (p.id === 's1' ? Object.assign({}, p, { cost7d: 0 }) : p))
+            })
+        }
+    }));
+    ok('…and a row with runs but no cost says why, rather than reading as free',
+        html().includes('publishes no price per run'));
+    onMessage.forEach(fn => fn({ data: { type: 'data', data: DATA } }));
+
+    // — the agent cell: what the page already knows about that agent
+    ok('‼️ the agent carries the tally this page can already derive',
+        plan.includes('Definitions:') && plan.includes('Runs, 7 days:') && plan.includes('Cost, 7 days:'));
+    ok('…and none of it costs a second query — it is summed off the rows',
+        /function agentTally/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8')));
+
+    // — the last-run cell: both clocks, the way every other time on the page does
+    ok('‼️ the last run gives the exact moment in both clocks',
+        cellOf('lastrun').includes('UTC') || plan.includes('on this machine'));
+    ok('…and a row that has never run says what "never" means for THAT row',
+        plan.includes('It has never fired.'));
+
+    // — MIRROR: a control says what is IN it before what it is for
+    ok('‼️ the on/off switch opens on its own state, then on what pressing does',
+        /title="On — it fires on its own\./.test(plan) || /title="Off —/.test(plan));
+    ok('…and the press is still named', plan.includes('Press to switch it'));
+    ok('‼️ the triangle says which way it points and what is behind it',
+        !/title="details"/.test(plan) && plan.includes('Behind it: the whole setup'));
+
+    clickData('tab', 'run');
+    // ‼️ `'Started: ' + x || '—'` is `('Started: ' + x) || '—'`, which is never
+    // falsy — a run with no matching event drew the words "Started: undefined".
+    ok('‼️ a run with no start event does not print "Started: undefined"',
+        !html().includes('Started: undefined') && !html().includes('Ended: undefined'));
+    ok('…and the money column has a hover at all now',
+        html().includes('per million tokens') || html().includes('never a bill'));
+}
+
+
 // --------------------------------------------------------- right-click menus
 // The contract is the same one the backlog rows proved: do it with the row's
 // own control, do it with the menu, and require the two messages to be

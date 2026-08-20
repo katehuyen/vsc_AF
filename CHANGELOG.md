@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.191.0 — M-25: the Plan table answers when you hover it (2026-08-20)
+
+*“The tooltips in the tables don’t give anywhere near enough detail — they don’t follow our design principles.”* M-8 answered that for the **Runs** table. The **Plan** table beside it never got the same pass, and this is it, against the five names (`docs/CONVENTIONS.md`).
+
+**Every column is defined, once, on its heading.** *What runs · Agent · Guard · Cost 7d · Last run · On* each say what they mean on the `<th>`; four of them said nothing at all, and one heading’s whole tooltip was the word `sort`.
+
+**The Guard’s hover was a copy of the Guard.** A native `title` holding the same words the cell had just drawn — the purest wasted hover on the page. It is an `AFTip` now (a guard is text and grows to a path plus a window), and it carries the only question a guard raises: **how many wake-ups it has actually saved**, out of how many, at what rate, and the runs and cost that got through.
+
+**Three cells had no hover at all.**
+- **Agent** — now says what this page already knows about that agent: how many definitions on the page run as it, how many of those are switched on, its runs and its cost over 7 days with **this row’s share** beside each, and the working folder when the row sets one. Every figure summed off rows already on screen — no second query.
+- **Cost 7d** — the total, the runs, and the figure the reader was being left to work out: **per run**. Plus the skipped wake-ups, and the sentence that has to be there when a row has runs and no money behind it: the engine bills a plan and publishes no price, which is not the same claim as “free”.
+- **Last run** — the exact moment in both clocks (local and UTC, like every other time in the extension), what happened that time, and the 7-day run count. A row that has **never** run now says what “never” means for *that* row — due at a time, already overdue, or simply never launched.
+
+**MIRROR, where it was most missing.** The on/off switch is a bare coloured square: its hover now opens on **what it currently is**, then when it fires next, then what pressing it would do. A row with no switch says why it has none. And the ▸ triangle says which way it is pointing and **what is behind it** — how many setup fields, how many steps, whether there is a prompt — instead of the word “details”.
+
+**Launch stopped repeating itself.** The cell was carrying a two-line explanation under *every* row; the explanation lives on the heading, so the cell now carries figures — engine, model, **effort and permissions**, each naming the launcher’s default where the definition sets nothing.
+
+**Two real defects found on the way:**
+
+- **`Started: undefined` in the Runs table’s *Took* panel.** `'Started: ' + x || '—'` reads as `('Started: ' + x) || '—'`, which is never falsy — so a run with no matching event drew the word `undefined` rather than an em dash. Both lines fixed.
+- **The Runs table’s Cost cell had no hover at all** when a price *was* published — the last bare cell in that table. It now carries the cost, the tokens, the effective rate per million tokens and the cost per minute, and says plainly that it is an API-equivalent at your `agentFarm.pricing` rates, never a bill.
+
+**A derived rate is no longer rounded to `$0.00`.** The column formatter is two decimals wide, which is right for a column and wrong for anything divided: cost per run of a cheap schedule, cost per minute. Those print to as many places as it takes to be a real figure — the page spends enough effort elsewhere refusing to let a zero read as “free”.
+
 ## 3.190.0 — M-24: the prompts you saved, in the form that writes prompts (2026-08-20)
 
 **The Console has had this since S-11: right-click a send button and the phrases you keep get pasted at the caret.** The New-task form asks the same question in four more boxes — the task’s own prompt, the retry prompt, the continuation prompt and a workflow step’s prompt — and had none of it. Those are the prompts nobody is sitting in front of when they run, so a wording that was got right once and then retyped from memory costs more here, not less.

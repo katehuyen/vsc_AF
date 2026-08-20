@@ -82,6 +82,21 @@
         if (!n) { return '—'; }
         return n >= 10 ? '$' + n.toFixed(0) : '$' + n.toFixed(2);
     }
+    /**
+     * ‼️ M-25 — THE SAME MONEY, FOR A FIGURE THAT WAS DIVIDED.
+     *
+     * `fmtUSD` is for a column two decimals wide, and it is right there. A
+     * DERIVED rate is routinely smaller than a cent — cost per minute, cost per
+     * run of a cheap schedule — and rounding those to `$0.00` prints the one
+     * reading this page keeps having to argue against: that the work was free.
+     * A real figure is shown to as many places as it takes to be one.
+     */
+    function fmtRate(n) {
+        if (!n) { return '—'; }
+        if (n >= 10) { return '$' + n.toFixed(0); }
+        if (n >= 0.01) { return '$' + n.toFixed(2); }
+        return '$' + n.toFixed(4);
+    }
     function rel(ts) {
         if (!ts) { return '—'; }
         const s = Math.round((Date.now() - ts) / 1000);
@@ -382,29 +397,96 @@
         const bits = [];
         if (p.engine) { bits.push(`<span class="badge">${C.esc(p.engine)}</span>`); }
         if (p.model) { bits.push(`<span class="badge">${C.esc(p.model)}</span>`); }
-        const now = [p.engine || 'default engine', p.model || 'default model'].join(' · ');
-        return `<td title="${C.esc('Now: ' + now
-            + '\n\nWhat this definition launches with. An empty half is the launcher\'s own default,'
-            + ' resolved when it runs.')}">${bits.join(' ')}</td>`;
+        // ‼️ M-25 — FIGURES, NOT A PARAGRAPH. What the column MEANS is on its
+        // <th>; repeating it under every row was two lines of hover spent on a
+        // sentence the reader had already read once per row above.
+        return `<td title="${C.esc([
+            'Engine: ' + (p.engine || 'the launcher\'s default'),
+            'Model: ' + (p.model || 'the launcher\'s default'),
+            'Effort: ' + (setupValue(p, 'Effort') || 'the launcher\'s default'),
+            'Permissions: ' + (setupValue(p, 'Permissions') || 'the launcher\'s default')
+        ].join('\n'))}">${bits.join(' ')}</td>`;
     }
 
-    function planRowHtml(p) {
+    /** One labelled value out of a row's own setup list — the ▸ already holds
+     *  these, and a fact the reader can have on hover must not cost a click. */
+    function setupValue(p, label) {
+        const hit = ((p.detail && p.detail.setup) || [])
+            .find(x => String(x.label).toLowerCase() === String(label).toLowerCase());
+        return hit ? String(hit.value) : '';
+    }
+
+    /**
+     * ‼️ M-25 — WHAT THE WHOLE PAGE ALREADY KNOWS ABOUT ONE AGENT.
+     *
+     * Every figure in an agent's hover is derived from the rows already in
+     * front of the reader — no second query, which is what makes a dense table
+     * cheap (docs/CONVENTIONS.md → fill the space with figures instead).
+     */
+    function agentTally(list) {
+        const by = {};
+        for (const p of list || []) {
+            const name = p.agentName || '';
+            if (!name) { continue; }
+            const t = by[name] || (by[name] = { defs: 0, on: 0, runs7d: 0, cost7d: 0 });
+            t.defs++;
+            if (p.switchable && p.enabled) { t.on++; }
+            t.runs7d += p.runs7d || 0;
+            t.cost7d += p.cost7d || 0;
+        }
+        return by;
+    }
+
+    function planRowHtml(p, tally) {
         const key = p.kind + ':' + p.id;
         const k = KIND[p.kind];
         const open = expanded.has(key);
         const badges = p.issues.map(i =>
             `<span class="badge warn" title="${C.esc((ISSUE[i] || ['', ''])[1])}">${C.esc((ISSUE[i] || [i])[0])}</span>`).join(' ');
+        // ‼️ M-25 — THE GUARD'S OWN PANEL. It used to be a native `title`
+        // holding the SAME words the cell had just drawn, which is the purest
+        // form of a wasted hover: a guard is text and can grow to a path and a
+        // window, so it is an AFTip, and what it has actually saved goes with
+        // it because that is the only question a guard raises.
         const guard = p.hasGuard
-            ? `<span title="${C.esc(p.guard)}">🛡 ${C.esc(p.guard)}</span>${p.skipped7d ? `<div class="muted small">saved ${p.skipped7d} wake-up(s)</div>` : ''}`
-            : (p.switchable ? '<span class="muted">—</span>' : '');
+            ? tipw(`<span>🛡 ${C.esc(p.guard)}</span>${p.skipped7d ? `<div class="muted small">saved ${p.skipped7d} wake-up(s)</div>` : ''}`,
+                `Guard — ${p.skipped7d || 0} wake-up(s) saved in 7 days`,
+                window.AFTip.lines([
+                    // ‼️ the blank belongs to the STRING — AFTip.lines drops an
+                    // empty entry, so a separator written as one vanishes.
+                    p.guard + '\n',
+                    'Skipped: ' + (p.skipped7d || 0) + ' of ' + ((p.skipped7d || 0) + (p.runs7d || 0))
+                    + ' wake-up(s) in 7 days' + (p.skipRate ? ' (' + p.skipRate + '%)' : ''),
+                    'Ran: ' + (p.runs7d || 0) + ' time(s), costing ' + fmtUSD(p.cost7d),
+                    p.skipped7d
+                        ? 'Every skip is an agent run that was never started and never paid for.'
+                        : 'Nothing has been skipped yet — the condition has held every time.'
+                ]))
+            : (p.switchable
+                ? `<span class="muted" title="${C.esc('No precondition: every wake-up launches. '
+                    + 'A guard is what stops one from paying for a run that had nothing to do.')}">—</span>`
+                : '');
+        // ‼️ M-25 · MIRROR — a control says what is IN it before what it is for.
+        // The switch is a bare square: its own state is readable only from a
+        // colour, so its hover opens on the state and then says what the press
+        // would do.
         const stateCell = p.switchable
             ? `<button class="sw ${p.enabled ? 'on' : 'off'}" data-plan="toggle" data-kind="${p.kind}" data-id="${p.id}"
-                    title="${p.enabled ? 'switch off' : 'switch on'}" aria-pressed="${p.enabled}"><span></span></button>`
-            : '<span class="muted small">manual</span>';
+                    title="${C.esc((p.enabled ? 'On — it fires on its own.' : 'Off — it is saved and complete, but nothing will start it.')
+                + '\n' + (p.nextAt && p.enabled ? 'Next: ' + until(p.nextAt) : '')
+                + '\n\nPress to switch it ' + (p.enabled ? 'off' : 'on') + '.')}" aria-pressed="${p.enabled}"><span></span></button>`
+            : `<span class="muted small" title="${C.esc('It has no switch: a ' + (KIND[p.kind] || { label: p.kind }).label
+                + ' runs when it is launched, never on its own.')}">manual</span>`;
         return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}"
             ${planCtx(p)} title="${C.esc(window.AFCtx.hint(k.label + ' — ' + k.hint))}">
             <td class="tick">${p.switchable ? `<input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"${selected.has(key) ? ' checked' : ''}>` : ''}</td>
-            <td class="expand" data-expand="${key}" role="button" tabindex="0" title="details">${open ? '▾' : '▸'}</td>
+            ${/* ‼️ M-25 · MIRROR — the triangle says which way it is pointing and
+                  what is behind it. "details" was one word about neither. */''}
+            <td class="expand" data-expand="${key}" role="button" tabindex="0"
+                title="${C.esc((open ? 'Open — press to close it.' : 'Closed — press to open it.')
+            + '\n\nBehind it: the whole setup ' + (p.detail && p.detail.setup ? '(' + p.detail.setup.length + ' field(s))' : '')
+            + (p.detail && p.detail.steps && p.detail.steps.length ? ', its ' + p.detail.steps.length + ' step(s)' : '')
+            + (p.detail && p.detail.prompt ? ', and the prompt it sends' : '') + '.')}">${open ? '▾' : '▸'}</td>
             <td class="main">
                 ${window.AFTip.wrap(`<div class="rowtitle"><span title="${C.esc(k.hint)}">${k.icon}</span> <b>${C.esc(p.title)}</b> ${badges}</div>
                 <div class="muted small">${C.esc(p.when)}${p.nextAt ? ` · next ${C.esc(until(p.nextAt))}` : ''}</div>
@@ -420,12 +502,55 @@
                 p.detail && p.detail.prompt ? '\n' + p.detail.prompt : ''
             ]), 'tip-free mainw', 'data-aftip-anchor=".prow"')}
             </td>
-            <td class="agent">${p.agentName ? C.esc(p.agentName) : '<span class="muted">—</span>'}</td>
+            ${/* ‼️ M-25 — the AGENT, with what this page already knows about it.
+                  A name on its own is the one thing the cell had already drawn;
+                  the question a reader has here is "what else is this agent
+                  carrying, and what has it been costing me". */''}
+            <td class="agent">${p.agentName
+            ? tipw(C.esc(p.agentName), p.agentName + ' — on this page',
+                (t => window.AFTip.lines([
+                    'Definitions: ' + t.defs + (t.defs > 1 ? ' on this page run as this agent' : ' — this is the only one'),
+                    p.switchable ? 'Switched on: ' + t.on + ' of ' + t.defs : '',
+                    'Runs, 7 days: ' + t.runs7d + ' (this row: ' + (p.runs7d || 0) + ')',
+                    'Cost, 7 days: ' + fmtUSD(t.cost7d) + ' (this row: ' + fmtUSD(p.cost7d) + ')',
+                    setupValue(p, 'Working folder') ? '\nWorking folder: ' + setupValue(p, 'Working folder') : ''
+                ]))(((tally || {})[p.agentName]) || { defs: 1, on: 0, runs7d: p.runs7d || 0, cost7d: p.cost7d || 0 }))
+            : `<span class="muted" title="${C.esc('This definition names no agent — the launcher asks for one, '
+                + 'or picks its default, at the moment it runs.')}">—</span>`}</td>
             ${launchCell(p)}
             <td class="guardcell">${guard}</td>
-            <td class="num">${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}</td>
-            <td class="lastrun">${p.lastRunAt ? C.esc(rel(p.lastRunAt)) : '<span class="muted">never</span>'}
-                ${p.lastNote ? `<div class="muted small">${C.esc(p.lastNote)}</div>` : ''}</td>
+            ${/* ‼️ M-25 — WHAT IT COST, AND WHAT THAT DIVIDES INTO. A money
+                  figure with a run count under it implies a rate the reader was
+                  being left to work out; and a $0.00 with runs behind it is the
+                  one reading that must not be left as "free". */''}
+            <td class="num">${tipw(`${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}`,
+            `${fmtUSD(p.cost7d)} over 7 days`,
+            window.AFTip.lines([
+                'Total, 7 days: ' + fmtUSD(p.cost7d),
+                'Runs: ' + (p.runs7d || 0),
+                p.runs7d ? 'Per run: ' + fmtRate((p.cost7d || 0) / p.runs7d) : '',
+                p.skipped7d ? 'Skipped: ' + p.skipped7d + ' wake-up(s)'
+                    + (p.skipRate ? ' (' + p.skipRate + '% of them)' : '') + ' — never started, never paid for' : '',
+                p.runs7d && !p.cost7d
+                    ? '\nRuns with no cost behind them: this engine bills a plan and publishes no price per run, '
+                    + 'so nothing here is a claim that the work was free.'
+                    : (!p.runs7d ? '\nIt has not run in the last 7 days.' : '')
+            ]))}</td>
+            ${/* ‼️ M-25 — the LAST RUN, whole: the exact moment (in both clocks,
+                  media/afTime.js) and what happened that time. "3d ago" is the
+                  shorthand; the panel carries the long form. */''}
+            <td class="lastrun">${p.lastRunAt
+            ? tipw(`${C.esc(rel(p.lastRunAt))}${p.lastNote ? `<div class="muted small">${C.esc(p.lastNote)}</div>` : ''}`,
+                'Last run — ' + rel(p.lastRunAt),
+                window.AFTip.lines([
+                    window.AFTime.tip(p.lastRunAt, 'Ran'),
+                    p.lastNote ? '\nWhat happened: ' + p.lastNote : '',
+                    p.runs7d ? '\n' + p.runs7d + ' run(s) in the last 7 days.' : ''
+                ]))
+            : `<span class="muted" title="${C.esc('It has never fired. '
+                + (p.overdue ? 'And its time has already come — see the ⚠ on the row.'
+                    : p.nextAt ? 'First time due ' + until(p.nextAt) + '.'
+                        : 'It runs when it is launched, so “never” only means nobody has launched it yet.'))}">never</span>`}</td>
             <td class="state">${stateCell}</td>
             <td class="acts">
                 <button class="mini secondary" data-plan="run" data-kind="${p.kind}" data-id="${p.id}" title="run it now">run</button>
@@ -471,6 +596,10 @@
             last: p => p.lastRunAt || 0
         });
 
+        // ‼️ M-25 — computed ONCE for the whole table, never per row: every
+        // figure in an agent's hover comes off rows already on this page.
+        const tally = agentTally(d.plan);
+
         // Grouping: the user asked for "well grouped"; kind is the default
         // because it answers "what kinds of automation do I even have".
         const groups = new Map();
@@ -489,15 +618,33 @@
         const head = `<tr>
             <th class="tick"><input type="checkbox" class="allsel" title="select all switchable"></th>
             <th class="expand"></th>
-            ${sortCell(v, 'title', 'What runs')}
-            ${sortCell(v, 'agent', 'Agent')}
+            ${/* ‼️ M-25 — EVERY COLUMN IS DEFINED, AND DEFINED HERE. A column's
+                  meaning is said once, on its heading; a sentence repeated
+                  under every figure of every row is the thing that made these
+                  hovers worthless (docs/CONVENTIONS.md → a cell hover is a
+                  READOUT). What the cells carry below is figures. */''}
+            ${sortCell(v, 'title', 'What runs', false,
+        'The definition itself — its name, when it goes and what it will ask for. '
+        + 'A warning badge beside the name is something about THIS row that needs you.')}
+            ${sortCell(v, 'agent', 'Agent', false,
+        'Whose folder it runs in, and whose CLAUDE.md it wakes up with. '
+        + 'Empty means the definition names no agent and the launcher picks.')}
             <th title="${C.esc('What this definition launches with — its engine and its model. '
         + 'Either half may be blank: that half is the launcher\'s own default, resolved when it runs. '
         + 'A stated engine is shown here because a model name alone cannot say which CLI it goes to.')}">Launch</th>
-            <th>Guard</th>
-            ${sortCell(v, 'cost', 'Cost 7d', true)}
-            ${sortCell(v, 'last', 'Last run')}
-            <th class="state">On</th><th class="acts"></th></tr>`;
+            <th title="${C.esc('A precondition checked before the wake-up: if it is not met, nothing is '
+        + 'launched and no agent run is paid for. A guarded row also says how many wake-ups it has '
+        + 'saved in the last 7 days.')}">Guard</th>
+            ${sortCell(v, 'cost', 'Cost 7d', true,
+        'What this ONE definition cost over the last 7 days, and the runs behind it. '
+        + 'A plan-billed engine states no price, so a row can have runs and no cost.')}
+            ${sortCell(v, 'last', 'Last run', false,
+        'When it last actually fired, and what happened that time. '
+        + '“never” means it has been defined but has not yet run — which for a schedule whose '
+        + 'time has passed is what the ⚠ on the row is about.')}
+            <th class="state" title="${C.esc('Whether it fires on its own. Off means it is saved and '
+        + 'complete but nothing will start it. A workflow and a template have no switch: they run '
+        + 'when they are launched, so the column says “manual”.')}">On</th><th class="acts"></th></tr>`;
 
         const body = !sorted.length
             ? `<tr><td colspan="10" class="empty">${d.plan.length
@@ -505,7 +652,7 @@
                 : 'Nothing is automated yet. Add a schedule to run an agent at a set time, or a trigger to run one when something happens.'}</td></tr>`
             : [...groups.entries()].map(([g, list]) =>
                 (g ? `<tr class="grouphead"><td colspan="10">${C.esc(g)} <span class="muted small">${list.length}</span></td></tr>` : '')
-                + list.map(planRowHtml).join('')).join('');
+                + list.map(x => planRowHtml(x, tally)).join('')).join('');
 
         return `
             ${lede}
@@ -2035,7 +2182,21 @@
             return `<span class="muted" title="${C.esc(engineLabel(r)
                 + ' bills a plan and publishes no price per run. Its tokens are in the column beside this one; $0.00 here would read as "free", which is a different claim.')}">—</span>`;
         }
-        return fmtUSD(r.costUSD);
+        // ‼️ M-25 — A MONEY FIGURE WITH NO HOVER WAS THE LAST BARE CELL IN THIS
+        // TABLE. Everything below is derived from what the row already carries,
+        // which is what makes a dense table cheap; where a denominator is not
+        // worth dividing by (a run of under a minute has no hourly rate) the
+        // line is simply not written.
+        const usd = r.costUSD || 0;
+        return tipw(fmtUSD(r.costUSD), fmtUSD(r.costUSD) + ' — ' + engineLabel(r),
+            window.AFTip.lines([
+                'Cost: ' + fmtUSD(usd),
+                r.tokens ? 'Tokens: ' + r.tokens.toLocaleString() : '',
+                r.tokens && usd ? 'Rate: ' + fmtRate(usd / (r.tokens / 1e6)) + ' per million tokens' : '',
+                r.durMin >= 1 && usd ? 'Per minute: ' + fmtRate(usd / r.durMin) : '',
+                '\nThe API-equivalent of what this run counted, at your agentFarm.pricing rates '
+                + '— good for comparing runs, never a bill.'
+            ]));
     }
 
     /* ======================================================================
@@ -2059,6 +2220,14 @@
 
     /** `Label: value` lines out of a setup list — one shape for every kind. */
     const setupLines = list => (list || []).map(x => x.label + ': ' + x.value);
+
+    /** The full stamp of a run's first (or `last`) event of these kinds, or ''
+     *  when it has none — the caller decides what an absence prints. */
+    function eventStamp(r, kinds, last) {
+        const hits = (r.events || []).filter(e => kinds.indexOf(e.kind) >= 0);
+        const e = last ? hits[hits.length - 1] : hits[0];
+        return e ? window.AFTime.full(e.ts) : '';
+    }
 
     /**
      * ‼️ THE PART OF A SESSION ID A PERSON CAN ACTUALLY MATCH.
@@ -2206,9 +2375,14 @@
             <td class="num">${r.durMin !== undefined ? tipw(r.durMin + 'm',
                 `${r.durMin} minutes`,
                 window.AFTip.lines([
-                    'Started: ' + (r.events || []).filter(e => e.kind === 'started').map(e => window.AFTime.full(e.ts))[0] || '—',
-                    'Ended: ' + (r.events || []).filter(e => e.kind === 'finished' || e.kind === 'cancelled').map(e => window.AFTime.full(e.ts)).pop() || '—',
-                    ''
+                    // ‼️ M-25 — `'Started: ' + x || '—'` reads as
+                    // `('Started: ' + x) || '—'`, which is never falsy: a run
+                    // with no matching event drew the literal words "Started:
+                    // undefined". The fallback has to be chosen BEFORE the
+                    // label is glued on.
+                    'Started: ' + (eventStamp(r, ['started']) || '—'),
+                    'Ended: ' + (eventStamp(r, ['finished', 'cancelled'], true) || '—'),
+                    r.durMin ? '\nWall clock, not time the agent spent working.' : ''
                 ])) : '—'}</td>
             ${/* ‼️ M-21 — WHAT IT BURNED, in its own column. The rate came with
                   it out of the "Took" panel: how fast it spent is a fact about
