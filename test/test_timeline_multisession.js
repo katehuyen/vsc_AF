@@ -250,14 +250,22 @@ ok('…and its figures are in there', /Session: #S1 · TOOL/.test(lastHtml)
 ok('ops tooltip claims no shared rows', !/data-agent="ops"[\s\S]{0,600}has \d+ rows here/.test(lastHtml));
 
 // ---- session cards: disambiguated titles + per-session chips ----
-ok('card titled dev #1', lastHtml.indexOf('>dev #1</span> <span class="sid"') !== -1);
-ok('card titled dev #2', lastHtml.indexOf('>dev #2</span> <span class="sid"') !== -1);
+// ‼️ U-81 — the name and the id chip are each a panel trigger now, so they are
+// no longer adjacent in the markup: what matters is that the card carries both
+// names and that the id chip is still beside them, not the exact byte between.
+ok('card titled dev #1', lastHtml.indexOf('>dev #1</span>') !== -1);
+ok('card titled dev #2', lastHtml.indexOf('>dev #2</span>') !== -1);
+ok('the name carries its own panel', /<span class="af-tipw">\s*<span class="slink"[^>]*>dev #1<\/span>/.test(lastHtml));
+ok('…and the id chip carries its own', /<span class="af-tipw"><span class="sid">\(#S1\)/.test(lastHtml));
 ok('cards carry the session id, as the Console rows do', lastHtml.indexOf('(#S2)</span>') !== -1);
 ok('cards show start time', /started \d{2}:\d{2}/.test(lastHtml));
 
 // ---- the card is a place to act, not only to read ----
 {
-    ok('the title opens the session', lastHtml.indexOf('class="slink" data-open="D:/t/S1.jsonl"') !== -1);
+    // `data-aftipact` rides with it: the name is a thing you PRESS, and afTip
+    // has to know that to get out of the way of the hand (U-74/U-81).
+    ok('the title opens the session',
+        lastHtml.indexOf('class="slink" data-aftipact data-open="D:/t/S1.jsonl"') !== -1);
     ok('…and so does the session\'s own name', lastHtml.indexOf('the S1 job') !== -1);
     ok('cards carry the right-click contract', lastHtml.indexOf('afTimelineSession') !== -1);
     ok('a session with a process can be ended', lastHtml.indexOf('data-endsess="S1"') !== -1);

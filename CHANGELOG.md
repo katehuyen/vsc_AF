@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.195.0 — U-81: the Live Timeline’s session cards answer when you point at them (2026-08-21)
+
+*“The one AFTip there doesn’t draw right — it’s transparent, so everything it says mixes with the text behind it. Somebody tried to fix the CSS and clearly didn’t know how, because it’s still transparent.”* They were right about the diagnosis and right that the fix was in the wrong place.
+
+**The panel was never the problem: `opacity` on the block above it was.** The panel lives inside `.card .sub`, which was dimmed with `opacity: .7` — and opacity is applied to the whole **subtree** after it is painted. So the panel was drawn at 70% too, whatever it declared about its own background; `background: … !important` is painted at the ancestor’s alpha like everything else, which is why two rounds of fixing the background changed nothing. The same rule opens a stacking context, so the panel’s `z-index` was trapped inside the dimmed block and the next line of the card painted over it. **The dimming is kept — the same grey, applied as a colour** (`tip-host` in `common.css`), which inherits into the text and stops at the panel’s own.
+
+**And it was the wrong shape of panel.** It used `tip-block`, which measures the panel against the block it sits in — right for a wide table row, wrong for a 260px card: it produced a panel narrower than any other panel in the extension. Anchored to its trigger it is a classic AFTip again, at its own width, with afTip’s edge flip keeping it on the page.
+
+**The panel also answered a different question from the one asked.** The card draws the **last** prompt; the panel opened the **first** one, under a head that named neither — hover a cut line to read the rest of it and you got a different prompt entirely. It now carries both, labelled, in the order a reader asks: *the last thing asked*, then *how it opened*.
+
+**Then every other element on the card, one at a time.** A card is a row of the Sessions table stood up, so each figure is answered the way that table answers its column — same shape, same order, same words.
+- **The name** — the conversation: agent, whether the name is resolved, folder, how long it has been running, transcript, and whether this engine reports the full hook stream or only open-and-close.
+- **The id chip** — the id: the full string, everywhere else it appears, what owns the process, and which YOUR-TURN alerts this session has set. (The engine badge **stopped repeating it** — that is the chip’s subject, and a fact in two panels is ONE SUBJECT broken. The badge answers what the engine decides instead: model, cost reported, tokens, transcript.)
+- **The status badge** — SHORTHAND, so all seven states are now one hover from their meaning: what `PERMISSION?` and `YOUR TURN` actually mean, the tool in flight, how long it has been silent against the stuck threshold, whether a process still owns it, and whether there is anything to interrupt.
+- **Money** — figures, not the paragraph it used to carry: cost per turn, per hour, per 1M tokens · raw and plan-weighted tokens with the ratio · context now and its share · the model of the last reply, and where the figures were read from.
+- **Work** — prompts, tool calls, **tools per prompt**, files, errors with their share, compactions, sub-agents, and what the count is based on.
+- **Time** — both clocks and the machine’s own offset, like every other time in the extension, for the start and the last event, plus how long it has run, how long it has been silent, and minutes per turn.
+- **The pid** — what a headless entrypoint means, and that the claim comes from the CLI’s own registry rather than from a hook.
+- **The folder** — the path whole, and that clicking reveals it.
+- **All five buttons** — what pressing each one does, what it does *not* touch, and whether it asks first, instead of the sentence-long native tooltips they carried.
+
+**Looked at, not asserted.** `render_page.js` grew a `--tip <class>[:n]` flag that opens a panel using the component’s own stay-open class, so a hover panel can finally be photographed — opaque, at its real width, in its real place, in both themes. `test/test_timeline_card_tips.js` pins the rules the picture cannot: every block that carries a panel is exempt from the opacity dimming, no card panel uses `tip-block`, and every pressable trigger says it can be pressed. Swim lanes untouched.
+
 ## 3.194.0 — U-82: “Copy ▸” copies again — everywhere, not just in the backlog (2026-08-21)
 
 *“There are Copy options — the code, the words, code and words — and I have never once seen any of them put anything on the clipboard.”* They were not putting anything on it. **Every Copy ▸ in the extension was broken, on every page, for the same reason.**

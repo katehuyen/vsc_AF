@@ -203,6 +203,24 @@
         'idle':               { label: 'IDLE',        color: 'var(--vscode-descriptionForeground, #999)' },
         'ended':              { label: 'ENDED',       color: 'var(--vscode-descriptionForeground, #999)' }
     };
+    /**
+     * ‼️ U-81 — SHORTHAND: THE BADGE IS THE SHORT FORM, THIS IS THE LONG ONE.
+     *
+     * `PERMISSION?` and `YOUR TURN` are seven-letter words for a state a reader
+     * has to act on, and the card said them and nothing else. The rule is that
+     * a shorthand is always one hover away from its meaning
+     * (docs/CONVENTIONS.md → SHORTHAND), so every status the badge can draw is
+     * written out here, once.
+     */
+    const STATUS_WORDS = {
+        'working': 'thinking — a turn is in flight and no tool is running',
+        'tool': 'running a tool right now',
+        'waiting-permission': 'stopped at a permission prompt — it cannot go on until somebody answers',
+        'waiting-input': 'the turn is finished and it is waiting on you',
+        'stalled': 'nothing has arrived for longer than the stuck threshold',
+        'idle': 'open, with nothing in flight',
+        'ended': 'the session is over'
+    };
     // Statuses where there is something to interrupt: a turn is in flight, a
     // permission dialog is up, or the session stopped mid-work. An idle or
     // finished session has nothing to stop — the button stays off those cards.
@@ -313,11 +331,20 @@
      */
     function engineBadge(s) {
         const eng = window.AFEngine.id(s.source);
+        // ‼️ U-81 — THE SAME FIGURES THE SESSIONS TABLE'S ENGINE CELL CARRIES
+        // (media/sessionsTable.js → TIP.engine), because it is the same fact
+        // about the same session. The session id is NOT among them any more:
+        // it is the id chip's subject two elements to the left, and a fact in
+        // two panels is the ONE SUBJECT rule broken.
         return window.AFEngine.badge(eng, [
-            'Engine: ' + window.AFEngine.label(eng),
-            'Events: ' + (hasHooks(s) ? 'full (hook stream)' : 'lifecycle only'),
-            'Session: ' + shortId(s.sessionId)
-        ].join('\n'));
+            tline('Engine', window.AFEngine.label(eng)),
+            tline('Events', hasHooks(s)
+                ? 'full — prompts, tools and turn ends' : 'lifecycle only — open and close'),
+            tline('Model of the last reply', s.model),
+            tline('Cost reported', s.cost ? C.fmtUSD(s.cost) : 'no — plan or account billing'),
+            tline('Tokens', s.tokens ? C.fmtTok(s.tokens) : 'not published by this CLI'),
+            tline('Transcript', s.transcriptPath ? 'on disk' : 'none this build can open')
+        ].filter(Boolean).join('\n'));
     }
 
     /**
@@ -363,6 +390,202 @@
         ].filter(Boolean).join(' · ');
         const time = `started ${fmtClock(s.startedAt)} · ${fmtDur(Date.now() - s.startedAt)} · last event ${relTime(s.lastEventTs)}`;
         return { money, work, time };
+    }
+
+    /* ============ U-81 — WHAT A SESSION CARD SAYS WHEN YOU POINT AT IT ======
+     *
+     * ‼️ A CARD IS A ROW OF THE SESSIONS TABLE, STOOD UP. Every figure on it is
+     * a column over there, and that table answers for each one
+     * (media/sessionsTable.js → TIP). This page answered for a single line out
+     * of nine: four carried nothing at all, and three carried a native `title`
+     * holding either an explanation (which belongs to a heading, never to a
+     * cell) or the words the card had just drawn beside it. So the same
+     * questions are answered here, in the same shape and the same order as the
+     * table a reader already knows.
+     *
+     * ONE SUBJECT, one panel. The NAME is the conversation · the id chip is the
+     * id · the badge is what it is doing right now · the prompt is what was
+     * said · and the three figure lines are money, work and time. No fact
+     * stands in two of them, which is why the id is not repeated under the name
+     * and the model is not repeated under the badge.
+     *
+     * ‼️ AND EVERY ONE OF THEM IS AN `AFTip`, NOT A `title`. A card is 260px
+     * wide: every figure list here is longer than a native tooltip reads well,
+     * and a path or a prompt is text outright (docs/CONVENTIONS.md → Hover).
+     * The DEFAULT layout, deliberately — `tip-block` measures the panel against
+     * the block it sits in, which is right for a wide table row and wrong for a
+     * narrow card: it produced a 260px-wide panel, narrower than any other
+     * panel in the extension. Anchored to its trigger the panel is its own
+     * width again, and afTip's edge flip keeps it on the page.
+     * ==================================================================== */
+
+    /** `Label: value`, dropped when there is no value — the table's own line. */
+    const tline = (label, v) =>
+        (v === '' || v === undefined || v === null ? '' : `${label}: ${v}`);
+    /** The body of a figures panel: the lines that have something to say. */
+    const figures = parts => (parts || []).filter(Boolean).join('\n');
+    const round1 = n => Math.round(n * 10) / 10;
+    /** A rate only exists when there is a denominator worth dividing by. */
+    const per = (n, d, f) => (n && d ? f(n / d) : '');
+
+    /** WHICH CONVERSATION THIS IS — the panel under its name. */
+    function nameTip(s) {
+        const ran = Math.max(0, Date.now() - (s.startedAt || 0));
+        return {
+            head: `${s.label || s.agentName} · ${window.AFEngine.label(engineOf(s))}`
+                + (s.turns ? ` · ${s.turns} turns` : ''),
+            body: figures([
+                tline('Agent', s.resolved ? s.agentName : 'not resolved — the card is named after the session'),
+                tline('Named', s.label && s.label !== s.agentName
+                    ? `${s.label} — this agent has more than one session open` : ''),
+                tline('Folder', s.cwd),
+                tline('Running for', fmtDur(ran)),
+                tline('Transcript', s.transcriptPath || 'none this build can open'),
+                tline('Events', hasHooks(s)
+                    ? 'full — prompts, tools and turn ends'
+                    : 'lifecycle only — a CLI in its own terminal, open and close is all this page sees')
+            ]) + (s.transcriptPath
+                ? '\n\nClick opens the transcript at the latest activity.' : '')
+        };
+    }
+
+    /** THE ID ITSELF — where else this exact string turns up. */
+    function idTip(s) {
+        return {
+            head: `Session ${shortId(s.sessionId)}`,
+            body: figures([
+                tline('Full id', s.sessionId),
+                tline('Also on', 'the Console rows, the terminal tab, the log lines and this page\'s swim lane'),
+                tline('Owned by', s.owner
+                    ? `pid ${s.owner.pid}${s.owner.entrypoint ? ' · ' + s.owner.entrypoint : ''}`
+                    : (s.hosted ? 'Agent Farm\'s own Console' : '')),
+                tline('Alerts set', (actionsFor(s.sessionId) || [])
+                    .map(a => (ACTION_BY_ID[a] || {}).label || a).join(' · '))
+            ])
+        };
+    }
+
+    /** THE CONVERSATION'S NAME — text, and the card cuts it at its own width. */
+    function titleTip(s) {
+        return {
+            head: 'What this conversation is called',
+            body: s.title
+                + '\n\nFrom the transcript — the launch name, a rename, or what the conversation itself suggested.'
+                + (s.transcriptPath ? '\nClick opens the transcript at the latest activity.' : '')
+        };
+    }
+
+    /**
+     * WHAT WAS SAID — and BOTH ends of it when they differ.
+     *
+     * ‼️ The card draws the LAST prompt and the panel used to open the FIRST
+     * one, with a head that named neither: the reader hovered a line to see the
+     * rest of it and got a different prompt entirely. They are two facts and
+     * the panel now says which is which, in the order a reader asks — the thing
+     * on the card first, what it opened with underneath.
+     */
+    function promptTip(s) {
+        const last = String(s.lastPrompt || '');
+        const first = String(s.firstPrompt || '');
+        const same = !first || first === last;
+        return {
+            head: `${s.label || s.agentName} · ${window.AFTip.sizeNote(last)}`
+                + (same ? '' : ` · opened with ${window.AFTip.sizeNote(first)}`),
+            body: (same ? last : `── The last thing asked ──\n${last}\n\n── How it opened ──\n${first}`)
+        };
+    }
+
+    /** WHAT IT IS DOING RIGHT NOW, and why the page is entitled to say so. */
+    function statusTip(s, meta, gone) {
+        const silent = Date.now() - (s.lastEventTs || 0);
+        const stuck = DATA.stuckMs || 0;
+        return {
+            head: `${meta.label}${s.currentTool ? ' · ' + s.currentTool : ''}`,
+            body: figures([
+                tline('State', STATUS_WORDS[s.status] || s.status),
+                tline('Tool in flight', s.currentTool),
+                tline('Silent for', fmtDur(silent)
+                    + (stuck ? ` · marked stalled after ${fmtDur(stuck)}` : '')),
+                tline('Process', gone
+                    ? 'gone — the OS no longer knows it, the session just never said so'
+                    : (s.owner ? `alive, pid ${s.owner.pid}` : (s.hosted ? 'hosted by the Console' : ''))),
+                tline('Can be interrupted', !gone && RUNNING.indexOf(s.status) >= 0
+                    ? 'yes — ⎋ Interrupt below' : 'nothing is in flight to stop')
+            ])
+        };
+    }
+
+    /**
+     * THE MONEY LINE — cost, tokens and context, as the Sessions table answers
+     * them. Three blocks, because the line is three facts joined by dots and a
+     * flat list of twelve figures is the wall `panelBody` exists to prevent.
+     */
+    function moneyTip(s) {
+        const hours = Math.max(0, Date.now() - (s.startedAt || 0)) / 3600000;
+        return {
+            head: 'What this conversation has cost so far',
+            body: panelBody([
+                [
+                    tline('API-equivalent', s.cost ? C.fmtUSD(s.cost)
+                        : 'not published — this engine bills a plan'),
+                    tline('Cost per turn', per(s.cost, s.turns, C.fmtUSD)),
+                    tline('Cost per hour', hours >= 1 ? C.fmtUSD((s.cost || 0) / hours) : ''),
+                    tline('Per 1M tokens', s.cost && s.tokens
+                        ? C.fmtUSD(s.cost / (s.tokens / 1000000)) : '')
+                ],
+                [
+                    tline('Tokens (raw)', s.tokens ? C.fmtTok(s.tokens) : ''),
+                    tline('Weighted against the plan', s.wTokens ? C.fmtTok(s.wTokens) : ''),
+                    tline('Weight ratio', s.tokens && s.wTokens ? round1(s.wTokens / s.tokens) + '×' : ''),
+                    tline('Tokens per turn', per(s.tokens, s.turns, n => C.fmtTok(Math.round(n))))
+                ],
+                [
+                    tline('Context now', s.ctxTokens ? C.fmtTok(s.ctxTokens) + ' tokens' : ''),
+                    tline('Share of the session', s.ctxTokens && s.tokens
+                        ? Math.round(s.ctxTokens * 100 / s.tokens) + '%' : ''),
+                    tline('Model of the last reply', s.model),
+                    tline('Read from', s.transcriptPath
+                        ? 'the transcript on disk' : 'nothing — no transcript this build can read')
+                ]
+            ])
+        };
+    }
+
+    /** THE WORK LINE — what it has actually done. */
+    function workTip(s) {
+        return {
+            head: 'What it has done in this session',
+            body: figures([
+                tline('Prompts', s.prompts),
+                tline('Tool calls', s.toolCalls),
+                tline('Tools per prompt', per(s.toolCalls, s.prompts, round1)),
+                tline('Files written', s.filesEdited || ''),
+                tline('Errors', s.errors
+                    ? `${s.errors}${s.toolCalls ? ` (${Math.round(s.errors * 100 / s.toolCalls)}% of tool calls)` : ''}` : ''),
+                tline('Compactions', s.compactions || ''),
+                tline('Sub-agents finished', s.subagentStops || ''),
+                tline('Turns on the transcript', s.turns || ''),
+                tline('Counted from', hasHooks(s)
+                    ? 'the live hook stream' : 'nothing — this CLI reports only open and close')
+            ])
+        };
+    }
+
+    /** THE TIME LINE — every clock in the extension carries UTC in its hover. */
+    function timeTip(s) {
+        const T = window.AFTime;
+        return {
+            head: 'When this session ran',
+            body: panelBody([
+                T.tip(s.startedAt, 'Started'),
+                T.tip(s.lastEventTs, 'Last event'),
+                [
+                    tline('Running for', fmtDur(Date.now() - (s.startedAt || 0))),
+                    tline('Silent for', fmtDur(Date.now() - (s.lastEventTs || 0))),
+                    tline('Minutes per turn', per((Date.now() - (s.startedAt || 0)) / 60000, s.turns, round1))
+                ]
+            ])
+        };
     }
 
     /* ================= U-67 — WHAT THIS PAGE SAYS WHEN YOU POINT AT IT =======
@@ -1101,14 +1324,36 @@
             const meta = STATUS_META[s.status] || STATUS_META.idle;
             const gone = isGone(s);
             const st = statLines(s);
+            // ‼️ `data-aftipact` — the name and the path are things you PRESS,
+            // and afTip only knows that about real buttons and links unless the
+            // page says so. Without it a panel stands under the hand that is
+            // reaching for the link (U-74).
             const open = s.transcriptPath
-                ? ` class="slink" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}" title="Open this session"`
+                ? ` class="slink" data-aftipact data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}"`
                 : '';
+            const tip = (trigger, t) => window.AFTip.wrap(trigger, t.head, t.body);
+            const pid = gone ? '' : (s.owner
+                ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' · Console/headless' : ' · terminal'}`
+                : '');
             const where = [
-                gone ? '' : (s.owner
-                    ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' · Console/headless' : ' · terminal'}`
-                    : ''),
-                s.cwd ? `<span class="pathlink" data-cwd="${C.esc(s.cwd)}" title="Reveal this folder">${C.esc(s.cwd)}</span>` : ''
+                pid ? tip(`<span>${C.esc(pid)}</span>`, {
+                    head: 'The process behind this card',
+                    body: figures([
+                        tline('Pid', s.owner.pid),
+                        tline('Entrypoint', s.owner.entrypoint || '—'),
+                        tline('Ran', s.owner.entrypoint === 'sdk-cli'
+                            ? 'headless — no terminal, nobody at the keyboard'
+                            : 'in a terminal a person can type in'),
+                        tline('Reported state', s.owner.status || ''),
+                        tline('Confirmed by', 'the CLI\'s own registry of running sessions — not by a hook event')
+                    ])
+                }) : '',
+                s.cwd ? tip(
+                    `<span class="pathlink" data-aftipact data-cwd="${C.esc(s.cwd)}">${C.esc(s.cwd)}</span>`,
+                    {
+                        head: 'Working folder',
+                        body: s.cwd + '\n\nClick reveals it in the OS file manager.'
+                    }) : ''
             ].filter(Boolean).join(' · ');
             return `<div class="card" style="border-left:3px solid ${gone ? 'var(--vscode-descriptionForeground,#999)' : meta.color}"
                  ${ctxAttr({
@@ -1116,24 +1361,61 @@
                      sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''
                  })}>
                 <div class="spread">
-                    <h3 style="margin:0"><span${open}>${C.esc(s.label || s.agentName)}</span> <span class="sid" title="Session id — the same one the Console rows, the terminal and the log lines carry">(${C.esc(shortId(s.sessionId))})</span> ${engineBadge(s)}</h3>
-                    <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
+                    <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))} ${engineBadge(s)}</h3>
+                    ${tip(`<span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>`, statusTip(s, meta, gone))}
                 </div>
-                ${s.title ? `<div class="sub" style="margin-top:3px"><span${open}>${C.esc(s.title)}</span></div>` : ''}
-                <div class="sub" style="margin-top:4px">${s.lastPrompt ? window.AFTip.wrap('“' + C.esc(s.lastPrompt) + '”', `${s.label || s.agentName} · ${window.AFTip.sizeNote(s.firstPrompt || s.lastPrompt)}`, (s.firstPrompt || s.lastPrompt), 'tip-block') : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
-                ${st.money ? `<div class="sub" style="margin-top:6px" title="From this session's transcript: what it has spent, the tokens that bought, what its context window is holding now, and the model of its last reply">${st.money}</div>` : ''}
-                <div class="sub" style="margin-top:${st.money ? '2' : '6'}px">${st.work}</div>
-                <div class="sub" style="margin-top:2px">${st.time}</div>
-                ${where ? `<div class="sub muted" style="margin-top:2px">${where}</div>` : ''}
+                ${s.title ? `<div class="sub tip-host" style="margin-top:3px">${tip(`<span${open}>${C.esc(s.title)}</span>`, titleTip(s))}</div>` : ''}
+                <div class="sub tip-host" style="margin-top:4px">${s.lastPrompt ? tip('“' + C.esc(s.lastPrompt) + '”', promptTip(s)) : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
+                ${st.money ? `<div class="sub tip-host" style="margin-top:6px">${tip(st.money, moneyTip(s))}</div>` : ''}
+                <div class="sub tip-host" style="margin-top:${st.money ? '2' : '6'}px">${tip(st.work, workTip(s))}</div>
+                <div class="sub tip-host" style="margin-top:2px">${tip(st.time, timeTip(s))}</div>
+                ${where ? `<div class="sub tip-host" style="margin-top:2px">${where}</div>` : ''}
                 ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page, card and swim lane together.</div>` : ''}
                 <div class="btnrow">
-                    <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
-                    ${!gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — stops the running turn and leaves the session open. A conversation the Console hosts is stopped through the Console; one running in a terminal gets Esc typed into it.">⎋ Interrupt</button>` : ''}
-                    ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
-                    ${s.owner || s.hosted ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="${C.esc(s.hosted
-                        ? 'End this conversation for real — the Console closes it and the session leaves this page. Its transcript stays on disk. Asks first.'
-                        : 'End this session for real — its claude process (pid ' + s.owner.pid + ') is stopped and the session leaves this page. Asks first.')}">⏻ End session</button>` : ''}
-                    <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="Take this session off the Live Timeline whole — this card AND its swim-lane row, in every range. The session itself is not touched: its transcript stays on disk, and it comes back here if it reports another event.">✕ Clear</button>
+                    ${tip(`<button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}">⌨ Terminal</button>`, {
+                        head: 'Jump to this session\'s terminal window',
+                        body: figures([
+                            tline('Finds it by', 'this session\'s id, falling back to the agent name'),
+                            tline('Agent', s.agentName),
+                            tline('Nothing is sent', 'the window is only brought forward')
+                        ])
+                    })}
+                    ${!gone && RUNNING.indexOf(s.status) >= 0 ? tip(`<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}">⎋ Interrupt</button>`, {
+                        head: 'Stop the running turn, keep the session',
+                        body: figures([
+                            tline('Stops', 'the turn in flight — the conversation stays open and can be asked again'),
+                            tline('How', s.hosted
+                                ? 'through the Console, which hosts this conversation'
+                                : 'Esc is typed into the terminal running it'),
+                            tline('Currently', STATUS_WORDS[s.status] || s.status)
+                        ])
+                    }) : ''}
+                    ${s.transcriptPath ? tip(`<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>`, {
+                        head: 'Open the transcript at the latest activity',
+                        body: figures([
+                            tline('File', s.transcriptPath),
+                            tline('Opens at', window.AFTime.stamp(s.lastEventTs) || 'the top'),
+                            tline('Turns', s.turns || '')
+                        ])
+                    }) : ''}
+                    ${s.owner || s.hosted ? tip(`<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}">⏻ End session</button>`, {
+                        head: 'End this conversation for real — asks first',
+                        body: figures([
+                            tline('Ends', s.hosted
+                                ? 'the Console closes the conversation and it leaves this page'
+                                : `its claude process (pid ${s.owner.pid}) is stopped and it leaves this page`),
+                            tline('The transcript', 'stays on disk — nothing about the session\'s record is touched'),
+                            tline('Asks first', 'yes')
+                        ])
+                    }) : ''}
+                    ${tip(`<button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}">✕ Clear</button>`, {
+                        head: 'Take it off this page — card and swim lane, in every range',
+                        body: figures([
+                            tline('Removes', 'this card AND its swim-lane row, at every window length'),
+                            tline('The session', 'is not touched — its transcript stays on disk'),
+                            tline('It comes back', 'if the session reports another event')
+                        ])
+                    })}
                 </div>
             </div>`;
         }).join('');

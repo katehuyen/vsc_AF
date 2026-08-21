@@ -201,6 +201,29 @@ function main() {
         if (!variants.length) { console.error('no such variant'); process.exitCode = 1; return; }
     }
 
+    // ‼️ A HOVER PANEL HAS TO BE PHOTOGRAPHABLE (U-81). A picture that can only
+    // ever show closed panels is a picture that cannot answer "is it opaque, is
+    // it the right width, does it open in the right place" — which is exactly
+    // what got shipped blind twice. `--tip <class>` opens every panel whose
+    // wrapper carries that class using the component's OWN stay-open class
+    // (`af-on`, the one afTip writes when a repaint takes `:hover` away), never
+    // a rule invented here — so the panel is photographed at its real size, in
+    // its real place, with its real background.
+    //
+    // `--tip <class>:<n>` opens only the Nth of them (1-based). Panels overlap
+    // each other on purpose — each one covers whatever is under it — so a
+    // picture with all of them open answers "is it opaque" and nothing else;
+    // one at a time is how the width and the placement are read.
+    const tIdx = args.indexOf('--tip');
+    const tipArg = tIdx >= 0 ? String(args[tIdx + 1] || '').trim() : '';
+    const tipCls = tipArg.split(':')[0];
+    const tipNth = Number(tipArg.split(':')[1] || 0);
+    if (tIdx >= 0 && !/^[\w-]+(:\d+)?$/.test(tipArg)) {
+        console.error('--tip takes a class name and an optional index, e.g. --tip tip-host:3');
+        process.exitCode = 1;
+        return;
+    }
+
     const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
     const sections = variants.map(v => {
         const r = runPage(fixture.script, v.data, fixture.window || {});
@@ -243,6 +266,40 @@ function main() {
         return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
     }).join('\n');
 
+    // The wrappers asked for, opened. `af-on` is the wrapper state the collapse
+    // rule (A-12) yields to, so the panel comes back at its own size with its
+    // own border and background — nothing about it is restated here.
+    const opened = !tipCls ? sections : (() => {
+        const W = 'class="af-tipw';
+        const carries = new RegExp(`class="[^"]*\\b${tipCls}\\b[^"]*"`, 'g');
+        const marks = new Set();
+        // the wrapper itself
+        let m;
+        const wre = /class="af-tipw[^"]*"/g;
+        while ((m = wre.exec(sections))) {
+            if (new RegExp(`\\b${tipCls}\\b`).test(m[0])) { marks.add(m.index); }
+        }
+        // …and the first wrapper inside an element that carries the class
+        while ((m = carries.exec(sections))) {
+            if (m[0].indexOf('af-tipw') >= 0) { continue; }
+            const at = sections.indexOf(W, m.index);
+            if (at >= 0) { marks.add(at); }
+        }
+        if (!marks.size) { console.error(`--tip ${tipCls}: nothing carries it`); }
+        let picked = [...marks].sort((a, b) => a - b);
+        if (tipNth) {
+            console.log(`--tip ${tipCls}: ${picked.length} panels, opening #${tipNth}`);
+            picked = picked.slice(tipNth - 1, tipNth);
+        }
+        let out = '', last = 0;
+        for (const at of picked) {
+            const end = sections.indexOf('"', at + W.length);
+            out += sections.slice(last, end) + ' af-on';
+            last = end;
+        }
+        return out + sections.slice(last);
+    })();
+
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} — ${theme}</title>
 <style>
@@ -269,7 +326,7 @@ body { margin: 0; padding: 0 0 60px;
 .rndr-page .af-head, .rndr-page [class*="sticky"] { position: static !important; }
 </style></head>
 <body>
-${sections}
+${opened}
 </body></html>`;
 
     fs.mkdirSync(OUT, { recursive: true });

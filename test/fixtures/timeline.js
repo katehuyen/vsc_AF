@@ -33,6 +33,15 @@ const sessions = () => ([
         source: undefined,                 // a Claude transcript states no engine
         status: 'tool', currentTool: 'Edit',
         lastPrompt: 'X-35 multi motor adaptasyonu — Live Timeline',
+        // ‼️ U-81 — A SESSION HAS TWO PROMPTS AND THE FIXTURE ONLY EVER HAD ONE,
+        // which is exactly why nobody noticed that the card drew the LAST one
+        // and its panel opened the FIRST. The opening prompt is also the long
+        // text on this page, so it is what a picture of the panel has to show.
+        firstPrompt: 'Live Timeline sayfasını bütün motorlar için aç: hook akışı yalnızca '
+            + 'Claude\'dan geliyor, ama Console\'un barındırdığı her konuşma — Codex, '
+            + 'Gemini, Antigravity — aynı kartı ve aynı şeridi hak ediyor. Rozetin rengi '
+            + 'motorun kendi rengi olsun, ve "lifecycle only" ifadesi yalnızca gerçekten '
+            + 'kendi terminalinde açılıp kapanan CLI için yazılsın.',
         startedAt: min(96), lastEventTs: min(0.4),
         prompts: 14, toolCalls: 213, compactions: 1, subagentStops: 3, errors: 2,
         cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm',

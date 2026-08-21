@@ -406,6 +406,20 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     border-bottom: 1px solid var(--vscode-widget-border, #4443);
 }
 .af-tipb { display: block; }
+/* ‼️ U-81 — A BLOCK THAT HOSTS A PANEL DIMS ITSELF WITH A COLOUR, NEVER WITH
+   `opacity`. MEASURED, on the Live Timeline's session cards: the panel sat
+   inside `.card .sub`, which was dimmed with `opacity:.7`, and opacity is
+   applied to the whole SUBTREE after it is painted — so the panel was drawn at
+   70% too and the page's own text read straight through its words. Nothing the
+   panel says about its own background can undo that; `background: … !important`
+   is painted at the ancestor's alpha like everything else, which is why two
+   rounds of fixing the background changed nothing. It also opens a stacking
+   context, so the panel's `z-index:40` is trapped inside the dimmed block and
+   the next sibling paints over it.
+   The dimming is kept — the same grey, applied as a colour, which inherits into
+   the text and stops at the panel's own `color`. Put `tip-host` on any block
+   that carries a panel and is dimmed with `.muted` or `.card .sub`. */
+.tip-host, .tip-host.muted, .card .tip-host { opacity: 1; color: var(--vscode-descriptionForeground, #9d9d9d); }
 
 /* ------------------------------------------------------- clearable text box
    ‼️ A SEARCH BOX YOU CANNOT EMPTY IN ONE PRESS IS A SEARCH BOX YOU RETYPE.
