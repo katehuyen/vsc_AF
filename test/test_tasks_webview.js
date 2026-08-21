@@ -107,6 +107,20 @@ const bodyEl = {
 const html = () => getEl('app')._html + loose.map(e => e._html || '').join('');
 const ms = createAfmsDom(html);
 
+/**
+ * ‼️ M-21 — THE PAGE WITHOUT ITS HOVER PANELS, which is what a question about
+ * the TABLE is really asking. "Filtering narrowed it" was written as "the row
+ * that should be gone appears nowhere on the page" — fine while nothing but the
+ * table named a definition, and wrong the moment the header strip started
+ * deriving its figures from the same list ("next to wake: …", the top spenders,
+ * the rows with problems). Those panels are the whole farm's state on purpose:
+ * a filter narrows a table, it does not change what the farm is doing. So a
+ * table assertion reads the page with every `af-tip` panel taken out, and the
+ * tips get their own file (`test_tasks_header_tips.js`).
+ */
+const noTips = s => String(s).replace(/<span class="af-tip">[\s\S]*?<\/span><\/span>/g, '');
+const tableHtml = () => noTips(html());
+
 /** Parse the rendered HTML into shim elements matching a CSS-ish selector. */
 function query(sel, scope) {
     // ‼️ A SELECTOR LIST IS A LIST, AND A DESCENDANT IS A DESCENDANT. The page
@@ -596,7 +610,7 @@ const setFilter = (name, ...values) => {
     el.fire('change');
 };
 setFilter('kind', 'trigger');
-ok('filtering by kind narrows the table', html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+ok('filtering by kind narrows the table', tableHtml().includes('Media watch') && !tableHtml().includes('AGENT_AREA batch'));
 ok('an active filter becomes a visible chip', html().includes('class="chips"') && html().includes('kind: trigger'));
 ok('the chip reports how much is hidden', html().includes('showing 1 of 6'));
 ok('a reset control appears with it', html().includes('data-resetview'));
@@ -614,14 +628,14 @@ ok('reset clears every filter at once', !html().includes('class="chips"'));
 ok('and brings the rows back', html().includes('AI daily scan') && html().includes('triage inbox'));
 
 setFilter('guard', 'no');
-ok('the guard filter finds unguarded rows', html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+ok('the guard filter finds unguarded rows', tableHtml().includes('Media watch') && !tableHtml().includes('AGENT_AREA batch'));
 resetView();
 
 const issuesBox = query('[data-f="issues"]')[0];
 issuesBox.checked = true;
 issuesBox.fire('change');
 ok('"needs attention" shows only rows with problems',
-    html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+    tableHtml().includes('Media watch') && !tableHtml().includes('AGENT_AREA batch'));
 ok('a boolean filter also gets a chip', html().includes('needs attention'));
 resetView();
 
@@ -637,7 +651,7 @@ const q = sandbox.document.getElementById('planq');
 q.value = 'scan AI news';
 q.fire('input');
 ok('search matches the PROMPT, not only the name',
-    html().includes('AI daily scan') && !html().includes('Media watch'));
+    tableHtml().includes('AI daily scan') && !tableHtml().includes('Media watch'));
 ok('the search term shows as a chip', html().includes('“scan AI news”'));
 resetView();
 
@@ -652,10 +666,10 @@ setFilter('group', 'kind');
 setFilter('group', '');
 clickData('sort', 'cost');
 ok('sorting by cost puts the cheapest first (ascending)',
-    html().indexOf('AI daily scan') < html().indexOf('Media watch'));
+    tableHtml().indexOf('AI daily scan') < tableHtml().indexOf('Media watch'));
 clickData('sort', 'cost');
 ok('clicking the same column flips the direction',
-    html().indexOf('Media watch') < html().indexOf('AI daily scan'));
+    tableHtml().indexOf('Media watch') < tableHtml().indexOf('AI daily scan'));
 ok('grouping stays off while sorting flat', !html().includes('class="grouphead"'));
 setFilter('group', 'kind');
 
@@ -762,7 +776,7 @@ query('[data-out]')[0].click();
 ok('output opens by path', posted[0] && posted[0].type === 'open-output' && posted[0].file === 'D:/out/r3.md');
 
 setFilter('status', 'failed');
-ok('the run status filter works', html().includes('broken run') && !html().includes('live run'));
+ok('the run status filter works', tableHtml().includes('broken run') && !tableHtml().includes('live run'));
 ok('and reports itself as a chip', html().includes('status: failed'));
 resetView();
 setFilter('source', 'trigger');

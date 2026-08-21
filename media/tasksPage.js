@@ -121,9 +121,79 @@
 
     // ---------------------------------------------------------------- header
 
+    /* ======================================================================
+       ‼️ M-21 — THE STRIP THAT SUMMARISES THE PAGE COULD NOT BE ASKED ANYTHING.
+
+       M-25 took the five design principles through the Plan and Runs TABLES and
+       stopped where the tables stop. The control strip above them is the first
+       thing read on this page and it answered almost nothing: five of its eight
+       figures had no hover AT ALL, three had a one-line `title` — which
+       docs/CONVENTIONS.md names as a bug in its own right, not as a small tip —
+       the shorthand durations `1h` / `8h` / `24h` had their long form written
+       nowhere, and the two tabs did not say what was behind them.
+
+       ONE SUBJECT is what splits them, and no figure explains another's:
+         ⚙️ the CEILING and what is under it   · ⏳ what is waiting, and why
+         🛡️ what a person has to decide        · 📅 the SHAPE of the plan
+         🏁 today's outcome                    · 💵 the money
+         🛡 what was never spent               · ⚠️ what is wrong
+       ====================================================================== */
+
+    /** A header AFTip. Anchored to the strip, so a long panel is measured
+     *  against the block it belongs to rather than to a 4-character chip. */
+    const htip = (trigger, head, body) =>
+        window.AFTip.wrap(trigger, head, body, 'tip-free', 'data-aftip-anchor=".ctl"');
+
+    /** `n thing` / `n things` — the tips below count seven different things. */
+    const plural = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
+
+    /** ‼️ A LIST IN A PANEL IS CAPPED AND SAYS SO. An unbounded one turns the
+     *  panel into the table it was supposed to save you from opening. */
+    function someOf(list, n, draw) {
+        const head = list.slice(0, n).map(draw);
+        if (list.length > n) { head.push('…and ' + (list.length - n) + ' more'); }
+        return head;
+    }
+
+    /** The figures every header tip derives from, computed once per render. */
+    function headerFacts(d) {
+        const runs = d.runs || [];
+        const plan = d.plan || [];
+        const now = Date.now();
+        const due = plan.filter(p => p.nextAt && p.nextAt > now).sort((a, b) => a.nextAt - b.nextAt);
+        return {
+            now, plan, due,
+            running: runs.filter(r => r.status === 'running'),
+            queued: runs.filter(r => r.status === 'queued'),
+            parked: runs.filter(r => r.status === 'parked'),
+            failedToday: runs.filter(r => r.status === 'failed'
+                && r.when >= new Date(now).setHours(0, 0, 0, 0)),
+            /** How many wake-ups fall inside the next `mins` minutes — the only
+             *  honest answer to "what does pausing for an hour actually skip". */
+            wakeIn: mins => plan.filter(p => p.nextAt && p.nextAt > now
+                && p.nextAt <= now + mins * 60_000).length
+        };
+    }
+
+    /** MIRROR — what the gate says RIGHT NOW, as the first line of the panel of
+     *  every control that changes it. */
+    function gateNowLine(g) {
+        if (g.paused) { return 'Now: everything is paused' + (g.pauseReason ? ' — ' + g.pauseReason : ''); }
+        if (g.pausedUntil && g.pausedUntil > Date.now()) {
+            return 'Now: paused until ' + until(g.pausedUntil);
+        }
+        if (g.blocked) { return 'Now: held — ' + (g.blockReason || 'a gate is closed'); }
+        return 'Now: automation is running';
+    }
+
+    /** The three named durations. SHORTHAND: the button is the short form and
+     *  the panel opens with the long one. */
+    const PAUSE_FOR = [[60, '1h', 'one hour'], [480, '8h', 'eight hours'], [1440, '24h', 'twenty-four hours']];
+
     function headerHtml(d) {
         const g = d.gate || {};
         const s = d.summary;
+        const f = headerFacts(d);
         const paused = g.paused || (g.pausedUntil && g.pausedUntil > Date.now());
         const state = g.paused
             ? '<span class="pill stop">ALL PAUSED</span>' + (g.pauseReason ? ` <span class="muted small">${C.esc(g.pauseReason)}</span>` : '')
@@ -138,14 +208,72 @@
                 <span class="ctl-title">Automation</span> ${state}
                 <span class="spacer"></span>
                 ${paused
-                ? '<button data-gate="resume">▶ Resume all</button>'
-                : `<button class="secondary" data-gate="pause">⏸ Pause all</button>
+                ? htip('<button data-gate="resume">▶ Resume all</button>',
+                    'Resume all — let the farm start work on its own again',
+                    window.AFTip.lines([
+                        gateNowLine(g), '',
+                        'Lets the ' + plural(s.plansOn, 'switched-on definition')
+                        + ' wake up again, and lets anything sitting in the queue launch.',
+                        f.due.length
+                            ? 'Next after this: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
+                            : 'Nothing is scheduled to wake up next — the pause was holding triggers and queued work only.',
+                        '',
+                        'A pause never dropped an occurrence: a schedule whose time passed while it was'
+                        + ' held is deferred, not cancelled, so resuming can produce a run immediately.'
+                    ]))
+                : `${htip('<button class="secondary" data-gate="pause">⏸ Pause all</button>',
+                    'Pause all — until you press resume',
+                    window.AFTip.lines([
+                        gateNowLine(g), '',
+                        'Holds ' + plural(s.plansOn, 'switched-on definition') + ' of '
+                        + s.plansSwitchable + ', every trigger, and every launch out of the queue.',
+                        f.running.length
+                            ? plural(f.running.length, 'run') + ' already going '
+                            + (f.running.length === 1 ? 'is' : 'are') + ' NOT stopped — a pause is about starting, not killing.'
+                            : 'Nothing is running, so nothing is interrupted.',
+                        f.due.length
+                            ? 'First wake-up it would hold: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
+                            : 'No schedule is due, so this holds triggers and queued work only.',
+                        '',
+                        'Nothing is lost. A due occurrence is deferred to the moment you resume.'
+                    ]))}
                        <span class="btngroup">
-                         <button class="secondary mini" data-gate="pause-for:60">1h</button>
-                         <button class="secondary mini" data-gate="pause-for:480">8h</button>
-                         <button class="secondary mini" data-gate="pause-for:1440">24h</button>
+                         ${PAUSE_FOR.map(([mins, short, long]) => htip(
+                        `<button class="secondary mini" data-gate="pause-for:${mins}">${short}</button>`,
+                        'Pause for ' + long,
+                        window.AFTip.lines([
+                            gateNowLine(g), '',
+                            'Automation starts itself again at ' + until(Date.now() + mins * 60_000)
+                            + ' — you do not have to come back and resume it.',
+                            (w => w
+                                ? plural(w, 'wake-up') + ' fall' + (w === 1 ? 's' : '')
+                                + ' inside that window and would be deferred to the end of it.'
+                                : 'No schedule is due inside that window, so this holds triggers'
+                                + ' and queued work only.')(f.wakeIn(mins)),
+                            '',
+                            'Same hold as ⏸ Pause all, with an end on it.'
+                        ]))).join('\n                         ')}
                        </span>`}
-                <button class="secondary" data-gate="open" title="Nightly window: nothing wakes on its own. A due schedule is deferred to the end of the window, not dropped.">🌙 Quiet ${quiet}</button>
+                ${/* ‼️ M-21 — MIRROR: this control cuts its own value down to two
+                      clock times, so the panel opens with what it is set to. */''
+            }${htip('<button class="secondary" data-gate="open">🌙 Quiet ' + quiet + '</button>',
+                g.quietFrom ? 'Quiet hours: ' + g.quietFrom + ' – ' + g.quietTo : 'Quiet hours: off',
+                window.AFTip.lines([
+                    g.quietFrom
+                        ? 'Between those two times nothing wakes on its own.'
+                        : 'No nightly window is set — the farm wakes at any hour.',
+                    '',
+                    'A schedule due inside the window is DEFERRED to the moment the window ends,'
+                    + ' never dropped: the occurrence still happens, later.',
+                    'Work you start by hand is not affected, and a run already going is not stopped.',
+                    g.quietFrom && f.due.length
+                        ? ''
+                        : undefined,
+                    g.quietFrom && f.due.length
+                        ? 'Next wake-up as it stands: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
+                        : undefined,
+                    '', 'Press to change the window.'
+                ]))}
             </div>
             ${/**
                 * ‼️ M-7 — THE GATE IN FRONT OF EVERY OTHER GATE, AND IT WAS
@@ -166,14 +294,128 @@
             </div>` : ''}
             ${gateEdit ? gateHtml(g) : ''}
             <div class="ctl-row stats">
-                <span class="stat" title="running / farm-wide limit">⚙️ <b>${s.running}</b>/${s.runLimit} running</span>
-                ${s.queued ? `<span class="stat">⏳ <b>${s.queued}</b> queued</span>` : ''}
-                ${s.needsYou ? `<span class="stat hot" data-open="open-needs" role="button" tabindex="0">🛡️ <b>${s.needsYou}</b> need you</span>` : ''}
-                <span class="stat">📅 <b>${s.plansOn}</b>/${s.plansSwitchable} switched on</span>
-                <span class="stat">🏁 today <b>${s.doneToday}</b>✓${s.failedToday ? ` <b class="bad">${s.failedToday}</b>✗` : ''}</span>
-                <span class="stat" title="what the automations cost over 7 days">💵 <b>${fmtUSD(s.cost7d)}</b>/7d</span>
-                ${s.savedWakeups7d ? `<span class="stat" title="wake-ups the preconditions suppressed — agent runs never paid for">🛡 <b>${s.savedWakeups7d}</b> saved</span>` : ''}
-                ${s.issues ? `<span class="stat hot" data-fixissues role="button" tabindex="0" title="show only the rows that need attention">⚠️ <b>${s.issues}</b> need attention</span>` : ''}
+                ${htip(`<span class="stat">⚙️ <b>${s.running}</b>/${s.runLimit} running</span>`,
+                `${s.running} of ${s.runLimit} launch slots in use`,
+                window.AFTip.lines([
+                    'The farm runs at most ' + plural(s.runLimit, 'task') + ' at once, and at most '
+                    + plural(d.perAgentLimit || 1, 'task') + ' per agent. Everything else waits.',
+                    f.running.length ? '' : undefined,
+                    ...someOf(f.running, 6, r => '· ' + r.agentName + ' — ' + r.title
+                        + (r.durMin !== undefined ? '  (' + r.durMin + 'm)' : '')),
+                    '',
+                    s.running >= s.runLimit
+                        ? 'The ceiling is full, so nothing new starts until one of these ends.'
+                        : plural(s.runLimit - s.running, 'slot') + ' free — a queued task can launch now.',
+                    'agentFarm.maxConcurrentTasks and .maxConcurrentPerAgent are the two numbers.'
+                ]))}
+                ${s.queued ? htip(`<span class="stat">⏳ <b>${s.queued}</b> queued</span>`,
+                    plural(s.queued, 'task') + ' waiting to launch',
+                    window.AFTip.lines([
+                        'Sorted by priority, and a task gains a point every 30 minutes it waits,'
+                        + ' so nothing starves behind a busy agent.',
+                        (o => o ? 'The one that has waited longest was made ' + rel(o.when) + '.' : undefined)(
+                            f.queued.slice().sort((a, b) => a.when - b.when)[0]),
+                        f.queued.length ? '' : undefined,
+                        ...someOf(f.queued, 6, r => '· ' + r.agentName + ' — ' + r.title
+                            + (r.source ? '  (' + r.source + ')' : '')),
+                        f.parked.length ? '' : undefined,
+                        f.parked.length
+                            ? plural(f.parked.length, 'other') + ' held at a ceiling rather than'
+                            + ' waiting in line — those say “parked”, and the row says which ceiling.'
+                            : undefined
+                    ])) : ''}
+                ${s.needsYou ? htip(
+                    `<span class="stat hot" data-open="open-needs" role="button" tabindex="0">🛡️ <b>${s.needsYou}</b> need you</span>`,
+                    plural(s.needsYou, 'thing') + ' the farm will not decide by itself',
+                    window.AFTip.lines([
+                        'A permission the agent stopped to ask for, a browser action waiting for a yes,'
+                        + ' or a run that has gone quiet. Work stops at each of these until you answer.',
+                        (d.needs || []).length ? '' : undefined,
+                        ...someOf(d.needs || [], 8, i => '· ' + i.agentName + ' — ' + i.title
+                            + '  (' + i.kind.replace('-', ' ') + ')'),
+                        '', 'Press to open the Needs page and answer them.'
+                    ])) : ''}
+                ${htip(`<span class="stat">📅 <b>${s.plansOn}</b>/${s.plansSwitchable} switched on</span>`,
+                    s.plansOn + ' of ' + s.plansSwitchable + ' switchable definitions are on',
+                    window.AFTip.lines([
+                        // ‼️ A KIND WITH NOTHING IN IT IS NOT A FIGURE. "0 workflows"
+                        // in a sentence listing what the plan holds is a word the
+                        // reader has to read to discover it says nothing.
+                        'Counted over ' + plural(f.plan.length, 'definition') + ' on the Plan tab: '
+                        + ['schedule', 'trigger', 'workflow', 'template']
+                            .map(k => f.plan.filter(p => p.kind === k).length)
+                            .map((n, i) => n ? plural(n, ['schedule', 'trigger', 'workflow', 'template'][i]) : '')
+                            .filter(Boolean).join(' · ') + '.',
+                        'Workflows and templates have no on/off state — they are launched, not woken —'
+                        + ' so they are not in this fraction.',
+                        s.plansSwitchable - s.plansOn
+                            ? plural(s.plansSwitchable - s.plansOn, 'definition')
+                            + ' ' + (s.plansSwitchable - s.plansOn === 1 ? 'is' : 'are')
+                            + ' saved and switched off: it stays on the list and never fires.'
+                            : 'Every switchable definition is on.',
+                        f.due.length ? '' : undefined,
+                        ...someOf(f.due, 4, p => '· ' + until(p.nextAt) + ' — ' + p.title)
+                    ]))}
+                ${htip(`<span class="stat">🏁 today <b>${s.doneToday}</b>✓${s.failedToday ? ` <b class="bad">${s.failedToday}</b>✗` : ''}</span>`,
+                    'Since midnight: ' + s.doneToday + ' finished, ' + s.failedToday + ' failed',
+                    window.AFTip.lines([
+                        (t => t
+                            ? Math.round(s.doneToday / t * 100) + '% of the ' + t
+                            + ' runs that ended today ended well.'
+                            : 'Nothing has ended today yet.')(s.doneToday + s.failedToday),
+                        'Counted off the run records, so a run cleared from the list still counts —'
+                        + ' this figure and the length of the Runs tab are different questions.',
+                        f.failedToday.length ? '' : undefined,
+                        ...someOf(f.failedToday, 5, r => '· failed — ' + r.agentName + ' — ' + r.title)
+                    ]))}
+                ${htip(`<span class="stat">💵 <b>${fmtUSD(s.cost7d)}</b>/7d</span>`,
+                    fmtUSD(s.cost7d) + ' over seven days, across every definition',
+                    window.AFTip.lines([
+                        (n => n
+                            ? plural(n, 'run') + ' came out of the plan in that week — '
+                            + fmtRate(s.cost7d / n) + ' a run on average.'
+                            : 'No definition has produced a run in the last seven days.')(
+                                f.plan.reduce((a, p) => a + (p.runs7d || 0), 0)),
+                        'Work you started by hand is not in this figure: it is what the farm spent'
+                        + ' on its OWN, which is the number a ceiling is set against.',
+                        '',
+                        ...someOf(f.plan.filter(p => p.cost7d > 0).sort((a, b) => b.cost7d - a.cost7d),
+                            5, p => '· ' + fmtUSD(p.cost7d) + ' — ' + p.title
+                                + (p.runs7d ? '  (' + p.runs7d + ' run(s))' : '')),
+                        f.plan.some(p => p.cost7d > 0) ? undefined
+                            : 'Nothing has been priced yet in this window.'
+                    ]))}
+                ${s.savedWakeups7d ? htip(
+                    `<span class="stat">🛡 <b>${s.savedWakeups7d}</b> saved</span>`,
+                    plural(s.savedWakeups7d, 'wake-up') + ' a guard suppressed in seven days',
+                    window.AFTip.lines([
+                        'A guard is a precondition checked BEFORE the agent is started, so each of'
+                        + ' these is a run that was never spawned and never paid for — the whole'
+                        + ' reason a schedule has one.',
+                        (w => w
+                            ? s.savedWakeups7d + ' of ' + w + ' wake-ups came to nothing — '
+                            + Math.round(s.savedWakeups7d / w * 100) + '% of what the guarded rows'
+                            + ' would have cost was never spent.'
+                            : undefined)(s.savedWakeups7d
+                                + f.plan.filter(p => p.skipped7d > 0).reduce((a, p) => a + (p.runs7d || 0), 0)),
+                        '',
+                        ...someOf(f.plan.filter(p => p.skipped7d > 0).sort((a, b) => b.skipped7d - a.skipped7d),
+                            5, p => '· ' + p.skipped7d + ' skipped of '
+                                + (p.skipped7d + (p.runs7d || 0)) + ' — ' + p.title
+                                + (p.guard ? '  (' + p.guard + ')' : ''))
+                    ])) : ''}
+                ${s.issues ? htip(
+                    `<span class="stat hot" data-fixissues role="button" tabindex="0">⚠️ <b>${s.issues}</b> need attention</span>`,
+                    plural(s.issues, 'definition') + ' with something wrong',
+                    window.AFTip.lines([
+                        'Only rows that are switched ON (or cannot be switched off) are counted —'
+                        + ' a problem in something deliberately disabled is not a problem.',
+                        '',
+                        ...someOf(f.plan.filter(p => p.issues.length && (p.enabled || !p.switchable)), 6,
+                            p => '· ' + p.title + ' — '
+                                + p.issues.map(i => (ISSUE[i] || [i])[0]).join(', ')),
+                        '', 'Press to filter the Plan tab down to exactly these rows.'
+                    ])) : ''}
             </div>
         </div>`;
     }
@@ -247,12 +489,48 @@
     }
 
     function tabsHtml(d) {
+        const f = headerFacts(d);
+        // ‼️ M-21 — A TAB IS A DOOR AND IT SAID NOTHING ABOUT THE ROOM. Two
+        // words and a count, no hover at all: whether the thing you are looking
+        // for is a DEFINITION or an EXECUTION is the one distinction this whole
+        // page is built on, and the control that switches between them was the
+        // one place it was not written down.
         const T = [
-            ['plan', '📅 Plan', d.plan.length],
-            ['run', '▶ Runs', d.runs.length]
+            ['plan', '📅 Plan', d.plan.length,
+                plural(d.plan.length, 'definition') + ' — work that has not happened yet',
+                window.AFTip.lines([
+                    'A schedule, a trigger, a workflow or a template: the thing that DECIDES a run,'
+                    + ' not the run. Editing one here changes every future execution and no past one.',
+                    '',
+                    ['schedule', 'trigger', 'workflow', 'template'].map(k => {
+                        const n = f.plan.filter(p => p.kind === k).length;
+                        return n ? KIND[k].icon + ' ' + n + ' ' + KIND[k].label.toLowerCase()
+                            + (n === 1 ? '' : 's') + ' — ' + KIND[k].hint : undefined;
+                    }).filter(Boolean).join('\n'),
+                    '',
+                    f.due.length
+                        ? 'Next to wake: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
+                        : 'Nothing here is due to wake up on its own.',
+                    d.summary.issues
+                        ? d.summary.issues + ' of them have something wrong with them.'
+                        : undefined
+                ])],
+            ['run', '▶ Runs', d.runs.length, plural(d.runs.length, 'execution') + ' on the list',
+                window.AFTip.lines([
+                    'One row is one execution — what a definition on the Plan tab actually did, or'
+                    + ' what you started by hand. Nothing here can be edited; it has already happened.',
+                    '',
+                    f.running.length + ' running · ' + f.queued.length + ' queued · '
+                    + f.parked.length + ' parked',
+                    'Today: ' + d.summary.doneToday + ' finished, ' + d.summary.failedToday + ' failed.',
+                    '',
+                    'The list is capped and the oldest rows are filed month by month — ⌛ Archive'
+                    + ' in the toolbar reads them back.'
+                ])]
         ];
-        return `<div class="tabs">${T.map(([id, label, n]) =>
-            `<button class="tab ${id === tab ? 'on' : ''}" data-tab="${id}">${label} <span class="tab-n">${n}</span></button>`).join('')}
+        return `<div class="tabs">${T.map(([id, label, n, head, body]) => window.AFTip.wrap(
+            `<button class="tab ${id === tab ? 'on' : ''}" data-tab="${id}">${label} <span class="tab-n">${n}</span></button>`,
+            head, body, 'tip-free', 'data-aftip-anchor=".tabs"')).join('')}
             <span class="spacer"></span>
             ${/* ‼️ M-21 — MAKING A TASK IS NOT A THING YOU DO ON THE RUNS TAB.
                   The button lived in the Runs filter bar, beside "Cancel queued"

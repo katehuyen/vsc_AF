@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.200.0 — M-21 (part): the strip that summarises this page could not be asked anything (2026-08-21)
+
+M-25 took the five design principles through this page’s two **tables** and stopped where the tables stop. The control strip above them is the first thing read on the page, and it answered almost nothing: **five of its eight figures had no hover at all**, three had a one-line `title` — which `docs/CONVENTIONS.md` names as a bug in its own right, not as a small tip — the shorthand durations `1h` / `8h` / `24h` had their long form written nowhere, and **the two tabs did not say what was behind them**, which is the one distinction this entire page is built on.
+
+**Every figure now carries the derivation you would otherwise open another page for.** ⚙️ names both ceilings and lists what is under them right now · ⏳ says how the queue is ordered, how long the oldest has waited and who is in it · 🛡️ lists the things a person has to answer instead of only counting them · 📅 breaks the definitions down by kind, says why the fraction is not out of the total, and names what wakes next · 🏁 derives today’s success **rate** and names what failed · 💵 lists the top spenders, the per-run average and what the figure excludes · 🛡 says what share of the guarded wake-ups came to nothing · ⚠️ names the rows and their issues.
+
+**ONE SUBJECT decides the split, and no figure explains another’s.** The ceiling is ⚙️’s subject, what is waiting is ⏳’s, and the two tab panels carry none of each other’s counts.
+
+**SHORTHAND and MIRROR, where they actually apply.** `1h` is the right thing to write on a button four characters wide — the long form belongs in the panel, and there was no panel: *“Pause for one hour · automation starts itself again at 13:01 · 2 wake-ups fall inside that window and would be deferred.”* Every control that changes the gate opens with what the gate says **now**, and 🌙 Quiet states its current window as its first line.
+
+**`test/test_tasks_header_tips.js` is the gate.** It walks the real span nesting to find any control on the strip that cannot be asked anything, refuses a panel of fewer than three lines **by name** (a one-liner is the bug this file exists for), and pins the derivations, the two principles and the tab split. `test_tasks_webview.js` reads the page **without its hover panels** now: “filtering narrowed the table” had been written as “that row appears nowhere on the page”, which stopped being the same question the moment the strip started deriving its figures from the same list — a filter narrows a table, it does not change what the farm is doing.
+
 ## 3.199.0 — M-21 (part): a run whose terminal outlived the window came back as a row nothing could ever launch (2026-08-21)
 
 A VS Code reload is not a rare event — **installing a build is one**, and this project installs one every few minutes. Every task that is `running` at that moment has to be given a state by hand, because the process handle that would have answered went with the host. There are three different right answers, and the store cannot tell them apart by itself.

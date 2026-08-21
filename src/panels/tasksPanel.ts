@@ -701,6 +701,15 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             runLimit: limits.global,
             queued: m.tasks.filter(t => t.status === 'queued').length,
             needsYou: deps.buildWaiting().length,
+            // ‼️ M-21 — AND WHAT THEY ARE. The strip could say that four things
+            // needed a person and not one word about what any of them was, so
+            // the only way to find out was to open another page — for a figure
+            // whose whole job is to tell you whether opening it is worth it
+            // (DENSITY). Three kinds reach this chip and no more: a permission
+            // ask, a browser approval, and a run that has gone quiet.
+            needs: deps.buildWaiting()
+                .slice(0, 12)
+                .map(i => ({ kind: i.kind, agentName: i.agentName, title: i.title })),
             plansOn: plan.filter(p => p.switchable && p.enabled).length,
             plansSwitchable: plan.filter(p => p.switchable).length,
             doneToday: records.filter(r => r.status === 'done' && (r.endedAt ?? 0) >= t0).length,
