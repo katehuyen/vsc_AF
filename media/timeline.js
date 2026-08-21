@@ -60,6 +60,19 @@
             transition:background-color .08s linear; }
         .lane-hot:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.18)); }
         .lane-hotw.lane-dot .lane-hot { border-radius:50%; }
+        /* ‼️ U-81 — THE CARD'S TWO TEXT LINES ARE TWO DIFFERENT FACTS AND WERE
+           DRAWN IDENTICALLY: the conversation's name above, the last thing asked
+           below, same size, same grey, one under the other — so they read as one
+           paragraph broken in half. The name takes the card's own foreground and
+           a little weight; the prompt stays quiet and italic behind a ↳ that says
+           it is the LATEST thing said, not the rest of the line above it.
+           The selector carries three classes on purpose: .card .tip-host sets
+           the dimmed colour these lines need everywhere else (see common.css). */
+        .card .tip-host.card-open { color:var(--vscode-foreground); font-weight:600; }
+        .card .tip-host.card-said { font-style:italic; }
+        .card .card-said .said-mark { font-style:normal; font-weight:600;
+            margin-right:3px; letter-spacing:.02em;
+            color:var(--vscode-textLink-foreground, #3794ff); }
     </style>`;
 
     /**
@@ -465,33 +478,49 @@
         };
     }
 
-    /** THE CONVERSATION'S NAME — text, and the card cuts it at its own width. */
+    /**
+     * THE CONVERSATION'S NAME — and the prompt it was cut from, WHOLE.
+     *
+     * ‼️ The name IS the opening prompt in nearly every session: until somebody
+     * renames a conversation the transcript has no other name to give it, and it
+     * is cut to a line at the source. A panel that repeated that same cut line
+     * answered nothing — the reader hovers a clipped line to get the REST of it.
+     * It carries the opening prompt to its full stored length and scrolls, which
+     * is the entire reason this is an AFTip and not a native `title`.
+     */
     function titleTip(s) {
+        const first = String(s.firstPrompt || '');
         return {
-            head: 'What this conversation is called',
-            body: s.title
-                + '\n\nFrom the transcript — the launch name, a rename, or what the conversation itself suggested.'
+            head: first
+                ? `Opening prompt · ${window.AFTip.sizeNote(first)}`
+                : 'What this conversation is called',
+            body: (first || String(s.title || ''))
+                + '\n\nThe card draws the conversation\'s NAME, which the transcript takes from'
+                + ' the launch name, a rename, or this opening prompt — cut to one line.'
                 + (s.transcriptPath ? '\nClick opens the transcript at the latest activity.' : '')
         };
     }
 
     /**
-     * WHAT WAS SAID — and BOTH ends of it when they differ.
+     * THE LAST THING ASKED — WHOLE, and only that.
      *
-     * ‼️ The card draws the LAST prompt and the panel used to open the FIRST
-     * one, with a head that named neither: the reader hovered a line to see the
-     * rest of it and got a different prompt entirely. They are two facts and
-     * the panel now says which is which, in the order a reader asks — the thing
-     * on the card first, what it opened with underneath.
+     * ‼️ Two things were wrong here and both were content, not paint.
+     *
+     * It carried the same 90-character cut the card had just drawn, because that
+     * is all `lastPrompt` has ever been — a row's worth. Hovering a clipped line
+     * therefore returned the clipped line. The whole prompt now travels beside
+     * it (`lastPromptFull`, LiveSession) and the panel scrolls it.
+     *
+     * And it repeated the OPENING prompt under a `How it opened` head — a fact
+     * the line directly ABOVE it on the same card already carries, and whose own
+     * panel now carries it whole. That is ONE SUBJECT broken in the plainest way
+     * there is: the same text, twice, on one card.
      */
     function promptTip(s) {
-        const last = String(s.lastPrompt || '');
-        const first = String(s.firstPrompt || '');
-        const same = !first || first === last;
+        const last = String(s.lastPromptFull || s.lastPrompt || '');
         return {
-            head: `${s.label || s.agentName} · ${window.AFTip.sizeNote(last)}`
-                + (same ? '' : ` · opened with ${window.AFTip.sizeNote(first)}`),
-            body: (same ? last : `── The last thing asked ──\n${last}\n\n── How it opened ──\n${first}`)
+            head: `The last thing asked · ${window.AFTip.sizeNote(last)}`,
+            body: last
         };
     }
 
@@ -1364,8 +1393,8 @@
                     <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))} ${engineBadge(s)}</h3>
                     ${tip(`<span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>`, statusTip(s, meta, gone))}
                 </div>
-                ${s.title ? `<div class="sub tip-host" style="margin-top:3px">${tip(`<span${open}>${C.esc(s.title)}</span>`, titleTip(s))}</div>` : ''}
-                <div class="sub tip-host" style="margin-top:4px">${s.lastPrompt ? tip('“' + C.esc(s.lastPrompt) + '”', promptTip(s)) : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
+                ${s.title ? `<div class="sub tip-host card-open" style="margin-top:3px">${tip(`<span${open}>${C.esc(s.title)}</span>`, titleTip(s))}</div>` : ''}
+                <div class="sub tip-host card-said" style="margin-top:4px">${s.lastPrompt ? tip(`<span class="said-mark">↳ last</span>“${C.esc(s.lastPrompt)}”`, promptTip(s)) : `<span class="muted">${hasHooks(s) ? 'no prompt yet' : 'a CLI in its own terminal — open and close is all this page can see'}</span>`}</div>
                 ${st.money ? `<div class="sub tip-host" style="margin-top:6px">${tip(st.money, moneyTip(s))}</div>` : ''}
                 <div class="sub tip-host" style="margin-top:${st.money ? '2' : '6'}px">${tip(st.work, workTip(s))}</div>
                 <div class="sub tip-host" style="margin-top:2px">${tip(st.time, timeTip(s))}</div>

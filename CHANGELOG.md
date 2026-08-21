@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.196.0 — U-81 (part 2): the card’s panels stopped handing back the line you hovered (2026-08-21)
+
+*“The whole reason we use an `AFTip` is that no text ever has to be cut — it takes any length and it scrolls. This one made it an AFTip and cut the text anyway. Then what was the point?”* There was none. Part 1 fixed how the panel was **painted**; nobody looked at what it was **carrying**.
+
+**Both text lines on a session card now open WHOLE.**
+- **The name / opening prompt.** A conversation’s name is the opening prompt cut to a line at the source (80 characters) — until somebody renames it, the transcript has no other name to give. The panel repeated that same cut, so hovering a clipped line returned the clipped line. It carries the opening prompt to its full stored length (`FIRST_PROMPT_MAX`, 4,000) and scrolls.
+- **The last thing asked.** Same defect, worse cause: `lastPrompt` on the session record **is** 90 characters — a row’s worth, which is all a card or a strip can draw. There was no whole version of it anywhere for a panel to open. `LiveSession.lastPromptFull` now travels beside it, capped like the opening prompt, so both ends of a conversation are readable to the same depth.
+
+**‼️ And the last-prompt panel stopped repeating the line above it.** It carried a `── How it opened ──` block holding the opening prompt — the fact the line **directly above it on the same card** already draws, and whose own panel now opens it whole. The same text twice on one card is ONE SUBJECT broken in the plainest way there is. Removed; each panel answers its own question and says how many characters it is holding.
+
+**The two lines no longer read as one paragraph broken in half.** Same size, same grey, one under the other, both prose — so the name and the last prompt looked like the start and the end of a single sentence. The name takes the card’s own foreground and a little weight; the prompt stays quiet and italic behind a `↳ last` in the link colour, which says it is the **latest** thing said and not the rest of the line above it.
+
+**Measured and looked at.** `test/test_timeline_card_tips.js` now pins the tail of each prompt inside the markup (a panel that cut the text would fail), that `How it opened` appears nowhere on a card, and that the two lines carry different classes; the fixture grew the long `lastPromptFull` that made the defect visible at all. Photographed with `render_page.js --tip card-open` and `--tip card-said`.
+
 ## 3.195.0 — U-81: the Live Timeline’s session cards answer when you point at them (2026-08-21)
 
 *“The one AFTip there doesn’t draw right — it’s transparent, so everything it says mixes with the text behind it. Somebody tried to fix the CSS and clearly didn’t know how, because it’s still transparent.”* They were right about the diagnosis and right that the fix was in the wrong place.

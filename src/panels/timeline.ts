@@ -92,6 +92,10 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 status: s.status,
                 currentTool: s.currentTool,
                 lastPrompt: s.lastPrompt,
+                // ‼️ U-81 — the CUT line is what the card draws; the WHOLE one is what
+                // its hover panel carries. Sending only the cut version is what made
+                // that panel repeat the line the reader was hovering to get past.
+                lastPromptFull: s.lastPromptFull || s.lastPrompt || '',
                 startedAt: s.startedAt,
                 lastEventTs: s.lastEventTs,
                 prompts: s.prompts,

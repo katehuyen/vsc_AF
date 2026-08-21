@@ -85,16 +85,35 @@ const cards = html.slice(html.indexOf('<h2>Live sessions'));
         badges.some(b => b.indexOf('Cost reported:') >= 0 && b.indexOf('Transcript:') >= 0));
 }
 
-// ---- the prompt panel, which used to answer a different question ----------
+// ---- the two prompt panels, which used to hand back the cut line ----------
 {
-    // The card draws the LAST prompt; the panel opened the FIRST one under a
-    // head that named neither, so hovering a cut line gave a different prompt.
-    ok('the panel names the last prompt', cards.indexOf('── The last thing asked ──') >= 0);
-    ok('…and says separately how the conversation opened',
-        cards.indexOf('── How it opened ──') >= 0);
-    ok('…and does not split one prompt in two when they are the same',
-        (cards.match(/── How it opened ──/g) || []).length
-        < (cards.match(/class="af-tipw"/g) || []).length);
+    const s = fixture.sessions()[0];
+
+    // ‼️ THE WHOLE REASON AN AFTip IS USED HERE IS THAT NOTHING HAS TO BE CUT:
+    // it takes any length and it scrolls. Both panels used to carry the same
+    // 80/90-character string the card had already drawn, so hovering a clipped
+    // line gave back the clipped line. (Neither text contains a character `esc`
+    // touches, so the raw tail is what lands in the markup.)
+    ok('the opening prompt is carried WHOLE, not as the name it was cut to',
+        cards.indexOf(s.firstPrompt.slice(-60)) >= 0);
+    ok('the last prompt is carried WHOLE, not as its 90-character row',
+        cards.indexOf(s.lastPromptFull.slice(-60)) >= 0);
+    ok('…and each panel says how long the text it holds is',
+        /Opening prompt · [\d.,]+ characters/.test(cards)
+        && /The last thing asked · [\d.,]+ characters/.test(cards));
+
+    // ONE SUBJECT: how the conversation opened is the line ABOVE's fact, and
+    // that line's own panel now carries it whole. The last-prompt panel used to
+    // repeat it under a `How it opened` head — the same text twice on one card.
+    ok('‼️ the last-prompt panel does not repeat how the conversation opened',
+        cards.indexOf('How it opened') < 0);
+
+    // Two facts, drawn identically one under the other, read as one paragraph
+    // broken in half — which is what the reader reported.
+    ok('the name line and the prompt line are told apart on the card',
+        cards.indexOf('sub tip-host card-open') >= 0
+        && cards.indexOf('sub tip-host card-said') >= 0
+        && cards.indexOf('said-mark') >= 0);
 }
 
 // ---- the layout the narrow card needs -------------------------------------

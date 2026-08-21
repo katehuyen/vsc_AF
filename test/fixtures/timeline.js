@@ -33,6 +33,15 @@ const sessions = () => ([
         source: undefined,                 // a Claude transcript states no engine
         status: 'tool', currentTool: 'Edit',
         lastPrompt: 'X-35 multi motor adaptasyonu — Live Timeline',
+        // ‼️ U-81 — AND THE LAST PROMPT HAS TWO LENGTHS TOO. `lastPrompt` is the
+        // 90 characters a row can hold; `lastPromptFull` is what the hover panel
+        // exists to show. The fixture only ever carried the cut one, so a panel
+        // handing back that same cut line passed every test there was.
+        lastPromptFull: 'X-35 multi motor adaptasyonu — Live Timeline sayfasındaki '
+            + 'kartların hepsi tek tek gözden geçirilsin: hangi satır hangi olguyu '
+            + 'söylüyor, hangisi bir başkasının konusunu tekrar ediyor. Kartın adı '
+            + 'ile son sorulan şey birbirine benzemesin, ikisi de kırpılmadan '
+            + 'panelde okunabilsin ve panel kaydırılabilir olsun.',
         // ‼️ U-81 — A SESSION HAS TWO PROMPTS AND THE FIXTURE ONLY EVER HAD ONE,
         // which is exactly why nobody noticed that the card drew the LAST one
         // and its panel opened the FIRST. The opening prompt is also the long

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { FIRST_PROMPT_MAX } from './sessions';
 import { truncate } from './util';
 
 export type LiveStatus =
@@ -24,7 +25,21 @@ export interface LiveSession {
     status: LiveStatus;
     currentTool?: string;
     firstPrompt?: string;
+    /**
+     * The last prompt CUT TO A ROW (90 chars) — what a card or a strip draws,
+     * where the line is the whole space there is.
+     */
     lastPrompt?: string;
+    /**
+     * ‼️ The same prompt WHOLE — what a hover panel carries.
+     *
+     * A card cuts the line and hands the rest to an AFTip; an AFTip handed the
+     * same 90 characters is a panel that answers nothing, which is the whole
+     * reason the panel is there. Capped at FIRST_PROMPT_MAX like the opening
+     * prompt beside it, so both ends of a conversation are readable to the
+     * same depth and neither can grow without bound.
+     */
+    lastPromptFull?: string;
     startedAt: number;
     lastEventTs: number;
     prompts: number;
@@ -479,6 +494,7 @@ export class LiveMonitor implements vscode.Disposable {
                     s.prompts++;
                     if (!s.firstPrompt && e.detail?.trim()) { s.firstPrompt = e.detail.trim(); }
                     s.lastPrompt = e.detail ? truncate(e.detail, 90) : undefined;
+                    s.lastPromptFull = e.detail ? truncate(e.detail.trim(), FIRST_PROMPT_MAX) : undefined;
                     break;
                 case 'toolStart': s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++; break;
                 case 'toolEnd': s.status = 'working'; s.currentTool = undefined; break;
@@ -805,6 +821,7 @@ export class LiveMonitor implements vscode.Disposable {
                     s.firstPrompt = truncate(rawPrompt, 4000);
                 }
                 s.lastPrompt = truncate(rawPrompt, 90);
+                s.lastPromptFull = truncate(rawPrompt, FIRST_PROMPT_MAX);
                 this.push(s, 'prompt', undefined, truncate(rawPrompt, SAID));
                 break;
             }
