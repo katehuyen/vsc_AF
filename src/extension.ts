@@ -239,7 +239,8 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, DIMS_OUT_NOTE, need,
+    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, DIMS_OUT_NOTE,
+    INTERACTIVE_NOTE, need,
     needOneExecutor, optStr, parseBridgeRequest
 } from './core/bridge';
 import {
@@ -3889,23 +3890,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'project? (id or name; "" = explicitly none, '
                 + 'omit to inherit the window\'s active project), priority? (higher runs sooner), '
                 + 'workDir? (run it here instead of the agent folder), start? (default true), '
-                // ‼️ M-26 — the two axes of an INTERACTIVE run. Documented here
-                // rather than only in `runDimensions` because this is the op an
-                // agent is told "open a session for me and leave it open", and
-                // the pair is refused outright on a headless run (a headless task
-                // has no surface and nothing to keep open) rather than ignored.
-                + 'interactiveTarget? (vscode = the integrated terminal, the default and what every '
-                + 'interactive task did before this | external = its own OS terminal window — Windows '
-                + 'Terminal where there is one; the CLI\'s exit code is read back through a file, so the '
-                + 'task still finishes on its own | console = Agent Farm hosts the conversation in its '
-                + 'Console panel, which is the only surface where the task follows what the run is DOING '
-                + 'rather than only when it stopped), '
-                + 'interactiveClose? (stay-open = the default: the conversational CLI, and the task '
-                + 'finishes when the surface is closed | auto-close = one turn — the engine is asked in '
-                + 'its print-and-exit form, the answer is written where it can be watched, the process '
-                + 'ends and the task is done). '
-                + '‼️ Both describe an interactive run: passing either with mode:"headless" is refused, '
-                + 'not ignored. '
+                // ‼️ M-26 — the two axes of an INTERACTIVE run, in the one sentence
+                // every op that can install one carries (`INTERACTIVE_NOTE`). This
+                // is the door an agent is told "open a session for me and leave it
+                // open", so it is the door the wording was written for — but it is
+                // not the only one, and five hand-typed copies would be five
+                // contracts.
+                + INTERACTIVE_NOTE + ' '
                 // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
                 + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
@@ -4172,7 +4163,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const dims = bridgeRunDimensions({
                     ...args,
                     engine: optStr(args, 'engine') || (t as FarmTask).engine || ''
-                });
+                }, { mode: (t as FarmTask).mode });
                 // ‼️ M-22 — `cli` IS THREE-STATE HERE, like `project` on
                 // `tasks.add`: absent = the original's, "" = explicitly none, a
                 // name = that profile. Without the middle state "retry it on
@@ -4433,7 +4424,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ENGINE_ENUM
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
-                + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
+                + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)'
+                + INTERACTIVE_NOTE,
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -4796,7 +4788,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // duplicate; this handler is the UNION of the two, so nothing the
             // older shape accepted has been taken away.
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
+                + INTERACTIVE_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -4827,8 +4820,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Dimensions may be stated at either level; the nested ones win
                 // because they are the more specific statement.
                 const dims = {
-                    ...bridgeRunDimensions(args),
-                    ...(nested ? bridgeRunDimensions(nested) : {})
+                    ...bridgeRunDimensions(args, { mode }),
+                    ...(nested ? bridgeRunDimensions(nested, { mode }) : {})
                 };
                 // ‼️ M-22 — each level was already checked on its own, and that
                 // is not the same question: `{engine, action:{cli}}` states one
@@ -4919,7 +4912,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'templates.add',
-            describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?',
+            describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?'
+                + INTERACTIVE_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -5089,7 +5083,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'templates.run',
-            describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?',
+            describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?'
+                + INTERACTIVE_NOTE,
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -5105,7 +5100,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // moment it mattered.
                 const over = bridgeRunDimensions({
                     ...args, engine: optStr(args, 'engine') || t.engine || ''
-                });
+                }, { mode: t.mode });
                 // ‼️ M-22 — same three-state `cli` as `tasks.rerun`, and for the
                 // same reason: the template's saved profile survives an override
                 // that only names an engine (`runExtras` drops what is unset), so

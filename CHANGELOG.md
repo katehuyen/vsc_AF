@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.197.0 — M-26: an interactive task says WHERE it opens and WHETHER it closes (2026-08-21)
+
+*“An interactive task always opens in VS Code’s terminal and always stays open. I want to choose — the OS terminal or the Console — and I want a one-turn job to close itself when the answer is in.”* Two axes, on every surface that can install a run.
+
+**`interactiveTarget` — where the run appears.** `vscode` (the integrated terminal, the default and what every interactive task did before this) · `external` (its own OS terminal window — Windows Terminal where there is one, which is the answer to xterm.js glitching on a long TUI session) · `console` (Agent Farm hosts the conversation in its own panel — the one surface where the extension can follow what a run is *doing* rather than only when it stopped).
+
+**`interactiveClose` — what happens once the agent has replied.** `stay-open` (the default: the conversational CLI, and the task finishes when the surface is closed) · `auto-close` (one turn, then it ends).
+
+**‼️ `auto-close` is not a TUI killed on a guess.** Nothing in a TUI says “the answer is over”, so a timer or a quiet-transcript heuristic would end a thinking agent mid-thought. The engine is asked in its **print-and-exit** form instead — the same `runArgs` / `claude -p` the headless path spawns — and the shell is told to leave when it returns. The surface is still a terminal you watch; what changed is that the run has an end.
+
+**Two surfaces this extension does not own, and one honest way to follow each.** An OS window outlives the extension host by design and a Console conversation is the panel’s process, so neither can be followed by a child process exit. The window writes the CLI’s own exit code to a file and a 2-second watch reads it; the Console is followed through the panel’s own report, and `auto-close` ends the task the first time that session comes back to rest **with an answer behind it** (idle alone would end it before the agent had said anything). One timer drives both — an idle farm pays nothing.
+
+### ‼️ What the first pass got wrong, measured rather than reasoned about
+
+**The OS terminal surface never worked at all — not “mostly”, at all.** Three findings, each of which alone would have been enough:
+- **`echo %ERRORLEVEL%> "f"` is not an echo.** A digit touching `>` is a **handle number**, so `echo 0> f` redirects STDIN, prints `ECHO is on.` to the console and leaves the file **empty**. Measured for codes 0, 1, 2 and 3 — every one wrote nothing. The watcher then read `""`, and `Number("")` is `0`, so **every external run reported success, a crashed CLI included**: the exact failure the exit file exists to prevent.
+- **Parenthesising it fixes the redirection and not the answer.** `%ERRORLEVEL%` on a one-line `&` chain is expanded when the **line** is parsed — before the first command has run. Measured: a literal `0` whatever the CLI returned.
+- **And the command never reached the shell.** node → `wt` → `cmd` is three parsers that do not agree about quoting: node escapes an inner `"` the C runtime’s way, which `cmd.exe` has never understood — and every command here has inner quotes, because the prompt is one. Measured: a launch carrying a quoted prompt opened a window that ran nothing, while the identical launch without inner quotes worked.
+
+**So the command travels as a generated `.cmd` script now**, which crosses none of those parsers and is the only place the exit code can be read correctly at all — a batch file is parsed a line at a time, so `%ERRORLEVEL%` on the line *after* the command is that command’s own. Every `%` in the command is doubled (batch reads one as a variable); round-tripped against a prompt carrying `%`, `!`, `&`, `<`, `>` and quotes, intact. The script names its own window and deletes itself on its last line. The `start` fallback was broken too and by the same class of thing: it was handed an **unquoted** title, which `start` reads as a program name (`The system cannot find the file …`) — it passes an empty title now and lets the script do the naming.
+
+**The bridge accepted the pair on a headless run.** The refusal read `mode === "headless"`, and `mode` is not a required argument: every door resolves it as `mode === "interactive" ? … : "headless"`, so an **omitted** mode is a headless run — and an omitted mode walked straight past the check. `tasks.add {interactiveTarget:"external"}` was accepted and stored on a background run nobody would ever see. It is `!== "interactive"` now, and the refusal says which of the two cases it is. Three doors legitimately know the mode without carrying it in those args — a trigger states it on the action while its dimensions sit outside it (or the reverse), a rerun and a template run inherit it — so they pass it in rather than being refused.
+
+**A reloaded window followed its OS terminals and not its Console tasks.** One timer drives both followers and it was started on the external set alone, so the one surface that reports what a run is *doing* was the one surface whose task never finished after a reload.
+
+**A half-written exit file read as a success.** The shell creates the file on the redirection and writes a moment later; a tick landing in between read `""` and finished a running task as `done`. An empty read is “not yet” now.
+
+**And the contract is one sentence, not five.** `interactiveTarget` / `interactiveClose` are documented from a single shared string (`INTERACTIVE_NOTE`) on `tasks.add`, `schedules.add`, `triggers.add`, `templates.add` and `templates.run` — five hand-typed copies would have been five contracts.
+
+**Measured:** `test/test_interactive_targets.js` (45 checks) pins the closed lists and their defaults, every bridge refusal including the omitted-mode one, the routing to all three surfaces, both follower fixes — and **runs the generated script for real**, for a success and for two different failures, plus a prompt round-trip. The live `wt.exe` path was smoke-tested end to end on this machine: codes `0` and `4`, both read back correctly.
+
+**In the form:** *Opens in* and *When it answers* appear only while the mode is interactive (a box with no referent is a bug), the mode change repaints the form, and a half-written draft keeps both values across the repaint. `Create` sits in the corner with `Cancel` to its left.
+
 ## 3.196.0 — U-81 (part 2): the card’s panels stopped handing back the line you hovered (2026-08-21)
 
 *“The whole reason we use an `AFTip` is that no text ever has to be cut — it takes any length and it scrolls. This one made it an AFTip and cut the text anyway. Then what was the point?”* There was none. Part 1 fixed how the panel was **painted**; nobody looked at what it was **carrying**.

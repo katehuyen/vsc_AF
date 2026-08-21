@@ -179,7 +179,20 @@ export function optStr(args: Record<string, unknown>, key: string): string {
  * (`_REF/agentfarm-dev.md`). Absent fields are left out entirely rather than
  * written as empty strings — "not stated" is not the same as "no flag".
  */
-export function bridgeRunDimensions(args: Record<string, unknown>): Record<string, unknown> {
+/**
+ * `opts.mode` — THE EFFECTIVE MODE, when the caller already knows it and these
+ * args do not carry it.
+ *
+ * ‼️ Three doors are in exactly that position and reading `args.mode` at any of
+ * them would refuse a run that really is interactive: a TRIGGER may state its
+ * mode on the action and its dimensions outside it (or the other way round, and
+ * this function is called once per level), while a RERUN and a TEMPLATE RUN
+ * inherit the mode from the thing being re-run and never restate it.
+ */
+export function bridgeRunDimensions(
+    args: Record<string, unknown>,
+    opts: { mode?: string } = {}
+): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     // ‼️ THE ENGINE IS CHECKED WHERE IT IS WRITTEN DOWN, NOT WHERE IT RUNS
     // (X-35). A schedule or a trigger is a run that has not happened yet, and a
@@ -245,9 +258,18 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
         // caller that asked for "the Console, and close it when it answers" and
         // got an archived background run would have no way of telling; the mode
         // is right there in the same call, so the contradiction is nameable.
-        if ((out.interactiveTarget || out.interactiveClose) && optStr(args, 'mode') === 'headless') {
-            need(false, 'interactiveTarget / interactiveClose describe an interactive run — '
-                + 'this one is headless, which has no surface and nothing to keep open.');
+        //
+        // ‼️ THE TEST IS `!== 'interactive'`, NOT `=== 'headless'`. Every door
+        // that takes a mode resolves it as `mode === 'interactive' ? … : 'headless'`
+        // — so an OMITTED mode is headless, and an omitted mode was precisely how
+        // the pair used to get through: `tasks.add {interactiveTarget:'external'}`
+        // was accepted and then stored on a background run nobody would ever see.
+        if (out.interactiveTarget || out.interactiveClose) {
+            const mode = opts.mode !== undefined ? opts.mode : (optStr(args, 'mode') ?? '');
+            need(mode === 'interactive',
+                'interactiveTarget / interactiveClose describe an interactive run — this one is '
+                + (mode ? `"${mode}"` : 'headless (no mode was stated, which means headless)')
+                + ', which has no surface and nothing to keep open.');
         }
     }
     // `project` on the wire, `projectId` in the model: the caller names the
@@ -322,6 +344,24 @@ export function needOneExecutor(engine: unknown, cli: unknown): void {
  * It lives beside the serializer rather than in each `describe`, because a
  * sentence typed into five contracts is a sentence four of them stop matching.
  */
+/**
+ * ‼️ M-26 — the two INTERACTIVE axes, in one sentence, for every op that can
+ * install an interactive run. Shared rather than retyped: four describes saying
+ * the same thing in four wordings is four contracts.
+ */
+export const INTERACTIVE_NOTE =
+    ' ‼️ AND IF mode IS interactive, WHERE IT OPENS AND WHETHER IT STAYS — '
+    + 'interactiveTarget? (vscode = the integrated terminal, the default | external = its '
+    + 'own OS terminal window, Windows Terminal where there is one; the CLI\'s exit code '
+    + 'comes back through a file so the run still finishes on its own | console = Agent '
+    + 'Farm hosts the conversation in its Console panel, the only surface that follows '
+    + 'what the run is DOING rather than only when it stopped), '
+    + 'interactiveClose? (stay-open = the default, the conversational CLI, and it finishes '
+    + 'when the surface is closed | auto-close = one turn — the engine is asked in its '
+    + 'print-and-exit form and the run has an end). '
+    + 'Both are refused, not ignored, on a headless run — including one that is headless '
+    + 'because no mode was stated at all.';
+
 export const DIMS_OUT_NOTE =
     ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '
     + 'reportsCost, costSource, takesEffort) — read those before the figures beside '

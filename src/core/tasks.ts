@@ -1125,7 +1125,15 @@ export class TaskManager implements vscode.Disposable {
         for (const t of this.tasks) {
             if (t.status === 'running' && t.exitFile) { this.externalWatch.add(t.id); }
         }
-        if (this.externalWatch.size) { this.startInteractiveWatch(); }
+        // ‼️ …AND SO DOES A CONVERSATION THE CONSOLE IS HOSTING. One timer drives
+        // both (see `startInteractiveWatch`), so starting it on `externalWatch`
+        // alone left a reloaded window following its OS terminals and not its
+        // Console tasks — the one surface that reports what a run is DOING would
+        // have been the one surface whose task never finished.
+        if (this.externalWatch.size
+            || this.tasks.some(t => t.status === 'running' && t.consoleSessionId)) {
+            this.startInteractiveWatch();
+        }
         this.timer = setInterval(() => {
             this.tickSchedules(); this.pump(); this.pumpArchiveRepair();
         }, 30_000);
@@ -2491,6 +2499,12 @@ export class TaskManager implements vscode.Disposable {
             }
             let raw: string;
             try { raw = fs.readFileSync(task.exitFile, 'utf8'); } catch { continue; }
+            // ‼️ THE FILE EXISTS BEFORE IT HAS ANYTHING IN IT. The shell creates it
+            // on the redirection and writes a moment later, so a tick landing in
+            // between reads "" — and `Number("")` is 0, which would finish a run
+            // that is still going, as a success. An empty read is "not yet"; the
+            // next tick is two seconds away.
+            if (!raw.trim()) { continue; }
             this.externalWatch.delete(id);
             // The file is written by the shell, so the code is text and may be
             // padded; anything that is not a clean zero is a failure, including
