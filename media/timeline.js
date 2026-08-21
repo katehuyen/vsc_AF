@@ -68,8 +68,8 @@
            it is the LATEST thing said, not the rest of the line above it.
            The selector carries three classes on purpose: .card .tip-host sets
            the dimmed colour these lines need everywhere else (see common.css). */
-        .card .tip-host.card-open { color:var(--vscode-foreground); font-weight:600; }
-        .card .tip-host.card-said { font-style:italic; }
+        .card .tip-host.card-open { color:var(--vscode-foreground); font-weight:600; overflow-wrap:anywhere; word-break:break-word; }
+        .card .tip-host.card-said { font-style:italic; overflow-wrap:anywhere; word-break:break-word; }
         .card .card-said .said-mark { font-style:normal; font-weight:600;
             margin-right:3px; letter-spacing:.02em;
             color:var(--vscode-textLink-foreground, #3794ff); }
