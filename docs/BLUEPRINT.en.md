@@ -2894,6 +2894,22 @@ Completed phases (all 2026-07-08):
 
 ## Release Notes
 
+### 3.206.0 — X-51 (X-50): The Chain Walked End To End, And The Build Read (2026-08-21)
+
+- **End-to-end acceptance (`test/test_wiki_e2e.js`, 41 checks):** mark → brief → start the run (claimed, still `pending`, a second run refused by name) → **write exactly what the prompt instructs** → report back → ask both sides → check the shape of what was written. Each piece had a suite; the **seam** never did.
+- **‼️ A real defect found on its first run:** a `[[link]]` and the `index.md` line must use the page's **filename form** (`[[Aday_Havuzu]]`, not `[[Aday Havuzu]]`). Obsidian resolves a link against the filename and so does `wiki.lint` — a spaced link is broken on both sides. The agent procedure (`_REF/wiki.md` §2, §4) now says so.
+- **Build verification (`npm run verify` → `tools/verify_vsix.js`, 12 checks):** every gate in this repo ran **before** `vsce`, so `.vscodeignore` — a list of patterns — could drop a new `media/*.js` or `out/panels/*.js` silently: the extension installs cleanly and the page is blank the first time it is opened. This reads the VSIX's own zip listing and checks that every panel, core module, media asset and **every script `htmlShell` asks the webview for** is really inside.
+
+### 3.205.0 — U-70 (X-50): The Wiki Cockpit — The One Surface That Reads The Pool (2026-08-21)
+
+- **A dedicated Wiki panel:** `Agent Farm: Open Wiki` or Toolbox → **📚 Wiki**. Four doors wrote to the pool and no surface read it ([details](#wiki-kokpiti)).
+- **Vault strip:** root · `-WIKI-ANAYASA-.md` · `index.md` · `log.md` — clickable, missing ones marked ⚠. **With the root or the law absent both compile buttons are dead and say why before the press.**
+- **DENSE table:** one mark = one line; everything longer is an AFTip. Hovering a row gives the session, agent, engine, turn range, note and who marked it when — zero clicks.
+- **[Compile Selected] / [Compile All Pending]:** both are `wiki.compile.run`. **Neither marks anything compiled** — only the run reporting back closes a mark.
+- **A mark with a run out is not offered:** `compiling` is not a state in the pool but a `pending` row with a live claim; it draws no tick box and is not in the count.
+- **Inline editing and provenance:** ✎ topics (an emptied list is never sent), 🚫 drop, ↺ reopen, ✕ delete — none of them touch a page already written; compiled rows carry a `Category / Concept` breadcrumb.
+- **🩺 Lint:** reports `wiki.lint` into the page — reported, never repaired.
+
 ### 3.204.0 — M-23 (X-50): Wiki Compilation Engine and Headless Runs (2026-08-21)
 
 - **Headless Compilation (`wiki.compile.run`):** Independent headless agent execution synthesizing accumulated candidates under the vault's `-WIKI-ANAYASA-.md` rules.

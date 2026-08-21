@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.205.0",
+  "version": "3.206.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9213,6 +9213,7 @@
     "watch": "tsc -watch -p ./",
     "package": "node test/test_encoding.js && node test/test_ctxmenu.js && node test/test_parity.js && vsce package --allow-missing-repository --out dist/vsix",
     "test": "tsc -p ./ && node test/run-all.js",
+    "verify": "node tools/verify_vsix.js",
     "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}\""
   },
   "devDependencies": {

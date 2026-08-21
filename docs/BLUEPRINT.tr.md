@@ -2938,6 +2938,22 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 
 ## Sürüm Notları
 
+### 3.206.0 — X-51 (X-50): Zincirin Uçtan Uca Yürünmesi ve Paket Doğrulaması (2026-08-21)
+
+- **Uçtan Uca Kabul (`test/test_wiki_e2e.js`, 41 kontrol):** İşaretle → brifing → koşuyu başlat (iddia, hâlâ `pending`, ikinci koşu adıyla reddedilir) → **prompt ne diyorsa onu yaz** → geri bildir → iki tarafı da sor → yazılanın şeklini denetle. Parçalar tek tek test ediliyordu; **dikiş yeri** hiç test edilmemişti.
+- **‼️ İlk koşuşta bulunan gerçek hata:** bir `[[link]]` ve `index.md` satırı sayfanın **dosya adı biçimini** kullanmak zorunda (`[[Aday_Havuzu]]`, `[[Aday Havuzu]]` değil). Obsidian bağlantıyı dosya adına göre çözer, `wiki.lint` de öyle — boşluklu bir bağlantı iki tarafta birden kırıktır. Ajan prosedürü (`_REF/wiki.md` §2, §4) artık bunu söylüyor.
+- **Paket Doğrulaması (`npm run verify` → `tools/verify_vsix.js`, 12 kontrol):** Depodaki bütün kapılar `vsce`'den **önce** koşuyordu; `.vscodeignore` bir desen listesi olduğu için yeni bir `media/*.js` ya da `out/panels/*.js` sessizce düşebiliyordu — eklenti sorunsuz kurulur, sayfa ilk açılışta boş gelir. Bu araç VSIX'in kendi zip dizinini okuyup her panelin, çekirdek modülün, medya dosyasının ve **`htmlShell`'in webview'dan istediği her betiğin** gerçekten içeride olduğunu doğruluyor.
+
+### 3.205.0 — U-70 (X-50): Wiki Kokpiti — Havuzu Okuyan Tek Yüzey (2026-08-21)
+
+- **Adanmış Wiki paneli:** `Agent Farm: Open Wiki` ya da Toolbox → **📚 Wiki**. Havuza yazan dört kapı vardı, okuyan hiçbir yüzey yoktu ([detay](#wiki-kokpiti)).
+- **Kasa şeridi:** kök · `-WIKI-ANAYASA-.md` · `index.md` · `log.md` — tıklanabilir, eksik olan ⚠. **Kök ya da anayasa yoksa iki derleme düğmesi de ölü ve sebebini basılmadan önce söylüyor.**
+- **DENSE tablo:** bir işaret = bir satır; uzayan her şey AFTip. Satır üstünde oturum, ajan, motor, tur aralığı, not ve kim/ne zaman işaretledi — sıfır tıkla.
+- **[Seçilenleri Derle] / [Tüm Bekleyenleri Derle]:** ikisi de `wiki.compile.run`. **Hiçbir şeyi derlenmiş işaretlemez** — kapatan tek şey koşunun geri bildirmesi.
+- **Koşusu çıkmış işaret teklif edilmez:** `compiling` havuzda bir durum değil, iddiası yaşayan bir `pending` satır; kutucuk çizmez, sayıya girmez.
+- **Satır içi düzenleme ve provenance:** ✎ konular (boş liste hiç gönderilmez), 🚫 düşür, ↺ geri koy, ✕ sil — üçü de kasadaki sayfaya dokunmaz; derlenmiş satırlar `Kategori / Kavram` kırıntısı taşır.
+- **🩺 Lint:** `wiki.lint` sayfanın içine rapor eder — rapor eder, asla onarmaz.
+
 ### 3.204.0 — M-23 (X-50): Wiki Derleme Motoru ve Headless Koşu (2026-08-21)
 
 - **Headless Derleme (`wiki.compile.run`):** Aday havuzunda biriken turları ve konuşmaları `-WIKI-ANAYASA-.md` kuralları altında sentezleyen bağımsız headless ajan çalıştırması.
