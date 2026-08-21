@@ -63,6 +63,19 @@ export interface WikiCandidate {
     compiledAt?: number;
     /** Which pages the compile wrote for it — provenance, read backwards. */
     pages?: string[];
+    /**
+     * ‼️ M-23 — A COMPILE IS OUT FOR THIS MARK, and the row is still `pending`.
+     *
+     * Nothing is compiled until the agent says the pages exist (B-14), so a run
+     * in flight cannot change the state. But two runs over the same mark would
+     * read the same turns twice and file the same concept twice, which is the
+     * one failure the pool exists to prevent — so the claim is recorded and a
+     * second run over a claimed mark is refused by name. A claim whose task is
+     * no longer running is STALE and ignored: a crashed run must not lock a
+     * turn out of the wiki for ever.
+     */
+    compileTaskId?: string;
+    compileStartedAt?: number;
 }
 
 /** A pool that grows without bound is a pool nobody reads. The newest are the
@@ -376,6 +389,161 @@ export interface WikiDeps {
     sessions(): SessionInfo[];
     /** The agent procedure, so the brief can point at it by path. */
     procedure?: string;
+    /**
+     * ‼️ M-23 — HOW A BRIEF BECOMES SOMEBODY DOING THE WORK.
+     *
+     * This module cannot reach vscode or the task manager, and it must not: the
+     * point of `wiki.compile` handing back a brief is that the SYNTHESIS is an
+     * agent's. So the host injects the one thing the engine needs — start a
+     * headless run with these words — and everything about which agent, which
+     * model and what a task is stays where it already lives.
+     */
+    startCompile?(a: { title: string; prompt: string; agent?: string; engine?: string; model?: string; effort?: string; start?: boolean }):
+        { taskId: string; agent: string; started: boolean };
+    /** Is a recorded claim still a run, or the ghost of one that died? */
+    taskAlive?(taskId: string): boolean;
+    /** Which agent writes the wiki when nobody names one (the setting). */
+    defaultAgent?(): string;
+}
+
+/** What a compile is handed — the same object whether a person reads it or a
+ *  headless run is built out of it. One assembly, so the words an agent works
+ *  from can never drift from the words the op prints. */
+export interface WikiBrief {
+    rules: string;
+    procedure: string;
+    root: string;
+    index: string;
+    log: string;
+    existing: { category: string; concept: string; file: string }[];
+    candidates: (Record<string, unknown> & { transcript: string; readTurns: string })[];
+    next: string[];
+}
+
+const COMPILE_STEPS = [
+    'Read the rules file first — it outranks the agent procedure.',
+    'Read each candidate\'s transcript over the turns named, and distil the concepts.',
+    'Create or amend pages under <root>/<Category>/<Concept>.md; never delete contradicted text, annotate it with a dated line.',
+    'Update index.md (one line per page) and append to log.md.',
+    'Report back: wiki.candidates.edit { id, state:"compiled", pages:[…] } for each one.'
+];
+
+/** Which marks a compile is about. The three selectors are exclusive on
+ *  purpose: a compile of "whatever is there" is never implied. */
+export function chooseCandidates(store: WikiStore, args: Record<string, unknown>): WikiCandidate[] {
+    const pool = store.candidates.filter(c => c.state === 'pending');
+    let chosen: WikiCandidate[];
+    if (args.ids !== undefined) {
+        const ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(x => String(x));
+        chosen = store.candidates.filter(c => ids.includes(c.id));
+        need(chosen.length === ids.length,
+            `${ids.length - chosen.length} of those ids are not in the pool.`);
+    } else if (args.topic !== undefined) {
+        const t = argStr(args, 'topic').toLowerCase();
+        chosen = pool.filter(c => c.topics.some(x => x.toLowerCase() === t));
+    } else if (args.all === true) {
+        chosen = pool;
+    } else {
+        need(false, 'Pass ids, topic, or all:true — a compile of "whatever is there" is never implied.');
+        chosen = [];
+    }
+    need(chosen.length > 0, 'Nothing matched — there is nothing to compile.');
+    return chosen;
+}
+
+/** The brief: the law, the root, what the wiki already holds, and every chosen
+ *  mark resolved to a transcript on disk and a turn range inside it. */
+export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
+    const root = deps.root();
+    const rules = path.join(root, WIKI_RULES_REL);
+    need(fs.existsSync(root),
+        `The wiki root does not exist: ${root}. Set agentFarm.wikiRoot or create the folder before compiling.`);
+    need(fs.existsSync(rules),
+        `The wiki's own law is missing: ${rules}. It outranks the agent procedure, so a compile without it would be a guess.`);
+    const { pages } = readWikiPages(root);
+    return {
+        rules,
+        procedure: deps.procedure ?? '_REF/wiki.md',
+        root,
+        index: path.join(root, WIKI_INDEX_REL),
+        log: path.join(root, WIKI_LOG_REL),
+        // What already exists decides create-vs-amend, which is the first
+        // judgement of every compile (_REF/wiki.md §3).
+        existing: pages.map(p => ({ category: p.category, concept: p.concept, file: p.file })),
+        candidates: chosen.map(c => ({
+            ...view(c),
+            // The transcript and the range, so the agent reads the turns itself
+            // rather than trusting a summary of them.
+            transcript: c.sessionFile,
+            readTurns: c.fromTurn === 0 ? 'all' : `${c.fromTurn}-${c.toTurn}`
+        })),
+        next: COMPILE_STEPS
+    };
+}
+
+/**
+ * ‼️ M-23 — THE BRIEF, AS WORK. What a headless run is actually told.
+ *
+ * Every line here is something the run cannot look up for itself in time: where
+ * the law is, which transcript and which turns, what the wiki already holds,
+ * and how to report back. Nothing here summarises a transcript — a summary of
+ * the thing being distilled is the mechanical output this whole idea exists to
+ * avoid, so the run is pointed AT the file and reads it.
+ *
+ * ‼️ AND THE REPORT-BACK IS PART OF THE WORK, NOT A COURTESY. A compile that
+ * wrote three pages and never said so leaves the pool claiming the turns are
+ * still waiting, and the next compile reads them again and files the concept
+ * twice. The ids are in the text so there is nothing to look up.
+ */
+export function compilePrompt(brief: WikiBrief): string {
+    const L: string[] = [];
+    L.push('Compile these marked turns into the wiki. You are the synthesis — the extension gathered');
+    L.push('the material and can do no more than that.');
+    L.push('');
+    L.push('## The law, in this order');
+    L.push(`1. \`${brief.rules}\` — the vault's own law. Read it FIRST; it outranks everything below.`);
+    L.push(`2. \`${brief.procedure}\` — the agent procedure (page template, atomicity, provenance, contradictions).`);
+    L.push('');
+    L.push('## Where the wiki is');
+    L.push(`- root: \`${brief.root}\``);
+    L.push(`- index: \`${brief.index}\` — one line per page`);
+    L.push(`- log: \`${brief.log}\` — append \`## [YYYY-MM-DD] compile | <Concept>\``);
+    L.push(brief.existing.length
+        ? `- it already holds ${brief.existing.length} page(s): `
+            + brief.existing.map(p => `${p.category}/${p.concept}`).join(' · ')
+        : '- it holds no pages yet — every concept here is a new page.');
+    L.push('');
+    L.push('## What to read');
+    for (const c of brief.candidates) {
+        const topics = Array.isArray(c.topics) ? (c.topics as string[]).join(', ') : String(c.topics ?? '');
+        L.push(`- **${c.id}** — turns ${c.turns} of \`${c.transcript}\``);
+        L.push(`  · filed under: ${topics}`);
+        if (c.label) { L.push(`  · opening line: ${String(c.label).slice(0, 160)}`); }
+        if (c.note) { L.push(`  · why it was kept: ${String(c.note)}`); }
+    }
+    L.push('');
+    L.push('## What to do');
+    brief.next.forEach((s, i) => L.push(`${i + 1}. ${s}`));
+    L.push('');
+    L.push('## ‼️ Three lines you do not cross');
+    L.push('- **A page is one concept.** If a turn carries three, it is three pages — not one page with');
+    L.push('  three headings. Filing by "the session it came from" is what the topics are there to prevent.');
+    L.push('- **Nothing contradicted is deleted.** An older claim that turned out wrong is annotated with a');
+    L.push('  dated line saying what superseded it, so the page reads as a history rather than a rewrite.');
+    L.push('- **Every fact carries where it came from.** Session id and turn range, under the text it');
+    L.push('  supports — a wiki whose provenance is missing cannot be audited and is not worth keeping.');
+    L.push('');
+    L.push('## Report back — this is part of the work');
+    L.push('For every id above, once its pages exist:');
+    L.push('');
+    L.push('```');
+    for (const c of brief.candidates) {
+        L.push(`wiki.candidates.edit { id: "${c.id}", state: "compiled", pages: ["<Category>/<Concept>.md", …] }`);
+    }
+    L.push('```');
+    L.push('');
+    L.push('A mark you did NOT write a page for stays pending — say which, and why, rather than closing it.');
+    return L.join('\n');
 }
 
 /** A session by full id, by the short id every surface prints, or by file. */
@@ -408,7 +576,11 @@ function view(c: WikiCandidate): Record<string, unknown> {
         addedAt: c.addedAt,
         addedBy: c.addedBy,
         compiledAt: c.compiledAt ?? null,
-        pages: c.pages ?? null
+        pages: c.pages ?? null,
+        // M-23 — a run is out for this mark. Still `pending`: nothing is
+        // compiled until the run says the pages exist.
+        compileTaskId: c.compileTaskId ?? null,
+        compileStartedAt: c.compileStartedAt ?? null
     };
 }
 
@@ -505,6 +677,11 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                     // say "compiled at 14:02" while sitting in the pending pool.
                     if (st === 'compiled') { c!.compiledAt = Date.now(); }
                     else { c!.compiledAt = undefined; }
+                    // M-23 — and the run that was out for it is over as far as
+                    // this mark is concerned, whichever way it went. A closed
+                    // mark still carrying a claim would refuse the next compile
+                    // of a turn it no longer has anything to do with.
+                    if (st !== 'pending') { c!.compileTaskId = undefined; c!.compileStartedAt = undefined; }
                 }
                 S().save();
                 return view(c!);
@@ -544,6 +721,10 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                     pool: {
                         pending: count('pending'), compiled: count('compiled'),
                         dropped: count('dropped'), total: pool.length,
+                        // M-23 — pending marks a run is already out for. They are
+                        // still pending, and asking for them again is refused.
+                        compiling: pool.filter(c => c.state === 'pending' && c.compileTaskId
+                            && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true)).length,
                         topics: S().topics()
                     },
                     wiki: {
@@ -569,54 +750,52 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         {
             op: 'wiki.compile',
             describe: 'Assemble what it takes to compile marked turns into the wiki, and hand it back as a brief: the rules, the root, what the wiki already holds, and each candidate resolved to a transcript and a turn range. args: ids? (a list) or topic? (every pending mark carrying it) or all? (true = every pending mark). ‼️ It writes NO wiki page — synthesis is the agent\'s, under the vault\'s own law — and it marks nothing compiled; report back with wiki.candidates.edit {state:"compiled", pages:[…]} when the pages exist.',
+            handler: (args) => buildBrief(deps, chooseCandidates(S(), args))
+        },
+        {
+            op: 'wiki.compile.run',
+            describe: 'M-23 — the compile, DONE rather than described: it assembles the same brief wiki.compile hands back and starts a headless run that carries out the synthesis, under the vault\'s own law. args: ids? / topic? / all? (the same three exclusive selectors), agent? (who writes the wiki; default agentFarm.wikiAgent), engine?, model?, effort?, start? (default true). ‼️ Nothing is marked compiled by starting a run — the run reports back with wiki.candidates.edit when the pages exist, which is the only thing that closes a mark. A mark with a compile already out is refused rather than read twice; a claim whose run has ended is stale and ignored.',
             handler: (args) => {
-                const root = deps.root();
-                const rules = path.join(root, WIKI_RULES_REL);
-                need(fs.existsSync(root),
-                    `The wiki root does not exist: ${root}. Set agentFarm.wikiRoot or create the folder before compiling.`);
-                need(fs.existsSync(rules),
-                    `The wiki's own law is missing: ${rules}. It outranks the agent procedure, so a compile without it would be a guess.`);
-                const pool = S().candidates.filter(c => c.state === 'pending');
-                let chosen: WikiCandidate[];
-                if (args.ids !== undefined) {
-                    const ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(x => String(x));
-                    chosen = S().candidates.filter(c => ids.includes(c.id));
-                    need(chosen.length === ids.length,
-                        `${ids.length - chosen.length} of those ids are not in the pool.`);
-                } else if (args.topic !== undefined) {
-                    const t = argStr(args, 'topic').toLowerCase();
-                    chosen = pool.filter(c => c.topics.some(x => x.toLowerCase() === t));
-                } else if (args.all === true) {
-                    chosen = pool;
-                } else {
-                    need(false, 'Pass ids, topic, or all:true — a compile of "whatever is there" is never implied.');
-                    chosen = [];
-                }
-                need(chosen.length > 0, 'Nothing matched — there is nothing to compile.');
-                const { pages } = readWikiPages(root);
+                need(!!deps.startCompile,
+                    'This build has no way to start a run — wiki.compile hands back the brief and you do the work.');
+                const chosen = chooseCandidates(S(), args);
+                // ‼️ CAN A COMPILE HAPPEN AT ALL, before which marks it is about:
+                // a missing root or a wiki with no law of its own stops every
+                // run, and answering "that mark is busy" first would send the
+                // reader after the wrong problem.
+                const brief = buildBrief(deps, chosen);
+                // ‼️ TWO RUNS OVER ONE MARK FILE THE CONCEPT TWICE. The claim is
+                // only real while its run is; a crashed compile must not lock a
+                // turn out of the wiki for ever (see WikiCandidate.compileTaskId).
+                const claimed = chosen.filter(c => c.compileTaskId
+                    && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true));
+                need(claimed.length === 0,
+                    `${claimed.length} of those already have a compile running (${claimed.map(c => c.id).join(', ')}). `
+                    + 'Let it finish, or drop that run first — reading the same turns twice files the concept twice.');
+                const topics = [...new Set(chosen.flatMap(c => c.topics))];
+                const title = `Wiki compile — ${topics.slice(0, 3).join(', ')}`
+                    + (topics.length > 3 ? ` +${topics.length - 3}` : '')
+                    + ` (${chosen.length} mark${chosen.length === 1 ? '' : 's'})`;
+                const run = deps.startCompile!({
+                    title,
+                    prompt: compilePrompt(brief),
+                    agent: optStr(args, 'agent') || (deps.defaultAgent ? deps.defaultAgent() : ''),
+                    engine: optStr(args, 'engine'),
+                    model: optStr(args, 'model'),
+                    effort: optStr(args, 'effort'),
+                    start: args.start !== false
+                });
+                const at = Date.now();
+                for (const c of chosen) { c.compileTaskId = run.taskId; c.compileStartedAt = at; }
+                S().save();
                 return {
-                    rules,
-                    procedure: deps.procedure ?? '_REF/wiki.md',
-                    root,
-                    index: path.join(root, WIKI_INDEX_REL),
-                    log: path.join(root, WIKI_LOG_REL),
-                    // What already exists decides create-vs-amend, which is the
-                    // first judgement of every compile (_REF/wiki.md §3).
-                    existing: pages.map(p => ({ category: p.category, concept: p.concept, file: p.file })),
-                    candidates: chosen.map(c => ({
-                        ...view(c),
-                        // The transcript and the range, so the agent reads the
-                        // turns itself rather than trusting a summary of them.
-                        transcript: c.sessionFile,
-                        readTurns: c.fromTurn === 0 ? 'all' : `${c.fromTurn}-${c.toTurn}`
-                    })),
-                    next: [
-                        'Read the rules file first — it outranks the agent procedure.',
-                        'Read each candidate\'s transcript over the turns named, and distil the concepts.',
-                        'Create or amend pages under <root>/<Category>/<Concept>.md; never delete contradicted text, annotate it with a dated line.',
-                        'Update index.md (one line per page) and append to log.md.',
-                        'Report back: wiki.candidates.edit { id, state:"compiled", pages:[…] } for each one.'
-                    ]
+                    taskId: run.taskId, agent: run.agent, started: run.started, title,
+                    marks: chosen.length,
+                    topics,
+                    reads: brief.candidates.map(c => ({ id: c.id, transcript: c.transcript, turns: c.readTurns })),
+                    root: brief.root, rules: brief.rules,
+                    note: 'Nothing is compiled yet. The run reports back with wiki.candidates.edit '
+                        + '{state:"compiled", pages:[…]} when the pages exist — that is what closes a mark.'
                 };
             }
         },

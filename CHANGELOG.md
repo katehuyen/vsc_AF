@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.204.0 — M-23 (X-50): the compile, done rather than described (2026-08-21)
+
+B-14 drew a line the engine may not cross: `wiki.compile` hands back a **brief**, because an extension cannot synthesise and one that pretended to would produce exactly the mechanical summaries this whole idea exists to avoid. That left the second half of the system with no door — the pool filled up and emptying it meant calling the bridge by hand and doing the reading yourself. **`wiki.compile.run` is the honest way across:** it assembles the same brief and starts a **headless run** that carries out the synthesis under the vault's own law. **Agent Farm: Compile Wiki Candidates…** is the palette's door to it — everything waiting is ticked when the picker opens, so Enter compiles the lot and unticking is the exception.
+
+**‼️ STARTING A RUN MARKS NOTHING COMPILED.** The only thing that closes a mark is the run reporting the pages back with `wiki.candidates.edit {state:"compiled", pages:[…]}` — the same contract B-14 wrote. A compile that marked its own work done would leave the pool claiming turns had been written into a wiki the first failure never reached.
+
+**‼️ AND TWO RUNS OVER ONE MARK IS THE FAILURE THE POOL EXISTS TO PREVENT.** The same turns read twice file the same concept twice. So a run records its claim on every mark it took, a second compile over a claimed mark is **refused by name**, and the picker does not offer it. The claim is only real while the run is: a compile that crashed leaves a **stale** claim that is ignored, because a dead run must not lock a turn out of the wiki for ever. `wiki.status` counts them (`pool.compiling`) and they stay **pending**, which is what they are.
+
+**The prompt is the product.** The run is told where the law is (and to read it first — it outranks the agent procedure), which transcript and which turns, what the wiki already holds (which is what decides create-vs-amend), and the three lines it does not cross: **one concept per page**, **nothing contradicted is deleted** (it is annotated with a dated line), **every fact carries where it came from**. The report-back is written out with the real candidate ids, so there is nothing to look up — and a mark it could not write a page for is told to stay pending and say why.
+
+`agentFarm.wikiAgent` says who writes the wiki. The brief is **one assembly** shared by both doors, so the words an agent works from cannot drift from the words the op prints. 51 checks in `test/test_wiki_compile_run.js`, including the claim, the stale claim, and the three refusals that are not guesses: no root, no `-WIKI-ANAYASA-.md`, and "compile whatever is there".
+
 ## 3.203.0 — K-26 (X-50): the turn you are reading is one press from the wiki pool (2026-08-21)
 
 S-38 put a whole conversation into the candidate pool from the row it is on. But a conversation is not what gets compiled — a **turn** is, and the moment worth keeping is the moment the answer lands, not an hour later when you would have to find it again. So every turn now carries a quiet **🔖** on the row that starts it: on the Console's prompt rows and on the transcript's turn bands, with the same item in the right-click menu on those bands and on every row of the Turns page.

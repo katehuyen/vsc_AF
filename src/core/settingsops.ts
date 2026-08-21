@@ -119,7 +119,10 @@ const CATEGORY_OF: Record<string, string> = {
     // agents WRITE into (the report folder and the answer folder), because that
     // is the question a reader has about it: where does what the agents produce
     // end up.
-    wikiRoot: 'reports'
+    wikiRoot: 'reports',
+    // M-23 — and who writes it. Same category as the root for the same reason:
+    // both answer "where does what the agents produce end up, and by whose hand".
+    wikiAgent: 'reports'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [

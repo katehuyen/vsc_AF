@@ -4771,6 +4771,15 @@
       ]
     },
     {
+      "capability": "compileWiki",
+      "ui": [
+        "cmd:agentfarm.compileWiki"
+      ],
+      "ops": [
+        "wiki.compile.run"
+      ]
+    },
+    {
       "capability": "sessionViewer.ts#afnav",
       "ui": [
         "page:sessionViewer.ts#afnav"

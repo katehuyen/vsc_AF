@@ -111,12 +111,18 @@ const CONVERTED = [
  * single box asking a single string about a thing that already exists is not a
  * form either: `renameSession`, `tagSession`, `connectTelegram` (a token),
  * `testDispatch` (a diagnostic), `runParallel`.
+ *
+ * ‼️ M-23 — `compileWiki` is the newest of those, and the clearest: the rows it
+ * offers are marks somebody already made, everything is ticked when it opens,
+ * and it builds no object at all — it starts a run. Making that a page form
+ * would put a builder in front of a gesture whose whole point is one Enter.
+ * (U-70 gives the pool its own page; this stays the palette's door to it.)
  */
 const KEPT_ON_PURPOSE = [
     'agentfarm.quickMenu', 'agentfarm.setupExample', 'agentfarm.worktreeRuns',
     'agentfarm.browsePackGallery', 'agentfarm.addRecipe', 'agentfarm.startSessionWith',
     'agentfarm.renameSession', 'agentfarm.tagSession', 'agentfarm.connectTelegram',
-    'agentfarm.testDispatch', 'agentfarm.runParallel'
+    'agentfarm.testDispatch', 'agentfarm.runParallel', 'agentfarm.compileWiki'
 ];
 KEPT_ON_PURPOSE.forEach(cmd => {
     ok(`${cmd} is still there (it is a picker or one question, not a builder)`,
@@ -127,7 +133,11 @@ KEPT_ON_PURPOSE.forEach(cmd => {
     // The measurement, guarded. If a future change pushes these back up, the
     // number in docs/CONVENTIONS.md is wrong and this says so.
     const m = measure();
-    ok(`no more than 30 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 30);
+    // ‼️ THE CEILING ONLY MOVES WITH A NAME. It went 30 → 31 for
+    // `agentfarm.compileWiki` (M-23), which is in KEPT_ON_PURPOSE above with
+    // the reason. A raise with nothing added to that list is the sweep undoing
+    // itself, and the next reader would have no way to tell the two apart.
+    ok(`no more than 31 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 31);
     ok(`no more than 4 are chains of two or more (measured ${m.chains})`, m.chains <= 4);
     ok('‼️ the scan is not fooled by the last command in a push() block',
         (BODIES['agentfarm.missionStepOutput'] || '').split('\n').length < 8);

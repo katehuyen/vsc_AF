@@ -9153,7 +9153,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: () => wikiStore,
         root: wikiRoot,
         sessions: () => index.allWithExternal(),
-        procedure: '_REF/wiki.md'
+        procedure: '_REF/wiki.md',
+        /**
+         * ‼️ M-23 — WHAT TURNS A BRIEF INTO SOMEBODY DOING THE WORK.
+         *
+         * `core/wiki.ts` cannot reach the task manager and must not: the whole
+         * point of the brief is that the SYNTHESIS is an agent's. So the engine
+         * assembles the words and this starts one headless run out of them,
+         * through the same `addTask`/`startTask` every other door uses — a
+         * second launcher would be a second set of rules about budgets,
+         * projects and engines.
+         */
+        defaultAgent: () => cfg().get<string>('wikiAgent')?.trim() || '',
+        taskAlive: (taskId) => {
+            const t = taskManager.tasks.find(x => x.id === taskId);
+            return !!t && (t.status === 'queued' || t.status === 'running');
+        },
+        startCompile: (a) => {
+            // Named, configured, or the farm's first agent — and if there is no
+            // agent at all, the refusal says that rather than throwing later.
+            const agent = a.agent ? findAgent(a.agent) : (
+                cfg().get<string>('wikiAgent')?.trim()
+                    ? findAgent(cfg().get<string>('wikiAgent')!.trim())
+                    : agents[0]);
+            need(!!agent, 'There is no agent to write the wiki — add one, or set agentFarm.wikiAgent.');
+            const engine = (a.engine ?? '').trim().toLowerCase();
+            const errors = validateLaunch({
+                effort: a.effort ?? '', permissionMode: '',
+                ...(engine ? { engine: engine as EngineId } : {})
+            });
+            need(!errors.length, errors.join(' · '));
+            const task = taskManager.addTask(agent!, a.title, a.prompt, 'headless', {
+                ...(engine && engine !== 'claude' ? { engine } : {}),
+                ...(a.model ? { model: a.model } : {}),
+                ...(a.effort ? { effort: a.effort } : {})
+            });
+            const started = a.start !== false ? taskManager.startTask(task) : false;
+            return { taskId: task.id, agent: agent!.name, started };
+        }
     });
     /**
      * ‼️ K-26 (X-50) — THE SAME POOL, REACHED FROM THE ROW YOU ARE READING.
@@ -18471,6 +18508,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     + (merged ? ` (${merged} merged into a mark already there)` : '')
                     + ` — ${pending} waiting to be compiled`, 5000);
             }),
+
+        /**
+         * ‼️ M-23 (X-50) — THE COMPILE, AS A THING A PERSON DOES.
+         *
+         * Marking is cheap and a pool nobody empties is a pool nobody trusts, so
+         * the second half needs a door as ordinary as the first. This one asks
+         * exactly one question — WHICH marks — and everything is ticked when it
+         * opens, because "compile what is waiting" is the whole gesture and
+         * narrowing it is the exception.
+         *
+         * ‼️ IT DOES NOT WRITE A WIKI PAGE AND IT DOES NOT PRETEND TO. It starts
+         * a headless run under the vault's own law and says so; nothing in the
+         * pool closes until that run reports the pages back. A compile that
+         * marked its own work done would leave the pool lying the first time one
+         * failed halfway.
+         */
+        vscode.commands.registerCommand('agentfarm.compileWiki', async () => {
+            const alive = (id?: string): boolean => !!id
+                && !!taskManager.tasks.find(t => t.id === id
+                    && (t.status === 'queued' || t.status === 'running'));
+            const pool = wikiStore.candidates.filter(c => c.state === 'pending');
+            if (!pool.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: nothing is waiting to be compiled. Mark a turn with its 🔖 first — '
+                    + 'the badge is on every prompt row in the Console and on every turn band in a transcript.');
+                return;
+            }
+            const busy = pool.filter(c => alive(c.compileTaskId));
+            const free = pool.filter(c => !alive(c.compileTaskId));
+            if (!free.length) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: all ${busy.length} waiting mark(s) already have a compile running. `
+                    + 'Reading the same turns twice would file the same concept twice.');
+                return;
+            }
+            interface Row extends vscode.QuickPickItem { id: string }
+            const rows: Row[] = free.map(c => ({
+                id: c.id,
+                label: c.topics.join(' · '),
+                description: c.fromTurn === 0 ? 'whole conversation'
+                    : c.fromTurn === c.toTurn ? `turn ${c.fromTurn}` : `turns ${c.fromTurn}-${c.toTurn}`,
+                detail: `#${c.sessionId.slice(0, 8)}${c.agentName ? ' · ' + c.agentName : ''}`
+                    + (c.label ? ` — ${c.label.slice(0, 90)}` : ''),
+                picked: true
+            }));
+            const picked = await vscode.window.showQuickPick(rows, {
+                canPickMany: true,
+                title: `Compile ${free.length} marked turn(s) into the wiki`
+                    + (busy.length ? ` — ${busy.length} more already has a run out` : ''),
+                placeHolder: 'Everything is ticked: press Enter to compile it all, or untick what should wait'
+            });
+            if (!picked || !picked.length) { return; }
+            const r = await bridge.dispatch('wiki.compile.run', { ids: picked.map(p => p.id) });
+            if (r.error) {
+                void vscode.window.showErrorMessage(`Agent Farm: ${r.error}`);
+                return;
+            }
+            const out = r.result as { agent: string; marks: number; taskId: string; started: boolean };
+            const open = 'Open Tasks';
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${out.agent} is compiling ${out.marks} mark(s) into the wiki`
+                + (out.started ? '' : ' — queued, not started yet')
+                + '. Nothing closes in the pool until it reports the pages back.',
+                open
+            ).then(a => { if (a === open) { void vscode.commands.executeCommand('agentfarm.openTasks'); } });
+        }),
 
         // The shelf itself: pinned first, then the recent list, one Enter to
         // pick the conversation back up. This is the answer to "253 sessions,
