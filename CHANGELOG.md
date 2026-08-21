@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.198.0 — M-21 (part): the rule that every box records itself is measured now, and it caught one (2026-08-21)
+
+The Tasks page redraws itself on every host push, and the redraw replaces the whole form. So **a field that lives only in the DOM is a field that a task finishing somewhere else silently empties, mid-sentence, with nobody watching.** M-21 named one victim — the continuation prompt, the longest text on the card and the one that only matters when nobody is looking — and the sweep that cleared the other 54 fields was done **by hand, once**. A rule found by hand once is a rule that rots.
+
+**`test/test_composer_fields.js` is that comparison, derived rather than declared.** It reads the ids `readComposer()` and `readStep()` actually pull out of the page, reads the ids the wiring actually attaches an `input`/`change` listener to, and fails when the two sets disagree — so a field added tomorrow is checked tomorrow without anybody remembering the file exists. It runs **both ways**: a read with no listener loses what was typed, and a listener for something nothing reads is how a renamed field goes quietly dead. The one honest exemption (`nt-kind`, which reopens the composer instead of storing itself) is named, with its own check that it still reads the draft first.
+
+**‼️ And the first thing it found was two days old.** M-26 shipped *Opens in* and *When it answers* on the interactive form; `readComposer()` reads both, and **nothing called it when either was changed** — they were in no wiring list at all. Pick “its own OS terminal window”, let any task anywhere finish, and the repaint drew the box back at the default. Silently, because the draft had never been told. Wired.
+
+**The half nobody had audited is clean.** A workflow **step** is read through a different helper (`nt-st-` ids, list-driven), which is exactly why the hand sweep never covered it — and a step's prompt is the same kind of long text as the one that started this. All 31 of its fields are wired; measured, not assumed.
+
 ## 3.197.0 — M-26: an interactive task says WHERE it opens and WHETHER it closes (2026-08-21)
 
 *“An interactive task always opens in VS Code’s terminal and always stays open. I want to choose — the OS terminal or the Console — and I want a one-turn job to close itself when the answer is in.”* Two axes, on every surface that can install a run.

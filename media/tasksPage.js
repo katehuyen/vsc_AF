@@ -3106,7 +3106,14 @@
                 'debounceSec', 'cooldownSec', 'maxPerHour',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
                     byId('nt-' + id, 'input', () => readComposer()));
+            // ‼️ M-26's two boxes are in this list, and they were in NO list when
+            // they shipped: `readComposer()` reads them, but nothing called it when
+            // one was changed. Pick "its own OS terminal window", let any task
+            // anywhere finish, and the repaint drew the box back at the default —
+            // silently, because the draft had never been told. Exactly the defect
+            // M-21 named on the continuation prompt, on a field two days old.
             ['agent', 'effort', 'permissionMode', 'project', 'cli',
+                'interactiveTarget', 'interactiveClose',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which
