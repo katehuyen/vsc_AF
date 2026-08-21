@@ -257,9 +257,10 @@ import {
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
-    buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
-    MissionLimits, missionLiveSlice, MissionRun, MissionSpec, MissionStore, newMissionId,
-    outputExcerpt, parsePlannerEnvelope, PlannerResult, remainingBudget
+    buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionAutonomy, MissionEngine, MissionEngineDeps,
+    MissionLimits, missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec,
+    MissionStore, newMissionId, normalizeObjective, outputExcerpt, parsePlannerEnvelope,
+    PlannerResult, poolFromFleet, remainingBudget, resolveLead, validateObjective
 } from './core/missions';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
@@ -3637,8 +3638,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const createMission = (input: Record<string, unknown>): string | undefined => {
         const goal = String(input.goal ?? '').trim();
         if (!goal) { return 'Goal is required.'; }
-        const lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
-        if (!lead) { return 'Pick a lead agent.'; }
+        // ‼️ M-15 (X-32) — WHICH KIND OF MISSION IS BEING STARTED, decided here
+        // and nowhere else. Anything that is not the exact string 'adaptive' is
+        // a classic mission, so every caller written before this — the panel,
+        // the bridge, a stored template — goes down the identical path.
+        const mode: MissionMode = String(input.mode ?? '') === 'adaptive' ? 'adaptive' : 'classic';
+        // ‼️ AN OBJECTIVE'S POOL IS RESOLVED BEFORE THE RUN, NOT INSIDE IT. An
+        // adaptive user gives an outcome, not a cast list; if they named nobody,
+        // the pool is the whole fleet as this window currently knows it — a
+        // FACT written into the spec rather than a list re-derived on every
+        // round, so a run started today still means the same thing when an agent
+        // is added tomorrow.
+        const poolIn = Array.isArray(input.pool)
+            ? (input.pool as { agentId?: unknown }[])
+                .map(m => agents.find(a => a.id === String(m?.agentId ?? '')))
+                .filter((a): a is typeof agents[number] => !!a)
+            : [];
+        const pool = mode === 'adaptive'
+            ? poolFromFleet((poolIn.length ? poolIn : agents).map(a => ({ id: a.id, name: a.name })))
+            : [];
+        let lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
+        if (!lead && mode === 'adaptive') {
+            // Deterministic, and shown to the caller in the spec it gets back:
+            // the first of the pool. The engine never starts nameless.
+            const picked = resolveLead(agents.map(a => ({ id: a.id, name: a.name })), pool);
+            lead = picked ? agents.find(a => a.id === picked.agentId) : undefined;
+        }
+        if (!lead) {
+            return mode === 'adaptive'
+                ? 'No agent in the fleet to lead this objective.' : 'Pick a lead agent.';
+        }
         const modelOk = (m: string) => modelIdOk(m);
         const teamIn = Array.isArray(input.team)
             ? input.team as {
@@ -3678,7 +3707,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
             }
         }
-        if (!team.length) { return 'Pick at least one team agent.'; }
+        // An adaptive run has a POOL instead: naming a fixed team is exactly the
+        // decision the user is not being asked to make.
+        if (!team.length && mode === 'classic') { return 'Pick at least one team agent.'; }
         const plannerModel = String(input.plannerModel ?? '').trim().slice(0, 60);
         if (plannerModel && !modelOk(plannerModel)) { return `Planner model "${plannerModel}" has illegal characters — use a plain model id/alias.`; }
         // The mission-wide engine for its DELEGATIONS. Refused here, before the
@@ -3725,6 +3756,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else {
             projectId = activeProjectId() || undefined;
         }
+        // ‼️ M-15 — THE OBJECTIVE IS CHECKED BEFORE A PENNY IS SPENT. An adaptive
+        // run with no criteria cannot be judged, and one with a duplicate
+        // criterion id would file two verdicts under one name. Every fault is
+        // reported at once (`validateObjective` returns the list) rather than
+        // one per attempt, and the run does not exist until they are gone.
+        const objective = mode === 'adaptive'
+            ? normalizeObjective({
+                mode, constraints: input.constraints as string[] | undefined,
+                successCriteria: input.successCriteria as MissionObjective['successCriteria'],
+                pool, autonomy: input.autonomy as MissionAutonomy | undefined
+            })
+            : {};
+        if (mode === 'adaptive') {
+            const bad = validateObjective({
+                mode, goal, leadAgentId: lead.id, leadAgentName: lead.name, ...objective
+            });
+            if (bad.length) { return `This objective cannot start — ${bad.join('; ')}.`; }
+        }
         startMission({
             id: newMissionId(),
             title: String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60),
@@ -3732,6 +3781,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             leadAgentId: lead.id,
             leadAgentName: lead.name,
             team,
+            ...(mode === 'adaptive' ? { mode, ...objective } : {}),
             workdir: workdir || undefined,
             plannerModel: plannerModel || undefined,
             projectId,
@@ -4629,16 +4679,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?, '
                 + 'project? (id or name — the mission AND every delegation it makes are filed under it, so the '
                 + 'project\'s Work tab shows the whole run; pass "" for deliberately none. Omit it and the '
-                + 'window\'s active project is used, which is only right when a person just started this)',
+                + 'window\'s active project is used, which is only right when a person just started this). '
+                + '‼️ mode? (classic|adaptive, default classic — M-15). An ADAPTIVE mission is given an '
+                + 'OUTCOME rather than a recipe: successCriteria ([{id?, text, required?}] — required, and '
+                + 'each id is stable for the life of the mission because evaluations refer to it), '
+                + 'constraints? ([string] — what the run may NOT do), pool? ([{agentId}] — whom the lead may '
+                + 'draw on; omit for the whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
+                + '`team` are OPTIONAL on an adaptive run: the lead is resolved deterministically (first of '
+                + 'the pool) and the cast is chosen at runtime, one role bound per agent. Every other arg '
+                + 'above means the same thing in both modes',
             handler: (args) => {
-                const lead = findAgent(argStr(args, 'lead'));
+                const adaptive = String(args.mode ?? '') === 'adaptive';
+                // An adaptive run is allowed to name neither: that is the point.
+                const leadKey = adaptive ? optStr(args, 'lead') : argStr(args, 'lead');
+                const lead = leadKey ? findAgent(leadKey) : undefined;
                 const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
-                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "permissionMode"?: "..." }]');
+                need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "permissionMode"?: "..." }]');
                 const team = teamIn.map(t => ({
                     agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
                     engine: t.engine, permissionMode: t.permissionMode
                 }));
-                const err = createMission({ ...args, leadAgentId: lead.id, team });
+                const err = createMission({ ...args, ...(lead ? { leadAgentId: lead.id } : {}), team });
                 need(!err, err ?? '');
                 const run = missionStore.runs[missionStore.runs.length - 1];
                 return { runId: run.id, title: missionStore.spec(run.specId)?.title };

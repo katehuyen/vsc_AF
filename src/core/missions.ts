@@ -1,6 +1,19 @@
 import * as fs from 'fs';
+import {
+    bindRuntimeRole, isAdaptive, MissionAutonomy, MissionMode, MissionObjective,
+    MissionPoolMember, MissionRuntimeRole, missionModeOf, normalizeObjective, validateObjective
+} from './missionMode';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
+
+export {
+    bindRuntimeRole, DEFAULT_AUTONOMY, isAdaptive, missionModeOf, normalizeCriteria,
+    normalizeObjective, normalizePool, poolFromFleet, resolveLead, validateObjective
+} from './missionMode';
+export type {
+    FleetAgent, MissionAutonomy, MissionMode, MissionObjective, MissionPoolMember,
+    MissionRuntimeRole, SuccessCriterion
+} from './missionMode';
 
 /**
  * Missions — dynamic multi-agent orchestration (design: raporlar/2026-07-17).
@@ -150,6 +163,25 @@ export interface MissionSpec {
      */
     projectId?: string;
     createdAt: number;
+    /**
+     * ‼️ M-15 (X-32) — WHICH KIND OF MISSION THIS IS. Absent = 'classic', and
+     * that is a decision rather than a fallback: every mission in every store
+     * predates this field, and a record that had to be guessed at would be a
+     * run whose behaviour changed on upgrade. Read it through `missionModeOf`,
+     * never off this field directly.
+     */
+    mode?: MissionMode;
+    /**
+     * The adaptive half — absent on a classic mission and inert if some other
+     * writer leaves it there. What the run must ACHIEVE (`successCriteria`),
+     * what it may not do on the way (`constraints`), who it may draw on
+     * (`pool`) and how much rope the lead has (`autonomy`). See
+     * `core/missionMode.ts`; the loop that spends them is M-16.
+     */
+    constraints?: string[];
+    successCriteria?: MissionObjective['successCriteria'];
+    pool?: MissionPoolMember[];
+    autonomy?: MissionAutonomy;
 }
 
 export type MissionStepStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -230,6 +262,16 @@ export interface MissionRun {
     pausePending?: boolean;
     result?: MissionResult;
     note?: string;
+    /**
+     * ‼️ M-15 — WHO THE LEAD PUT TO WORK, AND AS WHAT (adaptive runs only).
+     *
+     * An adaptive lead is handed a pool rather than a cast list, so "the team"
+     * is not a fact until the run makes it one. A role is bound the first time
+     * the lead delegates to an agent and lives HERE, on the run: nothing is
+     * created on disk and the same agent may hold a different role tomorrow
+     * without either statement being wrong. Absent on every classic run.
+     */
+    roles?: MissionRuntimeRole[];
 }
 
 export function newMissionId(): string {
@@ -256,6 +298,25 @@ export type PlannerDecision =
 
 const MAX_TASKS_PER_ROUND = 6;
 const MAX_PROMPT_CHARS = 8000;
+
+/**
+ * The agents this mission's lead may delegate to — its team when it is classic,
+ * its pool when it is adaptive. One function so nothing has to remember which,
+ * and so an adaptive spec whose pool was never resolved falls back to the team
+ * rather than to "anybody".
+ */
+export function allowedAgents(spec: MissionSpec): MissionTeamMember[] {
+    if (isAdaptive(spec) && spec.pool?.length) {
+        return spec.pool.map(m => ({
+            agentId: m.agentId, agentName: m.agentName || m.agentId,
+            ...(m.role ? { role: m.role } : {}),
+            ...(m.model ? { model: m.model } : {}),
+            ...(m.engine ? { engine: m.engine } : {}),
+            ...(m.permissionMode ? { permissionMode: m.permissionMode } : {})
+        }));
+    }
+    return spec.team;
+}
 
 /** Validate the planner's raw reply into a decision, or say exactly why not
  *  (the error text is fed back to the planner — write it for the model). */
@@ -296,7 +357,13 @@ export function parsePlannerDecision(
         if (o.tasks.length > MAX_TASKS_PER_ROUND) {
             return { ok: false, error: `too many tasks in one round (max ${MAX_TASKS_PER_ROUND})` };
         }
-        const names = new Map(spec.team.map(m => [m.agentName.toLowerCase(), m.agentName]));
+        // ‼️ M-15 — WHOM THE LEAD IS ALLOWED TO NAME, which is the one thing the
+        // two modes disagree about here. A classic lead has a TEAM and may name
+        // nobody else; an adaptive lead has a POOL and picks from it at runtime.
+        // The rest of this parse — the actions, the caps, the self-containment
+        // rule — is the same contract for both, which is why it is not forked.
+        const allowed = allowedAgents(spec);
+        const names = new Map(allowed.map(m => [m.agentName.toLowerCase(), m.agentName]));
         const tasks: PlannerTaskReq[] = [];
         for (const t of o.tasks as Record<string, unknown>[]) {
             const agentRaw = String(t?.agent ?? '').trim();
@@ -304,7 +371,9 @@ export function parsePlannerDecision(
             if (!agent) {
                 return {
                     ok: false,
-                    error: `unknown agent "${agentRaw}" — the team is: ${spec.team.map(m => m.agentName).join(', ')}`
+                    error: `unknown agent "${agentRaw}" — `
+                        + `${isAdaptive(spec) ? 'the pool is' : 'the team is'}: `
+                        + allowed.map(m => m.agentName).join(', ')
                 };
             }
             const title = typeof t.title === 'string' ? t.title.trim().slice(0, 120) : '';
@@ -473,6 +542,103 @@ export function buildResumeMessage(
     return head + '\n\n' + buildRoundMessage(results, rem, ['statuses reflect the state after the interruption']);
 }
 
+// ---------------------------------------------------------------------------
+// protocol — M-15
+// ---------------------------------------------------------------------------
+
+/**
+ * ‼️ M-15 — WHAT THE TWO MODES ACTUALLY DISAGREE ABOUT, AND NOTHING ELSE.
+ *
+ * The lifecycle is one machine: the guards, the waves, pause, cancel, approval,
+ * the ledger, the store, the cost attribution and the reload recovery are the
+ * same code whichever kind of mission is running, and they have to stay that
+ * way — a second copy of a lifecycle is a second set of bugs, and an adaptive
+ * run that could pause differently from a classic one is a run nobody can
+ * reason about.
+ *
+ * What differs is exactly two things: **what the lead is told** and **what its
+ * reply is checked against**. So that is the seam, and it is an interface with
+ * two implementations rather than an `if (adaptive)` growing through the loop.
+ * The engine holds one of these and never asks which it has.
+ */
+export interface MissionProtocol {
+    readonly mode: MissionMode;
+    /** The first thing the lead is given on a fresh run. */
+    briefing(spec: MissionSpec, hints: TeamHint[], rem: RemainingBudget): string;
+    /** The lead's raw reply → a decision, or exactly why not (the error text is
+     *  fed back to the model, so it is written for one). */
+    parse(raw: string, spec: MissionSpec): { ok: true; decision: PlannerDecision } | { ok: false; error: string };
+    /** What the lead is told after a wave settles. */
+    roundMessage(results: StepResult[], rem: RemainingBudget, notes?: string[]): string;
+}
+
+const classicProtocol: MissionProtocol = {
+    mode: 'classic',
+    briefing: (spec, hints, rem) => buildBriefing(spec, hints, rem),
+    parse: (raw, spec) => parsePlannerDecision(raw, spec),
+    roundMessage: (results, rem, notes) => buildRoundMessage(results, rem, notes)
+};
+
+/**
+ * ‼️ AN OBJECTIVE IS NOT A RECIPE, AND THE BRIEFING IS WHERE THAT BECOMES TRUE.
+ *
+ * The classic briefing hands the lead a team and a goal and lets it plan. The
+ * adaptive one hands it the OUTCOME — every success criterion by its stable id,
+ * so the lead can say which one a delegation is for and the evaluation gate
+ * (M-17) can answer per id; the constraints as a fence rather than a task list;
+ * and the pool as candidates it chooses from, because the whole point is that
+ * the user did not have to pick the cast. `autonomy` is the one line that says
+ * what to do at a fork the objective does not settle.
+ */
+function adaptiveBriefing(spec: MissionSpec, _hints: TeamHint[], rem: RemainingBudget): string {
+    const pool = allowedAgents(spec)
+        .map(m => `- ${m.agentName}${m.role ? ` (${m.role})` : ''}`).join('\n');
+    const criteria = (spec.successCriteria ?? [])
+        .map(c => `- [${c.id}] ${c.text}${c.required ? '' : '  (optional)'}`).join('\n');
+    const constraints = (spec.constraints ?? []).map(c => `- ${c}`).join('\n');
+    const autonomy = spec.autonomy === 'decide-alone'
+        ? 'DECIDE ALONE — take the judgement yourself and record why; only "ask_user" when you are blocked, not when you are unsure.'
+        : 'ASK WHEN UNSURE — at a fork this objective does not settle, use "ask_user" rather than guessing.';
+    return `You are the LEAD of an OBJECTIVE. You were given a result to reach, not a procedure to follow: nobody has told you how many rounds to run, which agents to use or in what order. You work that out, you delegate it, and you judge the outcome against the criteria below.
+
+You do not do the work yourself — you plan, delegate, read the results and finish with an honest verdict.
+
+## Objective
+${spec.goal.trim()}
+${spec.workdir ? `\nWorking folder (delegates run inside it): ${spec.workdir}` : ''}
+
+## Success criteria — this is what "done" means
+${criteria || '- (none recorded — say so and finish)'}
+Each carries a stable id. When you delegate for one, name it in the task's "expect".
+${constraints ? `\n## Constraints — things this run may NOT do\n${constraints}` : ''}
+
+## Who you may draw on
+${pool}
+These are candidates, not an assigned team. Use as few as the objective needs; the first time you delegate to one, say in "expect" what role it is playing.
+
+## Autonomy
+${autonomy}
+
+## Budget
+${remLine(rem)}
+Each round you will receive the delegates' results and the updated budget.
+
+## How to answer
+${DECISION_SCHEMA}`;
+}
+
+const adaptiveProtocol: MissionProtocol = {
+    mode: 'adaptive',
+    briefing: adaptiveBriefing,
+    parse: (raw, spec) => parsePlannerDecision(raw, spec),
+    roundMessage: (results, rem, notes) => buildRoundMessage(results, rem, notes)
+};
+
+/** The one place a mode becomes behaviour. */
+export function protocolFor(spec: MissionSpec): MissionProtocol {
+    return missionModeOf(spec) === 'adaptive' ? adaptiveProtocol : classicProtocol;
+}
+
 /** Compact one-liner per round — the ledger is the resume fallback. */
 export function ledgerLine(round: MissionRound): string {
     if (round.action === 'delegate') {
@@ -567,6 +733,22 @@ export function parsePlannerEnvelope(stdout: string): {
 const MAX_STORED_RUNS = 40;
 const MAX_STORED_SPECS = 100;
 
+/**
+ * ‼️ M-15 — THE MIGRATION, WHICH FOR A CLASSIC MISSION IS NOTHING AT ALL.
+ *
+ * Every mission written before this has no `mode`, and the whole promise of the
+ * item is that such a record loads and runs exactly as it did. So this touches
+ * nothing on a classic spec — no field is added, none is defaulted in, and the
+ * object comes back out identical. An adaptive spec is put into canonical shape
+ * instead: criteria get their stable ids, the pool is de-duplicated, blanks are
+ * dropped, and `autonomy` takes its documented default. Idempotent, because a
+ * store is loaded and saved many times over one mission's life.
+ */
+export function migrateSpec(spec: MissionSpec): MissionSpec {
+    if (!isAdaptive(spec)) { return spec; }
+    return { ...spec, mode: 'adaptive', ...normalizeObjective(spec) };
+}
+
 export class MissionStore {
     specs: MissionSpec[] = [];
     runs: MissionRun[] = [];
@@ -580,7 +762,7 @@ export class MissionStore {
             const raw = expandDeep(
                 JSON.parse(fs.readFileSync(this.file, 'utf8')) as { specs?: MissionSpec[]; runs?: MissionRun[] },
                 this.portableRoots());
-            this.specs = Array.isArray(raw.specs) ? raw.specs : [];
+            this.specs = (Array.isArray(raw.specs) ? raw.specs : []).map(migrateSpec);
             this.runs = Array.isArray(raw.runs) ? raw.runs : [];
         } catch { /* first run / unreadable — start empty */ }
     }
@@ -647,13 +829,22 @@ function hardCallCap(spec: MissionSpec): number {
 export class MissionEngine {
     private cancelRequested = false;
     private pauseRequested = false;
+    /**
+     * ‼️ M-15 — chosen ONCE, at construction, from the spec's own mode. The loop
+     * below never asks which kind of mission it is running: everything that
+     * differs between the two is behind this, and everything that does not is
+     * shared code with nothing to fork.
+     */
+    readonly protocol: MissionProtocol;
 
     constructor(
         readonly spec: MissionSpec,
         readonly run: MissionRun,
         private hints: TeamHint[],
         private deps: MissionEngineDeps
-    ) { }
+    ) {
+        this.protocol = protocolFor(spec);
+    }
 
     cancel(): void { this.cancelRequested = true; }
     /** Sets the pause flag and shows it immediately (pausePending) — the run
@@ -719,7 +910,7 @@ export class MissionEngine {
             const rem = remainingBudget(spec, run, deps.now());
             const guard = guardReason(rem);
             let prompt = run.rounds.length === 0 && !roundMsg
-                ? buildBriefing(spec, this.hints, rem)
+                ? this.protocol.briefing(spec, this.hints, rem)
                 : (roundMsg ?? 'Decide the next round. Reply with ONLY the JSON decision object.');
             if (guard) { prompt += finishOnlyNote(guard); }
             roundMsg = undefined;
@@ -731,7 +922,7 @@ export class MissionEngine {
             if (!pr.ok && run.plannerSessionId) {
                 // resume-fallback: fresh session re-seeded from briefing + ledger
                 run.plannerSessionId = undefined;
-                let fb = buildBriefing(spec, this.hints, rem) +
+                let fb = this.protocol.briefing(spec, this.hints, rem) +
                     (run.ledger.length ? '\n\n## History so far (you are mid-mission)\n' + run.ledger.join('\n') : '') +
                     '\n\nDecide the next round. Reply with ONLY the JSON decision object.';
                 if (guard) { fb += finishOnlyNote(guard); }
@@ -745,7 +936,7 @@ export class MissionEngine {
             run.totalCostUSD += pr.costUSD ?? 0;
             run.totalTokens = (run.totalTokens ?? 0) + (pr.tokens ?? 0);
 
-            const parsed = parsePlannerDecision(pr.raw ?? '', spec);
+            const parsed = this.protocol.parse(pr.raw ?? '', spec);
             if (!parsed.ok) {
                 if (parseRetried) {
                     this.end('failed', undefined, `planner returned an invalid decision twice — ${parsed.error}`);
@@ -827,8 +1018,20 @@ export class MissionEngine {
                 continue;
             }
 
+            // ‼️ M-15 — THE TEAM OR THE POOL, whichever this mission has. A
+            // classic spec's team is its own list; an adaptive one has no team
+            // and picks from the pool, and looking only at `spec.team` there
+            // would give every adaptive step an empty `agentId` — a delegation
+            // with nobody to run it.
+            const roster = allowedAgents(spec);
             round.steps = tasks.map(t => {
-                const member = spec.team.find(m => m.agentName === t.agent);
+                const member = roster.find(m => m.agentName === t.agent);
+                // …and the choice itself is recorded, once per agent per run:
+                // an adaptive lead assigning work IS the moment the cast is
+                // decided, and it is decided nowhere else.
+                if (member && isAdaptive(spec)) {
+                    run.roles = bindRuntimeRole(run.roles ?? [], member, t.expect || t.title, deps.now());
+                }
                 return {
                     id: newMissionId(),
                     round: round.n,
@@ -884,7 +1087,7 @@ export class MissionEngine {
                 + round.steps.reduce((a, s) => a + (s.tokens ?? 0), 0);
             run.ledger.push(ledgerLine(round));
             deps.onUpdate(run);
-            roundMsg = buildRoundMessage(
+            roundMsg = this.protocol.roundMessage(
                 this.stepResults(round.steps),
                 remainingBudget(spec, run, deps.now()),
                 notes);
