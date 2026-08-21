@@ -57,7 +57,9 @@ const data = () => ({
             engine: '', models: ['claude-opus-5'], origin: 'auto', headless: false,
             title: 'Oturum 7 — görev, ama gerçek bir terminalde',
             entrypoint: 'cli',
-            launchedBy: { kind: 'task', label: 'ZEN sürüm notu' }
+            // S-41 — `mode` is what the host now sends for such a run, and it
+            // is what makes the row Auto without the moon.
+            launchedBy: { kind: 'task', label: 'ZEN sürüm notu', mode: 'interactive' }
         })
     ],
     sessionTableN: 200

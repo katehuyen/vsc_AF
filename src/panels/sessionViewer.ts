@@ -350,7 +350,16 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             title: deps.titleFor?.(cli.sessionId) || cli.title || '(untitled session)',
             pinned: deps.pinnedFor?.(cli.sessionId) === true,
             tags: deps.tagsFor?.(cli.sessionId) ?? [],
-            origin: verdict?.origin ?? sessionOrigin({ launchedBy }),
+            // S-41 — every fact the rule reads, written out even where the
+            // answer is "this page cannot know": a foreign-CLI transcript
+            // states no entrypoint, and the two facts only the index holds
+            // (`consoleHosted`, `agentId`) are exactly why `verdict` is asked
+            // for first. Omitting them silently is what made this page and the
+            // row that opened it disagree about the same session.
+            origin: verdict?.origin ?? sessionOrigin({
+                entrypoint: undefined, consoleHosted: undefined,
+                launchedBy, agentId: undefined
+            }),
             // S-35 — a foreign-CLI transcript states no entrypoint at all, so
             // with no record to ask there is no evidence either way and the
             // page claims none.
@@ -695,12 +704,19 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         // tables filter on, so opening a transcript says it too, and by the
         // same rule: a run the farm's own record names beats a reading of the
         // entrypoint (see core/sessions.ts sessionOrigin).
-        origin: verdict?.origin
-            ?? sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        // S-41 — the whole field set, including the two this page has no way of
+        // knowing. Written rather than omitted: a missing field used to change
+        // the answer without saying so.
+        origin: verdict?.origin ?? sessionOrigin({
+            entrypoint, consoleHosted: undefined,
+            launchedBy: deps.launchedByFor?.(sessionId), agentId: undefined
+        }),
         // S-35 — 🌙: an automation run with no terminal behind it. Same rule as
         // the tables', from core/sessions.ts, so the page and the row agree.
-        headless: verdict?.headless
-            ?? sessionHeadless({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        headless: verdict?.headless ?? sessionHeadless({
+            entrypoint, consoleHosted: undefined,
+            launchedBy: deps.launchedByFor?.(sessionId), agentId: undefined
+        }),
         launchedBy: deps.launchedByFor?.(sessionId) ?? null,
         // The badge beside the title — see EngineFor above for why it is asked
         // for rather than worked out.

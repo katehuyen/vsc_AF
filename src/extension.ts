@@ -2169,10 +2169,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const pool = [...taskManager.tasks,
         ...taskManager.archivedTasks().filter(t => !live.has(t.id))];
         for (const t of pool) {
-            // Interactive runs open a terminal the user is sitting at; they are
-            // not the automation this repairs and they have no headless
-            // transcript of their own to claim.
-            if (t.mode !== 'headless' || !t.startedAt || !t.agentId) { continue; }
+            // ‼️ S-41 — AND AN INTERACTIVE RUN IS STILL A RUN WE STARTED.
+            //
+            // This line used to read `t.mode !== 'headless'`, on the reasoning
+            // that a terminal the user is sitting at is not the automation the
+            // binding repairs. That confused WHO STARTED IT with WHERE IT RAN,
+            // which are the two axes the Sessions page filters on separately:
+            // with no binding there is no `launchedBy`, and with no `launchedBy`
+            // the origin rule fell through to "an agent's folder, nothing of
+            // ours" and stamped every task-launched terminal 🧑 User. A task
+            // opened it, so it is 🤖 Auto — and `mode` travels on the binding,
+            // which is what makes it Auto and NOT headless.
+            if (!t.startedAt || !t.agentId) { continue; }
             const agent = agents.find(a => a.id === t.agentId);
             const cwd = t.workDir || agent?.dir;
             if (!cwd) { continue; }
@@ -2217,7 +2225,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ THE ONE ID THAT NEEDS NO DEDUCTION. A resumed run was told
                 // which conversation to continue, so its binding is DECLARED and
                 // beats every clock-based guess (S-19 → S-31).
-                sessionId: t.resumeSessionId,
+                // …and a Console-hosted task is the other case where the id is
+                // known at the spawn rather than deduced afterwards: the panel
+                // owns the process and hands its session id straight back
+                // (M-26). Declaring it is what keeps an interactive run off the
+                // clock-and-folder path, where a conversation the user opened
+                // themselves in the same folder could have been claimed (S-41).
+                sessionId: t.resumeSessionId || t.consoleSessionId,
                 // …and once the cost matcher has named the transcript, that is a
                 // recorded fact too — it survives the restart in the same row.
                 transcriptFile: t.costSessionFile,
@@ -13192,7 +13206,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Archive first: a live row about the same id is the fresher statement.
         for (const t of [...taskManager.archivedTasks(), ...taskManager.tasks]) {
             const f = t.costSessionFile;
-            if (!f) { continue; }
+            // ‼️ S-41 — AND A RUN THAT NAMED ITS OWN SESSION NEEDS NO FILE.
+            //
+            // `costSessionFile` is written by the cost matcher, which only ever
+            // ran for headless tasks — so this map, which is what puts a name in
+            // the origin hover, could not see an interactive run at all, and the
+            // launch binding's slower clock-and-folder path was its only way in.
+            // A resumed run and a Console-hosted one both KNOW their session id
+            // at the spawn; taking it here is the same fact, minutes earlier.
+            const declared = t.resumeSessionId || t.consoleSessionId;
+            if (!f && !declared) { continue; }
             // ‼️ THE ID COMES FROM THE INDEX, NOT FROM THE FILENAME (X-35). Only
             // Claude names a transcript after its session; Codex writes
             // `rollout-…-<uuid>.jsonl` and Gemini `session-1.json`, and both
@@ -13203,22 +13226,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // that should name the schedule named nothing. The basename stays as
             // the last resort, because it is right on Claude and a task whose
             // transcript has not been indexed yet still deserves an entry.
-            const id = index.byFile(String(f))?.sessionId
-                || path.basename(String(f)).replace(/\.jsonl$/i, '');
-            if (!id) { continue; }
+            // …BOTH ids, never one instead of the other. A resumed run is told
+            // one conversation and may be given a new id for the turn it adds,
+            // so choosing between the declared id and the matched file would
+            // leave whichever lost the toss unnamed.
+            const ids = [...new Set([
+                declared,
+                f ? (index.byFile(String(f))?.sessionId
+                    || path.basename(String(f)).replace(/\.jsonl$/i, '')) : undefined
+            ].filter((x): x is string => !!x))];
+            if (!ids.length) { continue; }
             const sched = t.fromSchedule
                 ? taskManager.schedules.find(s => s.id === t.fromSchedule) : undefined;
             const trig = t.fromTrigger
                 ? taskManager.triggers.find(x => x.id === t.fromTrigger) : undefined;
             const flow = t.workflowId
                 ? taskManager.workflows.find(w => w.id === t.workflowId) : undefined;
-            map[id] = t.missionId ? { kind: 'mission', label: t.title, mode: t.mode }
+            const entry = t.missionId ? { kind: 'mission', label: t.title, mode: t.mode }
                 : sched ? { kind: 'schedule', label: sched.title, mode: t.mode }
                     : trig ? { kind: 'trigger', label: trig.title, mode: t.mode }
                         : flow ? { kind: 'workflow', label: flow.title, mode: t.mode }
                             : t.fromSchedule ? { kind: 'schedule', label: t.title, mode: t.mode }
                                 : t.fromTrigger ? { kind: 'trigger', label: t.title, mode: t.mode }
                                     : { kind: 'task', label: t.title, mode: t.mode };
+            for (const id of ids) { map[id] = entry; }
         }
         index.setLaunchers(map);
     };

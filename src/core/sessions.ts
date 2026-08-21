@@ -355,13 +355,33 @@ export function provenanceNote(s: SessionInfo): string | undefined {
  * no ledger and a stray `claude -p` genuinely could be anything, does the
  * entrypoint still get to answer.
  */
-export function sessionOrigin(
-    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy' | 'agentId'>
-): SessionOrigin {
+export function sessionOrigin(s: OriginFacts | SessionInfo): SessionOrigin {
     if (s.launchedBy) { return 'auto'; }
     if (s.consoleHosted) { return 'user'; }
     if (s.agentId) { return 'user'; }
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
+}
+
+/**
+ * ‼️ S-41 — THE FOUR FACTS THE TWO RULES ARE MADE OF, AND WHY THEY ARE REQUIRED.
+ *
+ * `Pick<SessionInfo, …>` made every one of them optional, so `sessionOrigin({
+ * launchedBy })` compiled — and a caller that left `agentId` out got a
+ * different answer from one that passed it, for the same session, with nothing
+ * anywhere saying so. That is not a rule with an exception; it is two rules.
+ * Every field is REQUIRED here and may be `undefined`: a caller has to write
+ * what it does not know, and the next fact these rules learn to read breaks the
+ * build at every surface instead of going quietly missing at one of them.
+ *
+ * A surface holding the whole `SessionInfo` passes THAT — it cannot leave out a
+ * field it does not know exists. What the union refuses is the third shape, the
+ * one that caused this: an object assembled by hand out of two of the four.
+ */
+export interface OriginFacts {
+    entrypoint: string | undefined;
+    consoleHosted: boolean | undefined;
+    launchedBy: { kind: string; label: string; mode?: string } | undefined;
+    agentId: string | undefined;
 }
 
 /**
@@ -396,23 +416,33 @@ export function provenanceFields(s: SessionInfo): {
  * with no terminal and no keyboard, or a task launched in `interactive` mode
  * that opened a real terminal a person can type into.
  *
- * Only ever true for a run that is already 'auto'.
- * If Agent Farm started the run itself (`launchedBy`), it is headless unless
- * it explicitly opened an interactive terminal (`mode === 'interactive'` or
- * entrypoint `'cli'`).
- * Outside the fleet (or when no launcher is recorded), `entrypoint.startsWith('sdk')`
- * remains the proxy for Claude runs.
+ * ‼️ S-41 — AND IT IS DECIDED WITHOUT ASKING WHO STARTED THE RUN.
+ *
+ * This used to open with `if (sessionOrigin(s) !== 'auto') { return false; }`,
+ * which does not narrow the answer — it DEFINES one axis in terms of the other,
+ * and the two are independent by construction: a task launched in interactive
+ * mode is automation with a terminal, and the whole reason the page carries two
+ * filters rather than one is that such a run exists. Read off the execution
+ * evidence alone, in this order:
+ *
+ * 1. The Console hosts a panel a person is watching — there is a screen.
+ * 2. A run Agent Farm started states its own launch dimension (`mode`), which
+ *    is a recorded fact and not a reading of the transcript.
+ * 3. Otherwise the entrypoint is all there is: `cli` is a terminal somebody sat
+ *    at, `sdk-*` is a program's entry — except inside the fleet, where `sdk-cli`
+ *    is also the Console's own shape and its record can go missing (S-37).
+ *
+ * Every case answers as it did before; what is gone is the dependency, so a
+ * session can now be 🤖 Auto and NOT headless without the two rules arguing.
  */
-export function sessionHeadless(
-    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy' | 'agentId'>
-): boolean {
-    if (sessionOrigin(s) !== 'auto') { return false; }
+export function sessionHeadless(s: OriginFacts | SessionInfo): boolean {
     if (s.consoleHosted) { return false; }
     if (s.launchedBy) {
-        if (s.launchedBy.mode === 'interactive' || s.entrypoint === 'cli') { return false; }
-        return true;
+        return !(s.launchedBy.mode === 'interactive' || s.entrypoint === 'cli');
     }
-    return String(s.entrypoint ?? '').startsWith('sdk');
+    if (s.entrypoint === 'cli') { return false; }
+    if (String(s.entrypoint ?? '').startsWith('sdk')) { return !s.agentId; }
+    return false;
 }
 
 interface JsonlLine {

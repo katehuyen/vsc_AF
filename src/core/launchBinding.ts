@@ -163,6 +163,19 @@ export function bindSession(
         // without letting anything be decided on less than one clear candidate.
         if (session.cwd && !underCwd(session.cwd, b.cwd)) { return false; }
         const ended = b.endedAt ?? now;
+        // ‼️ S-41 — AN INTERACTIVE RUN IS CLAIMED AT ITS SPAWN OR NOT AT ALL.
+        //
+        // A headless run's window is the run: it starts, prints and exits, and
+        // nothing else of ours is in that folder meanwhile. A terminal task is
+        // the opposite — it opens in the AGENT'S OWN FOLDER, which is where the
+        // user's own conversations live, and it stays open for as long as they
+        // keep typing, so `endedAt` is absent and the window is "until now".
+        // Matched on lifespan alone, such a binding would claim the next
+        // session a person started there and stamp their own dialog 🤖 — the
+        // very mislabelling S-37 was about, arriving from the other direction.
+        // The run's prompt is on the command line, so its transcript begins at
+        // the spawn; a conversation that began later is somebody else's.
+        if (b.mode === 'interactive' && session.firstTs > b.startedAt + tolMs) { return false; }
         return session.firstTs >= b.startedAt - tolMs
             && session.firstTs <= ended + 15_000
             && session.lastTs <= ended + tolMs;
