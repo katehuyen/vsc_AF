@@ -104,6 +104,66 @@ export function parseTurnRange(v: unknown): { from: number; to: number } {
     return { from: Math.min(a, b), to: Math.max(a, b) };
 }
 
+/** One entry of a session's turn rollup — all `turnFor` needs of it. */
+export interface TurnAnchor { n: number; label: string; ts: number }
+
+/** Where a mark came from and what it is allowed to say about itself.
+ *  `exact` false means the number was INFERRED from the clock alone and the
+ *  surface must show it as a guess the reader can correct. */
+export interface TurnMatch { turn: number; count: number; exact: boolean }
+
+/** Enough of a prompt to tell two turns apart, whitespace-flattened so a line
+ *  break in the console and a line break in the transcript compare equal. */
+const probeOf = (text: string): string =>
+    String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 60);
+
+/**
+ * ‼️ K-26 — WHICH TRANSCRIPT TURN THE ROW UNDER THE POINTER IS.
+ *
+ * The pool files by turn NUMBER, and the number belongs to the transcript
+ * (`sessions.ts` numbers turns as it parses). A Console row does not carry it:
+ * the panel's own counter restarts on every resume, and the backfill numbers
+ * rows by their place in the file, not by turn. So the number is resolved here,
+ * from the two things a row does carry.
+ *
+ * ‼️ AND THE TEXT OUTRANKS THE CLOCK, because only one of the two is exact. A
+ * live row is stamped when the panel sent it and the transcript stamps the same
+ * prompt when the CLI wrote it — seconds apart, and a queued message can start
+ * the next turn inside that gap, so a clock-only rule silently files the
+ * neighbouring turn. The opening line, flattened, matches one turn or none.
+ * When it matches none — a transcript that has not caught up, an engine that
+ * rewrites the prompt — the clock answers and `exact` says so, which is what
+ * lets the popover show the number as something to check rather than assert it.
+ */
+export function turnFor(turns: readonly TurnAnchor[], at: { ts: number; text?: string }): TurnMatch {
+    const count = turns.length;
+    if (!count) { return { turn: 0, count: 0, exact: false }; }
+    const probe = probeOf(at.text ?? '');
+    if (probe) {
+        const hits = turns.filter(t => {
+            const lab = probeOf(t.label);
+            if (!lab) { return false; }
+            if (lab === probe) { return true; }
+            // A label is a truncation of the prompt, so one is a prefix of the
+            // other — but only at length. Twelve characters of agreement is a
+            // name; two is "de" against "devam et", which is a coincidence and
+            // would file the wrong turn while looking certain.
+            const n = Math.min(lab.length, probe.length);
+            return n >= 12 && lab.slice(0, n) === probe.slice(0, n);
+        });
+        if (hits.length === 1) { return { turn: hits[0].n, count, exact: true }; }
+        if (hits.length > 1) {
+            // The same prompt typed twice ("devam") — the clock only has to
+            // choose between turns that already said the same thing.
+            const near = hits.reduce((a, b) =>
+                Math.abs(b.ts - at.ts) < Math.abs(a.ts - at.ts) ? b : a);
+            return { turn: near.n, count, exact: true };
+        }
+    }
+    const before = turns.filter(t => t.ts <= at.ts);
+    return { turn: (before.length ? before[before.length - 1] : turns[0]).n, count, exact: false };
+}
+
 /** Two marks on the same conversation whose turn ranges touch are the same
  *  mark. A whole-conversation candidate (0) swallows any range in it. */
 export function rangesOverlap(
@@ -189,6 +249,13 @@ export class WikiStore {
         this.candidates = this.candidates.filter(c => !ids.includes(c.id));
         if (gone.length) { this.save(); }
         return gone;
+    }
+
+    /** What is already marked in one conversation — what turns a reading
+     *  surface paints as taken (K-26). Compiled marks are included: the turn was
+     *  kept, and a badge that forgot that would invite marking it again. */
+    forSession(sessionId: string): WikiCandidate[] {
+        return this.candidates.filter(c => c.sessionId === sessionId && c.state !== 'dropped');
     }
 
     /** Every topic in the pool with how many pending marks carry it — the list

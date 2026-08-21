@@ -1172,6 +1172,15 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'tnFold', title: "Show this turn's content here", act: 'tnFold',
         when: TURN_ROW, group: '2_turn@1'
     },
+    // ‼️ K-26 — the badge is the gesture, this is where somebody LOOKS for it.
+    // The Turns page is the one surface that reads every turn of every session
+    // against each other, which is exactly the reading that ends in "that one
+    // is worth keeping" — and a feature only reachable by noticing a 🔖 that
+    // fades in on hover is a feature half the fleet never finds.
+    {
+        id: 'tnWiki', title: 'Keep this turn for the wiki…', act: 'tnWiki',
+        when: TURN_ROW, group: '2_turn@2'
+    },
     ...picker(CTX_PREFIX + 'tnCopy', TURN_ROW, 'tnCopy', [
         ['prompt', 'What was asked'],
         ['answer', 'What came back'],
@@ -1213,6 +1222,13 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'vtJump', title: 'Jump to it', act: 'vtJump',
         when: VIEWER_TURN, group: '1_open@3'
+    },
+    // K-26 — the same mark the band's 🔖 makes, in the menu the hand already
+    // opens on this row. Its own group: it is the only item here that leaves
+    // something behind after the page is closed.
+    {
+        id: 'vtWiki', title: 'Keep this turn for the wiki…', act: 'vtWiki',
+        when: VIEWER_TURN, group: '3_mark@1'
     },
     // Export-MD selection: the checkboxes are on the bands and in the
     // breakdown table, and "only this one" was a button in one of the two.

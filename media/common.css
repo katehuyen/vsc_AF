@@ -646,3 +646,71 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     border-top: 1px solid var(--vscode-widget-border, #4443);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ---- K-26: the wiki tagger --------------------------------------------------
+   A POPOVER, not a window. The saved-prompt picker above takes the screen
+   because choosing a prompt is what you stopped to do; this is pressed while an
+   answer is still arriving behind it, so the backdrop is invisible (it exists
+   only to catch the click that closes) and the panel opens against the badge.
+   The badge itself is quiet until the row is under the pointer — a bookmark on
+   every prompt row of a long conversation, at full strength, is a column of
+   noise. */
+.afwiki {
+    background: none; border: none; padding: 0 3px; cursor: pointer;
+    font-size: 11px; line-height: 1; opacity: .22; transition: opacity .12s;
+    filter: grayscale(1);
+}
+.msg:hover .afwiki, .turnhdr:hover .afwiki, .afwiki:hover, .afwiki:focus { opacity: 1; }
+/* Kept: colour comes back and stays back, whatever the pointer is doing. */
+.afwiki.on { opacity: 1; filter: none; }
+.afw-wrap { position: fixed; inset: 0; z-index: 70; }
+.afw-box {
+    position: fixed; width: 340px; display: flex; flex-direction: column; gap: 6px;
+    padding: 9px 10px 10px; border-radius: 7px; box-shadow: 0 8px 26px #0008;
+    border: 1px solid var(--vscode-widget-border, #4444);
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.afw-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.afw-grow { flex: 1 1 auto; }
+.afw-x {
+    background: transparent; border: none; padding: 1px 4px; cursor: pointer;
+    font-size: 11px; line-height: 1; color: var(--vscode-descriptionForeground);
+}
+.afw-x:hover { color: var(--vscode-foreground); }
+.afw-turn { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.afw-turn label { display: flex; align-items: center; gap: 4px; opacity: .7; }
+.afw-turn input { width: 62px; padding: 2px 5px; font-size: 11px; }
+.afw-of { opacity: .55; }
+/* An inferred number says so IN the row it is in, not in a log nobody reads. */
+.afw-guess { color: var(--vscode-editorWarning-foreground, #d19a66); cursor: help; }
+.afw-label {
+    font-size: 10px; opacity: .5; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-family: var(--vscode-editor-font-family);
+}
+/* The one question the panel asks, said once. Without it four grey pills
+   are four grey pills; with it they are answers. */
+.afw-ask { font-size: 10px; opacity: .55; margin-top: 2px; }
+.afw-chips {
+    display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow: auto;
+}
+.afw-chip {
+    background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+    border: 1px solid transparent; border-radius: 10px; padding: 1px 8px;
+    font-size: 10px; cursor: pointer; opacity: .62;
+}
+.afw-chip:hover { opacity: .85; }
+.afw-chip.on {
+    opacity: 1; border-color: var(--vscode-focusBorder);
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+}
+.afw-box input[type="text"] { padding: 3px 6px; font-size: 11px; }
+.afw-err { font-size: 10px; color: var(--vscode-errorForeground); }
+.afw-foot { display: flex; align-items: center; gap: 8px; }
+.afw-note { flex: 1 1 auto; font-size: 9px; opacity: .5; line-height: 1.25; }
+.afw-go { flex: none; padding: 3px 12px; font-size: 11px; }
+/* The confirmation replaces the form rather than sitting under it: the panel is
+   about to close itself, and a form still on screen invites a second press. */
+.afw-done {
+    font-size: 11px; padding: 6px 2px 2px;
+    color: var(--vscode-testing-iconPassed, #89d185);
+}

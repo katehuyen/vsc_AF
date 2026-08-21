@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.202.0",
+  "version": "3.203.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2720,6 +2720,11 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.ctx.tnWiki",
+        "title": "Keep this turn for the wiki\u2026",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.ctx.tnCopyPrompt",
         "title": "What was asked",
         "category": "Agent Farm"
@@ -2782,6 +2787,11 @@
       {
         "command": "agentfarm.ctx.vtJump",
         "title": "Jump to it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtWiki",
+        "title": "Keep this turn for the wiki\u2026",
         "category": "Agent Farm"
       },
       {
@@ -5222,6 +5232,11 @@
           "group": "2_turn@1"
         },
         {
+          "command": "agentfarm.ctx.tnWiki",
+          "when": "webviewSection == 'afTurnRow'",
+          "group": "2_turn@2"
+        },
+        {
           "command": "agentfarm.ctx.shOpen",
           "when": "webviewSection == 'afSearchHit'",
           "group": "1_open@0"
@@ -5255,6 +5270,11 @@
           "command": "agentfarm.ctx.vtJump",
           "when": "webviewSection == 'afViewerTurn'",
           "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.vtWiki",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "3_mark@1"
         },
         {
           "command": "agentfarm.ctx.vtExportOn",
@@ -7188,6 +7208,11 @@
           "group": "ctx"
         },
         {
+          "command": "agentfarm.ctx.tnWiki",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
           "command": "agentfarm.ctx.tnCopyPrompt",
           "when": "false",
           "group": "ctx"
@@ -7249,6 +7274,11 @@
         },
         {
           "command": "agentfarm.ctx.vtJump",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.vtWiki",
           "when": "false",
           "group": "ctx"
         },

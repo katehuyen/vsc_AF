@@ -7,7 +7,7 @@ import { SessionIndex } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
 import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
 import { fmtDuration, fmtStepPair } from '../core/util';
-import { askExportOptions, handleAfNav, htmlShell } from './base';
+import { askExportOptions, handleAfNav, htmlShell, wikiMarkMessage } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { full as afFull } from '../core/aftime';
 
@@ -237,6 +237,8 @@ export class TurnsPanel {
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
+        // The wiki tagger answers for itself, on every page that opens it (K-26).
+        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh':
                 this.refresh();

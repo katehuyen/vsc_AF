@@ -1,0 +1,406 @@
+// Agent Farm — the wiki tagger: one click on the turn you are reading.
+//
+// ‼️ K-26 — MARKING A TURN HAS TO BE CHEAPER THAN DECIDING WHERE IT GOES.
+//
+// "Obsidian is the IDE, the LLM is the programmer, the wiki is the codebase" —
+// but a turn worth keeping goes past at conversation speed, and the moment
+// keeping it means stopping to decide WHICH page it belongs on, nothing gets
+// kept at all. So the gesture is a badge on the row, and the only question it
+// asks is what the turn is ABOUT. Nothing is written to the vault: the mark
+// lands in the candidate pool (src/core/wiki.ts), where a compile picks it up
+// later — and where dropping it again costs nothing.
+//
+// ‼️ AND IT IS A POPOVER, NOT A WINDOW. The saved-prompt picker (afSnippets)
+// takes the screen because choosing a prompt IS what you stopped to do. This is
+// the opposite: the answer is arriving in the panel behind it and the reader
+// must not lose their place, so the panel opens beside the badge that was
+// pressed, over a backdrop you can see straight through, and closes on Esc, on
+// Save, or on a click anywhere else.
+//
+// ‼️ THE TOPICS ALREADY IN THE POOL ARE THE LIST. A pool where one subject is
+// spelled three ways files one concept three times, and nobody spells
+// consistently from memory across weeks — the same reason the session menu is a
+// picker and not a box (S-38). The chips are what is in use, ticked in any
+// combination; the box beside them takes anything new, comma-separated, and a
+// word typed there counts whether or not you also ticked something.
+//
+// Two messages, answered by wikiMarkMessage in src/panels/base.ts:
+//   { type:'wikiAsk',  session, turn?, ts?, text? }  → topics, marks, the turn
+//   { type:'wikiMark', session, from, to, topics, note } → what it did
+// The turn NUMBER is the host's answer, never the page's guess: a Console row
+// carries a moment and an opening line, and only the transcript knows what turn
+// those are. A number the host is not sure of comes back flagged and is shown
+// as something to check.
+(function () {
+    'use strict';
+
+    /** How this page talks to the extension host. Set once by init(). */
+    let post = null;
+    /** null while closed. Otherwise everything the panel is drawing. */
+    let state = null;
+    /** The overlay, created on first use. Off <body>, because every page redraws
+     *  its own body and a panel living in a slot would be wiped mid-typing. */
+    let host = null;
+    /** Called with (session, marks) after a mark lands, so the surface can turn
+     *  its badge green without waiting for the next data push. */
+    let onMarks = null;
+
+    const esc = s => String(s === undefined || s === null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+    /** How a range reads wherever it is written — one turn, a span, or the lot. */
+    function rangeWords(from, to) {
+        if (!from) { return 'the whole conversation'; }
+        return from === to ? `turn ${from}` : `turns ${from}–${to}`;
+    }
+
+    /** `4` or `3-7` or empty, exactly as the pool's own parser takes it. */
+    function parseRange(s) {
+        const t = String(s || '').trim();
+        if (!t) { return { from: 0, to: 0 }; }
+        const m = /^(\d+)\s*(?:[-–—]\s*(\d+))?$/.exec(t);
+        if (!m) { return null; }
+        const a = Number(m[1]);
+        const b = m[2] === undefined ? a : Number(m[2]);
+        if (a < 1 || b < 1) { return null; }
+        return { from: Math.min(a, b), to: Math.max(a, b) };
+    }
+
+    /** Does a mark cover this turn? The pool's own overlap rule (rangesOverlap),
+     *  so a badge is green exactly when marking again would MERGE rather than
+     *  add a row. */
+    function covers(mark, turn) {
+        if (!mark) { return false; }
+        if (!mark.from || !turn) { return true; }
+        return mark.from <= turn && turn <= mark.to;
+    }
+
+    /**
+     * The badge, drawn the same way on every surface that draws one.
+     *
+     * `marks` is the page's own list for this conversation (it comes down with
+     * the page's data and is refreshed after a mark), so the row knows it is
+     * taken at PAINT time rather than after a round trip.
+     */
+    function badge(o) {
+        const turn = Number(o && o.turn) || 0;
+        const marks = (o && o.marks) || [];
+        const on = marks.filter(m => covers(m, turn));
+        const topics = [];
+        on.forEach(m => (m.topics || []).forEach(t => {
+            if (topics.indexOf(t) < 0) { topics.push(t); }
+        }));
+        const data = ' data-afwiki="1"'
+            + ` data-afw-session="${esc((o && o.session) || '')}"`
+            + ` data-afw-turn="${turn}"`
+            + ` data-afw-ts="${Number(o && o.ts) || 0}"`
+            + ` data-afw-text="${esc((o && o.text) || '')}"`;
+        const btn = `<button class="afwiki${on.length ? ' on' : ''}"${data}>🔖</button>`;
+        if (!window.AFTip) { return btn; }
+        return on.length
+            ? window.AFTip.wrap(btn, `Kept for the wiki — ${rangeWords(on[0].from, on[0].to)}`,
+                `Filed under: ${topics.join(' · ')}\n\n`
+                + (on.some(m => m.state === 'compiled')
+                    ? 'A compile has already written this one into 00_WIKI.'
+                    : 'Waiting in the candidate pool. Nothing is in the vault yet — a compile reads'
+                      + ' the transcript over these turns and writes the pages.')
+                + '\n\nPress it again to add another topic to the same mark; a second press never'
+                + ' makes a second row.', 'tip-free')
+            : window.AFTip.wrap(btn, 'Keep this turn for the wiki',
+                'Marks it in the candidate pool — free, reversible, and NOTHING is written to the'
+                + ' vault. All it asks for is what the turn is about; a compile does the reading and'
+                + ' the writing later.\n\nThe topics already in the pool are offered as chips, so the'
+                + ' same subject is not spelled three ways and filed three times.', 'tip-free');
+    }
+
+    function ensureHost() {
+        if (host) { return host; }
+        const body = document.body;
+        if (!body || typeof body.appendChild !== 'function') { return null; }
+        host = document.createElement('div');
+        host.id = 'af-wiki';
+        body.appendChild(host);
+        return host;
+    }
+
+    function init(api, marksCb) {
+        post = typeof api === 'function' ? api
+            : (api && typeof api.postMessage === 'function' ? m => api.postMessage(m) : null);
+        if (typeof marksCb === 'function') { onMarks = marksCb; }
+    }
+
+    /**
+     * Open the tagger for one row. `at` is the badge's own rect — the panel is
+     * placed against it, because a reader who pressed a badge halfway down a
+     * conversation should not have to look somewhere else to answer.
+     */
+    function open(o) {
+        const el = (o && o.el) || null;
+        const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+        state = {
+            session: (o && o.session) || '',
+            turn: Number(o && o.turn) || 0,
+            range: '', label: '', exact: true,
+            topics: [], picked: [], typed: '', note: '',
+            turnCount: 0, marks: [], pending: 0,
+            loading: true, error: '', done: '',
+            at: r ? { x: r.left, y: r.bottom, top: r.top } : null
+        };
+        render();
+        if (post) {
+            post({
+                type: 'wikiAsk', session: state.session,
+                turn: state.turn, ts: Number(o && o.ts) || 0, text: (o && o.text) || ''
+            });
+        }
+    }
+
+    function close() { state = null; render(); }
+
+    const isOpen = () => !!state;
+
+    /** The host's two answers. Returns true when the message was ours, so a page
+     *  can hand its whole message event over and stop caring. */
+    function receive(msg) {
+        if (!msg) { return false; }
+        if (msg.type === 'wikiAsk') {
+            if (!state || msg.session !== state.session) { return true; }
+            if (!msg.ok) { state.loading = false; state.error = msg.why || 'Unavailable.'; render(); return true; }
+            state.loading = false;
+            state.topics = msg.topics || [];
+            state.marks = msg.marks || [];
+            state.turnCount = msg.turnCount || 0;
+            state.exact = msg.exact !== false;
+            state.label = msg.label || '';
+            const from = Number(msg.from) || 0;
+            const to = Number(msg.to) || from;
+            state.turn = from;
+            state.range = from ? (from === to ? String(from) : `${from}-${to}`) : '';
+            // A turn already marked opens with its own topics ticked: pressing
+            // the badge on a kept turn is nearly always "…and this too".
+            const on = state.marks.filter(m => covers(m, from));
+            on.forEach(m => (m.topics || []).forEach(t => {
+                if (state.picked.indexOf(t) < 0) { state.picked.push(t); }
+            }));
+            render();
+            return true;
+        }
+        if (msg.type === 'wikiMarked') {
+            if (!msg.ok) {
+                if (state) { state.saving = false; state.error = msg.why || 'It did not go in.'; render(); }
+                return true;
+            }
+            // ‼️ The surface is told even when the panel has already gone: the
+            // badge turning green is the whole point, and it must not depend on
+            // the popover still being open to receive the news.
+            if (onMarks) { onMarks(msg.session, msg.marks || []); }
+            if (state && msg.session === state.session) {
+                state.marks = msg.marks || [];
+                state.topics = msg.topics || state.topics;
+                state.pending = msg.pending || 0;
+                state.done = msg.merged
+                    ? `Added to the mark already on ${rangeWords(msg.from, msg.to)}`
+                    : `Kept — ${rangeWords(msg.from, msg.to)}`;
+                state.saving = false;
+                render();
+                // Long enough to read, short enough that it is not a dialog to
+                // dismiss: the panel closes itself and the badge stays green.
+                setTimeout(() => { if (state && state.done) { close(); } }, 1100);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** Everything ticked plus everything typed — the typed word counts whether
+     *  or not anything was ticked, which is the commonest way this is used. */
+    function chosenTopics() {
+        const out = state.picked.slice();
+        String(state.typed || '').split(',').forEach(t => {
+            const s = t.trim();
+            if (s && !out.some(x => x.toLowerCase() === s.toLowerCase())) { out.push(s); }
+        });
+        return out;
+    }
+
+    function save() {
+        if (!state || state.saving) { return; }
+        const topics = chosenTopics();
+        if (!topics.length) {
+            state.error = 'It needs at least one topic — that is what the compile files the concept under.';
+            render();
+            return;
+        }
+        const r = parseRange(state.range);
+        if (!r) {
+            state.error = 'Turns read as 4, or 3-7, or leave it empty for the whole conversation.';
+            render();
+            return;
+        }
+        state.saving = true;
+        state.error = '';
+        render();
+        if (post) {
+            post({
+                type: 'wikiMark', session: state.session,
+                from: r.from, to: r.to, topics, note: state.note
+            });
+        }
+    }
+
+    function chipsHtml() {
+        if (!state.topics.length) {
+            return '<div class="afw-none">Nothing in the pool yet — type the first topic below.</div>';
+        }
+        return state.topics.slice(0, 24).map((t, i) => {
+            const on = state.picked.some(p => p.toLowerCase() === t.topic.toLowerCase());
+            return `<button class="afw-chip${on ? ' on' : ''}" data-afw-chip="${i}"
+                title="${esc(t.topic)} — ${t.pending} waiting, ${t.total} marked in all">${esc(t.topic)}</button>`;
+        }).join('');
+    }
+
+    function html() {
+        if (!state) { return ''; }
+        const at = state.at;
+        // Placed against the badge and clamped inside the window; when the badge
+        // is low on the screen the panel goes ABOVE it rather than off the end.
+        // The window's own size, with a fallback: a page script also runs in a
+        // shim that has no viewport, and a NaN coordinate places the panel
+        // nowhere at all rather than failing loudly.
+        const W = 340, H = 300;
+        const vw = window.innerWidth || 1200;
+        const vh = window.innerHeight || 800;
+        const x = at ? Math.max(8, Math.min(at.x - 12, vw - W - 8)) : 40;
+        const below = at ? at.y + 6 : 60;
+        const y = at && below + H > vh ? Math.max(8, at.top - H - 6) : below;
+        const r = parseRange(state.range);
+        const turnLine = state.loading ? 'reading the transcript…'
+            : !r ? 'that is not a turn or a range'
+                : state.turnCount ? `${rangeWords(r.from, r.to)} of ${state.turnCount}`
+                    : rangeWords(r.from, r.to);
+        return `<div class="afw-wrap" id="afw-wrap">
+            <div class="afw-box" style="left:${Math.round(x)}px; top:${Math.round(y)}px;">
+                <div class="afw-head">
+                    <b>Keep for the wiki</b>
+                    <span class="afw-grow"></span>
+                    <button class="afw-x" id="afw-x" title="Close (Esc) — nothing is saved">✕</button>
+                </div>
+                ${state.done ? `<div class="afw-done">✓ ${esc(state.done)}${state.pending
+        ? ` · ${state.pending} waiting to be compiled` : ''}</div>` : `
+                <div class="afw-turn">
+                    <label title="Which turns of this conversation the mark covers. One number, a span like 3-7, or empty for the whole thing.">turns
+                        <input id="afw-range" type="text" value="${esc(state.range)}" placeholder="all"></label>
+                    <span class="afw-of">${esc(turnLine)}</span>
+                    ${state.exact ? '' : `<span class="afw-guess" title="The transcript did not carry this row's opening line, so the number came from its clock alone. Check it before saving — the neighbouring turn is a real possibility.">≈ check this</span>`}
+                </div>
+                ${state.label ? `<div class="afw-label">${esc(state.label)}</div>` : ''}
+                <div class="afw-ask" title="The compile files the concept under these. Ticking one that is already in use is what stops the same subject being spelled three ways and filed three times.">what is it about?</div>
+                <div class="afw-chips">${state.loading ? '' : chipsHtml()}</div>
+                <input id="afw-typed" type="text" value="${esc(state.typed)}"
+                    placeholder="a new topic, or two, comma-separated"
+                    title="Anything typed here counts whether or not you also ticked a chip. Enter saves.">
+                <input id="afw-note" type="text" value="${esc(state.note)}"
+                    placeholder="why it is worth keeping (optional)"
+                    title="Your own words, kept with the mark so the pool is readable on its own.">
+                ${state.error ? `<div class="afw-err">${esc(state.error)}</div>` : ''}
+                <div class="afw-foot">
+                    <span class="afw-note">Nothing is written to the vault — it lands in the candidate pool.</span>
+                    <button class="afw-go" id="afw-go"${state.saving ? ' disabled' : ''}>${state.saving ? 'Keeping…' : 'Keep it'}</button>
+                </div>`}
+            </div>
+        </div>`;
+    }
+
+    function render() {
+        const root = ensureHost();
+        if (!root) { return; }
+        root.innerHTML = html();
+        if (!state) { return; }
+        const on = (id, ev, fn) => {
+            const node = document.getElementById(id);
+            if (node) { node.addEventListener(ev, fn); }
+        };
+        on('afw-x', 'click', close);
+        on('afw-wrap', 'mousedown', ev => {
+            if (ev.target && ev.target.id === 'afw-wrap') { close(); }
+        });
+        on('afw-go', 'click', save);
+        // Typing is recorded without a repaint — a render on every keystroke
+        // would take the caret out of the box the reader is in.
+        const typed = document.getElementById('afw-typed');
+        if (typed) {
+            typed.addEventListener('input', () => { state.typed = typed.value; });
+            typed.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { state.typed = typed.value; save(); }
+                if (ev.key === 'Escape') { close(); }
+            });
+            if (!state.loading && !state.done) {
+                try { typed.focus({ preventScroll: true }); } catch (e) { typed.focus(); }
+            }
+        }
+        const note = document.getElementById('afw-note');
+        if (note) {
+            note.addEventListener('input', () => { state.note = note.value; });
+            note.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { state.note = note.value; save(); }
+                if (ev.key === 'Escape') { close(); }
+            });
+        }
+        const range = document.getElementById('afw-range');
+        if (range) {
+            range.addEventListener('input', () => { state.range = range.value; });
+            range.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { state.range = range.value; save(); }
+                if (ev.key === 'Escape') { close(); }
+            });
+        }
+        root.querySelectorAll('[data-afw-chip]').forEach(node =>
+            node.addEventListener('click', () => {
+                const t = state.topics[Number(node.dataset.afwChip)];
+                if (!t) { return; }
+                const at = state.picked.findIndex(p => p.toLowerCase() === t.topic.toLowerCase());
+                if (at >= 0) { state.picked.splice(at, 1); } else { state.picked.push(t.topic); }
+                // The boxes are rewritten by the repaint, so what is in them now
+                // is carried over rather than lost.
+                if (typed) { state.typed = typed.value; }
+                if (note) { state.note = note.value; }
+                if (range) { state.range = range.value; }
+                render();
+            }));
+    }
+
+    /**
+     * Hang the badge on a page. One document-level listener, because every
+     * surface repaints its rows constantly and a listener bound per badge would
+     * be rebound per repaint — and missed on the one repaint somebody forgot.
+     */
+    function wire() {
+        // The same guard afSnippets' ensureHost carries, for the same reason: a
+        // page script is also run against a light DOM (the webview tests), and
+        // a shared component that assumed a whole document would take five
+        // pages' tests down with a message naming none of them.
+        if (!document || typeof document.addEventListener !== 'function') { return false; }
+        if (document.body && document.body.dataset && document.body.dataset.afWiki === '1') { return true; }
+        if (document.body && document.body.dataset) { document.body.dataset.afWiki = '1'; }
+        document.addEventListener('click', ev => {
+            const b = ev.target && ev.target.closest ? ev.target.closest('[data-afwiki]') : null;
+            if (!b) { return; }
+            ev.preventDefault();
+            ev.stopPropagation();
+            open({
+                el: b,
+                session: b.dataset.afwSession || '',
+                turn: Number(b.dataset.afwTurn) || 0,
+                ts: Number(b.dataset.afwTs) || 0,
+                text: b.dataset.afwText || ''
+            });
+        }, true);
+        document.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape' && state) { close(); }
+        });
+        return true;
+    }
+
+    window.AFWiki = { init, wire, open, close, isOpen, receive, badge, covers };
+})();

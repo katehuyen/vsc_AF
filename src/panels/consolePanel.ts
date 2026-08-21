@@ -20,7 +20,7 @@ import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
-import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
+import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 
 /**
  * The composer's chip list, back as attachments.
@@ -528,6 +528,11 @@ export class ConsolePanel {
                 // all point at the same thing in the same way
                 projectIcon: s.projectId
                     ? (this.deps.projects().find(p => p.id === s.projectId)?.icon ?? '') : '',
+                // K-26 — which turns of this conversation are already in the
+                // candidate pool. Only for the card being read: the badge is
+                // drawn on its rows and nowhere else, and the other cards carry
+                // no messages either (above).
+                wikiMarks: s.id === this.selected && s.sessionId ? wikiMarksOf(s.sessionId) : [],
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),
@@ -803,6 +808,8 @@ export class ConsolePanel {
         if (await promptSnippetMessage(this.panel.webview, () => this.deps.promptSnippets(), msg.type)) {
             return;
         }
+        // The wiki tagger does the same on every surface that draws a badge (K-26).
+        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'select':

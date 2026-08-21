@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
+import { normTopics, turnFor } from '../core/wiki';
 
 /**
  * The global nav's 🔔 Notices button shows the current unread count in
@@ -312,6 +313,11 @@ export function htmlShell(
     // into is a component the next surface skips — which is exactly how eight
     // surfaces ended up listing an object they could not make.
     const form = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afForm.js'));
+    // The wiki tagger (K-26). Ships everywhere for the reason the badge exists:
+    // a turn worth keeping goes past at conversation speed on whichever surface
+    // you happen to be reading it on, and a component a page had to opt into is
+    // the page where the turn goes unmarked.
+    const wiki = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWiki.js'));
     // The query language. Ships everywhere for the strongest version of that
     // reason: the extension host runs the SAME FILE (src/core/query.ts loads it
     // out of media/), so a page that had to opt in would be a page whose filter
@@ -371,6 +377,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
+<script nonce="${nonce}" src="${wiki}"></script>
 <script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
@@ -439,6 +446,138 @@ export async function promptSnippetMessage(
                     'agentFarm.promptSnippetsFile', chosen, vscode.ConfigurationTarget.Global);
             }
             void webview.postMessage({ type: 'promptSnippets', ...read() });
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+/**
+ * ‼️ K-26 — THE WIKI TAGGER'S HOST SIDE, WIRED ONCE FOR EVERY READING SURFACE.
+ *
+ * The badge is on the Console's prompt rows and on the transcript's turn bands,
+ * and the list of surfaces only grows. Registered here for the same reason the
+ * notices count is: `htmlShell` ships `media/afWiki.js` to every page, so a
+ * page that had to reach the pool through its own panel's deps would be a page
+ * where the badge draws and does nothing.
+ */
+export interface WikiMarkBridge {
+    /** The pool's topics, newest use first — the chips the tagger offers. */
+    topics(): { topic: string; pending: number; total: number }[];
+    /** What is already marked in this conversation, so a taken turn says so. */
+    marks(sessionId: string): {
+        id: string; from: number; to: number; topics: string[]; state: string
+    }[];
+    /** The transcript's turn rollup — how a row's moment becomes a number. */
+    turns(sessionId: string): { n: number; label: string; ts: number }[];
+    /** ‼️ The transcript's path and engine are re-derived by the implementation
+     *  from the session id, never taken from the page: a webview is not where a
+     *  file path is decided (the same rule attachmentsOf follows). */
+    add(a: {
+        sessionId: string; from: number; to: number;
+        topics: string[]; note: string; label: string;
+    }): { merged: boolean; pending: number };
+}
+
+let wikiBridge: WikiMarkBridge | undefined;
+export function setWikiMarkBridge(b: WikiMarkBridge): void { wikiBridge = b; }
+
+/**
+ * ‼️ WHAT IS ALREADY MARKED, AT PAINT TIME — not after a round trip.
+ *
+ * The badge on a kept turn is green the moment the page draws, or it flickers
+ * grey on every repaint of a conversation that is repainting constantly. So the
+ * marks travel with the page's own data, and only a NEW mark comes back over
+ * the wire (see the `wikiMarked` reply, which carries the fresh list).
+ */
+export function wikiMarksOf(sessionId: string): {
+    id: string; from: number; to: number; topics: string[]; state: string
+}[] {
+    try { return wikiBridge && sessionId ? wikiBridge.marks(sessionId) : []; } catch { return []; }
+}
+
+/** Everything a surface needs to draw the tagger for one conversation. */
+function wikiSnapshot(sessionId: string): Record<string, unknown> {
+    if (!wikiBridge) { return { session: sessionId, ok: false, why: 'The candidate pool is not open yet.' }; }
+    return {
+        session: sessionId,
+        ok: true,
+        topics: wikiBridge.topics(),
+        marks: wikiBridge.marks(sessionId),
+        turnCount: wikiBridge.turns(sessionId).length
+    };
+}
+
+/**
+ * The two messages `media/afWiki.js` sends. Returns true when the message was
+ * the tagger's, so a panel hands over anything it does not recognise.
+ *
+ * ‼️ THE TURN NUMBER IS RESOLVED HERE AND SENT BACK FOR THE READER TO SEE. The
+ * page asks with the row's own moment and opening line; `turnFor` says which
+ * transcript turn that is and whether it is sure. Nothing is written on that
+ * message — the popover opens with the number filled in and the person presses
+ * Save. A guess is a guess in front of the reader, never behind them.
+ */
+export function wikiMarkMessage(
+    webview: vscode.Webview,
+    msg: { type: string; [k: string]: unknown }
+): boolean {
+    const str = (k: string): string => (typeof msg[k] === 'string' ? msg[k] as string : '');
+    const num = (k: string): number => (typeof msg[k] === 'number' ? Math.floor(msg[k] as number) : 0);
+    switch (msg.type) {
+        case 'wikiAsk': {
+            const session = str('session');
+            const snap = wikiSnapshot(session);
+            if (!wikiBridge || !snap.ok) { void webview.postMessage({ type: 'wikiAsk', ...snap }); return true; }
+            const turns = wikiBridge.turns(session);
+            // A row that already knows its number (a transcript turn band) says
+            // so and is believed; a Console row hands over its moment instead.
+            const given = num('turn');
+            const at = given > 0
+                ? { turn: given, count: turns.length, exact: true }
+                : turnFor(turns, { ts: num('ts'), text: str('text') });
+            void webview.postMessage({
+                type: 'wikiAsk', ...snap,
+                from: at.turn, to: at.turn, exact: at.exact,
+                label: turns.find(t => t.n === at.turn)?.label ?? str('text').slice(0, 90)
+            });
+            return true;
+        }
+        case 'wikiMark': {
+            const session = str('session');
+            if (!wikiBridge) {
+                void webview.postMessage({ type: 'wikiMarked', session, ok: false, why: 'The candidate pool is not open yet.' });
+                return true;
+            }
+            const topics = normTopics(msg.topics);
+            if (!topics.length) {
+                void webview.postMessage({
+                    type: 'wikiMarked', session, ok: false,
+                    why: 'A candidate needs at least one topic — it is what the compile files the concept under.'
+                });
+                return true;
+            }
+            const turns = wikiBridge.turns(session);
+            const from = Math.max(0, num('from'));
+            const to = Math.max(from, num('to'));
+            if (from > 0 && turns.length && to > turns.length) {
+                void webview.postMessage({
+                    type: 'wikiMarked', session, ok: false,
+                    why: `That conversation has ${turns.length} turn(s); ${to} is past the end.`
+                });
+                return true;
+            }
+            const r = wikiBridge.add({
+                sessionId: session, from, to, topics,
+                note: str('note'),
+                label: turns.find(t => t.n === from)?.label ?? (turns[0]?.label ?? '')
+            });
+            void webview.postMessage({
+                type: 'wikiMarked', session, ok: true,
+                merged: r.merged, pending: r.pending,
+                from, to, ...wikiSnapshot(session)
+            });
             return true;
         }
         default:

@@ -998,6 +998,24 @@
       }
     },
     {
+      "capability": "base.ts#wikiMark",
+      "ui": [
+        "page:base.ts#wikiMark"
+      ],
+      "ops": [
+        "wiki.candidates.add"
+      ]
+    },
+    {
+      "capability": "base.ts#wikiAsk",
+      "ui": [
+        "page:base.ts#wikiAsk"
+      ],
+      "ops": [
+        "wiki.candidates.list"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#queueSend",
       "ui": [
         "page:consolePanel.ts#queueSend"

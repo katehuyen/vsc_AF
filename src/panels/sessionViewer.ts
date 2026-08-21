@@ -9,7 +9,7 @@ import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
 import { revealPath } from '../core/reveal';
-import { askExportOptions, handleAfNav, htmlShell } from './base';
+import { askExportOptions, handleAfNav, htmlShell, wikiMarksOf, wikiMarkMessage } from './base';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -719,6 +719,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         turnCount: turnNo,
         turnTotals,
         turns,
+        // K-26 — which turns of this conversation are already in the candidate
+        // pool, so the band's 🔖 is green from the first paint.
+        wikiMarks: wikiMarksOf(sessionId),
         // What this session did to the code, summarised. The hunks themselves
         // are fetched per file on demand ('sessionFileEdits') — a Write of a
         // 3000-line file has no business travelling in every render.
@@ -884,6 +887,9 @@ export class SessionViewerPanel {
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
+        // The wiki tagger answers for itself, on every page that draws a badge
+        // (K-26 — see wikiMarkMessage in ./base).
+        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
         switch (msg.type) {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));

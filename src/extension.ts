@@ -313,7 +313,9 @@ import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
-import { postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
+import {
+    postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge
+} from './panels/base';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
@@ -9152,6 +9154,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         root: wikiRoot,
         sessions: () => index.allWithExternal(),
         procedure: '_REF/wiki.md'
+    });
+    /**
+     * ‼️ K-26 (X-50) — THE SAME POOL, REACHED FROM THE ROW YOU ARE READING.
+     *
+     * Every page ships `media/afWiki.js` (htmlShell), so the badge is wired
+     * once here rather than threaded through each panel's deps — the same
+     * registration the notices count uses. The webview hands over a session id
+     * and a moment; the transcript's path, its engine and the turn number are
+     * all re-derived HERE, because a file path is not a webview's to decide.
+     */
+    setWikiMarkBridge({
+        topics: () => wikiStore.topics(),
+        marks: (sessionId) => wikiStore.forSession(sessionId).map(c => ({
+            id: c.id, from: c.fromTurn, to: c.toTurn, topics: c.topics, state: c.state
+        })),
+        turns: (sessionId) => {
+            const s = index.allWithExternal().find(x => x.sessionId === sessionId);
+            return (s?.turns ?? []).map(t => ({ n: t.n, label: t.label, ts: t.ts }));
+        },
+        add: (a) => {
+            const s = index.allWithExternal().find(x => x.sessionId === a.sessionId);
+            const r = wikiStore.add({
+                sessionId: a.sessionId,
+                sessionFile: s?.file ?? '',
+                engine: s?.source ?? s?.producerEngine ?? 'claude',
+                agentName: s?.agentName ?? '',
+                fromTurn: a.from, toTurn: a.to,
+                topics: a.topics, label: a.label, note: a.note,
+                addedBy: 'you'
+            });
+            return {
+                merged: r.merged,
+                pending: wikiStore.candidates.filter(c => c.state === 'pending').length
+            };
+        }
     });
 
     /**

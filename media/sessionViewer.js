@@ -101,6 +101,9 @@
             return;
         }
         if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
+        // K-26 — the wiki tagger answers for itself; the marks it hands back
+        // are what turns the band's 🔖 green without waiting for a data push.
+        if (window.AFWiki && window.AFWiki.receive(ev.data)) { return; }
         // The receipt for one step's copy button — drawn on the button itself, and
         // only after the host says the clipboard actually took it. No repaint: the
         // reader is looking at that row and moving it under them would be rude.
@@ -292,6 +295,10 @@
             <label class="turnsel" title="Include this turn in Export MD">
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
+            ${window.AFWiki ? window.AFWiki.badge({
+        session: DATA.sessionId, turn: m.turn, marks: DATA.wikiMarks || [],
+        text: (info && info.label) || ''
+    }) : ''}
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
             <span class="turntags">${turnTags(info).map(t => `<span class="tag">${C.esc(t)}</span>`).join('')}</span>
             <span class="turnstats">${stats}</span>
@@ -1515,6 +1522,16 @@
                 render({ keepScroll: true });
                 return;
             case 'vtJump': scrollToTurn(n); return;
+            // K-26 — the same popover the band's 🔖 opens, anchored on the band
+            // the menu was opened over so the answer appears where the question
+            // was asked.
+            case 'vtWiki':
+                window.AFWiki.open({
+                    el: document.querySelector(`.turnhdr[data-turn="${n}"]`),
+                    session: DATA.sessionId, turn: n,
+                    text: (turnInfo(n) || {}).label || ''
+                });
+                return;
             case 'vtExport':
                 if (arg === 'only') {
                     (DATA.turns || []).forEach(t => exportOff.add(t.n));
@@ -1598,6 +1615,15 @@
     // ‼️ ONCE, at module scope — render() runs on every fold, filter and replay
     // step, and a listener added there would multiply with them.
     window.AFCtx.listen(ctxDo);
+    // K-26 — the badge on every turn band. The fresh mark list is written back
+    // into DATA so the next repaint (a fold, a filter, a live push) still draws
+    // it green; the surface owns what it paints, the component owns the panel.
+    window.AFWiki.init(vscode, (session, marks) => {
+        if (session !== DATA.sessionId) { return; }
+        DATA.wikiMarks = marks;
+        render({ keepScroll: true });
+    });
+    window.AFWiki.wire();
 
     if (DATA.resetView) {
         filter = '';

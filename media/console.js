@@ -1274,9 +1274,25 @@
     function messageHtml(m) {
         const mid = ` data-mid="${C.esc(m.id || '')}"`;
         if (m.role === 'user') {
+            // ‼️ K-26 — THE BADGE IS ON THE PROMPT, WHICH IS WHERE A TURN STARTS.
+            // The line that CLOSES a turn only exists for turns run in this
+            // panel: the backfill reads user/agent/tool rows off the transcript
+            // and no result row, so a badge hung there would be missing from
+            // exactly the scrollback a reader goes back through. A steered
+            // message starts no turn and carries none.
+            // ‼️ …and the SESSION id, not the card's. A card is this panel's
+            // handle on a conversation; the pool files by the id the transcript
+            // is named after, and a session with no id yet (the very first
+            // prompt, before the CLI has answered) carries no badge because
+            // there is nothing yet to file it under.
+            const cur = sel() || {};
+            const mark = !m.steer && cur.sessionId && window.AFWiki ? window.AFWiki.badge({
+                session: cur.sessionId, turn: 0, ts: m.ts, text: m.text || '',
+                marks: cur.wikiMarks || []
+            }) : '';
             // ↯ — said INTO the turn above it, which was already running: it is
             // not the question that reply was answering.
-            return `<div class="msg user${m.steer ? ' steer' : ''}"${mid}${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg user${m.steer ? ' steer' : ''}"${mid}${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you${mark}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         // ‼️ EVERY STEP ROW SAYS WHAT KIND OF STEP IT IS AND WHAT IT COST.
         // The conversation used to show only WHAT happened: a file read off
@@ -2377,6 +2393,16 @@
     // the same listener that records every keystroke, so the draft, the
     // autosize and Send's enabled state all follow without a second path.
     window.AFSnippets.init(vscode);
+    // K-26 — the 🔖 on every prompt row. The fresh mark list is written back
+    // into the card so the next repaint (and this panel repaints on every step
+    // of a running turn) still draws it green.
+    window.AFWiki.init(vscode, (session, marks) => {
+        const cur = (DATA.sessions || []).find(s => s.sessionId === session);
+        if (!cur) { return; }
+        cur.wikiMarks = marks;
+        paint();
+    });
+    window.AFWiki.wire();
     const wireSnipMenu = id => window.AFSnippets.bind(id, 'c-text');
     const SNIP_HINT = window.AFSnippets.HINT;
 
@@ -3842,6 +3868,8 @@
         // for. The picker owns the answer (media/afSnippets.js) — including
         // dropping a late one for a window the user already closed.
         if (window.AFSnippets.receive(ev.data)) { return; }
+        // …and the wiki tagger the same way (K-26).
+        if (window.AFWiki.receive(ev.data)) { return; }
         // A refused send gives the message back whole — text and files — so
         // nothing has to be retyped or re-attached.
         if (ev.data && ev.data.type === 'restore') {

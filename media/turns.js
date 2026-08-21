@@ -225,6 +225,8 @@
     const key = r => r.file + '#' + r.n;
 
     window.addEventListener('message', ev => {
+        // K-26 — the wiki tagger answers for itself (media/afWiki.js).
+        if (window.AFWiki.receive(ev.data)) { return; }
         if (ev.data.type === 'turnDetail') {
             detailCache[ev.data.file + '#' + ev.data.n] = { msgs: ev.data.msgs || [] };
             render();
@@ -874,6 +876,26 @@
             render();
             return;
         }
+        // K-26 — the pool files by session id and turn number, and this row is
+        // the only surface that carries both for every turn the fleet has run.
+        if (verb === 'tnWiki') {
+            const id = String(ctx.sessionId || (row && row.sessionId) || '');
+            if (!id) {
+                window.AFCtx.toast('That turn has no session id on it — the pool files by id, so open the transcript and mark it there.', true);
+                return;
+            }
+            // The key is a session id and a turn number joined — it is not
+            // selector-safe, so the row is found by walking the fold buttons
+            // rather than by building a query out of it.
+            const btn = [...document.querySelectorAll('[data-fold]')]
+                .find(b => b.dataset.fold === k);
+            window.AFWiki.open({
+                el: btn ? btn.closest('tr') || btn : null,
+                session: id, turn: Number(ctx.turnN) || (row ? row.n : 0),
+                text: (row && row.label) || ''
+            });
+            return;
+        }
         if (verb !== 'tnCopy') { return; }
 
         if (arg === 'where') {
@@ -898,6 +920,11 @@
 
     // ‼️ ONCE, at module scope — render() rebuilds every row on every change.
     window.AFCtx.listen(ctxDo);
+    // K-26 — the tagger, reachable from the right-click on any turn row. No
+    // badge here: this page is a table read across sessions, and the mark it
+    // makes is confirmed by the popover's own ✓ rather than by a column.
+    window.AFWiki.init(vscode);
+    window.AFWiki.wire();
 
     render();
 })();

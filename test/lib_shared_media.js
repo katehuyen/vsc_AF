@@ -25,7 +25,13 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // any box that takes a prompt (M-24). Shared the moment a second surface
     // wanted it: the Console's send buttons and the Tasks form's four boxes.
     'afSnippets.js',
-    'afTip.js', 'afForm.js', 'afQuery.js', 'afTime.js',
+    'afTip.js',
+    // afWiki.js was the thirteenth — the wiki tagger's badge and popover
+    // (K-26). Shared from the first line it was written: the badge belongs on
+    // every surface that draws a turn, and a component a page had to opt into
+    // is the page where the turn goes unmarked.
+    'afWiki.js',
+    'afForm.js', 'afQuery.js', 'afTime.js',
     // afEngine.js was the tenth — which engine ran a thing, drawn one way (U-26)
     'afEngine.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn

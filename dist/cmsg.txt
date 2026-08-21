@@ -1,0 +1,57 @@
+v10.88 - k-26 (x-50): okudugun tur wiki havuzuna bir basista giriyor
+
+S-38 butun bir konusmayi uzerinde durdugun satirdan havuza koyuyordu. Ama
+derlenen sey konusma degil TUR, ve saklamaya deger an cevabin dustugu an -
+bir saat sonra onu yeniden bulmak zorunda kaldigin an degil. Artik her turun
+basladigi satir sessiz bir rozet tasiyor: Konsol'un prompt satirlarinda ve
+transkriptin tur bantlarinda; ayni kalem o bantlarin ve Turns sayfasinin her
+satirinin sag tik menusunde de var.
+
+ROZET PROMPT'TA, TURU KAPATAN SATIRDA DEGIL. Kapatan satiri panel yaziyor ve
+yalnizca panelde kosan turlar icin var: resume edilmis bir konusmada geriye
+kaydirdiginda oradaki satirlar transkriptten geliyor ve transkriptte result
+satiri hic yok. Oraya asilan bir rozet, okuyucunun geri gittigi tam da o
+scrollback'te bulunmayacakti. Ustelik turun neyle ilgili oldugunu soyleyen
+satir da prompt - yani sorulan sorunun cevabi zaten orada duruyor.
+
+VE TUR NUMARASI TRANSKRIPTIN, SATIRIN KENDI KELIMELERINDEN COZULUYOR. Havuz
+tur numarasiyla dosyaliyor ve bir Konsol satiri numara tasimiyor: panelin
+kendi sayaci her resume'de sifirlaniyor, backfill ise satirlari dosyadaki
+yerlerine gore numaraliyor. Bunu yalnizca saatle cozmek, tam da dogru
+gorundugu yerde yanlis: paneli gonderdigi anda damgaliyor, CLI yazdigi anda
+damgaliyor, ve kuyruktaki bir mesaj o aralikta bir sonraki turu baslatabilir
+- yani "o ana kadar baslamis son tur" kurali sessizce KOMSU turu dosyaliyor.
+Bosluklari duzlestirilmis acilis satiri bir ture uyuyor ya da hicbirine;
+saatin izni yalnizca zaten ayni seyi soylemis turlar arasinda secmek. Hicbiri
+uymadiginda - transkript henuz yetismediyse - saat cevap veriyor ve popover o
+numarayi, kaydedilmeden once, bulundugu satirda KONTROL EDILECEK bir sey
+olarak gosteriyor.
+
+Pencere degil popover. Kayitli prompt secici ekrani aliyor cunku bir prompt
+secmek zaten durup yaptigin sey; bu ise arkanda hala cevap akarken
+basiliyor - o yuzden panel rozetin yanina aciliyor, arkasindan gorunen bir
+zeminin ustunde duruyor ve Esc'te, Kaydet'te ya da baska bir yere tiklamada
+kapaniyor. Tur araligini (duzenlenebilir: 4, 3-7 ya da butun konusma icin
+bos) konusmanin uzunluguna karsi gosteriyor, turun acilis satirini, havuzdaki
+konulari cip olarak, yenileri icin bir kutu ve istege bagli bir not. Uc
+kutunun herhangi birinde Enter kaydediyor. YAZDIGIN SEY, cip isaretlemesen de
+sayiliyor - en sik kullanilacak yol bu ve naif bir secicinin attigi sey.
+
+Isaretlenmis tur isaretli kaliyor ve bunu ilk boyamada soyluyor. Isaretler
+sayfanin kendi verisiyle geliyor, bir gidis-donusten sonra degil - yani her
+adimda yeniden boyanan bir panelde rozet ilk karede yaniyor. Isaretli bir
+ARALIGIN icindeki tur de yaniyor, butun konusma isareti (S-38) icindeki her
+turu yakiyor. Yanan bir rozete basmak o isaretin kendi konulari zaten
+isaretli olarak aciliyor, cunku havuz ikinci satir eklemek yerine BIRLESTIRIYOR
+(B-14) - sonradan aklina gelen konuyu eklemenin yolu da tam olarak bu.
+
+media/afWiki.js htmlShell'den her sayfaya gidiyor ve host tek yerde cevap
+veriyor (wikiMarkMessage), yani sonraki okuma yuzeyi rozeti kablolayarak
+degil cizerek aliyor. test_wiki_tagger.js'te 44 kontrol - saatin yanlis
+yaptigi komsu-tur vakasi dahil; test/live_wiki.js ise panelin tarayicida
+kosan hali, statik bir render'in fotograflayamadigi yari icin.
+
+Parity: base.ts#wikiAsk -> wiki.candidates.list, base.ts#wikiMark ->
+wiki.candidates.add. 193 dosya / 11.578 kontrol, 0 fail. 3.203.0 kurulu.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
