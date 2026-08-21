@@ -2399,7 +2399,11 @@
 
     const EVENT_WORD = {
         created: 'made', parked: 'held back', started: 'started',
-        finished: 'ended', cancelled: 'cancelled', retried: 'retried'
+        finished: 'ended', cancelled: 'cancelled', retried: 'retried',
+        // ‼️ M-21 — "picked back up", never "started": nothing was spawned. A
+        // window reload re-attaches a run whose surface outlived the extension
+        // host, and the word has to say that it is the SAME run continuing.
+        resumed: 'picked back up'
     };
 
     /**

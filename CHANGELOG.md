@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.199.0 — M-21 (part): a run whose terminal outlived the window came back as a row nothing could ever launch (2026-08-21)
+
+A VS Code reload is not a rare event — **installing a build is one**, and this project installs one every few minutes. Every task that is `running` at that moment has to be given a state by hand, because the process handle that would have answered went with the host. There are three different right answers, and the store cannot tell them apart by itself.
+
+**‼️ The OS terminal one was wrong, and the code that would have made it right could never run.** A Windows Terminal window outlives the extension host *by design* — that is the whole reason M-26 gave that surface an exit file instead of a child-process handle. The constructor re-arms the watch on exactly that state (`running` + an exit file) — but the stale sweep that clears `running` rows lives inside `load()`, which is called from the constructor's **first line**. By the time the re-arm looked, there was no such task left. So an interactive run in its own terminal came back as `queued` **with `autoStart` already cleared by its own launch**, which means nothing on this earth relaunches it; the row sat there for ever while the terminal it belongs to finished the work minutes later into an exit file nobody was reading. Measured on a store written by hand, before and after.
+
+**The Console is the opposite case, and had to stop being treated as the same one.** That session is a process *this* host spawned and read over a pipe: a reload starts with an empty session map, so `consoleTaskState` answers `undefined` for ever and a task left `running` would be followed by a timer that can never conclude. It goes back on the queue like any other cut run — and **its dead session id goes with the session**, so the row no longer offers a conversation nobody can open.
+
+**And a run that was cut says so now.** Clearing `startedAt` on its own left a row that reads as though it had never run at all: the one fact the reader needs — that it was *cut*, not skipped — was written nowhere. Every one of the three paths writes its own line, and the `started` line above it keeps its own timestamp, so the two together tell the whole story.
+
+**A new event kind, because "picked back up" is not "started".** A re-attached run — an OS terminal, or a media render still polling its URLs — has had nothing spawned for it, and drawing it as `started` would claim the one thing that did not happen. `resumed` is its own word on the timeline, and the media reattach (which crossed reloads in complete silence) writes one too.
+
+**`test/test_task_reload.js` is the gate**: it opens a real `TaskManager` on a store written the way a window that died mid-run leaves one, once for each of the five shapes, and checks the vocabulary too — a kind the core can write but the page has no word for degrades silently to its raw identifier, so the two lists are compared rather than trusted.
+
 ## 3.198.0 — M-21 (part): the rule that every box records itself is measured now, and it caught one (2026-08-21)
 
 The Tasks page redraws itself on every host push, and the redraw replaces the whole form. So **a field that lives only in the DOM is a field that a task finishing somewhere else silently empties, mid-sentence, with nobody watching.** M-21 named one victim — the continuation prompt, the longest text on the card and the one that only matters when nobody is looking — and the sweep that cleared the other 54 fields was done **by hand, once**. A rule found by hand once is a rule that rots.

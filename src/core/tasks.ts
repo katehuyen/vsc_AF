@@ -420,7 +420,13 @@ export type TaskEventKind =
     | 'started'    // the process was spawned
     | 'finished'   // done / failed — `note` carries which and why
     | 'cancelled'
-    | 'retried';
+    | 'retried'
+    // ‼️ M-21 — PICKED BACK UP, WHICH IS NOT STARTED AGAIN. A run whose surface
+    // outlives this extension host (an OS terminal, a media job still polling)
+    // is re-attached after a reload without anything being spawned. Drawn as
+    // `started` it would read as a second launch of the same work, which is the
+    // one thing that did NOT happen.
+    | 'resumed';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -1273,9 +1279,58 @@ export class TaskManager implements vscode.Disposable {
                     // re-offers it explicitly (see reattachMediaTask).
                     const step = this.workflows.find(x => x.id === t.workflowId)?.steps[t.stepIndex ?? -1];
                     if (step?.parallel) { this.parallelReattachRuns.add(t.workflowRunId ?? ''); }
+                    // ‼️ M-21 — and it says so on the row. A reattach is the one
+                    // thing that happens to a task while nobody is looking, and
+                    // it left no line at all: the run simply carried on across a
+                    // reload it never mentioned.
+                    noteTaskEvent(t, 'resumed',
+                        'the VS Code window reloaded — the render was still in flight, and its poll URLs picked it back up');
+                    staleChanged = true;
+                    continue;
+                }
+                // ‼️ M-21 — A SURFACE OUTSIDE THIS EXTENSION HOST IS NOT STALE,
+                // AND THE CODE THAT SAID SO COULD NEVER RUN. An OS terminal
+                // outlives the window that opened it by design: the CLI is
+                // still working in it and its exit file is still the file it
+                // always was. The constructor re-arms `externalWatch` on
+                // exactly this state — but this sweep runs first, inside
+                // `load()`, so by the time it looked there was no `running`
+                // task left carrying an exit file and the re-arm was
+                // unreachable. What the user got instead was the worst of both:
+                // the run went back to `queued` with `autoStart` already
+                // cleared by its own launch, so NOTHING relaunches it, and the
+                // terminal finished the work minutes later into an exit file
+                // nobody was reading. Measured on a store written by hand.
+                if (t.exitFile && normInteractiveTarget(t.interactiveTarget) === 'external') {
+                    noteTaskEvent(t, 'resumed',
+                        'the VS Code window reloaded — the OS terminal kept going, and this is still watching its exit file');
+                    staleChanged = true;
                     continue;
                 }
                 staleChanged = true;
+                // ‼️ M-21 — …AND A CONSOLE CONVERSATION IS THE OPPOSITE CASE,
+                // so it must not be treated as the same one. The session is a
+                // process THIS extension host spawned and reads over a pipe: a
+                // reload starts with an empty session map, `consoleTaskState`
+                // answers `undefined` for ever, and a task left `running` would
+                // be watched by a timer that can never conclude. It goes back on
+                // the queue like any other cut run — and its dead session id
+                // goes with the session, so the row does not offer a
+                // conversation nobody can open.
+                if (t.consoleSessionId) {
+                    noteTaskEvent(t, 'parked',
+                        'the VS Code window closed — the Console session it was hosted in did not survive');
+                    t.consoleSessionId = undefined;
+                } else if (t.workflowRunId === undefined) {
+                    // ‼️ M-21 — WHY A RUN IS BACK ON THE QUEUE IS PART OF WHAT
+                    // HAPPENED TO IT. Clearing `startedAt` on its own left a row
+                    // that reads as though it had never run at all, and the one
+                    // fact the reader needs — that it was cut, not skipped — was
+                    // written nowhere. The `started` line above it keeps its own
+                    // timestamp, so the two together tell the whole story.
+                    noteTaskEvent(t, 'parked',
+                        'the VS Code window closed mid-run — back on the queue, press start to run it again');
+                }
                 if (t.workflowRunId !== undefined && t.stepIndex !== undefined) {
                     t.status = 'cancelled';
                     t.endedAt = Date.now();
