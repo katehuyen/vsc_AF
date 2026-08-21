@@ -257,6 +257,10 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.openSessionAgent', when: SESSION_ROW, group: '1_open@5' },
     { command: 'agentfarm.revealSessionFolder', when: `${SESSION_ROW} && cwd`, group: '1_open@6' },
     { command: 'agentfarm.sessionToQueue', when: SESSION_ROW, group: '4_project@4' },
+    // ‼️ S-38 (X-50) — MARKING A CONVERSATION FOR THE WIKI IS A MARK, so it sits
+    // with the other marks. It writes nothing to the vault and nothing that
+    // happens next is automatic; it is the same weight of gesture as labelling.
+    { command: 'agentfarm.sessionToWiki', when: SESSION_ROW, group: '2_mark@5' },
     { command: 'agentfarm.copySessionPath', when: SESSION_ROW, group: '5_copy@1' },
     { command: 'agentfarm.copySessionCwd', when: `${SESSION_ROW} && cwd`, group: '5_copy@2' },
 
@@ -271,6 +275,10 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.pinSession', when: CONSOLE_ANY, group: '1_session@5' },
     { command: 'agentfarm.tagSession', when: CONSOLE_ANY, group: '1_session@6' },
     { command: 'agentfarm.copySessionId', when: CONSOLE_ANY, group: '1_session@7' },
+    // ‼️ S-38 — the same mark on the Console's own cards. The conversation you
+    // are having is the one most likely to be worth keeping, and it is the one
+    // surface where you are reading the answer as it arrives.
+    { command: 'agentfarm.sessionToWiki', when: CONSOLE_ANY, group: '1_session@9' },
     { command: 'agentfarm.focusSessionTerminal', when: CONSOLE_RESUMABLE, group: '1_session@8' },
     // ‼️ S-29 — FIRST, BECAUSE IT IS THE ONE THING YOU DO TO A CARD THAT HAS
     // ENDED. The card is kept after a session ends for two reasons: so the
@@ -303,6 +311,7 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.pinSession', when: TIMELINE_SESSION, group: '1_session@4' },
     { command: 'agentfarm.tagSession', when: TIMELINE_SESSION, group: '1_session@5' },
     { command: 'agentfarm.copySessionId', when: TIMELINE_SESSION, group: '1_session@6' },
+    { command: 'agentfarm.sessionToWiki', when: TIMELINE_SESSION, group: '1_session@9' },
     { command: 'agentfarm.resumeInConsole', when: TIMELINE_SESSION, group: '1_session@7' },
     { command: 'agentfarm.resumeSession', when: TIMELINE_SESSION, group: '1_session@8' },
     { command: 'agentfarm.interruptSession', when: TIMELINE_SESSION, group: '2_stop@1' },

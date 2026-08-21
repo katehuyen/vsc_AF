@@ -4743,6 +4743,16 @@
       ]
     },
     {
+      "capability": "sessionToWiki",
+      "ui": [
+        "cmd:agentfarm.sessionToWiki",
+        "ctx:agentfarm.sessionToWiki"
+      ],
+      "ops": [
+        "wiki.candidates.add"
+      ]
+    },
+    {
       "capability": "sessionViewer.ts#afnav",
       "ui": [
         "page:sessionViewer.ts#afnav"

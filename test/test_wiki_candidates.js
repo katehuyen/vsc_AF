@@ -294,6 +294,36 @@ let briefIds = [];
         (await call('wiki.lint')).result.misplaced.join() === path.join('System', 'Derin'));
 }
 
+// ---------- S-38: the doors the catalogue opens on a conversation ----------
+{
+    const CTX = require(path.join(ROOT, 'out', 'core', 'ctxmenu.js'));
+    const pkg = require(path.join(ROOT, 'package.json'));
+    const items = CTX.CTX_ITEMS.filter(i => i.command === 'agentfarm.sessionToWiki');
+    // ‼️ THREE SURFACES, because a conversation is listed in three places and
+    // which one you are on when it turns out to be worth keeping is not
+    // predictable — that is the whole reason the mark has to be cheap.
+    ok('the wiki mark is on session rows, Console cards and the timeline',
+        items.length === 3);
+    // It is a MARK, so it is filed with the other marks — never with the items
+    // that RUN something.
+    ok('…and on a session row it sits with the other marks',
+        items.some(i => i.group.indexOf('2_mark') === 0));
+    const cmd = pkg.contributes.commands.find(c => c.command === 'agentfarm.sessionToWiki');
+    ok('the command is contributed with a title a reader can act on',
+        !!cmd && /Wiki Candidates/.test(cmd.title));
+    const menu = (pkg.contributes.menus['webview/context'] || [])
+        .filter(m => m.command === 'agentfarm.sessionToWiki');
+    ok('…and package.json carries all three doors, not only the catalogue',
+        menu.length === 3);
+    // The parity rule, in this file too: a new user-triggerable action names
+    // the op an agent would call to do the same thing.
+    const manifest = require(path.join(ROOT, 'parity.manifest.json'));
+    const list = manifest.capabilities || manifest.actions || manifest.entries || [];
+    const cap = list.find(c => (c.ui || []).includes('cmd:agentfarm.sessionToWiki'));
+    ok('…and the manifest points it at wiki.candidates.add',
+        !!cap && (cap.ops || []).includes('wiki.candidates.add'));
+}
+
 // ---------- the pool survives a restart ----------
 {
     const reopened = new W.WikiStore(poolFile);

@@ -294,7 +294,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
-import { registerWikiOps, WikiStore } from './core/wiki';
+import { normTopics, registerWikiOps, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
@@ -9153,6 +9153,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessions: () => index.allWithExternal(),
         procedure: '_REF/wiki.md'
     });
+
+    /**
+     * ‼️ S-38 (X-50) — WHAT A TURN IS ABOUT, ASKED AS A LIST RATHER THAN A BOX.
+     *
+     * The pool's filing key is its topics, and a pool where one subject is
+     * spelled three ways files one concept three times. Nobody spells
+     * consistently from memory across weeks, so the topics already in use ARE
+     * the list — ticked in any combination — and what you type is offered as a
+     * new one on the same list rather than instead of it. Typing works exactly
+     * as it would in a box; the difference is that the alternative to typing is
+     * visible at the moment you would otherwise be guessing.
+     *
+     * Returns the chosen topics, or `undefined` when the picker was dismissed —
+     * which is not the same as choosing none, and the caller says so.
+     */
+    const pickWikiTopics = (store: WikiStore, count: number): Promise<string[] | undefined> =>
+        new Promise(resolve => {
+            const known = store.topics();
+            const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
+            qp.title = count === 1
+                ? 'What is this conversation about?'
+                : `What are these ${count} conversations about?`;
+            qp.placeholder = known.length
+                ? 'Tick the topics it belongs under, or type a new one'
+                : 'Type the topic it belongs under — e.g. Agent Farm, Görev Yaşam Döngüsü';
+            qp.canSelectMany = true;
+            qp.ignoreFocusOut = true;
+            const base = known.map(t => ({
+                label: t.topic,
+                description: t.pending ? `${t.pending} waiting` : undefined,
+                detail: t.total > t.pending ? `${t.total} marked in all` : undefined
+            }));
+            qp.items = base;
+            // A word that is not in the pool yet is offered as itself, at the
+            // top, so a new topic is one keystroke further than an old one and
+            // no further.
+            qp.onDidChangeValue(v => {
+                const typed = v.trim();
+                qp.items = typed && !known.some(t => t.topic.toLowerCase() === typed.toLowerCase())
+                    ? [{ label: typed, description: 'new topic' }, ...base]
+                    : base;
+            });
+            let done = false;
+            qp.onDidAccept(() => {
+                done = true;
+                // ‼️ WHAT IS TYPED AND NOT TICKED STILL COUNTS. Enter on a
+                // fresh word with nothing selected is the commonest way this
+                // will be used, and a picker that answered "none" there would
+                // throw away the only thing the person did.
+                const picked = qp.selectedItems.map(i => i.label);
+                const typed = qp.value.trim();
+                if (typed && !picked.some(p => p.toLowerCase() === typed.toLowerCase())) {
+                    picked.push(typed);
+                }
+                qp.hide();
+                resolve(normTopics(picked));
+            });
+            qp.onDidHide(() => { qp.dispose(); if (!done) { resolve(undefined); } });
+            qp.show();
+        });
 
     // Notices ops (§19.C): the agent→user notice board — every agent posts
     // "you should know / remember this" here; the user reads them on the
@@ -18320,6 +18380,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.window.setStatusBarMessage(
                         `Agent Farm: ${list.length} sessions labelled`, 4000);
                 }
+            }),
+
+        /**
+         * ‼️ S-38 (X-50) — A WHOLE CONVERSATION INTO THE WIKI POOL, FROM THE ROW
+         * IT IS ALREADY ON.
+         *
+         * The pool only works if marking is cheaper than deciding, and until
+         * this existed the only way in was to call the bridge by hand — which is
+         * not a gesture anybody makes while reading. Here the session is already
+         * under the pointer: one item, one box, and the whole conversation is
+         * marked. It writes NOTHING to the vault (see core/wiki.ts) — the
+         * compile is a separate, deliberate act.
+         *
+         * ‼️ AND IT IS A PICKER, NOT A BOX — for a reason, not to satisfy a
+         * rule. A pool where the same subject is spelled three ways files the
+         * same concept three times, and nobody can spell consistently from
+         * memory across weeks. So the topics already in the pool are the LIST,
+         * ticked in any combination, with what you type offered as a new one on
+         * the same list. Typing still works exactly as it would in a box; what
+         * changed is that the alternative to typing is visible.
+         */
+        vscode.commands.registerCommand('agentfarm.sessionToWiki',
+            async (arg?: SessionRef | SessionInfo) => {
+                const list = sessionsFromArg(arg).filter(s => !!s.sessionId);
+                if (!list.length) { return; }
+                const topics = await pickWikiTopics(wikiStore, list.length);
+                if (!topics) { return; }
+                if (!topics.length) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: a candidate needs at least one topic — it is what the compile files the concept under.');
+                    return;
+                }
+                let merged = 0;
+                for (const s of list) {
+                    // fromTurn 0 = the whole conversation. A session marked whole
+                    // swallows any single turn already marked in it, which is the
+                    // right way round: the narrower mark was a subset.
+                    const r = wikiStore.add({
+                        sessionId: s.sessionId as string,
+                        sessionFile: s.file,
+                        engine: s.source ?? s.producerEngine ?? 'claude',
+                        agentName: s.agentName ?? '',
+                        fromTurn: 0, toTurn: 0, topics,
+                        label: (s.turns ?? [])[0]?.label ?? '',
+                        note: '', addedBy: 'you'
+                    });
+                    if (r.merged) { merged++; }
+                }
+                const pending = wikiStore.candidates.filter(c => c.state === 'pending').length;
+                void vscode.window.setStatusBarMessage(
+                    `Agent Farm: ${list.length === 1 ? 'conversation' : list.length + ' conversations'} marked for the wiki`
+                    + (merged ? ` (${merged} merged into a mark already there)` : '')
+                    + ` — ${pending} waiting to be compiled`, 5000);
             }),
 
         // The shelf itself: pinned first, then the recent list, one Enter to

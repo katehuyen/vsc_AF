@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.202.0 — S-38 (X-50): a conversation goes into the wiki pool from the row it is already on (2026-08-21)
+
+The candidate pool only works if marking is **cheaper than deciding**, and until now the only way in was to call the bridge by hand — which is not a gesture anybody makes while reading. **Add to Wiki Candidates…** is on the session row, on the Console's own cards and on the Live Timeline: three surfaces, because which one you are on when a conversation turns out to be worth keeping is not predictable. It is filed with the other **marks** (label, pin, copy id) and never with the items that run something, because that is what it is — it writes nothing to the vault, and the compile stays a separate, deliberate act.
+
+**‼️ It asks with a picker, not a box — for a reason, not to satisfy a rule.** A pool where one subject is spelled three ways files one concept three times, and nobody spells consistently from memory across weeks. So the topics **already in the pool are the list**, ticked in any combination and annotated with how many marks are waiting under each; a word that is not in the pool yet appears at the top of that same list as *new topic*, one keystroke further than an old one and no further. Typing still works exactly as it would in a box — and Enter on a fresh word with nothing ticked keeps that word, which is the commonest way this will be used and the one a naive picker would throw away.
+
+Marking several selected conversations at once puts the same topics on each. A conversation already marked is not marked twice: the whole-session mark **merges** with whatever was pending for it (and swallows a single turn already marked inside it — the narrower mark was a subset), and the confirmation says how many merged and how many marks are now waiting to be compiled.
+
 ## 3.201.0 — B-14 (X-50): the wiki candidate pool, and the line its ops do not cross (2026-08-21)
 
 *“Obsidian is the IDE, the LLM is the programmer, the wiki is the codebase.”* The user does not write `00_WIKI`; agents do. But a turn worth keeping goes past at conversation speed, and the moment marking one costs a decision about **where it belongs**, nobody marks anything. So the system is two halves, and this is the cheap one.
