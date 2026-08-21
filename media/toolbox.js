@@ -722,6 +722,15 @@
                 // Antigravity reads none of them, and a page that just said
                 // "extends claude" in lower case left that as a guess.
                 sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends Claude Code — this is Claude Code's extension model, and the other engines do not read it`,
+                // ‼️ U-83 — THE FOUR THINGS THIS PAGE OWNS, ON THEIR OWN ROW.
+                // Wiki left this cluster for the global nav (it is about the
+                // whole farm's knowledge, not about Claude's extension model);
+                // ⚖ Sync Constitution arrived from the Dashboard, because what
+                // it mirrors — the shared CLAUDE.md into the AGENTS.md files the
+                // other engines read — is a piece of Claude Code's extension
+                // model and belongs with the rest of it. Four appended to the
+                // global row wrapped it under the cursor, so they take line two
+                // (`relatedRow`) and keep the same right edge.
                 related: [
                     {
                         nav: 'airtable', label: '🗄️ Airtable Engine',
@@ -734,16 +743,19 @@
                             + '(last 30 days) — the place to copy one agent\'s capability onto another.'
                     },
                     {
+                        // Its own row has the width its full name needs, so it
+                        // is no longer shortened to "Sync Cons." — the one thing
+                        // that made it unreadable on the board it came from.
+                        action: 'syncConstitution', label: '⚖ Sync Constitution', name: 'Sync Constitution',
+                        title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
+                    },
+                    {
                         nav: 'secrets', label: '🔑 Secrets',
                         title: 'Named values kept in the OS keychain — never in settings files or git — '
                             + 'with what each is for and which agents may use it.'
-                    },
-                    {
-                        nav: 'wiki', label: '📚 Wiki',
-                        title: 'The turns marked as worth keeping, and what the compiles made of them — '
-                            + 'the candidate pool on one side, the vault\'s own pages on the other.'
                     }
                 ],
+                relatedRow: true,
                 guide: 'toolbox'
             })}
             <div class="btnrow" style="margin-bottom:10px">${tabBar}</div>

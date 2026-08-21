@@ -129,7 +129,7 @@ ok('it is the version package.json claims',
 // pattern that stopped matching.
 {
     const leaked = [...names].filter(n =>
-        /^extension\/(src|test|node_modules|scratchpad)\//.test(n)
+        /^extension\/(src|test|node_modules|scratchpad|tools|\.tmp)\//.test(n)
         || /\.vsix$/.test(n)
         || n === 'extension/parity.manifest.json'
         || /^extension\/dist\/render\//.test(n));

@@ -761,18 +761,11 @@
                         <input type="date" id="dash-from" value="${C.esc(rangeFrom)}" title="From this day">
                         <input type="date" id="dash-to" value="${C.esc(rangeTo)}" title="To this day, included">
                     </span>` : ''}`,
-                // ⚖ Sync constitution had no button anywhere: mirroring the
-                // shared CLAUDE.md to the AGENTS.md files the other engines read
-                // was reachable from the command palette and the bridge only, so
-                // the one operation that touches EVERY agent at once was the one
-                // you could not click. It belongs on the board that is about the
-                // whole farm rather than any single agent.
-                related: [
-                    {
-                        action: 'syncConstitution', label: '⚖ Sync Cons.', name: 'Sync Constitution',
-                        title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
-                    }
-                ],
+                // ⚖ Sync Constitution lives on the Toolbox now (U-83): what it
+                // mirrors is the shared CLAUDE.md into the AGENTS.md files the
+                // other engines read, which is a piece of the extension model
+                // that page is about — and there it has the room to carry its
+                // whole name instead of "Sync Cons.".
                 guide: 'dashboard'
             })}
             ${kpis}

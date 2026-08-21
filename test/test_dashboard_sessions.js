@@ -709,29 +709,5 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         /rangeFrom = d\[0\]/.test(js));
 }
 
-// ---------- ⚖ the shared constitution has a button ----------
-// It was reachable from the command palette and the bridge only — so the one
-// operation that touches EVERY agent at once was the one you could not click.
-{
-    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
-    const head = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
-    ok('the dashboard asks for a Sync constitution button',
-        /action: 'syncConstitution'/.test(js) && /Sync constitution/.test(js));
-    ok('…in the row with the destinations, not among the range controls',
-        js.indexOf("action: 'syncConstitution'") > js.indexOf('related: ['));
-    ok('the header renders a `related` entry that is an ACTION as a button',
-        /if \(r\.action\)/.test(head) && /data-afact="\$\{r\.action\}"/.test(head));
-    ok('…and wires it to one message the page owns',
-        /data-afact\]/.test(head) && /type: 'headerAction', action: b\.dataset\.afact/.test(head));
-
-    // The handler CALLS the palette command — the divergence checks, the modal
-    // and the .afbak backups are that command's, and there is one of them.
-    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
-    ok('the panel routes headerAction to the command the palette calls',
-        /case 'headerAction'/.test(panel)
-        && /msg\.action === 'syncConstitution'/.test(panel)
-        && /executeCommand\('agentfarm\.syncConstitution'\)/.test(panel));
-}
-
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -71,7 +71,10 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | Have the agent work under Antigravity too | Right-click agent → `Sync Agent with the Other Engines…` ([details](#antigravity-uyumlulugu)) |
 | Add conversation or turn to wiki candidate pool | `🔖` badge on transcript/Console row, or right-click → `Add to Wiki Candidates…` ([details](#wiki)) |
 | Compile wiki candidates into the vault | Command palette → `Agent Farm: Compile Wiki Candidates…` ([details](#wiki)) |
-| See, filter and compile the waiting wiki marks | Command palette → `Agent Farm: Open Wiki`, or Toolbox → `📚 Wiki` ([details](#wiki-kokpiti)) |
+| See, filter and compile the waiting wiki marks | The `📚 Wiki` button in any page's toolbar, or the command palette → `Agent Farm: Open Wiki` ([details](#wiki-kokpiti)) |
+| Mirror the shared constitution to the other engines | Toolbox header → `⚖ Sync Constitution` (second row), or the palette → `Agent Farm: Sync Constitution` |
+| Stop a session that comes straight back under a new id | Session card → `☠ Force kill`, or right-click → `Force Kill Session Tree` ([details](#spare-oturumlar)) |
+| Turn every daily budget off without losing the figures | Settings → Cost & Budgets → `budgetsUnlimited` |
 | Inspect turns across all 5 engines | Beside Sessions table → `⤢ Open Turns page` ([details](#turlar-sayfasi)) |
 | Copy full text directly from timeline | Right-click dot/tool on timeline → `Copy Corpus` ([details](#live-observation)) |
 
@@ -2059,7 +2062,7 @@ The extension does not synthesize wiki pages directly with heuristic templates; 
 
 ### The Wiki Cockpit — The One Surface That READS The Pool (3.205.0 — U-70) {#wiki-kokpiti}
 
-Four doors WROTE to the pool (the 🔖 badge, a session's right-click, the bridge, the palette command) and no surface READ it: what was waiting, what it was about, and where a compile actually put it were all invisible. The Wiki panel (`Agent Farm: Open Wiki`, or Toolbox → **📚 Wiki**) answers those three questions at a glance.
+Four doors WROTE to the pool (the 🔖 badge, a session's right-click, the bridge, the palette command) and no surface READ it: what was waiting, what it was about, and where a compile actually put it were all invisible. The Wiki panel (**📚 Wiki** in every page's toolbar, or `Agent Farm: Open Wiki`) answers those three questions at a glance.
 
 - **Vault strip (top):** the wiki root, `-WIKI-ANAYASA-.md`, `index.md` and `log.md` — each one clickable, each missing one marked **⚠**. With the root or the law absent, **both compile buttons are dead and say why before the press**; a button that looks alive over a compile that will be refused is the exact lie this feature exists to avoid.
 - **Filter bar:** a topic multi-select (each option carrying how many marks under it are still waiting), state toggles (All / ⏳ Waiting / ✅ Compiled / 🚫 Dropped), and a live search box speaking the farm's shared query grammar (`foo bar` = both, `-foo` = exclude, `"exact phrase"`). The search looks at a mark's topics, its opening prompt, its note, its session and the pages a compile wrote for it, all at once.
@@ -2894,6 +2897,20 @@ Completed phases (all 2026-07-08):
 
 ## Release Notes
 
+### 3.209.0 — X-54: A Shipped Example Is Not A Private Note, And A Cap You Cannot Suspend (2026-08-21)
+
+- **The budget example named a real agent of this installation, in Turkish**, in a manifest read by everybody the extension is ever installed for: `{"psikolog": 20, "*": 50}`. It is `{"agent_one": 20, "*": 50}` now, and the dispatcher's example — Turkish match words and the same agent name — went with it. Both faults are the same fault, so the settings manifest is now swept for it: a check fails the build if any shipped description names one of this farm's agents or is written in the user's own language.
+- **`budgetsUnlimited` — suspend every daily budget without losing what you typed.** There was no way to lift a cap short of deleting the figures and typing them back in later. While the switch is on, no agent has a cap and nothing warns or blocks on spend; the figures stay in settings, untouched, and turning it off puts them straight back in force. Off by default — a ceiling is never removed by an upgrade.
+- **‼️ And it is honoured everywhere or it is not honoured at all.** Seven places read the budgets, and a switch obeyed by six of them is worse than no switch: the cap looks off and something still refuses to run. Nobody reads the setting directly any more — one accessor returns an empty map while the switch is on, which is already the shape every reader treats as "no cap set" — and a test fails the build the moment a new call site reads it raw.
+
+### 3.208.0 — S-43: The Session Nobody Started, And The Process Above The One You Can See (2026-08-21) {#spare-oturumlar}
+
+- **A daemon's spare worker is no longer drawn as a session.** Claude Code v2.1+ keeps a daemon and one pre-warmed idle worker ready so a `claude` you type starts instantly. That worker registers itself like a real session (`"kind":"bg","spare":true,"status":"idle"`) and fires the same SessionStart hook — so the Live Timeline showed a card for a session nobody had started, and it belonged to whichever agent's folder the worker happened to sit in.
+- **‼️ The verdict is re-taken on every read, in both directions.** The hook fires the instant the worker is born and its registry file may not be on disk yet, so the answer at SessionStart can honestly be *"I do not know"* — and a filter that decides there and then passes its own test and leaks in real life. Nothing is hidden on a shrug (which is exactly the old behaviour, so no other engine can regress); the question is simply asked again whenever the list is read, by which time the file exists. A session that has ever submitted a prompt is released and never held again — that is the daemon handing its spare to a real conversation, and a rule that kept reading `spare:true` would hide the conversation with it.
+- **☠ Force kill — end the tree, not the leaf.** "End session" stops the process the registry names, and on Windows `taskkill /T` only ever walks DOWN from there: the daemon above it saw its worker die, bred another under a new id, and the card came back for ever. Force Kill climbs to the top of the **claude** part of the tree and stops it there. The climb is bounded three ways, each a safety rule: it never enters VS Code's own ancestry, it only climbs through a process that is recognisably claude (so a session started from a terminal stops at the topmost claude and never touches the shell), and it gives up after a fixed depth so a reused pid cannot become a loop. The confirmation names every process that will go, by name and pid.
+- On the session card, in both right-click menus, and on the bridge as `sessions.forceKill`. A Console-hosted session is refused by name — its tree runs under this window, and End session already closes it properly.
+- 45 checks in `test/test_spare_sessions.js`, including the race, the hand-over, the four engines that have no claude registry at all, and the dangerous case: a leaf whose grandparent is the editor.
+
 ### 3.206.0 — X-51 (X-50): The Chain Walked End To End, And The Build Read (2026-08-21)
 
 - **End-to-end acceptance (`test/test_wiki_e2e.js`, 41 checks):** mark → brief → start the run (claimed, still `pending`, a second run refused by name) → **write exactly what the prompt instructs** → report back → ask both sides → check the shape of what was written. Each piece had a suite; the **seam** never did.
@@ -3325,3 +3342,259 @@ The first real user-feedback round. Four requests, four features:
 - A cost engine (editable pricing rules, cache separation, double-count protection)
 - New agent scaffold, session start/continue, status bar
 - This guide
+
+
+---
+
+## Appendix: Agent Ecosystem Setup & Portability Blueprint {#portability-blueprint}
+
+> [!abstract] 📖 PURPOSE AND SCOPE OF THIS BLUEPRINT
+> This master blueprint is an end-to-end architectural guide for building, configuring, or porting an autonomous AI agent fleet, the **Agent Farm** VS Code cockpit, and the underlying **Obsidian Knowledge Base (LifeOS)** from scratch on any computer.
+> 
+> Whether executing a disaster recovery scenario after formatting your system or setting up a brand-new hardware workstation, following these steps in order will yield a fully operational agent ecosystem in 15–20 minutes.
+
+---
+
+### 00. Introduction & Architecture Philosophy
+
+The primary limitation of traditional AI tools is their "statelessness." When an agent finishes a task and closes, context is lost, project history is forgotten, and systemic cohesion dissolves.
+
+This ecosystem structures AI not as an ephemeral chat bot, but as a **living, rule-governed, memory-retaining, and self-coordinating autonomous fleet**.
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           HUMAN OPERATOR                                │
+│         (Strategic Decisions, Goal Setting, Approvals & Vision)         │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ (Visual Monitoring & Notices)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    AGENT FARM COCKPIT (VS Code)                         │
+│   Fleet Status · Budget Tracking · Sessions · Live Feed · Work Queue    │
+└──────────────────┬───────────────────────────────────┬──────────────────┘
+                   │ (Bridge IPC / JSONL)              │ (REST API / MCP)
+                   ▼                                   ▼
+┌──────────────────────────────────────┐  ┌───────────────────────────────┐
+│        AGENT FLEET (CLI)             │  │   KNOWLEDGE BASE (LifeOS)     │
+│ • Developer (Code & Debugging)       │  │ • Projects & Backlog          │
+│ • Manager (Planning & Coordination)  │◄─┼─►• Agent Constitutions         │
+│ • Psychologist (Focus & Context)     │  │ • Wiki & Memory Pool          │
+│ • Basic / Haiku (Mechanical Tasks)   │  │ • Live System Definitions     │
+└──────────────────────────────────────┘  └───────────────────────────────┘
+```
+
+---
+
+#### 0.1 The Three Pillars: Human, Cockpit, Fleet
+
+1. **Knowledge Base & Memory (Obsidian LifeOS):** The Single Source of Truth. Project plans, backlogs, constitutions, decision logs, and user preferences live here.
+2. **Management Cockpit (Agent Farm - VS Code Extension):** The visual command center where the human operator monitors agents, dispatches tasks, and tracks token costs.
+3. **Working Fleet (CLI Engines — Claude Code, Gemini, Antigravity):** Independent execution engines that write code, run tests, modify files, and delegate tasks to peer agents.
+
+> [!info] 📖 PRINCIPLE: SINGLE SOURCE OF TRUTH
+> Storing the same data in two places guarantees contradictions. All *FACTS* live in the Obsidian Vault; all *METHODS* live in agent constitutions (`CLAUDE.md` and `_REF/`). Agents reference locations rather than copying data into local memory.
+
+---
+
+#### 0.2 Portability & Isolation Principles
+
+To ensure this ecosystem runs seamlessly across OS platforms (Windows, macOS, Linux) and any user folder:
+
+*   **1. Never Hardcode Machine Paths:** Use environment variables (`${env:USERPROFILE}`, `~`, or relative paths) instead of user-bound absolute paths.
+*   **2. Separate Rules from Code:** Agent constitutions live in standalone Markdown files, decoupled from application source code.
+*   **3. Parameterize Root Directories:** All root paths are configured centrally via VS Code settings (`agentFarm.agentRoots`, `agentFarm.projectsRoot`).
+
+---
+
+#### 0.3 MASTER DEPENDENCY MATRIX
+
+> [!important] 🔴 PRE-FLIGHT CHECKLIST
+> All tools, plugins, engines, and ports required to run the ecosystem are categorized across 5 primary layers:
+
+##### 1. Host & Runtime Layer (Foundation)
+*   🔴 **Node.js (v20+ LTS):** `winget install OpenJS.NodeJS.LTS` / `brew install node` (Required)
+*   🔴 **Git (v2.40+):** Version control and subagent worktree isolation.
+*   🔴 **VS Code (v1.90+):** The host IDE for Agent Farm.
+*   🔴 **Global NPM Tools:** `npm i -g @anthropic-ai/claude-code @vscode/vsce`
+
+##### 2. AI Engine & CLI Layer (Intelligence)
+*   🔴 **Claude Code CLI (`@anthropic-ai/claude-code`):** Primary agent execution CLI (`claude login` required).
+*   🟢 **Antigravity / Gemini CLI:** Multi-model alternative engine (`GEMINI_API_KEY`).
+*   🟢 **OpenCode / Codex CLI:** Open-source or local LLM execution CLI (`agentFarm.codexHome`).
+
+##### 3. Knowledge Base Layer (Memory)
+*   🔴 **Obsidian App:** Vault root container.
+*   🔴 **`obsidian-local-rest-api`:** Vault HTTP REST API bridge (Port `27123`/`27124` + Bearer Token).
+*   🔴 **`obsidian-tasks-plugin`:** Task metadata formatting standard (🆔, ⛔, ⏫, 📅).
+*   🟡 **`dataview`:** Dynamic project indices and queries.
+*   🟢 **`obsidian-git`:** Automatic background vault backup.
+
+##### 4. Local Ports & Protocols Layer (Networking)
+*   `4141` — **Bridge IPC Socket:** JSONL messaging between agents and VS Code.
+*   `8377` — **Live Hook Listener:** Live timeline events (prompt, tool, permission waits).
+*   `8378` — **Read-Only Web View:** Phone/LAN dashboard for fleet status and costs.
+*   `27123/27124` — **Obsidian REST API:** Vault file access endpoint.
+
+##### 5. External Cloud & Messaging Layer (Optional Integrations)
+*   🟢 **Airtable API:** Cloud task table synchronization (`AIRTABLE_API_KEY` + `BASE_ID`).
+*   🟢 **Telegram Bot API:** Remote mobile chat trigger bridge (`agentFarm.telegram.enabled`).
+*   🟢 **Replicate API:** Agent image/media generation (`mediaAuthSecret`).
+
+---
+
+### 01. Layer 0 — Host Environment and Runtime
+
+```powershell
+# Verify runtime tools
+node -v
+npm -v
+git --version
+```
+
+```powershell
+# Install global CLI tools
+npm install -g @anthropic-ai/claude-code
+npm install -g @vscode/vsce
+
+# Authenticate Claude CLI
+claude
+```
+
+---
+
+### 02. Layer 1 — Knowledge Base (Obsidian Vault)
+
+```text
+📁 {{VAULT_DIR}} (Obsidian Vault Root)
+├── 📁 00_AGENT_AREA/                # Agent operational domain
+│   ├── 📁 10_PROJECTS/              # Active and archived project folders
+│   ├── 📁 20_WIKI/                  # Distilled knowledge synthesis pool
+│   └── 📁 99_SYSTEM/                # System constitutions & LifeOS definitions
+├── 📁 01_INBOX/                     # Operational inbox & flow
+│   ├── 📁 10_TODO/                  # Task lists (__TODO__.md)
+│   └── 📁 20_PROGRESS/              # Ongoing progress reports
+└── 📁 90_OTHER/                     # Templates, archives, and helpers
+```
+
+---
+
+### 03. Layer 2 — Agent Core, Constitutions & Duties
+
+```text
+📁 {{AGENT_DIR}} (Agent Fleet Root)
+├── 📄 AGENTS.md             # Shared Constitution (Common rules for all agents)
+├── 📄 CLAUDE.md             # Claude CLI root instructions
+├── 📁 _REF/                 # On-demand recipe library
+│   ├── 📄 bridge.md         # Bridge protocol rules
+│   ├── 📄 notices.md        # Notification & Q&A formats
+│   └── 📄 duties.md         # Duty checklist formats
+└── 📁 developer/            # Example Agent: Software Developer
+    ├── 📄 AGENTS.md         # Agent role & domain focus
+    ├── 📄 DUTIES.md         # Periodic watch duty checklist
+    └── 📁 memory/           # Long-term memory store (≤12 words/line index)
+```
+
+---
+
+### 04. Layer 3 — Credentials & MCP Protocols
+
+`📂 ~/.claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "obsidian-mcp",
+        "--vault-path",
+        "YOUR_VAULT_PATH_HERE",
+        "--api-key",
+        "YOUR_OBSIDIAN_REST_API_KEY_HERE"
+      ]
+    }
+  }
+}
+```
+
+---
+
+### 05. Layer 4 — Agent Farm Cockpit (VS Code Extension)
+
+```powershell
+# Build VSIX package from source
+cd ~/projects/vsc_AgentFarm
+npm install
+npm run compile
+
+# Build and install VSIX
+vsce package --no-dependencies
+code --install-extension agent-farm-3.206.0.vsix
+```
+
+`📂 %APPDATA%\Code\User\settings.json`:
+```json
+{
+  "agentFarm.agentRoots": [
+    "~/projects/ai-agents"
+  ],
+  "agentFarm.projectsRoot": "~/documents/lifeos_vault/00_AGENT_AREA/10_PROJECTS",
+  "agentFarm.livePort": 8377,
+  "agentFarm.web.enabled": false,
+  "agentFarm.web.port": 8378,
+  "agentFarm.newAgentModel": "sonnet"
+}
+```
+
+---
+
+### 06. Layer 5 — Bridge & Notices Engine
+
+Bridge operates over a local socket (`localhost:4141`) using JSONL line-delimited messages:
+
+```json
+{
+  "type": "notice",
+  "agent": "developer",
+  "noticeType": "question",
+  "title": "Architectural Approval Required",
+  "content": "Proceed with database schema migration?",
+  "handled": false
+}
+```
+
+---
+
+### 07. Layer 6 — Verification & Disaster Recovery Checklist
+
+```text
+┌───┐
+│ ✔ │ 1. Do Node.js, Git, and Claude CLI respond correctly in terminal?
+├───┤
+│ ✔ │ 2. Is Obsidian running with Local REST API plugin enabled?
+├───┤
+│ ✔ │ 3. Do 00_AGENT_AREA and 99_SYSTEM directories exist in the Vault?
+├───┤
+│ ✔ │ 4. Are AGENTS.md and _REF/ present in the agent root?
+├───┤
+│ ✔ │ 5. Does the Agent Farm panel list all agents as ready/green?
+└───┘
+```
+
+#### Quick Start Cheat Sheet
+
+```powershell
+# 1. Setup environment
+winget install OpenJS.NodeJS.LTS Git.Git
+npm install -g @anthropic-ai/claude-code @vscode/vsce
+
+# 2. Authenticate
+claude
+
+# 3. Build & install Agent Farm
+cd ~/projects/vsc_AgentFarm
+npm install
+npm run compile
+vsce package --no-dependencies
+code --install-extension agent-farm-*.vsix
+```

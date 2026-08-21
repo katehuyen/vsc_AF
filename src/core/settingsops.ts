@@ -72,7 +72,7 @@ const CATEGORY_OF: Record<string, string> = {
     notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
     maxTranscriptMessages: 'live', contextWindowTokens: 'live',
     // cost & budgets
-    pricing: 'cost', budgets: 'cost', windowTokenLimit: 'cost',
+    pricing: 'cost', budgets: 'cost', budgetsUnlimited: 'cost', windowTokenLimit: 'cost',
     windowWeightedTokenLimit: 'cost', quotaWeightMode: 'cost', quotaWeights: 'cost',
     quotaBrakeBasis: 'cost',
     planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost',

@@ -48,6 +48,20 @@ export interface LiveSession {
     compactions: number;
     subagentStops: number;
     notifiedStuck: boolean;
+    /**
+     * ‼️ S-43 — HELD BACK: this looks like the daemon's pre-warmed spare worker
+     * and it has never done a thing.
+     *
+     * Claude Code keeps an idle worker ready so a `claude` you type starts
+     * instantly, and that worker fires SessionStart exactly like a person's
+     * session does. Tracked, never drawn: `sessions()` leaves it out, so no
+     * card appears, nothing is written to the lane, and "End session" is not
+     * offered for a process that would simply be bred again. It is not a
+     * verdict taken once — see `settleSpares`; a session that submits a prompt
+     * is released and never held again, because that is the daemon handing its
+     * spare over to a real conversation.
+     */
+    spare?: boolean;
     /** Which Agent Farm builds watched this session, oldest first — see `af` on
      *  LiveEvent. Usually one; more than one means the extension was updated (or
      *  rolled back) while the session was still running, which is exactly the
@@ -143,6 +157,17 @@ export interface LiveConfig {
      * to run — see the swim-lane toggles in the timeline panel.
      */
     onTurnReady?: (s: LiveSession) => void;
+    /**
+     * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a
+     * daemon spare / background worker, `false` somebody's session, `undefined`
+     * it has not written the file yet.
+     *
+     * Injected rather than read here: this module never touches a disk, so a
+     * test drives the filter by handing it a function. Absent (any other engine,
+     * any test that does not care) means nothing is ever held — which is the
+     * old behaviour exactly, so Codex, Gemini and Antigravity cannot regress.
+     */
+    spareOf?: (sessionId: string) => boolean | undefined;
 }
 
 // Detail views (≤8h) render from memory; longer ranges are bucketed from the
@@ -811,9 +836,24 @@ export class LiveMonitor implements vscode.Disposable {
             case 'SessionStart':
                 s.status = 'idle';
                 s.startedAt = now;
+                // ‼️ S-43 — A DAEMON'S SPARE FIRES THIS HOOK TOO, and it was
+                // being drawn as a live session that nobody had started: End
+                // Session killed the leaf worker, the daemon bred another under
+                // a new id, and the card came back for ever. Held rather than
+                // dropped — the session is still tracked, so the moment it says
+                // anything real it appears with its whole history intact.
+                if (s.prompts === 0 && cfg.spareOf?.(s.sessionId) === true) {
+                    s.spare = true;
+                    break;
+                }
+                s.spare = false;
                 this.push(s, 'start', undefined, payload.source);
                 break;
             case 'UserPromptSubmit': {
+                // A prompt is the end of every doubt: a spare that is handed to
+                // a real conversation stops being a spare here, whatever the
+                // registry still says about it.
+                s.spare = false;
                 s.status = 'working';
                 s.prompts++;
                 const rawPrompt = (payload.prompt ?? '').trim();
@@ -1040,7 +1080,40 @@ export class LiveMonitor implements vscode.Disposable {
     // ---------- Queries ----------
 
     sessions(): LiveSession[] {
-        return [...this.sessionsMap.values()].sort((a, b) => b.lastEventTs - a.lastEventTs);
+        this.settleSpares();
+        return [...this.sessionsMap.values()]
+            .filter(s => !s.spare)
+            .sort((a, b) => b.lastEventTs - a.lastEventTs);
+    }
+
+    /**
+     * ‼️ S-43 — THE VERDICT IS RE-TAKEN, IN BOTH DIRECTIONS, ON EVERY READ.
+     *
+     * The hook arrives the instant the worker is born and the CLI may not have
+     * written that pid's registry file yet, so the answer at SessionStart can
+     * honestly be "I do not know". Deciding it there once is what makes a
+     * filter that passes its test and leaks in real life: read "I do not know"
+     * as *real* and the spare slips through on its first event; read it as
+     * *spare* and a session that has only just started is hidden for good.
+     *
+     * So it is not decided there. Nothing is held on a shrug — the old
+     * behaviour — and the question is simply asked again whenever the list is
+     * read, by which time the file exists. That makes the leak self-healing
+     * (the card is gone by the next refresh) without ever hiding a session the
+     * registry knows is real, and it costs one directory read per refresh.
+     *
+     * A session that has ever submitted a prompt is released and never held
+     * again: the daemon hands its spare to a real conversation, and a rule that
+     * kept looking at `spare:true` would hide the conversation with it.
+     */
+    private settleSpares(): void {
+        const spareOf = this.getConfig().spareOf;
+        if (!spareOf) { return; }
+        for (const s of this.sessionsMap.values()) {
+            if (s.prompts > 0 || s.status === 'ended') { s.spare = false; continue; }
+            const verdict = spareOf(s.sessionId);
+            if (verdict !== undefined) { s.spare = verdict; }
+        }
     }
 
     events(windowMs: number): LiveEvent[] {
@@ -1061,8 +1134,12 @@ export class LiveMonitor implements vscode.Disposable {
         };
         let best: LiveSession | undefined;
         let count = 0;
+        this.settleSpares();
         for (const s of this.sessionsMap.values()) {
-            if (s.agentId !== agentId) { continue; }
+            // A held spare is not one of this agent's sessions — it is the
+            // CLI's own idle worker, and counting it lit an agent up as busy
+            // in the fleet views for work nobody had asked for (S-43).
+            if (s.agentId !== agentId || s.spare) { continue; }
             count++;
             if (!best || rank[s.status] < rank[best.status]) { best = s; }
         }

@@ -36,8 +36,20 @@ export interface CliSessionRecord {
     nameSource?: string;
     /** the CLI's own status word ('idle', …) — informational */
     status?: string;
-    /** 'interactive' | … */
+    /** 'interactive' = a conversation · 'bg' = a worker the daemon runs */
     kind?: string;
+    /**
+     * ‼️ S-43 — THE CLI SAYS SO ITSELF: this process is a **pre-warmed spare**.
+     *
+     * Claude Code v2.1+ keeps a daemon and one idle worker ready so a `claude`
+     * you type starts instantly. That worker registers here exactly like a real
+     * session (`"kind":"bg","spare":true,"status":"idle"`) and fires the same
+     * SessionStart hook — which is how a session nobody started kept appearing
+     * on the Live Timeline, and why killing it only made the daemon breed
+     * another. Read from the record rather than guessed; verified against a
+     * live one on disk.
+     */
+    spare?: boolean;
     /** 'cli' = a person's terminal · 'sdk-cli' = a program (e.g. our Console) */
     entrypoint?: string;
     startedAt?: number;
@@ -107,6 +119,7 @@ export function readCliSessions(claudeDir: string): CliSessionRecord[] {
         if (typeof o.nameSource === 'string') { rec.nameSource = o.nameSource; }
         if (typeof o.status === 'string') { rec.status = o.status; }
         if (typeof o.kind === 'string') { rec.kind = o.kind; }
+        if (typeof o.spare === 'boolean') { rec.spare = o.spare; }
         if (typeof o.entrypoint === 'string') { rec.entrypoint = o.entrypoint; }
         if (typeof o.startedAt === 'number') { rec.startedAt = o.startedAt; }
         if (typeof o.updatedAt === 'number') { rec.updatedAt = o.updatedAt; }
@@ -167,6 +180,38 @@ export function liveSessionIds(records: CliSessionRecord[]): Set<string> {
  */
 export function ownerOf(records: CliSessionRecord[], sessionId: string): CliSessionRecord | undefined {
     return records.find(r => r.sessionId === sessionId);
+}
+
+/**
+ * ‼️ S-43 — IS THIS THE DAEMON'S OWN WORKER RATHER THAN SOMEBODY'S SESSION?
+ *
+ * Two marks, and the weaker one is deliberate. `spare: true` is the CLI saying
+ * it outright. `kind: 'bg'` alone is only a hint — a headless run is background
+ * work too — so it is never enough on its own: the caller pairs it with "and it
+ * has never received a prompt", which a real run stops satisfying the instant
+ * it starts working. That pairing is what makes hiding safe: anything real
+ * un-hides itself within a moment, and only a worker that never does anything
+ * stays hidden.
+ */
+export function isSpareCliSession(rec: CliSessionRecord): boolean {
+    return rec.spare === true || rec.kind === 'bg';
+}
+
+/**
+ * What the registry says about one session id: `true` it is a spare/background
+ * worker, `false` it is somebody's session, `undefined` **it has not said yet**.
+ *
+ * ‼️ The third answer is the one that matters. The SessionStart hook fires the
+ * instant the worker is born, and the registry file for that pid may not be on
+ * disk yet — so a caller that reads "I do not know" as "it is real" leaks the
+ * very card this is built to remove, and one that reads it as "it is spare"
+ * hides a session that has only just started. Neither: the question is asked
+ * again later (see LiveMonitor.settleSpares), by which time the file is there.
+ */
+export function spareVerdict(claudeDir: string, sessionId: string): boolean | undefined {
+    if (!sessionId) { return undefined; }
+    const rec = ownerOf(readCliSessions(claudeDir), sessionId);
+    return rec ? isSpareCliSession(rec) : undefined;
 }
 
 /** How to describe an owner to the user, honestly. */

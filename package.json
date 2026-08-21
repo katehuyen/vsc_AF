@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.206.0",
+  "version": "3.209.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -692,6 +692,12 @@
         "title": "End Session (stop its process)",
         "category": "Agent Farm",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "agentfarm.forceKillSession",
+        "title": "Force Kill Session Tree (stop the daemon too)",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
       },
       {
         "command": "agentfarm.dismissSession",
@@ -4299,9 +4305,14 @@
           "group": "3_stop@2"
         },
         {
-          "command": "agentfarm.dismissSession",
+          "command": "agentfarm.forceKillSession",
           "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "3_stop@3"
+        },
+        {
+          "command": "agentfarm.dismissSession",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
+          "group": "3_stop@4"
         },
         {
           "command": "agentfarm.assignSessionProject",
@@ -4479,9 +4490,14 @@
           "group": "2_stop@2"
         },
         {
-          "command": "agentfarm.dismissSession",
+          "command": "agentfarm.forceKillSession",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "2_stop@3"
+        },
+        {
+          "command": "agentfarm.dismissSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "2_stop@4"
         },
         {
           "command": "agentfarm.ctx.backlogGo",
@@ -8736,7 +8752,7 @@
             }
           },
           "default": [],
-          "description": "Dispatcher routing rules for 'dispatch' triggers — first matching regex wins. Example: [{\"match\": \"uyku|kaygı\", \"agent\": \"psikolog\"}]."
+          "description": "Dispatcher routing rules for 'dispatch' triggers — first matching regex wins. Example: [{\"match\": \"invoice|billing\", \"agent\": \"agent_one\"}]."
         },
         "agentFarm.dispatchClassifier": {
           "type": "boolean",
@@ -9007,7 +9023,12 @@
             "type": "number"
           },
           "default": {},
-          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"psikolog\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded."
+          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"agent_one\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded. Tick 'budgetsUnlimited' to suspend every budget without losing the figures."
+        },
+        "agentFarm.budgetsUnlimited": {
+          "type": "boolean",
+          "default": false,
+          "description": "Suspend every daily budget: while this is on, no agent has a cap and nothing warns or blocks on spend, whatever 'budgets' says. The figures are kept, not cleared — turn it off and the budgets you set are back in force, unchanged."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",

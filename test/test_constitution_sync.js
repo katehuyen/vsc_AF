@@ -194,5 +194,44 @@ const codexPath = path.join(agentDir, 'AGENTS.md');
 
 try { fs.rmSync(nest, { recursive: true, force: true }); } catch { }
 
+// ---------- ⚖ the operation has a button, and it is on the Toolbox ----------
+//
+// It was reachable from the command palette and the bridge only — so the one
+// operation that touches EVERY agent at once was the one you could not click.
+// U-83 moved it off the Dashboard onto the Toolbox: what it mirrors is Claude's
+// own extension model into the files the other engines read, which is what that
+// page is about, and there it has the room for its whole name.
+{
+    const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const js = rd('media/toolbox.js');
+    const head = rd('media/pageHeader.js');
+    check('the Toolbox asks for a Sync Constitution button',
+        /action: 'syncConstitution'/.test(js) && /Sync Constitution/.test(js));
+    check('…spelled out on the button, not shortened to "Sync Cons."',
+        /label: '⚖ Sync Constitution'/.test(js));
+    check('…and the Dashboard no longer draws one',
+        !/syncConstitution/.test(rd('media/dashboard.js'))
+        && !/case 'headerAction'/.test(rd('src/panels/dashboard.ts')));
+    check('the header renders a `related` entry that is an ACTION as a button',
+        /if \(r\.action\)/.test(head) && /data-afact="\$\{r\.action\}"/.test(head));
+    check('…and wires it to one message the page owns',
+        /data-afact\]/.test(head) && /type: 'headerAction', action: b\.dataset\.afact/.test(head));
+    // ‼️ The second row is INSIDE .af-head, because wire() scopes header
+    // actions to `.af-head [data-afact]` — lifted out of that box, this very
+    // button would stop posting and nothing else would notice.
+    check('…from the second row too, which stays inside the header block',
+        head.indexOf('af-head-more') > 0
+        && /<div class="af-head-more">/.test(head)
+        && head.indexOf('${moreRow}') > head.indexOf('<div class="af-head-bar">'));
+
+    // The handler CALLS the palette command — the divergence checks, the modal
+    // and the .afbak backups are that command's, and there is one of them.
+    const panel = rd('src/panels/toolboxPanel.ts');
+    check('the panel routes headerAction to the command the palette calls',
+        /case 'headerAction'/.test(panel)
+        && /msg\.action === 'syncConstitution'/.test(panel)
+        && /executeCommand\('agentfarm\.syncConstitution'\)/.test(panel));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

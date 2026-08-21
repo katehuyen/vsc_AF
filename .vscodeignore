@@ -6,6 +6,7 @@ tsconfig.json
 **/*.map
 .gitignore
 *.vsix
+.tmp/**
 scratchpad/**
 test/**
 dist/render/**

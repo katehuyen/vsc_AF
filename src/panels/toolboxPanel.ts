@@ -151,6 +151,15 @@ export class ToolboxPanel {
             case 'afnav':
                 handleAfNav(msg.to);
                 break;
+            // A header button that is an action, not a destination (see
+            // AFHeader's `related`). The handler CALLS the command the palette
+            // calls — the dialogs, the divergence checks and the backups are
+            // that command's, and there is exactly one of them.
+            case 'headerAction':
+                if (msg.action === 'syncConstitution') {
+                    void vscode.commands.executeCommand('agentfarm.syncConstitution');
+                }
+                break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'toolbox');
                 break;

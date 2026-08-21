@@ -241,5 +241,29 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('…and nothing can be compiled', /id="wk-call"[^>]*disabled/.test(h));
 }
 
+// ============================================= U-83 — reaching it at all
+//
+// The cockpit was one click from the Toolbox and nowhere else: a page about the
+// whole farm's knowledge, filed behind the page about Claude's extension model.
+// It is a global destination now, between Studio (what is being made) and
+// Toolbox (what it is made of) — and, like every other one, absent from its own
+// page and never drawn twice on one toolbar.
+{
+    const fs = require('fs');
+    const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+    ok('the Wiki is in the global nav', /id: 'wiki', label: '📚 Wiki'/.test(nav));
+    ok('…between Studio and Toolbox',
+        nav.indexOf("id: 'studio'") < nav.indexOf("id: 'wiki'")
+        && nav.indexOf("id: 'wiki'") < nav.indexOf("id: 'toolbox'"));
+    ok('…and carries the sentence every destination owes its reader (U-68)',
+        /id: 'wiki', label: '📚 Wiki',\s*\n\s*tip: '/.test(nav));
+    ok('…so no page lists it as a `related` one as well',
+        !/nav: 'wiki'/.test(fs.readFileSync(path.join(__dirname, '..', 'media', 'toolbox.js'), 'utf8')));
+    ok('the page itself is skipped on its own toolbar (page id matches the nav id)',
+        /page: 'wiki'/.test(fs.readFileSync(path.join(__dirname, '..', 'media', 'wiki.js'), 'utf8')));
+    ok('…and the shell already knows where to send it',
+        /wiki: 'agentfarm\.openWiki'/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'base.ts'), 'utf8')));
+}
+
 console.log(`\ntest_wiki_page: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

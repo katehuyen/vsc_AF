@@ -247,7 +247,10 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.copySessionId', when: SESSION_ROW, group: '2_mark@4' },
     { command: 'agentfarm.interruptSession', when: SESSION_ROW, group: '3_stop@1' },
     { command: 'agentfarm.endSession', when: SESSION_ROW, group: '3_stop@2' },
-    { command: 'agentfarm.dismissSession', when: SESSION_ROW, group: '3_stop@3' },
+    // ‼️ S-43 — beside End, never instead of it: End stops this conversation,
+    // Force Kill stops the daemon that keeps re-making it.
+    { command: 'agentfarm.forceKillSession', when: SESSION_ROW, group: '3_stop@3' },
+    { command: 'agentfarm.dismissSession', when: SESSION_ROW, group: '3_stop@4' },
     { command: 'agentfarm.assignSessionProject', when: SESSION_ROW, group: '4_project@1' },
     { command: 'agentfarm.projectFromSession', when: SESSION_ROW, group: '4_project@2' },
     { command: 'agentfarm.addSessionFolderToProject', when: SESSION_ROW, group: '4_project@3' },
@@ -316,7 +319,8 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.resumeSession', when: TIMELINE_SESSION, group: '1_session@8' },
     { command: 'agentfarm.interruptSession', when: TIMELINE_SESSION, group: '2_stop@1' },
     { command: 'agentfarm.endSession', when: TIMELINE_SESSION, group: '2_stop@2' },
-    { command: 'agentfarm.dismissSession', when: TIMELINE_SESSION, group: '2_stop@3' },
+    { command: 'agentfarm.forceKillSession', when: TIMELINE_SESSION, group: '2_stop@3' },
+    { command: 'agentfarm.dismissSession', when: TIMELINE_SESSION, group: '2_stop@4' },
 
     // =====================================================================
     // PROJECTS — the page where the user actually works. Everything below is

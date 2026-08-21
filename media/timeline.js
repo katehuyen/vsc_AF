@@ -1437,6 +1437,15 @@
                             tline('Asks first', 'yes')
                         ])
                     }) : ''}
+                    ${s.owner && !s.hosted ? tip(`<button class="secondary" data-killsess="${C.esc(s.sessionId)}" data-killagent="${C.esc(s.label || s.agentName)}">☠ Force kill</button>`, {
+                        head: '‼️ Stop the whole claude tree above it — asks first, naming every process',
+                        body: figures([
+                            tline('Use it when', 'End session kills it and it comes straight back under a new id — that is the CLI\'s daemon breeding a replacement worker'),
+                            tline('Ends', `the tree above pid ${s.owner.pid}, up to the topmost claude process — never VS Code's own`),
+                            tline('vs End session', 'End stops this conversation; this stops the machinery that keeps re-making it'),
+                            tline('Asks first', 'yes — the confirmation lists each process that will go')
+                        ])
+                    }) : ''}
                     ${tip(`<button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}">✕ Clear</button>`, {
                         head: 'Take it off this page — card and swim lane, in every range',
                         body: figures([
@@ -1562,6 +1571,10 @@
         document.querySelectorAll('[data-endsess]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({
                 type: 'endSession', sessionId: b.dataset.endsess || '', agentName: b.dataset.endagent || ''
+            })));
+        document.querySelectorAll('[data-killsess]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'forceKillSession', sessionId: b.dataset.killsess || '', agentName: b.dataset.killagent || ''
             })));
         document.querySelectorAll('[data-dropsess]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({

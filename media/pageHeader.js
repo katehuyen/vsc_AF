@@ -3,7 +3,10 @@
 // whose left half is the page's own scope controls and actions, and whose
 // right half — after a thin divider — is the GLOBAL cluster, identical on
 // every page (minus the page itself):
-//   Dashboard · Live Timeline · Tasks · Missions · Toolbox · [related panel] · ⌕ Search · ⚙ Settings · Refresh · ? Guide
+//   Dashboard · Live Timeline · Tasks · Missions · Wiki · Toolbox · [related panel] · ⌕ Search · ⚙ Settings · Refresh · ? Guide
+// A page owning several destinations of its own can send that `related` cluster
+// to a second, equally right-aligned row (`relatedRow`) instead of lengthening
+// the global one.
 // Pages differ only in their left half; the right half is muscle memory.
 // Alignment, gaps and wrapping come from here — pages must not hand-roll
 // their own header rows.
@@ -19,12 +22,22 @@
         .af-head-bar { display:flex; gap:6px 8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; min-width:0; }
         .af-head-actions, .af-head-nav { display:flex; gap:5px; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; }
         .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:9px; }
+        /* ‼️ U-83 — A PAGE'S OWN DESTINATIONS MAY TAKE THEIR OWN LINE. Four of
+           them appended to a twelve-button global row is a toolbar that wraps
+           under the cursor at any window the user actually works at, and the
+           four that get pushed onto line two are chosen by width rather than by
+           meaning. relatedRow makes the split deliberate: the global cluster
+           keeps line one, the page's own cluster gets line two, both flush
+           right so the two rows share an edge and read as one block. It is a
+           full-width flex child of .af-head, so it wraps to its own line
+           without any of the halves above it moving. */
+        .af-head-more { flex:1 0 100%; display:flex; gap:6px 8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-top:-4px; }
         /* THIS row only. A dozen destinations plus the page's own actions was
            overflowing and wrapping onto a second line, and a toolbar that moves
            under the cursor is worse than a slightly tighter one. Nothing is
            renamed, hidden or reordered — the buttons here are simply denser
            than the page's own body buttons, which keep their normal size. */
-        .af-head-bar button { font-size:11px; padding:3px 8px; }
+        .af-head-bar button, .af-head-more button { font-size:11px; padding:3px 8px; }
         .af-head-bar .af-nav-n { opacity:.85; }
         /* ‼️ U-68 — THE FIVE THAT ARE THE SAME EVERYWHERE ARE DRAWN AS THEIR
            ICON ALONE. Evals, ⌕, ⚙, ⟳ and ? are on every page in the same order,
@@ -34,7 +47,7 @@
         .af-head-bar .af-ico { min-width:24px; padding:3px 0; text-align:center; }
         /* An AFTip wrapper is the flex child once a button is wrapped, so it
            has to sit in the row exactly as the bare button did. */
-        .af-head-bar .af-tipw-nav { display:inline-flex; align-items:center; }
+        .af-head-bar .af-tipw-nav, .af-head-more .af-tipw-nav { display:inline-flex; align-items:center; }
         /* ‼️ HERE THE FIRST LINE IS THE NAME, NOT A FIGURE. The panel's head is
            normally a faded caption above the figures it heads; on this row it
            is the one thing the control may not be showing at all, so it is read
@@ -125,6 +138,15 @@
             id: 'studio', label: '🎬 Studio',
             tip: 'Media production: productions and their scenes, the prompts and renders behind each one, '
                 + 'the providers used and what the month has cost.'
+        },
+        // U-83: the Wiki was reachable from the Toolbox's own row and nowhere
+        // else — a destination that is about the whole farm's knowledge, filed
+        // behind one page. It sits between Studio and Toolbox because that is
+        // where the row turns from "what is being made" to "what it is made of".
+        {
+            id: 'wiki', label: '📚 Wiki',
+            tip: 'The turns marked as worth keeping, and what the compiles made of them — the candidate '
+                + 'pool on one side, the vault\'s own pages on the other.'
         },
         {
             id: 'toolbox', label: 'Toolbox',
@@ -265,6 +287,12 @@
      *                //   page owns). It posts { type:'headerAction', action } and
      *                //   sits in the same row, so the page's controls above keep
      *                //   their own line.
+     *   relatedRow,  // true → the `related` cluster gets its OWN row under the
+     *                //   global one, still flush right. For a page that owns
+     *                //   several destinations: four extra buttons on the global
+     *                //   row wrap it at any real window width, and which four
+     *                //   fall to line two is then decided by pixels rather than
+     *                //   by meaning.
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
      *   navActions,  // optional { <navId>: {label, title} } — this page claims
@@ -328,9 +356,14 @@
                 attrs: `data-afnav="${n.id}"`, tip: n.tip
             }));
         }
+        // `relatedRow` sends this cluster to a line of its own under the global
+        // one (see .af-head-more). The buttons are built exactly the same way
+        // either way — only where they land changes.
+        const more = [];
+        const relatedInto = o.relatedRow ? more : cluster;
         for (const r of o.related || []) {
             if (r.action) {
-                cluster.push(navBtn({
+                relatedInto.push(navBtn({
                     label: r.label, name: r.name, attrs: `data-afact="${r.action}"`, tip: r.title || ''
                 }));
                 continue;
@@ -339,7 +372,7 @@
             // inherits its sentence rather than restating it — one description
             // per destination, wherever the button to it happens to sit.
             const known = NAV.find(n => n.id === r.nav);
-            cluster.push(navBtn({
+            relatedInto.push(navBtn({
                 label: r.label, name: r.name, attrs: `data-afnav="${r.nav}"`,
                 tip: r.title || (known && known.tip) || ''
             }));
@@ -385,10 +418,16 @@
         // afSessionCtx.js) and covers the title block, heading and subtitle
         // alike, because both name the same object.
         const info = o.infoCtx ? ` ${o.infoCtx}` : '';
+        // The second row stays INSIDE .af-head: wire() scopes header actions to
+        // `.af-head [data-afact]` on purpose (an unscoped query also caught
+        // every AFForm Submit), so a related ACTION lifted out of the box would
+        // silently stop posting.
+        const moreRow = more.length ? `<div class="af-head-more">${more.join('')}</div>` : '';
         return `${STYLE}
             <div class="af-head">
                 <div class="af-head-info"${info}><h1>${o.title}</h1>${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
                 <div class="af-head-bar">${bar}</div>
+                ${moreRow}
             </div>`;
     }
 

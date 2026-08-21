@@ -153,7 +153,8 @@ import {
 import { EngineRunner, testEngine } from './core/engineTest';
 import { effortsFor, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
+import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
+import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
 import { revealPath } from './core/reveal';
 import {
     agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
@@ -334,6 +335,22 @@ import {
 
 function cfg() {
     return vscode.workspace.getConfiguration('agentFarm');
+}
+
+/**
+ * ‼️ X-54 — THE DAILY BUDGETS, THROUGH ONE DOOR.
+ *
+ * Seven places read this setting, and "budgets are suspended" is only true if
+ * every one of them agrees. A switch honoured in six of seven is worse than no
+ * switch: the ceiling appears to be off and something still refuses to run. So
+ * nobody reads `budgets` directly any more — `budgetsUnlimited` hands back an
+ * empty map, which is already the shape every reader treats as "no cap set",
+ * and the figures the user typed stay in settings untouched, waiting for the
+ * switch to come back off.
+ */
+function budgetsNow(): Record<string, number> {
+    if (cfg().get<boolean>('budgetsUnlimited', false)) { return {}; }
+    return cfg().get<Record<string, number>>('budgets', {});
 }
 
 function claudeDir(): string {
@@ -797,7 +814,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const healthConfig = () => ({
         staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
         contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
-        budgets: cfg().get<Record<string, number>>('budgets', {}),
+        budgets: budgetsNow(),
         trendFactor: cfg().get<number>('trendAlertFactor', 2),
         anomalyMinUsd: cfg().get<number>('costAnomalyMinUsd', 1),
         qualityScores: qualityStore.scores,
@@ -929,6 +946,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             best = agents.find(a => a.name.toLowerCase() === base);
         }
         return best ? { agentId: best.id, agentName: best.name } : {};
+    };
+    /**
+     * ‼️ S-43 — the CLI's session registry, cached for a moment.
+     *
+     * `settleSpares` asks about every tracked session on every read of the live
+     * list, and the answer for all of them comes from one directory. Reading it
+     * once per question would turn a panel refresh into a dozen directory
+     * scans; a snapshot this short cannot go stale in any way that matters,
+     * because the only thing a later scan changes is how quickly a card that
+     * should not be there disappears.
+     */
+    let spareSnap: { at: number; recs: CliSessionRecord[] } | undefined;
+    const spareOf = (sessionId: string): boolean | undefined => {
+        const now = Date.now();
+        if (!spareSnap || now - spareSnap.at > 750) {
+            spareSnap = { at: now, recs: readCliSessions(claudeDir()) };
+        }
+        const rec = ownerOf(spareSnap.recs, sessionId);
+        // No record is NOT a verdict: any other engine's session has none, and
+        // a claude that was born a millisecond ago has not written one yet.
+        return rec ? isSpareCliSession(rec) : undefined;
     };
     const live = new LiveMonitor(
         () => ({
@@ -1841,7 +1879,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // insight and let the task start anyway; a ceiling you can walk
             // through is not a ceiling. Per-agent limit first, then the fleet.
             budgetCheck: (agentName) => {
-                const budgets = cfg().get<Record<string, number>>('budgets', {});
+                const budgets = budgetsNow();
                 if (!budgets || !Object.keys(budgets).length) { return undefined; }
                 const d = new Date();
                 const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2801,7 +2839,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agents: agents.map(a => ({
                 name: a.name,
                 todayCost: todayCostOf(index.forAgent(a.id)),
-                budget: cfg().get<Record<string, number>>('budgets', {})[a.name]
+                budget: budgetsNow()[a.name]
             })),
             warnings: insights
                 .filter(i => i.severity !== 'info')
@@ -5875,6 +5913,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                 }
                 return ids.length === 1 ? out[0] : { sessions: out.length, results: out };
+            }
+        },
+        {
+            op: 'sessions.forceKill',
+            describe: 'Stop a session AND the process tree above it — for a claude the daemon owns, where sessions.end kills the worker and the daemon immediately breeds another under a new id. Climbs from the session\'s process to the top of the claude tree (never into VS Code\'s own tree, never past a shell) and stops it there, then purges the card. Asks the user to confirm, naming every process that will go. A Console-hosted session is refused — use sessions.end, which closes it properly. args: sessionId',
+            handler: async (args) => {
+                const sessionId = String(args.sessionId ?? '').trim();
+                need(sessionId, 'sessionId required');
+                const before = live.sessions().some(s => s.sessionId === sessionId);
+                await forceKillLiveSession(sessionId);
+                return {
+                    sessionId, tracked: before,
+                    killed: !live.sessions().some(s => s.sessionId === sessionId)
+                };
             }
         },
         {
@@ -10318,7 +10370,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getPricing: () => pricing,
         windowTokenLimit: () => cfg().get<number>('windowTokenLimit', 0),
         windowWeightedTokenLimit: () => cfg().get<number>('windowWeightedTokenLimit', 0),
-        budgets: () => cfg().get<Record<string, number>>('budgets', {}),
+        budgets: () => budgetsNow(),
         mediaCost: () => ({
             today: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),
             month: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000)
@@ -10546,7 +10598,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getInsights: () => insights,
         live,
         projects: () => projectStore.all(),
-        budgets: () => cfg().get<Record<string, number>>('budgets', {}),
+        budgets: () => budgetsNow(),
         agentRoots: () => cfg().get<string[]>('agentRoots', [])
             .map(expandEnvPath).filter(r => fs.existsSync(r)),
         defaultModel: () => cfg().get<string>('newAgentModel', 'sonnet').trim(),
@@ -11369,7 +11421,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const automations = [...scheds, ...trigs].map(a => ({
             ...a, lastFiredAt: lastFired.get(a.id) ?? a.lastFiredAt
         }));
-        const budgets = cfg().get<Record<string, number>>('budgets', {});
+        const budgets = budgetsNow();
         return {
             notices: noticesStore.list({ limit: 0 }),
             queue: workQueueStore.list({ limit: 0 }),
@@ -14174,7 +14226,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             getInsights: () => insights,
             live,
             projects: () => projectStore.all(),
-            budgets: () => cfg().get<Record<string, number>>('budgets', {})
+            budgets: () => budgetsNow()
         }, now);
         const today = dayKey(now);
         const projectByAgent = agentProjectNames(
@@ -17840,6 +17892,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showInformationMessage(`Agent Farm: ${who} ended (pid ${owner.pid}).`);
     };
 
+    /**
+     * ‼️ S-43 — END IT AT THE ROOT, because ending it at the leaf is what made
+     * the loop.
+     *
+     * "End session" stops the process the CLI registry names — the worker — and
+     * on Windows `taskkill /T` only ever walks DOWN from there. The daemon above
+     * it sees its worker die, starts another, and the card returns under a new
+     * id: the user could kill the same session for ever without leaving the
+     * editor. This climbs the process tree to the top of the CLAUDE part of it
+     * (never into ours, never past a shell — see core/processTree.ts) and stops
+     * THAT, so there is nothing left to breed a replacement.
+     *
+     * It is a separate action rather than a better End, because the two answer
+     * different questions and the difference is worth a press: End stops this
+     * conversation, Force Kill stops the machinery that keeps making it.
+     */
+    const forceKillLiveSession = async (sessionId: string, agentName?: string): Promise<void> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        const who = agentName ?? (s ? live.labelOf(s) : sessionId.slice(0, 8));
+        // A Console session is OUR child. Its tree runs under this window, so
+        // climbing it would walk straight into the editor — and closing it
+        // properly (stdin, then its own tree) is what consoleHost already does.
+        if (consoleHost.list().some(h => h.sessionId === sessionId)) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: "${who}" is a Console session in this window — use End session, which closes it and its own process tree. `
+                + 'Force Kill is for a claude the daemon owns.');
+            return;
+        }
+        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        if (!owner) {
+            const yes = await vscode.window.showWarningMessage(
+                `No live process owns "${who}" any more — there is nothing left to kill. Clear it from the live timeline?`,
+                { modal: true }, 'Clear it');
+            if (yes !== 'Clear it') { return; }
+            live.dismiss(sessionId, 'cleared (no live process)', true);
+            return;
+        }
+        const table = readProcessTable();
+        const target = findKillTarget(owner.pid, table, ancestorsOf(process.pid, table));
+        const yes = await vscode.window.showWarningMessage(
+            `Force kill "${who}" and its whole process tree?`,
+            {
+                modal: true,
+                detail: describeKillTarget(target)
+                    + '\n\nAnything mid-turn is lost. Transcripts stay on disk. '
+                    + 'To stop just this conversation, use End session instead; to take the card off the page without touching a process, use Clear.'
+            },
+            'Force kill tree');
+        if (yes !== 'Force kill tree') { return; }
+        try {
+            if (process.platform === 'win32') {
+                // X-47 — `windowsHide`, or ending a session flashes a console.
+                cp.execFile('taskkill', ['/PID', String(target.root), '/T', '/F'],
+                    { windowsHide: true }, () => { /* best effort */ });
+            } else {
+                process.kill(target.root, 'SIGKILL');
+            }
+        } catch {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: could not stop pid ${target.root} — it may already be gone.`);
+        }
+        // Purged, not merely ended: the point of this action is that the card
+        // goes and stays gone.
+        live.dismiss(sessionId, 'force killed from Agent Farm', true);
+        void vscode.window.showInformationMessage(
+            `Agent Farm: ${who} force killed — process tree stopped at pid ${target.root}`
+            + (target.chain.length > 1 ? ` (${target.chain.length} processes deep).` : '.'));
+    };
+
     // Palette entry point for the insight commands (tree rows pass the object).
     const pickInsight = async (placeHolder: string, fixableOnly = false): Promise<Insight | undefined> => {
         const list = insights.filter(i => !fixableOnly || FIX_COMMANDS[i.category]);
@@ -18718,6 +18839,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     'End which session? (its claude process is stopped)');
                 if (!sessionId) { return; }
                 await endLiveSession(sessionId, s?.agentName);
+            }),
+
+        // ‼️ S-43 — one session at a time, on purpose. A bulk "kill every tree"
+        // is a different and much larger promise than a bulk End, and nobody
+        // asked for it; the single path already names exactly what will go.
+        vscode.commands.registerCommand('agentfarm.forceKillSession',
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionsFromArg(arg)[0];
+                const sessionId = await pickLiveSessionId(s?.sessionId,
+                    'Force kill which session? (its whole claude process tree is stopped)');
+                if (!sessionId) { return; }
+                await forceKillLiveSession(sessionId, s?.agentName);
             }),
 
         vscode.commands.registerCommand('agentfarm.dismissSession',

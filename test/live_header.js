@@ -11,6 +11,7 @@
  *
  *   node test/live_header.js        → dist/render/live_header.html
  *   node test/live_header.js --check → the same page, answering for itself
+ *   node test/live_header.js --light → the light theme (→ live_header.light.html)
  *
  * Open it, or drive it:
  *   · rest on Console for 300ms — nothing (a control you press waits .6s)
@@ -35,6 +36,27 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const CHECK = process.argv.includes('--check');
+// A second theme, because the toolbar is drawn in whichever one the user has
+// open and a row that only ever gets looked at in the dark is half looked at.
+const LIGHT = process.argv.includes('--light');
+
+/** The editor's own variables, at VS Code's Dark/Light Modern defaults — only
+ *  the ones this page's markup actually resolves. */
+const VARS = LIGHT
+    ? `--vscode-foreground:#3b3b3b; --vscode-editor-background:#ffffff;
+       --vscode-editorWidget-background:#f8f8f8; --vscode-widget-border:#d4d4d4;
+       --vscode-descriptionForeground:#3b3b3b99; --vscode-button-background:#005fb8;
+       --vscode-button-foreground:#ffffff; --vscode-button-secondaryBackground:#e5e5e5;
+       --vscode-button-secondaryForeground:#3b3b3b; --vscode-menu-background:#ffffff;
+       --vscode-menu-foreground:#3b3b3b; --vscode-menu-border:#cecece;
+       --vscode-list-hoverBackground:#f2f2f2; --vscode-focusBorder:#005fb8;`
+    : `--vscode-foreground:#cccccc; --vscode-editor-background:#1f1f1f;
+       --vscode-editorWidget-background:#252526; --vscode-widget-border:#454545;
+       --vscode-descriptionForeground:#9d9d9d; --vscode-button-background:#0078d4;
+       --vscode-button-foreground:#ffffff; --vscode-button-secondaryBackground:#313131;
+       --vscode-button-secondaryForeground:#cccccc; --vscode-menu-background:#252526;
+       --vscode-menu-foreground:#cccccc; --vscode-menu-border:#454545;
+       --vscode-list-hoverBackground:#2a2d2e; --vscode-focusBorder:#0078d4;`;
 
 /** The cascade, unchanged, with `:hover` renamed to a class of the same weight
  *  so a script can put it on. Nothing else about the sheet is touched. */
@@ -114,15 +136,7 @@ document.title = out.some(l => l.startsWith('FAIL')) ? 'CHECK FAILED' : 'CHECK O
 const page = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Agent Farm — live header</title>
 <style>
-:root {
-    --vscode-foreground:#cccccc; --vscode-editor-background:#1f1f1f;
-    --vscode-editorWidget-background:#252526; --vscode-widget-border:#454545;
-    --vscode-descriptionForeground:#9d9d9d; --vscode-button-background:#0078d4;
-    --vscode-button-foreground:#ffffff; --vscode-button-secondaryBackground:#313131;
-    --vscode-button-secondaryForeground:#cccccc; --vscode-menu-background:#252526;
-    --vscode-menu-foreground:#cccccc; --vscode-menu-border:#454545;
-    --vscode-list-hoverBackground:#2a2d2e; --vscode-focusBorder:#0078d4;
-}
+:root { ${VARS} }
 body { background:var(--vscode-editor-background); color:var(--vscode-foreground);
        font:13px "Segoe UI",sans-serif; padding:28px 24px; margin:0; }
 #log { margin-top:180px; font:12px Consolas,monospace; color:#9d9d9d; white-space:pre; }
@@ -130,6 +144,10 @@ ${sheet()}
 </style></head>
 <body>
 <div id="head"></div>
+<!-- ‼️ U-83 — THE SECOND ROW, drawn from the Toolbox's REAL header call, because
+     the one thing that can be wrong here is where four buttons land relative to
+     the twelve above them, and no string test can see that. -->
+<div id="head2" style="margin-top:52px; border-top:1px solid var(--vscode-widget-border); padding-top:22px"></div>
 <div id="log">nothing pressed yet</div>
 <script>${read('media/afTip.js')}</script>
 <script>${read('media/pageHeader.js')}</script>
@@ -142,6 +160,21 @@ document.getElementById('head').innerHTML = AFHeader.html({
     subtitle: 'the toolbar, running, so U-74 can be looked at rather than believed',
     page: 'agents',
     navActions: { console: { label: 'Talk to Agent', title: 'Console — talk to this agent, or open the page' } }
+});
+// The Toolbox's own header, verbatim: four destinations it owns on a row of
+// their own under the global one, both flush right.
+document.getElementById('head2').innerHTML = AFHeader.html({
+    title: 'Toolbox',
+    page: 'toolbox',
+    sub: '318 installed extensions across user + agent scope · inventory, details and management for everything that extends Claude Code',
+    related: [
+        { nav: 'airtable', label: '🗄️ Airtable Engine', title: 'Your data engine as a farm module.' },
+        { nav: 'capabilities', label: 'Capability Matrix', title: 'Who has which skill and MCP server.' },
+        { action: 'syncConstitution', label: '⚖ Sync Constitution', name: 'Sync Constitution', title: 'Mirror the shared constitution to the AGENTS.md files Codex and Antigravity read.' },
+        { nav: 'secrets', label: '🔑 Secrets', title: 'Named values kept in the OS keychain.' }
+    ],
+    relatedRow: true,
+    guide: 'toolbox'
 });
 AFHeader.wire(
     { postMessage: m => say('posted ' + JSON.stringify(m)) },
@@ -156,6 +189,6 @@ ${CHECK ? CHECKS : ''}
 </body></html>`;
 
 fs.mkdirSync(path.join(ROOT, 'dist', 'render'), { recursive: true });
-const out = path.join(ROOT, 'dist', 'render', `live_header${CHECK ? '.check' : ''}.html`);
+const out = path.join(ROOT, 'dist', 'render', `live_header${CHECK ? '.check' : ''}${LIGHT ? '.light' : ''}.html`);
 fs.writeFileSync(out, page, 'utf8');
 console.log(out);

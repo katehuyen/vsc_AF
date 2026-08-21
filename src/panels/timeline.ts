@@ -249,6 +249,15 @@ export class TimelinePanel {
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
                 });
                 break;
+            // ‼️ S-43 — the card's other stop. Same shape as endSession: the
+            // command owns the confirmation, the climb and the kill, and there
+            // is exactly one of it.
+            case 'forceKillSession':
+                void vscode.commands.executeCommand('agentfarm.forceKillSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
+                break;
             case 'dismissSession':
                 void vscode.commands.executeCommand('agentfarm.dismissSession', {
                     sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',

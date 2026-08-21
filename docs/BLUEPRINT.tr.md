@@ -71,7 +71,10 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with the Other Engines…` ([detay](#antigravity-uyumlulugu)) |
 | Konuşmayı/turu wiki aday havuzuna ekle | Transkript/Konsol satırında 🔖, ya da sağ tık → `Add to Wiki Candidates…` ([detay](#wiki)) |
 | Wiki adaylarını derle (sentezle) | Komut paleti → `Agent Farm: Compile Wiki Candidates…` ([detay](#wiki)) |
-| Bekleyen wiki işaretlerini gör, süz ve derle | Komut paleti → `Agent Farm: Open Wiki`, ya da Toolbox → `📚 Wiki` ([detay](#wiki-kokpiti)) |
+| Bekleyen wiki işaretlerini gör, süz ve derle | Her sayfanın araç çubuğundaki `📚 Wiki` düğmesi, ya da komut paleti → `Agent Farm: Open Wiki` ([detay](#wiki-kokpiti)) |
+| Ortak anayasayı diğer motorlara yansıt | Toolbox başlığı → `⚖ Sync Constitution` (alt satır), ya da palet → `Agent Farm: Sync Constitution` |
+| Kapatınca yeni ID ile geri gelen oturumu durdur | Oturum kartı → `☠ Force kill`, ya da sağ tık → `Force Kill Session Tree` ([detay](#spare-oturumlar)) |
+| Günlük bütçeleri rakamları kaybetmeden tamamen kaldır | Ayarlar → Cost & Budgets → `budgetsUnlimited` |
 | Tüm motorların turlarını incele | Sessions yanındaki `⤢ Open Turns page` ([detay](#turlar-sayfasi)) |
 | Zaman çizelgesinden tam metni kopyala | Çizelgedeki noktaya sağ tık → `Copy Corpus` ([detay](#canli-gozlem)) |
 
@@ -2100,7 +2103,7 @@ Eklenti doğrudan wiki sayfası sentezlemez; çünkü bir eklentinin mekanik öz
 
 ### Wiki Kokpiti — Havuzu Okuyan Tek Yüzey (3.205.0 — U-70) {#wiki-kokpiti}
 
-Havuza **yazan** dört kapı vardı (🔖 rozeti, oturum sağ tıkı, köprü, komut paleti) ama havuzu **okuyan** hiçbir yüzey yoktu: neyin beklediği, neyle ilgili olduğu ve derlemenin sonucu nereye yazdığı görünmüyordu. Wiki paneli (`Agent Farm: Open Wiki`, ya da Toolbox → **📚 Wiki**) bu üç soruyu tek bakışta cevaplar.
+Havuza **yazan** dört kapı vardı (🔖 rozeti, oturum sağ tıkı, köprü, komut paleti) ama havuzu **okuyan** hiçbir yüzey yoktu: neyin beklediği, neyle ilgili olduğu ve derlemenin sonucu nereye yazdığı görünmüyordu. Wiki paneli (her sayfanın araç çubuğundaki **📚 Wiki**, ya da `Agent Farm: Open Wiki`) bu üç soruyu tek bakışta cevaplar.
 
 - **Kasa şeridi (üstte):** Wiki kökü, `-WIKI-ANAYASA-.md`, `index.md` ve `log.md` — her biri tıklanabilir, eksik olan **⚠** ile işaretli. Kök veya anayasa yoksa **iki derleme düğmesi de ölüdür ve sebebini basılmadan önce söyler**; derlemenin zaten reddedileceği bir düğmenin canlı görünmesi bu özelliğin kaçınmak için var olduğu yalandır.
 - **Süzgeç çubuğu:** Konu çoklu-seçimi (yanında o konuda kaç işaretin beklediği), durum düğmeleri (Hepsi / ⏳ Bekleyenler / ✅ Derlenenler / 🚫 Düşenler) ve filonun ortak sorgu dilini konuşan canlı arama kutusu (`foo bar` = ikisi de, `-foo` = hariç, `"tam ifade"`). Arama bir işaretin konularına, açılış promptuna, notuna, oturumuna ve derlemenin yazdığı sayfalara birden bakar.
@@ -2938,6 +2941,20 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 
 ## Sürüm Notları
 
+### 3.209.0 — X-54: Ürüne Giden Örnek Özel Not Değildir, ve Askıya Alınamayan Tavan (2026-08-21)
+
+- **Bütçe örneği bu kurulumun gerçek bir ajanını, üstelik Türkçe, adıyla anıyordu**: `{"psikolog": 20, "*": 50}` — eklentinin kurulduğu herkesin okuduğu bir manifestoda. Artık `{"agent_one": 20, "*": 50}`; dispatcher'ın örneği de (Türkçe eşleşme sözcükleri ve aynı ajan adı) onunla birlikte düzeltildi. İkisi aynı hata olduğu için ayarlar manifestosu bu hataya karşı süpürülüyor: ürüne giden herhangi bir açıklama bu filonun bir ajanını anarsa ya da kullanıcının kendi dilinde yazılmışsa test derlemeyi düşürüyor.
+- **`budgetsUnlimited` — girdiğin rakamları kaybetmeden bütün günlük bütçeleri askıya al.** Bir tavanı kaldırmanın tek yolu rakamları silip sonra yeniden yazmaktı. Anahtar açıkken hiçbir ajanın tavanı yok, harcama üzerinden hiçbir şey uyarmıyor ve engellemiyor; rakamlar ayarlarda olduğu gibi duruyor ve anahtarı kapatınca aynen yürürlüğe giriyor. Varsayılan kapalı — bir tavan güncellemeyle kaldırılmaz.
+- **‼️ Ya her yerde geçerli ya hiç.** Bütçeleri yedi yer okuyor; altısının uyduğu bir anahtar, hiç olmayan anahtardan kötüdür — tavan kalkmış görünür ve bir şey hâlâ çalışmayı reddeder. Artık ayarı kimse doğrudan okumuyor: anahtar açıkken tek erişim noktası boş bir harita döndürüyor (bu zaten her okuyucunun "tavan yok" diye anladığı şekil) ve yeni bir çağrı yeri ayarı ham okuduğu anda test derlemeyi düşürüyor.
+
+### 3.208.0 — S-43: Kimsenin Başlatmadığı Oturum ve Gördüğünün Üstündeki Süreç (2026-08-21) {#spare-oturumlar}
+
+- **Daemon'ın yedek işçisi artık oturum diye çizilmiyor.** Claude Code v2.1+, yazdığın `claude`'ın anında açılması için arka planda bir daemon ve önceden ısıtılmış boşta bir işçi tutar. O işçi kendini gerçek bir oturum gibi kaydeder (`"kind":"bg","spare":true,"status":"idle"`) ve aynı SessionStart kancasını atar — Live Timeline da kimsenin başlatmadığı bir oturumu kart olarak basıyor, üstelik işçinin bulunduğu klasöre göre bir ajanın hanesine yazıyordu.
+- **‼️ Karar her okumada, iki yönde de yeniden veriliyor.** Kanca işçi doğar doğmaz geliyor ve o pid'in kayıt dosyası henüz diskte olmayabiliyor; yani SessionStart anındaki dürüst cevap "bilmiyorum" olabilir — orada karara bağlayan bir süzgeç kendi testinden geçer, hayatta sızar. Bilinmeyene dayanarak hiçbir şey gizlenmiyor (bu zaten eski davranışın aynısı, dolayısıyla öbür motorlarda regresyon imkânsız); soru liste her okunduğunda yeniden soruluyor, o an dosya çoktan yerinde. Bir kez prompt almış oturum serbest bırakılıyor ve bir daha asla tutulmuyor — daemon'ın yedeğini gerçek bir konuşmaya devretmesi tam olarak budur ve `spare:true`'ya bakmayı sürdüren bir kural konuşmayı da gizlerdi.
+- **☠ Force kill — yaprağı değil ağacı sonlandır.** "End session" kaydın işaret ettiği süreci durduruyor, Windows'ta `taskkill /T` ise yalnızca AŞAĞI yürüyor: üstteki daemon işçisinin öldüğünü görüp yenisini yeni bir ID ile doğuruyor, kart sonsuza kadar geri geliyordu. Force Kill, ağacın **claude** kısmının tepesine tırmanıp orayı durduruyor. Tırmanış üç yerden sınırlı ve üçü de güvenlik kuralı: VS Code'un kendi soy ağacına asla girmiyor, yalnızca tanınabilir biçimde claude olan bir süreçten geçiyor (terminalden başlatılmış bir oturumda en üstteki claude'da duruyor, kabuğa dokunmuyor) ve sabit bir derinlikten sonra vazgeçiyor — yeniden kullanılmış bir pid döngüye dönüşemesin. Onay kutusu gidecek her süreci adıyla ve pid'iyle sayıyor.
+- Oturum kartında, iki sağ tık menüsünde ve köprüde `sessions.forceKill` olarak. Console'un barındırdığı bir oturum adıyla reddediliyor — onun ağacı bu pencerenin altında koşuyor ve End session onu zaten düzgün kapatıyor.
+- `test/test_spare_sessions.js` içinde 45 kontrol: yarış durumu, devir, claude kaydı hiç olmayan dört motor ve tehlikeli vaka — büyükbabası editör olan bir yaprak.
+
 ### 3.206.0 — X-51 (X-50): Zincirin Uçtan Uca Yürünmesi ve Paket Doğrulaması (2026-08-21)
 
 - **Uçtan Uca Kabul (`test/test_wiki_e2e.js`, 41 kontrol):** İşaretle → brifing → koşuyu başlat (iddia, hâlâ `pending`, ikinci koşu adıyla reddedilir) → **prompt ne diyorsa onu yaz** → geri bildir → iki tarafı da sor → yazılanın şeklini denetle. Parçalar tek tek test ediliyordu; **dikiş yeri** hiç test edilmemişti.
@@ -3367,3 +3384,272 @@ Skills/MCP'ye gelen "bir bakışta gör + tek tıkla yönet" olgunluğu hafıza 
 - Maliyet motoru (düzenlenebilir fiyat kuralları, cache ayrımı, tekrar sayım koruması)
 - Yeni ajan iskeleti, oturum başlat/devam ettir, durum çubuğu
 - Bu kılavuz
+
+
+---
+
+## Ek: Ajan Ekosistemi Kurulum & Taşınabilirlik Kılavuzu (Portability Blueprint) {#portability-blueprint}
+
+> [!abstract] 📖 EL KİTABININ AMACI VE KAPSAMI
+> Bu başucu kitabı; bağımsız yapay zeka ajanlarından oluşan bir geliştirme ve operasyon filosunu, bu filoyu yöneten **Agent Farm** VS Code kokpitini ve arka plandaki **Obsidian Bilgi Tabanını (LifeOS)** sıfırdan kurmak, yapılandırmak veya başka bir bilgisayara eksiksiz taşımak için hazırlanmış uçtan uca mimari rehberdir.
+> 
+> İster bir format sonrası felaket kurtarma (disaster recovery) senaryosunda olun, ister sistemi tamamen yeni bir donanımda ayağa kaldırıyor olun; bu rehberdeki adımları sırasıyla takip ettiğinizde 15-20 dakika içinde çalışan, tam fonksiyonel bir ajan ekosistemine sahip olursunuz.
+
+---
+
+### 00. Giriş & Sistem Mimarisi Felsefesi
+
+Modern yapay zeka araçlarının en büyük kısıtı "anlık ve hafızasız (stateless)" olmalarıdır. Ajanlar bir görevi tamamlayıp kapandığında bağlam kaybolur, projelerin tarihçesi unutulur ve sistem dağılır. 
+
+Bu ekosistem, yapay zekayı anlık bir sohbet botu olarak değil; **yaşayan, kuralları olan, hafızasını koruyan ve birbiriyle organize çalışan otonom bir şirket filosu** olarak kurgular.
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           İNSAN OPERATÖR                                │
+│           (Stratejik Karar, Hedef Belirleme, Onay & Vizyon)             │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ (Görsel Denetim & Bildirimler)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    AGENT FARM KOKPİTİ (VS Code)                         │
+│   Filo Durumu · Bütçe Takibi · Oturumlar · Canlı Akış · Görev Kuyruğu   │
+└──────────────────┬───────────────────────────────────┬──────────────────┘
+                   │ (Bridge IPC / JSONL)              │ (REST API / MCP)
+                   ▼                                   ▼
+┌──────────────────────────────────────┐  ┌───────────────────────────────┐
+│        AJAN FİLOSU (CLI)             │  │   BİLGİ TABANI (LifeOS Vault) │
+│ • Developer (Kod & Hata Çözümü)      │  │ • Projeler & Backlog          │
+│ • Manager (Planlama & Koordinasyon)  │◄─┼─►• Ajan Anayasası & Kararlar   │
+│ • Psikolog (Kişisel Bağlam & Odak)   │  │ • Wiki & Hafıza Havuzu        │
+│ • Basit / Haiku (Mekanik İşler)      │  │ • Canlı Sistem Tanımları      │
+└──────────────────────────────────────┘  └───────────────────────────────┘
+```
+
+---
+
+#### 0.1 İnsan - Kokpit - Filo Sacayağı
+
+Sistem birbirinden ayrılmaz üç temel sütun üzerine kuruludur:
+
+1. **Bilgi Tabanı ve Bellek (Obsidian LifeOS):** Sistemin "tek doğruluk kaynağıdır (Single Source of Truth)". Proje planları, görevler, anayasa kuralları, kararlar ve kullanıcı tercihleri burada yaşar.
+2. **Yönetim Kokpiti (Agent Farm - VS Code Extension):** İnsan operatörün ajanları gözlemlediği, görev atadığı, maliyet ve token tüketimini izlediği görsel kumanda merkezidir.
+3. **Çalışan Ajan Gücü (CLI Ajanları — Claude Code, Gemini, Antigravity):** Dosya sisteminde doğrudan kod yazan, test çalıştıran, dosyaları düzenleyen ve birbirine iş devreden bağımsız motorlardır.
+
+> [!info] 📖 İLKE: TEK DOĞRULUK KAYNAĞI (SINGLE SOURCE OF TRUTH)
+> Bir veri iki farklı yerde tutulursa kaçınılmaz olarak çelişki üretir. Bu mimaride tüm *olgular (FACTS)* Obsidian kütüphanesinde, tüm *çalışma metotları (METHODS)* ajan anayasasında (`CLAUDE.md` ve `_REF/`) yaşar. Ajanlar bilgiyi kendi hafızalarında kopyalamaz, kütüphanedeki adrese işaret eder.
+
+---
+
+#### 0.2 Taşınabilirlik (Portability) ve Yalıtım Prensipleri
+
+Bu ekosistemin herhangi bir işletim sisteminde (Windows, macOS, Linux) ve herhangi bir kullanıcı klasöründe sorunsuz çalışabilmesi için **3 Altın Kural** geçerlidir:
+
+*   **1. Asla Sabit Kullanıcı Yolu Yazmayın:** Kullanıcı adına bağımlı yollar yerine her zaman ortam değişkeni (`${env:USERPROFILE}`, `~` veya göreceli yol) kullanılır.
+*   **2. Anayasa ve Kod Ayrımı:** Ajanların davranış kuralları (Anayasa) kod tabanına gömülmez; bağımsız markdown dosyalarında taşınır.
+*   **3. Dizin Parametrizasyonu:** Tüm kök klasörler Agent Farm ayarlarından (`agentFarm.agentRoots`, `agentFarm.projectsRoot`) tek bir merkezden yapılandırılır.
+
+---
+
+#### 0.3 TÜM BAĞIMLILIKLAR VE DIŞ BAĞLANTI MATRIXİ (MASTER INVENTORY)
+
+> [!important] 🔴 KURULUM ÖNCESİ KONTROL LİSTESİ
+> Yeni bir bilgisayara geçildiğinde veya format sonrasında kurulması gereken tüm araçlar, eklentiler, motorlar ve portlar önem derecesine göre 5 ana katmanda toplanmıştır:
+
+##### 1. Host & Çalışma Zamanı Katmanı (Zemin)
+*   🔴 **Node.js (v20+ LTS):** `winget install OpenJS.NodeJS.LTS` (Zorunlu motor)
+*   🔴 **Git (v2.40+):** `winget install Git.Git` (Sürüm kontrolü ve worktree)
+*   🔴 **VS Code (v1.90+):** `code.visualstudio.com` (Agent Farm kokpit kabuğu)
+*   🔴 **Global NPM Araçları:** `npm i -g @anthropic-ai/claude-code @vscode/vsce`
+
+##### 2. Yapay Zeka Motorları ve CLI Katmanı (Zeka)
+*   🔴 **Claude Code CLI (`@anthropic-ai/claude-code`):** Ana ajan çalıştırma motoru (`claude login` yetkisi şarttır).
+*   🟢 **Antigravity / Gemini CLI:** Alternatif/çoklu-model motoru (`GEMINI_API_KEY`).
+*   🟢 **OpenCode / Codex CLI:** Açık kaynaklı/yerel model motorları (`agentFarm.codexHome`).
+
+##### 3. Bilgi Tabanı ve Obsidian Katmanı (Bellek)
+*   🔴 **Obsidian (Uygulama):** `obsidian.md` (Vault kökü).
+*   🔴 **`obsidian-local-rest-api`:** Vault okuma/yazma HTTP köprü (Port `27123`/`27124` + Bearer Token).
+*   🔴 **`obsidian-tasks-plugin`:** Görev biçim standardı (🆔, ⛔, ⏫, 📅).
+*   🟡 **`dataview`:** Dinamik proje indeksleri ve sorgular.
+*   🟢 **`obsidian-git`:** Otomatik vault yedeği.
+
+##### 4. Yerel Portlar ve Protokoller Katmanı (Haberleşme)
+*   `4141` — **Bridge IPC Soketi:** Ajanlar ile VS Code arasında JSONL mesajlaşma.
+*   `8377` — **Live Hook Listener:** Claude olaylarını (prompt, tool, permission) panele işleme.
+*   `8378` — **Read-Only Web View:** Telefondan/LAN'dan filo ve bütçe izleme.
+*   `27123/27124` — **Obsidian REST API:** Vault dosyalarına erişim.
+
+##### 5. Harici Bulut ve Mesajlaşma Katmanı (İsteğe Bağlı Entegrasyonlar)
+*   🟢 **Airtable API:** Görev tablosu bulut senkronizasyonu (`AIRTABLE_API_KEY` + `BASE_ID`).
+*   🟢 **Telegram Bot API:** Telefondan ajana mesaj atma köprü (`agentFarm.telegram.enabled`).
+*   🟢 **Replicate API:** Ajan bazlı görsel/medya üretimi (`mediaAuthSecret`).
+
+---
+
+### 01. Katman 0 — Host Ortamı ve Temel Çalışma Zamanı (Runtime)
+
+Ajanların terminalde koşturulabilmesi ve Agent Farm eklentisinin derlenebilmesi için işletim sisteminde temel geliştirme araçlarının eksiksiz bulunması gerekir.
+
+```powershell
+# Sürümleri kontrol edin
+node -v
+npm -v
+git --version
+```
+
+```powershell
+# Claude Code CLI ve Eklenti Paketleme araçlarını global yükleyin
+npm install -g @anthropic-ai/claude-code
+npm install -g @vscode/vsce
+
+# Claude CLI oturumunu başlatın ve tarayıcıdan giriş yapın
+claude
+```
+
+---
+
+### 02. Katman 1 — Bilgi Tabanı ve Yaşam İşletim Sistemi (Obsidian Vault)
+
+```text
+📁 {{VAULT_DIR}} (Obsidian Vault Kökü)
+├── 📁 00_AGENT_AREA/                # Ajanların özel operasyon alanı
+│   ├── 📁 10_PROJECTS/              # Aktif ve arşiv proje klasörleri
+│   ├── 📁 20_WIKI/                  # Damıtılmış bilgi ve sentez havuzu
+│   └── 📁 99_SYSTEM/                # Sistem anayasaları ve LifeOS tanımları
+├── 📁 01_INBOX/                     # Giriş kutusu ve operasyonel akış
+│   ├── 📁 10_TODO/                  # Görev listeleri (__TODO__.md)
+│   └── 📁 20_PROGRESS/              # Devam eden işlerin durum raporları
+└── 📁 90_OTHER/                     # Şablonlar, arşiv ve yardımcı dosyalar
+```
+
+#### 2.1 Obsidian Kurulumu ve Şart Eklentiler
+
+> [!important] 🔴 ZORUNLU EKLENTİLER
+> Obsidian kurulduktan sonra aşağıdaki topluluk eklentileri (Community Plugins) mutlaka kurulmalı ve etkinleştirilmelidir:
+> 
+> 1. **Local REST API (`obsidian-local-rest-api`):** Ajanların ve MCP sunucusunun vault'a HTTP üzerinden güvenli okuma/yazma yapmasını sağlar.
+> 2. **Tasks (`obsidian-tasks-plugin`):** Görev yönetimi, öncelik (🆔, ⛔, ⏫, 📅) ve tarih formatlarını denetler.
+> 3. **Dataview (`dataview`):** Dinamik sorgular ve proje indeksleri için gereklidir.
+
+---
+
+### 03. Katman 2 — Ajan Çekirdeği, Anayasa ve Görev Sistemi
+
+```text
+📁 {{AGENT_DIR}} (Ajan Filosu Kök Klasörü)
+├── 📄 AGENTS.md             # Shared Constitution (Tüm ajanların ortak anayasası)
+├── 📄 CLAUDE.md             # Claude CLI kök direktifleri (AGENTS.md ile senkron)
+├── 📁 _REF/                 # Şartlı prosedürler kütüphanesi (On-demand recipes)
+│   ├── 📄 bridge.md         # Köprü protokol kuralları
+│   ├── 📄 notices.md        # Bildirim ve soru-cevap formatları
+│   └── 📄 duties.md         # Nöbet görevleri format rehberi
+└── 📁 developer/            # Örnek Ajan: Yazılım Geliştirici
+    ├── 📄 AGENTS.md         # Ajanın kimliği, uzmanlık alanı ve odak repoları
+    ├── 📄 DUTIES.md         # Ajanın periyodik nöbet görevleri kontrol listesi
+    └── 📁 memory/           # Ajanın uzun vadeli hafıza bankası
+```
+
+---
+
+### 04. Katman 3 — Kimlikler, İletişim ve MCP Sunucuları (Protocols)
+
+`📂 ~/.claude/claude_desktop_config.json` veya `%USERPROFILE%\.claude.json`:
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "obsidian-mcp",
+        "--vault-path",
+        "YOUR_VAULT_PATH_HERE",
+        "--api-key",
+        "YOUR_OBSIDIAN_REST_API_KEY_HERE"
+      ]
+    }
+  }
+}
+```
+
+---
+
+### 05. Katman 4 — Agent Farm Kokpiti (VS Code Extension)
+
+```powershell
+# 1. Eklenti dizinine geçin ve derleyin
+cd ~/projects/vsc_AgentFarm
+npm install
+npm run compile
+
+# 2. VSIX paketini üretin ve kurun
+vsce package --no-dependencies
+code --install-extension agent-farm-3.206.0.vsix
+```
+
+`📂 %APPDATA%\Code\User\settings.json`:
+```json
+{
+  "agentFarm.agentRoots": [
+    "~/projects/ai-agents"
+  ],
+  "agentFarm.projectsRoot": "~/documents/lifeos_vault/00_AGENT_AREA/10_PROJECTS",
+  "agentFarm.livePort": 8377,
+  "agentFarm.web.enabled": false,
+  "agentFarm.web.port": 8378,
+  "agentFarm.newAgentModel": "sonnet"
+}
+```
+
+---
+
+### 06. Katman 5 — Köprü (Bridge) ve Bildirimler (Notices) Motoru
+
+Bridge; yerel soket üzerinden JSONL formatında mesajlaşma sağlar (`localhost:4141`).
+
+```json
+{
+  "type": "notice",
+  "agent": "developer",
+  "noticeType": "question",
+  "title": "Mimari Onay Talebi",
+  "content": "Değişiklik onaylansın mı?",
+  "handled": false
+}
+```
+
+---
+
+### 07. Katman 6 — Uçtan Uca Doğrulama ve Felaket Kurtarma Kontrol Listesi
+
+```text
+┌───┐
+│ ✔ │ 1. Node.js, Git ve Claude CLI terminalden hatasız yanıt veriyor mu?
+├───┤
+│ ✔ │ 2. Obsidian açıldı ve Local REST API eklentisi aktif mi?
+├───┤
+│ ✔ │ 3. Vault içinde 00_AGENT_AREA ve 99_SYSTEM klasörleri mevcut mu?
+├───┤
+│ ✔ │ 4. ajanlar/ kök klasöründe AGENTS.md ve _REF/ fihristi yerinde mi?
+├───┤
+│ ✔ │ 5. VS Code'da Agent Farm paneli tüm ajanları yeşil/hazır listeliyor mu?
+└───┘
+```
+
+#### Hızlı Kurulum Özeti (Cheat Sheet)
+
+```powershell
+# 1. Ortamı hazırla
+winget install OpenJS.NodeJS.LTS Git.Git
+npm install -g @anthropic-ai/claude-code @vscode/vsce
+
+# 2. Giriş yap
+claude
+
+# 3. Agent Farm'ı derle ve kur
+cd ~/projects/vsc_AgentFarm
+npm install
+npm run compile
+vsce package --no-dependencies
+code --install-extension agent-farm-*.vsix
+```

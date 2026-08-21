@@ -1322,15 +1322,6 @@
       }
     },
     {
-      "capability": "dashboard.ts#headerAction",
-      "ui": [
-        "page:dashboard.ts#headerAction"
-      ],
-      "ops": [
-        "constitution.sync"
-      ]
-    },
-    {
       "capability": "dashboard.ts#interruptSession",
       "ui": [
         "page:dashboard.ts#interruptSession"
@@ -1960,6 +1951,16 @@
       ],
       "ops": [
         "sessions.files"
+      ]
+    },
+    {
+      "capability": "forceKillSession",
+      "ui": [
+        "cmd:agentfarm.forceKillSession",
+        "ctx:agentfarm.forceKillSession"
+      ],
+      "ops": [
+        "sessions.forceKill"
       ]
     },
     {
@@ -6176,6 +6177,15 @@
       }
     },
     {
+      "capability": "timeline.ts#forceKillSession",
+      "ui": [
+        "page:timeline.ts#forceKillSession"
+      ],
+      "ops": [
+        "sessions.forceKill"
+      ]
+    },
+    {
       "capability": "timeline.ts#history",
       "ui": [
         "page:timeline.ts#history"
@@ -6316,6 +6326,15 @@
         "kind": "navigation",
         "why": "Moves the selection or the focus inside a page that is already open."
       }
+    },
+    {
+      "capability": "toolboxPanel.ts#headerAction",
+      "ui": [
+        "page:toolboxPanel.ts#headerAction"
+      ],
+      "ops": [
+        "constitution.sync"
+      ]
     },
     {
       "capability": "toolboxPanel.ts#mcp-def",

@@ -471,5 +471,51 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         getEl('app')._html.includes('id="cat-prompts"'));
 }
 
+// ============================================ X-54 — budgets, and whose farm this is
+//
+// Two faults in one section. The budget example named a real person's agent, in
+// Turkish, in a manifest that ships to everybody — and there was no way to
+// suspend a budget short of deleting the figures and typing them back in.
+{
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const props = pkg.contributes.configuration.properties;
+    const text = Object.values(props)
+        .map(p => `${p.description || ''} ${p.markdownDescription || ''}`).join('\n');
+
+    // ‼️ THE SETTINGS MANIFEST IS THE PRODUCT'S FACE. A hard-coded example is
+    // read by every user this is ever installed for, so an example naming this
+    // installation's own agents — or written in this installation's language —
+    // is a private note left in a shipped file. Generic names only.
+    ok('‼️ no shipped example names one of THIS farm\'s agents',
+        !/\bpsikolog\b/i.test(text));
+    ok('…and no example is written in the user\'s own language',
+        !/uyku|kaygı|örnek/i.test(text));
+    ok('the budget example uses a generic agent name instead',
+        /agent_one/.test(props['agentFarm.budgets'].description));
+
+    // The switch: it suspends, it does not clear. A user who has to delete
+    // their figures to turn a cap off has to remember them to turn it back on.
+    const u = props['agentFarm.budgetsUnlimited'];
+    ok('there is a switch that suspends every budget', !!u && u.type === 'boolean');
+    ok('…off by default — a ceiling is not removed by an upgrade', u.default === false);
+    ok('…and it says the figures are kept, not cleared', /kept, not cleared/.test(u.description));
+    // Asked of the model the page actually draws, not of a map the module may
+    // or may not export — a check that can quietly answer `true` is not one.
+    const cost = SO.buildSettingsModel(props, () => undefined).find(c => c.id === 'cost');
+    ok('…and it is drawn in the section with the budgets it suspends',
+        !!cost && cost.items.some(i => i.key === 'agentFarm.budgetsUnlimited')
+        && cost.items.some(i => i.key === 'agentFarm.budgets'));
+
+    // ‼️ PRINCIPLE 1: a switch honoured in six of seven places is worse than no
+    // switch — the cap looks off and something still refuses to run. This is
+    // what makes that fail the build rather than somebody's memory.
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const raw = ext.split("get<Record<string, number>>('budgets'").length - 1;
+    ok('‼️ every budget reader goes through the one door that honours the switch',
+        raw === 1 && /function budgetsNow\(\)/.test(ext));
+    ok('…and that door returns an empty map while it is on',
+        /budgetsUnlimited', false\)\) \{ return \{\}; \}/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
