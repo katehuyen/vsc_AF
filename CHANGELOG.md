@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.194.0 — U-82: “Copy ▸” copies again — everywhere, not just in the backlog (2026-08-21)
+
+*“There are Copy options — the code, the words, code and words — and I have never once seen any of them put anything on the clipboard.”* They were not putting anything on it. **Every Copy ▸ in the extension was broken, on every page, for the same reason.**
+
+**The root cause: the page was writing a clipboard it is not allowed to touch.** `navigator.clipboard.writeText` requires the document to be **focused**, and every one of these copies arrives from a menu pick — the right-click hands focus to VS Code’s own menu, the command relays back, and the page runs the one clipboard call it cannot satisfy. The write was rejected each time. The session viewer’s ⧉ button had already hit this and quietly moved its write to the host; nothing generalised that, so the other ~40 copy items kept failing together.
+
+**The host holds the clipboard now, for every page at once.** `media/afCtx.js` — the single door behind every Copy ▸ — asks the extension host, which writes with `vscode.env.clipboard` and answers. **The “Copied: …” line is only drawn once the host says the write happened**, and a refusal or a door that never answers is reported instead of swallowed. Wired from the same mint-once path `htmlShell` runs for every page, so no panel opts in and the next panel cannot forget.
+
+**The first line said it did something it does not do.** “The code — *quote it at an agent*” reads as a second action, and left the reader unsure whether a plain “copy just the code” existed at all. Quoting an item **at** something is what the two entries above it do (the work queue, the agent) and they say so. The three copy lines are now **The code, on its own · The words · Code and words** — what lands on the clipboard, not what it is for.
+
+**Measured, so it cannot rot back:** `test/test_clipboard_host.js` drives the whole round trip (asks the host · claims nothing early · reports a refusal · hands the acquired API on to the page script that loads after it) and fails the build if any page in `media/` grows its own `navigator.clipboard` write again; `test/test_backlog_page.js` pins what each of the three lines actually copies.
+
 ## 3.193.0 — U-80: Live sessions cards prompt truncation restored (2026-08-21)
 
 **Live session cards on the Live Timeline page are compact and proportional again.**

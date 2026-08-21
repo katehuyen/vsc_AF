@@ -2012,6 +2012,25 @@ function pickParent(r, code) {
     r.send({ type: 'afctx', act: 'blFile', ctx: unfiled });
     ok('‼️ filing opens the row\'s OWN area picker — a static menu cannot know the areas',
         r.all('[data-blpick]').length > 0);
+
+    // ‼️ U-82 — THE THREE COPY LINES ONLY COPY, and each one says what it says.
+    // The clipboard is the HOST's (media/afCtx.js → src/panels/base.ts), so a
+    // copy leaving this page is a request going out; when the page wrote the
+    // clipboard itself the three lines did nothing at all and there was nothing
+    // here to notice it. Also the guard against the ambiguity that filed the
+    // item: none of them sends a second message beside the copy.
+    const before = r.posted.length;
+    r.send({ type: 'afctx', act: 'blCopy:code', ctx: ctx });
+    ok('“The code, on its own” copies the code and nothing else',
+        last().type === 'afClipboard' && last().text === 'K-1');
+    ok('…and does nothing beside copying it', r.posted.length === before + 1);
+    r.send({ type: 'afctx', act: 'blCopy:text', ctx: ctx });
+    ok('“The words” copies the item itself, without its code',
+        last().type === 'afClipboard' && last().text === 'measure what the counter actually sees');
+    r.send({ type: 'afctx', act: 'blCopy:both', ctx: ctx });
+    ok('“Code and words” carries the pair, joined',
+        last().type === 'afClipboard'
+        && last().text === 'K-1 — measure what the counter actually sees');
 }
 
 // ---------------------------------------------------------------------------

@@ -76,10 +76,43 @@ const ctxPanels = new Map<string, vscode.Webview>();
 const ctxKeys = new WeakMap<vscode.Webview, string>();
 let ctxSeq = 0;
 
+/**
+ * ‼️ THE CLIPBOARD IS THE HOST'S — WIRED FOR EVERY PAGE, ONCE (U-82).
+ *
+ * `media/afCtx.js` owns every "Copy ▸" in the extension and used to write
+ * through `navigator.clipboard`, which requires the document to be FOCUSED.
+ * Every one of those copies arrives from a menu pick, and the menu is VS Code's
+ * own: focus is elsewhere at exactly the moment the page tries to write, so the
+ * whole family failed together and looked like dead menu items. The session
+ * viewer had already found this for its ⧉ button and moved the write here; this
+ * makes that the rule instead of one panel's workaround.
+ *
+ * Registered here rather than in each panel's `onMessage` because a component
+ * that ships to every page (htmlShell) must not need 28 panels to opt in — the
+ * next panel would be the one that forgot. Once per WEBVIEW, from the same
+ * mint-once path as the right-click key, so a page that rebuilds its HTML does
+ * not stack a second listener.
+ */
+function wireClipboard(webview: vscode.Webview): void {
+    webview.onDidReceiveMessage((msg: { type?: string; token?: unknown; text?: unknown }) => {
+        if (!msg || msg.type !== 'afClipboard') { return; }
+        const token = msg.token;
+        const text = typeof msg.text === 'string' ? msg.text : '';
+        const answer = (ok: boolean, error?: string) =>
+            void Promise.resolve(webview.postMessage({ type: 'afClipboardDone', token, ok, error }))
+                .then(undefined, () => { /* page gone — nothing to tell */ });
+        if (!text) { answer(false, 'Nothing to copy — that row does not carry it.'); return; }
+        void vscode.env.clipboard.writeText(text).then(
+            () => answer(true),
+            () => answer(false, 'The clipboard refused that.'));
+    });
+}
+
 /** The key for this webview, minted once and stable for its lifetime. */
 function ctxKeyFor(webview: vscode.Webview, scriptFile: string): string {
     const had = ctxKeys.get(webview);
     if (had) { ctxPanels.set(had, webview); return had; }
+    wireClipboard(webview);
     const key = `${scriptFile.replace(/\.js$/, '')}#${++ctxSeq}`;
     ctxKeys.set(webview, key);
     ctxPanels.set(key, webview);

@@ -32,6 +32,26 @@
      *  not a feature; the session helper's HINT is the long form of this. */
     const HINT = 'right-click for more';
 
+    /**
+     * ‼️ THE HOST'S DOOR, ACQUIRED HERE — and handed on unchanged (U-82).
+     *
+     * `acquireVsCodeApi` may be called once per webview and every page script
+     * calls it. This file loads FIRST (htmlShell's script order), so it takes
+     * the handle and puts the same instance back behind the global name: the
+     * page that loads after us calls `acquireVsCodeApi()` and gets what it
+     * always got, including the one `getState`/`setState` store it shares with
+     * the shared components already using it.
+     *
+     * Without this the copy below has no way to reach the host, and the
+     * clipboard is the host's — see `copy`.
+     */
+    const api = (function () {
+        if (typeof acquireVsCodeApi !== 'function') { return null; }
+        const got = acquireVsCodeApi();
+        window.acquireVsCodeApi = () => got;
+        return got;
+    })();
+
     /** Which page instance this is — written into the HTML by htmlShell. */
     function panel() {
         const ui = window.__AFUI__ || {};
@@ -140,12 +160,32 @@
      * `say(message, isError)` is optional: a page that already draws a flash
      * line passes its own setter and the message lands where that page's other
      * messages land. Without one, the toast below is used.
+     *
+     * ‼️ U-82 — THE HOST WRITES IT, NOT THE PAGE. `navigator.clipboard.writeText`
+     * needs the document FOCUSED, and every one of these calls arrives from a
+     * menu pick: the right-click hands focus to VS Code's own menu, the command
+     * relays back, and the page runs the one clipboard call it cannot satisfy.
+     * So "Copy ▸" failed on every page at once, silently enough to read as a
+     * dead menu item. `vscode.env.clipboard` has no such condition, and the
+     * report below is only drawn once the host says the write happened
+     * (src/panels/base.ts → afClipboard).
      */
     function copy(value, say) {
         const text = String(value === undefined || value === null ? '' : value);
         const tell = say || toast;
         if (!text) { tell('Nothing to copy — that row does not carry it.', true); return; }
         const shown = 'Copied: ' + (text.length > 60 ? text.slice(0, 57) + '…' : text);
+        if (api && typeof api.postMessage === 'function') {
+            const token = ++copySeq;
+            // A door that never answers must still report — a silent success is
+            // exactly the bug this replaced (Principle 1).
+            const timer = setTimeout(() => {
+                if (pending.has(token)) { pending.delete(token); tell('The clipboard did not answer.', true); }
+            }, 5000);
+            pending.set(token, { tell, shown, timer });
+            api.postMessage({ type: 'afClipboard', token, text });
+            return;
+        }
         const nav = typeof navigator !== 'undefined' ? navigator : null;
         if (nav && nav.clipboard && nav.clipboard.writeText) {
             nav.clipboard.writeText(text).then(
@@ -154,6 +194,23 @@
             return;
         }
         tell('This window has no clipboard access.', true);
+    }
+
+    /** The copies waiting on the host, by token. One page can only have a
+     *  handful in flight, and each is answered or timed out. */
+    const pending = new Map();
+    let copySeq = 0;
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('message', ev => {
+            const m = ev && ev.data;
+            if (!m || m.type !== 'afClipboardDone') { return; }
+            const waiting = pending.get(m.token);
+            if (!waiting) { return; }
+            pending.delete(m.token);
+            clearTimeout(waiting.timer);
+            waiting.tell(m.ok ? waiting.shown : (m.error || 'The clipboard refused that.'), !m.ok);
+        });
     }
 
     /** The fallback report: one floating line, gone in three seconds. It is

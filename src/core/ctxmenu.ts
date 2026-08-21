@@ -396,8 +396,14 @@ export const CTX_ITEMS: CtxItem[] = [
         ['down5', 'Down 5'],
         ['bottom', 'To the back of the queue']
     ]),
+    // ‼️ U-82 — EVERY LINE HERE ONLY COPIES. The first one used to end "quote it
+    // at an agent", which reads as a second thing it does, and left a reader
+    // unsure whether the extension had a plain "copy the code" at all. Quoting
+    // an item AT something is what the two lines above do (the work queue, the
+    // agent) and they say so; these three put text on the clipboard, nothing
+    // else, and the words are now what is copied rather than what it is for.
     ...picker(CTX_PREFIX + 'blCopy', BACKLOG_ROW, 'blCopy', [
-        ['code', 'The code — quote it at an agent'],
+        ['code', 'The code, on its own'],
         ['text', 'The words'],
         ['both', 'Code and words']
     ]),
