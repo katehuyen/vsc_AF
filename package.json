@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.200.0",
+  "version": "3.201.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9012,6 +9012,11 @@
           "items": {
             "type": "object"
           }
+        },
+        "agentFarm.wikiRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Folder that holds the LLM wiki — one folder per category, a page per concept, plus index.md, log.md and _KURALLAR_/-WIKI-ANAYASA-.md. wiki.compile and wiki.lint read it. Empty = D:\\zone\\know\\note\\obsidian\\00_WIKI."
         },
         "agentFarm.projectsRoot": {
           "type": "string",

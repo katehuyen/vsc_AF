@@ -294,6 +294,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
+import { registerWikiOps, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
@@ -9134,6 +9135,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerTurnsOps(bridge, {
         sessions: () => index.allWithExternal(),
         isActive: s => index.isSessionActive(s, Date.now())
+    });
+
+    // ‼️ B-14 (X-50) — THE WIKI CANDIDATE POOL. Marking a turn is cheap and
+    // writes nothing to the vault; compiling is the expensive half and belongs
+    // to an agent under the vault's own law. See `src/core/wiki.ts` for why
+    // `wiki.compile` hands back a brief instead of writing a page.
+    const wikiStore = new WikiStore(path.join(context.globalStorageUri.fsPath, 'wiki_candidates.json'));
+    const wikiRoot = (): string => {
+        const set = cfg().get<string>('wikiRoot');
+        return (set && set.trim())
+            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI');
+    };
+    registerWikiOps(bridge, {
+        store: () => wikiStore,
+        root: wikiRoot,
+        sessions: () => index.allWithExternal(),
+        procedure: '_REF/wiki.md'
     });
 
     // Notices ops (§19.C): the agent→user notice board — every agent posts

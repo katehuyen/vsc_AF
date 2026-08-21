@@ -114,7 +114,12 @@ const CATEGORY_OF: Record<string, string> = {
     notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
     // work queue (user→agent async channel) + its answer folder
     answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',
-    'queue.targets': 'queue'
+    'queue.targets': 'queue',
+    // ‼️ B-14 (X-50) — the LLM wiki's root. It sits beside the other two folders
+    // agents WRITE into (the report folder and the answer folder), because that
+    // is the question a reader has about it: where does what the agents produce
+    // end up.
+    wikiRoot: 'reports'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [

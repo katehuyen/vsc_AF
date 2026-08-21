@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.201.0 — B-14 (X-50): the wiki candidate pool, and the line its ops do not cross (2026-08-21)
+
+*“Obsidian is the IDE, the LLM is the programmer, the wiki is the codebase.”* The user does not write `00_WIKI`; agents do. But a turn worth keeping goes past at conversation speed, and the moment marking one costs a decision about **where it belongs**, nobody marks anything. So the system is two halves, and this is the cheap one.
+
+**Marking is free, reversible and touches no vault.** `wiki.candidates.add` takes a session, a turn (`4`, `"3-7"`, or nothing at all for the whole conversation) and the topics somebody typed in two seconds — the compiler’s filing key, and the only thing it insists on. It lands in `wiki_candidates.json` beside the other stores.
+
+**‼️ Marking the same turn twice is not an error and is not a second row.** The console badge and the session menu both reach the same turn, so a double mark is certain — and two rows for one turn means the compile reads it twice and files the concept twice. An overlapping mark **merges its topics** into the pending one and widens the range, which is also how you add a topic you thought of later: mark it again.
+
+**‼️ AND `wiki.compile` DOES NOT WRITE A WIKI PAGE.** An extension cannot synthesise, and an op that pretended to would produce exactly the mechanical summaries this whole idea exists to avoid. What it does is everything the extension is genuinely better at than the agent: gather the chosen candidates, resolve each one to a **transcript on disk and a turn range inside it**, find the vault’s own law, list what the wiki already holds (which is what decides create-vs-amend), and hand back a brief with the steps. The agent does the synthesis under `-WIKI-ANAYASA-.md` and reports back with `wiki.candidates.edit {state:"compiled", pages:[…]}`. **Asking for a brief marks nothing** — a compile that falls over halfway must not leave the pool claiming work that never happened.
+
+**Two refusals rather than two guesses.** A missing wiki root, and a wiki with no law of its own: both stop the compile by name. The law outranks the agent procedure, so compiling without it would be a guess dressed as a result. And a `state` sweep on `remove` will not touch pending marks — they are the only thing in this file that cannot be reconstructed.
+
+**`wiki.status` answers both sides at once** (pool: pending/compiled and every topic with its count · vault: root, rules, index, log, pages, categories, anything filed deeper than one category), and **`wiki.lint`** reports the wiki’s *shape* — orphans, broken `[[links]]`, unindexed pages — and repairs nothing. Whether two pages contradict each other is not a question a program can answer, and is not guessed at.
+
+81 checks in `test/test_wiki_candidates.js`, against a real wiki on disk. `agentFarm.wikiRoot` is the folder; `_REF/wiki.md` §10 now says what these ops actually do rather than only their names.
+
 ## 3.200.0 — M-21 (part): the strip that summarises this page could not be asked anything (2026-08-21)
 
 M-25 took the five design principles through this page’s two **tables** and stopped where the tables stop. The control strip above them is the first thing read on the page, and it answered almost nothing: **five of its eight figures had no hover at all**, three had a one-line `title` — which `docs/CONVENTIONS.md` names as a bug in its own right, not as a small tip — the shorthand durations `1h` / `8h` / `24h` had their long form written nowhere, and **the two tabs did not say what was behind them**, which is the one distinction this entire page is built on.
