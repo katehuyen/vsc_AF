@@ -1,0 +1,11 @@
+v10.83 - m-21 (kismi): kapinin ucuncu yonu - cizilip hic okunmayan kutu
+
+Cizilip hic okunmayan bir kutu, cevabi atilan bir kontroldur ("referansi
+olmayan bir kutu bir hatadir", docs/CONVENTIONS.md) ve okuyanin bunu anlamasinin
+yolu yok. Formun cizdigi 78 kutunun hepsi iki okuyucudan biri tarafindan
+okunuyor; tek istisna zaten adiyla listelenmis olan kind secicisi. Tek yonlu
+sabitlendi (cizilen kume okunan kumenin alt kumesidir), cunku taramanin
+goremedigi bir markup sekli asla yanlis bir suclamaya donusmemeli.
+
+Urun kodu degismedi -- yalnizca test ve surum notu, o yuzden yeni paket yok
+(3.198.0 kurulu ve ayni). 189 dosya / 11.386 test yesil.

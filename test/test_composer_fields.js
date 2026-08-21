@@ -128,6 +128,26 @@ ok('`typeAhead` still writes the draft — it is the wire for two boxes',
     const deadStep = [...stepWired].filter(id => !stepReads.has(id));
     ok('…nor any step field'
         + (deadStep.length ? ` — DEAD: ${deadStep.join(', ')}` : ''), deadStep.length === 0);
+
+    // ‼️ THE THIRD DIRECTION: a box that is DRAWN and never read is a control
+    // whose answer is discarded — "a box with no referent is a bug"
+    // (docs/CONVENTIONS.md), and the reader has no way of telling. Only the
+    // four field helpers and raw `<input|select|textarea id="nt-…">` count;
+    // a button is an action, not an answer. One-directional on purpose: the
+    // scan may not see every markup shape, so it asserts drawn ⊆ read and
+    // never the reverse.
+    const drawn = new Set();
+    for (const m of src.matchAll(/\b(?:choiceSel|pickSel|textF|numF)\('([a-zA-Z0-9_-]+)'/g)) {
+        drawn.add(m[1]);
+    }
+    for (const m of src.matchAll(/<(?:input|select|textarea)[^>]*\bid="nt-([a-zA-Z0-9_-]+)"/g)) {
+        drawn.add(m[1]);
+    }
+    const allRead = new Set([...composerReads, ...[...stepReads].map(id => 'st-' + id)]);
+    const discarded = [...drawn].filter(id => !allRead.has(id) && !EXEMPT.has(id));
+    ok('the form has boxes to check at all', drawn.size > 60);
+    ok('‼️ no box is drawn whose answer nothing ever reads'
+        + (discarded.length ? ` — DISCARDED: ${discarded.join(', ')}` : ''), discarded.length === 0);
 }
 
 // ------------------------------------------------- the premise, still standing

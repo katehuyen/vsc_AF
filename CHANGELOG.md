@@ -12,6 +12,8 @@ The Tasks page redraws itself on every host push, and the redraw replaces the wh
 
 **The half nobody had audited is clean.** A workflow **step** is read through a different helper (`nt-st-` ids, list-driven), which is exactly why the hand sweep never covered it — and a step's prompt is the same kind of long text as the one that started this. All 31 of its fields are wired; measured, not assumed.
 
+**And the third direction is closed too.** A box that is DRAWN and never read is a control whose answer is discarded — *“a box with no referent is a bug”* (`docs/CONVENTIONS.md`) — and the reader has no way of telling. All 78 boxes the form draws are read by one of the two readers; the only exception is the kind picker, which is the exemption already named. Asserted one-directionally (drawn ⊆ read), because a markup shape the scan cannot see must never turn into a false accusation.
+
 ## 3.197.0 — M-26: an interactive task says WHERE it opens and WHETHER it closes (2026-08-21)
 
 *“An interactive task always opens in VS Code’s terminal and always stays open. I want to choose — the OS terminal or the Console — and I want a one-turn job to close itself when the answer is in.”* Two axes, on every surface that can install a run.
