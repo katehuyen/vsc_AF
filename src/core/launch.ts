@@ -287,6 +287,69 @@ export function describeLaunch(o: LaunchOptions): string {
  */
 export type RunSurface = 'terminal' | 'console';
 
+/* ================ M-26 — THE TWO AXES OF AN INTERACTIVE RUN ================
+ *
+ * ‼️ WHY THEY LIVE HERE AND NOT ON THE TASK. This module is "the vocabulary of
+ * starting a session", and these are two more words in it — the same kind of
+ * closed list as the efforts and the permission modes below, read by the same
+ * form helper and refused by the same validator. A task, a schedule, a trigger,
+ * a template and a workflow step all carry them (`RunDimensions`), so the
+ * values cannot be spelled in the module that happens to own tasks.
+ *
+ * `RunSurface` above is the sibling question for a SESSION a person starts by
+ * hand, and it deliberately stays two-valued: that path has had its own OS
+ * terminal setting for releases, and folding the two lists together would make
+ * one of the two surfaces answer a question it does not ask.
+ */
+export type InteractiveTarget = 'vscode' | 'external' | 'console';
+export type InteractiveClose = 'stay-open' | 'auto-close';
+
+export const INTERACTIVE_TARGETS: readonly InteractiveTarget[] = ['vscode', 'external', 'console'];
+export const INTERACTIVE_CLOSES: readonly InteractiveClose[] = ['stay-open', 'auto-close'];
+
+/** The surfaces, in the shape every other dimension's picker takes. */
+export const TARGET_CHOICES: LaunchChoice[] = [
+    {
+        id: 'vscode', label: 'VS Code terminal',
+        detail: 'the integrated terminal, in this window — where every interactive task has always opened'
+    },
+    {
+        id: 'external', label: 'OS terminal (Windows Terminal)',
+        detail: 'its own window outside VS Code. The integrated terminal is xterm.js inside Chromium and '
+            + 'long TUI sessions glitch there; a native window does not. Its exit code is read back, so the '
+            + 'task still finishes on its own.'
+    },
+    {
+        id: 'console', label: 'Agent Farm Console',
+        detail: 'inside the panel — Agent Farm hosts the conversation, so the run stays visible to the '
+            + 'extension and the task follows what the session is actually doing'
+    }
+];
+
+/** What happens once the agent has answered. */
+export const CLOSE_CHOICES: LaunchChoice[] = [
+    {
+        id: 'stay-open', label: 'stay open — keep talking',
+        detail: 'the conversational form of the CLI: the prompt is sent, the answer arrives, and the '
+            + 'session waits for you. The task finishes when you close it.'
+    },
+    {
+        id: 'auto-close', label: 'auto-close — one turn, then done',
+        detail: 'the engine is asked in its print-and-exit form: the answer is written where you can watch '
+            + 'it, the process ends, and the task is done. A TUI has no other way to say "the answer is over".'
+    }
+];
+
+/** A stored, formed or bridged value — or the default. Never a guess: an
+ *  unknown string becomes the default rather than the nearest-looking option,
+ *  because "it opened somewhere else" is what nobody would notice. */
+export function normInteractiveTarget(v: unknown): InteractiveTarget {
+    return INTERACTIVE_TARGETS.includes(v as InteractiveTarget) ? v as InteractiveTarget : 'vscode';
+}
+export function normInteractiveClose(v: unknown): InteractiveClose {
+    return INTERACTIVE_CLOSES.includes(v as InteractiveClose) ? v as InteractiveClose : 'stay-open';
+}
+
 /** A saved, named launch setup (`agentFarm.launchProfiles`). */
 export interface LaunchProfile extends LaunchOptions {
     name: string;

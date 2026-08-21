@@ -21,7 +21,7 @@
  */
 
 import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
-import { ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
+import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 
 export interface BridgeOpSpec {
@@ -222,6 +222,34 @@ export function bridgeRunDimensions(args: Record<string, unknown>): Record<strin
     if (out.effort && !engineTakesEffort(String(out.engine ?? ''))) {
         need(false, `engine "${out.engine}" has no reasoning-effort setting — leave effort out.`);
     }
+    // ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS AND WHETHER IT STAYS, refused
+    // here for the same reason the effort is: a schedule is a run that has not
+    // happened yet, and a mistyped surface stored happily tonight is a window
+    // that does not appear at 03:00. Both are closed lists; there is no
+    // nearest-looking fallback, because "it opened somewhere else" is exactly
+    // the outcome the caller would never notice.
+    {
+        const t = optStr(args, 'interactiveTarget');
+        if (t) {
+            need((INTERACTIVE_TARGETS as readonly string[]).includes(t),
+                `unknown interactiveTarget "${t}" — ${INTERACTIVE_TARGETS.join(', ')}`);
+            out.interactiveTarget = t;
+        }
+        const c = optStr(args, 'interactiveClose');
+        if (c) {
+            need((INTERACTIVE_CLOSES as readonly string[]).includes(c),
+                `unknown interactiveClose "${c}" — ${INTERACTIVE_CLOSES.join(', ')}`);
+            out.interactiveClose = c;
+        }
+        // ‼️ AND THEY ARE REFUSED ON A HEADLESS RUN RATHER THAN IGNORED. A
+        // caller that asked for "the Console, and close it when it answers" and
+        // got an archived background run would have no way of telling; the mode
+        // is right there in the same call, so the contradiction is nameable.
+        if ((out.interactiveTarget || out.interactiveClose) && optStr(args, 'mode') === 'headless') {
+            need(false, 'interactiveTarget / interactiveClose describe an interactive run — '
+                + 'this one is headless, which has no surface and nothing to keep open.');
+        }
+    }
     // `project` on the wire, `projectId` in the model: the caller names the
     // thing, the store holds its id.
     const project = optStr(args, 'project') || optStr(args, 'projectId');
@@ -305,6 +333,7 @@ export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
+        interactiveTarget?: string; interactiveClose?: string;
         ignoreBudget?: boolean; retry?: RetryPolicy;
     },
     projectName?: (id: string) => string | undefined
@@ -338,6 +367,12 @@ export function bridgeDimsOut(
         effort: o.effort ?? null,
         permissionMode: o.permissionMode ?? null,
         cli: o.cli ?? null,
+        // ‼️ M-26 — the DEFAULTS are named rather than left null, for the same
+        // reason the engine is: "where does this open, and does it stay?" has an
+        // answer for every run ever recorded — the integrated terminal, left
+        // open, for the ones written before there was anywhere else to put them.
+        interactiveTarget: o.interactiveTarget ?? 'vscode',
+        interactiveClose: o.interactiveClose ?? 'stay-open',
         workDir: o.workDir ?? null,
         priority: o.priority ?? 0,
         project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null,

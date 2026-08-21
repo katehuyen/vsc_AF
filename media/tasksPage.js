@@ -855,6 +855,11 @@
             // they would be for a session started by hand.
             engine: d.engine || '',
             model: d.model || '', effort: d.effort || '', permissionMode: d.permissionMode || '',
+            // ‼️ M-26 — the two axes of an interactive run open on what every
+            // interactive task has always done: this window's terminal, left
+            // open. A default that changed behaviour for the tasks people
+            // already have would be a surprise, not a feature.
+            interactiveTarget: 'vscode', interactiveClose: 'stay-open',
             cli: '', workDir: '', priority: 0,
             // ‼️ A TASK OPENS ON THE WINDOW'S PROJECT; AN AUTOMATION DOES NOT.
             // A task made here is made by a person who is looking at a project.
@@ -1973,6 +1978,30 @@
                         <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
                     </select></label>` : ''}
                 ${/**
+                    * ‼️ M-26 — AND, FOR AN INTERACTIVE RUN, THE TWO THINGS THAT
+                    * WERE NEVER ASKED: where it opens, and whether it stays.
+                    *
+                    * Drawn ONLY on `interactive`, because a headless run has no
+                    * surface and nothing to keep open — a box with no referent
+                    * is a bug (docs/CONVENTIONS.md), and here it would be a box
+                    * whose answer is discarded. Switching the mode back to
+                    * headless repaints the form and they go with it; the values
+                    * stay on the draft, so switching back does not lose them.
+                    */ ''}
+                ${wantsRun && c.mode === 'interactive' ? `
+                ${choiceSel('interactiveTarget', 'Opens in', L.targets, c.interactiveTarget,
+            'Where this run appears. VS Code\'s own terminal is where every interactive task has always '
+            + 'opened. An OS terminal window is the answer to xterm.js glitching on a long TUI session — '
+            + 'its exit code is read back through a file, so the task still finishes on its own. The '
+            + 'Console hosts the conversation inside Agent Farm, which is the one surface where the '
+            + 'extension can follow what the run is doing instead of only when it stopped.')}
+                ${choiceSel('interactiveClose', 'When it answers', L.closes, c.interactiveClose,
+                'What happens once the agent has replied. Stay-open is the conversational CLI: the answer '
+                + 'arrives and the session waits for you — the task finishes when you close it. Auto-close '
+                + 'asks the engine in its print-and-exit form, so the answer is written where you can watch '
+                + 'it and then the run ENDS: one-turn work you wanted to see, rather than a window to '
+                + 'remember to close. (A TUI has no other way to say "the answer is over".)')}` : ''}
+                ${/**
                     * ‼️ A TEMPLATE GETS THESE TOO (X-35). It was excluded here —
                     * `c.kind !== 'template'` — which made the one object whose
                     * whole purpose is "that launch again" the only one that
@@ -2033,12 +2062,17 @@
                 <span class="spacer"></span>
                 <button class="secondary mini" id="nt-guide-btn" title="Guide: Tasks, Sessions & Retry Architecture">?</button>
                 ${ro ? '' : composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
+                ${''/* ‼️ M-26 — THE ACTION IS THE LAST THING IN THE ROW, and Cancel
+                    sits to its left. The corner is where a hand ends up and where
+                    a form's own verb belongs; Cancel had it, so the press that
+                    finishes the work was one button in from the edge and the
+                    press that throws it away was the easy one. */}
+                <button class="secondary" id="nt-cancel">${ro ? 'Close' : 'Cancel'}</button>
                 ${ro ? '' : `<button id="nt-add">${c.kind === 'task'
                 ? (retry
                     ? (c.start ? 'Retry it now' : 'Queue the retry')
                     : (c.start ? 'Add and start' : 'Add to the queue'))
                 : (editing ? 'Save changes' : 'Create the ' + spec.label)}</button>`}
-                <button class="secondary" id="nt-cancel">${ro ? 'Close' : 'Cancel'}</button>
             </div>
         </div>`;
     }
@@ -2060,6 +2094,10 @@
         v('prompt', 'prompt'); v('title', 'title'); v('agent', 'agent'); v('mode', 'mode');
         v('engine', 'engine');
         v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
+        // ‼️ M-26 — drawn only on an interactive run, and `v()` skips what is not
+        // on the page: switching to headless and back keeps both answers on the
+        // draft instead of resetting them to the defaults.
+        v('interactiveTarget', 'interactiveTarget'); v('interactiveClose', 'interactiveClose');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
@@ -3087,6 +3125,13 @@
             // it. Redrawing alone left the old word in the composer while the
             // box showed the new model's first level, and the run went out with
             // the word (see ntNarrowEffort).
+            // ‼️ M-26 — the mode decides whether two other boxes exist at all
+            // (where it opens, what it does when it answers), so it has to
+            // repaint. Without this the form kept whichever half it happened to
+            // be drawn with: switch to interactive and the two questions never
+            // appeared, switch away and they stayed offering an answer nothing
+            // would read.
+            byId('nt-mode', 'change', () => { readComposer(); render(); });
             byId('nt-model', 'change', () => {
                 readComposer();
                 if (composer) {

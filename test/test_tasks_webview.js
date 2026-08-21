@@ -1775,7 +1775,16 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     // would have meant an `if` here and another in the Console and another in
     // the launcher. The dispatch is `consoleEngine.ts`'s job now.
     ok('a per-turn engine gets its own command, not claude\'s flags',
-        /runArgs\(engine\.id, \{/.test(tasks) && /tuiArgs\(engine\.id, \{/.test(tasks));
+        /runArgs\(engine\.id, \{/.test(tasks) && /tuiArgs\(engine\.id, dims\)/.test(tasks));
+    // ‼️ M-26 — …AND WHICH OF THE TWO IS THE CLOSE POLICY'S ANSWER. `auto-close`
+    // is one turn, so the terminal is handed the engine's PRINT-AND-EXIT form —
+    // the same `runArgs` the headless path spawns with. A TUI has no other way
+    // to say "the answer is over"; killing a conversational run when it looks
+    // finished would be a guess, and the first prompt flag would be wrong for it.
+    ok('‼️ one turn in a terminal is the engine\'s one-shot form, not a killed TUI',
+        /oneShot \? runArgs\(engine\.id, dims\) : tuiArgs\(engine\.id, dims\)/.test(tasks)
+        && /oneShot \? \[\] : engineFirstPromptFlag\(engine\.id\)/.test(tasks)
+        && /\$\{oneShot \? '-p ' : ''\}/.test(tasks));
     ok('‼️ …with the prompt on stdin, which is what lets it carry the project brief',
         /stdio: \[pipePrompt \? 'pipe' : 'ignore', 'pipe', 'pipe'\]/.test(tasks)
         && /engineContextPrefix\(this\.readContext\(ctxFile\)\)/.test(tasks));

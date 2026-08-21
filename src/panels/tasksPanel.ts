@@ -6,7 +6,11 @@ import { AgentInfo } from '../core/agents';
 import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
-import { EFFORT_CHOICES, modelChoices, ONE_EXECUTOR, PERMISSION_CHOICES, twoExecutors } from '../core/launch';
+import {
+    CLOSE_CHOICES, EFFORT_CHOICES, modelChoices, normInteractiveClose, normInteractiveTarget,
+    ONE_EXECUTOR, PERMISSION_CHOICES,
+    TARGET_CHOICES, twoExecutors
+} from '../core/launch';
 import { EngineModels } from '../core/models';
 import {
     describeFailurePhase, FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow,
@@ -728,6 +732,12 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             efforts: EFFORT_CHOICES,
             engineModels: deps.engineModels?.() ?? null,
             permissions: PERMISSION_CHOICES,
+            // ‼️ M-26 — the two axes of an INTERACTIVE run, from the same
+            // vocabulary module the efforts and the permission modes come from,
+            // so the form, the bridge and the session launcher all offer and
+            // refuse the same words.
+            targets: TARGET_CHOICES,
+            closes: CLOSE_CHOICES,
             // ‼️ X-18 — the engine axis reaches unattended work too, and this is
             // where it matters MOST: nobody is sitting in front of a task, so an
             // engine that cannot run produces an output file full of a shell
@@ -955,6 +965,9 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
         engine: t.engine ?? '', model: t.model ?? '', effort: t.effort ?? '',
         permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
+        // M-26 - what the object was set to, so reopening the form shows it.
+        interactiveTarget: t.interactiveTarget ?? 'vscode',
+        interactiveClose: t.interactiveClose ?? 'stay-open',
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
         ignoreBudget: !!t.ignoreBudget,
@@ -1084,6 +1097,9 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
         mode: s.mode, engine: s.engine ?? '', model: s.model ?? '', effort: s.effort ?? '',
         permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
+        // M-26 - what the object was set to, so reopening the form shows it.
+        interactiveTarget: s.interactiveTarget ?? 'vscode',
+        interactiveClose: s.interactiveClose ?? 'stay-open',
         cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
         ...retrySeed(s.retry),
@@ -1107,6 +1123,9 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         mode: a.kind === 'workflow' ? 'headless' : a.mode,
         engine: dims.engine ?? '', model: dims.model ?? '', effort: dims.effort ?? '',
         permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
+        // M-26 - what the object was set to, so reopening the form shows it.
+        interactiveTarget: dims.interactiveTarget ?? 'vscode',
+        interactiveClose: dims.interactiveClose ?? 'stay-open',
         cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
         ...retrySeed(dims.retry),
@@ -1398,6 +1417,18 @@ export class TasksPanel {
             effort: str('effort') || undefined,
             permissionMode: str('permissionMode') || undefined,
             cli: str('cli') || undefined,
+            // ‼️ M-26 — an automation's run appears somewhere too, and it is the
+            // case where the choice matters MOST: it fires with nobody at a
+            // window, so "open it in a terminal I will find in the morning"
+            // versus "one turn in the Console and done" is a decision that can
+            // only be made here. Stated on the interactive shape only, and
+            // cleared (undefined = GONE, per the note above) when the mode is
+            // headless — a schedule that quietly kept a surface from a mode it
+            // no longer runs in would offer it back the next time it is opened.
+            interactiveTarget: str('mode') === 'interactive' && str('interactiveTarget')
+                ? normInteractiveTarget(str('interactiveTarget')) : undefined,
+            interactiveClose: str('mode') === 'interactive' && str('interactiveClose')
+                ? normInteractiveClose(str('interactiveClose')) : undefined,
             workDir: str('workDir') || undefined,
             priority: num('priority', 0) || undefined,
             projectId: str('project') || undefined,
@@ -1891,6 +1922,10 @@ export class TasksPanel {
                         effort: str('effort') || undefined,
                         permissionMode: str('permissionMode') || undefined,
                         cli: str('cli') || undefined,
+                        interactiveTarget: mode === 'interactive' && str('interactiveTarget')
+                            ? normInteractiveTarget(str('interactiveTarget')) : undefined,
+                        interactiveClose: mode === 'interactive' && str('interactiveClose')
+                            ? normInteractiveClose(str('interactiveClose')) : undefined,
                         workDir: str('workDir') || undefined,
                         priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
                         ignoreBudget: t.ignoreBudget === true ? true : undefined
@@ -1948,6 +1983,14 @@ export class TasksPanel {
                     ...(str('effort') ? { effort: str('effort') } : {}),
                     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
                     ...(str('cli') ? { cli: str('cli') } : {}),
+                    // M-26 - where an interactive run opens and whether it stays.
+                    // Only sent when the mode is interactive: the boxes are not on
+                    // the page otherwise, and a headless task carrying a surface
+                    // would be a decision nobody made.
+                    ...(mode === 'interactive' && str('interactiveTarget')
+                        ? { interactiveTarget: normInteractiveTarget(str('interactiveTarget')) } : {}),
+                    ...(mode === 'interactive' && str('interactiveClose')
+                        ? { interactiveClose: normInteractiveClose(str('interactiveClose')) } : {}),
                     ...(str('workDir') ? { workDir: str('workDir') } : {}),
                     ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
                     // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)

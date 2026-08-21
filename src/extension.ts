@@ -246,6 +246,7 @@ import {
     archivedOutputBody, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
     FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
+    InteractiveClose, InteractiveTarget,
     previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
@@ -270,7 +271,7 @@ import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
 import {
-    carriedTotals, ConsoleMessage, contextPercent, contextSample, OlderHistory,
+    carriedTotals, ConsoleMessage, contextPercent, contextSample, ConsoleStatus, OlderHistory,
     PERMISSION_MODES_LIVE, transcriptPos
 } from './core/consoleproto';
 import { CodexContextProbe, isStale } from './core/codexctx';
@@ -1756,6 +1757,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return undefined;
     };
 
+    /**
+     * ‼️ M-26 — THE CONSOLE IS BUILT LATER THAN THE QUEUE, so the two ops that
+     * hand a task to it are late-bound rather than passed. A forward reference
+     * and not a re-ordering: the Console needs the session index, the project
+     * context writer and the shared ACP process, all of which are built after
+     * this point, and moving the queue below them would put every task the
+     * window is meant to resume behind a panel that may never open.
+     *
+     * Undefined until activation finishes, which is the honest state: a task
+     * that asks for the Console before there is one falls back to a terminal
+     * (see `startTask`) rather than disappearing.
+     */
+    let consoleTaskStart:
+        | ((spec: { agentId: string; agentName: string; cwd: string; prompt: string;
+            engine?: string; model?: string; effort?: string; permissionMode?: string;
+            projectId?: string }) => string | undefined)
+        | undefined;
+    let consoleTaskRead: ((id: string) => {
+        state: ConsoleStatus; answered: boolean; failed?: boolean; reason?: string;
+    } | undefined) | undefined;
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -1785,6 +1807,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!future.length) { return undefined; }
                 return future.sort((a, b) => (b.percent - a.percent) || (a.resetsAt - b.resetsAt))[0].resetsAt;
             },
+            // ‼️ M-26 — the two doors to the Console, forwarded. The queue
+            // decides WHAT to run and never learns how to open a panel; the
+            // panel owns its process, its engine refusals and its own report.
+            startConsoleTask: spec => consoleTaskStart?.({
+                agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
+                prompt: spec.prompt,
+                engine: spec.task.engine, model: spec.task.model,
+                effort: spec.task.effort, permissionMode: spec.task.permissionMode,
+                projectId: spec.task.projectId
+            }),
+            consoleTaskState: id => consoleTaskRead?.(id),
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
@@ -3856,6 +3889,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'project? (id or name; "" = explicitly none, '
                 + 'omit to inherit the window\'s active project), priority? (higher runs sooner), '
                 + 'workDir? (run it here instead of the agent folder), start? (default true), '
+                // ‼️ M-26 — the two axes of an INTERACTIVE run. Documented here
+                // rather than only in `runDimensions` because this is the op an
+                // agent is told "open a session for me and leave it open", and
+                // the pair is refused outright on a headless run (a headless task
+                // has no surface and nothing to keep open) rather than ignored.
+                + 'interactiveTarget? (vscode = the integrated terminal, the default and what every '
+                + 'interactive task did before this | external = its own OS terminal window — Windows '
+                + 'Terminal where there is one; the CLI\'s exit code is read back through a file, so the '
+                + 'task still finishes on its own | console = Agent Farm hosts the conversation in its '
+                + 'Console panel, which is the only surface where the task follows what the run is DOING '
+                + 'rather than only when it stopped), '
+                + 'interactiveClose? (stay-open = the default: the conversational CLI, and the task '
+                + 'finishes when the surface is closed | auto-close = one turn — the engine is asked in '
+                + 'its print-and-exit form, the answer is written where it can be watched, the process '
+                + 'ends and the task is done). '
+                + '‼️ Both describe an interactive run: passing either with mode:"headless" is refused, '
+                + 'not ignored. '
                 // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
                 + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
@@ -4002,6 +4052,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(effort ? { effort } : {}),
                         ...(permissionMode ? { permissionMode } : {}),
                         ...(cli ? { cli } : {}),
+                        // ‼️ M-26 — where an interactive run opens and whether it
+                        // stays. Read through the SAME function the schedules and
+                        // the triggers use (`bridgeRunDimensions`), so a mistyped
+                        // surface is refused with one sentence at every door
+                        // instead of being quietly dropped at this one.
+                        ...(() => {
+                            const d = bridgeRunDimensions(args);
+                            return {
+                                ...(d.interactiveTarget ? { interactiveTarget: d.interactiveTarget as InteractiveTarget } : {}),
+                                ...(d.interactiveClose ? { interactiveClose: d.interactiveClose as InteractiveClose } : {})
+                            };
+                        })(),
                         ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
                         ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
                         ...(args.ignoreBudget === true ? { ignoreBudget: true } : {}),
@@ -13431,6 +13493,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessionProject: (s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }) =>
             sessionOwnProject(s),
         promptSnippets: () => readPromptSnippets()
+    };
+
+    /* ======== M-26 — AN INTERACTIVE TASK, HOSTED BY THE CONSOLE ============
+     *
+     * ‼️ THE PANEL IS OPENED AND THE PROCESS IS STARTED IN ONE GESTURE, which
+     * is the opposite of what the ▶ button does. That button opens the COMPOSER
+     * on purpose — a person still has a project to choose and a first thing to
+     * say. A task has already said both: its prompt is the whole reason it
+     * exists and it was filed under a project when it was created, hours ago.
+     * Dropping it into a composer would leave a queued run waiting for a hand.
+     *
+     * The engine is refused HERE, the same way and with the same sentence the
+     * panel's own start uses — a task launched onto a CLI this machine does not
+     * have would otherwise be a hosted session that dies on its first turn.
+     */
+    consoleTaskStart = spec => {
+        const d = launchDefaults();
+        const engine = (spec.engine || d.engine || 'claude').trim().toLowerCase();
+        const refused = engineRefusal(engineOptions(engineMatrix()), engine);
+        if (refused) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+            return undefined;
+        }
+        const id = consoleHost.start({
+            agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
+            engine: engine as EngineId,
+            model: spec.model || d.model,
+            effort: spec.effort || d.effort,
+            permissionMode: spec.permissionMode || d.permissionMode,
+            // Explicit, including the empty string: a task's project was decided
+            // when it was created, and inheriting the window's active one now
+            // would file the run under whatever is on screen at 03:00.
+            projectId: spec.projectId || '',
+            firstPrompt: spec.prompt
+        });
+        // Shown, because an interactive run is one a person is meant to watch —
+        // that is the whole difference between this and a headless task.
+        ConsolePanel.show(consoleDeps, { sessionId: id });
+        return id;
+    };
+
+    /**
+     * What that hosted conversation is doing, in the words the queue asks in.
+     * `answered` is `turns` and not `status`: a session is `idle` from the
+     * moment it is up until the first thing is said to it, so a task that ended
+     * on idle alone would finish before the agent had spoken.
+     */
+    consoleTaskRead = id => {
+        const s = consoleHost.get(id);
+        if (!s) { return undefined; }
+        return {
+            state: s.status,
+            answered: s.status === 'idle' && (s.turns || 0) > 0,
+            failed: s.status === 'error',
+            reason: s.exitReason
+        };
     };
 
     /**

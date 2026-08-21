@@ -17,7 +17,7 @@ import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
-import { modelIdOk } from './launch';
+import { InteractiveClose, InteractiveTarget, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
@@ -29,10 +29,33 @@ import {
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import { archiveMonths, readArchive } from './taskstats';
+import { openExternalTerminal } from './extTerminal';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type TaskMode = 'interactive' | 'headless';
+
+/**
+ * ‼️ M-26 — WHERE AN INTERACTIVE RUN IS PUT, AND WHAT HAPPENS WHEN IT ANSWERS.
+ *
+ * `mode` says whether a person is meant to see the run at all. It was doing a
+ * second job it never stated: an interactive task always went into VS Code's
+ * own terminal, always with the CLI's conversational form, and always sat there
+ * until somebody closed the window. Both of those are choices, and a person
+ * starting the same work by hand has been making them for releases — the
+ * launcher has asked "terminal or Console?" since 3.5x, and the OS terminal has
+ * been a door since `core/extTerminal.ts` existed.
+ *
+ * The vocabulary itself is `core/launch.ts`, beside the efforts and the
+ * permission modes: a task, a schedule, a trigger, a template and a workflow
+ * step all carry these, so they cannot be spelled in the module that owns
+ * tasks. Re-exported here because a task is where a reader looks for them.
+ */
+export {
+    CLOSE_CHOICES, INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, normInteractiveClose,
+    normInteractiveTarget, TARGET_CHOICES
+} from './launch';
+export type { InteractiveClose, InteractiveTarget } from './launch';
 
 export interface FarmTask {
     id: string;
@@ -117,6 +140,27 @@ export interface FarmTask {
      */
     effort?: string;
     permissionMode?: string;
+    /**
+     * ‼️ M-26 — WHERE THIS INTERACTIVE RUN OPENS, and what it does once the
+     * agent has answered. Both are ignored on a headless run, and both are
+     * absent on every task written before they existed — which reads as
+     * `vscode` + `stay-open`, exactly what those tasks did.
+     */
+    interactiveTarget?: InteractiveTarget;
+    interactiveClose?: InteractiveClose;
+    /** ‼️ M-26 — the hosted conversation this task was handed to, when it runs
+     *  in the Console. The one handle that lets the panel's own report be read
+     *  back against this task (see `pumpConsoleTasks`). */
+    consoleSessionId?: string;
+    /**
+     * ‼️ M-26 — HOW AN EXTERNAL WINDOW REPORTS BACK. A detached `wt` returns
+     * immediately and its own exit code says nothing about the CLI inside it, so
+     * the launch appends a line that writes the CLI's `%ERRORLEVEL%` into this
+     * file. Nothing else can be believed about a window this extension does not
+     * own — and a heuristic ("it has been quiet a while") is exactly the kind of
+     * rule that rots. Absent on every other surface.
+     */
+    exitFile?: string;
     /**
      * ‼️ WHICH ENGINE RUNS IT (X-18). Empty = `claude`, which is what every task
      * ever written means and what nothing may start reinterpreting.
@@ -463,6 +507,21 @@ export interface RunDimensions {
     effort?: string;
     permissionMode?: string;
     cli?: string;
+    /**
+     * ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS, AND WHETHER IT STAYS.
+     *
+     * They live here, with the model and the permission mode, because they are
+     * decided the same way and for the same reason: an automation fires with
+     * nobody at a window, so everything about how its run appears has to be
+     * stated when the automation is written or it is not stated at all. A
+     * nightly job set to `console` + `auto-close` is a different, deliberate
+     * thing from one that opens a terminal and waits to be closed — and before
+     * this, neither could be said anywhere.
+     *
+     * Ignored on a headless run, on every object that carries them.
+     */
+    interactiveTarget?: InteractiveTarget;
+    interactiveClose?: InteractiveClose;
     workDir?: string;
     priority?: number;
     /** ‼️ The budget waiver travels with the automation, not only with the task
@@ -497,6 +556,16 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     if (d.effort) { r.effort = d.effort; }
     if (d.permissionMode) { r.permissionMode = d.permissionMode; }
     if (d.cli) { r.cli = d.cli; }
+    // ‼️ M-26 — the DEFAULT is dropped, like every other field here. A task
+    // carrying `interactiveTarget: 'vscode'` and one carrying nothing run
+    // identically, and writing the word would make every task on disk claim a
+    // decision nobody made.
+    if (d.interactiveTarget && d.interactiveTarget !== 'vscode') {
+        r.interactiveTarget = normInteractiveTarget(d.interactiveTarget);
+    }
+    if (d.interactiveClose && d.interactiveClose !== 'stay-open') {
+        r.interactiveClose = normInteractiveClose(d.interactiveClose);
+    }
     if (d.workDir) { r.workDir = d.workDir; }
     if (d.priority) { r.priority = Math.trunc(d.priority); }
     if (d.ignoreBudget) { r.ignoreBudget = true; }
@@ -889,6 +958,29 @@ export interface TaskManagerOptions {
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
     /** F2: media poll interval override (tests); undefined = provider default (3s). */
     mediaPollMs?: () => number;
+    /**
+     * ‼️ M-26 — HAND AN INTERACTIVE TASK TO THE CONSOLE.
+     *
+     * Injected rather than imported: this module knows how to decide WHAT to
+     * run and must not learn how to open a panel — the Console owns its own
+     * process, its own engine refusals and its own composer. Returns the hosted
+     * session's id, or undefined when the panel refused (an engine that is not
+     * on this machine), which is a failed run with a reason and never a task
+     * left standing.
+     */
+    startConsoleTask?: (spec: {
+        task: FarmTask; agentId: string; agentName: string; cwd: string; prompt: string;
+    }) => string | undefined;
+    /**
+     * ‼️ M-26 — WHAT THAT HOSTED CONVERSATION IS DOING NOW. The panel's own
+     * report, read back against the task. `answered` is the fact `auto-close`
+     * turns on: the agent has finished a turn in this session, as opposed to the
+     * session merely sitting idle because nothing has been said to it yet.
+     */
+    consoleTaskState?: (sessionId: string) => {
+        state: 'starting' | 'working' | 'idle' | 'ended' | 'error';
+        answered: boolean; failed?: boolean; reason?: string;
+    } | undefined;
     /** I5: model policy — extra --model args (and reason) for a task launch. */
     modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
     /**
@@ -981,6 +1073,11 @@ export class TaskManager implements vscode.Disposable {
      *  the very restart that clears the condition. */
     archiveRepair: { id: string; month: string }[] = [];
     private terminals = new Map<string, vscode.Terminal>();      // taskId -> terminal
+    // ‼️ M-26 — the tasks running in a window this extension does not own. Only
+    // their ids: everything else about them is on the task itself, and the timer
+    // beside this exists only while the set does.
+    private externalWatch = new Set<string>();
+    private externalTimer?: NodeJS.Timeout;
     private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
     private handoffs = new Map<string, Handoff>();               // workflowRunId -> last handoff
     // workflowRunId -> the parallel group currently fanning out on that run.
@@ -1019,6 +1116,16 @@ export class TaskManager implements vscode.Disposable {
             this.reattachQueue = [];
         }
         if (!this.runner()) { this.startFollowerWatch(); }
+        // ‼️ M-26 — A WINDOW THAT RESTARTED PICKS THE OUTSIDE BACK UP. An OS
+        // terminal outlives this extension host by design, so a task launched
+        // into one and still `running` after a reload has a window that is very
+        // possibly still there — and its exit file is the same file it always
+        // was. Without this the run would sit in `running` for ever, which is
+        // the exact failure the exit file exists to prevent.
+        for (const t of this.tasks) {
+            if (t.status === 'running' && t.exitFile) { this.externalWatch.add(t.id); }
+        }
+        if (this.externalWatch.size) { this.startInteractiveWatch(); }
         this.timer = setInterval(() => {
             this.tickSchedules(); this.pump(); this.pumpArchiveRepair();
         }, 30_000);
@@ -1794,6 +1901,7 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
+            | 'interactiveTarget' | 'interactiveClose'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'>>
     ): FarmTask {
@@ -2202,13 +2310,49 @@ export class TaskManager implements vscode.Disposable {
             + (task.resumeSessionId ? ` · resuming ${task.resumedFrom || task.resumeSessionId}` : ''));
         if (task.mode === 'headless') {
             this.spawnHeadless(task, agent);
+        } else if (normInteractiveTarget(task.interactiveTarget) === 'console'
+            && this.opts.startConsoleTask) {
+            // ‼️ M-26 — THE CONSOLE IS NOT A TERMINAL WITH A DIFFERENT SKIN.
+            // There is no command line to build: the panel owns the process, so
+            // the run is described (agent · engine · launch dimensions · first
+            // prompt) and the panel starts it. What comes back is the hosted
+            // session's id, which is the ONE thing that lets this task be
+            // followed afterwards — see `watchConsoleTasks`.
+            const id = this.opts.startConsoleTask({
+                task, agentId: agent.id, agentName: agent.name,
+                cwd: task.workDir ?? agent.dir, prompt: task.prompt
+            });
+            if (id) {
+                task.consoleSessionId = id;
+                noteTaskEvent(task, 'started', 'handed to the Console — the panel hosts the conversation');
+                this.startInteractiveWatch();
+            } else {
+                // The panel refused (no such engine on this machine, most
+                // often). A refusal is a finished run with a reason, never a
+                // task left standing in `running` with nothing behind it.
+                this.finish(task, 'failed');
+                noteTaskEvent(task, 'finished', 'the Console could not start it — see the warning it showed');
+            }
         } else {
             const p = sanitizePrompt(task.prompt);
             let extra = this.extraArgs().trim();
             const profile = this.cliProfileFor(task);
+            // ‼️ M-26 — ONE TURN MEANS THE ENGINE'S ONE-SHOT FORM. `auto-close`
+            // is not "the same conversational run, killed when it looks done":
+            // a TUI is finished when the person quits it, and nothing in it says
+            // "the answer is over". So the engine is asked in the form that
+            // prints and exits — the same form the headless path uses — and the
+            // shell is told to leave when it does. The surface is still a
+            // terminal you watch; what changed is that the run has an end.
+            const oneShot = normInteractiveClose(task.interactiveClose) === 'auto-close';
             let command: string;
             if (profile) {
-                command = buildCliCommand(profile.interactive ?? profile.headless, task.prompt, extra);
+                // A profile states both forms itself; one turn is what its
+                // `headless` template is, and a profile that has only one
+                // template gets that one whichever was asked for.
+                command = buildCliCommand(
+                    oneShot ? profile.headless : (profile.interactive ?? profile.headless),
+                    task.prompt, extra);
             // ‼️ NOT `=== 'perTurn'` — "anything that is not Claude" is the real
             // question here (K-25). OpenCode's hosted shape is a shared ACP
             // connection, but a TASK is `opencode run --format json`, which has
@@ -2223,20 +2367,25 @@ export class TaskManager implements vscode.Disposable {
                 // vocabulary instead (consoleEngine.ts), and the permission mode
                 // becomes this engine's sandbox because it has nobody to ask.
                 const engine = engineOf(task.engine);
+                const dims = {
+                    model: task.model, effort: task.effort,
+                    permissionMode: task.permissionMode,
+                    // ‼️ Antigravity works in its own scratch folder unless it
+                    // is handed one; the terminal's cwd below is not enough.
+                    cwd: task.workDir ?? agent.dir
+                };
                 command = [
                     engine.exe,
-                    ...tuiArgs(engine.id, {
-                        model: task.model, effort: task.effort,
-                        permissionMode: task.permissionMode,
-                        // ‼️ Antigravity works in its own scratch folder unless it
-                        // is handed one; the terminal's cwd below is not enough.
-                        cwd: task.workDir ?? agent.dir
-                    }),
+                    // `runArgs` is the SAME measured vocabulary the headless
+                    // path spawns with — one turn in a terminal is that run,
+                    // watched. Reaching for a different flag set here would be a
+                    // second answer to "how does this engine take a prompt".
+                    ...(oneShot ? runArgs(engine.id, dims) : tuiArgs(engine.id, dims)),
                     // …and on two of the three the first prompt is a FLAG, not a
                     // positional, or the terminal answers once and closes where a
                     // person expected to sit in the conversation
                     // (engineFirstPromptFlag carries the measurement).
-                    ...engineFirstPromptFlag(engine.id),
+                    ...(oneShot ? [] : engineFirstPromptFlag(engine.id)),
                     `"${p}"`
                 ].join(' ');
             } else {
@@ -2244,19 +2393,151 @@ export class TaskManager implements vscode.Disposable {
                 if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
                 const launch = this.launchArgs(task);
                 if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
-                command = `claude ${extra ? extra + ' ' : ''}"${p}"`;
+                // `-p` is claude's print-and-exit, exactly as the headless path
+                // builds it — the difference is only where the output lands.
+                command = `claude ${extra ? extra + ' ' : ''}${oneShot ? '-p ' : ''}"${p}"`;
             }
-            const terminal = vscode.window.createTerminal({
-                name: `AF: ${task.title.slice(0, 30)}`,
-                cwd: task.workDir ?? agent.dir,
-                env: this.opts.getEnv?.(agent.id)
-            });
-            terminal.show();
-            terminal.sendText(command, true);
-            this.terminals.set(task.id, terminal);
+            this.openInteractive(task, agent, command);
         }
         this.save();
         return true;
+    }
+
+    /**
+     * ‼️ M-26 — PUT THE RUN WHERE THE TASK ASKED FOR IT.
+     *
+     * Two surfaces reach here (the Console never builds a command line at all).
+     * They differ in ONE thing that matters afterwards: VS Code's terminal is an
+     * object this extension holds, so its close and its exit code are events;
+     * an OS window is not, and nothing about it can be observed from here. So
+     * the external launch writes the CLI's own exit code into a file and the
+     * watcher below reads it — the process's real answer, through the only
+     * channel a detached window has.
+     */
+    private openInteractive(task: FarmTask, agent: AgentInfo, command: string): void {
+        const cwd = task.workDir ?? agent.dir;
+        const target = normInteractiveTarget(task.interactiveTarget);
+        const close = normInteractiveClose(task.interactiveClose);
+        if (target === 'external') {
+            fs.mkdirSync(this.outputsDir, { recursive: true });
+            const exitFile = path.join(this.outputsDir, `${task.id}.exit`);
+            try { fs.rmSync(exitFile, { force: true }); } catch { /* nothing to clear */ }
+            task.exitFile = exitFile;
+            openExternalTerminal(cwd, command, `AF: ${task.title.slice(0, 30)}`, {
+                // `auto-close` is the whole reason `keepOpen` exists: the window
+                // is there to be watched, not to be dismissed afterwards.
+                keepOpen: close !== 'auto-close',
+                exitFile
+            });
+            this.externalWatch.add(task.id);
+            this.startInteractiveWatch();
+            noteTaskEvent(task, 'started', close === 'auto-close'
+                ? 'in an OS terminal window — one turn, then it closes'
+                : 'in an OS terminal window — it stays open for you');
+            return;
+        }
+        const terminal = vscode.window.createTerminal({
+            name: `AF: ${task.title.slice(0, 30)}`,
+            cwd,
+            env: this.opts.getEnv?.(agent.id)
+        });
+        terminal.show();
+        // ‼️ THE EXIT IS A SECOND LINE, NOT `&& exit`. The shell here is
+        // whatever the user's default is (pwsh, cmd, bash), and the three do not
+        // agree on chaining — but every one of them takes `exit` on its own
+        // line, and it runs when the CLI above has returned because that is what
+        // a line in a shell means. `onDidCloseTerminal` then finishes the task
+        // on the path it has always used.
+        terminal.sendText(command, true);
+        if (close === 'auto-close') { terminal.sendText('exit', true); }
+        this.terminals.set(task.id, terminal);
+    }
+
+    /**
+     * ‼️ M-26 — THE ONLY HONEST WAY TO FOLLOW A WINDOW WE DO NOT OWN.
+     *
+     * A detached `wt` returns the moment it has handed the command to the
+     * terminal server, so its own exit code is about the launcher and not about
+     * the run. The alternative that suggests itself — "the transcript has been
+     * quiet for a while, call it done" — is a guess that would mark a thinking
+     * agent finished, so it is not used. The launch appends a line that writes
+     * the CLI's exit code to a file; this reads it, once it is there.
+     *
+     * The timer exists only while something is being watched — an idle farm
+     * pays nothing for a surface nobody is using. It drives the Console's
+     * follow-up too: both are interactive runs this manager did not spawn, and
+     * a second interval for the second one would be two beats for one question.
+     */
+    private startInteractiveWatch(): void {
+        if (this.externalTimer) { return; }
+        this.externalTimer = setInterval(() => {
+            this.pumpExternalWatch();
+            this.pumpConsoleTasks();
+            if (!this.externalWatch.size && !this.tasks.some(
+                t => t.status === 'running' && t.consoleSessionId)) {
+                clearInterval(this.externalTimer);
+                this.externalTimer = undefined;
+            }
+        }, 2_000);
+    }
+
+    private pumpExternalWatch(): void {
+        for (const id of [...this.externalWatch]) {
+            const task = this.tasks.find(t => t.id === id);
+            // Gone, cancelled, or finished from somewhere else: stop watching.
+            if (!task || task.status !== 'running' || !task.exitFile) {
+                this.externalWatch.delete(id);
+                continue;
+            }
+            let raw: string;
+            try { raw = fs.readFileSync(task.exitFile, 'utf8'); } catch { continue; }
+            this.externalWatch.delete(id);
+            // The file is written by the shell, so the code is text and may be
+            // padded; anything that is not a clean zero is a failure, including
+            // a file we cannot read a number out of at all.
+            const code = Number(String(raw).trim().split(/\s+/)[0]);
+            noteTaskEvent(task, 'finished', Number.isFinite(code)
+                ? `the OS terminal's CLI exited with ${code}`
+                : 'the OS terminal reported an exit this window could not read');
+            this.finish(task, code === 0 ? 'done' : 'failed');
+            try { fs.rmSync(task.exitFile, { force: true }); } catch { /* it can stay */ }
+        }
+    }
+
+    /**
+     * ‼️ M-26 — A CONSOLE-HOSTED TASK IS FOLLOWED THROUGH THE PANEL'S OWN
+     * REPORT, not through a process this manager spawned. `consoleTaskState`
+     * answers what the hosted session is doing right now; `auto-close` ends the
+     * task the first time that session comes back to rest with an answer
+     * behind it, and `stay-open` waits for the session itself to end.
+     */
+    pumpConsoleTasks(): void {
+        const read = this.opts.consoleTaskState;
+        if (!read) { return; }
+        for (const task of this.tasks) {
+            if (task.status !== 'running' || !task.consoleSessionId) { continue; }
+            const st = read(task.consoleSessionId);
+            if (!st) { continue; }
+            if (st.state === 'ended') {
+                noteTaskEvent(task, 'finished', `the Console session ended — ${st.reason || 'closed'}`);
+                this.finish(task, st.failed ? 'failed' : 'done');
+                continue;
+            }
+            if (st.state === 'error') {
+                noteTaskEvent(task, 'finished', `the Console session failed — ${st.reason || 'no reason given'}`);
+                this.finish(task, 'failed');
+                continue;
+            }
+            // ‼️ `answered` and not merely `idle`: a session is idle for the
+            // whole moment between being started and being spoken to, and
+            // finishing the task there would end it before the agent had said
+            // anything at all.
+            if (normInteractiveClose(task.interactiveClose) === 'auto-close' && st.answered) {
+                noteTaskEvent(task, 'finished',
+                    'the agent finished its first answer — the conversation stays in the Console');
+                this.finish(task, 'done');
+            }
+        }
     }
 
     /** Explicit per-task model (mission member override) beats the policy engine.
@@ -3206,6 +3487,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
+                | 'interactiveTarget' | 'interactiveClose'
                 | 'priority' | 'projectId' | 'ignoreBudget'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
@@ -3242,6 +3524,12 @@ export class TaskManager implements vscode.Disposable {
         copy.outputContract = task.outputContract;
         copy.cli = over?.cli ?? task.cli;
         copy.workDir = over?.workDir ?? task.workDir;
+        // ‼️ M-26 — a retry runs where the original ran, unless the form said
+        // otherwise. "Run that again, but in an OS terminal this time" is the
+        // whole reason the form can override it; keeping the original's answer
+        // is the reason the fallback is the task's own.
+        copy.interactiveTarget = over?.interactiveTarget ?? task.interactiveTarget;
+        copy.interactiveClose = over?.interactiveClose ?? task.interactiveClose;
         copy.missionId = task.missionId;
         copy.ignoreBudget = over?.ignoreBudget ?? task.ignoreBudget;
         noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);
@@ -4496,6 +4784,7 @@ export class TaskManager implements vscode.Disposable {
 
     dispose(): void {
         clearInterval(this.timer);
+        if (this.externalTimer) { clearInterval(this.externalTimer); this.externalTimer = undefined; }
         this.stopFollowerWatch();
         for (const [taskId, child] of this.processes) {
             this.killProcess(taskId, child);
