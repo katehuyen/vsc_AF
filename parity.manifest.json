@@ -583,6 +583,54 @@
       }
     },
     {
+      "capability": "base.ts#openPromptSnippets",
+      "ui": [
+        "page:base.ts#openPromptSnippets"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "base.ts#pickPromptSnippets",
+      "ui": [
+        "page:base.ts#pickPromptSnippets"
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
+    },
+    {
+      "capability": "base.ts#promptSnippets",
+      "ui": [
+        "page:base.ts#promptSnippets"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "base.ts#wikiAsk",
+      "ui": [
+        "page:base.ts#wikiAsk"
+      ],
+      "ops": [
+        "wiki.candidates.list"
+      ]
+    },
+    {
+      "capability": "base.ts#wikiMark",
+      "ui": [
+        "page:base.ts#wikiMark"
+      ],
+      "ops": [
+        "wiki.candidates.add"
+      ]
+    },
+    {
       "capability": "browsePackGallery",
       "ui": [
         "cmd:agentfarm.browsePackGallery"
@@ -713,6 +761,15 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
+    },
+    {
+      "capability": "compileWiki",
+      "ui": [
+        "cmd:agentfarm.compileWiki"
+      ],
+      "ops": [
+        "wiki.compile.run"
+      ]
     },
     {
       "capability": "completeTask",
@@ -948,16 +1005,6 @@
       }
     },
     {
-      "capability": "base.ts#openPromptSnippets",
-      "ui": [
-        "page:base.ts#openPromptSnippets"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
       "capability": "consolePanel.ts#openTranscript",
       "ui": [
         "page:consolePanel.ts#openTranscript"
@@ -975,44 +1022,6 @@
       ],
       "ops": [
         "console.permissionMode"
-      ]
-    },
-    {
-      "capability": "base.ts#pickPromptSnippets",
-      "ui": [
-        "page:base.ts#pickPromptSnippets"
-      ],
-      "exempt": {
-        "kind": "file-picker",
-        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
-      }
-    },
-    {
-      "capability": "base.ts#promptSnippets",
-      "ui": [
-        "page:base.ts#promptSnippets"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
-      "capability": "base.ts#wikiMark",
-      "ui": [
-        "page:base.ts#wikiMark"
-      ],
-      "ops": [
-        "wiki.candidates.add"
-      ]
-    },
-    {
-      "capability": "base.ts#wikiAsk",
-      "ui": [
-        "page:base.ts#wikiAsk"
-      ],
-      "ops": [
-        "wiki.candidates.list"
       ]
     },
     {
@@ -2838,6 +2847,34 @@
       }
     },
     {
+      "capability": "opencodeDeleteSession",
+      "ui": [
+        "cmd:agentfarm.opencodeDeleteSession"
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
+      }
+    },
+    {
+      "capability": "opencodeExportSession",
+      "ui": [
+        "cmd:agentfarm.opencodeExportSession"
+      ],
+      "ops": [
+        "sessions.opencodeExport"
+      ]
+    },
+    {
+      "capability": "opencodeRefreshHistory",
+      "ui": [
+        "cmd:agentfarm.opencodeRefreshHistory"
+      ],
+      "ops": [
+        "sessions.opencodeSync"
+      ]
+    },
+    {
       "capability": "openConsole",
       "ui": [
         "cmd:agentfarm.openConsole"
@@ -3241,32 +3278,14 @@
       }
     },
     {
-      "capability": "opencodeDeleteSession",
+      "capability": "openWiki",
       "ui": [
-        "cmd:agentfarm.opencodeDeleteSession"
+        "cmd:agentfarm.openWiki"
       ],
       "exempt": {
-        "kind": "human-only",
-        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
-    },
-    {
-      "capability": "opencodeExportSession",
-      "ui": [
-        "cmd:agentfarm.opencodeExportSession"
-      ],
-      "ops": [
-        "sessions.opencodeExport"
-      ]
-    },
-    {
-      "capability": "opencodeRefreshHistory",
-      "ui": [
-        "cmd:agentfarm.opencodeRefreshHistory"
-      ],
-      "ops": [
-        "sessions.opencodeSync"
-      ]
     },
     {
       "capability": "pauseAutomations",
@@ -4771,15 +4790,6 @@
       ]
     },
     {
-      "capability": "compileWiki",
-      "ui": [
-        "cmd:agentfarm.compileWiki"
-      ],
-      "ops": [
-        "wiki.compile.run"
-      ]
-    },
-    {
       "capability": "sessionViewer.ts#afnav",
       "ui": [
         "page:sessionViewer.ts#afnav"
@@ -6253,21 +6263,21 @@
       }
     },
     {
-      "capability": "timeline.ts#testTurnAlert",
-      "ui": [
-        "page:timeline.ts#testTurnAlert"
-      ],
-      "ops": [
-        "live.alerts.test"
-      ]
-    },
-    {
       "capability": "timeline.ts#setTurnAlert",
       "ui": [
         "page:timeline.ts#setTurnAlert"
       ],
       "ops": [
         "live.alerts.set"
+      ]
+    },
+    {
+      "capability": "timeline.ts#testTurnAlert",
+      "ui": [
+        "page:timeline.ts#testTurnAlert"
+      ],
+      "ops": [
+        "live.alerts.test"
       ]
     },
     {
@@ -6517,6 +6527,92 @@
       ],
       "ops": [
         "reports.weekly"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#afnav",
+      "ui": [
+        "page:wikiPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#compile",
+      "ui": [
+        "page:wikiPanel.ts#compile"
+      ],
+      "ops": [
+        "wiki.compile.run"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#edit",
+      "ui": [
+        "page:wikiPanel.ts#edit"
+      ],
+      "ops": [
+        "wiki.candidates.edit"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#lint",
+      "ui": [
+        "page:wikiPanel.ts#lint"
+      ],
+      "ops": [
+        "wiki.lint"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#openPage",
+      "ui": [
+        "page:wikiPanel.ts#openPage"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#openSession",
+      "ui": [
+        "page:wikiPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#openWikiFile",
+      "ui": [
+        "page:wikiPanel.ts#openWikiFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#refresh",
+      "ui": [
+        "page:wikiPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#remove",
+      "ui": [
+        "page:wikiPanel.ts#remove"
+      ],
+      "ops": [
+        "wiki.candidates.remove"
       ]
     },
     {

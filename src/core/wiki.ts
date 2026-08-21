@@ -471,7 +471,7 @@ export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
         // judgement of every compile (_REF/wiki.md §3).
         existing: pages.map(p => ({ category: p.category, concept: p.concept, file: p.file })),
         candidates: chosen.map(c => ({
-            ...view(c),
+            ...candidateView(c),
             // The transcript and the range, so the agent reads the turns itself
             // rather than trusting a summary of them.
             transcript: c.sessionFile,
@@ -559,8 +559,10 @@ function findSession(list: SessionInfo[], ref: string): SessionInfo {
 
 const shortOf = (id: string): string => id.slice(0, 8);
 
-/** How a candidate is drawn wherever it is listed — one shape, one place. */
-function view(c: WikiCandidate): Record<string, unknown> {
+/** How a candidate is drawn wherever it is listed — one shape, one place.
+ *  ‼️ U-70 — exported, because the Wiki page draws the same rows the op prints:
+ *  two shapes of one candidate is two places to fix a field. */
+export function candidateView(c: WikiCandidate): Record<string, unknown> {
     return {
         id: c.id,
         session: shortOf(c.sessionId),
@@ -581,6 +583,156 @@ function view(c: WikiCandidate): Record<string, unknown> {
         // compiled until the run says the pages exist.
         compileTaskId: c.compileTaskId ?? null,
         compileStartedAt: c.compileStartedAt ?? null
+    };
+}
+
+/**
+ * ‼️ U-70 — THE FOUR ACTS OF THE POOL, WRITTEN ONCE.
+ *
+ * The Wiki page does the same four things the bridge does: amend a mark, drop
+ * one, read both sides, start a compile. A panel that re-implemented any of
+ * them would be a second set of rules about what closes a mark and what a
+ * running compile claims — and the parity gate would be right to call it a
+ * different act. So the bodies live here and both doors call them; the ops are
+ * one line each, and the page's button and the agent's op cannot disagree.
+ */
+
+/** `wiki.candidates.edit` — amend a mark, and stamp what the amendment means. */
+export function editCandidate(store: WikiStore, args: Record<string, unknown>): Record<string, unknown> {
+    const c = store.get(argStr(args, 'id'));
+    need(!!c, `No candidate with id "${optStr(args, 'id')}".`);
+    if (args.topics !== undefined) {
+        const t = normTopics(args.topics);
+        need(t.length > 0, 'A candidate cannot be left with no topic — remove it instead.');
+        c!.topics = t;
+    }
+    if (args.addTopics !== undefined) {
+        for (const t of normTopics(args.addTopics)) {
+            if (!c!.topics.some(x => x.toLowerCase() === t.toLowerCase())) { c!.topics.push(t); }
+        }
+    }
+    if (args.note !== undefined) { c!.note = String(args.note ?? ''); }
+    if (args.pages !== undefined) {
+        c!.pages = (Array.isArray(args.pages) ? args.pages : [args.pages])
+            .map(p => String(p ?? '').trim()).filter(Boolean);
+    }
+    if (args.state !== undefined) {
+        const st = String(args.state).toLowerCase() as WikiCandidateState;
+        need((WIKI_STATES as readonly string[]).includes(st),
+            `Unknown state "${args.state}" — use ${WIKI_STATES.join(', ')}.`);
+        c!.state = st;
+        // ‼️ The stamp goes on when it is CLAIMED to be compiled and comes off
+        // when that claim is withdrawn, so a row can never say "compiled at
+        // 14:02" while sitting in the pending pool.
+        if (st === 'compiled') { c!.compiledAt = Date.now(); }
+        else { c!.compiledAt = undefined; }
+        // M-23 — and the run that was out for it is over as far as this mark is
+        // concerned, whichever way it went. A closed mark still carrying a claim
+        // would refuse the next compile of a turn it no longer has anything to
+        // do with.
+        if (st !== 'pending') { c!.compileTaskId = undefined; c!.compileStartedAt = undefined; }
+    }
+    store.save();
+    return candidateView(c!);
+}
+
+/** `wiki.candidates.remove` — take marks out of the pool. */
+export function removeCandidates(store: WikiStore, args: Record<string, unknown>):
+    { removed: number; candidates: Record<string, unknown>[] } {
+    let ids: string[] = [];
+    if (args.id !== undefined) { ids = [argStr(args, 'id')]; }
+    else if (args.ids !== undefined) {
+        ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(x => String(x));
+    } else if (args.state !== undefined) {
+        const st = String(args.state).toLowerCase();
+        need(st === 'compiled' || st === 'dropped',
+            'A sweep only takes compiled or dropped rows — pending work is never swept away by a state argument. Pass its id.');
+        ids = store.candidates.filter(c => c.state === st).map(c => c.id);
+    } else {
+        need(false, 'Pass id, ids or state.');
+    }
+    const gone = store.remove(ids);
+    need(gone.length > 0, 'Nothing matched — no candidate was removed.');
+    return { removed: gone.length, candidates: gone.map(candidateView) };
+}
+
+/** `wiki.status` — the pool and the vault, read in one breath. */
+export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
+    const root = deps.root();
+    const rules = path.join(root, WIKI_RULES_REL);
+    const { pages, misplaced } = readWikiPages(root);
+    const pool = deps.store().candidates;
+    const count = (st: WikiCandidateState) => pool.filter(c => c.state === st).length;
+    return {
+        pool: {
+            pending: count('pending'), compiled: count('compiled'),
+            dropped: count('dropped'), total: pool.length,
+            // M-23 — pending marks a run is already out for. They are still
+            // pending, and asking for them again is refused.
+            compiling: pool.filter(c => c.state === 'pending' && c.compileTaskId
+                && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true)).length,
+            topics: deps.store().topics()
+        },
+        wiki: {
+            root,
+            exists: fs.existsSync(root),
+            // ‼️ THE RULES ARE THE ONE FILE WHOSE ABSENCE STOPS A COMPILE. They
+            // are the vault's law and they outrank the agent procedure, so "I
+            // could not find them" is never an invitation to proceed from memory.
+            rules, rulesFound: fs.existsSync(rules),
+            procedure: deps.procedure ?? '_REF/wiki.md',
+            index: path.join(root, WIKI_INDEX_REL),
+            indexFound: fs.existsSync(path.join(root, WIKI_INDEX_REL)),
+            log: path.join(root, WIKI_LOG_REL),
+            logFound: fs.existsSync(path.join(root, WIKI_LOG_REL)),
+            pages: pages.length,
+            categories: [...new Set(pages.map(p => p.category))].sort(),
+            misplaced
+        }
+    };
+}
+
+/** `wiki.compile.run` — the brief, started as a headless run instead of read. */
+export function startCompileRun(deps: WikiDeps, args: Record<string, unknown>): Record<string, unknown> {
+    need(!!deps.startCompile,
+        'This build has no way to start a run — wiki.compile hands back the brief and you do the work.');
+    const chosen = chooseCandidates(deps.store(), args);
+    // ‼️ CAN A COMPILE HAPPEN AT ALL, before which marks it is about: a missing
+    // root or a wiki with no law of its own stops every run, and answering
+    // "that mark is busy" first would send the reader after the wrong problem.
+    const brief = buildBrief(deps, chosen);
+    // ‼️ TWO RUNS OVER ONE MARK FILE THE CONCEPT TWICE. The claim is only real
+    // while its run is; a crashed compile must not lock a turn out of the wiki
+    // for ever (see WikiCandidate.compileTaskId).
+    const claimed = chosen.filter(c => c.compileTaskId
+        && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true));
+    need(claimed.length === 0,
+        `${claimed.length} of those already have a compile running (${claimed.map(c => c.id).join(', ')}). `
+        + 'Let it finish, or drop that run first — reading the same turns twice files the concept twice.');
+    const topics = [...new Set(chosen.flatMap(c => c.topics))];
+    const title = `Wiki compile — ${topics.slice(0, 3).join(', ')}`
+        + (topics.length > 3 ? ` +${topics.length - 3}` : '')
+        + ` (${chosen.length} mark${chosen.length === 1 ? '' : 's'})`;
+    const run = deps.startCompile!({
+        title,
+        prompt: compilePrompt(brief),
+        agent: optStr(args, 'agent') || (deps.defaultAgent ? deps.defaultAgent() : ''),
+        engine: optStr(args, 'engine'),
+        model: optStr(args, 'model'),
+        effort: optStr(args, 'effort'),
+        start: args.start !== false
+    });
+    const at = Date.now();
+    for (const c of chosen) { c.compileTaskId = run.taskId; c.compileStartedAt = at; }
+    deps.store().save();
+    return {
+        taskId: run.taskId, agent: run.agent, started: run.started, title,
+        marks: chosen.length,
+        topics,
+        reads: brief.candidates.map(c => ({ id: c.id, transcript: c.transcript, turns: c.readTurns })),
+        root: brief.root, rules: brief.rules,
+        note: 'Nothing is compiled yet. The run reports back with wiki.candidates.edit '
+            + '{state:"compiled", pages:[…]} when the pages exist — that is what closes a mark.'
     };
 }
 
@@ -617,7 +769,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                     addedBy: optStr(args, 'by') || 'agent'
                 });
                 return {
-                    ...view(candidate), merged,
+                    ...candidateView(candidate), merged,
                     pending: S().candidates.filter(c => c.state === 'pending').length,
                     ...(merged ? {
                         note2: 'An overlapping mark on this conversation was already pending — its topics were merged into that one.'
@@ -642,110 +794,24 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                     .sort((a, b) => b.addedAt - a.addedAt);
                 return {
                     total: rows.length,
-                    candidates: rows.slice(0, limit).map(view)
+                    candidates: rows.slice(0, limit).map(candidateView)
                 };
             }
         },
         {
             op: 'wiki.candidates.edit',
             describe: 'Change a candidate. args: id, then any of topics? (replaces the list), addTopics? (adds to it), note?, state? (pending|compiled|dropped), pages? (the wiki files a compile wrote for it — provenance read backwards). Setting state=compiled stamps the time; this is how a compile reports back (_REF/wiki.md §8 step 6).',
-            handler: (args) => {
-                const c = S().get(argStr(args, 'id'));
-                need(!!c, `No candidate with id "${optStr(args, 'id')}".`);
-                if (args.topics !== undefined) {
-                    const t = normTopics(args.topics);
-                    need(t.length > 0, 'A candidate cannot be left with no topic — remove it instead.');
-                    c!.topics = t;
-                }
-                if (args.addTopics !== undefined) {
-                    for (const t of normTopics(args.addTopics)) {
-                        if (!c!.topics.some(x => x.toLowerCase() === t.toLowerCase())) { c!.topics.push(t); }
-                    }
-                }
-                if (args.note !== undefined) { c!.note = String(args.note ?? ''); }
-                if (args.pages !== undefined) {
-                    c!.pages = (Array.isArray(args.pages) ? args.pages : [args.pages])
-                        .map(p => String(p ?? '').trim()).filter(Boolean);
-                }
-                if (args.state !== undefined) {
-                    const st = String(args.state).toLowerCase() as WikiCandidateState;
-                    need((WIKI_STATES as readonly string[]).includes(st),
-                        `Unknown state "${args.state}" — use ${WIKI_STATES.join(', ')}.`);
-                    c!.state = st;
-                    // ‼️ The stamp goes on when it is CLAIMED to be compiled and
-                    // comes off when that claim is withdrawn, so a row can never
-                    // say "compiled at 14:02" while sitting in the pending pool.
-                    if (st === 'compiled') { c!.compiledAt = Date.now(); }
-                    else { c!.compiledAt = undefined; }
-                    // M-23 — and the run that was out for it is over as far as
-                    // this mark is concerned, whichever way it went. A closed
-                    // mark still carrying a claim would refuse the next compile
-                    // of a turn it no longer has anything to do with.
-                    if (st !== 'pending') { c!.compileTaskId = undefined; c!.compileStartedAt = undefined; }
-                }
-                S().save();
-                return view(c!);
-            }
+            handler: (args) => editCandidate(S(), args)
         },
         {
             op: 'wiki.candidates.remove',
             describe: 'Take marks out of the pool. args: id? (one) or ids? (a list) or state? (sweep every candidate in that state — compiled|dropped only, never pending). Removing a mark undoes nothing in the vault; a page already written stays written.',
-            handler: (args) => {
-                let ids: string[] = [];
-                if (args.id !== undefined) { ids = [argStr(args, 'id')]; }
-                else if (args.ids !== undefined) {
-                    ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(x => String(x));
-                } else if (args.state !== undefined) {
-                    const st = String(args.state).toLowerCase();
-                    need(st === 'compiled' || st === 'dropped',
-                        'A sweep only takes compiled or dropped rows — pending work is never swept away by a state argument. Pass its id.');
-                    ids = S().candidates.filter(c => c.state === st).map(c => c.id);
-                } else {
-                    need(false, 'Pass id, ids or state.');
-                }
-                const gone = S().remove(ids);
-                need(gone.length > 0, 'Nothing matched — no candidate was removed.');
-                return { removed: gone.length, candidates: gone.map(view) };
-            }
+            handler: (args) => removeCandidates(S(), args)
         },
         {
             op: 'wiki.status',
             describe: 'What the pool holds and what the wiki holds. No arguments. Reports both sides: pending/compiled marks and their topics, and the vault\'s own state (root, rules, index, log, page count).',
-            handler: () => {
-                const root = deps.root();
-                const rules = path.join(root, WIKI_RULES_REL);
-                const { pages, misplaced } = readWikiPages(root);
-                const pool = S().candidates;
-                const count = (st: WikiCandidateState) => pool.filter(c => c.state === st).length;
-                return {
-                    pool: {
-                        pending: count('pending'), compiled: count('compiled'),
-                        dropped: count('dropped'), total: pool.length,
-                        // M-23 — pending marks a run is already out for. They are
-                        // still pending, and asking for them again is refused.
-                        compiling: pool.filter(c => c.state === 'pending' && c.compileTaskId
-                            && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true)).length,
-                        topics: S().topics()
-                    },
-                    wiki: {
-                        root,
-                        exists: fs.existsSync(root),
-                        // ‼️ THE RULES ARE THE ONE FILE WHOSE ABSENCE STOPS A
-                        // COMPILE. They are the vault's law and they outrank the
-                        // agent procedure, so "I could not find them" is never
-                        // an invitation to proceed from memory.
-                        rules, rulesFound: fs.existsSync(rules),
-                        procedure: deps.procedure ?? '_REF/wiki.md',
-                        index: path.join(root, WIKI_INDEX_REL),
-                        indexFound: fs.existsSync(path.join(root, WIKI_INDEX_REL)),
-                        log: path.join(root, WIKI_LOG_REL),
-                        logFound: fs.existsSync(path.join(root, WIKI_LOG_REL)),
-                        pages: pages.length,
-                        categories: [...new Set(pages.map(p => p.category))].sort(),
-                        misplaced
-                    }
-                };
-            }
+            handler: () => wikiStatus(deps)
         },
         {
             op: 'wiki.compile',
@@ -755,49 +821,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         {
             op: 'wiki.compile.run',
             describe: 'M-23 — the compile, DONE rather than described: it assembles the same brief wiki.compile hands back and starts a headless run that carries out the synthesis, under the vault\'s own law. args: ids? / topic? / all? (the same three exclusive selectors), agent? (who writes the wiki; default agentFarm.wikiAgent), engine?, model?, effort?, start? (default true). ‼️ Nothing is marked compiled by starting a run — the run reports back with wiki.candidates.edit when the pages exist, which is the only thing that closes a mark. A mark with a compile already out is refused rather than read twice; a claim whose run has ended is stale and ignored.',
-            handler: (args) => {
-                need(!!deps.startCompile,
-                    'This build has no way to start a run — wiki.compile hands back the brief and you do the work.');
-                const chosen = chooseCandidates(S(), args);
-                // ‼️ CAN A COMPILE HAPPEN AT ALL, before which marks it is about:
-                // a missing root or a wiki with no law of its own stops every
-                // run, and answering "that mark is busy" first would send the
-                // reader after the wrong problem.
-                const brief = buildBrief(deps, chosen);
-                // ‼️ TWO RUNS OVER ONE MARK FILE THE CONCEPT TWICE. The claim is
-                // only real while its run is; a crashed compile must not lock a
-                // turn out of the wiki for ever (see WikiCandidate.compileTaskId).
-                const claimed = chosen.filter(c => c.compileTaskId
-                    && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true));
-                need(claimed.length === 0,
-                    `${claimed.length} of those already have a compile running (${claimed.map(c => c.id).join(', ')}). `
-                    + 'Let it finish, or drop that run first — reading the same turns twice files the concept twice.');
-                const topics = [...new Set(chosen.flatMap(c => c.topics))];
-                const title = `Wiki compile — ${topics.slice(0, 3).join(', ')}`
-                    + (topics.length > 3 ? ` +${topics.length - 3}` : '')
-                    + ` (${chosen.length} mark${chosen.length === 1 ? '' : 's'})`;
-                const run = deps.startCompile!({
-                    title,
-                    prompt: compilePrompt(brief),
-                    agent: optStr(args, 'agent') || (deps.defaultAgent ? deps.defaultAgent() : ''),
-                    engine: optStr(args, 'engine'),
-                    model: optStr(args, 'model'),
-                    effort: optStr(args, 'effort'),
-                    start: args.start !== false
-                });
-                const at = Date.now();
-                for (const c of chosen) { c.compileTaskId = run.taskId; c.compileStartedAt = at; }
-                S().save();
-                return {
-                    taskId: run.taskId, agent: run.agent, started: run.started, title,
-                    marks: chosen.length,
-                    topics,
-                    reads: brief.candidates.map(c => ({ id: c.id, transcript: c.transcript, turns: c.readTurns })),
-                    root: brief.root, rules: brief.rules,
-                    note: 'Nothing is compiled yet. The run reports back with wiki.candidates.edit '
-                        + '{state:"compiled", pages:[…]} when the pages exist — that is what closes a mark.'
-                };
-            }
+            handler: (args) => startCompileRun(deps, args)
         },
         {
             op: 'wiki.lint',

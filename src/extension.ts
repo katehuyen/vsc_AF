@@ -294,7 +294,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
-import { normTopics, registerWikiOps, WikiStore } from './core/wiki';
+import { normTopics, registerWikiOps, WikiDeps, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
@@ -311,6 +311,7 @@ import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
+import { WikiPanel } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import {
@@ -9149,7 +9150,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return (set && set.trim())
             || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI');
     };
-    registerWikiOps(bridge, {
+    // ‼️ U-70 — ONE `WikiDeps`, TWO DOORS. The bridge ops and the Wiki page are
+    // the same acts (`core/wiki.ts` holds the bodies), so they are handed the
+    // same dependency object: a page reading a different root, or starting a
+    // run through a different launcher, is exactly the drift the parity gate
+    // exists to catch.
+    const wikiDeps: WikiDeps = {
         store: () => wikiStore,
         root: wikiRoot,
         sessions: () => index.allWithExternal(),
@@ -9191,7 +9197,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const started = a.start !== false ? taskManager.startTask(task) : false;
             return { taskId: task.id, agent: agent!.name, started };
         }
-    });
+    };
+    registerWikiOps(bridge, wikiDeps);
+    /** U-70 — the cockpit over that same pool. */
+    const showWikiPanel = (focus?: string): void => WikiPanel.show({
+        extensionUri: context.extensionUri,
+        store: () => wikiStore,
+        wiki: () => wikiDeps,
+        openSession: (sessionId, file) => {
+            const s = index.allWithExternal().find(x => x.sessionId === sessionId);
+            const target = s?.file || file;
+            if (target) { void vscode.commands.executeCommand('agentfarm.openSession', target); }
+            else { void vscode.window.showWarningMessage(`Agent Farm: no transcript on disk for session ${sessionId}.`); }
+        },
+        openDoc,
+        docOpenConfig,
+        onChange: () => { TurnsPanel.refreshIfOpen(); }
+    }, focus);
     /**
      * ‼️ K-26 (X-50) — THE SAME POOL, REACHED FROM THE ROW YOU ARE READING.
      *
@@ -9221,6 +9243,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 topics: a.topics, label: a.label, note: a.note,
                 addedBy: 'you'
             });
+            // The cockpit is a view OF this pool, so a mark made anywhere else
+            // has to reach it — otherwise the one page that claims to show what
+            // is waiting is the page that is out of date (U-70).
+            WikiPanel.refreshIfOpen();
             return {
                 merged: r.merged,
                 pending: wikiStore.candidates.filter(c => c.state === 'pending').length
@@ -18502,6 +18528,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                     if (r.merged) { merged++; }
                 }
+                WikiPanel.refreshIfOpen();
                 const pending = wikiStore.candidates.filter(c => c.state === 'pending').length;
                 void vscode.window.setStatusBarMessage(
                     `Agent Farm: ${list.length === 1 ? 'conversation' : list.length + ' conversations'} marked for the wiki`
@@ -18566,6 +18593,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const out = r.result as { agent: string; marks: number; taskId: string; started: boolean };
+            WikiPanel.refreshIfOpen();   // the rows those marks are on now say "compiling"
             const open = 'Open Tasks';
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${out.agent} is compiling ${out.marks} mark(s) into the wiki`
@@ -21424,6 +21452,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openQueue', (arg?: unknown) => {
             showQueuePanel(typeof arg === 'string' ? arg : undefined);
+        }),
+
+        // U-70 — the wiki cockpit: the candidate pool and the vault, side by side.
+        vscode.commands.registerCommand('agentfarm.openWiki', (arg?: unknown) => {
+            showWikiPanel(typeof arg === 'string' ? arg : undefined);
         }),
 
         // The seed is what a caller already knows — a backlog item quoting

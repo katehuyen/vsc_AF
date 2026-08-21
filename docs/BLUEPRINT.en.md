@@ -71,6 +71,7 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | Have the agent work under Antigravity too | Right-click agent → `Sync Agent with the Other Engines…` ([details](#antigravity-uyumlulugu)) |
 | Add conversation or turn to wiki candidate pool | `🔖` badge on transcript/Console row, or right-click → `Add to Wiki Candidates…` ([details](#wiki)) |
 | Compile wiki candidates into the vault | Command palette → `Agent Farm: Compile Wiki Candidates…` ([details](#wiki)) |
+| See, filter and compile the waiting wiki marks | Command palette → `Agent Farm: Open Wiki`, or Toolbox → `📚 Wiki` ([details](#wiki-kokpiti)) |
 | Inspect turns across all 5 engines | Beside Sessions table → `⤢ Open Turns page` ([details](#turlar-sayfasi)) |
 | Copy full text directly from timeline | Right-click dot/tool on timeline → `Copy Corpus` ([details](#live-observation)) |
 
@@ -2056,6 +2057,19 @@ The extension does not synthesize wiki pages directly with heuristic templates; 
    - **Every fact has provenance:** Footnotes link back to the exact transcript file and turn ordinal.
 5. **Completion Contract:** When the agent finishes synthesis, it calls `wiki.candidates.edit {state:"compiled", pages:[…]}` over the bridge, marking candidates compiled and indexing newly created/updated pages.
 
+### The Wiki Cockpit — The One Surface That READS The Pool (3.205.0 — U-70) {#wiki-kokpiti}
+
+Four doors WROTE to the pool (the 🔖 badge, a session's right-click, the bridge, the palette command) and no surface READ it: what was waiting, what it was about, and where a compile actually put it were all invisible. The Wiki panel (`Agent Farm: Open Wiki`, or Toolbox → **📚 Wiki**) answers those three questions at a glance.
+
+- **Vault strip (top):** the wiki root, `-WIKI-ANAYASA-.md`, `index.md` and `log.md` — each one clickable, each missing one marked **⚠**. With the root or the law absent, **both compile buttons are dead and say why before the press**; a button that looks alive over a compile that will be refused is the exact lie this feature exists to avoid.
+- **Filter bar:** a topic multi-select (each option carrying how many marks under it are still waiting), state toggles (All / ⏳ Waiting / ✅ Compiled / 🚫 Dropped), and a live search box speaking the farm's shared query grammar (`foo bar` = both, `-foo` = exclude, `"exact phrase"`). The search looks at a mark's topics, its opening prompt, its note, its session and the pages a compile wrote for it, all at once.
+- **DENSE table:** one mark is **one line**, and everything that could grow is an AFTip instead. State · source (session + turn range) · topic chips (more than three collapse to `+N`) · what was said · when it was marked · pages written. The source cell opens the conversation; the row's AFTip gives the session, the agent, the engine, the turn range, the note and who marked it when — **with zero clicks**.
+- **Two compile buttons:** **📚 Compile Selected** takes the ticked rows, **⚡ Compile All Pending** takes everything waiting, both as ONE run. Both are `wiki.compile.run`: **neither marks anything compiled** — a row stays `pending` until the run reports back with `wiki.candidates.edit`.
+- **A mark with a run out cannot be selected:** `compiling` is not a state in the pool (the state dictionary is a published contract, B-14); it is a **pending** row with a live run. That row draws no tick box and is not in the "pending" count — it is the only thing standing between the system and filing the same concept twice.
+- **Inline editing:** ✎ opens the topics in a comma-separated box (Enter saves, Escape leaves it; an emptied list is never sent, because a mark with no topic has lost the pool's filing key). 🚫 takes a mark out of the queue, ↺ puts it back, ✕ deletes it — **none of them touch a page already written in the vault.**
+- **Provenance breadcrumb:** compiled rows carry clickable `Category / Concept` page links; pressing one opens the file with your `docOpen` preference (Obsidian / VS Code / a custom app).
+- **🩺 Lint:** reports `wiki.lint` into the page itself (orphan pages, broken `[[links]]`, unindexed pages, folders nested too deep). It **reports and never repairs**.
+
 ### Bridge Operations & Health Auditing
 
 - **`wiki.candidates.add` / `wiki.candidates.list` / `wiki.candidates.edit` / `wiki.candidates.remove`:** Candidate pool CRUD operations.
@@ -2781,6 +2795,7 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Open Capability Matrix (Skills × MCP × Agents)** — the fleet's capability grid, usage density and one-click copy
 - **Open Backlog (the active project's standing pile of work)** — the project page, opened straight onto its Backlog tab. It follows the status bar: whatever project is active in this window is the one it opens, and it only asks when nothing is active — the answer then becomes the window's active project, so it is asked once rather than at every press
 - **Open Turns (every turn across the farm)** — one row per user turn, farm-wide ([Turns Page](#turlar-sayfasi))
+- **Open Wiki (candidate pool + the vault’s own pages)** — the pool and the vault side by side ([Wiki Cockpit](#wiki-kokpiti))
 - **Copy Webhook URL** — the secret address of a webhook trigger
 - **Open Media Gallery** — produced media (preview + Re-run/Vary)
 - **New Recipe Workflow…** — ready-made factory templates

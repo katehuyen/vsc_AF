@@ -71,6 +71,7 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with the Other Engines…` ([detay](#antigravity-uyumlulugu)) |
 | Konuşmayı/turu wiki aday havuzuna ekle | Transkript/Konsol satırında 🔖, ya da sağ tık → `Add to Wiki Candidates…` ([detay](#wiki)) |
 | Wiki adaylarını derle (sentezle) | Komut paleti → `Agent Farm: Compile Wiki Candidates…` ([detay](#wiki)) |
+| Bekleyen wiki işaretlerini gör, süz ve derle | Komut paleti → `Agent Farm: Open Wiki`, ya da Toolbox → `📚 Wiki` ([detay](#wiki-kokpiti)) |
 | Tüm motorların turlarını incele | Sessions yanındaki `⤢ Open Turns page` ([detay](#turlar-sayfasi)) |
 | Zaman çizelgesinden tam metni kopyala | Çizelgedeki noktaya sağ tık → `Copy Corpus` ([detay](#canli-gozlem)) |
 
@@ -2097,6 +2098,19 @@ Eklenti doğrudan wiki sayfası sentezlemez; çünkü bir eklentinin mekanik öz
    - **Her olgu kaynağını taşır:** Bilginin hangi transkriptten ve hangi turdan geldiği dipnotlanır.
 5. **Geri Bildirim:** Ajan derlemeyi bitirdiğinde köprüden `wiki.candidates.edit {state:"compiled", pages:[…]}` çağrısı yaparak adayları kapatır ve oluşturulan/güncellenen sayfaları bildirir.
 
+### Wiki Kokpiti — Havuzu Okuyan Tek Yüzey (3.205.0 — U-70) {#wiki-kokpiti}
+
+Havuza **yazan** dört kapı vardı (🔖 rozeti, oturum sağ tıkı, köprü, komut paleti) ama havuzu **okuyan** hiçbir yüzey yoktu: neyin beklediği, neyle ilgili olduğu ve derlemenin sonucu nereye yazdığı görünmüyordu. Wiki paneli (`Agent Farm: Open Wiki`, ya da Toolbox → **📚 Wiki**) bu üç soruyu tek bakışta cevaplar.
+
+- **Kasa şeridi (üstte):** Wiki kökü, `-WIKI-ANAYASA-.md`, `index.md` ve `log.md` — her biri tıklanabilir, eksik olan **⚠** ile işaretli. Kök veya anayasa yoksa **iki derleme düğmesi de ölüdür ve sebebini basılmadan önce söyler**; derlemenin zaten reddedileceği bir düğmenin canlı görünmesi bu özelliğin kaçınmak için var olduğu yalandır.
+- **Süzgeç çubuğu:** Konu çoklu-seçimi (yanında o konuda kaç işaretin beklediği), durum düğmeleri (Hepsi / ⏳ Bekleyenler / ✅ Derlenenler / 🚫 Düşenler) ve filonun ortak sorgu dilini konuşan canlı arama kutusu (`foo bar` = ikisi de, `-foo` = hariç, `"tam ifade"`). Arama bir işaretin konularına, açılış promptuna, notuna, oturumuna ve derlemenin yazdığı sayfalara birden bakar.
+- **DENSE tablo:** Her işaret **tek satır**; büyüyebilecek her şey AFTip'e taşınmıştır. Durum · kaynak (oturum + tur aralığı) · konu çipleri (üçten fazlası `+N`) · söylenen · işaretlenme zamanı · yazılan sayfalar. Kaynak hücresi konuşmayı açar; satır üstündeki AFTip oturumu, ajanı, motoru, tur aralığını, notu ve kim/ne zaman işaretledi bilgisini **sıfır tıkla** verir.
+- **İki derleme düğmesi:** **📚 Compile Selected** işaretlenen satırları, **⚡ Compile All Pending** bekleyen her şeyi tek koşuya verir. İkisi de `wiki.compile.run`'dur: **hiçbir şeyi derlenmiş işaretlemezler** — koşu `wiki.candidates.edit` ile geri bildirene kadar satır `pending` kalır.
+- **Koşu çıkmış bir işaret seçilemez:** `compiling` havuzda bir durum değildir (durum sözlüğü yayımlanmış bir sözleşmedir, B-14); canlı bir koşusu olan **bekleyen** satırdır. O satırın kutucuğu hiç çizilmez ve "bekleyen" sayısına girmez — aynı kavramı iki kere dosyalamanın önündeki tek engel budur.
+- **Satır içi düzenleme:** ✎ konuları virgüllü bir kutuda açar (Enter kaydeder, Escape vazgeçer; boş bırakılan liste hiç gönderilmez, çünkü konusuz işaret havuzun dosyalama anahtarını kaybetmek demektir). 🚫 işareti kuyruktan çıkarır, ↺ geri koyar, ✕ siler — **hiçbiri kasada yazılmış bir sayfaya dokunmaz.**
+- **Provenance kırıntısı:** Derlenmiş satırlar `Kategori / Kavram` biçiminde tıklanabilir sayfa linkleri taşır; tıklayınca dosya senin `docOpen` tercihinle (Obsidian / VS Code / özel uygulama) açılır.
+- **🩺 Lint:** `wiki.lint`'i sayfanın içine rapor eder (yetim sayfalar, kırık `[[link]]`, indekssiz sayfa, fazla derin klasör). **Rapor eder, asla onarmaz.**
+
 ### Köprü ve Sağlık Denetimleri
 
 - **`wiki.candidates.add` / `wiki.candidates.list` / `wiki.candidates.edit` / `wiki.candidates.remove`:** Aday havuzu CRUD işlemleri.
@@ -2825,6 +2839,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Open Capability Matrix (Skills × MCP × Agents)** — filonun yetenek ızgarası, kullanım yoğunluğu ve tek tıkla kopyalama
 - **Open Backlog (the active project's standing pile of work)** — proje sayfasını doğrudan Backlog sekmesinde açar. Durum çubuğunu izler: bu pencerede hangi proje aktifse onu açar, aktif proje yoksa sorar — verdiğiniz cevap pencerenin aktif projesi olur, yani her basışta değil bir kez sorulur
 - **Open Turns (every turn across the farm)** — çiftlik çapında kullanıcı turu başına bir satır ([Turlar Sayfası](#turlar-sayfasi))
+- **Open Wiki (candidate pool + the vault’s own pages)** — aday havuzu ve kasa wiki’si yan yana ([Wiki Kokpiti](#wiki-kokpiti))
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
 - **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)
 - **New Recipe Workflow…** — hazır fabrika şablonları

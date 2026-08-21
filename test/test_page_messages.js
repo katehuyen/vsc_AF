@@ -33,6 +33,7 @@ const PAIRS = [
     ['media/evals.js', 'src/panels/evalsPanel.ts'],
     ['media/livingPage.js', 'src/panels/livingPanel.ts'],
     ['media/queue.js', 'src/panels/queuePanel.ts'],
+    ['media/wiki.js', 'src/panels/wikiPanel.ts'],
     ['media/memgraph.js', 'src/panels/memoryGraph.ts'],
     ['media/agentDetail.js', 'src/panels/agentDetail.ts'],
     ['media/projects.js', 'src/panels/projectsPanel.ts'],

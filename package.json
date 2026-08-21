@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.204.0",
+  "version": "3.205.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1392,6 +1392,12 @@
         "title": "Add to Queue",
         "category": "Agent Farm",
         "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.openWiki",
+        "title": "Open Wiki (candidate pool + the vault's own pages)",
+        "category": "Agent Farm",
+        "icon": "$(book)"
       },
       {
         "command": "agentfarm.backlogAdd",

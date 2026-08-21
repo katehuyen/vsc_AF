@@ -737,6 +737,11 @@
                         nav: 'secrets', label: '🔑 Secrets',
                         title: 'Named values kept in the OS keychain — never in settings files or git — '
                             + 'with what each is for and which agents may use it.'
+                    },
+                    {
+                        nav: 'wiki', label: '📚 Wiki',
+                        title: 'The turns marked as worth keeping, and what the compiles made of them — '
+                            + 'the candidate pool on one side, the vault\'s own pages on the other.'
                     }
                 ],
                 guide: 'toolbox'
