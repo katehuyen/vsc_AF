@@ -69,6 +69,10 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Günlük karne Telegram'a düşsün | `agentFarm.dailyDigest` = "21:30" ([detay](#gunluk-ozet-karti-cebe)) |
 | Ajanı başka makineye taşı / paylaş | Ajana sağ tık → `Export Agent Pack…` ([detay](#ajan-paketleri)) |
 | Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with the Other Engines…` ([detay](#antigravity-uyumlulugu)) |
+| Konuşmayı/turu wiki aday havuzuna ekle | Transkript/Konsol satırında 🔖, ya da sağ tık → `Add to Wiki Candidates…` ([detay](#wiki)) |
+| Wiki adaylarını derle (sentezle) | Komut paleti → `Agent Farm: Compile Wiki Candidates…` ([detay](#wiki)) |
+| Tüm motorların turlarını incele | Sessions yanındaki `⤢ Open Turns page` ([detay](#turlar-sayfasi)) |
+| Zaman çizelgesinden tam metni kopyala | Çizelgedeki noktaya sağ tık → `Copy Corpus` ([detay](#canli-gozlem)) |
 
 ### Kavramlar (30 Saniyede)
 
@@ -256,16 +260,18 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 ### Turlar Sayfası (Turns) {#turlar-sayfasi}
 
-**Agent Farm: Open Turns** (ya da Dashboard başlığındaki **Turns** düğmesi) — bütün çiftlik **kullanıcı turu başına bir satır** olacak şekilde açılır (2.81.0). Sessions tablosu "hangi oturum?" sorusuna cevaptır; bu sayfa "hangi *tur*, hangi oturumda olursa olsun, çiftlik çapında?" sorusuna. Tur özetleri transkriptler indekslenirken toplanır — sayfa anında açılır, kayıtlar değiştikçe kendini günceller.
+**Agent Farm: Open Turns** (ya da Sessions tablosunun hemen yanındaki **⤢ Open Turns page** düğmesi) — bütün çiftlik **kullanıcı turu başına bir satır** olacak şekilde açılır (2.81.0, 3.171.0). Sessions tablosu "hangi oturum?" sorusuna cevaptır; bu sayfa "hangi *tur*, hangi oturumda olursa olsun, çiftlik çapında?" sorusuna. Tur özetleri transkriptler indekslenirken toplanır — sayfa anında açılır, kayıtlar değiştikçe kendini günceller.
 
-- Başlıkta **ajan sayfalarındaki yedi düğmelik global küme birebir aynı sırayla** durur: Dashboard · Live Timeline · Missions · ⌕ Search · ⚙ Settings · Refresh · ? Guide.
-- **Kolonlar:** **By** — turun ait olduğu oturumun 🧑/🤖 kaynağı (3.20.0) · Ajan (● aktif noktası, `sub` rozeti, ⌨ terminale atlama) · **Turn** — turu açan komut, satırın kimliği (yazılan /komutlar komut adı olarak görünür) · **Session** — kısa, tam başlık tooltip'te · `n/N` tur numarası · model etiket(ler)i · ne zaman · süre (sonraki tur açılana kadar; son tur: oturumun sonuna kadar) · araç · hata · token · maliyet. Token ve maliyet o turun **gerçekten harcadığıdır** — subagent işi kendisini doğuran tura yazılır, rakamlar görüntüleyicinin tur tablosuyla birebir tutar.
-- **Kolon sırası:** Ajan · **Turn** (en geniş — satırın kimliği) · Session (dar) · `n/N` · Model · **Tokens** (harcayan modelin hemen yanında) · When · Duration · Tools · Err · Cost.
-- **Sessions tablolarının kontrolleri, tura uyarlanmış:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), **List** kutusu (varsayılan **200** — tur, oturumdan çok daha ince bir birim) + **All** chip'i, **Expand all / Collapse all / Single-open**, **🧑 kaynak anahtarı** (3.20.0) ve **Filters** chip'i. Sayfa **senin oturumlarının turlarıyla** açılır; anahtar tek tıkla User ↔ All arasında geçer, panelin **Started by** satırı 🤖 Auto'yu ekler. Filtre panelinde **iki metin kutusu** var — biri **tur komutları**, biri **oturum başlıkları** üzerinde — artı ajan ve **model** dropdown'ları, Active now / Has errors / Main only bayrakları, min–max aralıkları (token, maliyet, dakika, araç, hata, tur #) ve tarih aralığı. Sıralama, filtreler, kapsam, satır sayısı ve Show seçimi hatırlanır.
-- **Görüntüleyicideki gibi bir Show satırı:** **All · Dialog · 🧑 User · 🤖 Agent · 🔧 Tool calls · 📄 Results · ⚠ Errors** — açılan bir turun içeriğinden neyin gösterileceğini seçer; **Dialog (sen + ajan) varsayılan**, araç trafiği bir chip uzağında; seçim açtığın her tura uygulanır.
-- **▸ turun gerçek içeriğini açar** — komut, asistan cevapları ve araç çağrıları (girdileriyle), hatalar kırmızı — transkriptten istek anında okunur ve Show satırına göre filtrelenir. **Satıra tıklamak Oturum Görüntüleyici'yi tam o turdan açar.**
-- **⬇ Export MD (2.81.1):** **listelenen turları** Markdown'a aktarır, görüntüleyicideki aynı iki soruyla — **Current view** (açık turların içeriği, Show satırına göre filtreli; katlı turlar çıkarılır ya da istersen başlık olarak kalır) veya **Everything** (her listelenen tur tam içeriğiyle). Her tur `## <ajan> · turn n/N — <komut>` bölümü olur; seansı, modeli, token ve maliyetiyle.
-- Köprü operasyonu (farm-köprü kuralı gereği): **`turns.list`** — aynı satırlar veri olarak (`agent?`, `origin?` — `user` / `auto`, `limit?`); `sessions.recent` de aynı `origin?` kapsamını alır, böylece "dün ne üzerinde çalıştım?" diye sorulan bir ajan kendi zamanlı süpürmeleriyle değil, diyaloglarla cevap verir.
+- **Beş Motorlu Kapsam (3.173.0 — S-40):** Sayfa yalnızca Claude değil, çiftliğin beş motorunun da turlarını eksiksiz unroll eder: **Claude**, **Gemini** (kendi yanıtının token/fiyatı ve model bilgisi), **Antigravity (brain log)** (kendi adım ve planlayıcı çağrıları, dürüst 0 token), **Antigravity (barındırılan)** (Console `result` satırından gerçek token ve dolar hesabı) ve **OpenCode** (`rgb(60, 135, 255)` rozeti, `step-finish` roundtrip'i, ayrı sayılan `reasoning` ve bağlam penceresi).
+- **Tablo Düzeni ve Bildirilmiş Genişlikler (3.171.0 — U-69):** `table-layout: fixed` ve `<colgroup>` ile sütun genişlikleri bildirilmiştir; filtreleme neyi elerse elesin tablo yerinde kalır. Satırlar tek satırda kırpılır, sığmayan değerler AFTip ile açılır.
+- **Tek Konulu Hücre Panelleri (AFTip):** Her hücrenin hover'ı ilk satırında o hücrenin tam değerini yazar, altındaki blokta o değerin ima ettiği türetilmiş rakamları verir: **Steps** sütunu API çağrılarını, çağrı başına adımı ve **reasoning** payını gösterir; **Tokens** sütunu plan-ağırlıklı oranla birlikte maliyet ayrımını açıklar.
+- **🔖 Wiki Aday Havuzu Entegrasyonu (3.203.0 — K-26):** Her tur satırının başında sakin bir **🔖** wiki rozeti yer alır; tıklandığında veya sağ tık menüsünden **Add to Wiki Candidates…** seçildiğinde açılan popover ile tur doğrudan aday havuzuna aktarılır.
+- **Kolonlar:** **By** — turun ait olduğu oturumun 🧑/🤖 kaynağı · Ajan (● aktif noktası, `sub` rozeti, ⌨ terminale atlama) · **Turn** — turu açan komut, satırın kimliği · **Session** — kısa oturum adı · `n/N` tur numarası · Model ve motor rozeti · **Steps** · **Tokens** · When · Duration · Tools · Err · Cost.
+- **Sessions tablolarının kontrolleri, tura uyarlanmış:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), **List** kutusu (varsayılan **200**), **Expand all / Collapse all / Single-open**, **🧑 kaynak anahtarı** ve **Filters** paneli.
+- **Görüntüleyicideki gibi bir Show satırı:** **All · Dialog · 🧑 User · 🤖 Agent · 🔧 Tool calls · 📄 Results · ⚠ Errors** — **Dialog (sen + ajan) varsayılan**, araç trafiği bir chip uzağında.
+- **▸ turun gerçek içeriğini açar** — komut, asistan cevapları ve araç çağrıları; **satıra tıklamak Oturum Görüntüleyici'yi tam o turdan açar.**
+- **⬇ Export MD (2.81.1):** listelenen turları Markdown'a aktarır (`Current view` veya `Everything`).
+- Köprü operasyonu: **`turns.list`** (`agent?`, `origin?`, `engine?`, `limit?`).
 
 ### Insights Ağacı
 
@@ -938,7 +944,14 @@ Sıra da kalemler de aynı belgede durduğu için, `Backlog.md`'yi eklenti çal�
 
 **Ve tepesi brief'te gelir.** Her proje oturumu `## Next in backlog` bölümüyle açılır; "ilk üçünü yap" demek için yapıştırma da arama da gerekmez. Buradaki her şey ancak o bölüm sayesinde işe yarar.
 
-**Backlog sekmesinde satırın kendisi editördür.** Kutu kalemi kapatır; öncelik, boyut ve iş türü ise küçük bir menü açar ve mevcut değer işaretli gelir — bunlar eskiden her basışta bir adım dönüyordu, yani altı ya da dokuz değerli bir eksende ekranda zaten duran bir değere ulaşmak sekiz basış ve **dosyaya sekiz yazma** demekti. 🗂, kodsuz bir yakalamayı *dosyalanacak satırın üzerinde* hangi alan diye sorarak dosyalar. Eylemler iki yüz satırı düğme duvarına çevirmemek için üzerine gelince belirir ve sabit genişlikte **iki satıra** yerleşir — tek satır olduklarında küme ait olduğu kalemden daha genişti, yani satırın var oluş sebebi olan metne kalanla yetiniliyordu. **Yakalama kutusu yazdığınızı korur**: filtre, host'tan gelen veri, yan sekmeye geçip dönmek — hiçbiri sözlerinizi almaz; kutu ancak host eklemeyi onayladığında boşalır. Konsolun konuşma kutusundaki dört metin aracı (yapıştır · kopyala · kes · temizle) aynı bileşenden burada da vardır. Her filtre ekseni bir LİSTEDİR ve sayfa tarafındadır; bir çip gidiş-dönüş değil, bir yeniden çizimdir — ayrıca her filtre satırı, geneline ek olarak kendi temizlemesini taşır. Beş açılır eksen — **state · filing · blocked · plan · due** — eklentinin kendi çoklu-seçim denetimidir (`media/afFilters.js`); Search, Queue, Notices ve oturum tablosu neyi kullanıyorsa aynısı. Böylece "done VE cancelled" söylenebilir hâle gelir, state yanına "show closed" kutusu iliştirilmiş tek bir seçim olmaktan çıkıp gerçek bir liste olur, ve 📥 *unfiled* kendi ekseni olur — çünkü kodu olmamak bir durum değildir. Sıralama tek seçim kalır, çünkü bir sıralama gerçekten tek seçimdir. **‼️ Sıralamalardan biri "en son ne bitirdim" sorusunun kendisidir:** `closed — last finished first` en son kapanmış kalemi en üste alır, hâlâ açık olan her şey de en arkaya düşer — ok işareti kapananları tersine çevirir ama açık olanları öne çekmez, çünkü kapanmamış bir kalem "çok önce kapanmış" değildir. Kapanma zamanı **iz defterinden** gelir (kutunun gerçekten kıpırdadığı an, saniyesiyle); o yoksa satırdaki `✅` tarihinden (yalnız gün). İkisi de yoksa zaman **yok** yazılır, uydurulmaz — o kalemler de arkada, açık olanların önünde durur. Kapanmış satır tarihi üzerinde taşır, hover'ı hangi kaynaktan geldiğini söyler. Aynı soru köprüden de sorulabilir: `projects.backlog { sort: "closed" }`, ve her kalem `closedAt`/`closedOn` taşır. **Uzun bir kalem hover'da bütün hâlde açılır:** kutu satır kadar geniştir, **kaydırılır**, ve imleç içine girebilir; böylece `more` üzerinde beklemek bin kelimelik bir kalemi hiçbir şey açmadan okutur — yerini aldığı yerleşik tooltip, satırda zaten çizili olan iki yüz karakteri tekrarlayıp platformun canı nerede isterse orada kesiyordu. **Ve sekme kendini sayaçların yanındaki bir `?` üzerinden anlatır**; panel sayfanın üzerinde açılır, sonraki tıklamada ya da Esc ile kapanır. Eskiden bu, son satırın altında duran, hiç kimsenin bakmadığı yerde sürekli açık duran on satırlık gri bir metindi. Kutuyu kapatmak dosyanın **tam olarak bir karakterini** değiştirir ve ✅ tarihi uydurmaz — plandaki sözün aynısı. Yinelenen bir kod **satırda işaretlenir, asla düzeltilmez**; birinin belgesini bizim ona dair fikrimize uydurmak, bu modülün yapmaması gereken şeyin ta kendisidir. **‼️ Bir kalem başka bir kalemin PARÇASI olabilir, ve bağ bir ALANDIR — girinti değil, kod biçimi değil, konum değil:** çocuğun kendi satırındaki `[parent:: P-4]`. Kod düz kalır (parça kendi alanının bir sonraki numarasını alır, yani bir `U` kaleminin bir `P` epic'inin parçası olması istisna değil olağan hâldir); hiçbir satır kımıldamaz (düzenleme yine koda göre sıralar, arşivleme yine tek kapalı satırı taşır, dosyadaki girinti yine hiçbir şey ifade etmez); ve **kuyruk bunu bilmez** — parça ile bütün ayrı ayrı kuyruktadır, hangisi önce çalışılırsa çalışılır, hiçbiri kapsayıcı değildir ve hiçbiri diğerini sürüklemez. İlişki satırda bir **işaret** olarak çizilir (`↳ P-4` bütüne gider, `⊂ 3` yalnız o aileyi gösterir); ağacın çizildiği tek yer **family** sıralamasıdır, o da bir bakma biçimidir. Bu ⛔ **değildir**: parça bütününü beklemez. Bir bütünü kapatmak parçalarını kapatmaz — hangilerinin açık kaldığını söyler. Olmayan bir kodu, kendini ya da kendi altındakilerden birini gösteren bir bağ girişte reddedilir; dosyada zaten varsa **bildirilir, asla düzeltilmez**. Noktalı eski bir kod (`U-14.3`) hâlâ okunur, çünkü bir kod kalıcıdır; ama kimseyi kimsenin altına asmaz ve yenisi asla öyle dağıtılmaz. Arşivleme, kapanmış kalemleri *aynı dosyanın* sonundaki bir başlığın altına taşır — bilerek: bir kod asla ikinci kez verilmemeli ve bunun en ucuz garantisi, projenin kullandığı her kodun üretecin okuduğu dosyada durmasıdır.
+**Backlog sekmesinde satırın kendisi editördür.** Kutu kalemi kapatır; öncelik, boyut ve iş türü ise küçük bir menü açar ve mevcut değer işaretli gelir — bunlar eskiden her basışta bir adım dönüyordu, yani altı ya da dokuz değerli bir eksende ekranda zaten duran bir değere ulaşmak sekiz basış ve **dosyaya sekiz yazma** demekti. 🗂, kodsuz bir yakalamayı *dosyalanacak satırın üzerinde* hangi alan diye sorarak dosyalar. Eylemler iki yüz satırı düğme duvarına çevirmemek için üzerine gelince belirir ve sabit genişlikte **iki satıra** yerleşir — tek satır olduklarında küme ait olduğu kalemden daha genişti, yani satırın var oluş sebebi olan metne kalanla yetiniliyordu. **Yakalama kutusu yazdığınızı korur**: filtre, host'tan gelen veri, yan sekmeye geçip dönmek — hiçbiri sözlerinizi almaz; kutu ancak host eklemeyi onayladığında boşalır. Konsolun konuşma kutusundaki dört metin aracı (yapıştır · kopyala · kes · temizle) aynı bileşenden burada da vardır. Her filtre ekseni bir LİSTEDİR ve sayfa tarafındadır; bir çip gidiş-dönüş değil, bir yeniden çizimdir — ayrıca her filtre satırı, geneline ek olarak kendi temizlemesini taşır. Beş açılır eksen — **state · filing · blocked · plan · due** — eklentinin kendi çoklu-seçim denetimidir (`media/afFilters.js`); Search, Queue, Notices ve oturum tablosu neyi kullanıyorsa aynısı. Böylece "done VE cancelled" söylenebilir hâle gelir, state yanına "show closed" kutusu iliştirilmiş tek bir seçim olmaktan çıkıp gerçek bir liste olur, ve 📥 *unfiled* kendi ekseni olur — çünkü kodu olmamak bir durum değildir. Sıralama tek seçim kalır, çünkü bir sıralama gerçekten tek seçimdir.
+**‼️ Zaman Temelli Sıralamalar (3.174.0 — X-48):** Sıralama kutusunda zamanı cevaplayan üç seçenek yan yana durur:
+- **`opened` (🌱 en son yazılan önce):** İz defterinin o kod hakkında kaydettiği ilk tarih damgası.
+- **`last touched` (✎ en son çalışılan önce):** O kod üzerindeki en güncel işlem / dokunuş tarihi.
+- **`closed` (✅ en son biten önce):** Kapanış anı (iz defterinden saniyesiyle, yoksa `✅` etiketinden).
+Tarihler satır üzerinde 🌱 ve ✎ işaretleriyle çizilir, hover'ında her iki zaman birden görünür. Köprüde `projects.backlog { sort: "opened" | "touched" | "closed" }`.
+**‼️ Track Sekmesinden Koda Tıklama (3.169.0 — U-71):** Track görünümünde bir backlog koduna sol tıkla basmak, doğrudan **Backlog sekmesine geçer** ve arama kutusunu o koda daraltarak satırı karşına getirir; ↗ düğmesi ise dosyayı açar.
+**‼️ İş Kuyruğunda Motor, Model ve Efor Yönlendirmesi (3.180.0 — X-49):** Kuyruk yakalama formunda `target` (ajan/depo) yanında üç yeni eksen yer alır: `— engine —` · `— model —` · `— effort —`. Boş bırakılan eksen "fark etmez" demektir ve hiçbir varsayılan dayatılmaz; görev istemi bu alanları okuyarak yalnızca kendine ayrılmış işleri seçebilir. **Uzun bir kalem hover'da bütün hâlde açılır:** kutu satır kadar geniştir, **kaydırılır**, ve imleç içine girebilir; böylece `more` üzerinde beklemek bin kelimelik bir kalemi hiçbir şey açmadan okutur. **Ve sekme kendini sayaçların yanındaki bir `?` üzerinden anlatır**; panel sayfanın üzerinde açılır, sonraki tıklamada ya da Esc ile kapanır. Eskiden bu, son satırın altında duran, hiç kimsenin bakmadığı yerde sürekli açık duran on satırlık gri bir metindi. Kutuyu kapatmak dosyanın **tam olarak bir karakterini** değiştirir ve ✅ tarihi uydurmaz — plandaki sözün aynısı. Yinelenen bir kod **satırda işaretlenir, asla düzeltilmez**; birinin belgesini bizim ona dair fikrimize uydurmak, bu modülün yapmaması gereken şeyin ta kendisidir. **‼️ Bir kalem başka bir kalemin PARÇASI olabilir, ve bağ bir ALANDIR — girinti değil, kod biçimi değil, konum değil:** çocuğun kendi satırındaki `[parent:: P-4]`. Kod düz kalır (parça kendi alanının bir sonraki numarasını alır, yani bir `U` kaleminin bir `P` epic'inin parçası olması istisna değil olağan hâldir); hiçbir satır kımıldamaz (düzenleme yine koda göre sıralar, arşivleme yine tek kapalı satırı taşır, dosyadaki girinti yine hiçbir şey ifade etmez); ve **kuyruk bunu bilmez** — parça ile bütün ayrı ayrı kuyruktadır, hangisi önce çalışılırsa çalışılır, hiçbiri kapsayıcı değildir ve hiçbiri diğerini sürüklemez. İlişki satırda bir **işaret** olarak çizilir (`↳ P-4` bütüne gider, `⊂ 3` yalnız o aileyi gösterir); ağacın çizildiği tek yer **family** sıralamasıdır, o da bir bakma biçimidir. Bu ⛔ **değildir**: parça bütününü beklemez. Bir bütünü kapatmak parçalarını kapatmaz — hangilerinin açık kaldığını söyler. Olmayan bir kodu, kendini ya da kendi altındakilerden birini gösteren bir bağ girişte reddedilir; dosyada zaten varsa **bildirilir, asla düzeltilmez**. Noktalı eski bir kod (`U-14.3`) hâlâ okunur, çünkü bir kod kalıcıdır; ama kimseyi kimsenin altına asmaz ve yenisi asla öyle dağıtılmaz. Arşivleme, kapanmış kalemleri *aynı dosyanın* sonundaki bir başlığın altına taşır — bilerek: bir kod asla ikinci kez verilmemeli ve bunun en ucuz garantisi, projenin kullandığı her kodun üretecin okuduğu dosyada durmasıdır.
 
 **Parça olmak her sıralamada satırın üzerinde çizilir.** Girinti yalnız **family** görünümünde vardır; diğer her yerde ilişki satırın en sağındaki bir rozetten ibaretti, oysa bir kod sütununu okurken göz orada değildir. Bu yüzden artık **kodun kendisi** söyler: *italik*, ve sol kenarında `⊂` rozetinin kullandığı yeşilin aynısıyla ince bir çizgi. Bütünü Obsidian'da silinmiş bir bağ aynı biçimi uyarı renginde alır — nedenini satırdaki `⚠` taşır. Satırda başka hiçbir şey değişmez; metni soluklaştırmak "bu daha az önemli" derdi, oysa bir şeyin parçası olmak bunun tam tersidir.
 
@@ -1093,25 +1106,25 @@ Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın
 
 **Agent Farm: Open Live Timeline** komutuyla veya Live Feed görünümündeki nabız ikonuyla açılır.
 
-- **Kulvarlar (swim lanes):** Her ajan bir şerit; yeşil bloklar araç koşularını (süresiyle), noktalar/elmaslar olayları gösterir: mavi nokta = komut, kırmızı elmas = izin bekleme, mor elmas = compaction, turuncu nokta = subagent bitti, çizgi = tur sonu.
+- **Kulvarlar (swim lanes):** Her ajan bir şerit; yeşil bloklar araç koşularını (süresiyle), noktalar/elmaslar olayları gösterir: mavi dolu daire = kullanıcı komutu (prompt), mavi içi boş halka = modelin cevabı (`say` olayı — 3.183.0, konuşmanın iki yakası tek grafikte), kırmızı elmas = izin bekleme, mor elmas = compaction, turuncu nokta = subagent bitti, çizgi = tur sonu.
+- **Tek Konulu Zengin Paneller (3.179.0, 3.181.0 — U-67):** Kulvardaki her nokta ve araç bloğu kendi bağımsız `AFTip` paneline sahiptir: **Kim** (oturum, ajan, motor, model), **Ne söylendi** (tam ve alıntılanmış metin / araç komutu ve cevabı), **Zaman** (saat, tur no, aralık) ve **Eylemler** (tık = o ana atla, sağ tık = oturum menüsü). Araç blokları tek satır kompakt başlık ve süre taşır, gereksiz JSON yüküyle dolmaz.
+- **Copy Corpus — Noktadan Tam Metin Kopyalama (3.184.0 — U-76):** Zaman çizelgesindeki bir noktaya veya araç bloğuna sağ tık → **Copy Corpus** transkripti açmaya gerek kalmadan o anın tüm metnini doğrudan diskteki ham transkriptten panoya kopyalar. Köprü: `timeline.corpus`.
 - **Aynı ajanın eşzamanlı oturumları (2.45.0):** Aynı ajan aynı anda birden çok oturumda açıksa her eşzamanlı oturum **kendi satırını** alır (`dev #1`, `dev #2` …) — olaylar artık üst üste binmez. Ardışık (çakışmayan) oturumlar ise eskisi gibi tek satırı paylaşır, satır sayısı şişmez. Oturum kartları, bildirimler ve Needs You kuyruğu da aynı `#k` etiketini kullanır; ajan ağacında durum yanında `×2` rozeti görünür.
 - **Tıkla → tam o ana git (2.37.0):** Kulvardaki herhangi bir işarete **veya yeşil araç bloğuna** tıklayınca Oturum Görüntüleyici yalnızca açılmakla kalmaz, kayıtta **tam o olayın olduğu mesaja** kayar ve mesajı kısa süreliğine çerçeveyle vurgular. Görüntüleyici zaten açıksa aynı tık onu öne getirip o noktaya taşır.
 - **Sıra-sende uyarıları — ayar OTURUMUN, ajanın değil (3.144.0):** Her kulvarın solundaki dört kutucuk — **♪ ses · ◎ odak · ▣ modal · ▭ toast** — **o satırın oturumu** **YOUR TURN**'e geçtiğinde çalışacak eylemleri seçer. Satır zaten bir oturumdur: aynı ajanın üç eşzamanlı koşusu üç satırdır ve **üç bağımsız seçim** taşır; birine tıklamak ötekileri değiştirmez, arkalarında bir "ajan varsayılanı" katmanı yoktur (seçim yoksa uyarı yoktur). Kartların altındaki ikinci kontrol kopyası kaldırıldı — ayar yalnız kulvarda yaşar. Yalnız geçmiş çizen bir satırda kutucuklar **kapalıdır**: artık ateşleyemeyecek bir konuşmaya uyarı kurulmaz. Seçim `agentfarm.turnAlerts[sessionId]` altında `globalState`'e yazılır, tetikleme host tarafındadır — **panel kapalıyken de çalışır** — ve panel kapanmasına, VS Code reload'una dayanır. Terminal kulvarı sentetik `cli:…` kimliğinden gerçek konuşma kimliğine geçtiğinde tercih aynı adımda taşınır; hedefte kendi kaydı varsa birleştirme yapılmaz, çakışma söylenir. Eski ajan-anahtarlı harita **bir kez**, sürümlü bir göçle o an canlı olan oturumlara kopyalanır; sonrasında hiç okunmaz.
   *Ses:* eklentiyle gelen kısa bir WAV (`media/sounds/turn-ready.wav`, `tools/make_turn_sound.js` ile üretilir — lisanslanacak bir şey yok); Windows'ta gizli PowerShell `SoundPlayer.PlaySync()`, macOS'ta `afplay`, Linux'ta `paplay`→`aplay`. Dosya yolu komut metnine **hiç girmez** (Windows'ta ortam değişkeniyle, diğerlerinde `execFile` argümanıyla gider), yani kabuk enterpolasyonu yoktur. Her çalıştırma backend, çıkış kodu, `stderr`, süre ve timeout bilgisini döndürür; başarısızlık ilk olayda tanı veren bir uyarıyla söylenir ve tekrarları hız-sınırlanır. **`exit 0` yalnız "oynatıcı dosyayı kabul etti" demektir — duyulduğu iddiası değildir.** *Odak:* timeline panelini öne getirir (VS Code'un OS penceresini öne getiren API'si yoktur). *Modal:* doğru oturum adıyla bloklayıcı diyalog + Transkripti aç. *Toast:* köşede non-modal bildirim. Dört dal **birbirinden bağımsız** koşar: birinin hatası ötekini kesmez.
   **Aynı tura tek uyarı**, kaba bir 3 sn'lik yutma ile değil oturumun kendi tur sırasıyla: `Notification(waiting)` ve arkasından gelen `Stop` aynı turdur, tek kez çalar; gerçekten biten yeni bir tur bir saniye sonra gelse de yeniden çalar. İzin beklemesi YOUR TURN sayılmaz, reload'da geçmişten kurulan oturum bir daha duyurulmaz. Bu, global `notifyTurnEnd` ayarından ayrıdır — o tüm ajanlar için tek bir toast atar.
 - **"3 saniye sonra test et" (3.144.0):** Her canlı kulvar satırındaki **⏱** kutucuğu o satırın seçili eylemlerini bilerek çalıştırır. Geri sayım host tarafındadır, yani başka bir pencereye geçip odağın gerçekten gelip gelmediğini görebilirsin. Sonuç, grafiğin altındaki şeritte oturum + dört dal olarak çıkar; AFTip'te her dalın `ok/failed/skipped` durumu, ses backend'i, çıkış kodu, `stderr` ve süresi yazar. Seçim yoksa test kapalıdır. Aynı çekirdek köprüde de var: `live.alerts.get` · `live.alerts.set` · `live.alerts.test`.
-- Kırmızı dikey çizgi = şu an. Pencere seçici: **15m / 30m / 1h / 2h / 3h / 4h / 8h / 16h / 24h** ayrıntılı kulvar görünümü + **3d / 7d / 30d** yoğunluk görünümü. Kısa uçta artık atlanacak boşluk yok — 15m ile 4h arasında eksik olan basamaklar (**30m, 2h, 3h**) şeritte; tek bir oturumu canlı izlerken "çok dar" ile "dört saatlik geçmiş" arasında seçim yapmak gerekmiyor. 16h ve 24h de klasik akış (kulvar) olarak çizilir — monitör 24 saati bellekte tuttuğundan bar'lara düşmek yalnız 3 gün ve üzerinde gerekir.
-- Sağ üstte **Dashboard** düğmesi (2.43.0): Dashboard ↔ Ajan Detayı ↔ Timeline üçgeninde tek tık geçiş (Dashboard'da Live Timeline, Ajan Detayında her ikisi de var).
-- **Yoğunluk görünümü (24h+):** o ölçekte tek tek noktalar okunmaz — her kulvar 168 zaman dilimine bölünür, dilim başına aktivite çubuğu çizilir (yeşil = araçlar, mavi = komutlar, √ ölçek); şeridin üstündeki kırmızı bant = o dilimde izin beklemesi yaşandı. Amaç desenleri görmek: hangi ajan hangi gün/saatte çalışmış, nerede takılmış.
-- **Kalıcılık (2.13.0):** olaylar artık `globalStorage/live-events.jsonl` dosyasına yazılır — VS Code'u kapatıp açmak zaman çizelgesini sıfırlamaz. Bellekte son 24 saat tutulur (uzun aralıklar diskten okunur), dosyada son **31 gün** saklanır (üstü otomatik budanır, boyut sınırı 64MB). 31 günden geriye gitmemesinin nedeni yük değil anlam: hook olayları o ölçekte desen bilgisi taşımaz — uzun vadeli bakış için Dashboard (1 yıla kadar) doğru araçtır.
-- **‼️ Her olay hangi Agent Farm sürümünün gördüğünü söyler.** Kayıttaki her satır artık `af` damgası taşır, oturum kaydı da onu izleyen sürüm(ler)i (`afVersions`, eskiden yeniye — birden fazlaysa oturum bir güncellemenin iki yakasında koşmuş demektir ve iki yarısı **ortalanmaz**). Sebebi bir alan ihtiyacı değil, bir tartışma: "şu sürümde yakalama sağırlaştı" iddiası daha önce yalnız eklenti klasörlerinin kurulum zaman damgalarından, yani dolaylı kanıtla konuşulabiliyordu ve günlerce sürüyordu. **`live.versions`** bunu tek geçişte kapatır: sürüm başına ne zaman koştuğu, kaç oturum izlediği, tür tür kaç olay ve `perActiveHour` — **takvim saati başına değil, oturum aktivitesi saati başına** olay; sessiz bir hafta sonu boyunca kurulu duran sürüm daha az yakalamış sürüm değildir. Damgadan önce yazılmış satırlar boş sürüm altında **bilinmiyor** olarak durur, o günkü kuruluma atfedilmez — atfetmek zaten yerine geçilen kanıttı.
-- **Kulvar satırı kimin olduğunu söyler (3.31.0):** satırın adının üzerine gelince o oturumun tüm tablosu çıkar — kimlik, durum ve o anki araç, oturumun kendi adı, maliyet, token, bağlam, tur sayısı, sayaçlar, nerede koştuğu ve pid'i; ada tıklayınca oturum açılır. Klasörü ajan klasörlerinden biri olmayan satır artık açıklamasız bir hex dizisi değil, ne olduğuyla etiketlenir: `#3f8a1c2b` — oturum kimliği.
-- **Bitmeyen araç çağrısı (3.31.0):** `PostToolUse`'u hiç gelmemiş bir `PreToolUse` — kapatılan terminal, çöken süreç, öldürülen işlem — eskiden saatler önce bitmiş bir oturumda "şu an"a kadar uzayan, hiç bitmeyen yeşil bir blok olarak çiziliyordu. Böyle bir blok artık oturumun **gerçekten son olay aldığı yerde** duruyor ve **içi boş, kesik çizgili** çiziliyor; ipucu da bunu söylüyor. Oturumun "hâlâ içindeyim" dediği araç eskisi gibi büyümeye devam eder.
-- **Live sessions kartları:** Her oturumun anlık durumu, son komutu, sayaçları ve başlangıç saati (2.45.0); başlıkta gerekiyorsa `#k` oturum etiketi; sıra-sende chip'leri karttan oturum-bazlı ayarlanabilir; "Open transcript" ile kayda atlanır. 3.31.0'dan itibaren kart ayrıca **parantez içinde oturum kimliğini** (`(#407c78cb)` — Console satırlarındaki aynı tutamak), oturumun kendi adını ve kayıttan gelen sayılarını taşır: maliyet, o maliyetin aldığı token, pencerenin şu an tuttuğu bağlam, tur sayısı, model, dokunulan dosya sayısı — artı nerede koştuğu (pid · terminal ya da Console) ve klasörü. Başlık da ad da bağlantıdır: tıklayınca oturum açılır.
+- **AFTip ve Canlı Etkileşim Kuralları (3.182.0, 3.195.0, 3.196.0 — U-74, U-81):**
+  - **%100 Mat ve Opak:** Paneller `editor.background` ile tam opak çizilir; alt metinlerin görünmesini önleyen `tip-host` hiyerarşisi uygulanır.
+  - **Hover Ele Yol Verir:** Tıklama veya klavye girişi yapıldığı anda panel anında gizlenir ve imleç öğeden ayrılana kadar sessiz kalır. Tıklanabilir butonların hover'ı kasıtlı olarak daha yavaş açılır (.6s).
+  - **Titremesiz Yeniden Çizim (U-73):** Live Timeline periyodik olarak tüm DOM'u güncellese bile imlecin altındaki `tip-free` paneli yerini ve kaydırma konumunu korur.
+- **Live sessions kartları (3.193.0, 3.195.0 — U-80, U-81):** Her oturumun anlık durumu, son komutu, sayaçları ve başlangıç saati. Kart üzerindeki metin satırları ızgara düzenini bozmamak için **90 karaktere kırpılır**; üzerine gelindiğinde `AFTip` paneli 4.000 karaktere kadar tam metni açar. Kart başlığında oturum kimliği (`(#407c78cb)`), model, klasör, pid ve tekil konulu metrik panelleri (Money, Work, Time) yer alır.
+- **Host Tabanlı Panoya Kopyalama (3.194.0 — U-82):** Sağ tık menülerindeki tüm **Copy ▸ (The code · The words · Code and words)** eylemleri webview odak hatalarını aşmak için doğrudan extension host'un `vscode.env.clipboard` mekanizması üzerinden çalışır (`media/afCtx.js`).
 - **Oturumu bitirmek ve temizlemek (3.31.0):** kartın düğmeleri ⌨ Terminal · ⎋ Interrupt (turu durdurur, oturum kalır) · **⏻ End session** (oturumu sahiplenen claude sürecini durdurur — önce sorar, kayıt diskte kalır) · **✕ Clear**. Süreci artık işletim sisteminde olmayan oturum *"canlı süreç yok — bitmiş, sadece hook'ları söylememiş"* diye işaretlenir, Interrupt düğmesini kaybeder ve sayfa başlığı hepsini tek tıkla temizlemeyi önerir. `sessions.live` / `sessions.end` / `sessions.dismiss` köprüde olduğundan bir ajan da üçünü yapabilir.
-- **Kulvar satırına sağ tık (3.34.0):** satır zaten bir oturumdur — aşağıdaki kartın anlattığı oturum — dolayısıyla aynı menüyü taşır: Rename · Open session · Terminal · Interrupt · End session · Clear. Satırın tamamı cevap verir (o an çizdiği oturumla); ardışık oturumların paylaştığı sıkışık satırda her oturum **kendi aralığında** cevap verir, yani menü imlecin altındaki koşuya aittir. Satırın kendi sol tıkı (oturumu açar) ve blok/nokta tıklarıyla "tam o ana git" davranışı değişmedi — sağ tık alanları onların arkasında durur.
-- **Clear artık gerçekten siler (3.34.0):** eskiden Clear kartı kaldırıyor, kulvar satırını bırakıyordu — üstelik satırı kapatmak için "şu an"a bir `end` olayı yazdığından o satır çoğu zaman **boş** kalıyordu: ne kartı olan ne içinde bir şey bulunan öksüz bir satır. Clear artık oturumu bu sayfadan **bütün olarak** alır — kart ve satır birlikte, her aralıkta — ve VS Code yeniden başlasa da geri gelmez. Oturuma yine dokunmaz: kayıt diskte durur, sürece sinyal gönderilmez, yeni bir olay bildiren oturum geri gelir. **End session bilerek bunu yapmaz**: bir koşunun yaptığı iş sayfada tarih olarak kalır (hiç gelmemiş `end` olayı bitmemiş araç bloğunu kapatır), istenirse satıra sağ tıklanıp temizlenir.
-- Panel olay geldikçe kendini günceller; kendisinden hiç haber alınmayan oturum artık takip penceresi dolduktan yarım dakika içinde kendiliğinden düşer (3.31.0) — başka bir oturumun olay bildirmesini beklemez.
+- **Kulvar satırına sağ tık (3.34.0, 3.202.0):** satır zaten bir oturumdur — Rename · Open session · Terminal · Interrupt · End session · Clear · **Add to Wiki Candidates…** (S-38). Satırın tamamı cevap verir (o an çizdiği oturumla).
+- **Clear artık gerçekten siler (3.34.0):** eskiden Clear kartı kaldırıyor, kulvar satırını bırakıyordu — artık oturumu bu sayfadan **bütün olarak** alır (kart ve satır birlikte) ve VS Code yeniden başlasa da geri gelmez. Kayıt diskte durur, sürece sinyal gönderilmez.
+- Panel olay geldikçe kendini günceller; kendisinden hiç haber alınmayan oturum artık takip penceresi dolduktan yarım dakika içinde kendiliğinden düşer (3.31.0).
 - Not: 2.13.0 öncesi olaylar diske yazılmadığından, kurulumdan sonra uzun aralıklar zamanla dolar.
 
 ### Bildirimler
@@ -1141,13 +1154,18 @@ Boş sayfa problemine karşı: **Agent Farm: Set Up Example Automation…** üç
 
 ### Görev Ekleme ve Çalıştırma
 
-1. Tasks görünümünde **+** (Add Task): ajan seç → başlık → prompt → mod seç.
-2. İki mod var:
-   - **Interactive:** `claude "prompt"` — oturum açılır, prompt ilk mesaj olarak gider, sen devam edebilirsin.
-   - **Headless:** `claude -p "prompt"` — görevi çalıştırır, çıktıyı terminale basar ve çıkar. Otomasyon için idealdir.
-3. Kuyruktaki görevler sırayla bekler; ▶ ile başlatırsın, ↑↓ ile sıralarsın.
-4. Görev terminali kapanınca (veya headless komut bitince) görev otomatik **done** olur. Shell integration açıksa çıkış koduna göre **failed** da işaretlenir. İstediğin an ✓ ile elle tamamlayabilirsin.
-5. `agentFarm.queueAutoAdvance` ayarını açarsan, bir görev bitince o ajanın kuyruğundaki sıradaki görev kendiliğinden başlar — zincirleme çalışma.
+1. Tasks görünümünde **+** (Add Task): ajan seç → başlık → prompt → mod seç. Formdaki **?** popover butonu (3.192.0), webview içinden çıkmadan ve taslağı kaybetmeden **Görev ve Retry Mimarisi Rehberi**'ni açar (oturum devamlılığı, kota pencereleri, 3-prompt yönlendirme ve güvenlik frenleri).
+2. Modlar ve Yürütme Hedefleri:
+   - **Interactive (3.197.0 — M-26):** Etkileşimli oturum. İki kritik boyutuyla tam kontrol sunar:
+     - **Opens in (`interactiveTarget`):** `vscode` (entegre terminal, varsayılan), `external` (işletim sisteminin kendi terminal penceresi / Windows Terminal — üretilen `.cmd` batch wrapper ile gerçek `%ERRORLEVEL%` çıkış kodu yakalanır), `console` (Agent Farm'ın kendi barındırılan Console webview paneli).
+     - **When it answers (`interactiveClose`):** `stay-open` (sohbet açık kalır), `auto-close` (tek tur basıp çıkar — `claude -p` / `runArgs` ile çalışır, ajan cevabı tamamlanınca yüzey kapanır ve görev sonlanır).
+   - **Headless:** `claude -p "prompt"` — görevi arka planda çalıştırır, çıktıyı arşivler ve çıkar. Otomasyon için idealdir.
+3. **Kayıtlı Prompt Şablonları (3.190.0 — M-24):** Görev formu içerisindeki dört prompt kutusunda da (Görev promptu, Retry promptu, Devam promptu ve Workflow adım promptu) **sağ tık** yapıldığında ortak snippet penceresi (`media/afSnippets.js`) açılır. Kayıtlı prompt şablonları imlecin olduğu noktaya tek tıkla yapıştırılır.
+4. **Tasks Başlık Şeridi ve Canlı Kapı Metrikleri (3.200.0 — M-21):** Tasks sayfası başlığındaki kontrol şeridi çiftliğin anlık durumunu tek bakışta özetler: ⚙️ Eşzamanlılık tavanları · ⏳ Bekleme süreleri ve kuyruk sırası · 🛡️ İnsan onayı bekleyenler · 📅 Zamanlama dağılımı · 🏁 Günlük başarı oranı · 💵 Harcama ve token türevleri.
+5. **Plan & Runs Tabloları AFTip Panelleri (3.191.0 — M-25):** Runs tablosundaki **Tokens** ve **Cost** sütunları, Plan tablosundaki **Guard** (tasarruf edilen uyandırma sayısı), **Agent**, **Cost 7d** (koşu başı ortalama) ve **Last run** (tam yerel/UTC zamanı) hücreleri zengin AFTip panelleriyle açıklanır.
+6. Kuyruktaki görevler sırayla bekler; ▶ ile başlatırsın, ↑↓ ile sıralarsın.
+7. Görev terminali kapanınca (veya headless komut bitince) görev otomatik **done** olur. Shell integration açıksa çıkış koduna göre **failed** da işaretlenir. İstediğin an ✓ ile elle tamamlayabilirsin.
+8. `agentFarm.queueAutoAdvance` ayarını açarsan, bir görev bitince o ajanın kuyruğundaki sıradaki görev kendiliğinden başlar — zincirleme çalışma.
 
 Görev durumları: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ cancelled. Çalışan göreve tıklayınca terminali öne gelir.
 
@@ -2044,6 +2062,48 @@ Kopyalar sapmışsa ve ikisinde de değerli bilgi varsa "birini seç, diğerini 
 
 Boş sonuç koruması vardır: taslağı tamamen silersen hiçbir dosyaya yazılmaz.
 
+## LLM Wiki — Aday Havuzu ve Derleme (X-50) {#wiki}
+
+*“Obsidian IDE'dir, LLM programcıdır, wiki kod tabanıdır.”* Kullanıcı `00_WIKI`'yi doğrudan elle yazmaz; ajanlar yazar. Ancak konuşma akıp giderken akılda tutulmaya değer bir anı fark ettiğinde, **"bu bilgi tam olarak nereye ait?"** sorusunu çözmeye çalışmak o anı kaydettirmemekle sonuçlanır. Bu yüzden sistem ikiye ayrılmıştır: **anında ve ucuz işaretleme** ile **bilinçli ve kurallı derleme**.
+
+### Aday Havuzu Mantığı (3.201.0 — B-14)
+
+**İşaretlemek bedavadır, geri alınabilir ve kasaya dokunmaz.** Aday havuzu (`wiki_candidates.json`), transkriptler ile kasanın `00_WIKI` yapısı arasında hafif bir bekleme istasyonudur. Bir konuşma veya tur işaretlendiğinde kasada hiçbir dosya oluşturulmaz veya değiştirilmez; derleme tamamen ayrı ve kontrollü bir adımdır.
+
+- **Mükerrer İşaretleme Birleştirilir (Merge):** Aynı turun veya oturumun konsol rozetinden ve sağ tık menüsünden tekrar işaretlenmesi bir hata değildir ve ikinci bir satır yaratmaz. Örtüşen işaretleme konuları **birleştirir** ve tur aralığını genişletir; böylece sonradan aklına gelen bir konuyu eklemek için aynı yeri tekrar işaretlemen yeterlidir.
+
+### İşaretleme Kapıları
+
+1. **Tur Bazında İşaretleme (3.203.0 — K-26):**
+   - Console'daki kullanıcı prompt satırlarında, transkript tur bantlarında ve Turns sayfasındaki her satırın başında sakin bir **🔖** rozeti yer alır.
+   - Rozete tıklandığında veya sağ tık menüsünden **Add to Wiki Candidates…** seçildiğinde hafif bir popover (`media/afWiki.js`) açılır.
+   - Popover tur aralığını (`4`, `3-7` veya tüm konuşma için boş), havuzda zaten var olan konuları tıklanabilir çipler olarak ve yeni konu yazma kutusunu sunar. Hem işaretlenen çipler hem de yazılan yeni konular birlikte kaydedilir.
+   - Daha önce işaretlenmiş bir turda rozet yanık gelir (`lit`) ve tıklandığında mevcut konular seçili olarak açılır.
+
+2. **Oturum Bazında İşaretleme (3.202.0 — S-38):**
+   - Sessions tablosunda, Console oturum kartlarında ve Live Timeline kulvar sağ tık menülerinde **Add to Wiki Candidates…** seçeneği bulunur.
+   - Seçili tüm oturumları tek seferde havuzdaki konularla etiketler ve bekleyen derleme sayısını bildirir.
+
+### Derleme Motoru: Sentez ve Headless Koşu (3.204.0 — M-23)
+
+Eklenti doğrudan wiki sayfası sentezlemez; çünkü bir eklentinin mekanik özeti, bu sistemin kaçınmak istediği yüzeyselliği üretir. Bunun yerine eklenti ile ajan arasında net bir sözleşme kurulmuştur:
+
+1. **Brifing Üretimi (`wiki.compile`):** Seçilen adayları toplar, diskteki transkriptleri ve tam tur aralıklarını çözer, kasanın kendi anayasasını (`-WIKI-ANAYASA-.md`) okur, mevcut wiki dizinini tarar ve ajana ne yapması gerektiğini anlatan eksiksiz bir brifing hazırlar.
+2. **Headless Derleme Koşusu (`wiki.compile.run`):** Komut paletinden **Agent Farm: Compile Wiki Candidates…** seçildiğinde bekleyen adaylar listelenir. Enter'a basıldığında `agentFarm.wikiAgent` (varsayılan: `developer` veya atanmış ajan) altında headless bir derleme görevi başlar.
+3. **Eşzamanlılık ve Hak İddiası (Claim):** Koşan bir derleme, işlediği adayları rezerve eder (`pool.compiling`). İkinci bir derleme bu adayları çift derleyemez. Süreç çökerse bırakılan bayat iddia (`stale claim`) otomatik temizlenir ve adaylar tekrar `pending` durumuna döner.
+4. **Sentez Kuralları (Kasa Anayasası):**
+   - **Sayfa başına tek kavram:** Bir konu birden fazla sayfaya bölünmez.
+   - **Çelişen bilgi silinmez:** Eski bilginin üzeri çizilmez; tarihli bir not satırıyla güncellenir.
+   - **Her olgu kaynağını taşır:** Bilginin hangi transkriptten ve hangi turdan geldiği dipnotlanır.
+5. **Geri Bildirim:** Ajan derlemeyi bitirdiğinde köprüden `wiki.candidates.edit {state:"compiled", pages:[…]}` çağrısı yaparak adayları kapatır ve oluşturulan/güncellenen sayfaları bildirir.
+
+### Köprü ve Sağlık Denetimleri
+
+- **`wiki.candidates.add` / `wiki.candidates.list` / `wiki.candidates.edit` / `wiki.candidates.remove`:** Aday havuzu CRUD işlemleri.
+- **`wiki.status`:** Havuz durumu (bekleyen, derlenen, derlenenler) ve kasa wiki istatistikleri (kök klasör, anayasa dosyası, indeks, kategori derinlikleri).
+- **`wiki.lint`:** Kasa wiki'sinin yapısal sağlığını denetler (yetim sayfalar, kırık `[[link]]` bağlantıları, indekssiz sayfalar).
+- **Ayarlar:** `agentFarm.wikiRoot` (Obsidian wiki klasör yolu, örn. `00_AGENT_AREA/00_WIKI`), `agentFarm.wikiAgent` (derlemeyi yürütecek ajan).
+
 ## Filo Raporu
 
 `Agent Farm: Export Fleet Report (Markdown)` — filonun karşılaştırmalı karnesini Markdown dosyası olarak üretir (7/30/90 gün). Obsidian vault'una kaydetmek için biçilmiş kaftandır.
@@ -2862,6 +2922,119 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.204.0 — M-23 (X-50): Wiki Derleme Motoru ve Headless Koşu (2026-08-21)
+
+- **Headless Derleme (`wiki.compile.run`):** Aday havuzunda biriken turları ve konuşmaları `-WIKI-ANAYASA-.md` kuralları altında sentezleyen bağımsız headless ajan çalıştırması.
+- **Komut Paleti Kapısı:** `Agent Farm: Compile Wiki Candidates…` ile bekleyen tüm adaylar işaretli gelir; tek basışta derleme başlatılır.
+- **Eşzamanlı Derleme Koruması (Claim):** Koşan derleme aldığı adayları kilitler (`pool.compiling`), aynı konunun çift yazılmasını önler. Çöken süreçlerin kilitleri (`stale claim`) otomatik temizlenir.
+- **Sözleşme:** Ajan sentez sonrası `wiki.candidates.edit {state:"compiled", pages:[…]}` ile sayfaları bildirir ve adayları kapatır.
+
+### 3.203.0 — K-26 (X-50): Tur Satırlarında 🔖 Wiki Tagger Rozeti (2026-08-21)
+
+- **Doğrudan Tur İşaretleme:** Console prompt satırlarına, transkript tur bantlarına ve Turns tablosuna sakin bir **🔖** rozeti eklendi.
+- **Popover Seçici (`afWiki.js`):** Tıklandığında açılan hafif panelde tur aralığı (`4`, `3-7` veya tüm konuşma), mevcut konular ve yeni konu kutusu sunulur. İşaretli turlar açık gelir (`lit`), mükerrer eklemeler konuları birleştirir.
+
+### 3.202.0 — S-38 (X-50): Oturum ve Zaman Çizelgesinden Aday Ekleme (2026-08-21)
+
+- **Oturum Bazlı Aday Seçici:** Sessions tablosu, Console kartları ve Live Timeline sağ tık menüsüne **Add to Wiki Candidates…** eklendi.
+- **Konu Listesi ve Birleştirme:** Havuzda kayıtlı konular onay kutusu olarak listelenir, yeni konu tek tuşla eklenir. Tekrarlanan işaretlemeler çakışmadan birleştirilir.
+
+### 3.201.0 — B-14 (X-50): Wiki Aday Havuzu Altyapısı (2026-08-21)
+
+- **Hafif Aday Havuzu (`wiki_candidates.json`):** İşaretleme ücretsiz, geri alınabilir ve kasaya dokunmaz.
+- **`wiki.compile` Brifingi:** Transkriptleri toplar, tur aralıklarını çözer, kasa anayasasını ve mevcut sayfaları analiz ederek ajana tam brifing verir.
+- **Köprü ve Sağlık:** `wiki.status` havuz ve kasa durumunu raporlar, `wiki.lint` yetim ve indekssiz sayfaları denetler.
+
+### 3.200.0 — M-21: Tasks Başlık Şeridi Türetilmiş Metrikleri (2026-08-21)
+
+- **Zengin Başlık İpuçları:** ⚙️ Tavanlar, ⏳ Bekleyenler ve sıra kuralı, 🛡️ İnsan onayları, 📅 Zamanlamalar, 🏁 Günlük başarı oranı, 💵 Harcama türevleri zengin AFTip panelleriyle açıklandı.
+
+### 3.197.0 — M-26: İnteraktif Görev Hedefleri ve Kapanış Politikaları (2026-08-21)
+
+- **`interactiveTarget`:** `vscode` (entegre terminal), `external` (harici OS penceresi / Windows Terminal `.cmd` wrapper ile gerçek exit code yakalama), `console` (barındırılan webview).
+- **`interactiveClose`:** `stay-open` (sohbet açık kalır), `auto-close` (tek tur basıp çıkar — `claude -p` / `runArgs`).
+
+### 3.196.0 / 3.195.0 — U-81: Oturum Kartlarında AFTip ve Tam Metin Açılışı (2026-08-21)
+
+- **Tam Metin İpucu:** Kartlardaki ilk ve son prompt satırları 4.000 karaktere kadar AFTip ile açılır, "How it opened" mükerrer bloğu kaldırıldı.
+- **%100 Mat Opak Panel:** `editor.background` ve `tip-host` rengiyle ata-opaklık engelleri giderildi, 260px kart genişliğine özel boyutlandırma yapıldı.
+
+### 3.194.0 — U-82: Host Tabanlı Panoya Kopyalama (2026-08-21)
+
+- **Güvenli Clipboard Köprüsü:** Webview odak hatalarını aşmak için tüm **Copy ▸** eylemleri (`media/afCtx.js`) doğrudan extension host'un `vscode.env.clipboard` mekanizmasına bağlandı.
+
+### 3.193.0 — U-80: Live Sessions Kartları Prompt Kırpması (2026-08-21)
+
+- **90 Karakter Kırpma:** Live Timeline kartlarının ızgara düzenini korumak için prompt satırları 90 karaktere sınırlandı; tam metin AFTip hover paneline bağlandı.
+
+### 3.192.0 — Webview İçi Görev ve Retry Mimarisi Rehberi (2026-08-20)
+
+- **Dahili Modal Rehber:** New Task formunda `?` butonu ile açılan, taslağı kaybetmeden kapanan interaktif mimari kılavuzu (S-19 devamlılık, M-3/M-10 kota pencereleri, M-12 3-prompt yönlendirmesi).
+
+### 3.191.0 — M-25: Tasks Plan ve Runs Tabloları AFTip Panelleri (2026-08-20)
+
+- **Metrik Açıklamaları:** Plan tablosu Guard wake-up tasarrufları, Runs tablosu Tokens/Cost hücreleri ve koşu başı ortalama maliyetler AFTip panelleriyle açıklandı.
+
+### 3.190.0 — M-24: Görev Formlarında Kayıtlı Prompt Şablonları (2026-08-20)
+
+- **Sağ Tık Snippet Penceresi:** Görev formu içerisindeki tüm prompt alanlarında sağ tık ile `media/afSnippets.js` penceresi açılır ve şablonlar doğrudan imlece yapıştırılır.
+
+### 3.189.0 — M-21: New Task Konumu ve Runs Tokens Sütunu (2026-08-20)
+
+- **Sayfa Çubuğu:** "New task" butonu Runs sekmesinden sayfa üst çubuğuna taşındı. Runs tablosuna sıralanabilir **Tokens** sütunu eklendi.
+
+### 3.188.0 — K-28: OpenCode Resume Model Eşleme Düzeltmesi (2026-08-20)
+
+- **Model Seçeneği Doğrulama:** Devam ettirilen OpenCode oturumlarında `opencode/big-pickle` biçimi motorun aktif seçenek listesiyle eşleştirilerek geçersiz model değişim reddi engellendi.
+
+### 3.187.0 — K-27: Kesinti (Interrupted) Yanlış Alarm Koruması (2026-08-20)
+
+- **Dürüst Durum Ayrımı:** Araç hatalarının yanlışlıkla kullanıcı "Stop" kesintisi gibi `last turn interrupted` göstermesi engellendi; Antigravity, Codex ve Gemini için gerçek sonuçlar ayrıştırıldı.
+
+### 3.186.0 — U-75: Antigravity Transkript Birleştirme Güvenliği (2026-08-20)
+
+- **Kimlik Bazlı Merge:** Konsoldan devam ettirilen Antigravity oturumlarının dosyanın önceki turlarını ezmesi engellendi, mesaj kimlikleriyle tam geçmiş korundu.
+
+### 3.185.0 — U-73: Live Timeline Tooltip Titreme Düzeltmesi (2026-08-20)
+
+- **Yeniden Çizim Köprüsü:** Canlı zaman çizelgesi periyodik olarak yeniden çizilirken imleç altındaki `tip-free` hover panellerinin kaybolması ve titremesi engellendi.
+
+### 3.184.0 — U-76: Noktadan Tam Metin Kopyalama (Copy Corpus) (2026-08-20)
+
+- **Doğrudan Transkript Kopyalama:** Live Timeline noktasına veya araç bloğuna sağ tık → **Copy Corpus** ile ham transkriptteki tam metin anında panoya kopyalanır (`timeline.corpus`).
+
+### 3.183.0 — U-78: Live Timeline'da Model Cevapları (`say` Olayı) (2026-08-20)
+
+- **Birinci Sınıf Cevap Noktaları:** Asistan yanıtları mavi içi boş halka (`say`) olarak zaman çizelgesine işlenir, kullanıcı promptları dolu daire olarak kalır.
+
+### 3.182.0 — U-74: Hover Panelinin Ele Yol Vermesi (2026-08-20)
+
+- **Etkileşim Sessize Alma:** Butona tıklandığında veya tuşlandığında AFTip paneli anında kapanır. Tıklanabilir butonların hover'ı daha yavaş (.6s) açılarak hedeflenen butona engel olması önlenir.
+
+### 3.180.0 — X-49: İş Kuyruğu Motor, Model ve Efor Yönlendirmesi (2026-08-20)
+
+- **Hedef Eksenleri:** Kuyruk yakalama formuna ve filtrelerine `engine`, `model`, `effort` seçenekleri eklendi.
+
+### 3.175.0 — X-47: Arka Plan Süreçlerinde Konsol Penceresi Yalıtımı (2026-08-19)
+
+- **Windows Hide Güvencesi:** Tüm arka plan `child_process` spawn çağrılarında `windowsHide: true` zorunlu kılındı (`test_no_console_flash.js`).
+
+### 3.174.0 — X-48: Backlog Açılış ve Son Dokunuş Sıralamaları (2026-08-19)
+
+- **Zaman Sıralamaları:** Backlog için `opened` (ilk kayıt tarihi 🌱) ve `last touched` (son çalışma tarihi ✎) sıralama kipleri eklendi.
+
+### 3.173.0 — S-40: Beş Motorlu Turlar Sayfası (2026-08-19)
+
+- **Tüm Motorlar Tek Tabloda:** Claude, Gemini, Antigravity (brain log & Console), OpenCode oturumları kullanıcı turlarına açılarak tek sayfada listelenir (`turns.list`).
+
+### 3.171.0 — U-69: Turlar Tablosu Düzeni ve AFTip Hücreleri (2026-08-19)
+
+- **Sabit Tablo Düzeni:** `<colgroup>` ve `table-layout: fixed` ile sütun genişlikleri sabitlendi. Steps sütununa **reasoning** ayrımı eklendi.
+
+### 3.168.0 — X-52: OpenCode Model Listesi Isınması (2026-08-19)
+
+- **Arka Planda Katalog Çekimi:** `opencode models` arka planda taranır ve `globalState`'te saklanır; oturum açılmasını beklemeden model kutuları doldurulur.
 
 ### 2.21.0 — Görev Öngörüsü & Digest Sonuçları, Dalga 4 (2026-07-11)
 

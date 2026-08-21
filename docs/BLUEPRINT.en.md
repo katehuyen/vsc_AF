@@ -69,6 +69,10 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | Send the daily scorecard to Telegram | `agentFarm.dailyDigest` = "21:30" ([details](#daily-digest-card)) |
 | Move / share an agent to another machine | Right-click agent → `Export Agent Pack…` ([details](#agent-packs)) |
 | Have the agent work under Antigravity too | Right-click agent → `Sync Agent with the Other Engines…` ([details](#antigravity-uyumlulugu)) |
+| Add conversation or turn to wiki candidate pool | `🔖` badge on transcript/Console row, or right-click → `Add to Wiki Candidates…` ([details](#wiki)) |
+| Compile wiki candidates into the vault | Command palette → `Agent Farm: Compile Wiki Candidates…` ([details](#wiki)) |
+| Inspect turns across all 5 engines | Beside Sessions table → `⤢ Open Turns page` ([details](#turlar-sayfasi)) |
+| Copy full text directly from timeline | Right-click dot/tool on timeline → `Copy Corpus` ([details](#live-observation)) |
 
 ### Concepts (in 30 Seconds)
 
@@ -251,16 +255,18 @@ Turns a session's raw JSONL log into a readable conversation:
 
 ### Turns Page {#turlar-sayfasi}
 
-**Agent Farm: Open Turns** (or the **Turns** button in the Dashboard header) — the whole farm unrolled to **one row per user turn** (2.81.0). The Sessions table answers "which session?"; this page answers "which *turn*, in any session, farm-wide?". Turn rollups are collected while transcripts are indexed, so the page opens instantly and refreshes itself as logs change.
+**Agent Farm: Open Turns** (or the **⤢ Open Turns page** button right beside the Sessions table) — the whole farm unrolled to **one row per user turn** (2.81.0, 3.171.0). The Sessions table answers "which session?"; this page answers "which *turn*, in any session, farm-wide?". Turn rollups are collected while transcripts are indexed, so the page opens instantly and refreshes itself as logs change.
 
-- The header carries **the exact same seven-button global cluster as an agent page**, in the same order: Dashboard · Live Timeline · Missions · ⌕ Search · ⚙ Settings · Refresh · ? Guide.
-- **Columns:** **By** — the 🧑/🤖 origin of the turn's session (3.20.0) · Agent (● active dot, `sub` badge, ⌨ jump-to-terminal) · **Turn** — the opening prompt, the row's identity (typed /commands show as the command name) · **Session** — short, with the full title in the tooltip · `n/N` turn number · model tag(s) · when · duration (until the next turn opened; last turn: until the session's end) · tools · errors · tokens · cost. Tokens and cost are what that turn **actually consumed** — subagent work bills to the turn that spawned it, so the numbers match the viewer's turn table exactly.
-- **Column order:** Agent · **Turn** (widest — it is the row's identity) · Session (narrow) · `n/N` · Model · **Tokens** (right after the model that spent them) · When · Duration · Tools · Err · Cost.
-- **The Sessions tables' controls, adapted to turns:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), a **List** box (default **200** — a turn is far finer than a session) + **All** chip, **Expand all / Collapse all / Single-open**, the **🧑 origin switch** (3.20.0) and a **Filters** chip. The page opens scoped to **your own sessions' turns**; the switch flips User ↔ All in one click and the panel's **Started by** row adds 🤖 Auto. The filter panel has **two text boxes** — one over **turn prompts**, one over **session titles** — plus agent and **model** dropdowns, Active now / Has errors / Main only flags, min–max ranges (tokens, cost, minutes, tools, errors, turn #) and a date range. Sort, filters, scope, row count and the Show selection are remembered.
-- **A Show row like the viewer's:** **All · Dialog · 🧑 User · 🤖 Agent · 🔧 Tool calls · 📄 Results · ⚠ Errors** decides what an unfolded turn shows of its content — **Dialog (you + the agent) is the default**, tool traffic one chip away; the choice applies to every turn you open.
-- **▸ unfolds the turn's actual content** — the prompt, the assistant's replies and tool calls (with inputs), errors in red — parsed on demand from the transcript and filtered by the Show row. **Clicking the row opens the Session Viewer at that exact turn.**
-- **⬇ Export MD (2.81.1):** exports the **listed turns** to Markdown, with the same two-question prompt as the viewer — **Current view** (unfolded turns' content, filtered by the Show row; folded turns omitted or, if you choose, kept as their header) or **Everything** (every listed turn with its full content). Each turn becomes a `## <agent> · turn n/N — <prompt>` section with its session, model, tokens and cost.
-- Bridge op (per the farm-bridge rule): **`turns.list`** — the same rows as data (`agent?`, `origin?` — `user` / `auto`, `limit?`); `sessions.recent` takes the same `origin?` scope, so an agent asked "what did I work on yesterday?" can answer with dialogs instead of its own scheduled sweeps.
+- **Multi-Engine Coverage across all 5 engines (3.173.0 — S-40):** Unrolls turns across the entire farm without skipping non-Claude engines: **Claude**, **Gemini** (with model and token/price derivation for its reply), **Antigravity (brain log)** (tool calls, planner prose, duration with honest zero tokens), **Antigravity (hosted)** (Console `result` accounting for exact tokens and dollars), and **OpenCode** (`rgb(60, 135, 255)` badge, `step-finish` round-trips, separately tracked `reasoning` and context window bounds).
+- **Declared Table Layout & Widths (3.171.0 — U-69):** Built with `table-layout: fixed` and declared `<colgroup>` shares so the table remains visually consistent regardless of active filters. Single-line row clipping keeps rows compact.
+- **Single-Subject Cell Hovers (AFTip):** Each cell's hover opens with the full unclipped value on its first line, followed by derived metrics: the **Steps** column breaks down API calls, steps per call, and the share of **reasoning** tokens; the **Tokens** column details plan-weighted ratios alongside costs.
+- **🔖 Wiki Candidate Pool Tagger (3.203.0 — K-26):** Every turn row starts with a quiet **🔖** badge. Clicking it or picking **Add to Wiki Candidates…** from the right-click context menu opens a lightweight popover to tag and file the turn directly into the candidate pool.
+- **Columns:** **By** — 🧑/🤖 origin · Agent (● active dot, `sub` badge, ⌨ jump-to-terminal) · **Turn** — opening prompt · **Session** — short title · `n/N` turn number · Model/Engine badge · **Steps** · **Tokens** · When · Duration · Tools · Err · Cost.
+- **Adapted Controls:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), **List** count (default **200**), **Expand all / Collapse all / Single-open**, **🧑 origin switch**, and comprehensive **Filters**.
+- **Show Filter:** **All · Dialog · 🧑 User · 🤖 Agent · 🔧 Tool calls · 📄 Results · ⚠ Errors** — **Dialog (you + agent) is the default**.
+- **▸ unfolds actual turn content;** clicking any row opens the Session Viewer at that exact turn.
+- **⬇ Export MD (2.81.1):** exports listed turns to Markdown (`Current view` or `Everything`).
+- Bridge op: **`turns.list`** (`agent?`, `origin?`, `engine?`, `limit?`).
 
 ### Insights Tree
 
@@ -904,7 +910,14 @@ Both the order and the items live in the same document, so a person reading `Bac
 
 **And the top of it rides in the brief.** Every project session opens with `## Next in backlog`, so "do the first three" needs no paste and no lookup. Everything else here is only useful because of that section.
 
-**The Backlog tab makes the row the editor.** The checkbox closes the item; priority, size and work type each open a small menu with the current value marked — they used to cycle one step per press, which on a six- or nine-value axis meant up to eight presses and **eight writes to the file** to reach a value that was on screen all along. 🗂 files an uncoded capture by asking which area *on the row being filed*. Actions appear on hover rather than walling off two hundred lines with nine buttons each, and they sit in **two lines** at a fixed width — one line of controls was wider than the item it belonged to, which left the words, the whole reason the row exists, squeezed into what was left. **The capture box keeps what you have written** across every repaint — a filter, a host push, a step into another tab — and empties only once the host confirms the add; it carries the same four text tools (paste · copy · cut · clear) as the console composer, from the same component. Every filter axis is a LIST and page-side, so a chip is a repaint rather than a round trip, and each filter row carries its own clear beside the global one; the five dropdown axes — **state · filing · blocked · plan · due** — are **the extension's own multi-pick control** (`media/afFilters.js`), the same one Search, Queue, Notices and the sessions table use, so "done AND cancelled" is sayable, state is a real list rather than a single choice with a "show closed" box bolted beside it, and 📥 *unfiled* is its own axis because having no code is not a state. Sorting stays a single choice, because an ordering genuinely is one — and **one of the orderings is the question "what did I finish last?"**: `closed — last finished first` puts the most recent closing at the top and everything still open at the bottom, where it belongs; the arrow reverses the closed ones without dragging the open ones forward, because an item that is not closed is not "closed longest ago". The time comes from the **track ledger** (the moment the box actually moved, to the second) or failing that from the `✅` on the line (the day only); an item with neither is reported with **no** time rather than an invented old one, and sits behind the dated ones. A closed row wears its date, and the hover says which of the two sources it came from. Askable from an agent too: `projects.backlog { sort: "closed" }`, and every item carries `closedAt`/`closedOn`.
+**The Backlog tab makes the row the editor.** The checkbox closes the item; priority, size and work type each open a small menu with the current value marked — they used to cycle one step per press, which on a six- or nine-value axis meant up to eight presses and **eight writes to the file** to reach a value that was on screen all along. 🗂 files an uncoded capture by asking which area *on the row being filed*. Actions appear on hover rather than walling off two hundred lines with nine buttons each, and they sit in **two lines** at a fixed width — one line of controls was wider than the item it belonged to, which left the words, the whole reason the row exists, squeezed into what was left. **The capture box keeps what you have written** across every repaint — a filter, a host push, a step into another tab — and empties only once the host confirms the add; it carries the same four text tools (paste · copy · cut · clear) as the console composer, from the same component. Every filter axis is a LIST and page-side, so a chip is a repaint rather than a round trip, and each filter row carries its own clear beside the global one; the five dropdown axes — **state · filing · blocked · plan · due** — are **the extension's own multi-pick control** (`media/afFilters.js`), the same one Search, Queue, Notices and the sessions table use, so "done AND cancelled" is sayable, state is a real list rather than a single choice with a "show closed" box bolted beside it, and 📥 *unfiled* is its own axis because having no code is not a state. Sorting stays a single choice, because an ordering genuinely is one.
+**‼️ Time-Based Sortings (3.174.0 — X-48):** The sort picker presents three time-related answers:
+- **`opened` (🌱 last written first):** The very first timestamp recorded for that code in the track ledger.
+- **`last touched` (✎ last worked on first):** The most recent activity / touch timestamp recorded in the track ledger.
+- **`closed` (✅ last finished first):** The closing timestamp (to the second from the ledger, or from the `✅` tag).
+Dates are drawn on the row with 🌱 and ✎ glyphs, with both timestamps visible on hover. Over the bridge: `projects.backlog { sort: "opened" | "touched" | "closed" }`.
+**‼️ Jumping to Backlog from Track Chips (3.169.0 — U-71):** Left-clicking a backlog code chip in the Track view switches directly to the **Backlog tab**, filtering down to that specific item; the ↗ icon opens the file.
+**‼️ Work Queue Target Routing (3.180.0 — X-49):** The queue capture form and filters feature three additional routing dimensions beside `target`: `— engine —` · `— model —` · `— effort —`. Blank means unconstrained; tasks can scope their sweeps to only work assigned to their engine/model/size. **A long item opens whole on hover:** the box is as wide as the row and **scrolls**, and the pointer can travel into it, so resting on `more` reads a thousand-word item without opening anything.
 
 **‼️ A pile with families in it has two honest sizes, and the counts strip says which (3.113.0).** `10 open · 110 done` was written before an item could be part of another, so it counts a whole and its four parts as five things to do — the right answer to *how many lines are outstanding* and the wrong one to *how much work is left*, with nothing on screen saying which question it was answering. **The figures are the control**: press them and the parts drop out of the count (`⊟ wholes`), press again and they come back (`⊞ every`), and the choice is remembered. **‼️ And the reduced reading looks reduced (3.140.0).** The two line-drawing glyphs alone were not a state anybody noticed, so *wholes only* now says its own name beside the glyph, states **how many lines it is leaving out** (`−8`), and wears a dashed accent outline — while the plain reading keeps exactly the typography it always had, because a permanent highlight on both is a badge, not a signal. The **area chips follow the same rule**, so two adjacent lines can never disagree, and the hover carries **both readings** — so the question can be settled without pressing anything at all. A file where nothing is `[parent:: …]` of anything is not offered the switch: a toggle between two identical numbers is a button that does nothing. The **family** axis gained the row that reading actually needs alongside it — **wholes only — nobody's part** — because "show me the wholes, not the parts" used to take two ticks (*has parts* plus *stands on its own*), and a subset with no name is a subset nobody finds.
 
@@ -1049,25 +1062,25 @@ To remove: **Agent Farm: Remove Live Hooks** — deletes only Agent Farm's own e
 
 Opens with the **Agent Farm: Open Live Timeline** command or the pulse icon in the Live Feed view.
 
-- **Swim lanes:** Each agent is a strip; green blocks show tool runs (with their duration), dots/diamonds show events: blue dot = command, red diamond = permission wait, purple diamond = compaction, orange dot = subagent done, line = turn end.
+- **Swim lanes:** Each agent is a strip; green blocks show tool runs (with their duration), dots/diamonds show events: blue filled dot = user command (prompt), blue hollow ring = model reply (`say` event — 3.183.0, both sides of the conversation on one chart), red diamond = permission wait, purple diamond = compaction, orange dot = subagent done, line = turn end.
+- **Single-Subject Rich Panels (3.179.0, 3.181.0 — U-67):** Every point and tool span on the timeline is its own `AFTip` panel: **Who** (session, agent, engine, model), **What was said** (prompt whole and quoted / tool command and response), **Where** (clock time, turn number, delta), and **Actions** (click jumps to moment, right-click gives session actions). Tool spans are compact and avoid bloated stdout payloads.
+- **Copy Corpus — Full Text at One Click (3.184.0 — U-76):** Right-click any point or tool block on the timeline → **Copy Corpus** copies the full prompt or response directly from the raw transcript on disk without opening the transcript viewer. Bridge op: `timeline.corpus`.
 - **Concurrent sessions of the same agent (2.45.0):** If the same agent is open in more than one session at once, each concurrent session gets **its own row** (`dev #1`, `dev #2` …) — events no longer overlap. Sequential (non-overlapping) sessions still share a single row as before, so row count doesn't balloon. Session cards, notifications and the Needs You queue also use the same `#k` label; a `×2` badge appears next to the status in the agent tree.
 - **Click → go to that exact moment (2.37.0):** Clicking any marker in a lane **or a green tool block** doesn't just open the Session Viewer — it scrolls the log to **the exact message of that event** and highlights the message briefly with a frame. If the viewer is already open, the same click brings it forward and moves it to that point.
 - **Your-turn alerts — the setting belongs to the SESSION, not the agent (3.144.0):** the four boxes to the left of each lane — **♪ sound · ◎ focus · ▣ modal · ▭ toast** — pick the actions to run when **that row's session** moves to **YOUR TURN**. A row *is* a session: three concurrent runs of one agent are three rows carrying **three independent selections**, clicking one never moves the others, and there is no "agent default" layer behind them (no selection = no alert). The second copy of the control that used to sit under the card is gone — the setting lives in the lane and only there. A row that draws only history has the boxes **disabled**: an alert is not armed on a conversation that can no longer fire. The selection is written to `globalState` under `agentfarm.turnAlerts[sessionId]`, the triggering is host-side — **it works even when the panel is closed** — and it survives closing the panel and reloading VS Code. When a terminal lane is re-keyed from its synthetic `cli:…` id to the engine's real conversation id, the preference moves in the same step; if the target already has one, nothing is merged and the clash is reported. The old agent-keyed map is copied **once**, by a versioned migration, onto the sessions that are live at that moment — and never read again.
   *Sound:* a short WAV shipped with the extension (`media/sounds/turn-ready.wav`, generated by `tools/make_turn_sound.js` — there is nothing in it to licence), played by a hidden PowerShell `SoundPlayer.PlaySync()` on Windows, `afplay` on macOS, `paplay`→`aplay` on Linux. The path never enters a command string (an environment variable on Windows, an `execFile` argument elsewhere), so there is no shell interpolation. Every attempt returns its backend, exit code, `stderr`, duration and whether it timed out; a failure is reported once with a real diagnosis and repeats are rate-limited. **`exit 0` means the player accepted the file — it is not a claim that anyone heard it.** *Focus:* brings the timeline panel forward (VS Code has no API that raises the OS window). *Modal:* a blocking dialog naming the right session + Open transcript. *Toast:* a non-modal corner notification. The four branches run **independently**: one failing never cuts the others.
   **One alert per turn**, keyed by the session's own turn ordinal rather than a blunt 3-second cooldown: the `Notification(waiting)` and the `Stop` behind it are the same turn and ring once, while a genuinely new turn a second later rings again. A permission wait is not YOUR TURN, and a session rebuilt from the event store on reload is never re-announced. Separate from the global `notifyTurnEnd` setting, which fires one toast for all agents.
 - **"Test in 3 seconds" (3.144.0):** the **⏱** box on every live lane runs that row's selected alerts on purpose. The countdown is host-side, so you can switch to another window and see whether focus really comes back. The result appears in the strip under the chart — the session and all four branches, with an AFTip carrying each branch's `ok/failed/skipped`, the sound backend, its exit code, `stderr` and timing. With nothing selected the test is disabled. The same core is on the bridge: `live.alerts.get` · `live.alerts.set` · `live.alerts.test`.
-- A red vertical line = now. Window selector: **15m / 30m / 1h / 2h / 3h / 4h / 8h / 16h / 24h** detailed swim-lane view + **3d / 7d / 30d** density view. The short end has no gaps to jump over — the steps that were missing between 15m and 4h (**30m, 2h, 3h**) are in the strip, so following one session live no longer means choosing between "too tight" and "four hours of history". 16h and 24h are drawn as the classic flow (lanes) too — since the monitor keeps 24 hours in memory, dropping to bars is only needed at 3 days and beyond.
-- A **Dashboard** button at the top-right (2.43.0): one-click travel in the Dashboard ↔ Agent Detail ↔ Timeline triangle (the Dashboard has Live Timeline, the Agent Detail has both).
-- **Density view (24h+):** at that scale individual dots aren't readable — each lane is split into 168 time buckets, and an activity bar is drawn per bucket (green = tools, blue = commands, √ scale); the red band above the strip = a permission wait occurred in that bucket. The point is to see patterns: which agent worked which day/hour, where it got stuck.
-- **Persistence (2.13.0):** events are now written to a `globalStorage/live-events.jsonl` file — closing and reopening VS Code doesn't reset the timeline. The last 24 hours are kept in memory (long ranges are read from disk), and the file keeps the last **31 days** (older ones are pruned automatically, 64MB size limit). It doesn't go back further than 31 days not because of load but because of meaning: at that scale hook events don't carry pattern information — for the long view, the Dashboard (up to 1 year) is the right tool.
-- **‼️ Every event says which Agent Farm build saw it.** Each line now carries an `af` stamp and each session the build(s) that watched it (`afVersions`, oldest first — more than one means the extension was updated or rolled back mid-session, so the two halves must not be averaged). The reason is not a field, it is an argument: "capture went deaf in version N" could previously only be discussed from the *install timestamps of extension folders* — indirect evidence about a directly measurable claim — and one such investigation ran for days. **`live.versions`** closes it in one pass: per version, when it ran, how many sessions it watched, how many events of each kind, and `perActiveHour` — events per hour **of session activity, not per calendar hour**, because a version that sat installed through a quiet weekend is not a version that captured less. Lines written before the stamp existed are reported under an empty version as **unknown**, never attributed to whatever happened to be installed — attributing is exactly the evidence this replaced.
-- **A lane row tells you whose it is (3.31.0):** hover a row's name and you get that session's whole picture — id, status and current tool, its own name, cost, tokens, context, turns, counters, where it runs and its pid; click the name to open the session. A row whose folder is not one of your agent folders is labelled by what it is — `#3f8a1c2b`, the session id — instead of a bare hex string with no explanation.
-- **A tool call that never ended (3.31.0):** a `PreToolUse` whose `PostToolUse` never arrived — a closed terminal, a crash, a killed process — used to be drawn as a green bar running to "now", for ever, on a session that had been over for hours. Such a block now stops where the session's last event really landed and is drawn **hollow and dashed**; the tooltip says so. A tool the session says it is still inside keeps growing as before.
-- **Live sessions cards:** each session's live state, last command, counters and start time (2.45.0); a `#k` session label in the header if needed; the your-turn chips are configurable per session from the card; "Open transcript" jumps into the log. Since 3.31.0 the card also carries **the session id in parentheses** (`(#407c78cb)` — the same handle the Console rows use), the session's own name, and its figures from the transcript: cost, the tokens that bought, the context the window is holding now, turns, model, files touched — plus where it runs (pid · terminal or Console) and its folder. The title and the name are links: a click opens the session.
+- **AFTip & Live Interaction Rules (3.182.0, 3.195.0, 3.196.0 — U-74, U-81):**
+  - **100% Solid & Opaque:** Panels are rendered with `editor.background` at 100% opacity; dimming is inherited via `tip-host` foreground color rather than block opacity, preventing transparency leaks.
+  - **Hover Yields to Hand (U-74):** Any click or keystroke immediately mutes the hover panel until the pointer leaves the wrapper. Pressable triggers open slower (.6s) to stay out of the way of intentional clicks.
+  - **Flicker-Free Redraws (U-73):** Live Timeline periodic DOM rebuilds safely re-place `tip-free` floating panels without losing scroll position or closing under a resting pointer.
+- **Live sessions cards (3.193.0, 3.195.0 — U-80, U-81):** Prompt lines are truncated to 90 characters to preserve grid alignment; hovering opens the full text (up to 4,000 chars) in an `AFTip` alongside dedicated Money, Work, and Time metric blocks.
+- **Host-Backed Clipboard (3.194.0 — U-82):** All right-click **Copy ▸ (The code · The words · Code and words)** actions delegate directly to the extension host via `vscode.env.clipboard`, eliminating webview focus failures.
 - **Ending and clearing a session (3.31.0):** the card's buttons are ⌨ Terminal · ⎋ Interrupt (stops the turn, keeps the session) · **⏻ End session** (stops the claude process that owns it — asked first, and the transcript stays on disk) · **✕ Clear**. A session whose process the OS no longer knows is marked *"no live process — it is over, its hooks just never said so"*, loses its Interrupt button, and the page header offers to clear all of them at once. `sessions.live` / `sessions.end` / `sessions.dismiss` are on the bridge, so an agent can do all three too.
-- **Right-click a lane row, not just a card (3.34.0):** a row IS a session — the one the card below is about — so it carries the same menu: Rename · Open session · Terminal · Interrupt · End session · Clear. The whole row answers, with the session it is currently drawing; on a packed row (sequential sessions sharing a track) each session answers over its own span, so the menu is about the run under the pointer. The row's own left-click (open the session) and the bars' and dots' click-to-that-moment are untouched — the hit areas sit behind them.
-- **Clear means gone (3.34.0):** clearing used to take the card away and leave its swim-lane row behind — and, because it wrote an `end` event at "now" to close the lane, that row was usually *empty*: an orphan with no card and nothing in it. Clear now takes the session off this page **whole** — card and row together, in every range, and it stays off across a window reload. It still does not touch the session: the transcript stays on disk, the process is not signalled, and a session that reports another event comes back. **End session is deliberately not that**: what a run did stays on the page as history (with the end event that never arrived closing its unfinished tool bar), and the row can then be cleared by right-clicking it.
-- The panel updates itself as events arrive, and a session nobody has heard from expires on its own within half a minute of its tracking window (3.31.0) — it no longer waits for some other session to report an event.
+- **Right-click a lane row, not just a card (3.34.0, 3.202.0):** Rename · Open session · Terminal · Interrupt · End session · Clear · **Add to Wiki Candidates…** (S-38).
+- **Clear means gone (3.34.0):** Clear takes the session off this page **whole** — card and row together, in every range, and it stays off across a window reload.
+- The panel updates itself as events arrive, and a session nobody has heard from expires on its own within half a minute of its tracking window (3.31.0).
 - Note: since events prior to 2.13.0 weren't written to disk, long ranges fill in over time after installation.
 
 ### Notifications
@@ -1097,13 +1110,18 @@ Against the blank-page problem: **Agent Farm: Set Up Example Automation…** set
 
 ### Adding and Running Tasks
 
-1. In the Tasks view, **+** (Add Task): pick agent → title → prompt → pick mode.
-2. Two modes:
-   - **Interactive:** `claude "prompt"` — a session opens, the prompt goes as the first message, you can continue.
-   - **Headless:** `claude -p "prompt"` — runs the task, prints the output to the terminal and exits. Ideal for automation.
-3. Queued tasks wait in order; you start them with ▶ and reorder with ↑↓.
-4. When a task terminal closes (or a headless command finishes) the task automatically becomes **done**. If shell integration is on, it's also marked **failed** based on the exit code. You can mark it complete by hand with ✓ any time.
-5. If you turn on the `agentFarm.queueAutoAdvance` setting, when one task finishes the next task in that agent's queue starts by itself — chained running.
+1. In the Tasks view, **+** (Add Task): pick agent → title → prompt → pick mode. The **?** popover button on the form (3.192.0) opens the interactive **Task & Retry Architecture Guide** right inside the webview without losing your draft (session continuity, quota windows, 3-prompt steering, and safety brakes).
+2. Modes & Execution Targets:
+   - **Interactive (3.197.0 — M-26):** Full interactive session control across two orthogonal axes:
+     - **Opens in (`interactiveTarget`):** `vscode` (integrated terminal, default), `external` (dedicated OS terminal window / Windows Terminal via generated `.cmd` wrapper capturing `%ERRORLEVEL%`), `console` (Agent Farm's hosted Console webview panel).
+     - **When it answers (`interactiveClose`):** `stay-open` (session remains interactive), `auto-close` (runs as a single turn via `claude -p` / `runArgs`; automatically closes the surface and marks the task done once the model replies).
+   - **Headless:** `claude -p "prompt"` — runs the task in the background, archives the output, and exits. Ideal for automations.
+3. **Saved Prompt Snippets (3.190.0 — M-24):** Right-clicking inside any of the four prompt input boxes on the task form (Task prompt, Retry prompt, Continuation prompt, Workflow step prompt) opens the shared prompt snippet picker (`media/afSnippets.js`) to insert templates directly at the cursor.
+4. **Tasks Header Strip & Live Gate Metrics (3.200.0 — M-21):** The header strip on the Tasks page summarizes the farm's live status at a glance: ⚙️ Concurrency ceilings · ⏳ Waiting times & queue ordinal · 🛡️ Human approval gates · 📅 Schedule distribution · 🏁 Daily success rate · 💵 Spend & token derivatives.
+5. **Plan & Runs Table AFTip Panels (3.191.0 — M-25):** The Runs table's **Tokens** and **Cost** columns, and the Plan table's **Guard** (saved wake-ups), **Agent**, **Cost 7d** (cost per run average), and **Last run** (exact local/UTC timestamps) cells are explained through rich AFTip panels.
+6. Queued tasks wait in order; you start them with ▶ and reorder with ↑↓.
+7. When a task terminal closes (or a headless command finishes) the task automatically becomes **done**. If shell integration is on, it's also marked **failed** based on the exit code. You can mark it complete by hand with ✓ any time.
+8. If you turn on the `agentFarm.queueAutoAdvance` setting, when one task finishes the next task in that agent's queue starts by itself — chained running.
 
 Task states: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ cancelled. Clicking a running task brings its terminal forward.
 
@@ -2003,6 +2021,48 @@ If the copies have diverged and there's valuable information in both, "pick one,
 
 There's an empty-result guard: if you delete the draft entirely, nothing is written to any file.
 
+## LLM Wiki — Candidate Pool and Compilation (X-50) {#wiki}
+
+*“Obsidian is the IDE, LLM is the programmer, wiki is the codebase.”* A user never authors `00_WIKI` by hand; agents write it. However, when an insight surfaces in the middle of a flowing conversation, forcing the question **"where exactly does this belong in the wiki?"** guarantees the thought will never be captured. The system therefore separates the workflow into two clean stages: **instant, zero-friction candidate marking** and **disciplined, structured compilation**.
+
+### Candidate Pool Philosophy (3.201.0 — B-14)
+
+**Marking is free, reversible, and touches no vault files.** The candidate pool (`wiki_candidates.json`) acts as a lightweight staging ground between raw transcripts and the vault's `00_WIKI` structure. Tagging a conversation or turn creates no files and mutates no existing pages; compilation is a deliberate, governed batch process.
+
+- **Overlapping Tags Merge Automatically:** Tagging the same turn or session multiple times across different surfaces (Console, Live Timeline, Turns view) does not produce duplicate candidate entries. Topics are cleanly merged, and turn ranges are expanded.
+
+### Marking Entry Points
+
+1. **Turn-Level Marking (3.203.0 — K-26):**
+   - Console prompt rows, transcript turn banners, and Turns table rows feature a quiet **🔖** badge.
+   - Clicking the badge or selecting **Add to Wiki Candidates…** from the right-click menu opens a lightweight popover (`media/afWiki.js`).
+   - The popover allows choosing a turn range (`4`, `3-7`, or blank for the entire session), selecting existing candidate topic chips, and adding new topic tags on the fly.
+   - Already tagged turns display an active (`lit`) badge that opens with existing topics pre-checked.
+
+2. **Session-Level Marking (3.202.0 — S-38):**
+   - The Sessions table, Console session cards, and Live Timeline swim-lane context menus feature **Add to Wiki Candidates…**.
+   - Tags entire sessions across chosen topics in a single click and reports pending compilation counts.
+
+### Compilation Engine: Synthesis & Headless Execution (3.204.0 — M-23)
+
+The extension does not synthesize wiki pages directly with heuristic templates; mechanical summarization produces the exact shallow prose this architecture seeks to avoid. Instead, a strict division of labor is enforced:
+
+1. **Briefing Generation (`wiki.compile`):** Gathers target candidate entries, resolves transcripts and precise turn ranges on disk, reads the vault's constitution (`-WIKI-ANAYASA-.md`), analyzes existing wiki pages and categories, and builds an exhaustive synthesis briefing for the agent.
+2. **Headless Compilation Run (`wiki.compile.run`):** Triggering **Agent Farm: Compile Wiki Candidates…** from the Command Palette presents all pending candidates. Pressing Enter launches a headless compilation task under `agentFarm.wikiAgent` (default: `developer` or assigned wiki agent).
+3. **Concurrency & Claim Protection:** A running compilation marks its candidates as claimed (`pool.compiling`), preventing parallel runs from compiling the same candidate twice. If a task crashes, stale claims drop automatically after a timeout and revert back to `pending`.
+4. **Synthesis Rules (Vault Constitution):**
+   - **One concept per page:** A concept is never split across multiple pages.
+   - **Contradictions are preserved:** Outdated knowledge is not silently erased; updates are recorded with dated annotations.
+   - **Every fact has provenance:** Footnotes link back to the exact transcript file and turn ordinal.
+5. **Completion Contract:** When the agent finishes synthesis, it calls `wiki.candidates.edit {state:"compiled", pages:[…]}` over the bridge, marking candidates compiled and indexing newly created/updated pages.
+
+### Bridge Operations & Health Auditing
+
+- **`wiki.candidates.add` / `wiki.candidates.list` / `wiki.candidates.edit` / `wiki.candidates.remove`:** Candidate pool CRUD operations.
+- **`wiki.status`:** Reports pool counts (pending, compiling, compiled) and vault wiki topology (root, constitution, indexes, category depths).
+- **`wiki.lint`:** Audits vault wiki integrity (orphan pages, broken `[[wikilinks]]`, unindexed documents).
+- **Settings:** `agentFarm.wikiRoot` (Obsidian wiki path, e.g. `00_AGENT_AREA/00_WIKI`), `agentFarm.wikiAgent` (agent responsible for wiki compilation).
+
 ## Fleet Report
 
 `Agent Farm: Export Fleet Report (Markdown)` — produces the fleet's comparative scorecard as a Markdown file (7/30/90 days). Tailor-made for saving into your Obsidian vault.
@@ -2818,6 +2878,121 @@ Completed phases (all 2026-07-08):
 **What comes next lives in a separate, detailed document:** from the command palette, **Agent Farm: Open Development Plan** — the far-sighted development plan: event triggers, verify steps, the MCP panel, the n8n/webhook bridge, the multimedia production pipeline (a content factory with Kling/Seedance/Nano Banana-class models), smart oversight, multiple machines and the visionary horizon. Coding follows the priority order in that plan.
 
 ## Release Notes
+
+### 3.204.0 — M-23 (X-50): Wiki Compilation Engine and Headless Runs (2026-08-21)
+
+- **Headless Compilation (`wiki.compile.run`):** Independent headless agent execution synthesizing accumulated candidates under the vault's `-WIKI-ANAYASA-.md` rules.
+- **Command Palette Entry:** `Agent Farm: Compile Wiki Candidates…` lists all pending candidate items; starts synthesis in one click.
+- **Concurrency & Claim Protection:** Running compilation claims its candidate entries (`pool.compiling`), preventing duplicate runs on the same topics. Crashed processes release stale claims automatically.
+- **Contract:** Agent calls `wiki.candidates.edit {state:"compiled", pages:[…]}` to finalize compiled entries and record created/updated pages.
+
+### 3.203.0 — K-26 (X-50): 🔖 Wiki Tagger Badge on Turn Rows (2026-08-21)
+
+- **Direct Turn Tagging:** Console prompt lines, transcript turn banners, and the Turns table feature a quiet **🔖** tagger badge.
+- **Popover Picker (`afWiki.js`):** Clicking opens a lightweight popover to select turn ranges (`4`, `3-7`, or full session), existing topic chips, and new topic inputs. Overlapping tags merge cleanly without duplicates.
+
+### 3.202.0 — S-38 (X-50): Session and Timeline Candidate Tagging (2026-08-21)
+
+- **Session Context Menu Picker:** Right-click context menus across the Sessions table, Console cards, and Live Timeline swim lanes feature **Add to Wiki Candidates…**.
+- **Topic Selection & Merging:** Lists existing candidate pool topics as selectable checkboxes with instant new-topic additions.
+
+### 3.201.0 — B-14 (X-50): Wiki Candidate Pool Infrastructure (2026-08-21)
+
+- **Lightweight Candidate Pool (`wiki_candidates.json`):** Zero-friction, fully reversible staging ground touching no vault files upon tagging.
+- **`wiki.compile` Briefing:** Gathers transcripts, resolves turn ranges, analyzes vault constitution and existing pages, providing an exhaustive briefing to the agent.
+- **Bridge & Health:** `wiki.status` reports pool/vault metrics; `wiki.lint` checks orphan and unindexed pages.
+
+### 3.200.0 — M-21: Tasks Header Strip Derived Metrics (2026-08-21)
+
+- **Rich Header Tooltips:** ⚙️ Concurrency ceilings, ⏳ Waiting time distributions, 🛡️ Approval gates, 📅 Schedules, 🏁 Daily success rates, 💵 Cost derivatives explained via rich AFTip panels.
+
+### 3.197.0 — M-26: Interactive Task Targets and Close Policies (2026-08-21)
+
+- **`interactiveTarget`:** `vscode` (integrated terminal), `external` (dedicated OS terminal window / Windows Terminal via `.cmd` wrapper capturing real `%ERRORLEVEL%`), `console` (hosted webview).
+- **`interactiveClose`:** `stay-open` (session remains interactive), `auto-close` (single-turn execution via `claude -p` / `runArgs` that closes surface upon completion).
+
+### 3.196.0 / 3.195.0 — U-81: Session Cards AFTip and Full-Text Tooltips (2026-08-21)
+
+- **Full-Text Tooltip:** First and last prompt lines open up to 4,000 characters in AFTip hover panels; removed duplicate "How it opened" block.
+- **100% Solid Opaque Panels:** Applied `editor.background` and `tip-host` foreground styling to prevent parent transparency inheritance, sized cleanly for 260px cards.
+
+### 3.194.0 — U-82: Host-Backed Clipboard Integration (2026-08-21)
+
+- **Secure Clipboard Bridge:** Routed all **Copy ▸** context menu actions (`media/afCtx.js`) through the extension host (`vscode.env.clipboard`), eliminating webview clipboard permission failures.
+
+### 3.193.0 — U-80: Live Sessions Cards Prompt Truncation (2026-08-21)
+
+- **90-Character Row Truncation:** Live Timeline cards truncate prompt rows to 90 characters to maintain clean grid layout, delegating full text to AFTip hovers.
+
+### 3.192.0 — Interactive In-Webview Task & Retry Guide (2026-08-20)
+
+- **Embedded Modal Guide:** The `?` button on the New Task form opens an interactive architectural guide (S-19 continuity, M-3/M-10 quota windows, M-12 3-prompt steering) without navigating away or losing form state.
+
+### 3.191.0 — M-25: Tasks Plan and Runs Tables AFTip Panels (2026-08-20)
+
+- **Metric Breakdowns:** Plan table Guard wake-up savings, Runs table Tokens/Cost cells, and average per-run costs detailed via rich AFTip panels.
+
+### 3.190.0 — M-24: Saved Prompt Snippets in Task Forms (2026-08-20)
+
+- **Right-Click Snippet Picker:** All prompt inputs across the task form open `media/afSnippets.js` via right-click to paste saved prompt templates directly at the cursor.
+
+### 3.189.0 — M-21: New Task Placement and Runs Tokens Column (2026-08-20)
+
+- **Top Action Bar Placement:** Moved "New task" button from the Runs tab to the top action strip. Added sortable **Tokens** column to the Runs table.
+
+### 3.188.0 — K-28: OpenCode Resume Model Mapping Fix (2026-08-20)
+
+- **Model Option Matching:** Resumed OpenCode sessions match `opencode/big-pickle` formats against the engine's active option list, preventing invalid model rejection.
+
+### 3.187.0 — K-27: Honest Interruption Status Guard (2026-08-20)
+
+- **Accurate State Distinction:** Tool execution failures are no longer falsely marked as user "Stop" interruptions (`last turn interrupted`); truthful outcomes preserved for Antigravity, Codex, and Gemini.
+
+### 3.186.0 — U-75: Antigravity Transcript Merging Integrity (2026-08-20)
+
+- **ID-Based Session Merging:** Resumed Antigravity sessions in the Console no longer overwrite previous turns in the transcript, maintaining complete history across turns.
+
+### 3.185.0 — U-73: Live Timeline Tooltip Anti-Flicker (2026-08-20)
+
+- **Redraw Bridge:** Periodic Live Timeline DOM refreshes preserve floating `tip-free` tooltips under resting pointers without flickering or dismissing.
+
+### 3.184.0 — U-76: Full Text Copy from Timeline (Copy Corpus) (2026-08-20)
+
+- **Direct Transcript Extraction:** Right-click any point or tool block on the timeline → **Copy Corpus** copies full raw transcript text directly to the clipboard (`timeline.corpus`).
+
+### 3.183.0 — U-78: Model Replies on Live Timeline (`say` Event) (2026-08-20)
+
+- **First-Class Assistant Events:** Model replies render as hollow blue rings (`say`), while user prompts remain solid blue circles.
+
+### 3.182.0 — U-74: Hover Yields to Hand (2026-08-20)
+
+- **Input Muting:** AFTip hover panels mute immediately upon click or keystroke. Clickable buttons feature longer (.6s) hover delays to prevent misclicks.
+
+### 3.180.0 — X-49: Queue Routing by Engine, Model, and Effort (2026-08-20)
+
+- **Target Axes:** Added `engine`, `model`, `effort` dimensions to queue capture forms and filter bars.
+
+### 3.175.0 — X-47: Console Window Isolation for Background Processes (2026-08-19)
+
+- **Windows Hide Enforcement:** Enforced `windowsHide: true` on all background `child_process` spawn calls (`test_no_console_flash.js`).
+
+### 3.174.0 — X-48: Backlog Opened and Last Touched Sortings (2026-08-19)
+
+- **Temporal Orderings:** Added `opened` (first written timestamp 🌱) and `last touched` (last worked timestamp ✎) sort modes to Backlog.
+
+### 3.173.0 — S-40: 5-Engine Turns Page (2026-08-19)
+
+- **All Engines in One View:** Unrolls Claude, Gemini, Antigravity (brain log & Console), and OpenCode sessions into single user turns (`turns.list`).
+
+### 3.171.0 — U-69: Fixed Layout and AFTip Cells for Turns Table (2026-08-19)
+
+- **Declared Table Widths:** `<colgroup>` and `table-layout: fixed` lock column proportions. Added **reasoning** breakdown to Steps column.
+
+### 3.168.0 — X-52: OpenCode Model Catalog Warmup (2026-08-19)
+
+- **Background Model Polling:** Proactively scans `opencode models` into `globalState` on startup, populating model pickers before any session is opened.
+
+### 2.21.0 — Task Forecast & Digest Outcomes, Wave 4 (2026-07-11)
 
 ### 2.21.0 — Task Forecast & Digest Results, Wave 4 (2026-07-11)
 
