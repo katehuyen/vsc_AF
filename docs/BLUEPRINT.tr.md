@@ -1487,6 +1487,24 @@ Panel her koşuyu tur tur gösterir — lead'in gerekçesi, delegasyon tablosu (
 
 **Sol paneldeki Missions bölümü (2.63.0)** aynı takibin ağaç hâlidir — Tasks ile Recent Sessions arasında. Her koşu durum/hüküm ikonu, tur sayısı (`R3/8`), harcanan dolar ve yaşıyla listelenir; genişletince turlar ve her turun delegasyonları (durum, maliyet — tıkla → arşivlenmiş çıktı) görünür. Onay bekleyen tur ve lead'in sorusu **eyleme dönük satırlar** olarak en üste düşer: Approve/Reject ve Answer doğrudan satırdan. Satır eylemleri: Pause / Resume / Cancel, **Run again** (aynı hedef-ekip-limitlerle yeni koşu, onaylı) ve **Delete run**. Koşuya tıklamak tam Missions sayfasını açar.
 
+### Klasik ve Adaptif Misyonlar (Classic vs Adaptive)
+
+Misyon motoru iki farklı orkestrasyon modu sunar: **Classic (Klasik)** ve **Adaptive (Adaptif)**. İkisi birbirinin rakibi değil; farklı problem türleri için tasarlanmış iki ayrı çalışma yaklaşımıdır.
+
+| Boyut / Özellik | Klasik Misyon (Classic) | Adaptif Misyon (Adaptive) |
+| :--- | :--- | :--- |
+| **1. Ajanlar Arası Çıktı & İnceleme** | Sıralı `delegate` çağrıları yapar; bir ajanın çıktısı diğer ajanın önüne otomatik bağlanmaz. | `review`, `compare`, `revise` niyetleriyle bir görevin ürettiği çıktı/diff dosyası incelenecek ajanın önüne otomatik serilir. |
+| **2. Eşzamanlılık & Paralel Çalışma** | Her turda tek sıralı delegasyon koşar. | `parallel` eylemiyle bağımsız adımlar aynı turda eşzamanlı dalgalar halinde çalışır. |
+| **3. Hazır İş Akışları (Workflows)** | Önceden tanımlı workflow zincirlerini çağıramaz; her adımı tek tek delege etmek gerekir. | `run_workflow` ile var olan hazır workflow zincirlerini tek adımda koşturup sonucunu devralır. |
+| **4. Hiyerarşik Alt Hedefler** | Tek düz bir döngüdür (flat loop); alt hedef açamaz. | `run_mission` ile derinliği (3 seviye) ve döngüleri kontrol altında tutulan bağımsız alt misyonlar açabilir. |
+| **5. Hata Yönetimi & Esneklik** | Tekil bir ajan hatası tüm misyonu durdurur (ikili sonuç: başarı veya çöküş). | `missionFailure` modeliyle hata 9 sınıfa ayrılır; lider aynı modelle, başka ajanla veya strateji değiştirerek devam edebilir. |
+
+#### Ne Zaman Hangisi Seçilmeli?
+* **Klasik Misyon:** Hedefin ve adımların baştan görece öngörülebilir olduğu, tekil bir uzmanın sırayla yapabileceği, az turlu ve doğrusal görevler için ideal, hafif ve doğrudan bir yöntemdir.
+* **Adaptif Misyon:** Çok adımlı araştırma, kodlama ile eşzamanlı test/inceleme gerektiren, alt iş akışlarına ihtiyaç duyan ve belirsizliğin yüksek olduğu karmaşık projeler için dinamik ve kendini düzelten bir orkestrasyon sağlar.
+
+
+
 ## MCP Yönetimi
 
 Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — artık panelde görünür (0.9.0). Agents ağacında her ajanın **MCP** bölümü:

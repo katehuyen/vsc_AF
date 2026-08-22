@@ -1443,6 +1443,24 @@ The panel shows each run round by round — the lead's reasoning, the delegation
 
 **The Missions section in the sidebar (2.63.0)** is the tree twin of the same tracking — between Tasks and Recent Sessions. Each run is listed with its status/verdict icon, round count (`R3/8`), spent dollars and age; expand it for the rounds and each round's delegations (status, cost — click one to open its archived output). A round awaiting approval and the lead's question surface as **actionable rows** at the top: Approve/Reject and Answer right on the row. Row actions: Pause / Resume / Cancel, **Run again** (a fresh run of the same goal-team-limits, confirmed first) and **Delete run**. Clicking a run opens the full Missions page.
 
+### Classic vs. Adaptive Missions
+
+The mission engine provides two distinct orchestration modes: **Classic** and **Adaptive**. They are not mutually exclusive opposites, but two complementary patterns suited for different types of work.
+
+| Dimension / Capability | Classic Mission | Adaptive Mission |
+| :--- | :--- | :--- |
+| **1. Inter-Agent Artefact & Review** | Issues sequential `delegate` steps; one agent's output is not automatically piped into the next agent's context. | Uses `review`, `compare`, and `revise` intents to automatically pipe real artifact/diff outputs into the reviewer's prompt. |
+| **2. Concurrency & Parallelism** | Runs a single sequential delegation per planning round. | Uses `parallel` actions to dispatch independent tasks across concurrent execution waves in a single round. |
+| **3. Workflow Orchestration** | Cannot invoke pre-existing workflows; must manually delegate each step one by one across rounds. | Uses `run_workflow` to launch existing workflow chains as a single atomic step and inherit their final handoff. |
+| **4. Hierarchical Nested Objectives** | Flat single-level loop; cannot spawn subordinate missions. | Uses `run_mission` to delegate scoped sub-objectives to child missions with depth caps (3 levels) and cycle prevention. |
+| **5. Failure Tolerance & Recovery** | A single downstream task failure halts the entire mission (binary outcome: success or fatal abort). | Classifies failures into 9 distinct classes via `missionFailure`, allowing the lead to retry, switch models/agents, or replan. |
+
+#### When to Choose Which?
+* **Classic Mission:** Best for linear, well-defined tasks where a single specialist or simple sequence is sufficient, offering a lightweight and predictable execution loop.
+* **Adaptive Mission:** Designed for complex, exploratory, or multi-stage initiatives requiring dynamic code reviews, parallel investigation, workflow handoffs, and self-healing error recovery.
+
+
+
 ## MCP Management {#mcp-yonetimi}
 
 Your agents' tool gateways to the outside world — MCP servers — now show up in the panel (0.9.0). Each agent's **MCP** section in the Agents tree:
