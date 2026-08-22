@@ -517,5 +517,54 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         /budgetsUnlimited', false\)\) \{ return \{\}; \}/.test(ext));
 }
 
+
+// ---------- ‼️ THE KEY VS CODE DROPS, AND THE FILE THAT ANSWERS FOR IT ----------
+// Exactly one of the 124 settings this build contributes is missing from the
+// running window's configuration registry — `get()` returns undefined instead
+// of the declared default and `update()` refuses it by name. A setting that
+// vanishes is not a setting, so the reader falls back to the user's own
+// settings.json, which is JSONC: comments, trailing commas, and a `//` inside
+// every path and URL in the file.
+{
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const props = require(path.join(__dirname, '..', 'package.json')).contributes.configuration.properties;
+    const jsonc = [
+        '{',
+        '  // the fleet cap, off while the marathon runs',
+        '  "agentFarm.budgetsUnlimited": true,',
+        '  "http.proxy": "http://example.test//not-a-comment",',
+        '  /* and a block comment */',
+        '  "editor.rulers": [80, 120,],',
+        '}'
+    ].join('\n');
+    const stripped = SO.stripJsonc(jsonc);
+    ok('a comment does not survive the strip', !/the fleet cap/.test(stripped));
+    ok('…but a // inside a string does', /example\.test\/\/not-a-comment/.test(stripped));
+    ok('a trailing comma is dropped so the file parses at all',
+        (() => { try { JSON.parse(stripped); return true; } catch { return false; } })());
+    ok('a comma inside a string is not a trailing comma',
+        JSON.parse(SO.stripJsonc('{"a": "one, two" }')).a === 'one, two');
+
+    ok('the switch is read out of the file the registry lost it from',
+        SO.readFlatSetting(jsonc, 'agentFarm.budgetsUnlimited').value === true);
+    ok('‼️ false is told apart from absent — that is why there is a found flag',
+        JSON.stringify(SO.readFlatSetting('{"agentFarm.budgetsUnlimited": false}', 'agentFarm.budgetsUnlimited'))
+        === '{"found":true,"value":false}'
+        && SO.readFlatSetting(jsonc, 'agentFarm.livePort').found === false);
+    ok('the nested spelling VS Code also accepts is read too',
+        SO.readFlatSetting('{"agentFarm": {"budgetsUnlimited": true}}', 'agentFarm.budgetsUnlimited').value === true);
+    ok('a settings.json somebody broke answers nothing rather than throwing',
+        SO.readFlatSetting('{ not json at all', 'agentFarm.budgetsUnlimited').found === false);
+
+    ok('‼️ the budget door reads through the fallback, not the registry alone',
+        /cfgValue<boolean>\('agentFarm\.budgetsUnlimited', false\)/.test(ext));
+    ok('…and every value the settings page draws comes through the same door',
+        /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw\)/.test(ext));
+    ok('a refusal names the file and the line to paste instead of stopping there',
+        /not a registered configuration/i.test(ext) && /vscodeUserSettingsFile\(\)/.test(ext));
+    ok('…and 0 in a budgets figure is documented as the second way to lift a cap',
+        /A figure of 0 means NO CAP/.test(props['agentFarm.budgets'].description));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

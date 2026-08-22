@@ -93,7 +93,7 @@ import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
 } from './core/claudesettings';
 import {
-    buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile
+    buildSettingsModel, profileApplyPlan, readFlatSetting, SettingsCategory, SettingsProfile
 } from './core/settingsops';
 import { registerSettingsOps } from './core/settingsBridge';
 import { matchTaskSession } from './core/taskcost';
@@ -362,8 +362,58 @@ function cfg() {
  * and the figures the user typed stay in settings untouched, waiting for the
  * switch to come back off.
  */
+/** VS Code's own user settings.json — the file its Settings editor writes. */
+function vscodeUserSettingsFile(): string {
+    if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+            'Code', 'User', 'settings.json');
+    }
+    if (process.platform === 'darwin') {
+        return path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'settings.json');
+    }
+    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+        'Code', 'User', 'settings.json');
+}
+
+/** Re-read only when the file itself moved — `settingsCategories()` asks for
+ *  124 keys in a row and every one of them would otherwise hit the disk. */
+const userSettingsCache = { mtime: -1, text: '' };
+function userSettingsText(): string {
+    try {
+        const f = vscodeUserSettingsFile();
+        const st = fs.statSync(f);
+        if (st.mtimeMs !== userSettingsCache.mtime) {
+            userSettingsCache.mtime = st.mtimeMs;
+            userSettingsCache.text = fs.readFileSync(f, 'utf8');
+        }
+        return userSettingsCache.text;
+    } catch { return ''; }
+}
+
+/**
+ * ONE DOOR for reading an Agent Farm setting: the configuration registry, and
+ * the user's own settings.json when the registry hands back nothing for a key
+ * this build declares. The reasons — and the one key it was measured on — are
+ * in `stripJsonc`'s comment in `core/settingsops.ts`.
+ */
+function cfgValueRaw(key: string): unknown {
+    const v = vscode.workspace.getConfiguration().get(key);
+    if (v !== undefined) { return v; }
+    const hit = readFlatSetting(userSettingsText(), key);
+    return hit.found ? hit.value : undefined;
+}
+
+function cfgValue<T>(key: string, fallback: T): T {
+    const v = cfgValueRaw(key);
+    return v === undefined ? fallback : v as T;
+}
+
 function budgetsNow(): Record<string, number> {
-    if (cfg().get<boolean>('budgetsUnlimited', false)) { return {}; }
+    // ‼️ Through `cfgValue`, not `cfg().get`: this is the key VS Code drops, and
+    // a suspend switch that silently reads `false` is the failure it was written
+    // to prevent. A figure of 0 in `budgets` already means "no cap" on that
+    // agent — the brake tests `> 0` — so `"*": 0` is the second way to lift one.
+    if (cfgValue<boolean>('agentFarm.budgetsUnlimited', false)) { return {}; }
     return cfg().get<Record<string, number>>('budgets', {});
 }
 
@@ -14088,7 +14138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return conf?.properties ?? {};
     };
     const settingsCategories = (): SettingsCategory[] => buildSettingsModel(
-        settingsSchema(), (key) => vscode.workspace.getConfiguration().get(key));
+        settingsSchema(), cfgValueRaw);
     const readClaudeSettings = (): { json: Record<string, unknown>; parseError?: string } => {
         const file = userSettingsPath(claudeDir());
         if (!fs.existsSync(file)) { return { json: {} }; }
@@ -14102,9 +14152,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         categories: settingsCategories,
         writeSetting: async (key, value) => {
-            await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
+            try {
+                await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
+            } catch (e) {
+                const msg = String((e as Error)?.message ?? e);
+                // ‼️ VS Code can refuse a key this build's own manifest declares
+                // (measured on `agentFarm.budgetsUnlimited`). Reading it works —
+                // the reader falls back to the file — so the honest answer is the
+                // line to paste, not a bare refusal that leaves the user stuck.
+                if (/not a registered configuration/i.test(msg)) {
+                    throw new Error(`${msg} This build DOES declare "${key}" — VS Code's `
+                        + `configuration registry dropped it in this window and no extension can put it `
+                        + `back from inside. Reloading the window usually restores it. Until then, add `
+                        + `the line by hand to ${vscodeUserSettingsFile()}:  "${key}": `
+                        + `${JSON.stringify(value ?? null)}  — Agent Farm reads that file whenever the `
+                        + `registry hands back nothing, so the value takes effect with no reload.`);
+                }
+                throw e;
+            }
         },
-        readSetting: (key, fallback) => vscode.workspace.getConfiguration().get(key, fallback),
+        readSetting: (key, fallback) => cfgValue(key.startsWith('agentFarm.') ? key : `agentFarm.${key}`, fallback),
         getProfiles: () => context.globalState.get<SettingsProfile[]>('agentfarm.settingsProfiles', []),
         setProfiles: async (list) => { await context.globalState.update('agentfarm.settingsProfiles', list); },
         applyPlan: (profile) => profileApplyPlan(profile, settingsCategories()),

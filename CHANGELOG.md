@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.232.0 — A setting that vanishes is not a setting (2026-08-22)
+
+### The one key VS Code drops, and the file that answers for it
+`agentFarm.budgetsUnlimited` — the documented switch that suspends every daily
+budget without clearing the figures — could not be written (`settings.set` was
+refused with "is not a registered configuration") and, worse, could not be READ:
+`getConfiguration().get()` handed back `undefined` instead of the declared
+default, so a user who ticked it by hand got no suspension and no explanation.
+
+Measured before touching anything: **exactly one of the 124 settings this build
+contributes is missing from the running window's configuration registry**, and it
+is that one. The manifest is not at fault — the key occurs once, with a valid
+boolean schema, in the installed folder's `package.json`, and the keys either
+side of it in the same object both work. No extension can put a dropped key back
+from inside.
+
+So the READER stopped trusting the registry alone. Every Agent Farm value now
+comes through one door that falls back to the user's own `settings.json` when the
+registry has nothing to say — JSONC-aware, because that file legally carries
+comments, trailing commas and a `//` inside every Windows path and URL in it.
+The fallback is on the read side only: reading a file cannot corrupt it, and
+hand-patching somebody's JSONC is not a risk worth taking for a switch. A write
+VS Code refuses now answers with the file path and the exact line to paste, and
+says the value will take effect without a reload because the reader will find it.
+
+‼️ **And there was already a second way to lift a cap that nobody had written
+down:** the brake tests `> 0`, so **a figure of `0` in `budgets` means NO CAP on
+that name** — `{"*": 0}` lifts the fleet ceiling while every per-agent figure
+stays in force. It is the same "0 = unlimited" word the mission ceilings speak,
+and it goes through a setting that writes fine.
+
 ## 3.231.0 — The ceilings on a mission belong to whoever pays for it (2026-08-22)
 
 ### The arbitrary upper clamps are gone, and `0` means unlimited on every axis

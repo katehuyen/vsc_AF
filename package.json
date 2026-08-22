@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.231.0",
+  "version": "3.232.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9044,7 +9044,7 @@
             "type": "number"
           },
           "default": {},
-          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"agent_one\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded. Tick 'budgetsUnlimited' to suspend every budget without losing the figures."
+          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"agent_one\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded. A figure of 0 means NO CAP on that name, so {\"*\": 0} lifts the fleet ceiling while every per-agent figure stays in force. Tick 'budgetsUnlimited' to suspend every budget at once without losing the figures."
         },
         "agentFarm.budgetsUnlimited": {
           "type": "boolean",

@@ -8,6 +8,77 @@
  * twice: this file only maps keys to groups and validates values.
  */
 
+/**
+ * ‼️ MEASURED — VS CODE CAN DROP ONE KEY ITS OWN MANIFEST DECLARES.
+ *
+ * Exactly one of the 124 settings this build contributes,
+ * `agentFarm.budgetsUnlimited`, is missing from the running window's
+ * configuration registry: `getConfiguration().get()` hands back `undefined`
+ * instead of the declared default `false`, and `update()` refuses it with
+ * "is not a registered configuration". The manifest is not at fault — the key
+ * occurs exactly once, with a valid boolean schema, in the installed folder's
+ * `package.json`, and the keys either side of it in the same object both work.
+ * Whatever the registry did, no extension can argue with it from inside.
+ *
+ * A setting that vanishes is not a setting, so the READER stops trusting the
+ * registry alone: when it hands back nothing, the user's own `settings.json` is
+ * read for that key and the figure they typed is honoured. The fallback is on
+ * the read side only — reading a file cannot corrupt it, and hand-patching a
+ * user's JSONC is not a risk worth taking for a switch.
+ *
+ * `settings.json` is JSONC: comments and trailing commas are legal there, and a
+ * `//` inside a string — every Windows path, every URL in that file — has to
+ * survive the stripping.
+ */
+export function stripJsonc(text: string): string {
+    let out = '';
+    const commas: number[] = [];
+    let inStr = false, esc = false, inLine = false, inBlock = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i], n = text[i + 1];
+        if (inLine) { if (c === '\n') { inLine = false; out += c; } continue; }
+        if (inBlock) { if (c === '*' && n === '/') { inBlock = false; i++; } continue; }
+        if (inStr) {
+            out += c;
+            if (esc) { esc = false; } else if (c === '\\') { esc = true; } else if (c === '"') { inStr = false; }
+            continue;
+        }
+        if (c === '"') { inStr = true; out += c; continue; }
+        if (c === '/' && n === '/') { inLine = true; i++; continue; }
+        if (c === '/' && n === '*') { inBlock = true; i++; continue; }
+        if (c === ',') { commas.push(out.length); }
+        out += c;
+    }
+    // Trailing commas, resolved against the comma positions this pass already
+    // knows are outside a string — a regex over the whole text would eat the
+    // comma in `"one, two"` whenever a `}` happened to follow it.
+    const chars = out.split('');
+    for (const at of commas) {
+        let j = at + 1;
+        while (j < chars.length && /\s/.test(chars[j])) { j++; }
+        if (chars[j] === '}' || chars[j] === ']') { chars[at] = ' '; }
+    }
+    return chars.join('');
+}
+
+/** One key out of a JSONC settings file: flat `a.b` first, then the nested
+ *  spelling VS Code also accepts. `found` distinguishes "set to false" from
+ *  "not there", which is the whole point of reading the file at all. */
+export function readFlatSetting(text: string, key: string): { found: boolean; value?: unknown } {
+    let obj: unknown;
+    try { obj = JSON.parse(stripJsonc(text)); } catch { return { found: false }; }
+    if (!obj || typeof obj !== 'object') { return { found: false }; }
+    const flat = obj as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(flat, key)) { return { found: true, value: flat[key] }; }
+    let cur: unknown = obj;
+    for (const part of key.split('.')) {
+        if (!cur || typeof cur !== 'object'
+            || !Object.prototype.hasOwnProperty.call(cur as object, part)) { return { found: false }; }
+        cur = (cur as Record<string, unknown>)[part];
+    }
+    return { found: true, value: cur };
+}
+
 export interface SettingSpec {
     key: string;                      // full key, e.g. "agentFarm.livePort"
     type: string;                     // schema type: string|number|boolean|array|object
