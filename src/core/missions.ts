@@ -11,6 +11,10 @@ import {
 import {
     MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
 } from './missionTrace';
+import {
+    buildIntentPrompt, intentPrimitive, intentTitle, MissionPrimitive, primitiveFor,
+    primitivesFor, TaskIntent, unknownActionError
+} from './missionPrimitives';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -33,6 +37,14 @@ export type {
     CriterionFinding, CriterionVerdict, EvaluationAdvice, GateResult, MissionEvaluation,
     MissionEvaluator, ParsedEvaluation, StopReason
 } from './missionEvaluation';
+
+export {
+    buildIntentPrompt, intentPrimitive, intentTitle, primitiveFor, primitiveMenu, primitiveNamed,
+    PRIMITIVES, primitivesFor, unknownActionError
+} from './missionPrimitives';
+export type {
+    MissionPrimitive, PrimitiveIntent, PrimitiveName, PrimitiveShape, TaskIntent
+} from './missionPrimitives';
 
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, isAdaptive, missionModeOf, normalizeCriteria,
@@ -237,6 +249,16 @@ export interface MissionStep {
     criteria?: string[];
     /** ‼️ M-17 — this step IS a review, and its output is parsed as one. */
     evaluates?: boolean;
+    /**
+     * ‼️ M-18 — the typed intent this delegation was ordered as, when it was
+     * one. `review`, `compare` and `revise` run down the ordinary task path —
+     * they differ from a plain delegation only in that the ENGINE built the
+     * prompt out of real earlier output, and this is the field that says so.
+     */
+    intent?: TaskIntent;
+    /** the result ids this work was built from — the graph's fan-in for a
+     *  delegation, and the reason a revise can inherit their criteria */
+    sources?: string[];
     taskId?: string;
     status: MissionStepStatus;
     costUSD?: number;
@@ -255,7 +277,8 @@ export interface MissionStep {
  * mechanical authority and nothing here gets a free turn.
  */
 export type MissionAction =
-    'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate';
+    'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate'
+    | 'parallel' | TaskIntent;
 
 export interface MissionRound {
     n: number;
@@ -496,6 +519,25 @@ export interface AdaptiveReflection {
  */
 type PlannerDecisionCore =
     | { action: 'delegate'; thought: string; tasks: PlannerTaskReq[] }
+    /**
+     * ‼️ M-18 — `parallel` IS `delegate` PLUS A CLAIM, not a second execution
+     * route. The claim is that these tasks are independent; the engine still
+     * waves them by the one-writer rule and says so when it had to serialise.
+     * A primitive that could actually overrule that rule would be the bug this
+     * one exists to avoid — two writers in one folder is corruption, not speed.
+     */
+    | { action: 'parallel'; thought: string; tasks: PlannerTaskReq[] }
+    /**
+     * ‼️ M-18 — A TYPED TASK INTENT. `review`, `compare` and `revise` are not
+     * executors: each becomes ONE ordinary delegation whose prompt the engine
+     * builds from the REAL output of the named results. The lead names ids, not
+     * content — so it cannot hand a delegate a paraphrase of work that was
+     * never produced, which is the failure the whole family guards against.
+     */
+    | {
+        action: TaskIntent; thought: string; agent: string; targets: string[];
+        ask: string; title?: string; criteria?: string[];
+    }
     | {
         action: 'finish'; thought: string; verdict: MissionResult['verdict'];
         summary: string; stopReason?: StopReason;
@@ -599,13 +641,14 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
     }
     const done = (d: PlannerDecisionCore): ParseResult =>
         ({ ok: true, decision: reflection ? { ...d, reflection } : d });
-    // ‼️ ADAPTIVE-ONLY, checked before the shared table: a classic lead that
-    // invents "replan" must still get today's "unknown action" error, because
-    // a classic run's behaviour is not allowed to move by one character.
+    // ‼️ M-18 — ONE LOOKUP DECIDES BOTH QUESTIONS. "Is that an action?" and "may
+    // a lead in this mode use it?" have the same answer to the lead, and the
+    // menu in the error is generated from the same list the branches below
+    // dispatch on — so a classic lead inventing "replan" gets exactly today's
+    // message, and a primitive can never be advertised without being parseable.
+    const prim = primitiveFor(action, adaptive);
+    if (!prim) { return { ok: false, error: unknownActionError(action, adaptive) }; }
     if (action === 'replan' || action === 'evaluate') {
-        if (!adaptive) {
-            return { ok: false, error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort)` };
-        }
         if (action === 'replan') { return done({ action: 'replan', thought }); }
         const targets = Array.isArray(o.targets)
             ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 40)
@@ -668,9 +711,42 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
         return done({ action, thought, question });
     }
-    if (action === 'delegate') {
+    // ---- typed task intents: review | compare | revise (M-18) ----
+    if (prim.intent) {
+        const allowed = allowedAgents(spec);
+        const agentRaw = String(o.agent ?? '').trim();
+        const agent = allowed.find(m => m.agentName.toLowerCase() === agentRaw.toLowerCase());
+        if (!agent) {
+            return {
+                ok: false,
+                error: `"${action}" needs an "agent" from the pool — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
+            };
+        }
+        const targets = Array.isArray(o.targets)
+            ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 20)
+            : [];
+        if (targets.length < prim.intent.minTargets) {
+            return {
+                ok: false,
+                error: `"${action}" needs at least ${prim.intent.minTargets} result id(s) in "targets" `
+                    + '— it works on results this run already produced, so name them by the "id" shown with each round result'
+            };
+        }
+        const ask = typeof o.ask === 'string' ? o.ask.trim().slice(0, MAX_PROMPT_CHARS) : '';
+        if (action === 'revise' && !ask) {
+            return { ok: false, error: '"revise" needs an "ask": say exactly what gap the revision must close' };
+        }
+        const crit = readCriteriaIds(o.criteria, spec, `"${action}"`, adaptive);
+        if (!crit.ok) { return { ok: false, error: crit.error }; }
+        return done({
+            action: action as TaskIntent, thought, agent: agent.agentName, targets, ask,
+            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+            ...(crit.ids ? { criteria: crit.ids } : {})
+        });
+    }
+    if (action === 'delegate' || action === 'parallel') {
         if (!Array.isArray(o.tasks) || !o.tasks.length) {
-            return { ok: false, error: '"delegate" needs a non-empty "tasks" array' };
+            return { ok: false, error: `"${action}" needs a non-empty "tasks" array` };
         }
         if (o.tasks.length > MAX_TASKS_PER_ROUND) {
             return { ok: false, error: `too many tasks in one round (max ${MAX_TASKS_PER_ROUND})` };
@@ -700,19 +776,9 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             // ‼️ M-17 — WHICH CRITERIA THIS WORK IS FOR, and a wrong id is
             // refused rather than dropped: a criterion nobody can point at is
             // the one an evaluation will never be told has gone stale.
-            let criteria: string[] | undefined;
-            if (adaptive && Array.isArray(t.criteria)) {
-                const ids = new Set((spec.successCriteria ?? []).map(c => c.id));
-                const named = t.criteria.filter(x => typeof x === 'string').map(x => String(x).trim()).filter(Boolean);
-                const bad = named.find(x => !ids.has(x));
-                if (bad) {
-                    return {
-                        ok: false,
-                        error: `task "${title}" names an unknown criterion "${bad}" — the ids are: ${[...ids].join(', ') || '(none)'}`
-                    };
-                }
-                if (named.length) { criteria = [...new Set(named)]; }
-            }
+            const crit = readCriteriaIds(t.criteria, spec, `task "${title}"`, adaptive);
+            if (!crit.ok) { return { ok: false, error: crit.error }; }
+            const criteria = crit.ids;
             tasks.push({
                 agent, title, prompt,
                 expect: typeof t.expect === 'string' ? t.expect.trim().slice(0, 400) : undefined,
@@ -720,12 +786,32 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
                 ...(criteria ? { criteria } : {})
             });
         }
-        return done({ action, thought, tasks });
+        return done(action === 'parallel'
+            ? { action: 'parallel', thought, tasks }
+            : { action: 'delegate', thought, tasks });
     }
-    return {
-        ok: false,
-        error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort${adaptive ? ' | replan' : ''})`
-    };
+    return { ok: false, error: unknownActionError(action, adaptive) };
+}
+
+/**
+ * ‼️ M-17 — THE CRITERION IDS A PIECE OF WORK SERVES, read the same way
+ * wherever they are named. A wrong id is refused rather than dropped: a
+ * criterion nobody can point at is the one an evaluation will never be told has
+ * gone stale, and that is the mechanism the success gate rests on.
+ */
+function readCriteriaIds(raw: unknown, spec: MissionSpec, label: string, adaptive: boolean):
+    { ok: true; ids?: string[] } | { ok: false; error: string } {
+    if (!adaptive || !Array.isArray(raw)) { return { ok: true }; }
+    const ids = new Set((spec.successCriteria ?? []).map(c => c.id));
+    const named = raw.filter(x => typeof x === 'string').map(x => String(x).trim()).filter(Boolean);
+    const bad = named.find(x => !ids.has(x));
+    if (bad) {
+        return {
+            ok: false,
+            error: `${label} names an unknown criterion "${bad}" — the ids are: ${[...ids].join(', ') || '(none)'}`
+        };
+    }
+    return { ok: true, ...(named.length ? { ids: [...new Set(named)] } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -972,7 +1058,7 @@ ${remLine(rem)}
 Each round you will receive the delegates' results and the updated budget.
 
 ## How to answer
-${ADAPTIVE_DECISION_SCHEMA}`;
+${adaptiveDecisionSchema()}`;
 }
 
 /**
@@ -987,7 +1073,16 @@ ${ADAPTIVE_DECISION_SCHEMA}`;
  * version only when it moved. Asking "has it changed?" would put that judgement
  * in the model, which is the one place it cannot be checked.
  */
-const ADAPTIVE_DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose around it):
+function adaptiveDecisionSchema(): string {
+    const prims = primitivesFor(true);
+    // ‼️ M-18 — THE MENU AND THE PARSER READ THE SAME LIST. What the lead is
+    // offered here is generated from the registry the parser dispatches on, so
+    // a primitive cannot be advertised without being parseable, and one that is
+    // added cannot be forgotten in the prompt — the two ways of drifting apart.
+    const menu = prims.map(p => `"${p.name}"`).join(' | ');
+    const what = prims.map(p => `- "${p.name}" — ${p.describe}`).join('\n');
+    const extraRules = prims.flatMap(p => p.rules ?? []).map(r => `- ${r}`).join('\n');
+    return `Reply with ONLY one JSON object (no prose around it):
 {
   "rationale": "one short sentence, written to be SHOWN to the user: why this decision, now",
   "currentPhase": "your own short label for where this run is (e.g. \\"triage\\", \\"building\\", \\"verifying\\") — an observation, not a stage anyone enforces",
@@ -995,9 +1090,11 @@ const ADAPTIVE_DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose arou
   "changeReason": "only when the strategy above differs from your last one: what made you change it",
   "basedOn": ["ids of the earlier results this decision rests on, from the \\"id\\" shown with each round result"],
   "thought": "one short sentence on your reasoning",
-  "action": "delegate" | "evaluate" | "finish" | "ask_user" | "abort" | "replan",
+  "action": ${menu},
   "tasks": [ { "agent": "<pool agent name>", "title": "...", "prompt": "full self-contained instructions for that agent", "expect": "how to tell it succeeded", "criteria": ["<criterion ids this work is for>"], "readonly": true|false } ],
-  "targets": ["for evaluate: the result ids you are judging"],
+  "agent": "for review/compare/revise: the ONE pool agent that does it",
+  "ask": "for review/compare/revise: what you want looked at, weighed, or fixed",
+  "targets": ["for evaluate and for review/compare/revise: the result ids you mean"],
   "reviewer": "for evaluate: a pool agent to review independently — omit to judge it yourself",
   "findings": [ { "criterion": "<criterion id>", "verdict": "pass" | "fail" | "unknown", "evidence": "what you actually saw", "gap": "what is missing" } ],
   "advice": "for evaluate: finish | revise | replan | explore | ask_user | partial | failed",
@@ -1005,7 +1102,14 @@ const ADAPTIVE_DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose arou
   "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains",
   "stopReason": "for finish/abort: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
 }
+
+What each action is:
+${what}
+
 Rules:
+- "review", "compare" and "revise" work on results this run ALREADY produced: you name the ids in "targets" and the engine attaches the real output to the prompt. Do not paste the work into "ask" — name it.
+- A "revise" is charged to the same criteria as the work it revises, so any pass recorded about the old version goes stale. That is the point of it.
+${extraRules}
 - ‼️ "finish" with "success" is REFUSED unless every REQUIRED criterion has a current PASS on record. A criterion is judged by an "evaluate", never by a delegation finishing — a delegate exiting cleanly says the work RAN, not that the objective is met.
 - An evaluation goes STALE when work for one of the criteria it judged settles after it. Judge again after you change something; a pass about the old version does not open the gate.
 - Use "evaluate" with no "reviewer" to judge from the results you already hold — then the verdict must be in the SAME reply ("findings" + "advice"). Name a "reviewer" from the pool when the judgement should not be your own.
@@ -1021,6 +1125,7 @@ Rules:
 - Never delegate the same prompt to the same agent twice.
 - A delegation that FAILS is evidence, not a verdict on the objective. Retry, revise, replan, skip it, ask the user, or finish honestly as "partial" — decide, and say which in "rationale".
 - Mind the remaining budget; prefer finishing with a partial result over burning it.`;
+}
 
 /**
  * ‼️ M-16 — A FAILED DELEGATION IS EVIDENCE, NOT THE END OF THE MISSION.
@@ -1067,10 +1172,16 @@ export function protocolFor(spec: MissionSpec): MissionProtocol {
 
 /** Compact one-liner per round — the ledger is the resume fallback. */
 export function ledgerLine(round: MissionRound): string {
-    if (round.action === 'delegate') {
+    // ‼️ M-18 — every primitive that RAN TASKS reads the same way in the
+    // ledger, named by what it was. The ledger is the resume fallback: a lead
+    // re-seeded from it has to see that round 3 was a `revise` and not a fresh
+    // delegation, or it will re-order work it already ordered.
+    if (round.action === 'delegate' || round.action === 'parallel'
+        || round.action === 'review' || round.action === 'compare' || round.action === 'revise') {
         const steps = round.steps.map(s =>
             `${s.agentName}:"${s.title}"(${s.status}${s.costUSD !== undefined ? `,$${s.costUSD.toFixed(2)}` : ''})`).join(' · ');
-        return `R${round.n} delegate — ${steps}${round.rejectedReason ? ` [${round.rejectedReason}]` : ''}`;
+        const on = round.steps[0]?.sources?.length ? ` on ${round.steps[0].sources.join(',')}` : '';
+        return `R${round.n} ${round.action}${on} — ${steps}${round.rejectedReason ? ` [${round.rejectedReason}]` : ''}`;
     }
     if (round.action === 'ask_user') {
         return `R${round.n} ask_user — Q: ${round.question?.slice(0, 120) ?? ''} A: ${round.answer?.slice(0, 120) ?? '(pending)'}`;
@@ -1775,9 +1886,58 @@ export class MissionEngine {
                 continue;
             }
 
-            // ---- delegate ----
+            // ---- the work primitives: delegate · parallel · review · compare · revise ----
             const notes: string[] = [];
-            let tasks = d.tasks.filter(t => {
+            // ‼️ M-18 — A TYPED INTENT BECOMES ONE ORDINARY TASK, and the
+            // engine — not the lead — attaches the material. Built here rather
+            // than in the parser because only the RUN knows what an id
+            // produced; and if it knows nothing about one, the lead is told so
+            // rather than a delegate being sent to work on an empty quotation.
+            let requested: PlannerTaskReq[];
+            let intent: TaskIntent | undefined;
+            let sources: string[] | undefined;
+            if (d.action === 'review' || d.action === 'compare' || d.action === 'revise') {
+                const prim = intentPrimitive(d.action) as MissionPrimitive;
+                const all = run.rounds.flatMap(r => r.steps);
+                const known = d.targets
+                    .map(id => all.find(s => s.id === id))
+                    .filter((s): s is MissionStep => !!s);
+                const missing = d.targets.filter(id => !all.some(s => s.id === id));
+                if (missing.length) {
+                    run.ledger.push(`R? ${d.action} rejected — no result with id ${missing.join(', ')}`);
+                    roundMsg = `No result of this run carries the id ${missing.map(m => `"${m}"`).join(', ')}. `
+                        + `The ids you may name are the ones shown with each round's results`
+                        + (all.length ? `: ${all.slice(-8).map(s => s.id).join(', ')}` : ' — and nothing has run yet.')
+                        + '\nName real ids, or choose different work. Reply with ONLY the JSON decision object.';
+                    continue;
+                }
+                intent = d.action;
+                sources = [...d.targets];
+                const material = this.stepResults(known)
+                    .map(r => `### [${r.step.id}] ${r.step.agentName} — "${r.step.title}" (${r.step.status})\n`
+                        + (r.excerpt || '(this step produced no output)'))
+                    .join('\n\n');
+                // ‼️ A REVISE INHERITS THE CRITERIA OF WHAT IT REVISES. Without
+                // it, correcting an artefact would leave the old pass looking
+                // current — the staleness rule can only fire on criteria the
+                // work says it serves, and re-fixing a file plainly serves the
+                // same ones the first attempt did.
+                const inherited = [...new Set(known.flatMap(s => s.criteria ?? []))];
+                const criteria = d.criteria?.length ? d.criteria : inherited;
+                requested = [{
+                    agent: d.agent,
+                    title: d.title || intentTitle(d.action, d.targets),
+                    prompt: buildIntentPrompt(prim, d.ask, material, spec.goal),
+                    readonly: prim.intent!.readonly,
+                    ...(criteria.length ? { criteria } : {})
+                }];
+            } else if (d.action === 'delegate' || d.action === 'parallel') {
+                requested = d.tasks;
+            } else {
+                // unreachable: every other shape returned or continued above
+                requested = [];
+            }
+            let tasks = requested.filter(t => {
                 const key = dupKey(t.agent, t.prompt);
                 if (seenWork.has(key)) {
                     notes.push(`dropped "${t.title}" → ${t.agent}: the same work was already delegated once (planning loop guard)`);
@@ -1820,6 +1980,7 @@ export class MissionEngine {
                     expect: t.expect,
                     readonly: t.readonly,
                     ...(t.criteria ? { criteria: t.criteria } : {}),
+                    ...(intent ? { intent, ...(sources ? { sources } : {}) } : {}),
                     status: 'queued' as MissionStepStatus
                 };
             });
@@ -1838,7 +1999,13 @@ export class MissionEngine {
                     // decision (it is the lead that read several results), so it
                     // is not repeated here — one fact, one place.
                     actor: s.agentId || s.agentName,
-                    parentRefs: this.lastDecisionId ? [this.lastDecisionId] : []
+                    parentRefs: this.lastDecisionId ? [this.lastDecisionId] : [],
+                    // ‼️ M-18 — a typed intent DOES carry its own fan-in, and it
+                    // is the exception the rule above expects: the work was
+                    // built out of named results, so the edge belongs on the
+                    // step rather than only on the decision that ordered it.
+                    ...(s.sources?.length ? { inputRefs: [...s.sources] } : {}),
+                    ...(s.intent ? { intent: s.intent } : {})
                 });
             }
             deps.onUpdate(run);
@@ -1868,6 +2035,18 @@ export class MissionEngine {
 
             run.status = 'running';
             const waves = planWaves(tasks, !!spec.workdir, spec.limits.maxParallel);
+            // ‼️ M-18 — `parallel` IS A CLAIM THE ENGINE MAY REFUSE, out loud.
+            // The one-writer-per-folder rule is not negotiable — two writers in
+            // one working folder is corruption, not speed — so the waves are
+            // planned exactly as for a delegation and the lead is TOLD when its
+            // claim could not be honoured. Silently serialising would leave it
+            // believing a timing it never got.
+            if (d.action === 'parallel' && waves.length > 1) {
+                notes.push(`you asked for these ${tasks.length} tasks in parallel, but they ran in `
+                    + `${waves.length} waves — a working folder takes one writer at a time, and `
+                    + `${tasks.filter(t => !t.readonly).length} of them write. Mark work "readonly": true `
+                    + 'when it does not modify the folder, or split the writing.');
+            }
             let cursor = 0;
             for (let w = 0; w < waves.length; w++) {
                 const steps = round.steps.slice(cursor, cursor + waves[w].length);

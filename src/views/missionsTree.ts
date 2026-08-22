@@ -44,7 +44,9 @@ const ROUND_ICON: Record<MissionRound['action'], string> = {
     // M-16 — a round in which the lead changed its approach and ordered nothing
     replan: 'git-branch',
     // M-17 — a round that judged the criteria rather than doing work
-    evaluate: 'checklist'
+    evaluate: 'checklist',
+    // M-18 — the typed intents: work built out of results the run already has
+    parallel: 'split-horizontal', review: 'eye', compare: 'diff', revise: 'edit'
 };
 
 function themed(icon: string, color?: string): vscode.ThemeIcon {

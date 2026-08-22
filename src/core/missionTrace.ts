@@ -67,6 +67,13 @@ export interface MissionTraceEvent {
     /** stable id of a unit of work the lead set in motion (action.*) */
     actionId?: string;
     kind?: MissionActionKind;
+    /**
+     * ‼️ M-18 — the typed intent a delegation was ordered as (`review` ·
+     * `compare` · `revise`), absent on a plain one. A field rather than a word
+     * inside the title, because a surface that had to read the title to know
+     * what a node is would be reading prose.
+     */
+    intent?: string;
     agentId?: string;
     agentName?: string;
     title?: string;
@@ -262,6 +269,8 @@ export function readTrace(file: string): TraceRead {
 export interface TraceAction {
     actionId: string;
     kind: MissionActionKind;
+    /** the typed intent it was ordered as, when it was one (M-18) */
+    intent?: string;
     agentId?: string;
     agentName?: string;
     title?: string;
@@ -484,6 +493,7 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 const a: TraceAction = {
                     actionId: ev.actionId,
                     kind: ev.kind ?? 'task',
+                    ...(ev.intent ? { intent: ev.intent } : {}),
                     ...(ev.agentId ? { agentId: ev.agentId } : {}),
                     ...(ev.agentName ? { agentName: ev.agentName } : {}),
                     ...(ev.title ? { title: ev.title } : {}),
