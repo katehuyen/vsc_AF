@@ -787,6 +787,44 @@ msgHandler({ data: { type: 'created' } });
             !html().includes('new below'));
     }
 
+    // ‼️ X-85 — WHO SPOKE IS A FACT ABOUT THE PAST, so the RECORD answers it
+    // before the live fleet does. This page kept its own resolver that asked
+    // `message.fromName` and then `DATA.agents`, so a speaker with no stamped
+    // name who had since LEFT the fleet — or whose id was written with a
+    // different case or slash than the folder scan produces — fell back to a
+    // raw folder path on the very surface the name fields were added for.
+    {
+        const gone = JSON.parse(JSON.stringify(A_RUN));
+        // an agent that is no longer in the fleet, speaking with no stamped name
+        gone.roles.push({ agentId: 'D:\\zone\\agent\\ajanlar\\Asistan', agentName: 'asistan', brief: 'files it', boundAt: 2000 });
+        gone.messages.push({
+            id: 'm8', conversationId: 'cv1', from: 'd:/zone/agent/ajanlar/asistan', to: [],
+            intent: 'evidence', refs: [], excerpt: 'The archive already had both.',
+            orderedAt: 2500, settledAt: 2600, state: 'delivered'
+        });
+        // …and one the SPEC knew and nothing else does
+        const goneSpec = JSON.parse(JSON.stringify(A_SPEC));
+        goneSpec.pool.push({ agentId: 'a9', agentName: 'psikolog' });
+        gone.messages.push({
+            id: 'm9', conversationId: 'cv1', from: 'a9', to: [], intent: 'evidence', refs: [],
+            excerpt: 'Nobody asked the third one.', orderedAt: 2700, settledAt: 2800, state: 'delivered'
+        });
+        msgHandler({
+            data: {
+                type: 'data', data: {
+                    ...DATA, specs: [goneSpec, DATA.specs[0]], runs: [gone, RUN],
+                    traces: { run3: A_TRACE }, pending: { questions: [], approvals: [] }
+                }
+            }
+        });
+        ok('‼️ a speaker who has left the fleet is still named from the run\'s own cast',
+            html().includes('>asistan<') && !html().includes('ajanlar/asistan<'));
+        ok('…and the id is matched as a PATH, so case and slashes are not two agents',
+            !html().includes('>D:\\zone\\agent\\ajanlar\\Asistan<'));
+        ok('…the spec\'s pool answers for a member nothing else remembers',
+            html().includes('>psikolog<') && !html().includes('>a9<'));
+    }
+
     wired.cvthread[0]._click();
     ok('…and the exchange folds again on the same row',
         !html().includes('A zero on an engine that states no price is a MISSING price.'));

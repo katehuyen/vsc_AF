@@ -1283,12 +1283,32 @@
      * what survive a rename; a transcript drawn out of them is a wall of
      * folder names nobody reads. `lead` is the objective's own lead.
      */
+    /**
+     * ‼️ X-85 — AND THE RECORD ANSWERS BEFORE THE FLEET DOES, here exactly as it
+     * does on the host (`missionCastName`). This asked `message.fromName` and
+     * then the CURRENT fleet, so a speaker with no stamped name who had since
+     * left the fleet — or whose id was written with a different case or slash —
+     * fell back to a raw folder path on the very surface the name fields were
+     * added for. The run already carries who its cast were AT THE TIME: the
+     * roles the lead bound, the spec's lead, team and pool. Two resolvers that
+     * answer differently are two products, so this one asks in the same order.
+     */
+    const castKey = id => String(id == null ? '' : id).trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
     function speakerName(run, id) {
         if (!id) { return '—'; }
-        if (id === 'lead') { return spec(run).leadAgentName || 'lead'; }
-        const m = (run.messages || []).find(x => x.from === id && x.fromName);
-        if (m) { return m.fromName; }
-        const a = (DATA.agents || []).find(x => x.id === id);
+        const sp = spec(run) || {};
+        if (id === 'lead') { return sp.leadAgentName || 'lead'; }
+        const key = castKey(id);
+        if (!key) { return id; }
+        const named = [
+            ...(run.messages || []).filter(x => castKey(x.from) === key).map(x => x.fromName),
+            ...(run.roles || []).filter(x => castKey(x.agentId) === key).map(x => x.agentName),
+            ...(castKey(sp.leadAgentId) === key ? [sp.leadAgentName] : []),
+            ...(sp.team || []).filter(x => castKey(x.agentId) === key).map(x => x.agentName),
+            ...(sp.pool || []).filter(x => castKey(x.agentId) === key).map(x => x.agentName)
+        ].find(n => String(n || '').trim());
+        if (named) { return named; }
+        const a = (DATA.agents || []).find(x => castKey(x.id) === key);
         return a ? a.name : id;
     }
 

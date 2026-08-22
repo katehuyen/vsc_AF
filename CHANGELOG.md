@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.248.0 - X-85: who spoke is a fact about the past (2026-08-23)
+
+M-19/M-20 added a name beside every id in a mission's cast, because an id on
+this fleet is a folder path and `d:/zone/agent/ajanlar/asistan` is not an answer
+to "who spoke". The resolver's own comment said an agent that has since left
+the fleet is still who spoke — and then asked `agents.find(a => a.id === id)`,
+the CURRENT fleet, and nothing else. So the moment an agent was removed, or its
+id was written with a different case or slash than the folder scan produces,
+the reader was handed the raw path again: the exact failure the name fields
+were added to end, reproduced by the code that was supposed to end it.
+
+A run already carries who its cast were AT THE TIME — the name stamped on each
+message as it was said, the roles the lead bound on this run, and the spec's
+lead, team and pool. Those are asked first, in that order; the live fleet is
+only how the name is spelled TODAY and is asked second; the raw id is the last
+resort it was always meant to be. Ids are compared as PATHS, so case and
+slashes are not two different agents.
+
+‼️ And the page no longer keeps its own answer. `media/missions.js` had a
+second, independent `speakerName` that asked `fromName` then `DATA.agents`, so
+`missions.status` could name a speaker the transcript beside it drew as a
+folder path. Both resolvers now read the same sources in the same order, and
+`test_mission_council.js` measures that they still do.
+
 ## 3.247.0 - X-87/X-86: a record that cannot lie about itself (2026-08-23)
 
 Two doors into the same failure — a mission's history reading as whole when it

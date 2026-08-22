@@ -363,7 +363,36 @@ function castNameTest() {
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('there is exactly ONE cast-name resolver, so two ops cannot disagree',
         (ext.split('const missionCastName = ').length - 1) === 1
-        && (ext.split("agents.find(a => a.id === id)?.name ?? id").length - 1) === 1);
+        && (ext.split("agents.find(a => castKey(a.id) === key)?.name ?? id").length - 1) === 1);
+    // ‼️ X-85 — and it asks the RECORD before it asks the live fleet, or the
+    // comment above it ("an agent that has since left the fleet is still who
+    // spoke") is a wish rather than a behaviour.
+    {
+        const at = ext.indexOf('const missionCastName = ');
+        const body = ext.slice(at, ext.indexOf('const cancelMission = ', at));
+        ok('…and it reads the run\'s own cast — roles, lead, team, pool, stamped names',
+            /r\.roles \?\? \[\]/.test(body) && /spec\?\.team \?\? \[\]/.test(body)
+            && /spec\?\.pool \?\? \[\]/.test(body) && /m\.fromName/.test(body));
+        ok('…before the live fleet, which is only how the name is spelled today',
+            body.indexOf('r.messages ?? []') < body.indexOf('agents.find(a => castKey')
+            && body.indexOf('r.roles ?? []') < body.indexOf('agents.find(a => castKey'));
+        ok('…and an id is a folder path, so case and slashes are normalised',
+            /const castKey = /.test(ext) && /replace\(\/\\\\\/g, '\/'\)/.test(ext));
+
+        // ‼️ X-85 — AND THE PAGE ASKS THE SAME QUESTION IN THE SAME ORDER. The
+        // webview kept a second, independent resolver; a Bridge that answers
+        // "asistan" while the transcript beside it draws a folder path is two
+        // products, and the reader has no way to know which one is lying.
+        const media = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+        const ui = media.slice(media.indexOf('function speakerName('),
+            media.indexOf('function speakerName(') + 1400);
+        const order = (s, keys) => keys.map(k => s.indexOf(k));
+        const rising = (xs) => xs.every((v, i) => v > 0 && (i === 0 || v > xs[i - 1]));
+        ok('the page resolves a speaker from the same sources, in the same order',
+            rising(order(ui, ['run.messages', 'run.roles', 'sp.leadAgentId', 'sp.team', 'sp.pool', 'DATA.agents'])));
+        ok('…and normalises the id the same way the host does',
+            /const castKey = /.test(media) && /castKey\(x\.id\) === key/.test(media));
+    }
     ok('…and the council op uses it rather than keeping its own copy',
         /const nameOf = \(id: string\) => missionCastName\(r, id\);/.test(ext));
     ok('a status conversation says who is in it, not only which paths',

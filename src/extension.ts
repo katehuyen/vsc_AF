@@ -4355,10 +4355,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * about who was in the room. `lead` is a role rather than an agent and
      * resolves through the spec; an id nothing matches falls back to itself,
      * because an agent that has since left the fleet is still who spoke.
+     *
+     * ‼️ X-85 — AND THE RECORD ANSWERS BEFORE THE FLEET DOES. This asked the
+     * CURRENT fleet and nothing else, so the sentence above was a comment
+     * rather than a behaviour: the moment an agent was removed — or its id was
+     * written with a different case or slash than the folder scan produces —
+     * the reader was handed `d:/zone/agent/ajanlar/asistan` again, which is the
+     * exact failure these name fields were added to end. A run already carries
+     * who its cast were AT THE TIME: the spec's lead, team and pool, the
+     * runtime roles the lead bound, and the `fromName` stamped on every message
+     * as it was said. Those are the history; the live fleet is only how the
+     * name is spelled TODAY, and it is asked second. The raw id is the last
+     * resort it was always meant to be.
      */
-    const missionCastName = (r: MissionRun, id: string): string => (id === 'lead'
-        ? (r.specId && missionStore.spec(r.specId)?.leadAgentName) || 'the lead'
-        : agents.find(a => a.id === id)?.name ?? id);
+    /** Ids are folder paths here, so `D:\…\Asistan` and `d:/…/asistan` are one agent. */
+    const castKey = (id: string): string =>
+        String(id ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const missionCastName = (r: MissionRun, id: string): string => {
+        const spec = r.specId ? missionStore.spec(r.specId) : undefined;
+        if (id === 'lead') { return spec?.leadAgentName || 'the lead'; }
+        const key = castKey(id);
+        if (!key) { return id; }
+        // The run's own record of who this was, most direct evidence first: the
+        // name stamped on a message AS IT WAS SAID, then the role the lead bound
+        // on THIS run, then the spec written before it began.
+        const historical: (string | undefined)[] = [
+            ...(r.messages ?? []).filter(m => castKey(m.from) === key).map(m => m.fromName),
+            ...(r.roles ?? []).filter(x => castKey(x.agentId) === key).map(x => x.agentName),
+            ...(spec && castKey(spec.leadAgentId) === key ? [spec.leadAgentName] : []),
+            ...(spec?.team ?? []).filter(x => castKey(x.agentId) === key).map(x => x.agentName),
+            ...(spec?.pool ?? []).filter(x => castKey(x.agentId) === key).map(x => x.agentName)
+        ];
+        const kept = historical.find(n => !!String(n ?? '').trim());
+        if (kept) { return String(kept); }
+        return agents.find(a => castKey(a.id) === key)?.name ?? id;
+    };
 
     const cancelMission = (runId: string): void => {
         const run = missionStore.run(runId);
