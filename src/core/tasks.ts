@@ -3848,14 +3848,24 @@ export class TaskManager implements vscode.Disposable {
      * thing that makes the run findable afterwards. `undefined` means nothing
      * started — an empty chain — rather than a run nobody can name.
      */
-    runWorkflow(w: FarmWorkflow): string | undefined {
+    runWorkflow(w: FarmWorkflow, opts?: { projectId?: string }): string | undefined {
         if (!w.steps.length) { return undefined; }
         const runId = newId();
         this.runCounts.set(runId, 0);
         this.workflowEnds.delete(runId);
+        // ‼️ M-18 — WHOSE WORK THIS CHAIN IS, stated by the caller rather than
+        // inferred from the window. A chain started by a mission is work for
+        // the MISSION's project, and a run that fires an hour after anybody
+        // looked at this window has no current project to borrow — the same
+        // reason a mission's delegations pass their own key.
+        if (opts?.projectId) { this.workflowProjects.set(runId, opts.projectId); }
         this.routeToStep(w, 0, {}, runId);
         return runId;
     }
+
+    /** Set only for a run whose caller named a project; every other run keeps
+     *  inheriting from its own first task, exactly as it did. */
+    private workflowProjects = new Map<string, string>();
 
     /**
      * Why a run ended when the tasks alone cannot say — the loop guard and a
@@ -4121,6 +4131,8 @@ export class TaskManager implements vscode.Disposable {
      * started under, whatever that was, including none.
      */
     private runProject(runId: string): { projectId?: string } {
+        const declared = this.workflowProjects.get(runId);
+        if (declared) { return { projectId: declared }; }
         const first = this.tasks.find(t => t.workflowRunId === runId);
         return first ? { projectId: first.projectId } : {};
     }

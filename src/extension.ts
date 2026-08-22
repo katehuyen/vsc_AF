@@ -3543,7 +3543,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             step.note = 'workflow no longer exists';
                             continue;
                         }
-                        const wRunId = taskManager.runWorkflow(wf);
+                        // The MISSION's project, not the window's — a wave fires
+                        // whenever the planner decides to, and the chain it
+                        // starts is work for the same project the mission is.
+                        const wRunId = taskManager.runWorkflow(wf, { projectId: spec.projectId });
                         if (!wRunId) {
                             step.status = 'failed';
                             step.note = 'the workflow has no steps';

@@ -140,7 +140,21 @@ eq('a failed run is still failed after the reload', reloadedFail.status, 'failed
 ok('…though the REASON is honestly gone rather than invented',
     reloadedFail.reason === undefined && reloadedFail.stoppedAtStep === undefined);
 
-// ---- 5. the tasks outrank the memo ----
+// ---- 5. whose work the chain is ----
+console.log('\n-- ‼️ a chain started FOR a project is that project\'s work, from step 1');
+const w5 = mgr.addWorkflow('W5', [step('one'), step('two')]);
+const r5 = mgr.runWorkflow(w5, { projectId: 'prj_x' });
+const first5 = queued(mgr, w5.id, 0);
+eq('the first step already carries it — not inherited from a task that does not exist yet',
+    first5.projectId, 'prj_x');
+completeWith(mgr, first5, 'A');
+eq('and so does the next one', queued(mgr, w5.id, 1).projectId, 'prj_x');
+const w6 = mgr.addWorkflow('W6', [step('one')]);
+mgr.runWorkflow(w6);
+ok('a chain nobody stamped is left exactly as it was',
+    queued(mgr, w6.id, 0).projectId === undefined);
+
+// ---- 6. the tasks outrank the memo ----
 console.log('\n-- a resumed chain is running again, whatever an earlier ending said');
 const w3 = mgr.addWorkflow('W3', [step('one'), step('two')]);
 const r3 = mgr.runWorkflow(w3);

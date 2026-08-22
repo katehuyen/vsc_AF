@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.219.1 — M-18: a workflow started by a mission is that mission's project's work (2026-08-22)
+
+A chain inherited its project from **its own first task**, which for a chain nobody stamped meant the window's current project. That is right for a workflow somebody ran by hand and wrong for one a mission started: a wave fires whenever the planner decides to, possibly an hour after anybody looked at this window, and the work belongs to the project the mission is for — the same reason a mission's delegations already pass their own key rather than asking the window. `runWorkflow` now takes the project explicitly, and it lands on **step 1**, not from step 2 onwards. A chain nobody stamped is left exactly as it was.
+
 ## 3.219.0 — M-18 (X-32): an objective can hand a piece of itself to a child run (2026-08-22)
 
 **`run_mission` is for work that needs its own planning.** A delegation is one prompt to one agent; some pieces of an objective are not that shape — they need a lead of their own, several rounds and a verdict at the end. The lead names an outcome and what would count as reaching it, and gets back a **verdict**, not an output. A child objective with no criteria is refused by name and told to delegate instead: the only reason to spend a whole run on something is that it comes back judged, and a verdict needs a subject.
