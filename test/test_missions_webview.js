@@ -140,7 +140,8 @@ const sandbox = {
                                     : sel === '[data-cvthread]' ? { attr: 'data-cvthread', key: 'cvthread' }
                                         : sel === '[data-cvjump]' ? { attr: 'data-cvjump', key: 'cvjump' }
                                             : sel === '[data-cvall]' ? { attr: 'data-cvall', key: 'cvall' }
-                                                : null;
+                                                : sel === '[data-cvend]' ? { attr: 'data-cvend', key: 'cvend' }
+                                                    : null;
             if (!spec) { return []; }
             const re = new RegExp(`${spec.attr}="([^"]*)"`, 'g');
             let m;
@@ -727,6 +728,64 @@ msgHandler({ data: { type: 'created' } });
     wired.cvjump[0]._click();
     ok('a ref marks the message it points at, so a reader can follow the thread',
         html().includes('cvmsg marked'));
+
+    // ‼️ U-65 — A LIVE REPAINT MUST NOT TAKE THE READER'S PLACE AWAY.
+    //
+    // This page redraws once a second while a mission runs, and the transcript
+    // is a READING surface: a box that jumped back to its first line every
+    // second would not be a redraw, it would be an interruption. There are two
+    // readers here and they want opposite things — one FOLLOWING the exchange,
+    // who wants each new turn as it lands, and one reading further up, whose
+    // place must be kept and who is told what arrived in a count.
+    {
+        const box = getEl('cv-scroll');
+        // the reader has gone back up: 120px into a 900px transcript
+        box.scrollTop = 120; box.clientHeight = 400; box.scrollHeight = 900;
+        send();
+        ok('‼️ a reader who scrolled up keeps the exact line they were on',
+            getEl('cv-scroll').scrollTop === 120);
+        ok('…and the accordion it lives in is still open',
+            html().includes('A zero on an engine that states no price is a MISSING price.'));
+
+        // a new turn lands while they are still up there
+        const live = JSON.parse(JSON.stringify(A_RUN));
+        const sendLive = () => msgHandler({
+            data: {
+                type: 'data', data: {
+                    ...DATA, specs: [A_SPEC, DATA.specs[0]], runs: [live, RUN],
+                    traces: { run3: A_TRACE }, pending: { questions: [], approvals: [] }
+                }
+            }
+        });
+        live.messages.push({
+            id: 'm7', conversationId: 'cv1', from: 'a2', fromName: 'basit', to: [],
+            intent: 'evidence', refs: [], excerpt: 'Measured on run2: the same line meant both things.',
+            orderedAt: 2300, settledAt: 2400, state: 'delivered'
+        });
+        getEl('cv-scroll').scrollTop = 120;
+        getEl('cv-scroll').clientHeight = 400;
+        getEl('cv-scroll').scrollHeight = 900;
+        sendLive();
+        ok('‼️ …and is TOLD what arrived rather than being moved to it',
+            html().includes('new below'));
+        ok('…their place is still theirs', getEl('cv-scroll').scrollTop === 120);
+
+        // pressing the count is how they choose to go there
+        wired.cvend[0]._click();
+        ok('…and pressing it follows the exchange down',
+            getEl('cv-scroll').scrollTop === getEl('cv-scroll').scrollHeight);
+        ok('…so the count is spent', !html().includes('new below'));
+
+        // the other reader: at the bottom, following it live
+        getEl('cv-scroll').scrollTop = 500;
+        getEl('cv-scroll').clientHeight = 400;
+        getEl('cv-scroll').scrollHeight = 900;
+        sendLive();
+        ok('‼️ a reader who was following it rides down with the new turn',
+            getEl('cv-scroll').scrollTop === 900);
+        ok('…and is never shown a count for something already on their screen',
+            !html().includes('new below'));
+    }
 
     wired.cvthread[0]._click();
     ok('…and the exchange folds again on the same row',

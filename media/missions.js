@@ -74,6 +74,20 @@
      *  in one screen, not a memory limit. */
     const CONV_COMPACT = 25;
     let convAll = false;
+    /**
+     * ‼️ U-65 — THE READING POSITION IS STATE, and this page repaints ONCE A
+     * SECOND while a mission runs. A transcript that jumped back to its first
+     * line every second would not be a redraw, it would be an interruption —
+     * the same one AFTip had to solve for its panel.
+     *
+     * `convAtEnd` is the difference between the two readers this surface has:
+     * one FOLLOWING a live exchange, who wants each new turn as it lands, and
+     * one READING an earlier part of it, whose place must not be taken away.
+     * A new turn moves the first one down and shows the second one a count.
+     */
+    let convScroll = 0;
+    let convAtEnd = true;
+    let convSeen = 0;
     const guideNote = {};             // runId → what the host said about the last steer
     let expandedStep = null;          // step id opened in the accordion (one at a time)
     let tail = { file: '', text: '', size: 0, missing: false };
@@ -1379,6 +1393,11 @@
             const lost = msgs.filter(m => m.state === 'failed' || m.state === 'cancelled').length;
             const open = openRefs(msgs);
             const isOpen = convThread === c.id;
+            // ‼️ U-65 — what arrived while the reader was somewhere else. Only
+            // ever shown to a reader who is NOT following the bottom: telling
+            // someone who can already see the new turn that it is new is noise.
+            const unseen = isOpen && !convAtEnd ? Math.max(0, msgs.length - convSeen) : 0;
+            if (isOpen && convAtEnd) { convSeen = msgs.length; }
             const byId = {};
             msgs.forEach(m => { byId[m.id] = m; });
             const shown = convOnlyOpen ? msgs.filter(m => open.some(o => o.id === m.id)) : msgs;
@@ -1423,7 +1442,10 @@
                     <span class="mchip ${k && k.exit ? 'ok' : c.closedAt ? 'ok' : 'live'}">${
                         k && k.exit ? C.esc(k.exit) : c.closedAt ? C.esc(c.closeReason || 'closed') : 'open'}</span>
                 </div>`, (k ? 'Council ' + k.id : 'Conversation ' + c.id), headTip, 'cvroww')}
-                ${isOpen ? `<div class="cvmsgs">
+                ${isOpen ? `<div class="cvmsgs" id="cv-scroll">
+                    ${unseen ? `<div class="cvnew" data-cvend="1"
+                        title="${C.esc(unseen + ' turn(s) arrived while you were reading further up — your place was kept')}"
+                        >${unseen} new below ↓</div>` : ''}
                     ${drawn.length ? '' : '<div class="muted small">Nothing matches this filter.</div>'}
                     ${big && !convAll ? `<div class="cvmore" data-cvall="1"
                         title="${C.esc(shown.length + ' messages — the newest ' + CONV_COMPACT + ' are drawn; the rest are one click away')}"
@@ -1629,6 +1651,14 @@
     }
 
     function render() {
+        // ‼️ U-65 — read the transcript's place BEFORE the markup that holds it
+        // is thrown away. Nothing else on this page can be scrolled away from
+        // and still be the thing you were doing.
+        const cvWas = document.getElementById('cv-scroll');
+        if (cvWas && typeof cvWas.scrollTop === 'number') {
+            convScroll = cvWas.scrollTop;
+            convAtEnd = cvWas.scrollTop + (cvWas.clientHeight || 0) >= (cvWas.scrollHeight || 0) - 8;
+        }
         // after Start: the freshly created run (newest row) opens itself once
         if (openNewest && DATA.runs.length) {
             openNewest = false;
@@ -1811,8 +1841,11 @@
                 /* the transcript: a reading surface, so it scrolls on its own
                    and the row above it stays put while the reader moves */
                 .cvmsgs { max-height:420px; overflow:auto; padding:2px 0 6px 20px; }
-                .cvmore { font-size:11px; padding:3px 0; cursor:pointer; opacity:.8;
+                .cvmore, .cvnew { font-size:11px; padding:3px 0; cursor:pointer; opacity:.8;
                     color:var(--vscode-textLink-foreground); }
+                .cvnew { position:sticky; top:0; z-index:2; opacity:1; font-weight:600;
+                    background:var(--vscode-editor-background); padding:3px 6px; border-radius:4px; }
+                .cvnew:hover { text-decoration:underline; }
                 .cvmore:hover { text-decoration:underline; }
                 .cvmsg { padding:4px 0 5px; border-bottom:1px dotted var(--vscode-widget-border, #242424); }
                 .cvmsg:last-child { border-bottom:none; }
@@ -1875,6 +1908,13 @@
             ${listHtml()}
         `;
 
+        // ‼️ U-65 — and put it back. A reader who was following the exchange
+        // rides down with the new turn; a reader who had gone back up keeps
+        // exactly the line they were on and is told, in a count, what arrived.
+        const cvNow = document.getElementById('cv-scroll');
+        if (cvNow && typeof cvNow.scrollTop === 'number') {
+            cvNow.scrollTop = convAtEnd ? (cvNow.scrollHeight || 0) : convScroll;
+        }
         window.AFHeader.wire(vscode);
         const wire = (id, fn) => {
             const el = document.getElementById(id);
@@ -2045,6 +2085,17 @@
                 convThread = convThread === id ? null : id;
                 convAll = false;
                 convMark = null;
+                render();
+            }));
+        document.querySelectorAll('[data-cvend]').forEach(el =>
+            el.addEventListener('click', ev => {
+                if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                // Pressing the count is the reader CHOOSING to go there, so the
+                // box is moved for real: the next capture then agrees with the
+                // intent instead of reading the place they just left.
+                const box = document.getElementById("cv-scroll");
+                if (box && typeof box.scrollTop === "number") { box.scrollTop = box.scrollHeight || 0; }
+                convAtEnd = true;
                 render();
             }));
         document.querySelectorAll('[data-cvall]').forEach(el =>

@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.243.0 — U-65: a live repaint does not take the reader's place (2026-08-23)
+
+The Missions page redraws once a second while a mission runs, and the
+conversation room is a READING surface. A transcript that jumped back to its
+first line every second would not be a redraw, it would be an interruption —
+the same failure `afTip` had to solve for its own panel.
+
+‼️ There are two readers here and they want opposite things. One is FOLLOWING a
+live exchange and wants each new turn as it lands; one is reading further up,
+and their place must not be taken away. So the reading position is captured
+before the markup that holds it is thrown away and put back after: a reader at
+the bottom rides down with the new turn, a reader further up keeps the exact
+line they were on and is TOLD what arrived — `N new below ↓`, sticky at the top
+of the transcript. Pressing it is how they choose to go there, and the count is
+spent. A reader who can already see the new turn is never shown a count for it.
+
+Measured, not asserted: a scrolled-up reader's `scrollTop` survives a data
+refresh with the accordion still open, a turn arriving while they are up there
+produces the count and moves nothing, pressing the count lands at the end and
+clears it, and a reader at the bottom follows the exchange down with no count
+at all.
+
 ## 3.242.0 — U-65: the conversation is a room you can read (2026-08-23)
 
 ### The summary answered "did they talk"
