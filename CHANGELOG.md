@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.251.0 - X-79: a substring is not a vote, and a member is not two people (2026-08-23)
+
+`readVoteChoice` looked for the longest option that appeared ANYWHERE in the
+text as a substring. That answered confidently for three kinds of turn that had
+chosen nothing: one that weighed BOTH options ("fragments read better, but the
+single file is easier to ship"), one that named an option in order to REJECT it
+("I would not pick fragments"), and one where the option was part of another
+word (`file` inside `profile`). A tally built on any of those is the M-19
+failure with numbers on it.
+
+A vote is now read exactly or it is `unclear`. The structured line the brief
+already asks for wins first (`Vote: X`, `I vote X`); failing that, whole-word
+matches over the whole text, and the answer stands only when EXACTLY ONE option
+is named and it is not being refused. A longer option still beats one contained
+in it — `single file` and `file` on the same six words is one naming, not two.
+Options are a SET: trimmed, blanks dropped, unique by casefold, at the parse
+boundary, so a council cannot split its own vote between two spellings.
+
+And a member is one ballot. Every vote message became another `CouncilVote`, so
+the same member counted twice — on a three-member council, one agent
+out-voting the other two by talking. A later vote is kept in the record and
+marked `superseded`, out of the arithmetic; the first stands, because changing a
+vote is a real thing a council might want and it needs a stated intent rather
+than a second message that happens to look like one. ‼️ `tallyVotes` also
+enforces it while READING, not only while writing: the in-memory planning-loop
+guard blocks a repeat within one window, but it is gone after a reload and the
+stored votes are re-tallied from disk.
+
 ## 3.250.0 - X-75: an unknown fate is not a licence to repeat (2026-08-23)
 
 Two failure classes say, in their own words, that the work MAY HAVE RUN and

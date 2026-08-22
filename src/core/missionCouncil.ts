@@ -82,6 +82,13 @@ export interface CouncilVote {
     choice?: string;
     /** it voted, but named no option — the record says so rather than choosing */
     unclear?: boolean;
+    /**
+     * ‼️ X-79 — this member had already voted, so this turn is NOT their ballot.
+     * Kept whole, because a council's record is what was said and a vote that
+     * vanished from it could never be explained; out of the tally, because one
+     * member counted twice is a council with an extra person in it.
+     */
+    superseded?: boolean;
 }
 
 export interface MissionCouncil {
@@ -205,13 +212,86 @@ export function refuseCouncilTurn(
 }
 
 /** The option this turn named, from the council's own list — or nothing. */
+/**
+ * ‼️ X-79 — THE OPTIONS ARE A SET, NOT A LIST OF STRINGS.
+ *
+ * Trimmed, blanks dropped, and unique by CASEFOLD: `["Fragments", "fragments"]`
+ * is one option written twice, and letting it through would split a council's
+ * own vote between two spellings of the same answer.
+ */
+export function normalizeOptions(options: readonly string[] | undefined): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of options ?? []) {
+        const o = String(raw ?? '').trim();
+        if (!o) { continue; }
+        const key = o.toLowerCase();
+        if (seen.has(key)) { continue; }
+        seen.add(key);
+        out.push(o);
+    }
+    return out;
+}
+
+/** A word-boundary match: `file` does not match inside `profile` or `filed`. */
+const namesOption = (hay: string, option: string): boolean => {
+    const esc = option.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${esc}([^\\p{L}\\p{N}]|$)`, 'u').test(hay);
+};
+
+/** Words that turn "X" into "not X" when they sit just in front of it. */
+const NEGATION = /\b(not|no|never|n't|rather than|instead of|against|reject|oppose|avoid)\b[^.;!?]{0,24}$/;
+
+/**
+ * ‼️ X-79 — A VOTE IS READ EXACTLY OR IT IS UNCLEAR.
+ *
+ * This looked for the longest option that appeared ANYWHERE in the text as a
+ * substring, which produced a confident answer for three kinds of turn that had
+ * not chosen anything: one that weighed BOTH options ("fragments read better
+ * but the single file is easier to ship"), one that named an option in order to
+ * REJECT it ("not fragments"), and one where the option happened to be part of
+ * another word (`file` inside `profile`). A tally built on any of those is the
+ * M-19 failure with numbers on it.
+ *
+ * So: a STRUCTURED line wins first — `vote: X`, `choice: X`, `I vote X` — which
+ * is what the brief asks the speaker for. Failing that, whole-word matches over
+ * the whole text, and the answer stands only when EXACTLY ONE option is named
+ * and it is not being refused. Zero matches, two matches, or a negated one are
+ * all `undefined`, which the record keeps as `unclear` rather than resolving
+ * into the likeliest guess.
+ */
 export function readVoteChoice(text: string, options: readonly string[]): string | undefined {
-    const hay = (text || '').toLowerCase();
-    // Longest first, so "single file" is not matched as "file" when both are on
-    // offer — a shorter option contained in a longer one would otherwise decide
-    // the vote by accident of wording.
-    const ranked = [...options].sort((a, b) => b.length - a.length);
-    return ranked.find(o => o.trim() && hay.includes(o.trim().toLowerCase()));
+    const opts = normalizeOptions(options);
+    if (!opts.length) { return undefined; }
+    const body = String(text || '');
+    const hay = body.toLowerCase();
+
+    const ranked = [...opts].sort((a, b) => b.length - a.length);
+    /**
+     * Which options this text names — with the longest winning over any option
+     * CONTAINED in it, because `single file` and `file` on the same six words
+     * are one naming written once, not two competing ones. Two options that do
+     * not contain each other really are two, and that is ambiguity.
+     */
+    const namedIn = (s: string): string[] => {
+        const hit = ranked.filter(o => namesOption(s, o));
+        return hit.filter(o => !hit.some(other =>
+            other !== o && other.toLowerCase().includes(o.toLowerCase())));
+    };
+
+    // 1. The structured statement the speaker was asked for.
+    const declared = /(?:^|\n)\s*(?:my\s+)?(?:final\s+)?(?:vote|choice|i\s+vote|i\s+choose|i\s+pick)\s*[:\-–—]?\s*(.{1,120})/i
+        .exec(body);
+    if (declared) {
+        const named = namedIn(declared[1].toLowerCase());
+        if (named.length === 1) { return named[0]; }
+    }
+
+    // 2. Otherwise the whole text, and only an unambiguous, unrefused naming.
+    const named = namedIn(hay);
+    if (named.length !== 1) { return undefined; }
+    const at = hay.search(new RegExp(named[0].toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    return at >= 0 && NEGATION.test(hay.slice(0, at)) ? undefined : named[0];
 }
 
 export interface CouncilTally {
@@ -233,7 +313,17 @@ export interface CouncilTally {
 export function tallyVotes(council: MissionCouncil): CouncilTally {
     const counts: Record<string, number> = {};
     let unclear = 0;
+    // ‼️ X-79 — ONE BALLOT PER MEMBER. A vote is a message, and a member that
+    // spoke `vote` twice was counted twice: on a three-member council one agent
+    // could out-vote the other two by talking. A superseded turn stays in the
+    // record and out of the arithmetic. The tally is also read back off a
+    // stored run, so it never trusts the writer to have marked them — a second
+    // ballot from the same member is not counted here either.
+    const counted = new Set<string>();
     for (const v of council.votes ?? []) {
+        if (v.superseded) { continue; }
+        if (v.member && counted.has(v.member)) { continue; }
+        if (v.member) { counted.add(v.member); }
         if (v.choice) { counts[v.choice] = (counts[v.choice] ?? 0) + 1; }
         else { unclear++; }
     }
@@ -241,7 +331,9 @@ export function tallyVotes(council: MissionCouncil): CouncilTally {
     const top = ranked[0];
     const tie = ranked.length > 1 && ranked[1][1] === top[1];
     return {
-        counts, unclear, total: (council.votes ?? []).length,
+        // `total` is BALLOTS, not messages — a superseded turn is neither a
+        // vote for something nor an unclear one; it is not a ballot at all.
+        counts, unclear, total: Object.values(counts).reduce((a, b) => a + b, 0) + unclear,
         ...(top && !tie ? { leader: top[0] } : {}),
         tie
     };

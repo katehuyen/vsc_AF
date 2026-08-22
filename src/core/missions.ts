@@ -24,7 +24,7 @@ import {
 } from './missionConversation';
 import {
     councilBrief, councilDigest, councilExit, councilOf, MissionCouncil, newCouncilId,
-    readVoteChoice, refuseCouncilTurn
+    normalizeOptions, readVoteChoice, refuseCouncilTurn
 } from './missionCouncil';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
@@ -77,7 +77,8 @@ export type {
 
 export {
     chairCall, COUNCIL_EXIT_NAMES, COUNCIL_EXITS, councilBrief, councilDigest, councilExit,
-    councilExitMenu, councilOf, councilTurns, newCouncilId, readVoteChoice, refuseCouncilTurn,
+    councilExitMenu, councilOf, councilTurns, newCouncilId, normalizeOptions, readVoteChoice,
+    refuseCouncilTurn,
     tallyVotes
 } from './missionCouncil';
 export type { CouncilExit, CouncilTally, CouncilVote, MissionCouncil } from './missionCouncil';
@@ -1402,7 +1403,11 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         const wanted = Number(o.maxTurns);
         const maxTurns = Number.isFinite(wanted) && wanted > 0
             ? Math.min(40, Math.max(2, Math.floor(wanted))) : 8;
-        const options = list(o.options).slice(0, 6).map(s => s.slice(0, 80));
+        // ‼️ X-79 — the options are a SET: trimmed, blanks dropped, unique by
+        // casefold. "Fragments" and "fragments" are one answer written twice,
+        // and letting both through splits the council's own vote between two
+        // spellings of it.
+        const options = normalizeOptions(list(o.options).map(s => s.slice(0, 80))).slice(0, 6);
         return done({
             action: 'council', thought, question, members, chair,
             from: speakerIds, intent: intent as MessageIntent, maxTurns,
@@ -3176,10 +3181,24 @@ export class MissionEngine {
                     if (msg.intent === 'vote' && council.options?.length) {
                         council.votes ??= [];
                         if (!council.votes.some(v => v.messageId === msg.id)) {
+                            // ‼️ X-79 — ONE BALLOT PER MEMBER. Every vote message
+                            // used to become another `CouncilVote`, so a member
+                            // that spoke `vote` twice — trivially easy once a
+                            // few turns have gone by — counted as two people. A
+                            // later turn is kept in the record (a council's
+                            // history is what was said) and marked superseded,
+                            // so it is out of the arithmetic and still readable.
+                            // The FIRST ballot stands: changing a vote is a real
+                            // thing a council might want, but it needs a stated
+                            // intent rather than a second message that happens
+                            // to look like one.
+                            const already = council.votes.some(
+                                v => v.member === msg.from && !v.superseded);
                             const choice = readVoteChoice(text, council.options);
                             council.votes.push({
                                 messageId: msg.id, member: msg.from,
-                                ...(choice ? { choice } : { unclear: true })
+                                ...(choice ? { choice } : { unclear: true }),
+                                ...(already ? { superseded: true } : {})
                             });
                         }
                     }

@@ -161,6 +161,56 @@ const FINISH = {
     ] });
     ok('‼️ a TIE is a result and is reported as one', tied.tie);
     eq('…with no leader invented at the moment there is none', tied.leader, undefined);
+
+    // ‼️ X-79 — A SUBSTRING IS NOT A VOTE, AND A MEMBER IS NOT TWO PEOPLE.
+    // The choice was the longest option appearing ANYWHERE in the text, which
+    // answered confidently for three kinds of turn that had chosen nothing.
+    console.log('\n-- ‼️ X-79 a vote is read exactly, or it is unclear');
+    eq('a turn that weighs BOTH options has not voted for either',
+        M.readVoteChoice('fragments read better, but the single file is easier to ship.', opts),
+        undefined);
+    eq('a turn that names an option to REJECT it has not voted for it',
+        M.readVoteChoice('I would not pick fragments.', opts), undefined);
+    eq('…nor "rather than", which is the same sentence the other way round',
+        M.readVoteChoice('Anything rather than fragments.', opts), undefined);
+    eq('an option that is part of another WORD does not decide the vote',
+        M.readVoteChoice('It is in my profile already.', ['file', 'stream']), undefined);
+    eq('‼️ the structured line the brief asks for is read first, whatever else is said',
+        M.readVoteChoice('fragments are tempting.\nVote: single file', opts), 'single file');
+    eq('…and "I vote X" is the same statement',
+        M.readVoteChoice('I vote fragments', opts), 'fragments');
+    eq('a plain, unambiguous naming still counts',
+        M.readVoteChoice('single file, for the reasons basit gave.', opts), 'single file');
+
+    // the options are a SET — one answer written in two cases is one option
+    eq('duplicate options differing only in case collapse to one',
+        M.normalizeOptions([' Fragments ', 'fragments', '', 'single file']).join('|'),
+        'Fragments|single file');
+    eq('…and a vote for it is read against the surviving spelling',
+        M.readVoteChoice('fragments', M.normalizeOptions(['Fragments', 'fragments'])), 'Fragments');
+
+    // one member, one ballot — a vote is a message and a member could speak twice
+    const twice = M.tallyVotes({
+        ...k, votes: [
+            { messageId: 'm1', member: 'a1', choice: 'fragments' },
+            { messageId: 'm2', member: 'a2', choice: 'single file' },
+            { messageId: 'm3', member: 'a1', choice: 'fragments', superseded: true }
+        ]
+    });
+    eq('‼️ a superseded turn is in the record and out of the arithmetic',
+        twice.counts.fragments, 1);
+    ok('…so a member that spoke twice cannot out-vote the rest', twice.tie);
+    eq('…and the total counts BALLOTS, not messages', twice.total, 2);
+    const unmarked = M.tallyVotes({
+        ...k, votes: [
+            { messageId: 'm1', member: 'a1', choice: 'fragments' },
+            { messageId: 'm2', member: 'a1', choice: 'fragments' },
+            { messageId: 'm3', member: 'a2', choice: 'single file' }
+        ]
+    });
+    eq('‼️ …and a stored run whose second ballot was never marked is counted once too',
+        unmarked.counts.fragments, 1);
+    ok('…which is what makes the tally safe to re-read after a reload', unmarked.tie);
 }
 
 // ======================================= 4. the engine: opening one for real
