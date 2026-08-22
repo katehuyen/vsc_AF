@@ -1445,19 +1445,39 @@ The panel shows each run round by round — the lead's reasoning, the delegation
 
 ### Classic vs. Adaptive Missions
 
-The mission engine provides two distinct orchestration modes: **Classic** and **Adaptive**. They are not mutually exclusive opposites, but two complementary patterns suited for different types of work.
+The mission engine provides two core orchestration modes: **Classic** and **Adaptive**. These are not mutually exclusive or a "good vs. bad" dichotomy; they represent two distinct architectural philosophies tailored for different problem types, complexity levels, and execution dynamics.
 
-| Dimension / Capability | Classic Mission | Adaptive Mission |
-| :--- | :--- | :--- |
-| **1. Inter-Agent Artefact & Review** | Issues sequential `delegate` steps; one agent's output is not automatically piped into the next agent's context. | Uses `review`, `compare`, and `revise` intents to automatically pipe real artifact/diff outputs into the reviewer's prompt. |
-| **2. Concurrency & Parallelism** | Runs a single sequential delegation per planning round. | Uses `parallel` actions to dispatch independent tasks across concurrent execution waves in a single round. |
-| **3. Workflow Orchestration** | Cannot invoke pre-existing workflows; must manually delegate each step one by one across rounds. | Uses `run_workflow` to launch existing workflow chains as a single atomic step and inherit their final handoff. |
-| **4. Hierarchical Nested Objectives** | Flat single-level loop; cannot spawn subordinate missions. | Uses `run_mission` to delegate scoped sub-objectives to child missions with depth caps (3 levels) and cycle prevention. |
-| **5. Failure Tolerance & Recovery** | A single downstream task failure halts the entire mission (binary outcome: success or fatal abort). | Classifies failures into 9 distinct classes via `missionFailure`, allowing the lead to retry, switch models/agents, or replan. |
+Below are the 5 foundational architectural differences between the two modes and guidelines on when to choose each:
 
-#### When to Choose Which?
-* **Classic Mission:** Best for linear, well-defined tasks where a single specialist or simple sequence is sufficient, offering a lightweight and predictable execution loop.
-* **Adaptive Mission:** Designed for complex, exploratory, or multi-stage initiatives requiring dynamic code reviews, parallel investigation, workflow handoffs, and self-healing error recovery.
+#### 1. Inter-Agent Artefact Pipeline & Review
+* **Classic Mission:** Operates as a sequence of independent delegations. When the lead delegates a task to Agent A and Agent A finishes, there is no automated data pipeline linking Agent A's output paths (`outputRef`), code diffs, or textual deliverables into Agent B's system context. The lead must manually recall and copy-paste relevant excerpts into the next prompt. In longer runs, this causes context bloat in the planner and risks losing critical output nuances.
+* **Adaptive Mission (`review`, `compare`, `revise`):** Features a first-class artefact handover pipeline. When the lead specifies `review { target: "task-1" }` or `revise`, the engine automatically retrieves the actual output files and diffs from task-1 and places them directly into the reviewer agent's context. Alternative solutions from different agents can be evaluated side-by-side using `compare`, and suboptimal outputs can receive targeted revisions (`revise`) rather than restarting work from scratch.
+
+#### 2. Concurrency & Parallel Execution Waves
+* **Classic Mission:** Executes strictly one sequential delegation per planning round. Even if the lead identifies three completely independent sub-tasks (e.g., one agent researching a database schema, another drafting frontend UI, and a third writing unit test suites), they must run in serial order across separate rounds, with each waiting for the predecessor to fully finish.
+* **Adaptive Mission (`parallel`):** Powered by an intelligent wave planner (`planWaves`), independent tasks can be dispatched concurrently within the same planning round. While maintaining single-writer safety locks on shared working directories to prevent file collisions, read-only tasks or tasks operating in isolated workspaces run concurrently in parallel waves, substantially reducing overall wall-clock turnaround time.
+
+#### 3. Pre-Defined Workflow Orchestration
+* **Classic Mission:** Cannot directly invoke pre-configured multi-step workflows (e.g., *Compile → Test → Lint → Package*). If the lead needs to execute such a pipeline, it must manually delegate each individual step across consecutive rounds, unnecessarily consuming planner rounds and tokens.
+* **Adaptive Mission (`run_workflow`):** Seamlessly triggers established workflow chains as a single atomic step (tracked via `runId`). The workflow executes its sequence autonomously in the background and delivers its consolidated final handoff back to the lead upon completion.
+
+#### 4. Hierarchical Nested Objectives
+* **Classic Mission:** Structured as a flat, single-level planning loop. When encountering a complex sub-problem (such as deep architectural research or dedicated component development), the lead cannot spin off an autonomous child mission with its own dedicated lead and rounds; everything must be shoehorned into the primary planner loop.
+* **Adaptive Mission (`run_mission`):** Allows delegating distinct sub-goals to autonomous "Child Missions" equipped with their own lead, success criteria, and iterative planning rounds. Protected by a 3-level depth ceiling and cycle detection guards, child missions draw from the parent's remaining budget and conclude by returning an explicit verdict and evidence back to the parent lead.
+
+#### 5. Failure Taxonomy & Strategic Resilience
+* **Classic Mission:** If a delegated agent encounters an unexpected tool error or exits with a non-zero code, the engine treats this as an immediate fatal failure for the entire mission and aborts, denying the lead any opportunity to inspect the incident and adapt.
+* **Adaptive Mission (`missionFailure`):** Classifies downstream failures into 9 distinct categories (engine rejection, budget exhaustion, missing capabilities, execution failures, etc.). Instead of aborting immediately, the engine presents the error class, attempted work, and actionable remediation advice back to the lead. The lead can then make an informed strategic decision: *"Retry with the same model"*, *"Escalate to a more capable agent"*, *"Revise the prompt"*, or *"Consult the user"*.
+
+---
+
+#### Selection Guide: When to Use Which?
+
+* **When to choose Classic Mission?**
+  Ideal for straightforward, linear tasks where the trajectory is predictable and can be handled by a single agent or a simple sequence in a few rounds. It provides a lightweight, predictable loop with minimal orchestration overhead.
+
+* **When to choose Adaptive Mission?**
+  Built for complex, exploratory, or mission-critical projects requiring collaborative multi-agent dynamics—such as peer code reviews, comparative problem solving, parallel investigations, workflow executions, and self-healing error recovery where strategy must evolve dynamically as empirical evidence emerges.
 
 
 

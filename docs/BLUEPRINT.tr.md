@@ -1487,21 +1487,41 @@ Panel her koşuyu tur tur gösterir — lead'in gerekçesi, delegasyon tablosu (
 
 **Sol paneldeki Missions bölümü (2.63.0)** aynı takibin ağaç hâlidir — Tasks ile Recent Sessions arasında. Her koşu durum/hüküm ikonu, tur sayısı (`R3/8`), harcanan dolar ve yaşıyla listelenir; genişletince turlar ve her turun delegasyonları (durum, maliyet — tıkla → arşivlenmiş çıktı) görünür. Onay bekleyen tur ve lead'in sorusu **eyleme dönük satırlar** olarak en üste düşer: Approve/Reject ve Answer doğrudan satırdan. Satır eylemleri: Pause / Resume / Cancel, **Run again** (aynı hedef-ekip-limitlerle yeni koşu, onaylı) ve **Delete run**. Koşuya tıklamak tam Missions sayfasını açar.
 
-### Klasik ve Adaptif Misyonlar (Classic vs Adaptive)
+### Klasik ve Adaptif Misyonlar (Classic vs. Adaptive)
 
-Misyon motoru iki farklı orkestrasyon modu sunar: **Classic (Klasik)** ve **Adaptive (Adaptif)**. İkisi birbirinin rakibi değil; farklı problem türleri için tasarlanmış iki ayrı çalışma yaklaşımıdır.
+Misyon motoru iki temel orkestrasyon modu sunar: **Classic (Klasik)** ve **Adaptive (Adaptif)**. Bunlar birbirinin iyi/kötü zıddı değil; farklı problem türleri, karmaşıklık düzeyleri ve yürütme gereksinimleri için tasarlanmış iki ayrı çalışma felsefesidir.
 
-| Boyut / Özellik | Klasik Misyon (Classic) | Adaptif Misyon (Adaptive) |
-| :--- | :--- | :--- |
-| **1. Ajanlar Arası Çıktı & İnceleme** | Sıralı `delegate` çağrıları yapar; bir ajanın çıktısı diğer ajanın önüne otomatik bağlanmaz. | `review`, `compare`, `revise` niyetleriyle bir görevin ürettiği çıktı/diff dosyası incelenecek ajanın önüne otomatik serilir. |
-| **2. Eşzamanlılık & Paralel Çalışma** | Her turda tek sıralı delegasyon koşar. | `parallel` eylemiyle bağımsız adımlar aynı turda eşzamanlı dalgalar halinde çalışır. |
-| **3. Hazır İş Akışları (Workflows)** | Önceden tanımlı workflow zincirlerini çağıramaz; her adımı tek tek delege etmek gerekir. | `run_workflow` ile var olan hazır workflow zincirlerini tek adımda koşturup sonucunu devralır. |
-| **4. Hiyerarşik Alt Hedefler** | Tek düz bir döngüdür (flat loop); alt hedef açamaz. | `run_mission` ile derinliği (3 seviye) ve döngüleri kontrol altında tutulan bağımsız alt misyonlar açabilir. |
-| **5. Hata Yönetimi & Esneklik** | Tekil bir ajan hatası tüm misyonu durdurur (ikili sonuç: başarı veya çöküş). | `missionFailure` modeliyle hata 9 sınıfa ayrılır; lider aynı modelle, başka ajanla veya strateji değiştirerek devam edebilir. |
+Aşağıda iki modun çalışma prensipleri arasındaki 5 temel mimari fark ve seçim kriterleri detaylandırılmıştır:
 
-#### Ne Zaman Hangisi Seçilmeli?
-* **Klasik Misyon:** Hedefin ve adımların baştan görece öngörülebilir olduğu, tekil bir uzmanın sırayla yapabileceği, az turlu ve doğrusal görevler için ideal, hafif ve doğrudan bir yöntemdir.
-* **Adaptif Misyon:** Çok adımlı araştırma, kodlama ile eşzamanlı test/inceleme gerektiren, alt iş akışlarına ihtiyaç duyan ve belirsizliğin yüksek olduğu karmaşık projeler için dinamik ve kendini düzelten bir orkestrasyon sağlar.
+#### 1. Ajanlar Arası Çıktı Aktarımı ve İnceleme Hattı (Artefact Pipeline & Review)
+* **Klasik Misyon:** Sıralı delegasyonlar şeklinde çalışır. Lider, A ajanına bir görev verir; A ajanı işi bitirdiğinde lider B ajanına yeni bir görev verirken A ajanının ürettiği dosya yollarını (`outputRef`), kod diff'lerini veya metin çıktılarını B ajanının sistem bağlamına otomatik olarak bağlayan bir veri hattı yoktur. Liderin önceki çıktıları kendi hafızasında tutup sonraki ajanın prompt metnine elle yapıştırması gerekir. Bu durum, turlar uzadıkça planlayıcı bağlamının şişmesine ve liderin çıktı ayrıntılarını unutmasına yol açabilir.
+* **Adaptif Misyon (`review`, `compare`, `revise`):** İlk sınıf bir çıktı aktarım hattına sahiptir. Lider sadece `review { target: "task-1" }` veya `revise` dediğinde, motor arka planda 1. görevin ürettiği gerçek çıktı dosyasını ve diff'ini alarak incelemeyi yapacak uzmanın önüne otomatik olarak serer. İki farklı ajanın alternatif çözümleri `compare` ile yan yana koyulup kıyaslatılabilir; beğenilmeyen bir çıktıda ise sıfırdan başlamak yerine yalnızca hedefli düzeltme (`revise`) istenebilir.
+
+#### 2. Eşzamanlılık ve Paralel Çalışma Yeteneği (Parallel Waves)
+* **Klasik Misyon:** Her planlama turunda yalnızca tek bir sıralı delegasyon çalıştırır. Lider aynı anda 3 bağımsız iş yaptırmak istese bile (örneğin biri veritabanı şemasını araştırırken, diğeri frontend arayüz taslağını çıkarsın, üçüncüsü test senaryolarını hazırlasın), sistem bunları tek tek sıralı kuyruğa alır; biri tamamen bitmeden diğeri başlayamaz.
+* **Adaptif Misyon (`parallel`):** Dinamik dalga yöneticisi (`planWaves`) sayesinde, birbirini beklemeyen bağımsız işleri aynı planlama turunda eşzamanlı dalgalar halinde başlatabilir. Aynı çalışma dizininde (workdir) dosya çakışmasını önleyen tekil yazıcı (single-writer) güvenlik kilitlerini korurken, salt-okunur veya bağımsız yazma alanlarına sahip görevleri paralel koşturarak toplam süreden ciddi tasarruf sağlar.
+
+#### 3. Önceden Tanımlı İş Akışlarının Orkestrasyonu (Workflow Chains)
+* **Klasik Misyon:** Agent Farm içinde önceden kaydedilmiş çok adımlı hazır "Workflow" zincirlerini (örneğin: *Kodu Derle → Test Çalıştır → Lint Yap → Paketle*) doğrudan bir bütün olarak çağıramaz. Lider bir akışı işletmek istediğinde, her bir adımı ayrı ayrı turlarda tek tek elle delege etmek zorunda kalır; bu da gereksiz tur ve token harcanmasına sebep olur.
+* **Adaptif Misyon (`run_workflow`):** Var olan hazır workflow zincirlerini tek bir atomik adım olarak başlatabilir (`runId` üzerinden). Workflow arka planda kendi adımlarını sırayla tamamlar ve zincirin en son devrettiği nihai çıktıyı (final handoff) lidere tek parça halinde teslim eder.
+
+#### 4. Hiyerarşik ve İç İçe Alt Hedefler (Nested Missions)
+* **Klasik Misyon:** Tek düz bir döngüden (flat loop) ibarettir. Lider karmaşık ve çok yönlü bir hedefle karşılaştığında, bu hedefin bağımsız bir alt dalını (örneğin derin bir araştırma veya bağımsız bir alt bileşen geliştirmesini) kendi lideri ve turları olan ayrı bir alt çalışma grubuna devredemez; her şeyi tek bir ana döngünün içine sıkıştırmak zorunda kalır.
+* **Adaptif Misyon (`run_mission`):** Karmaşık bir hedefin alt parçasını, kendi lideri, başarı kriterleri ve turları olan bağımsız bir "Çocuk Misyon"a devredebilir. 3 seviyeli derinlik sınırı ve döngüsel çağrı engeli (cycle guard) ile sonsuz döngülere karşı korunur; çocuk misyon ana hedefin kalan bütçesinden beslenir ve işi bittiğinde ana lidere net bir karar/hüküm (verdict) sunarak kapanır.
+
+#### 5. Hata Toleransı ve Stratejik Esneklik (Failure Taxonomy & Resilience)
+* **Klasik Misyon:** Bir ajana görev verildiğinde o ajan beklenmedik bir komut hatası veya çıkış koduyla (exit code 1) kapandığında, motor bunu doğrudan "Tüm Misyon Çöktü (Fatal Fail)" kabul eder ve hedefi kapatır; lider ajana hatayı değerlendirip stratejisini değiştirme fırsatı tanımaz.
+* **Adaptif Misyon (`missionFailure`):** Ajan veya alt sistem hatalarını 9 kapalı sınıfa ayırır (motor reddi, bütçe kısıtı, ajanın bulunamaması, komut başarısızlığı vb.). Hata olduğunda misyonu hemen öldürmek yerine lidere hatanın sınıfını, denenmiş işi ve tavsiye edilen kurtarma yolunu sunar. Lider elindeki delile bakarak: *"Aynı modelle tekrar dene"*, *"Daha yetenekli başka bir model/ajan seç"*, *"Hedefi revize et"* veya *"Kullanıcıya danış"* kararlarından birini vererek görevi kurtarabilir.
+
+---
+
+#### Hangi Durumda Hangisi Tercih Edilmeli?
+
+* **Ne Zaman Klasik Misyon?**
+  Hedefin baştan net, doğrusal ve az adımlı olduğu durumlar için en yalın çözümdür. Örneğin tek bir uzmanın (developer) 2-3 tur içinde sıralı adımlarla tamamlayabileceği, karmaşık alt akışlara, çapraz kod incelemelerine veya paralel araştırmalara ihtiyaç duymayan görevlerde minimum orkestrasyon yükü ve öngörülebilir bir maliyet sağlar.
+
+* **Ne Zaman Adaptif Misyon?**
+  Birden fazla uzmanın birlikte çalışmasını gerektiren, bir ajanın yazdığı kodun diğeri tarafından denetlenmesi veya kıyaslanması gereken, eşzamanlı paralel araştırmaların yürütüleceği, hazır workflow'ların devreye gireceği ya da belirsizliğin yüksek olup stratejinin turlar ilerledikçe dinamik olarak yeniden şekilleneceği kapsamlı ve kritik projeler için idealdir.
 
 
 
