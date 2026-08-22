@@ -132,6 +132,7 @@ const VIEWER_STEP = "webviewSection == 'afViewerStep'";
 const VIEWER_FILE = "webviewSection == 'afViewerFile'";
 const DIFF_HUNK = "webviewSection == 'afDiffHunk'";
 const SEARCH_HIT = "webviewSection == 'afSearchHit'";
+const SCOPE_CHIP = "webviewSection == 'afScopeChip'";
 
 /** The Console's two waiting states — a held message, and a live request. */
 const CONSOLE_QUEUED = "webviewSection == 'afConsoleQueued'";
@@ -1209,6 +1210,19 @@ export const CTX_ITEMS: CtxItem[] = [
         ['line', 'The matching line'],
         ['context', 'The line with what is around it']
     ]),
+
+    // ---- a scope chip on the Search page ---------------------------------
+    // ‼️ U-88 — THE GESTURE EXISTED AND NOBODY COULD FIND IT. Ctrl-click has
+    // meant "only this" since the chips became toggles, which is discoverable
+    // only by reading the hint beside them; the menu is the door somebody
+    // looking for it will actually try. Both run the same page function.
+    //
+    // Hidden on the chip that is already alone: a menu item that cannot change
+    // anything teaches the reader nothing when they click it.
+    {
+        id: 'scOnly', title: 'Choose only this', act: 'scOnly',
+        when: `${SCOPE_CHIP} && !scopeAlone`, group: '1_scope@0'
+    },
 
     // ---- a turn band in the session viewer --------------------------------
     {

@@ -359,9 +359,36 @@ const go = r => r.els.go.fire('click');
     r.query('[data-role="user"]')[0].fire('click', { ctrlKey: true });
     ok('…Ctrl/⌘-click still means ONLY that one',
         JSON.stringify(lastSearch(r).roles) === '["user"]');
+    // ‼️ U-88 — AND "ONLY" NOW REACHES ALL NINE CHIPS. It used to stop at the
+    // role axis, so "only what a person wrote" quietly also searched every
+    // memory note and orphaned event — two sources the reader had just
+    // watched themselves NOT choose.
+    ok('‼️ …and "only" means only: the two sources go out with the other roles',
+        lastSearch(r).memory === false && lastSearch(r).events === false);
     r.query('[data-role="user"]')[0].fire('click');
     ok('…and the scope can never empty into "matches nothing"',
         JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
+    r.query('[data-preset="all"]')[0].fire('click');
+    r.query('[data-source="memory"]')[0].fire('click', { ctrlKey: true });
+    ok('‼️ a SOURCE can be the only thing chosen — the roles really do empty',
+        JSON.stringify(lastSearch(r).roles) === '[]'
+        && lastSearch(r).memory === true && lastSearch(r).events === false);
+    ok('…and the page says so in words rather than reading as "everything"',
+        r.html().includes('Memory') && !/Searching the conversation/.test(r.html()));
+    // an empty role list on the wire is the CALLER's answer, so the engine must
+    // not helpfully put the conversation back (the trap this item walked into)
+    ok('‼️ …and the engine reads present-but-empty as none, not as the default',
+        S.scanLimits({ roles: [] }).roles.size === 0
+        && S.scanLimits({}).roles.size === 3);
+    r.query('[data-source="memory"]')[0].fire('click');
+    ok('…putting the last lit chip out falls back rather than searching nothing',
+        JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
+    // back to the opening scope, so what follows measures the presets and the
+    // plain source toggle rather than what "only this" left behind
+    r.els['reset-scope'].fire('click');
+    ok('Reset puts all nine chips back where they started',
+        lastSearch(r).memory === true && lastSearch(r).events === true
+        && JSON.stringify(lastSearch(r).roles.slice().sort()) === '["assistant","automation","user"]');
     // ‼️ S-36 — the one press that means "only what a person actually wrote".
     r.query('[data-preset="human"]')[0].fire('click');
     ok('the People-only preset drops the generated prompts',
@@ -373,6 +400,32 @@ const go = r => r.els.go.fire('click');
     ok('…and Everything is all seven', lastSearch(r).roles.length === 7);
     r.query('[data-source="events"]')[0].fire('click');
     ok('a source chip toggles the source', lastSearch(r).events === false && lastSearch(r).memory === true);
+
+    // ‼️ U-88 — THE SAME GESTURE, BEHIND A DOOR SOMEBODY LOOKING FOR IT WILL
+    // TRY. Ctrl-click has meant "only this" since the chips became toggles and
+    // is discoverable only by reading the hint; the right-click item is the
+    // second door and runs the identical page function.
+    const chips = () => r.contexts().filter(c => c.webviewSection === 'afScopeChip');
+    ok('every scope chip publishes itself for the menu — the seven roles and both sources',
+        chips().length === 9);
+    ok('…carrying which axis it is on and which chip it is',
+        chips().filter(c => c.scopeKind === 'role').length === 7
+        && chips().filter(c => c.scopeKind === 'source').length === 2
+        && chips().some(c => c.scopeId === 'toolResult' && c.scopeLabel === 'Results'));
+    r.send({ type: 'afctx', act: 'scOnly', ctx: { scopeKind: 'role', scopeId: 'handler' } });
+    ok('‼️ the menu item and the modifier are ONE path — same result, no second implementation',
+        JSON.stringify(lastSearch(r).roles) === '["handler"]'
+        && lastSearch(r).memory === false && lastSearch(r).events === false);
+    ok('‼️ …and the chosen chip reports itself ALONE, which is what takes the item out of its own menu',
+        chips().some(c => c.scopeId === 'handler' && c.scopeOn === true && c.scopeAlone === true)
+        && chips().filter(c => c.scopeAlone === true).length === 1);
+    ok('…while every other chip still offers it', chips().filter(c => c.scopeAlone === false).length === 8);
+    r.send({ type: 'afctx', act: 'scOnly', ctx: { scopeKind: 'source', scopeId: 'events' } });
+    ok('…and it works on a source chip too', JSON.stringify(lastSearch(r).roles) === '[]'
+        && lastSearch(r).events === true && lastSearch(r).memory === false);
+    const before = lastSearch(r);
+    r.send({ type: 'afctx', act: 'somethingElse', ctx: {} });
+    ok('an unrelated menu action is ignored rather than guessed at', lastSearch(r) === before);
 }
 
 // ---------- X-24: the session axis ----------

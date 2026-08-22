@@ -5487,7 +5487,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Search the fleet\'s transcripts — EVERY ENGINE — plus the agents\' memory notes and the orphaned live events. The Search panel\'s own engine, filters and query language, so an agent and a person asking the same question get the same answer. '
                 + 'args: query (the query LANGUAGE by default: `foo bar` = both words in any order, `OR`, `-foo` excludes, `"a phrase"` is whole-word and ordered, `*` wildcards; a bare word is a plain substring), '
                 + 'regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, wholeWord? (a BARE word must match a whole word too — what quotes already do, without the quotes), '
-                + 'roles? (array of user|automation|assistant|delegator|handler|tool|toolResult; default user+automation+assistant = the conversation. ‼️ `delegator` is one agent\'s handover text inside a subagent lane and `handler` is that subagent\'s reply, and `automation` is a prompt a PROGRAM wrote on the same input channel a person uses — a mission/task/schedule/trigger brief, a headless run with no launcher on record, or an imported transcript whose author cannot be verified. All three used to arrive as `user`, so ["user"] now really is only what a PERSON asked), '
+                + 'roles? (array of user|automation|assistant|delegator|handler|tool|toolResult; omit = user+automation+assistant = the conversation, [] = NONE — a memory-only or events-only search, the same thing the Search page\'s chips express, so `[]` here reads like it does on `agents?` rather than quietly meaning "the default". ‼️ `delegator` is one agent\'s handover text inside a subagent lane and `handler` is that subagent\'s reply, and `automation` is a prompt a PROGRAM wrote on the same input channel a person uses — a mission/task/schedule/trigger brief, a headless run with no launcher on record, or an imported transcript whose author cannot be verified. All three used to arrive as `user`, so ["user"] now really is only what a PERSON asked), '
                 + 'file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), '
                 + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (' + ENGINE_ENUM + '…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
                 + 'from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). '
@@ -5514,7 +5514,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     regex: args.regex === true,
                     caseSensitive: args.caseSensitive === true,
                     wholeWord: args.wholeWord === true,
-                    roles: roles?.length ? roles : undefined,
+                    // ‼️ U-88 — present-but-empty is an ANSWER ("no transcript
+                    // roles"), absent is silence. Collapsing them left the
+                    // bridge unable to ask for the memory-only scope the page
+                    // can now express — the same asymmetry `agents?` already
+                    // avoids by giving `[]` its plain meaning.
+                    roles,
                     tsFrom: when(args.from, false),
                     tsTo: when(args.to, true),
                     files: file ? [file] : undefined,

@@ -402,7 +402,15 @@ export interface ScanLimits {
 /** The scan options, read once, in the one place both readers share. */
 export function scanLimits(opts: SearchOptions): ScanLimits {
     return {
-        roles: new Set(opts.roles?.length ? opts.roles : DEFAULT_ROLES),
+        // ‼️ U-88 — ABSENT AND EMPTY ARE NOT THE SAME ANSWER. No `roles` at all
+        // means "the caller did not say", which is still the conversation; an
+        // array that is present and empty means the caller DID say, and said
+        // none — a memory-only or events-only search, which the scope chips can
+        // now express. Collapsing the two put the whole conversation back into
+        // a search somebody had deliberately narrowed away from it. The bridge
+        // op keeps its documented `[] = default` by normalising before it gets
+        // here, so no existing caller changes.
+        roles: new Set(opts.roles ?? DEFAULT_ROLES),
         maxHits: opts.maxHits ?? 250,
         maxPerFile: opts.maxPerFile ?? 12,
         tsFrom: opts.tsFrom ?? 0,

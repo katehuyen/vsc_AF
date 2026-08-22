@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.213.0 — U-88: "Choose only this" on a scope chip, and "only" finally means only (2026-08-22)
+
+**Right-click any of Search's nine scope chips — You · Automation · Agent · Delegator · Handler · Tools · Results · Memory · Events — and choose "Choose only this".** It lights that one and puts every other one out. The gesture is not new: Ctrl-click (⌘ on Mac) has meant this since the chips became toggles, and it was discoverable only by reading the hint printed beside them. The menu is the door somebody looking for it will actually try, and both run the identical page function — a menu item and a button that can drift apart are two features pretending to be one.
+
+**‼️ AND "ONLY" NOW REACHES ALL NINE CHIPS, WHICH IS THE PART THAT WAS ACTUALLY WRONG.** Memory and Events are two booleans in the wire payload while the seven roles are an array — but on screen they are one row of chips a reader ticks, and the gesture used to stop silently at the array. So "only what a person wrote" also searched every memory note and every orphaned event: two sources the reader had just watched themselves not choose. One meaning, one row, both doors.
+
+**Which needed the scope to be able to say "none".** An empty roles array used to be read as "the caller did not say" and quietly refilled with the conversation, so a memory-only search was not expressible at all. Absent and empty are now different answers: omit `roles` and you get the conversation, pass `[]` and you get no transcript roles — the same way `agents?` has always given `[]` its plain meaning. The Search page's own rule is unchanged in spirit and corrected in reach: **the scope never empties**, but the scope is all nine chips, so putting the last role out while Memory is lit is a legitimate memory-only search rather than a reason to switch the conversation back on. `search.transcripts` on the bridge takes the same `[]`, because a scope a person can point at and an agent cannot ask for is a hole.
+
+The menu item hides itself on the chip that is already alone — an item that cannot change anything teaches the reader nothing when they click it.
+
 ## 3.212.0 — X-45 (X-32): the run keeps a journal, and the snapshot stops being the only copy (2026-08-22)
 
 **`missions.json` was written whole, best-effort, on every state change.** That was survivable while a run was a handful of rounds. With strategy versions, a runtime graph, evaluations and real conversation on the way, three failures were waiting in that one line: the file grows without bound, a crash mid-write truncates the **only** copy, and a window reload silently loses everything the snapshot had not caught up to. This release splits the two jobs. The snapshot stays the fast list and the engine's current state, and is now written **atomically** — temp file, then rename — so a crash leaves the previous good store rather than half of one. Every adaptive run additionally keeps an **append-only journal**: one sequence-numbered, schema-versioned JSONL file per run under `mission-trace/`, carrying `strategy.changed`, `action.created/started/settled`, `evaluation.recorded`, `message.sent`, `human.asked/answered/guided` and `run.finished`.

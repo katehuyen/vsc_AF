@@ -95,6 +95,53 @@
      */
     const scopeChanged = () => !sameSet(DEFAULT_ROLES) || !sourceMemory || !sourceEvents;
 
+    /**
+     * ‼️ U-88 — WHAT A SCOPE CHIP PUBLISHES SO IT CAN HAVE A MENU.
+     *
+     * `alone` is the whole reason this carries more than an id: "Choose only
+     * this" on the chip that is ALREADY the only one lit does nothing, and a
+     * menu item that does nothing is worse than an absent one — the reader
+     * clicks it and learns nothing about why the page did not move. The
+     * catalogue hides it on that condition, which it can only do if the chip
+     * says so here.
+     */
+    function chipCtx(kind, id, label) {
+        const lit = (kind === 'role' ? roleSel.has(id) : (id === 'memory' ? sourceMemory : sourceEvents));
+        return window.AFCtx.row('afScopeChip', {
+            scopeKind: kind, scopeId: id, scopeLabel: label,
+            scopeOn: lit, scopeAlone: lit && litCount() === 1
+        });
+    }
+
+    /** How many of the nine scope chips are lit — roles and the two sources are
+     *  ONE scope to the reader, so they are one count here too. */
+    function litCount() {
+        return roleSel.size + (sourceMemory ? 1 : 0) + (sourceEvents ? 1 : 0);
+    }
+
+    /**
+     * ‼️ "ONLY THIS" MEANS ONLY THIS — across all nine chips, not within the
+     * axis the chip happens to live on.
+     *
+     * Roles and the two sources are two different things in the wire payload
+     * (an array and two booleans) and ONE thing on screen: a row of chips the
+     * reader ticks. Keeping the gesture inside its own axis would have made
+     * "only Memory" leave the whole conversation lit — which is not what the
+     * words say, and not what somebody clicking it wants.
+     */
+    function chooseOnly(kind, id) {
+        if (kind === 'source') {
+            roleSel = new Set();
+            sourceMemory = id === 'memory';
+            sourceEvents = id === 'events';
+        } else {
+            roleSel = new Set([id]);
+            sourceMemory = false;
+            sourceEvents = false;
+        }
+        changed();
+    }
+
     function badge(attrs, label, on, disabled) {
         return `<button type="button" class="chip${on ? ' on' : ''}${disabled ? ' disabled' : ''}"
             ${attrs} aria-pressed="${on ? 'true' : 'false'}"${disabled ? ' disabled' : ''}>
@@ -242,7 +289,8 @@
         const fileScope = !!(preset && preset.file);
         const agents = facets.agents.length ? facets.agents : (DATA.agents || []);
         const filters = sessionFilterCount();
-        const interaction = 'Click to add or remove a kind. Ctrl-click (⌘ on Mac) keeps only that kind.';
+        const interaction = 'Click to add or remove a kind. Ctrl-click (⌘ on Mac) — or right-click → '
+            + '"Choose only this" — keeps ONLY that one and puts every other chip out, memory and events included.';
         return `<section class="search-panel">
             <div class="query-row">
                 <input id="q" type="text" value="${C.esc(queryText)}" spellcheck="false"
@@ -276,10 +324,10 @@
                     </div>
                 </div>
                 <div class="role-group">
-                    <span class="chip-run">${ROLES.map(r => tip(badge(`data-role="${r.id}"`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}</span>
+                    <span class="chip-run">${ROLES.map(r => tip(badge(`data-role="${r.id}" ${chipCtx('role', r.id, r.label)}`, `${r.icon} ${C.esc(r.label)}`, roleSel.has(r.id), unavailable), r.label, `${r.text}.\n\n${interaction}`)).join('')}</span>
                     <span class="chip-run">
-                        ${tip(badge('data-source="memory"', '📝 Memory', sourceMemory, unavailable), 'Memory notes', 'Agent memory files, paragraph by paragraph.')}
-                        ${tip(badge('data-source="events"', '⌁ Events', sourceEvents, unavailable), 'Orphaned events', 'Events whose transcript no longer exists.')}
+                        ${tip(badge(`data-source="memory" ${chipCtx('source', 'memory', 'Memory')}`, '📝 Memory', sourceMemory, unavailable), 'Memory notes', `Agent memory files, paragraph by paragraph.\n\n${interaction}`)}
+                        ${tip(badge(`data-source="events" ${chipCtx('source', 'events', 'Events')}`, '⌁ Events', sourceEvents, unavailable), 'Orphaned events', `Events whose transcript no longer exists.\n\n${interaction}`)}
                     </span>
                     <span class="scope-actions">
                         ${clearSlot('reset-scope', !unavailable && scopeChanged(), 'Reset the content scope',
@@ -497,13 +545,23 @@
         }));
         document.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', e => {
             const id = b.dataset.role;
-            if (e.ctrlKey || e.metaKey) roleSel = new Set([id]);
-            else if (roleSel.has(id)) roleSel.delete(id); else roleSel.add(id);
-            if (!roleSel.size) roleSel = new Set(DEFAULT_ROLES);
+            // ‼️ ONE MEANING, TWO DOORS (U-88). The modifier and the menu item
+            // are the same call — two gestures called "only this" that did
+            // different things would be worse than having only one of them.
+            if (e.ctrlKey || e.metaKey) { chooseOnly('role', id); return; }
+            if (roleSel.has(id)) roleSel.delete(id); else roleSel.add(id);
+            // ‼️ THE SCOPE never empties — but "the scope" is all nine chips,
+            // not the roles alone. Putting the last role out while Memory is
+            // still lit is a legitimate memory-only search, and forcing the
+            // conversation back on there would have silently widened it.
+            if (!litCount()) roleSel = new Set(DEFAULT_ROLES);
             changed();
         }));
-        document.querySelectorAll('[data-source]').forEach(b => b.addEventListener('click', () => {
-            if (b.dataset.source === 'memory') sourceMemory = !sourceMemory; else sourceEvents = !sourceEvents;
+        document.querySelectorAll('[data-source]').forEach(b => b.addEventListener('click', e => {
+            const id = b.dataset.source;
+            if (e.ctrlKey || e.metaKey) { chooseOnly('source', id); return; }
+            if (id === 'memory') sourceMemory = !sourceMemory; else sourceEvents = !sourceEvents;
+            if (!litCount()) roleSel = new Set(DEFAULT_ROLES);
             changed();
         }));
         wirePicker('search-agents', sel => { agentSel = sel === null ? null : new Set(sel); preset = null; });
@@ -709,6 +767,12 @@
         if (ev.data.facets) facets = ev.data.facets;
         if (ev.data.semanticStatus) semStatus = ev.data.semanticStatus;
         shell();
+    });
+
+    // ‼️ ONCE, not in `wire()` — that runs on every repaint, and a window
+    // listener registered there would stack one copy per paint.
+    window.AFCtx.listen((act, ctx) => {
+        if (act === 'scOnly') { chooseOnly(String(ctx.scopeKind || ''), String(ctx.scopeId || '')); }
     });
 
     shell();

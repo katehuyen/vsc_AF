@@ -2704,6 +2704,17 @@ const { opencodeStatus, syncToOpencode } =
             const trBlock = src.slice(src.indexOf("op: 'missions.trace'"));
             ok('‼️ X-45 — the journal has a bridge op, in the same commit as the feature',
                 trBlock.startsWith("op: 'missions.trace'"));
+
+            // ‼️ U-88 — the page can ask for a memory-only scope, so the bridge
+            // must be able to ask for it too. `[]` means NONE here, the way it
+            // already does on `agents?`; collapsing it to the default left an
+            // agent unable to express a scope a person could point at.
+            const stBlock = src.slice(src.indexOf("op: 'search.transcripts'"), src.indexOf("op: 'search.transcripts'") + 4000);
+            ok('search.transcripts says what an EMPTY roles array means',
+                /\[\] = NONE/.test(stBlock.replace(/'\s*\+\s*'/g, '')));
+            ok('…and the handler really passes it through rather than defaulting it away',
+                /roles\?\.length \? roles : undefined/.test(src) === false
+                && /present-but-empty is an ANSWER/.test(src));
             ok('…whose describe names every health value',
                 ['ok', 'missing', 'truncated', 'damaged', 'future']
                     .every(h => new RegExp('[/ ]' + h + '[ /]').test(trBlock.slice(0, 1600))));

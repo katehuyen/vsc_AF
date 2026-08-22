@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.212.0",
+  "version": "3.213.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2788,6 +2788,11 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.ctx.scOnly",
+        "title": "Choose only this",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.ctx.vtFold",
         "title": "Fold this turn",
         "category": "Agent Farm"
@@ -5280,6 +5285,11 @@
           "group": "2_search@2"
         },
         {
+          "command": "agentfarm.ctx.scOnly",
+          "when": "webviewSection == 'afScopeChip' && !scopeAlone",
+          "group": "1_scope@0"
+        },
+        {
           "command": "agentfarm.ctx.vtFold",
           "when": "webviewSection == 'afViewerTurn' && !afClosed",
           "group": "1_open@1"
@@ -7282,6 +7292,11 @@
         },
         {
           "command": "agentfarm.ctx.shCopyContext",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.scOnly",
           "when": "false",
           "group": "ctx"
         },

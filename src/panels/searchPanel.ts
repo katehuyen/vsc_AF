@@ -297,7 +297,10 @@ export class SearchPanel {
                     ? (msg.agents as unknown[]).filter((a): a is string => typeof a === 'string')
                     : undefined;
                 const file = typeof msg.file === 'string' && msg.file ? msg.file : undefined;
-                const roles = Array.isArray(msg.roles) && msg.roles.length
+                // ‼️ U-88 — an empty array is the PAGE saying "no transcript
+                // roles" (a memory-only scope), not the page saying nothing.
+                // Only a missing/ill-typed field falls back to the default.
+                const roles = Array.isArray(msg.roles)
                     ? msg.roles.filter(isSearchRole)
                     : undefined;
                 const seq = typeof msg.seq === 'number' ? msg.seq : 0;
