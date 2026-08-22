@@ -661,10 +661,21 @@ export interface Reconciliation {
     resume: 'ok' | 'rebrief' | 'refuse';
 }
 
+/**
+ * ‼️ SETTLED, IN EVERY VOCABULARY A REFERENCED RUN MIGHT SPEAK.
+ *
+ * An action's `refId` points at a FarmTask, a workflow run or a child mission
+ * run, and the three stores do not use the same words. `stopped` is a workflow
+ * chain that a person or a guard ended — the same event a task calls
+ * `cancelled` — and a word missing from this table is not read as "unknown
+ * vocabulary": it is read as UNSETTLED, so a chain that really did end comes
+ * back as "interrupted, fate unknown" and its money disappears from the
+ * parent's ledger. Adding a status to a store means adding it here.
+ */
 const SETTLED_TASK_STATUS: Record<string, MissionActionOutcome> = {
     done: 'done', ok: 'done', success: 'done', completed: 'done',
     failed: 'failed', error: 'failed', timeout: 'failed',
-    cancelled: 'cancelled', canceled: 'cancelled'
+    cancelled: 'cancelled', canceled: 'cancelled', stopped: 'cancelled'
 };
 
 /**
@@ -710,7 +721,18 @@ export function reconcileRun(
             });
         } else {
             interrupted++;
-            actions.push({ actionId: a.actionId, kind: a.kind, outcome: 'interrupted', from: 'unknown' });
+            // ‼️ MONEY ALREADY SPENT IS FINISHED WORK, even when the outcome is
+            // not. A child objective or a workflow chain that was still in
+            // flight has a ledger of its own and it is not empty; dropping it
+            // because the OUTCOME is unknown would leave the parent believing
+            // it has a budget it no longer has — and the parent's ceiling is
+            // the only fence on a run nobody is watching. The fate stays
+            // honestly unknown; the figures are what they are.
+            actions.push({
+                actionId: a.actionId, kind: a.kind, outcome: 'interrupted', from: 'unknown',
+                ...(rec?.costUSD !== undefined ? { costUSD: rec.costUSD } : {}),
+                ...(rec?.tokens !== undefined ? { tokens: rec.tokens } : {})
+            });
         }
     }
 

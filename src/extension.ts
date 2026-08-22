@@ -263,7 +263,8 @@ import {
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
-    classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
+    childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
+    ExternalLookup,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
@@ -3240,16 +3241,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // set in motion, and the task store can say whether that work finished
     // while we were gone. Everything recovered is kept, everything unaccounted
     // for is marked interrupted, and nothing is ever silently restarted.
+    /**
+     * ‼️ M-18 — THE THREE THINGS AN ACTION CAN POINT AT, not just the one.
+     *
+     * This asked the task store and returned `undefined` for everything else,
+     * which was right when a delegation was the only primitive that started
+     * anything. It is not any more: `run_workflow` starts a chain and
+     * `run_mission` starts a whole child objective, and both were reported
+     * `interrupted — fate unknown` at reload even when they had finished
+     * perfectly while the window was closed. Cost lost, result lost, and a lead
+     * told nothing happened is a lead that orders it again — which for a child
+     * objective means paying for the same run twice.
+     *
+     * Each kind is asked of the store that actually ran it, and of nothing else:
+     * a workflow's state is the workflow engine's answer to give, and a child
+     * run's is its own record. `stopped` reaches the settled table by name, so a
+     * chain a guard ended is `cancelled` rather than a mystery.
+     */
+    const missionExternalLookup: ExternalLookup = (kind, refId) => {
+        if (kind === 'workflow') {
+            const st = taskManager.workflowRunState(refId);
+            return st ? {
+                status: st.status, costUSD: st.costUSD, tokens: st.tokens,
+                ...(st.handoff?.file ? { outputFile: st.handoff.file } : {})
+            } : undefined;
+        }
+        if (kind === 'mission') {
+            const cr = missionStore.run(refId);
+            return cr ? {
+                status: cr.status, costUSD: cr.totalCostUSD, tokens: cr.totalTokens
+            } : undefined;
+        }
+        if (kind !== 'task') { return undefined; }
+        const t = taskManager.tasks.find(x => x.id === refId);
+        return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
+    };
+
     const missionReloadNotes = new Map<string, Reconciliation>();
     for (const r of missionStore.runs) {
         const wasLive = r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user';
         if (r.trace?.file) {
-            const rec = reconcileRun(readTrace(r.trace.file), r.trace.lastSeq,
-                (kind, refId) => {
-                    if (kind !== 'task') { return undefined; }
-                    const t = taskManager.tasks.find(x => x.id === refId);
-                    return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
-                });
+            const rec = reconcileRun(readTrace(r.trace.file), r.trace.lastSeq, missionExternalLookup);
             missionReloadNotes.set(r.id, rec);
             r.traceDegraded = rec.degraded || undefined;
             // the snapshot catches up to what the journal already knows
@@ -3269,11 +3301,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         step.status = 'failed';
                         step.note = 'interrupted by window reload — fate unknown';
                         step.failure = missionFailure('interrupted', step, step.note);
+                        // ‼️ …AND WHAT IT HAD ALREADY SPENT. A child objective or
+                        // a chain caught mid-flight has a ledger of its own; the
+                        // outcome is genuinely unknown and the money is not.
+                        // Dropping it would leave the run believing it still has
+                        // a budget it does not, on exactly the runs — deep,
+                        // nested, unattended — where the ceiling is the only
+                        // fence there is.
+                        if (a.costUSD !== undefined) { step.costUSD = a.costUSD; }
+                        if (a.tokens !== undefined) { step.tokens = a.tokens; }
                     } else {
                         step.status = a.outcome;
                         if (a.costUSD !== undefined) { step.costUSD = a.costUSD; }
                         if (a.tokens !== undefined) { step.tokens = a.tokens; }
                         if (a.outputFile) { step.outputFile = a.outputFile; }
+                        // ‼️ AND A CHILD OBJECTIVE'S VERDICT, which no output
+                        // archive holds. Recovering the STATUS of a child and
+                        // not its verdict would hand the lead a step marked
+                        // done with nothing in it — the empty quote
+                        // `resultText` exists to prevent, restored to life by
+                        // the one path that skipped it.
+                        if (step.missionRunId && !step.resultText) {
+                            const cr = missionStore.run(step.missionRunId);
+                            if (cr) { step.resultText = childResultText(cr); }
+                        }
+                        // A chain says why it ended other than by finishing —
+                        // the same sentence the observation loop writes.
+                        if (step.workflowRunId && !step.note) {
+                            step.note = taskManager.workflowRunState(step.workflowRunId)?.reason;
+                        }
+                        if (step.status === 'failed' && !step.failure) {
+                            step.failure = missionFailure('delegate-failed', step, step.note);
+                        }
                     }
                 }
             }
@@ -3676,14 +3735,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     step.failure = missionFailure('delegate-failed', step,
                                         cr.note || 'the child objective ended without a verdict');
                                 }
-                                step.resultText = cr.result
-                                    ? `Child objective ${cr.result.verdict}`
-                                    + (cr.result.stopReason ? ` (${cr.result.stopReason})` : '')
-                                    + `: ${cr.result.summary}`
-                                    + (cr.result.unmet?.length
-                                        ? `\nStill unmet: ${cr.result.unmet.map(u => `[${u.id}] ${u.text} → ${u.verdict}`).join('; ')}`
-                                        : '')
-                                    : `Child objective ${cr.status}${cr.note ? ` — ${cr.note}` : ''}`;
+                                step.resultText = childResultText(cr);
                                 traceEvent(run, 'action.settled', {
                                     actionId: step.id, kind: 'mission', refId: cr.id,
                                     outcome: settled === 'done' ? 'done' : (settled === 'cancelled' ? 'cancelled' : 'failed'),
@@ -9906,7 +9958,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     };
                 }
                 const read = readTrace(r.trace.file);
-                const rec = reconcileRun(read, r.trace.lastSeq);
+                // ‼️ THE SAME LOOKUP THE RELOAD USES. This asked the journal
+                // alone, so a caller reading a run's trace was told an action
+                // was interrupted while the task store had it finished ten
+                // minutes ago — two surfaces, two answers, one run.
+                const rec = reconcileRun(read, r.trace.lastSeq, missionExternalLookup);
                 const p = rec.projection;
                 const limit = Math.max(1, Math.min(2000, Number(args.limit ?? 200) || 200));
                 return {

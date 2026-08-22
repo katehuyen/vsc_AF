@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.222.0 — M-18 (X-45): a reload recovers a child objective and a chain, not only a task (2026-08-22)
+
+**A window reload was throwing away two thirds of a nested run.** X-45 taught a mission to survive a reload — the journal says what was set in motion, the stores say whether it finished while we were gone, and nothing is ever silently restarted. Then the lead was given two primitives that start something other than a task, and the recovery was never measured against either: the lookup began by refusing every kind but `task`, so a workflow chain or a child objective that **finished perfectly** while the window was closed came back as "interrupted — fate unknown". Its cost vanished from the parent's ledger, its verdict was never read, and a lead told nothing happened orders it again — which for a child objective means paying for the whole run twice.
+
+Each kind is now asked of the store that actually ran it, and `stopped` — a chain's own word for what a task calls `cancelled` — is a settled status by name rather than an unrecognised one treated as unfinished.
+
+**Money already spent is finished work, even when the outcome is not.** A child caught mid-flight has a ledger of its own and it is not empty. The fate stays honestly unknown; the figures ride up to the parent, because on a deep unattended run the parent's ceiling is the only fence there is and a budget that forgets what it spent is not one.
+
+**And a recovered child hands back its verdict, not just a status** — the same sentence it would have had if nobody had closed the window, from one function with two callers, so the recovered wording cannot drift from the live one. The same lookup now serves `missions.trace`, which had been answering from the journal alone: two surfaces were reporting different fates for one run.
+
 ## 3.221.0 — M-18: a failed primitive tells the lead what kind of failure it was (2026-08-22)
 
 **"Failed" was the same word for four different situations.** An agent that is not in the fleet, a run this machine refused before a process existed, a person pressing Cancel, and a delegate that worked for four minutes and came back wrong all reached the lead as one status and a sentence of prose. A person reads prose fine; the lead gets one line inside a round message and has to decide from it whether to order the same thing again — so it guessed, and mostly it retried, and a delegation to an agent that does not exist failed identically for as many rounds as the ceiling allowed.

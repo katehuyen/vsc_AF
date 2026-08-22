@@ -1153,6 +1153,29 @@ ${remLine(rem)}
 Decide the next round. ${'Reply with ONLY the JSON decision object.'}`;
 }
 
+/**
+ * ‼️ M-18 — WHAT A CHILD OBJECTIVE HANDED BACK, IN ONE SENTENCE.
+ *
+ * A child returns a VERDICT, which no output archive holds — so this text IS
+ * the step's result, and the lead is shown nothing else about the child. It
+ * lives here rather than at the two places that write it (the observation loop
+ * and the reload recovery) because those two are exactly the places that must
+ * agree: a run recovered after a window reload has to say the same thing it
+ * would have said had nobody closed the window.
+ */
+export function childResultText(cr: {
+    status: string; note?: string; result?: MissionResult
+}): string {
+    const r = cr.result;
+    if (!r) { return `Child objective ${cr.status}${cr.note ? ` — ${cr.note}` : ''}`; }
+    return `Child objective ${r.verdict}`
+        + (r.stopReason ? ` (${r.stopReason})` : '')
+        + `: ${r.summary}`
+        + (r.unmet?.length
+            ? `\nStill unmet: ${r.unmet.map(u => `[${u.id}] ${u.text} → ${u.verdict}`).join('; ')}`
+            : '');
+}
+
 export function finishOnlyNote(reason: string): string {
     return `\nIMPORTANT: ${reason} — "delegate" is no longer allowed. Reply with "finish" (or "abort"), an honest verdict and a summary of what was and was not achieved.`;
 }
