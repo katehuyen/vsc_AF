@@ -207,13 +207,20 @@ const R = M.resolveDelegateRun;
     ok('the form offers the effort from the host\'s ONE list, never a copy',
         /efforts: EFFORT_CHOICES/.test(ext) && /DATA\.efforts \|\| \[\]/.test(media));
     ok('…as a control on the member row',
-        /id="ef-\$\{i\}"/.test(media) && /effortOpts\(form\.efforts\[a\.id\] \|\| ''\)/.test(media));
+        /id="ef-\$\{i\}"/.test(media) && /effortOpts\(form\.efforts\[a\.id\] \|\| '', eRows\)/.test(media));
+    // ‼️ U-64 — and the rows it offers are THAT ENGINE'S, not the fleet's six.
+    // An engine with no effort setting draws the box dead rather than offering
+    // five words its own launch would refuse.
+    ok('…narrowed to what the engine the member lands on actually has',
+        /const effortRowsFor = \(engine, model\) => window\.AFEngine\.efforts\(/.test(media)
+        && /const noEffort = !eRows\.length;/.test(media)
+        && /— no effort —/.test(media));
     ok('…MIRROR: the control is too narrow to say what it is, so the tooltip '
         + 'opens with what it holds now',
-        /const effortTitle = \(sel\) => \{/.test(media)
+        /const effortTitle = \(sel, rows\) => \{/.test(media)
         && /\(sel \|\| 'resolved'\)/.test(media));
     ok('…the form reads it back and sends it',
-        /form\.efforts\[a\.id\] = document\.getElementById\('ef-' \+ i\)\.value;/.test(media)
+        /form\.efforts\[a\.id\] = val\('ef-' \+ i, form\.efforts\[a\.id\]\);/.test(media)
         && /effort: form\.efforts\[a\.id\] \|\| ''/.test(media));
     ok('…and the run detail reads the chosen effort back',
         /m\.effort \? ` ~\$\{m\.effort\}` : ''/.test(media)

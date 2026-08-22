@@ -16,6 +16,10 @@ export interface MissionsDeps {
     rerun(runId: string): void;
     remove(runId: string): void;
     answer(runId: string, text: string): void;
+    /** ‼️ M-16/U-64 — one-off steer for the next planner boundary. Answers with
+     *  the sentence that says WHEN it lands, or why it was refused; the page
+     *  shows it verbatim rather than deciding either for itself. */
+    guide(runId: string, text: string): { note?: string; error?: string };
     settleApproval(runId: string, ok: boolean): void;
     pickFolder(): Thenable<string | undefined>;
     /** Live-tail of an archived task output (last KBs only) for the expanded
@@ -104,6 +108,15 @@ export class MissionsPanel {
             case 'answer':
                 if (typeof msg.runId === 'string' && typeof msg.text === 'string') {
                     this.deps.answer(msg.runId, msg.text);
+                    this.refresh();
+                }
+                break;
+            case 'guide':
+                if (typeof msg.runId === 'string' && typeof msg.text === 'string') {
+                    const out = this.deps.guide(msg.runId, msg.text);
+                    void this.panel.webview.postMessage({
+                        type: 'guided', runId: msg.runId, note: out.note ?? '', error: out.error ?? ''
+                    });
                     this.refresh();
                 }
                 break;

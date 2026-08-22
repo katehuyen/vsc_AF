@@ -2339,6 +2339,15 @@
       ]
     },
     {
+      "capability": "missionsPanel.ts#guide",
+      "ui": [
+        "page:missionsPanel.ts#guide"
+      ],
+      "ops": [
+        "missions.guide"
+      ]
+    },
+    {
       "capability": "missionsPanel.ts#approve",
       "ui": [
         "page:missionsPanel.ts#approve"

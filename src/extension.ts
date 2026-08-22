@@ -10993,6 +10993,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
     };
 
+    /**
+     * ‼️ U-64 — THE TWO THINGS THE SNAPSHOT CANNOT SAY, read from the journal.
+     *
+     * A run record holds the strategy IN FORCE; the reason each revision was
+     * cut, and the graph of what actually happened, are only in the trace. The
+     * detail surface has to answer "what is it doing and why", and "why" is
+     * exactly the half that lives there.
+     *
+     * ‼️ CACHED ON `lastSeq`, because this page repaints ONCE A SECOND while a
+     * mission runs and re-parsing a JSONL per repaint per run is a cost nobody
+     * asked for. `lastSeq` only moves when the journal grew, which is precisely
+     * when the projection can differ — so a cache hit is not a stale read, it
+     * is the same file.
+     */
+    const missionTraceCache = new Map<string, { seq: number; view: unknown }>();
+    const missionTraceView = (run: MissionRun) => {
+        if (!run.trace?.file) { return undefined; }
+        const hit = missionTraceCache.get(run.id);
+        if (hit && hit.seq === run.trace.lastSeq) { return hit.view; }
+        let view: unknown;
+        try {
+            const rec = reconcileRun(readTrace(run.trace.file), run.trace.lastSeq, missionExternalLookup);
+            const p = rec.projection;
+            view = {
+                strategies: p.strategies, graph: p.graph,
+                phase: p.phase ?? null, degraded: rec.degraded || null
+            };
+        } catch {
+            // A journal this window cannot read is a fact the page says out
+            // loud — never a reason to hide the run or to draw an empty graph
+            // as though nothing had happened.
+            view = { strategies: [], graph: [], phase: null, degraded: 'the journal could not be read' };
+        }
+        missionTraceCache.set(run.id, { seq: run.trace.lastSeq, view });
+        return view;
+    };
+
     const missionsPanelDeps = {
         extensionUri: context.extensionUri,
         data: () => ({
@@ -11016,10 +11053,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // become false and the second incomplete — on a budget control,
             // which is the worst place to be describing the farm as it was.
             // Sent as a fact per row so the sentence is derived, not retyped.
+            // ‼️ U-64 — …AND WHETHER EACH ONE HAS AN EFFORT SETTING AT ALL. The
+            // form drew the same six effort rows on every engine, so a member
+            // put on OpenCode was offered `xhigh` by a picker that the launch
+            // then refuses — the control existed with no referent. `takesEffort`
+            // is the engine's own answer, the one `afEngine.js` reads.
             engines: engineMatrix().map(e => ({
                 id: e.id, label: e.label, ready: e.ready, next: e.next ?? null,
-                reportsCost: engineOf(e.id).reportsCost
+                reportsCost: engineOf(e.id).reportsCost,
+                takesEffort: engineTakesEffort(e.id)
             })),
+            // ‼️ U-64 — WHAT EACH ENGINE ACTUALLY OFFERS RIGHT NOW. The model
+            // boxes on this form suggested `agentFarm.modelAliases` — four
+            // Claude names — whatever engine the row was set to, so a mission
+            // delegating on OpenCode or Antigravity was typed blind while the
+            // Console and the Task launcher beside it offered the live catalog.
+            // Same matrix, same shape, read through `AFEngine.models/efforts`.
+            engineModels: engineModelMatrix(),
             // ‼️ THE PERMISSION VOCABULARY, FROM THE ONE LIST (M-14). Same
             // constant the Tasks and Console launchers read, so a mode can never
             // exist on one surface and not another — and the form can say what
@@ -11041,7 +11091,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 approvals: [...missionApprovals.keys()]
             },
             live: missionLiveBlock(),
-            plannerTranscripts: missionPlannerTranscripts()
+            plannerTranscripts: missionPlannerTranscripts(),
+            // ‼️ U-64 — by run id, and ONLY for the adaptive ones. A classic run
+            // has no journal and gets no key, which is what lets the page tell
+            // "no trace" apart from "a trace it could not read".
+            traces: Object.fromEntries(missionStore.runs
+                .filter(r => isAdaptive(missionStore.spec(r.specId)) && r.trace?.file)
+                .map(r => [r.id, missionTraceView(r)])
+                .filter(([, v]) => !!v))
         }),
         create: createMission,
         control: (action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string) => {
@@ -11075,6 +11132,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (run) { void vscode.commands.executeCommand('agentfarm.missionDelete', { kind: 'run', run }); }
         },
         answer: (runId: string, text: string) => { void answerMissionQuestion(runId, text); },
+        // ‼️ U-64 — steering an objective from its own detail, through the SAME
+        // door the command and the bridge use. It refuses by throwing (a
+        // classic run, an ended run, an empty steer) and the page shows that
+        // sentence rather than inventing its own rule about what may be steered.
+        guide: (runId: string, text: string) => {
+            try { return { note: guideMission(runId, text).note }; }
+            catch (e) { return { error: String((e as Error).message || e) }; }
+        },
         settleApproval: (runId: string, ok: boolean) => {
             const id = missionApprovals.get(runId);
             if (id) { approvalQueue.settle(id, ok); }

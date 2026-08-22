@@ -72,7 +72,45 @@ const DATA = {
         { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved — no prompts at all' }
     ],
     defaults: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
-    pending: { questions: [], approvals: ['run1'] }
+    pending: { questions: [], approvals: ['run1'] },
+    // ‼️ U-64 — THE ENGINE MATRIX AND WHAT EACH ENGINE OFFERS, in the shape
+    // `afEngine.js` reads on every other launch surface. OpenCode is here
+    // BECAUSE it takes no effort setting: the member row has to draw that box
+    // dead rather than offer five words the launch would refuse.
+    engines: [
+        { id: 'claude', label: 'Claude Code', ready: true, next: null, reportsCost: true, takesEffort: true },
+        { id: 'opencode', label: 'OpenCode', ready: true, next: null, reportsCost: true, takesEffort: false }
+    ],
+    efforts: [
+        { id: '', label: 'Default', detail: 'no --effort flag — the CLI decides' },
+        { id: 'low', label: 'low', detail: 'shortest reasoning' },
+        { id: 'high', label: 'high', detail: 'more reasoning per turn' }
+    ],
+    engineModels: {
+        claude: {
+            models: [
+                { id: '', label: 'Default', detail: 'no --model flag' },
+                { id: 'opus', label: 'opus', detail: 'the deep one' },
+                { id: 'haiku', label: 'haiku', detail: 'the cheap one' }
+            ],
+            efforts: {
+                '': [
+                    { id: '', label: 'Default', detail: 'no --effort flag — the CLI decides' },
+                    { id: 'low', label: 'low', detail: 'shortest reasoning' },
+                    { id: 'high', label: 'high', detail: 'more reasoning per turn' }
+                ]
+            },
+            defaultEffort: {}, source: 'settings', note: 'Claude Code — your model aliases.'
+        },
+        opencode: {
+            models: [
+                { id: '', label: 'Default', detail: 'no -m flag' },
+                { id: 'opencode/grok-code', label: 'Grok Code', detail: 'free tier' }
+            ],
+            efforts: {}, defaultEffort: {}, source: 'cli', note: 'OpenCode — from the CLI catalog.'
+        }
+    },
+    modelAliases: ['haiku', 'sonnet', 'opus']
 };
 const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
@@ -294,8 +332,14 @@ msgHandler({ data: { type: 'openForm' } });
 ok('openForm message reopens the form (New Mission command)', html().includes('id="mform"'));
 
 // ---------- per-member model override in the form ----------
-ok('team rows carry a model field with suggestions',
-    html().includes('id="md-1"') && html().includes('list="modelopts"') && html().includes('id="modelopts"'));
+// ‼️ U-64 — the suggestions are now the ENGINE'S OWN catalog, not the four
+// Claude aliases whatever the row is set to. A row with no engine of its own
+// lands on the mission's, which is Claude here, so `mo-claude` is the honest
+// list; `modelopts` (the alias knowledge base) is still drawn as the fallback
+// for an engine that has published no catalog to this window yet.
+ok('team rows carry a model field with the landing engine\'s suggestions',
+    html().includes('id="md-1"') && html().includes('list="mo-claude"')
+    && html().includes('id="mo-claude"') && html().includes('id="modelopts"'));
 getEl('f-goal').value = 'Ship the docs site';
 getEl('f-lead').value = 'a0';
 getEl('tm-1').checked = true;
@@ -332,6 +376,297 @@ ok('member permission mode rides along in the create payload',
     created3 && created3.input.team.length === 1
     && created3.input.team[0].permissionMode === 'acceptEdits');
 msgHandler({ data: { type: 'created' } });
+
+// ---------- U-64 (X-32): Classic / Adaptive Objective in ONE form ----------
+// The page keeps being the only Missions room there is: no second page, no
+// second store, no second create message. What changes is which questions the
+// form asks — a RECIPE (classic) or an OUTCOME (adaptive) — and the rule that
+// decides is the host's own: anything that is not the exact string 'adaptive'
+// is classic, so every caller written before this keeps working untouched.
+msgHandler({ data: { type: 'openForm' } });
+ok('the form opens on a mode choice, with Classic already picked',
+    html().includes('id="f-mode-classic"') && html().includes('id="f-mode-adaptive"')
+    && html().includes('class="segbtn on" id="f-mode-classic"'));
+ok('…and Classic still asks for a goal, a lead and a team',
+    html().includes('>Goal <') && html().includes('id="f-lead"') && html().includes('>Team <'));
+
+// Type into classic, then switch: nothing typed may be lost.
+getEl('f-goal').value = 'Ship the docs site';
+getEl('f-lead').value = 'a0';
+getEl('tm-1').checked = true;
+getEl('rl-1').value = 'builder';
+getEl('f-mode-adaptive').listeners.click();
+ok('switching to Adaptive asks for the OUTCOME instead of the goal',
+    html().includes('>Outcome <') && !html().includes('>Goal <'));
+ok('…and adds constraints, success criteria and autonomy',
+    html().includes('id="cn-0"') && html().includes('id="cr-0"') && html().includes('id="cq-0"')
+    && html().includes('id="f-autonomy"'));
+ok('‼️ nothing typed in the other mode is lost — it is hidden, never cleared',
+    html().includes('Ship the docs site'));
+ok('the decisions an objective already has a default for are folded under Advanced',
+    html().includes('id="f-adv"') && !html().includes('id="f-lead"'));
+ok('a criterion is REQUIRED by default — an objective nobody can fail is not one',
+    html().includes('id="cq-0" checked'));
+
+getEl('f-goal').value = 'The OpenCode engine is production-ready on this machine.';
+getEl('cn-0').value = 'Do not touch anything outside src/engines.';
+getEl('cr-0').value = 'A real session starts, answers and resumes with the same id.';
+// the shim's elements do not mirror rendered attributes, so the ticked box the
+// markup draws is stated here the way a hand would leave it
+getEl('cq-0').checked = true;
+getEl('cr-add').listeners.click();
+ok('+ criterion adds a second row with its own stable id', html().includes('id="cr-1"') && html().includes('>c2<'));
+getEl('cr-1').value = 'The cost shown matches what the CLI stated.';
+getEl('cq-1').checked = false;
+getEl('cn-add').listeners.click();
+getEl('cn-1').value = 'No new dependency without saying why.';
+getEl('f-adv').listeners.click();
+ok('Advanced opens and gives the pool, the limits and the engines back',
+    html().includes('id="f-lead"') && html().includes('id="lim-maxCostUSD"') && html().includes('id="f-engine"'));
+ok('…and the team block is a POOL here, because naming a cast is the decision not being asked',
+    html().includes('>Pool <'));
+getEl('f-autonomy').value = 'decide-alone';
+posted = [];
+getEl('f-start').listeners.click();
+const adaptiveCreate = posted.find(p => p.type === 'create');
+ok('Start posts an ADAPTIVE create', adaptiveCreate && adaptiveCreate.input.mode === 'adaptive');
+ok('…carrying the criteria with stable ids and their required flags',
+    adaptiveCreate && adaptiveCreate.input.successCriteria.length === 2
+    && adaptiveCreate.input.successCriteria[0].id === 'c1'
+    && adaptiveCreate.input.successCriteria[0].required === true
+    && adaptiveCreate.input.successCriteria[1].id === 'c2'
+    && adaptiveCreate.input.successCriteria[1].required === false);
+ok('…the constraints, blank lines dropped',
+    adaptiveCreate && adaptiveCreate.input.constraints.length === 2
+    && adaptiveCreate.input.constraints[0] === 'Do not touch anything outside src/engines.');
+ok('…the autonomy the user chose', adaptiveCreate && adaptiveCreate.input.autonomy === 'decide-alone');
+ok('…and a POOL, which is the same ticked rows the team block collects',
+    adaptiveCreate && Array.isArray(adaptiveCreate.input.pool)
+    && adaptiveCreate.input.pool.length === adaptiveCreate.input.team.length
+    && adaptiveCreate.input.pool[0].agentId === 'a1');
+
+// ‼️ BACKWARDS COMPATIBILITY IS THE POINT: a classic Start posts the message it
+// always posted. Not `mode: 'classic'` on every payload — the absent key IS the
+// classic answer, and a payload that grows keys nobody reads is how a
+// "compatible" change stops being one.
+getEl('f-mode-classic').listeners.click();
+posted = [];
+getEl('f-start').listeners.click();
+const classicCreate = posted.find(p => p.type === 'create');
+ok('‼️ a classic Start posts NO mode and NO objective keys — the payload is unchanged',
+    classicCreate && classicCreate.input.mode === undefined
+    && classicCreate.input.successCriteria === undefined
+    && classicCreate.input.constraints === undefined
+    && classicCreate.input.autonomy === undefined
+    && classicCreate.input.pool === undefined);
+ok('…and everything typed in the objective survived the trip back too',
+    html().includes('The OpenCode engine is production-ready on this machine.'));
+msgHandler({ data: { type: 'created' } });
+
+// ---------- U-64: the model/effort matrix follows the engine, live ----------
+// Every other launch surface narrows the model and the effort to the engine the
+// row is set to. This form did not: it offered four Claude aliases and six
+// efforts to a member delegating on OpenCode, and the launch then refused the
+// pair. `afEngine.js` answers both questions and is asked here per row.
+msgHandler({ data: { type: 'openForm' } });
+getEl('tm-1').checked = true;
+getEl('en-1').value = 'opencode';
+getEl('en-1').listeners.change();
+ok('a member moved to another engine gets THAT engine\'s catalog in its model box',
+    html().includes('id="md-1"') && html().includes('list="mo-opencode"')
+    && html().includes('opencode/grok-code'));
+ok('‼️ …and an engine with no effort setting draws the box DEAD rather than offering five refusals',
+    html().includes('— no effort —'));
+ok('…saying which engine decided that, in the tooltip the box is too narrow to carry',
+    html().includes('OpenCode has no effort setting'));
+getEl('en-1').value = '';
+getEl('f-engine').value = 'opencode';
+getEl('f-engine').listeners.change();
+ok('‼️ the mission-wide engine reaches every member that states none of its own',
+    html().includes('list="mo-opencode"'));
+getEl('f-engine').value = '';
+getEl('f-engine').listeners.change();
+ok('…and back: a member on Claude is offered Claude\'s models and its efforts again',
+    html().includes('list="mo-claude"') && html().includes('>high<'));
+msgHandler({ data: { type: 'created' } });
+
+// ---------- U-64: the list says which kind of run each row is ----------
+{
+    const adaptiveSpec = {
+        ...DATA.specs[0], id: 'spec2', title: 'Objective run', mode: 'adaptive',
+        successCriteria: [{ id: 'c1', text: 'proved', required: true }],
+        constraints: ['no writes'], autonomy: 'decide-alone'
+    };
+    msgHandler({
+        data: {
+            type: 'data', data: {
+                ...DATA,
+                specs: [DATA.specs[0], adaptiveSpec],
+                runs: [RUN, { ...RUN, id: 'run2', specId: 'spec2', status: 'running' }],
+                pending: { questions: [], approvals: [] }
+            }
+        }
+    });
+    ok('an adaptive run carries a compact mode badge on its row',
+        html().includes('Objective run<span class="mchip adpt">ADPT</span>')
+        || html().includes('Objective run <span class="mchip adpt">ADPT</span>'));
+    ok('a classic run carries none — the default costs no width',
+        (html().match(/mchip adpt/g) || []).length === 1);
+    ok('…and BOTH rows name their mode in the row tooltip, where the long form belongs',
+        html().includes('mode: Adaptive Objective') && html().includes('mode: Classic Mission'));
+}
+
+// ---------- U-64: the adaptive run's detail answers "what and why" ----------
+// Seven sections the classic detail never had, each with ONE subject: the
+// objective is what is judged, the strategy is what the lead is doing and why,
+// the evaluations are what was found, the cast is who is on it, the graph is
+// what actually happened. A classic run must not grow any of them.
+{
+    const A_SPEC = {
+        id: 'spec3', mode: 'adaptive', title: 'Objective run',
+        goal: 'The engine is production-ready and each path is proved by a real run.',
+        leadAgentId: 'a0', leadAgentName: 'lead', team: [],
+        pool: [{ agentId: 'a1', agentName: 'coder', role: 'runs the paths' },
+            { agentId: 'a2', agentName: 'reviewer' }],
+        constraints: ['Do not touch anything outside src/engines.'],
+        successCriteria: [
+            { id: 'c1', text: 'A real session starts and resumes with the same id.', required: true },
+            { id: 'c2', text: 'The cost shown matches what the CLI stated.', required: true },
+            { id: 'c3', text: 'A test covers the resume path.', required: false }
+        ],
+        autonomy: 'ask-when-unsure',
+        workdir: 'D:/repo', limits: DATA.defaults, approvalMode: 'auto', createdAt: 1
+    };
+    const A_RUN = {
+        id: 'run3', specId: 'spec3', status: 'running', startedAt: 500,
+        totalCostUSD: 2.1, ledger: [],
+        strategy: { version: 3, phase: 'verifying', text: 'Prove each path, then have a second agent read it back.', at: 9000 },
+        roles: [
+            { agentId: 'a1', agentName: 'coder', brief: 'runs each path against the real CLI', engine: 'opencode', boundAt: 1000 },
+            { agentId: 'a2', agentName: 'reviewer', brief: 'says what the transcript does NOT show', permissionMode: 'plan', boundAt: 4000 }
+        ],
+        evaluations: [
+            {
+                id: 'e1', targets: ['d1'], evaluator: { kind: 'lead' }, advice: 'revise', at: 3000,
+                findings: [{ criterionId: 'c1', verdict: 'pass', evidence: 'resumed twice with the same id' }]
+            },
+            {
+                id: 'e2', targets: ['d2'], evaluator: { kind: 'agent', agentId: 'a2', agentName: 'reviewer' },
+                advice: 'replan', at: 9500,
+                findings: [{ criterionId: 'c2', verdict: 'fail', gap: 'the page reads $0.00 where the CLI printed $0.014' }]
+            }
+        ],
+        guidance: [
+            { id: 'g1', text: 'stop spending rounds on the catalog', at: 2000, appliedAt: 2500 },
+            { id: 'g2', text: 'call an unreadable price a failure, not an unknown', at: 9800 }
+        ],
+        conversations: [{ id: 'cv1', objective: 'Is $0.00 a missing price or a free turn?', participants: ['a1', 'a2'], messages: 3, open: 1, closed: null }],
+        councils: [{ id: 'k1', question: 'Is $0.00 a missing price or a free turn?', conversation: 'cv1', chair: 'a2', members: ['a1', 'a2'], turns: 3, maxTurns: 8, votes: 2, exit: null }],
+        messages: [
+            { id: 'm1', conversationId: 'cv1', from: 'a1', state: 'said' },
+            { id: 'm2', conversationId: 'cv1', from: 'a2', state: 'said' },
+            { id: 'm3', conversationId: 'cv1', from: 'a1', state: 'failed' }
+        ],
+        rounds: [
+            {
+                n: 1, thought: 'open a session', action: 'delegate', plannerCostUSD: 0.02, at: 1000,
+                phase: 'exploring', strategyVersion: 1,
+                steps: [{ id: 'x1', round: 1, agentId: 'a1', agentName: 'coder', title: 'open a session', prompt: 'p', status: 'done', criteria: ['c1'] }]
+            },
+            {
+                // ‼️ a `parallel` round — the branch that used to draw NOTHING,
+                // because it tested the round's NAME instead of its contents
+                n: 2, thought: 'price and a second pair of eyes', action: 'parallel', plannerCostUSD: 0.03, at: 9000,
+                phase: 'verifying', strategyVersion: 3,
+                steps: [
+                    { id: 'x2', round: 2, agentId: 'a1', agentName: 'coder', title: 'read the price back', prompt: 'p', status: 'running', criteria: ['c2'] },
+                    { id: 'x3', round: 2, agentId: 'a2', agentName: 'reviewer', title: 'say what it does not show', prompt: 'p', status: 'done', evaluates: true, criteria: ['c2'] }
+                ]
+            }
+        ],
+        trace: { file: 'D:/store/run3.jsonl', v: 1, lastSeq: 20 },
+        traceDegraded: 'one delegation of round 2 has an unknown fate'
+    };
+    const A_TRACE = {
+        phase: 'verifying', degraded: null,
+        strategies: [
+            { n: 1, summary: 'walk the paths in order', phase: 'exploring', at: 1000 },
+            { n: 3, summary: 'prove each path, then read it back', phase: 'verifying', at: 9000, reason: 'the runner kept reporting its own work as evidence' }
+        ],
+        graph: [
+            { id: 'd1', kind: 'decision', status: 'done', actor: 'lead', label: 'open a session', parentRefs: [], inputRefs: [], outputRefs: ['n1'], createdAt: 1000, strategyVersion: 1 },
+            { id: 'n1', kind: 'delegation', status: 'done', actor: 'a1', label: 'coder — open a session', parentRefs: ['d1'], inputRefs: [], outputRefs: [], createdAt: 1100, settledAt: 2000, strategyVersion: 1 },
+            { id: 'd2', kind: 'decision', status: 'done', actor: 'lead', label: 'price and a second reader', parentRefs: ['d1'], inputRefs: ['n1'], outputRefs: [], createdAt: 9000, strategyVersion: 3 }
+        ]
+    };
+    const send = () => msgHandler({
+        data: {
+            type: 'data', data: {
+                ...DATA, specs: [A_SPEC, DATA.specs[0]], runs: [A_RUN, RUN],
+                traces: { run3: A_TRACE }, pending: { questions: [], approvals: [] }
+            }
+        }
+    });
+    send();
+    wired.run.find(r => r.dataset.run === 'run3')._click();
+    ok('the objective section states what is judged and how much is met',
+        html().includes('<b>Objective</b>') && html().includes('1/3 met')
+        && html().includes('1 required still open') && html().includes('ask-when-unsure'));
+    ok('‼️ a criterion shows the LATEST CURRENT verdict, never a stale one',
+        html().includes('>pass<') && html().includes('>fail<')
+        && html().includes('the page reads $0.00 where the CLI printed $0.014'));
+    ok('…and the constraints, in the user\'s own words',
+        html().includes('Do not touch anything outside src/engines.'));
+    ok('the strategy in force is named with its version and phase',
+        html().includes('<b>Strategy</b>') && html().includes('>v3<')
+        && html().includes('Prove each path, then have a second agent read it back.'));
+    ok('‼️ …and every revision says WHY it was cut — the half that is only in the journal',
+        html().includes('the runner kept reporting its own work as evidence'));
+    // The history sections open on a click, which is the DENSITY trade this
+    // page already makes for the ledger — the two that answer "what is it doing
+    // and why" are the ones that open themselves.
+    ['ca-toggle-run3', 'ev-toggle-run3', 'gr-toggle-run3', 'cv-toggle-run3', 'gd-toggle-run3']
+        .forEach(id => getEl(id).listeners.click());
+    ok('the cast is the roles the lead BOUND, not a team the user named',
+        html().includes('<b>Cast</b>') && html().includes('2 bound of 2')
+        && html().includes('runs each path against the real CLI'));
+    ok('…and says who is working right now', html().includes('>working<'));
+    ok('every verdict is kept, with who gave it and what it advised',
+        html().includes('<b>Evaluations</b>') && html().includes('>replan<') && html().includes('>revise<'));
+    ok('the runtime graph draws what actually happened, with its fan-in',
+        html().includes('<b>Runtime graph</b>') && html().includes('3 nodes')
+        && html().includes('coder — open a session') && html().includes('⤶1'));
+    ok('the conversation summary counts only messages that were really SPOKEN',
+        html().includes('<b>Conversations</b>') && html().includes('council k1') && html().includes('2 msg'));
+    ok('‼️ a steer says WHERE it lands, and never claims to reach work in flight',
+        html().includes('Guide next decision') && html().includes('1 waiting')
+        && html().includes('never the delegation running now'));
+    ok('a journal gap is said out loud rather than hiding the run',
+        html().includes('one delegation of round 2 has an unknown fate'));
+    ok('‼️ a `parallel` round draws its delegations — the branch that tested the round\'s NAME',
+        html().includes('read the price back') && html().includes('say what it does not show'));
+
+    posted = [];
+    getEl('gd-text-run3').value = 'prefer a failed criterion over an unknown';
+    getEl('gd-send-run3').listeners.click();
+    ok('Queue steer posts the guide message with the run and the text',
+        posted[0] && posted[0].type === 'guide' && posted[0].runId === 'run3'
+        && posted[0].text === 'prefer a failed criterion over an unknown');
+    msgHandler({ data: { type: 'guided', runId: 'run3', note: 'Recorded. The lead sees it at its next decision.', error: '' } });
+    ok('…and the HOST\'s sentence about when it lands is what the reader is shown',
+        html().includes('Recorded. The lead sees it at its next decision.'));
+    msgHandler({ data: { type: 'guided', runId: 'run3', note: '', error: 'That is a classic mission: it has no strategy to steer.' } });
+    ok('…as is its refusal, verbatim — the page keeps no second rule about what may be steered',
+        html().includes('That is a classic mission: it has no strategy to steer.'));
+
+    // and the obligation the rest of it inherits: a classic run notices none of it
+    wired.run.find(r => r.dataset.run === 'run3')._click();
+    wired.run.find(r => r.dataset.run === 'run1')._click();
+    ok('‼️ a CLASSIC run grows none of these sections',
+        !html().includes('<b>Objective</b>') && !html().includes('<b>Strategy</b>')
+        && !html().includes('<b>Cast</b>') && !html().includes('<b>Runtime graph</b>')
+        && !html().includes('Guide next decision'));
+}
 
 // ---------- live "now" strip ----------
 msgHandler({

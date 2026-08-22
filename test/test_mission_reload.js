@@ -157,11 +157,16 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
         /taskManager\.workflowRunState\(refId\)/.test(ext));
     ok('…and a child through its own run record',
         /const cr = missionStore\.run\(refId\);/.test(ext));
-    eq('‼️ and BOTH reconcile call sites use it — the reload and missions.trace, '
-        + 'or two surfaces answer differently about one run',
-        (ext.match(/reconcileRun\([\s\S]{0,120}?missionExternalLookup\)/g) || []).length, 2);
+    // ‼️ U-64 added the THIRD — the Missions page's own trace view, which draws
+    // the strategy history and the runtime graph. The rule is unchanged and is
+    // the reason this is counted rather than eyeballed: a reconcile that asked
+    // the journal alone would tell the reader an action was interrupted while
+    // the task store had it finished ten minutes ago.
+    eq('‼️ and EVERY reconcile call site uses it — the reload, missions.trace and '
+        + 'the page\'s trace view, or three surfaces answer differently about one run',
+        (ext.match(/reconcileRun\([\s\S]{0,120}?missionExternalLookup\)/g) || []).length, 3);
     eq('…and no reconcile is left asking the journal alone',
-        (ext.match(/reconcileRun\(/g) || []).length, 2);
+        (ext.match(/reconcileRun\(/g) || []).length, 3);
     ok('the interrupted branch keeps the figures',
         /step\.failure = missionFailure\('interrupted', step, step\.note\);\s*\n[\s\S]{0,600}?if \(a\.costUSD !== undefined\) \{ step\.costUSD = a\.costUSD; \}/.test(ext));
     ok('the recovered branch restores the child\'s verdict',

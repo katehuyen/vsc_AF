@@ -136,6 +136,30 @@ ok('it is the version package.json claims',
     ok('‼️ nothing that belongs to the workshop shipped'
         + (leaked.length ? ' (' + leaked.slice(0, 6).join(', ') + (leaked.length > 6 ? ', …' : '') + ')' : ''),
         leaked.length === 0);
+    /**
+     * ‼️ AND NOTHING NOBODY MEANT TO SHIP AT ALL.
+     *
+     * Every check above names a FOLDER. A stray file dropped in the repo ROOT
+     * matches no ignore pattern and no folder rule, so it rides into the
+     * artefact silently: measured on 3.230.0, a 1.4 MB file a mistyped shell
+     * redirection had created in the root was packed and every gate passed.
+     * The root of this extension has a known, short list of files; anything
+     * else there is an accident, and an accident in a shipped artefact is
+     * exactly what this tool exists to name.
+     */
+    const ROOT_OK = new Set([
+        'package.json', 'package-lock.json', 'readme.md', 'changelog.md',
+        // vsce renames the licence on its way in, so BOTH spellings are legal
+        'license', 'license.txt',
+        'tsconfig.json', '.vscodeignore', '.gitignore', '.gitattributes'
+    ]);
+    const strays = [...names]
+        .filter(n => n.startsWith('extension/') && !n.slice('extension/'.length).includes('/'))
+        .map(n => n.slice('extension/'.length))
+        .filter(n => !ROOT_OK.has(n.toLowerCase()));
+    ok('‼️ no stray file rode into the archive from the repo root'
+        + (strays.length ? ' (' + strays.slice(0, 6).join(', ') + (strays.length > 6 ? ', …' : '') + ')' : ''),
+        strays.length === 0);
     const total = files.reduce((n, f) => n + f.size, 0);
     console.log(`  ${(total / 1048576).toFixed(1)} MB uncompressed · ${fs.statSync(vsix).size / 1048576 < 1 ? '<1' : (fs.statSync(vsix).size / 1048576).toFixed(1)} MB packed`);
     ok('the build did not silently double in size', total < 40 * 1048576);

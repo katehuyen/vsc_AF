@@ -50,6 +50,18 @@
     // ---- mission-control observation state ----
     let liveOpen = true;              // "Live activity" section (hook events)
     let ledgerOpen = false;           // planner ledger section
+    // ---- U-64: the adaptive sections. Open by default are the two that answer
+    // "what is it doing and why" the moment the run is opened; the rest are
+    // history and cost a click, which is the DENSITY trade this page already
+    // makes for the ledger.
+    let objOpen = true;               // Objective — criteria and their verdicts
+    let stratOpen = true;             // Strategy in force + its revisions
+    let evalOpen = false;             // every verdict recorded
+    let castOpen = false;             // runtime roles the lead bound
+    let graphOpen = false;            // the runtime graph
+    let guideOpen = false;            // steer the next decision
+    let convOpen = false;             // conversation / council summary
+    const guideNote = {};             // runId → what the host said about the last steer
     let expandedStep = null;          // step id opened in the accordion (one at a time)
     let tail = { file: '', text: '', size: 0, missing: false };
     let tailTimer = null;
@@ -78,13 +90,61 @@
         // fenced by this one alone, and a user who could not see it believed the
         // dollar box was protecting them.
         maxTokens: '',
-        approvalMode: 'each-round'
+        approvalMode: 'each-round',
+        /**
+         * ‼️ U-64 (X-32) — WHICH KIND OF WORK THIS FORM IS STARTING.
+         *
+         * Anything that is not the exact string 'adaptive' is a classic
+         * mission — the same rule `createMission` applies on the host, written
+         * once on each side rather than negotiated. Classic is the default and
+         * its fields, its DOM and the payload it posts are untouched by this:
+         * the adaptive keys below are added to the message ONLY in adaptive
+         * mode, so a classic Start is byte-for-byte the message it always was.
+         */
+        mode: 'classic',
+        // Adaptive-only. Held even while classic is showing, because switching
+        // mode must not throw away what was typed in the other one.
+        constraints: [''],
+        criteria: [{ text: '', required: true }],
+        autonomy: 'ask-when-unsure'
     };
+    // Adaptive basic view = outcome + constraints + criteria. Everything the
+    // user is NOT being asked to decide (lead, pool, workdir, limits, engines,
+    // approval) lives under this fold — open once and it stays open.
+    let advOpen = false;
     // suggestions for the model inputs — the user's agentFarm.modelAliases
     // knowledge base (add a name once, every picker knows it); free text still allowed
     const modelSuggestions = () =>
         (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
     const modelDatalist = () => `<datalist id="modelopts">${modelSuggestions().map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>`;
+
+    /**
+     * ‼️ U-64 — THE LAUNCH SHAPE, so this form asks `afEngine.js` what an
+     * engine offers instead of guessing. Every other launch surface (Console,
+     * Task launcher, Settings) narrows model and effort to the engine the row
+     * is set to; this form did not, and offered four Claude aliases and six
+     * efforts to a member delegating on OpenCode. Same three fields the shared
+     * helper takes, built from the payload this page already receives.
+     */
+    const launchView = () => ({
+        engines: DATA.engines || [], engineModels: DATA.engineModels || {}, efforts: DATA.efforts || []
+    });
+    /** Which engine a member row really lands on: its own, else the mission's. */
+    const effEngine = (agentId) => form.engines[agentId] || form.engine || 'claude';
+    /** The datalist id carrying that engine's live models — '' when it has none
+     *  and the alias list is still the honest suggestion. */
+    const modelListFor = (engine) => {
+        const rows = (window.AFEngine.models(launchView(), engine) || []).filter(m => m.id);
+        return rows.length ? 'mo-' + engine : 'modelopts';
+    };
+    /** One datalist per engine that publishes a catalog, drawn once per render.
+     *  A free-typed model is still allowed — this is suggestion, not a fence. */
+    const engineDatalists = () => (DATA.engines || []).map(e => {
+        const rows = (window.AFEngine.models(launchView(), e.id) || []).filter(m => m.id);
+        if (!rows.length) { return ''; }
+        return `<datalist id="mo-${C.esc(e.id)}">${rows.map(m =>
+            `<option value="${C.esc(m.id)}">${C.esc(m.label && m.label !== m.id ? m.label : '')}</option>`).join('')}</datalist>`;
+    }).join('');
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
@@ -234,14 +294,20 @@
         // rule as the permissions above: never a copy typed in here, or the two
         // surfaces start offering different words for the same setting.
         const efforts = DATA.efforts || [];
-        const effortOpts = (sel) => ['<option value="">— resolved —</option>']
-            .concat(efforts.filter(e => e.id).map(e =>
+        // ‼️ U-64 — THE EFFORTS THAT ENGINE REALLY HAS, not the fleet-wide six.
+        // `AFEngine.efforts` answers per engine AND per model, so a member put
+        // on an engine with no effort flag is offered nothing rather than five
+        // words its launch will refuse. The full list is still the fallback for
+        // an engine whose catalog has not been fetched yet.
+        const effortRowsFor = (engine, model) => window.AFEngine.efforts(launchView(), engine, model) || [];
+        const effortOpts = (sel, rows) => ['<option value="">— resolved —</option>']
+            .concat((rows || efforts).filter(e => e.id).map(e =>
                 `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}>${C.esc(e.label)}</option>`))
             .join('');
         // MIRROR: too narrow to say what it is, so the tooltip opens with the
         // value it holds RIGHT NOW and then explains the field.
-        const effortTitle = (sel) => {
-            const cur = efforts.find(e => e.id === (sel || ''));
+        const effortTitle = (sel, rows) => {
+            const cur = (rows && rows.length ? rows : efforts).find(e => e.id === (sel || ''));
             return (sel || 'resolved') + (cur && cur.detail ? ' — ' + cur.detail : '')
                 + '\n\nEffort: how hard this member thinks per turn. Leave it empty and it is RESOLVED'
                 + ' the way a launch resolves it — this agent\'s own default for the engine it lands on,'
@@ -249,38 +315,106 @@
                 + ' a setting; one that does not refuses the run up front rather than passing a flag it'
                 + ' does not know.';
         };
-        const teamRows = DATA.agents.map((a, i) => `
+        const teamRows = DATA.agents.map((a, i) => {
+            // ‼️ U-64 — the row's OWN engine decides what its model box suggests
+            // and whether its effort box has anything to offer. Resolved here,
+            // not read off the select, so a member that says nothing inherits
+            // the mission's engine the same way the launch will.
+            const eng = effEngine(a.id);
+            const eRows = effortRowsFor(eng, form.models[a.id] || '');
+            const noEffort = !eRows.length;
+            const engLabel = (engines.find(e => e.id === eng) || {}).label || eng;
+            return `
             <div class="tmrow">
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
                     value="${C.esc(form.roles[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
                 <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
-                    title="Engine: which CLI this member's delegations run on — empty = the mission's engine below"
+                    title="Engine: which CLI this member's delegations run on — empty = the mission's engine below (now ${C.esc(engLabel)}). Changing it re-reads that engine's models and efforts into the two boxes on this row."
                     ${form.team[a.id] ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
                 <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
                     title="${C.esc(permTitle(form.perms[a.id] || ''))}"
                     ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
                 <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
-                    title="${C.esc(effortTitle(form.efforts[a.id] || ''))}"
-                    ${form.team[a.id] ? '' : 'disabled'}>${effortOpts(form.efforts[a.id] || '')}</select>
-                <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="modelopts"
-                    placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy"
+                    title="${C.esc(noEffort
+                        ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
+                        : effortTitle(form.efforts[a.id] || '', eRows))}"
+                    ${form.team[a.id] && !noEffort ? '' : 'disabled'}>${noEffort
+                        // SHORTHAND: the box is 152px and the engine's name does
+                        // not fit in it. The short form goes on the control, the
+                        // long one is already in the tooltip above.
+                        ? '<option value="">— no effort —</option>'
+                        : effortOpts(form.efforts[a.id] || '', eRows)}</select>
+                <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="${C.esc(modelListFor(eng))}"
+                    placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy. The suggestions are ${C.esc(engLabel)}'s own catalog as this window last read it; free text is still allowed."
                     value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
-            </div>`).join('');
+            </div>`;
+        }).join('');
         const lim = (key, label, hint) => `
             <label class="limfield" title="${C.esc(hint)}">${label}
                 <input type="number" id="lim-${key}" value="${C.esc(String(form[key] !== '' ? form[key] : DATA.defaults[key]))}">
             </label>`;
-        return `<div class="card" id="mform">
-            <h2 style="margin-top:0">New Mission</h2>
-            <p class="muted small">The lead agent plans round by round and delegates to the team; every delegation runs as a normal
-            headless task. Hard limits below fence the cost — the mission ends honestly when one is hit.</p>
-            <div class="frow"><label>Title <input type="text" id="f-title" placeholder="(optional — the goal's first words otherwise)" value="${C.esc(form.title)}"></label></div>
-            <div class="frow"><label>Goal <span class="req">required</span>
-                <textarea id="f-goal" rows="4" placeholder="What should this mission achieve? Be concrete: repo, deliverable, what counts as done.">${C.esc(form.goal)}</textarea></label></div>
-            <div class="frow"><label>Lead agent <span class="req">required</span> <select id="f-lead">${agentOpts}</select></label>
-                <span class="muted small">Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.</span></div>
-            <div class="frow"><span class="flabel">Team <span class="req">at least one</span></span>${teamRows}</div>
+        const adaptive = form.mode === 'adaptive';
+        /**
+         * ‼️ U-64 — THE ONE CHOICE THE FORM OPENS WITH, and the only one that
+         * changes what the rest of it asks. Segmented rather than a select
+         * because it is not a setting among settings: it decides whether the
+         * user is writing a RECIPE (classic — lead, team, rounds) or an OUTCOME
+         * (adaptive — result, constraints, criteria). Classic is first and
+         * pre-selected, so a hand that opens this form and types the way it
+         * always has starts exactly the mission it always started.
+         */
+        const modeSeg = `<div class="modeseg" role="radiogroup" aria-label="Kind of mission">
+            <button type="button" class="segbtn${adaptive ? '' : ' on'}" id="f-mode-classic" role="radio"
+                aria-checked="${adaptive ? 'false' : 'true'}"
+                title="Classic Mission — you give the RECIPE. You name the lead and the team, the lead plans round by round and delegates, and every delegation is a normal headless task. This is what a mission has always been and it stays the default; a run with no mode recorded is one of these.">Classic Mission</button>
+            <button type="button" class="segbtn${adaptive ? ' on' : ''}" id="f-mode-adaptive" role="radio"
+                aria-checked="${adaptive ? 'true' : 'false'}"
+                title="Adaptive Objective — you give the OUTCOME. You say what has to be true when this is done, what the run may not do, and how it will be judged; the lead builds the strategy at runtime, picks who works on what, and cannot close as success until an evaluation ties the criteria to real work. Everything else — who leads, who is in the pool, the limits, the engines — has a default and lives under Advanced.">Adaptive Objective</button>
+        </div>`;
+        // ‼️ Adaptive-only inputs. They are drawn from `form`, which HOLDS them
+        // while classic is showing: switching mode hides a field, it never
+        // clears one, and the same is true the other way round.
+        const conRows = form.constraints.map((c, i) => `
+            <div class="listrow">
+                <input type="text" id="cn-${i}" class="grow" placeholder="what this run may NOT do — e.g. do not touch files outside media/"
+                    value="${C.esc(c)}">
+                <button type="button" class="chip" id="cn-del-${i}" title="Drop this constraint">✕</button>
+            </div>`).join('');
+        const critRows = form.criteria.map((c, i) => `
+            <div class="listrow">
+                <span class="critid" title="The criterion's id — evaluations refer to it by this name for the life of the run">c${i + 1}</span>
+                <input type="text" id="cr-${i}" class="grow" placeholder="what has to be TRUE for this to be done — judged against real work, not against effort"
+                    value="${C.esc(c.text)}">
+                <label class="reqbox" title="${C.esc('Required: the run cannot close as success until this one is met — a required criterion left unmet is a partial or a failure, said out loud.\n\nOptional: judged and reported, but it does not hold the verdict.')}">
+                    <input type="checkbox" id="cq-${i}"${c.required ? ' checked' : ''}> required</label>
+                <button type="button" class="chip" id="cr-del-${i}" title="Drop this criterion">✕</button>
+            </div>`).join('');
+        const objectiveBlock = !adaptive ? '' : `
+            <div class="frow"><span class="flabel">Constraints
+                <span class="muted small">— what this run may NOT do (optional)</span></span>
+                ${conRows}
+                <button type="button" class="chip" id="cn-add" title="Add another constraint line">+ constraint</button></div>
+            <div class="frow"><span class="flabel">Success criteria <span class="req">at least one</span>
+                <span class="muted small">— how the result is judged</span></span>
+                ${critRows}
+                <button type="button" class="chip" id="cr-add" title="Add another criterion line">+ criterion</button></div>
+            <div class="frow"><label>Autonomy
+                <select id="f-autonomy">
+                    <option value="ask-when-unsure"${form.autonomy !== 'decide-alone' ? ' selected' : ''}>ask when unsure — the lead stops and asks you rather than guessing</option>
+                    <option value="decide-alone"${form.autonomy === 'decide-alone' ? ' selected' : ''}>decide alone — the lead never asks; it decides and records why</option>
+                </select></label>
+                <span class="muted small">Only about JUDGEMENT calls. The hard limits and the approval gate below still apply either way.</span></div>`;
+        // Everything the adaptive user is not being asked to decide. Classic
+        // draws this block plainly, exactly as it always has.
+        const commonBlock = `
+            <div class="frow"><label>${adaptive ? 'Lead agent' : 'Lead agent <span class="req">required</span>'} <select id="f-lead">${agentOpts}</select></label>
+                <span class="muted small">${adaptive
+                    ? 'Optional here — leave it and the first of the pool leads, which is what the run records. Its CLAUDE.md is the orchestration identity.'
+                    : 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'}</span></div>
+            <div class="frow"><span class="flabel">${adaptive
+                ? 'Pool <span class="muted small">— whom the lead may draw on; empty = the whole fleet</span>'
+                : 'Team <span class="req">at least one</span>'}</span>${teamRows}</div>
             <div class="frow"><label>Workdir <input type="text" id="f-workdir" placeholder="(optional) target repo/folder — delegations run inside it" value="${C.esc(form.workdir)}"></label>
                 <button class="secondary small" id="f-browse">Browse…</button>
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
@@ -299,65 +433,124 @@
                 <code>--disallowedTools</code> and <code>--max-turns</code>, which the others do not have. Delegation engine
                 and planner engine are separate axes on purpose.</span></div>
             <div class="frow"><label>Planner model
-                <input type="text" id="f-planner" list="modelopts" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
+                <input type="text" id="f-planner" list="${C.esc(modelListFor('claude'))}" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
                 <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's row, then the mission engine above, then that agent's own default for that engine, then your fleet defaults.</span></div>
-            ${modelDatalist()}
+            ${modelDatalist()}${engineDatalists()}
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
                     <option value="auto"${form.approvalMode === 'auto' ? ' selected' : ''}>auto — run without gates (hard limits still apply)</option>
-                </select></label></div>
+                </select></label></div>`;
+        return `<div class="card" id="mform">
+            <h2 style="margin-top:0">New Mission</h2>
+            ${modeSeg}
+            <p class="muted small">${adaptive
+                ? 'You give the outcome; the lead builds the strategy at runtime, chooses who works on what and combines the primitives it needs. It cannot close as <b>success</b> until a structured evaluation ties every required criterion to real work — partial and failed are honest endings and it will use them.'
+                : 'The lead agent plans round by round and delegates to the team; every delegation runs as a normal headless task. Hard limits below fence the cost — the mission ends honestly when one is hit.'}</p>
+            <div class="frow"><label>Title <input type="text" id="f-title" placeholder="(optional — the goal's first words otherwise)" value="${C.esc(form.title)}"></label></div>
+            <div class="frow"><label>${adaptive ? 'Outcome' : 'Goal'} <span class="req">required</span>
+                <textarea id="f-goal" rows="4" placeholder="${adaptive
+                    ? 'What do you want to end up with? Describe the RESULT, not the steps — what has to be true when this is done.'
+                    : 'What should this mission achieve? Be concrete: repo, deliverable, what counts as done.'}">${C.esc(form.goal)}</textarea></label></div>
+            ${objectiveBlock}
+            ${adaptive ? `<div class="colsec advsec">
+                <div class="colhead" id="f-adv" title="Everything an objective already has a default for: who leads, who is in the pool, where it runs, the hard limits, which engine the delegations use and whether each round is gated. Open it only when you want to overrule one.">
+                    <span class="carets">${advOpen ? '▾' : '▸'}</span> <b>Advanced</b>
+                    <span class="muted small">lead · pool · workdir · limits · engines · approval</span>
+                </div>
+                ${advOpen ? `<div class="advbody">${commonBlock}</div>` : ''}
+            </div>` : commonBlock}
             ${formErr ? `<div class="ferr">⚠ ${C.esc(formErr)}</div>` : ''}
             <div class="frow">
-                <button id="f-start">Start mission</button>
+                <button id="f-start">${adaptive ? 'Start objective' : 'Start mission'}</button>
                 <button class="secondary" id="f-cancel">Cancel</button>
             </div>
         </div>`;
     }
 
     function readForm() {
-        form.title = document.getElementById('f-title').value;
-        form.goal = document.getElementById('f-goal').value;
-        form.leadAgentId = document.getElementById('f-lead').value;
-        form.workdir = document.getElementById('f-workdir').value;
-        form.plannerModel = document.getElementById('f-planner').value;
-        form.engine = document.getElementById('f-engine').value;
+        // ‼️ U-64 — READ WHAT IS ON SCREEN, KEEP WHAT IS NOT. An adaptive form
+        // with Advanced folded has no lead select and no limit boxes in the
+        // DOM at all; reading them blind threw, and reading them as '' would
+        // have silently wiped a value the user typed before folding it away.
+        // So every read is guarded and a missing control leaves `form` alone.
+        const val = (id, keep) => {
+            const el = document.getElementById(id);
+            return el ? el.value : keep;
+        };
+        form.title = val('f-title', form.title);
+        form.goal = val('f-goal', form.goal);
+        form.leadAgentId = val('f-lead', form.leadAgentId);
+        form.workdir = val('f-workdir', form.workdir);
+        form.plannerModel = val('f-planner', form.plannerModel);
+        form.engine = val('f-engine', form.engine);
         DATA.agents.forEach((a, i) => {
-            form.team[a.id] = !!document.getElementById('tm-' + i).checked;
-            form.roles[a.id] = document.getElementById('rl-' + i).value;
-            form.models[a.id] = document.getElementById('md-' + i).value;
-            form.engines[a.id] = document.getElementById('en-' + i).value;
-            form.perms[a.id] = document.getElementById('pm-' + i).value;
-            form.efforts[a.id] = document.getElementById('ef-' + i).value;
+            const cb = document.getElementById('tm-' + i);
+            if (!cb) { return; }
+            form.team[a.id] = !!cb.checked;
+            form.roles[a.id] = val('rl-' + i, form.roles[a.id]);
+            form.models[a.id] = val('md-' + i, form.models[a.id]);
+            form.engines[a.id] = val('en-' + i, form.engines[a.id]);
+            form.perms[a.id] = val('pm-' + i, form.perms[a.id]);
+            form.efforts[a.id] = val('ef-' + i, form.efforts[a.id]);
         });
         ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'].forEach(k => {
-            form[k] = document.getElementById('lim-' + k).value;
+            form[k] = val('lim-' + k, form[k]);
         });
-        form.approvalMode = document.getElementById('f-approval').value;
+        form.approvalMode = val('f-approval', form.approvalMode);
+        // The objective rows exist only while Adaptive is showing. Gated on the
+        // mode rather than on finding the elements, because that is the fact
+        // that decides it: in classic they are not drawn, and a read there
+        // could only ever return the empty string over what was typed.
+        if (form.mode === 'adaptive') {
+            form.autonomy = val('f-autonomy', form.autonomy);
+            form.constraints = form.constraints.map((c, i) => val('cn-' + i, c));
+            form.criteria = form.criteria.map((c, i) => {
+                const box = document.getElementById('cq-' + i);
+                return { text: val('cr-' + i, c.text), required: box ? !!box.checked : c.required };
+            });
+        }
     }
 
     function submitForm() {
         readForm();
         formErr = '';
-        vscode.postMessage({
-            type: 'create',
-            input: {
-                title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
-                workdir: form.workdir, plannerModel: form.plannerModel,
-                engine: form.engine,
-                team: DATA.agents.filter(a => form.team[a.id])
-                    .map(a => ({
-                        agentId: a.id, role: form.roles[a.id] || '',
-                        model: form.models[a.id] || '', engine: form.engines[a.id] || '',
-                        effort: form.efforts[a.id] || '',
-                        permissionMode: form.perms[a.id] || ''
-                    })),
-                maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
-                maxTokens: form.maxTokens,
-                maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
-                approvalMode: form.approvalMode
-            }
-        });
+        /**
+         * ‼️ U-64 — A CLASSIC START POSTS THE MESSAGE IT ALWAYS POSTED. The
+         * adaptive keys are ADDED, never a `mode: 'classic'` written into every
+         * message: the host reads anything that is not the exact string
+         * 'adaptive' as classic, and a payload that grows keys nobody reads is
+         * how a "backwards compatible" change stops being one.
+         */
+        const input = {
+            title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
+            workdir: form.workdir, plannerModel: form.plannerModel,
+            engine: form.engine,
+            team: DATA.agents.filter(a => form.team[a.id])
+                .map(a => ({
+                    agentId: a.id, role: form.roles[a.id] || '',
+                    model: form.models[a.id] || '', engine: form.engines[a.id] || '',
+                    effort: form.efforts[a.id] || '',
+                    permissionMode: form.perms[a.id] || ''
+                })),
+            maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
+            maxTokens: form.maxTokens,
+            maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
+            approvalMode: form.approvalMode
+        };
+        if (form.mode === 'adaptive') {
+            input.mode = 'adaptive';
+            input.autonomy = form.autonomy;
+            input.constraints = form.constraints.map(c => String(c || '').trim()).filter(Boolean);
+            input.successCriteria = form.criteria
+                .map((c, i) => ({ id: 'c' + (i + 1), text: String(c.text || '').trim(), required: !!c.required }))
+                .filter(c => c.text);
+            // The pool IS the team rows — one cast list, ticked once. Empty is a
+            // real answer here (the whole fleet), which is why `team` still
+            // rides along untouched and the host picks the one its mode means.
+            input.pool = input.team;
+        }
+        vscode.postMessage({ type: 'create', input });
     }
 
     // ---------------- run detail ----------------
@@ -622,6 +815,14 @@
         const mins = Math.max(0, Math.round(((r.endedAt || Date.now()) - r.startedAt - (r.waitedMs || 0)) / 60000));
         const shares = tokenShares(r, sp);
         const lines = [
+            // ‼️ U-64 — WHICH KIND OF RUN THIS IS, first, because it changes what
+            // every line under it means: a classic run's "team" is the cast the
+            // user named, an adaptive one's is whoever the lead bound at
+            // runtime. A spec with no mode recorded IS classic — the same rule
+            // the host applies, never a guess from the fields present.
+            sp.mode === 'adaptive'
+                ? `mode: Adaptive Objective — outcome given, strategy built at runtime`
+                : `mode: Classic Mission — lead + team + rounds, as given`,
             `goal: ${sp.goal}`,
             `lead: ${sp.leadAgentName}${sp.plannerModel ? ` (planner: ${sp.plannerModel})` : ''}`,
             `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '')
@@ -706,12 +907,23 @@
         const key = run.id + ':' + r.n;
         const closed = closedRounds.has(key);
         let body = '';
-        if (r.action === 'delegate') {
+        // ‼️ U-64 — THE WORK IS DRAWN FOR EVERY ROUND THAT HAS ANY, not only
+        // for `delegate`. An adaptive lead orders `parallel`, `review`,
+        // `compare`, `revise`, `message` and `council` rounds, and each one puts
+        // real delegations on the record — this branch tested the round's NAME
+        // instead of its contents, so all of them rendered as a bare thought
+        // with their steps invisible. The classic path is unchanged: a classic
+        // round that delegates has steps and draws the same table it always did.
+        if (r.steps && r.steps.length) {
             body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th><th></th></tr></thead>
                 <tbody>${r.steps.map(s => stepRow(s, run)).join('')}</tbody></table>
                 ${r.rejectedReason ? `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>` : ''}`;
         } else if (r.action === 'ask_user') {
             body = `<div class="qa"><b>Q:</b> ${C.esc(r.question || '')}<br><b>A:</b> ${C.esc(r.answer || '(pending)')}</div>`;
+        } else if (r.rejectedReason) {
+            // A round the user rejected never got its steps — the reason is
+            // the whole record of it and must not fall out with the table.
+            body = `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>`;
         }
         const closedSummary = closed && r.steps.length ? `${r.steps.length} delegation(s) · ` : '';
         const stats = roundStats(r);
@@ -721,6 +933,8 @@
             <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <span class="turnnum">R${r.n}</span>
             <span class="tag">${C.esc(r.action)}</span>
+            ${r.strategyVersion ? `<span class="mchip ver" title="The revision of the strategy in force when this round was decided — a version is cut when the approach MOVED, so a run of eight rounds under one v1 changed its mind never">v${r.strategyVersion}</span>` : ''}
+            ${r.phase ? `<span class="mchip phase" title="The lead's own label for where the run is. An observation, not a stage the engine enforces — nothing branches on its value.">${C.esc(r.phase)}</span>` : ''}
             <span class="turnlabel">${C.esc(r.thought || r.question || '')}</span>
             <span class="turnstats">${closedSummary}${stats ? stats + ' · ' : ''}${fmtTime(r.at)}</span>
         </div>` + (closed ? '' : `<div class="roundbody">
@@ -736,6 +950,325 @@
             agentId: agentId || '', agentName: agentName || '',
             role: role || '', model: model || ''
         });
+    }
+
+    // ================= U-64: the ADAPTIVE half of a run's detail =============
+    //
+    // ONE SUBJECT per section: the objective says what is being judged, the
+    // strategy says what the lead is doing and why, the evaluations say what
+    // was found, the cast says who is on it, the graph says what actually
+    // happened. No fact is drawn in two of them.
+    //
+    // ‼️ What is NOT drawn: the lead's hidden reasoning. A round's `thought`
+    // and a strategy's own words are statements the lead MADE for the record;
+    // there is no place here for chain-of-thought, and the absence is
+    // deliberate rather than a gap somebody will helpfully fill in later.
+
+    const isAdaptive = (sp) => sp.mode === 'adaptive';
+    const traceOf = (run) => (DATA.traces || {})[run.id] || null;
+
+    /** ‼️ M-17's staleness rule, applied on the page exactly as the core states
+     *  it: a verdict expires when work for a criterion it judged SETTLED after
+     *  it — never by age. Derived here for the same reason it is derived there
+     *  (a stored flag would be a second copy of what the timeline says). */
+    function settledWork(run) {
+        const out = [];
+        run.rounds.forEach(r => r.steps.forEach(s => {
+            if (s.evaluates) { return; }
+            if (s.status !== 'done' && s.status !== 'failed') { return; }
+            if (s.criteria && s.criteria.length) { out.push({ at: r.at, criteria: s.criteria }); }
+        }));
+        return out;
+    }
+    function evalStale(ev, settled) {
+        const judged = {};
+        (ev.findings || []).forEach(f => { judged[f.criterionId] = true; });
+        return settled.some(s => s.at > ev.at && (s.criteria || []).some(c => judged[c]));
+    }
+    /** The latest CURRENT verdict per criterion — the same reading the success
+     *  gate does, so the page can never show a pass the gate would refuse. */
+    function criterionState(run) {
+        const settled = settledWork(run);
+        const state = {};
+        (run.evaluations || []).forEach(ev => {
+            if (evalStale(ev, settled)) { return; }
+            (ev.findings || []).forEach(f => {
+                state[f.criterionId] = { verdict: f.verdict, evidence: f.evidence, gap: f.gap, at: ev.at };
+            });
+        });
+        return state;
+    }
+    const VERDICT_CHIP = { pass: 'ok', fail: 'bad', unknown: 'wait' };
+
+    /** WHAT IS BEING JUDGED — criteria with their current verdict, the
+     *  constraints the run may not break, and how much rope the lead has. */
+    function objectiveSection(run, sp) {
+        const crit = sp.successCriteria || [];
+        const state = criterionState(run);
+        const met = crit.filter(c => (state[c.id] || {}).verdict === 'pass').length;
+        const reqUnmet = crit.filter(c => c.required && (state[c.id] || {}).verdict !== 'pass').length;
+        const rows = crit.map(c => {
+            const st = state[c.id] || {};
+            const v = st.verdict || 'unjudged';
+            const tip = [
+                c.required ? 'required — success is refused while this has no current pass'
+                    : 'optional — judged and reported, but it does not hold the verdict',
+                st.evidence ? 'evidence: ' + st.evidence : '',
+                st.gap ? 'gap: ' + st.gap : '',
+                st.at ? 'last judged ' + fmtTime(st.at) : 'no current verdict — nothing has judged it yet'
+            ].filter(Boolean).join('\n');
+            return `<tr title="${C.esc(tip)}">
+                <td class="critid">${C.esc(c.id)}</td>
+                <td>${C.esc(c.text)}</td>
+                <td>${c.required ? '<span class="mchip req">required</span>' : '<span class="muted small">optional</span>'}</td>
+                <td>${v === 'unjudged'
+                    ? '<span class="muted small">unjudged</span>'
+                    : `<span class="mchip ${VERDICT_CHIP[v] || 'wait'}">${C.esc(v)}</span>`}</td>
+                <td class="muted small">${C.esc(st.gap || st.evidence || '')}</td>
+            </tr>`;
+        }).join('');
+        const cons = (sp.constraints || []).map(c =>
+            `<li>${C.esc(c)}</li>`).join('');
+        return `<div class="colsec">
+            <div class="colhead" id="ob-toggle-${C.esc(run.id)}"
+                title="What this run is judged on. A required criterion opens the door only with a CURRENT pass — not a stale one, not an unknown, and not the absence of a complaint.">
+                <span class="carets">${objOpen ? '▾' : '▸'}</span> <b>Objective</b>
+                <span class="muted small">${met}/${crit.length} met${reqUnmet ? ` · ${reqUnmet} required still open` : ''}${
+                    sp.autonomy ? ` · ${C.esc(sp.autonomy)}` : ''}</span>
+            </div>
+            ${objOpen ? `<div class="objbody">
+                ${crit.length ? `<table class="mtable crit"><thead><tr>
+                    <th title="The criterion's id — every evaluation refers to it by this name for the life of the run">id</th>
+                    <th>Criterion</th><th title="Required criteria hold the success verdict; optional ones are reported and do not">Weight</th>
+                    <th title="The LATEST verdict that still speaks for the work as it stands — a verdict goes stale when work for the criterion it judged settled after it">Verdict</th>
+                    <th title="What is missing (gap), or what was seen (evidence)">Evidence / gap</th>
+                </tr></thead><tbody>${rows}</tbody></table>`
+                    : '<p class="muted small">This objective states no criteria — it cannot be judged and cannot close as success.</p>'}
+                ${cons ? `<div class="conslist"><span class="muted small">Constraints — what this run may not do:</span><ul>${cons}</ul></div>` : ''}
+            </div>` : ''}
+        </div>`;
+    }
+
+    /** WHAT IT IS DOING AND WHY — the strategy in force, and every revision
+     *  with the reason it was cut. The reason lives only in the journal, so a
+     *  run whose trace this window cannot read says so instead of guessing. */
+    function strategySection(run) {
+        const cur = run.strategy;
+        const tr = traceOf(run);
+        const revs = (tr && tr.strategies) || [];
+        if (!cur && !revs.length) { return ''; }
+        const head = cur
+            ? `<span class="mchip ver">v${cur.version}</span>${cur.phase ? ` <span class="mchip phase">${C.esc(cur.phase)}</span>` : ''}
+               <span class="muted small">since ${fmtTime(cur.at)}</span>`
+            : '<span class="muted small">no strategy recorded yet</span>';
+        // Newest first: the current approach is the one being read, and its
+        // predecessors are the history under it.
+        const hist = revs.slice().reverse().map(s => `
+            <div class="strow">
+                <span class="mchip ver">v${s.n}</span>
+                ${s.phase ? `<span class="mchip phase">${C.esc(s.phase)}</span>` : ''}
+                <span class="stext">${C.esc(s.summary)}</span>
+                ${s.reason ? `<span class="sreason" title="Why the approach MOVED — a version is cut when it did, never once per round">↺&nbsp;${C.esc(s.reason)}</span>` : ''}
+                <span class="muted small">${fmtTime(s.at)}</span>
+            </div>`).join('');
+        return `<div class="colsec">
+            <div class="colhead" id="st-toggle-${C.esc(run.id)}"
+                title="The approach the lead is working to right now, and every earlier revision with what made it change. A version is cut when the approach MOVED — a lead that restates the same plan five times has one strategy, not five.">
+                <span class="carets">${stratOpen ? '▾' : '▸'}</span> <b>Strategy</b> ${head}
+                ${revs.length > 1 ? `<span class="muted small">${revs.length} revisions</span>` : ''}
+            </div>
+            ${stratOpen ? `<div class="stratbody">
+                ${cur ? `<div class="curstrat">${C.esc(cur.text)}</div>` : ''}
+                ${hist || (tr ? '' : '<p class="muted small">The revision history is in this run\'s journal, which this window has not read.</p>')}
+            </div>` : ''}
+        </div>`;
+    }
+
+    /** WHAT WAS FOUND — every verdict this run recorded, stale ones kept,
+     *  because "we checked, then changed the thing" IS the history. */
+    function evaluationSection(run) {
+        const evs = run.evaluations || [];
+        if (!evs.length) { return ''; }
+        const settled = settledWork(run);
+        const rows = evs.slice().reverse().map(ev => {
+            const stale = evalStale(ev, settled);
+            const who = ev.evaluator && ev.evaluator.kind === 'agent'
+                ? (ev.evaluator.agentName || ev.evaluator.agentId || 'agent') : 'lead';
+            const finds = (ev.findings || []).map(f =>
+                `<span class="mchip ${VERDICT_CHIP[f.verdict] || 'wait'}"
+                    title="${C.esc(f.criterionId + ' — ' + f.verdict + (f.evidence ? '\nevidence: ' + f.evidence : '') + (f.gap ? '\ngap: ' + f.gap : ''))}">${C.esc(f.criterionId)} ${C.esc(f.verdict)}</span>`).join(' ');
+            return `<div class="evrow${stale ? ' stale' : ''}">
+                <span class="mchip adv">${C.esc(ev.advice)}</span>
+                <b>${C.esc(who)}</b>
+                ${finds}
+                ${stale ? '<span class="mchip wait" title="Work for a criterion this verdict judged settled AFTER it — the artefact it looked at is not the one that now exists. Kept, never deleted: the check happened.">stale</span>' : ''}
+                ${ev.note ? `<span class="muted small">${C.esc(ev.note)}</span>` : ''}
+                <span class="muted small">${fmtTime(ev.at)}</span>
+            </div>`;
+        }).join('');
+        const live = evs.filter(e => !evalStale(e, settled)).length;
+        return `<div class="colsec">
+            <div class="colhead" id="ev-toggle-${C.esc(run.id)}"
+                title="Every verdict this run recorded, newest first. A stale one is kept rather than deleted — throwing it away would leave a run that looks as though it was never reviewed. The advice (finish / revise / replan / explore / ask_user / partial / failed) is ADVICE: the lead still decides and the hard limits outrank both.">
+                <span class="carets">${evalOpen ? '▾' : '▸'}</span> <b>Evaluations</b>
+                <span class="muted small">${evs.length} recorded${evs.length !== live ? ` · ${live} still current` : ''}</span>
+            </div>
+            ${evalOpen ? `<div class="evbody">${rows}</div>` : ''}
+        </div>`;
+    }
+
+    /** WHO IS ON IT — the roles the lead BOUND at runtime, which is the only
+     *  place "the team" of an adaptive run is a fact, plus the pool it drew
+     *  from and who is busy right now. */
+    function castSection(run, sp) {
+        const roles = run.roles || [];
+        const pool = sp.pool || [];
+        if (!roles.length && !pool.length) { return ''; }
+        const busy = {};
+        run.rounds.forEach(r => r.steps.forEach(s => {
+            if (s.status === 'running') { busy[s.agentId] = (busy[s.agentId] || 0) + 1; }
+        }));
+        const rows = roles.map(r => `
+            <div class="castrow" ${teamCtx(r.agentId, r.agentName, r.brief, r.model)}
+                title="${C.esc([
+                    r.agentName + ' — ' + r.brief,
+                    'bound ' + fmtTime(r.boundAt) + ' — the first time the lead put this agent to work on this run',
+                    'engine ' + (r.engine || sp.engine || 'claude') + (r.model ? ' · model ' + r.model : '')
+                        + (r.effort ? ' · effort ' + r.effort : '') + (r.permissionMode ? ' · permissions ' + r.permissionMode : ''),
+                    window.AFCtx.HINT
+                ].join('\n'))}">
+                <b>${C.esc(r.agentName)}</b>
+                ${busy[r.agentId] ? '<span class="mchip live">working</span>' : ''}
+                <span class="brief">${C.esc(r.brief)}</span>
+                ${(r.engine || sp.engine) ? `<i class="mdl">${C.esc(r.engine || sp.engine)}</i>` : ''}
+                ${r.model ? `<i class="mdl">${C.esc(r.model)}</i>` : ''}
+                ${r.effort ? `<i class="mdl">~${C.esc(r.effort)}</i>` : ''}
+                ${r.permissionMode ? `<i class="mdl">${C.esc(r.permissionMode)}</i>` : ''}
+            </div>`).join('');
+        const unused = pool.filter(m => !roles.some(r => r.agentId === m.agentId));
+        return `<div class="colsec">
+            <div class="colhead" id="ca-toggle-${C.esc(run.id)}"
+                title="An adaptive lead is handed a POOL, not a cast: a role is bound the first time it puts an agent to work, and it lives on this run only — the same agent may hold a different role tomorrow without either statement being wrong.">
+                <span class="carets">${castOpen ? '▾' : '▸'}</span> <b>Cast</b>
+                <span class="muted small">${roles.length} bound of ${pool.length || 'the whole fleet'}${
+                    Object.keys(busy).length ? ` · ${Object.keys(busy).length} working now` : ''}</span>
+            </div>
+            ${castOpen ? `<div class="castbody">
+                ${rows || '<p class="muted small">Nobody bound yet — the lead has not delegated.</p>'}
+                ${unused.length ? `<div class="muted small">Still unused in the pool: ${unused.map(m =>
+                    C.esc(m.agentName) + (m.role ? ` <i class="mdl">${C.esc(m.role)}</i>` : '')).join(' · ')}</div>` : ''}
+            </div>` : ''}
+        </div>`;
+    }
+
+    /** WHAT ACTUALLY HAPPENED — the runtime graph. Never a workflow drawn in
+     *  advance: these nodes exist because the run made them, and the fan-in on
+     *  a decision is a recorded fact (`inputRefs`), not an inference from
+     *  timestamps. Drawn as an indented timeline, which is what a graph whose
+     *  edges are "what this was built from" reads as in a column this narrow. */
+    function graphSection(run) {
+        const tr = traceOf(run);
+        const nodes = (tr && tr.graph) || [];
+        if (!nodes.length) { return ''; }
+        const byId = {};
+        nodes.forEach(n => { byId[n.id] = n; });
+        const NODE_CHIP = { done: 'ok', failed: 'bad', running: 'live', cancelled: 'wait', open: 'wait' };
+        const rows = nodes.map(n => {
+            const ins = (n.inputRefs || []).filter(r => byId[r]);
+            const tip = [
+                n.kind + ' — ' + n.label,
+                'actor: ' + n.actor + ' · status: ' + n.status,
+                n.strategyVersion ? 'under strategy v' + n.strategyVersion + (n.phase ? ' · ' + n.phase : '') : '',
+                (n.parentRefs || []).length ? 'follows: ' + n.parentRefs.join(', ') : '',
+                ins.length ? 'built from: ' + ins.map(r => byId[r].label || r).join(' · ') : '',
+                (n.outputRefs || []).length ? 'produced: ' + n.outputRefs.join(', ') : '',
+                'created ' + fmtTime(n.createdAt) + (n.settledAt ? ' · settled ' + fmtTime(n.settledAt) : '')
+            ].filter(Boolean).join('\n');
+            return `<div class="gnode ${C.esc(n.kind)}" title="${C.esc(tip)}">
+                <span class="gid">${C.esc(n.id)}</span>
+                <span class="mchip ${NODE_CHIP[n.status] || 'wait'}">${C.esc(n.kind)}</span>
+                <span class="glabel">${C.esc(n.label)}</span>
+                ${ins.length ? `<span class="gin" title="fan-in — the results this was built from">⤶${ins.length}</span>` : ''}
+                ${n.strategyVersion ? `<span class="mchip ver">v${n.strategyVersion}</span>` : ''}
+                <span class="muted small">${C.esc(n.actor)}</span>
+            </div>`;
+        }).join('');
+        const kinds = {};
+        nodes.forEach(n => { kinds[n.kind] = (kinds[n.kind] || 0) + 1; });
+        return `<div class="colsec">
+            <div class="colhead" id="gr-toggle-${C.esc(run.id)}"
+                title="What the run really did, in the order it did it: a node per decision and per primitive it set in motion, with what each was built from. Nothing here was drawn in advance — a workflow's shape is decided before it starts and this one is not.">
+                <span class="carets">${graphOpen ? '▾' : '▸'}</span> <b>Runtime graph</b>
+                <span class="muted small">${nodes.length} nodes · ${Object.keys(kinds).map(k => `${kinds[k]} ${k}`).join(' · ')}</span>
+            </div>
+            ${graphOpen ? `<div class="graphbody">${rows}</div>` : ''}
+        </div>`;
+    }
+
+    /** THE HUMAN'S HAND ON A RUNNING OBJECTIVE — and, said plainly, WHERE it
+     *  lands. A steer is not delivered to work already in flight: a Task that
+     *  is running has its prompt and cannot be renegotiated. */
+    function guideSection(run, sp, active) {
+        const pend = (run.guidance || []).filter(g => !g.appliedAt);
+        const done = (run.guidance || []).filter(g => g.appliedAt);
+        if (!active && !pend.length && !done.length) { return ''; }
+        const note = guideNote[run.id];
+        return `<div class="colsec guidesec">
+            <div class="colhead" id="gd-toggle-${C.esc(run.id)}"
+                title="A one-off steer for the LEAD, injected exactly once at its next decision. It does not reach a delegation that is already running — that task has its prompt and cannot be renegotiated — and saying otherwise is the lie you would notice last.">
+                <span class="carets">${guideOpen ? '▾' : '▸'}</span> <b>Guide next decision</b>
+                <span class="muted small">${pend.length ? `${pend.length} waiting` : done.length ? `${done.length} applied` : 'nothing queued'}</span>
+            </div>
+            ${guideOpen ? `<div class="guidebody">
+                ${pend.map(g => `<div class="grow pend" title="Queued ${C.esc(fmtTime(g.at))} — it lands at the next planner boundary, not now">⏳ ${C.esc(g.text)}</div>`).join('')}
+                ${done.map(g => `<div class="grow" title="Put in front of the lead ${C.esc(fmtTime(g.appliedAt))} — exactly once">✓ ${C.esc(g.text)}</div>`).join('')}
+                ${active ? `<div class="guideform">
+                    <textarea id="gd-text-${C.esc(run.id)}" rows="2"
+                        placeholder="What should the lead take into account at its next decision?"></textarea>
+                    <button class="secondary small" id="gd-send-${C.esc(run.id)}">Queue steer</button>
+                    <span class="muted small">${run.status === 'running'
+                        ? 'It reaches the lead at its NEXT planner decision — never the delegation running now.'
+                        : `This run is ${C.esc(run.status)}; the lead sees it when it is resumed.`}</span>
+                </div>` : ''}
+                ${note ? `<div class="${note.error ? 'ferr' : 'muted small'}">${C.esc(note.error || note.note)}</div>` : ''}
+            </div>` : ''}
+        </div>`;
+    }
+
+    /** WHO SPOKE TO WHOM — a SUMMARY only. The transcript is U-65's subject and
+     *  drawing a hollow one here would be a feature that does not exist. */
+    function conversationSection(run) {
+        const convs = run.conversations || [];
+        const councils = run.councils || [];
+        if (!convs.length && !councils.length) { return ''; }
+        const byConv = {};
+        councils.forEach(k => { byConv[k.conversation] = k; });
+        const rows = convs.map(c => {
+            const k = byConv[c.id];
+            const msgs = (run.messages || []).filter(m => m.conversationId === c.id);
+            const said = msgs.filter(m => m.state !== 'failed').length;
+            return `<div class="cvrow" title="${C.esc([
+                (k ? 'council ' + k.id + ' — ' + k.question : 'conversation ' + c.id + ' — ' + (c.objective || '')),
+                'participants: ' + (c.participants || []).join(', '),
+                k ? 'chair: ' + k.chair + ' · turns ' + k.turns + '/' + k.maxTurns
+                    + (k.votes ? ' · ' + k.votes + ' votes' : '') : '',
+                k && k.exit ? 'ended: ' + k.exit : c.closed ? 'closed: ' + c.closed : 'open',
+                said + ' message(s) really spoken'
+            ].filter(Boolean).join('\n'))}">
+                <span class="mchip ${k ? 'council' : 'conv'}">${k ? 'council ' + C.esc(k.id) : C.esc(c.id)}</span>
+                <span class="cvq">${C.esc((k && k.question) || c.objective || '')}</span>
+                <span class="muted small">${said} msg${k ? ` · ${k.turns}/${k.maxTurns} turns` : ''}${
+                    k && k.exit ? ` · ${C.esc(k.exit)}` : c.closed ? ' · closed' : ''}</span>
+            </div>`;
+        }).join('');
+        return `<div class="colsec">
+            <div class="colhead" id="cv-toggle-${C.esc(run.id)}"
+                title="The exchanges this run really held. A message counted here was SPOKEN — a turn that was ordered and came back saying nothing is not one. The full transcript is its own surface; this line is the summary, not a folded copy of it.">
+                <span class="carets">${convOpen ? '▾' : '▸'}</span> <b>Conversations</b>
+                <span class="muted small">${convs.length} conversation(s)${councils.length ? ` · ${councils.length} council(s)` : ''}</span>
+            </div>
+            ${convOpen ? `<div class="cvbody">${rows}</div>` : ''}
+        </div>`;
     }
 
     function detailHtml(run) {
@@ -772,12 +1305,25 @@
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
             <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
-                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
+                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''}${
+                /* ‼️ U-64 — an ADAPTIVE run has no team here and drew an empty
+                   "team ·" that read as a missing fact. Its cast is bound at
+                   runtime and has its own section; the header says where. */
+                !sp.team.length
+                    ? (isAdaptive(sp)
+                        ? ` · <span class="muted small" title="An adaptive lead is handed a pool and binds a cast as it goes — the Cast section below is where that record is.">cast bound at runtime</span>`
+                        : '')
+                    : ` · team ` + sp.team.map(m =>
                 `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
                     title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}${m.permissionMode ? ` <i class="mdl" title="delegation permissions — what this member may do without stopping to ask">${C.esc(m.permissionMode)}</i>` : ''}${m.effort ? ` <i class="mdl" title="delegation effort — how hard this member thinks per turn; empty is not &quot;normal&quot;, it is resolved from this agent's own default then the fleet's">${C.esc(m.effort)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
+            ${isAdaptive(sp) && run.traceDegraded ? `<div class="nowstrip paused" title="What the last reload could not account for. The run is still shown in full — a journal with a gap is a reason to say so, never a reason to hide the work.">
+                <span class="nowdot hold"></span> journal: ${C.esc(run.traceDegraded)}</div>` : ''}
+            ${isAdaptive(sp) ? objectiveSection(run, sp) : ''}
+            ${isAdaptive(sp) ? strategySection(run) : ''}
+            ${isAdaptive(sp) ? guideSection(run, sp, active) : ''}
             ${run.pausePending ? `<div class="nowstrip paused"><span class="nowdot hold"></span> pausing — the current activity finishes first, then the run holds</div>` : ''}
             ${liveSection(run, sp)}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
@@ -805,10 +1351,24 @@
                 <button class="chip${roundSingle ? ' on' : ''}" id="rd-singleopen-${C.esc(run.id)}" title="Only one round open at a time: expanding a round folds the others">Single-open</button>
             </div>` : ''}
             ${run.rounds.map(r => roundCard(r, run)).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
+            ${isAdaptive(sp) ? castSection(run, sp) : ''}
+            ${isAdaptive(sp) ? conversationSection(run) : ''}
+            ${isAdaptive(sp) ? evaluationSection(run) : ''}
+            ${isAdaptive(sp) ? graphSection(run) : ''}
             ${ledgerSection(run)}
             ${run.result ? `<div class="resultbox ${run.result.verdict}">
                 <b>${C.esc(run.result.verdict.toUpperCase())}</b> — ${C.esc(run.result.summary)}
-                <div class="muted small">total ${usd(run.totalCostUSD)} · ended ${fmtTime(run.endedAt)}</div></div>` : ''}
+                ${/* ‼️ U-64 — AN HONEST ENDING SAYS WHAT IT DID NOT REACH. A
+                      partial or a failure whose unmet criteria were only in a
+                      log is a verdict the reader has to take on trust; these
+                      are the exact ids the success gate refused on. */''}
+                ${(run.result.unmet || []).length ? `<div class="unmet">
+                    <span class="muted small">Not reached:</span>
+                    ${run.result.unmet.map(u => `<span class="mchip bad"
+                        title="${C.esc(u.id + ' — ' + u.text + '\nverdict: ' + u.verdict)}">${C.esc(u.id)} ${C.esc(u.verdict)}</span>`).join(' ')}
+                </div>` : ''}
+                <div class="muted small">total ${usd(run.totalCostUSD)} · ended ${fmtTime(run.endedAt)}${
+                    run.result.stopReason ? ` · stopped: ${C.esc(run.result.stopReason)}` : ''}</div></div>` : ''}
             ${run.status === 'failed' && !run.result && run.note ? `<div class="resultbox failed">
                 <b>FAILED</b> — ${C.esc(run.note)}
                 <div class="muted small">ended ${fmtTime(run.endedAt)} · tracked cost ${usd(run.totalCostUSD)} (a killed planner call's spend is not in this number)</div></div>` : ''}
@@ -873,7 +1433,8 @@
             return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" ${runCtx(r, open)}
                 title="${C.esc(runTooltip(r, sp) + '\n— ' + window.AFCtx.HINT)}">
                 <td class="stoggle">${open ? '▾' : '▸'}</td>
-                <td>${C.esc(sp.title)}</td>
+                <td>${C.esc(sp.title)}${sp.mode === 'adaptive'
+                    ? ' <span class="mchip adpt">ADPT</span>' : ''}</td>
                 <td>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
                 <td>${chip(r.status)}${verdict}</td>
                 <td>R${r.rounds.length}/${sp.limits.maxRounds}</td>
@@ -909,6 +1470,12 @@
                 .mchip.live { color:var(--vscode-textLink-foreground); }
                 .mchip.wait { color:var(--vscode-editorWarning-foreground, #b58900); }
                 .mchip.team, .mchip.ro { opacity:.85; }
+                /* U-64: the mode badge. Outline like the status chips and drawn
+                   ONLY on an adaptive run — classic is the default and a badge
+                   on every row would spend width saying so. The row's own
+                   tooltip names the mode either way. */
+                .mchip.adpt { background:transparent; border:1px solid currentColor;
+                    color:var(--vscode-textLink-foreground); letter-spacing:.4px; padding:0 5px; }
                 .mchip.mdl, .mchip.team i.mdl { font-style:normal; opacity:.75; font-size:9px;
                     border:1px solid var(--vscode-widget-border, #5555); border-radius:6px; padding:0 4px; margin-left:3px; }
                 .nowstrip { display:flex; align-items:center; gap:7px; margin:8px 0; padding:7px 10px;
@@ -1004,6 +1571,52 @@
                 .limfield input { width:90px; display:block; margin-top:3px; }
                 .ferr { color:var(--vscode-errorForeground); font-size:12px; margin:8px 0; }
                 #f-browse { margin-top:4px; }
+                /* ---- U-64: which kind of mission, and the objective fields ---- */
+                .modeseg { display:inline-flex; margin:2px 0 10px; border-radius:6px; overflow:hidden;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                .segbtn { font-size:12px; padding:4px 14px; border:0; cursor:pointer; white-space:nowrap;
+                    background:transparent; color:var(--vscode-foreground); }
+                .segbtn + .segbtn { border-left:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                .segbtn.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+                .listrow { display:flex; gap:8px; align-items:center; margin:3px 0; }
+                .listrow .grow { flex:1; max-width:560px; margin-top:0; }
+                .critid { font-size:10px; flex:0 0 22px; opacity:.7; font-family:var(--vscode-editor-font-family, monospace); }
+                .reqbox { flex:0 0 auto; font-size:11px; display:flex; gap:4px; align-items:center;
+                    color:var(--vscode-descriptionForeground); }
+                .reqbox input { margin:0; }
+                .advsec { margin:12px 0 4px; border-top:1px solid var(--vscode-panel-border, rgba(128,128,128,.25)); padding-top:4px; }
+                .advbody { padding-left:14px; border-left:2px solid var(--vscode-panel-border, rgba(128,128,128,.25)); }
+                /* ---- U-64: the adaptive run detail ---- */
+                .mchip.req { background:transparent; border:1px solid currentColor;
+                    color:var(--vscode-editorWarning-foreground, #b58900); }
+                .mchip.ver, .mchip.phase, .mchip.adv, .mchip.conv, .mchip.council {
+                    background:transparent; border:1px solid var(--vscode-widget-border, #5555);
+                    color:var(--vscode-descriptionForeground); padding:0 5px; }
+                .mchip.ver { color:var(--vscode-textLink-foreground); }
+                .mchip.council { color:var(--vscode-textLink-foreground); }
+                .objbody, .stratbody, .evbody, .castbody, .graphbody, .cvbody, .guidebody {
+                    padding-left:14px; border-left:2px solid var(--vscode-panel-border, rgba(128,128,128,.25)); }
+                table.crit td, table.crit th { padding:3px 8px; }
+                table.crit td.critid { font-family:var(--vscode-editor-font-family, monospace); opacity:.7; }
+                .conslist ul { margin:2px 0 0 18px; padding:0; font-size:12px; }
+                .curstrat { font-size:12px; margin:4px 0 8px; }
+                .strow, .evrow, .castrow, .gnode, .cvrow, .grow {
+                    display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;
+                    font-size:12px; padding:2px 0; }
+                .strow .stext, .cvrow .cvq, .castrow .brief, .gnode .glabel { flex:1 1 220px; min-width:0; }
+                .sreason { font-size:11px; color:var(--vscode-descriptionForeground); font-style:italic; }
+                .evrow.stale { opacity:.6; }
+                .gnode .gid { font-family:var(--vscode-editor-font-family, monospace); font-size:10px;
+                    opacity:.6; flex:0 0 34px; }
+                .gnode.decision { border-left:2px solid var(--vscode-textLink-foreground); padding-left:6px; }
+                .gnode.delegation { padding-left:22px; }
+                .gnode.question, .gnode.approval, .gnode.guidance { padding-left:22px; opacity:.9; }
+                .gnode.finish { border-left:2px solid var(--vscode-testing-iconPassed, #2d7d46); padding-left:6px; }
+                .gin { font-size:10px; opacity:.75; }
+                .guideform { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px; }
+                .guideform textarea { flex:1 1 320px; max-width:520px; padding:5px 8px; }
+                .grow.pend { color:var(--vscode-editorWarning-foreground, #b58900); }
+                .unmet { margin:4px 0; display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
                 /* ---- mission-control observation ---- */
                 .colsec { margin:8px 0; }
                 .colhead { display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;
@@ -1059,12 +1672,41 @@
         if (formOpen) {
             document.getElementById('f-start').addEventListener('click', submitForm);
             document.getElementById('f-cancel').addEventListener('click', () => { formOpen = false; formErr = ''; render(); });
-            document.getElementById('f-browse').addEventListener('click', () => { readForm(); vscode.postMessage({ type: 'pickFolder' }); });
+            // Advanced can be folded, so Browse… is not always on screen.
+            wire('f-browse', () => { readForm(); vscode.postMessage({ type: 'pickFolder' }); });
+            // ‼️ U-64 — switching mode READS FIRST. Everything typed stays in
+            // `form`; the other mode's fields are hidden, never cleared.
+            const setMode = (m) => { readForm(); form.mode = m; formErr = ''; render(); };
+            wire('f-mode-classic', () => setMode('classic'));
+            wire('f-mode-adaptive', () => setMode('adaptive'));
+            wire('f-adv', () => { readForm(); advOpen = !advOpen; render(); });
+            wire('cn-add', () => { readForm(); form.constraints.push(''); render(); });
+            wire('cr-add', () => { readForm(); form.criteria.push({ text: '', required: true }); render(); });
+            form.constraints.forEach((_, i) => wire('cn-del-' + i, () => {
+                readForm();
+                form.constraints.splice(i, 1);
+                if (!form.constraints.length) { form.constraints.push(''); }
+                render();
+            }));
+            form.criteria.forEach((_, i) => wire('cr-del-' + i, () => {
+                readForm();
+                form.criteria.splice(i, 1);
+                if (!form.criteria.length) { form.criteria.push({ text: '', required: true }); }
+                render();
+            }));
             // ticking a team agent enables its role field
             DATA.agents.forEach((a, i) => {
                 const cb = document.getElementById('tm-' + i);
                 if (cb) { cb.addEventListener('change', () => { readForm(); render(); }); }
+                // ‼️ U-64 — a member's engine decides what its model box suggests
+                // and whether its effort box has anything in it, so changing it
+                // redraws the row. Same for the mission-wide engine below: every
+                // member that states none inherits it.
+                const en = document.getElementById('en-' + i);
+                if (en) { en.addEventListener('change', () => { readForm(); render(); }); }
             });
+            const missionEng = document.getElementById('f-engine');
+            if (missionEng) { missionEng.addEventListener('change', () => { readForm(); render(); }); }
         }
 
         document.querySelectorAll('.mrow').forEach(row =>
@@ -1208,6 +1850,21 @@
             });
             wire('lv-toggle-' + id, () => { liveOpen = !liveOpen; render(); });
             wire('lg-toggle-' + id, () => { ledgerOpen = !ledgerOpen; render(); });
+            // ---- U-64: the adaptive sections fold like every other one here
+            wire('ob-toggle-' + id, () => { objOpen = !objOpen; render(); });
+            wire('st-toggle-' + id, () => { stratOpen = !stratOpen; render(); });
+            wire('ev-toggle-' + id, () => { evalOpen = !evalOpen; render(); });
+            wire('ca-toggle-' + id, () => { castOpen = !castOpen; render(); });
+            wire('gr-toggle-' + id, () => { graphOpen = !graphOpen; render(); });
+            wire('cv-toggle-' + id, () => { convOpen = !convOpen; render(); });
+            wire('gd-toggle-' + id, () => { guideOpen = !guideOpen; render(); });
+            wire('gd-send-' + id, () => {
+                const box = document.getElementById('gd-text-' + id);
+                const text = box ? box.value : '';
+                if (!String(text).trim()) { return; }
+                delete guideNote[id];
+                vscode.postMessage({ type: 'guide', runId: id, text });
+            });
             // round-level accordion controls (mirror of the run-level chips)
             wire('rd-expandall-' + id, () => {
                 r.rounds.forEach(rd => closedRounds.delete(id + ':' + rd.n));
@@ -1432,6 +2089,14 @@
             if (formOpen) { render(); }
         } else if (m.type === 'openForm') {
             formOpen = true;
+            render();
+        } else if (m.type === 'guided') {
+            // ‼️ U-64 — the host's own sentence, shown verbatim. It is the one
+            // that says WHEN the steer lands (next planner boundary, or on
+            // resume) or why it was refused; a message the page composed itself
+            // would be a second rule about what may be steered.
+            guideNote[m.runId] = { note: m.note || '', error: m.error || '' };
+            guideOpen = true;
             render();
         } else if (m.type === 'tail') {
             // direct DOM update — no re-render, so reading the tail never
