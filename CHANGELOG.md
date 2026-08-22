@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.215.0 — M-16: "Guide an Objective…" — the user gets the same door the bridge has (2026-08-22)
+
+`missions.guide` shipped with the previous release as an op, which left the mechanism reachable by an agent and not by the person watching the run. **`Agent Farm: Guide an Objective…`** closes that: it lists the adaptive runs that are actually open — each showing the strategy version and phase it is following, plus how many steers are already waiting — takes one sentence, and says when it lands.
+
+**It is deliberately not a row action on the Missions tree.** Only an adaptive run can be steered, and a tree row's `contextValue` carries the run's *status*, not its mode. A row item would therefore either appear on classic runs and refuse when pressed — teaching the reader nothing — or force every other mission menu to be rewritten around a new value. A picker that lists exactly the runs the command can work on says the same thing and explains itself: a classic mission follows the recipe it was given and has no strategy to steer.
+
+**Both doors run one function.** The command and the op call the same `guideMission`, so which runs may be steered, when the text lands and what the user is told about work already in flight are properties of the mechanism rather than of the door somebody walked through. They differ only in how they present the answer — a toast, or a JSON result.
+
 ## 3.214.0 — M-16 (X-32): the adaptive lead says what it is doing and why, and the run keeps the graph of what it actually did (2026-08-22)
 
 **M-15 gave an adaptive run an objective instead of a recipe; X-45 gave it a journal. This release spends them.** An adaptive lead's reply is no longer just a decision: every call must also carry a `rationale` (one sentence, written to be **shown** — not the model's private deliberation), a `currentPhase` (its own label for where the run is, an observation nothing branches on) and its `strategy`, **restated in full every time**.

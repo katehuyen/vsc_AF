@@ -2275,6 +2275,15 @@
       ]
     },
     {
+      "capability": "missionGuide",
+      "ui": [
+        "cmd:agentfarm.missionGuide"
+      ],
+      "ops": [
+        "missions.guide"
+      ]
+    },
+    {
       "capability": "missionPause",
       "ui": [
         "cmd:agentfarm.missionPause"

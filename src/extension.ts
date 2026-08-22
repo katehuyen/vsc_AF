@@ -3582,6 +3582,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         missionQuestions.get(runId)?.resolve(a);
     };
 
+    /**
+     * ‼️ M-16 — THE ONE PLACE A STEER IS RECORDED, for every door there is.
+     *
+     * The command palette and the bridge both come here. They present the
+     * answer differently (a toast, a JSON result) and they must not decide
+     * anything differently: which runs may be steered, when the text lands and
+     * what the user is told about work already in flight are properties of the
+     * mechanism, not of the door somebody walked through.
+     *
+     * It THROWS on a refusal, which is the bridge's own convention — the
+     * command wraps it and shows the sentence.
+     */
+    const guideMission = (runId: string, text: string) => {
+        const run = missionStore.run(runId);
+        need(run, 'Run not found — missions.list shows current ids.');
+        const r = run as MissionRun;
+        const spec = missionStore.spec(r.specId);
+        need(spec && isAdaptive(spec),
+            'That is a classic mission: it follows the recipe it was given and has no strategy to steer. '
+            + 'Answer its question or stop it instead.');
+        need(r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled',
+            `That run has already ended (${r.status}) — there is no next planner boundary to inject at. `
+            + 'Rerun it instead.');
+        need(text.trim(), 'A steer with no text steers nothing.');
+        const g = addGuidance(r, text, Date.now());
+        // The RECEIPT line. The engine writes a second one marked `applied`
+        // when it actually injects it, and the pair is what makes "exactly
+        // once" survive a window reload.
+        traceEvent(r, 'human.guided', { askId: g.id, text: g.text, actor: 'user' });
+        missionChanged();
+        const live = missionEngines.has(runId);
+        return {
+            id: runId, guidanceId: g.id, title: spec?.title ?? runId,
+            appliesAt: (live ? 'next-round' : 'on-resume') as 'next-round' | 'on-resume',
+            pending: pendingGuidance(r).length,
+            note: live
+                ? 'Recorded. The lead sees it at its next decision — not the delegate that is running now.'
+                : `Recorded. The run is ${r.status}; the lead sees it when it is resumed.`
+        };
+    };
+
     const missionTeamHints = (spec: MissionSpec) => spec.team.map(m => {
         const a = agents.find(x => x.id === m.agentId);
         let hint = '';
@@ -9500,34 +9541,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`on-resume` while it is paused — and `pending` counts the steers still due. A classic '
                 + 'run has no planner boundary to inject at and is refused by name; so is a run that has '
                 + 'already ended. args: id (run id), text',
-            handler: (args) => {
-                const runId = argStr(args, 'id');
-                const text = argStr(args, 'text');
-                const run = missionStore.run(runId);
-                need(run, 'Run not found — missions.list shows current ids.');
-                const r = run as MissionRun;
-                const spec = missionStore.spec(r.specId);
-                need(spec && isAdaptive(spec),
-                    'That is a classic mission: it follows the recipe it was given and has no strategy to steer. '
-                    + 'Answer its question (missions.answer) or stop it (missions.cancel).');
-                need(r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled',
-                    `That run has already ended (${r.status}) — there is no next planner boundary. Rerun it instead.`);
-                const g = addGuidance(r, text, Date.now());
-                // The RECEIPT line. The engine writes a second one marked
-                // `applied` when it actually injects it, and the pair is what
-                // makes "exactly once" survive a window reload.
-                traceEvent(r, 'human.guided', { askId: g.id, text: g.text, actor: 'user' });
-                missionChanged();
-                const live = missionEngines.has(runId);
-                return {
-                    id: runId, guidanceId: g.id, title: spec?.title ?? runId,
-                    appliesAt: live ? 'next-round' : 'on-resume',
-                    pending: pendingGuidance(r).length,
-                    note: live
-                        ? 'Recorded. The lead sees it at its next decision — not the delegate that is running now.'
-                        : `Recorded. The run is ${r.status}; the lead sees it when it is resumed.`
-                };
-            }
+            handler: (args) => guideMission(argStr(args, 'id'), argStr(args, 'text'))
         }
     ]);
 
@@ -10344,6 +10358,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.missionAnswer', (node?: MissionNode) => {
             const run = missionNodeRun(node);
             if (run) { void answerMissionQuestion(run.id); }
+        }),
+        // ‼️ M-16 — STEER A RUNNING OBJECTIVE. Deliberately NOT a row action on
+        // the tree: only an adaptive run can be steered and the tree's
+        // contextValue carries the status, not the mode, so a row item would
+        // either appear on classic runs (and refuse when pressed) or need every
+        // other mission menu rewritten around a new value. A picker that lists
+        // exactly the runs this can work on says the same thing and teaches it.
+        vscode.commands.registerCommand('agentfarm.missionGuide', async (node?: MissionNode) => {
+            const fromNode = missionNodeRun(node);
+            const open = missionStore.runs.filter(r => {
+                const s = missionStore.spec(r.specId);
+                return s && isAdaptive(s)
+                    && r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled';
+            });
+            if (!open.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no adaptive objective is open. A classic mission follows the recipe it '
+                    + 'was given and has no strategy to steer.');
+                return;
+            }
+            let runId = fromNode && open.some(r => r.id === fromNode.id) ? fromNode.id : undefined;
+            if (!runId) {
+                const pick = await vscode.window.showQuickPick(
+                    open.map(r => {
+                        const s = missionStore.spec(r.specId);
+                        const due = pendingGuidance(r).length;
+                        return {
+                            label: s?.title ?? r.id,
+                            // MIRROR — the current value first: what it is following now
+                            description: r.strategy ? `v${r.strategy.version}${r.strategy.phase ? ` · ${r.strategy.phase}` : ''}` : r.status,
+                            detail: (r.strategy?.text ?? '(no strategy stated yet)')
+                                + (due ? `  ·  ${due} steer(s) already waiting` : ''),
+                            id: r.id
+                        };
+                    }),
+                    { title: 'Guide an objective', placeHolder: 'Which run?' });
+                runId = pick?.id;
+            }
+            if (!runId) { return; }
+            const text = await vscode.window.showInputBox({
+                title: 'Guidance for the lead',
+                prompt: 'Shown to the lead ONCE, at its next decision. It does NOT reach a delegate that is already running.',
+                ignoreFocusOut: true
+            });
+            if (!text?.trim()) { return; }
+            try {
+                const res = guideMission(runId, text);
+                void vscode.window.showInformationMessage(`Agent Farm: ${res.note}`);
+            } catch (e) {
+                void vscode.window.showErrorMessage('Agent Farm: ' + String(e instanceof Error ? e.message : e));
+            }
         }),
         vscode.commands.registerCommand('agentfarm.missionPause', (node?: MissionNode) => {
             const run = missionNodeRun(node);

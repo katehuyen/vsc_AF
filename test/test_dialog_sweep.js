@@ -122,7 +122,13 @@ const KEPT_ON_PURPOSE = [
     'agentfarm.quickMenu', 'agentfarm.setupExample', 'agentfarm.worktreeRuns',
     'agentfarm.browsePackGallery', 'agentfarm.addRecipe', 'agentfarm.startSessionWith',
     'agentfarm.renameSession', 'agentfarm.tagSession', 'agentfarm.connectTelegram',
-    'agentfarm.testDispatch', 'agentfarm.runParallel', 'agentfarm.compileWiki'
+    'agentfarm.testDispatch', 'agentfarm.runParallel', 'agentfarm.compileWiki',
+    // M-16 — pick which objective, then type the steer. Two boxes because there
+    // are two facts and neither can be guessed: only a live ADAPTIVE run can be
+    // steered, so the picker is the list of runs this can work on (which is
+    // also how the reader learns a classic mission has no strategy to steer),
+    // and the text is one free sentence. No form, nothing to fill in twice.
+    'agentfarm.missionGuide'
 ];
 KEPT_ON_PURPOSE.forEach(cmd => {
     ok(`${cmd} is still there (it is a picker or one question, not a builder)`,
@@ -134,10 +140,11 @@ KEPT_ON_PURPOSE.forEach(cmd => {
     // number in docs/CONVENTIONS.md is wrong and this says so.
     const m = measure();
     // ‼️ THE CEILING ONLY MOVES WITH A NAME. It went 30 → 31 for
-    // `agentfarm.compileWiki` (M-23), which is in KEPT_ON_PURPOSE above with
-    // the reason. A raise with nothing added to that list is the sweep undoing
-    // itself, and the next reader would have no way to tell the two apart.
-    ok(`no more than 31 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 31);
+    // `agentfarm.compileWiki` (M-23) and 31 → 32 for `agentfarm.missionGuide`
+    // (M-16); both are in KEPT_ON_PURPOSE above with the reason. A raise with
+    // nothing added to that list is the sweep undoing itself, and the next
+    // reader would have no way to tell the two apart.
+    ok(`no more than 32 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 32);
     ok(`no more than 4 are chains of two or more (measured ${m.chains})`, m.chains <= 4);
     ok('‼️ the scan is not fooled by the last command in a push() block',
         (BODIES['agentfarm.missionStepOutput'] || '').split('\n').length < 8);

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.214.0",
+  "version": "3.215.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -260,6 +260,12 @@
         "title": "Answer Mission Question…",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentfarm.missionGuide",
+        "title": "Guide an Objective…",
+        "category": "Agent Farm",
+        "icon": "$(compass)"
       },
       {
         "command": "agentfarm.missionPause",
