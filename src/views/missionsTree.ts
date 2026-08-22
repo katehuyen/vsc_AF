@@ -48,7 +48,9 @@ const ROUND_ICON: Record<MissionRound['action'], string> = {
     // M-18 — the typed intents: work built out of results the run already has
     parallel: 'split-horizontal', review: 'eye', compare: 'diff', revise: 'edit',
     // M-18 — a chain that already exists, run as one step; and a child objective
-    run_workflow: 'run-all', run_mission: 'type-hierarchy-sub'
+    run_workflow: 'run-all', run_mission: 'type-hierarchy-sub',
+    // M-19 — one agent speaking to the others, in a conversation with a record
+    message: 'comment'
 };
 
 function themed(icon: string, color?: string): vscode.ThemeIcon {

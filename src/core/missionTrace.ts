@@ -42,6 +42,11 @@ export type MissionTraceType =
     | 'strategy.changed'
     | 'action.created' | 'action.started' | 'action.settled'
     | 'evaluation.recorded'
+    /** ‼️ M-19 — a conversation was opened: its purpose and its cast, once. */
+    | 'conversation.opened'
+    /** ‼️ M-19 — a speaking turn came back with words. Written when the message
+     *  is DELIVERED, never when it is ordered: a turn that failed or said
+     *  nothing leaves no message, which is the whole point of the item. */
     | 'message.sent'
     | 'human.asked' | 'human.answered' | 'human.guided'
     | 'run.finished';
@@ -383,6 +388,14 @@ export interface TraceProjection {
     actions: TraceAction[];
     /** by criterion id — the LATEST verdict, with how many there have been */
     evaluations: TraceEvaluation[];
+    /**
+     * ‼️ M-19 — how many conversations this run opened, and how many turns
+     * really produced words. A message counted here was SPOKEN: a turn that was
+     * ordered and then failed, or came back saying nothing, never reaches the
+     * journal at all — which is what keeps this figure from being a count of
+     * intentions.
+     */
+    conversations: number;
     messages: number;
     /** an ask nobody answered — this is what becomes `paused + needs-you` */
     pending?: PendingHuman;
@@ -404,7 +417,7 @@ export interface TraceProjection {
 export function projectTrace(events: readonly MissionTraceEvent[]): TraceProjection {
     const p: TraceProjection = {
         lastSeq: 0, strategies: [], graph: [], guidance: [],
-        actions: [], evaluations: [], messages: 0, answers: {}
+        actions: [], evaluations: [], conversations: 0, messages: 0, answers: {}
     };
     const byId = new Map<string, TraceAction>();
     const evalById = new Map<string, TraceEvaluation>();
@@ -548,6 +561,9 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 });
                 break;
             }
+            case 'conversation.opened':
+                p.conversations++;
+                break;
             case 'message.sent':
                 p.messages++;
                 break;

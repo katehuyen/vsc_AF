@@ -20,6 +20,7 @@
  * that opened its own execution route would be a second engine.
  */
 
+import { messageIntentMenu } from './missionConversation';
 import { MissionActionKind } from './missionTrace';
 
 /** A typed task intent — one delegation built from work the run already has. */
@@ -27,7 +28,8 @@ export type TaskIntent = 'review' | 'compare' | 'revise';
 
 export type PrimitiveName =
     | 'delegate' | 'parallel' | TaskIntent
-    | 'evaluate' | 'run_workflow' | 'run_mission' | 'replan' | 'finish' | 'ask_user' | 'abort';
+    | 'evaluate' | 'run_workflow' | 'run_mission' | 'message'
+    | 'replan' | 'finish' | 'ask_user' | 'abort';
 
 /**
  * What the engine DOES with a decision — not a category, a dispatch.
@@ -145,6 +147,31 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             + 'It spends YOUR budget: what the child costs is charged to this run once, and its limits are cut from what '
             + 'you have left. Do not use it for work one delegation can do, and do not nest it deeply — there is a cap, '
             + 'and an objective already inside itself is refused.'
+        ]
+    },
+    {
+        name: 'message', scope: 'adaptive', shape: 'work', kind: 'conversation',
+        describe: 'have one pool agent SPEAK to the others — a real turn that reads their real messages',
+        fields: [
+            '"conversation": "for message: the id of a conversation you already opened (c1, c2…) — omit it to open a new one"',
+            '"objective": "for message, only when opening a new conversation: what it is FOR, in one line"',
+            '"participants": ["for message, only when opening: the pool agents who may speak in it"]',
+            '"from": "for message: the ONE pool agent that speaks this turn"',
+            '"to": ["for message: who it is addressed to — leave empty for everyone in the conversation"]',
+            `"intent": "for message: ${messageIntentMenu()}"`,
+            '"refs": ["for message: the message ids this turn is about — required for challenge, response, concede, synthesis and vote"]'
+        ],
+        rules: [
+            '"message" is a REAL speaking turn, not a note you write. The agent you name in "from" runs as an '
+            + 'ordinary delegation, is shown the ACTUAL TEXT of the messages you put in "refs", and whatever it '
+            + 'writes becomes the message. You never write somebody else\'s message and you are never asked to '
+            + 'summarise one — you name ids, and the engine attaches the words.',
+            '‼️ You may NOT report a discussion that did not happen. Three agents answering the same question '
+            + 'separately are three proposals, not a debate: a "synthesis" or a "vote" has to name the messages it '
+            + 'rests on, and only a real speaking turn produces a message id to name.',
+            'One participant speaks at a time in one conversation; different participants may speak at the same '
+            + 'time, which is how an independent first round works. When the same agent speaks again, its own '
+            + 'session is continued where the engine can — you do not manage that.'
         ]
     },
     {

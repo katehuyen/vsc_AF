@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.226.0 — M-19: agents can now actually talk to each other, and a discussion that did not happen cannot be reported (2026-08-22)
+
+**The failure this closes.** A lead sends the same question to three agents, gets three independent answers, and writes "the three discussed it and converged on X". Nobody discussed anything: B never saw A's answer, and the convergence is the lead's own prose presented as the outcome of a debate. It reads exactly like the real thing, which is why it had to become structurally impossible rather than discouraged.
+
+**A conversation is a record, not a rendering.** `message` is a new adaptive primitive: it opens a conversation with a stated purpose and a fixed cast, and every turn in it is a real speaking turn — the agent named in `from` runs as an ordinary headless delegation on the ordinary task path (same waves, same writer rule, same budget, same cancel; there is no message transport and no second engine). What it writes becomes the message.
+
+**The next speaker is given the real words.** The lead names message ids in `refs` and the engine attaches the text those ids actually produced. There is deliberately no parameter through which a lead could describe what somebody said — the same rule M-18's typed intents already enforce for work, applied to speech. And a message that is *about* something somebody said (`challenge`, `response`, `concede`, `synthesis`, `vote`) is refused unless it names what it rests on, so a synthesis that cites nothing cannot enter the record at all.
+
+**One participant at a time, and different ones at once.** Two turns of the same agent in flight on one conversation is a race, not parallelism — the second is briefed on a record the first is about to change, and on a resuming engine both would fight for the same session. Different participants speaking simultaneously is allowed and is exactly what an independent first round is: a speaking turn is readonly, so a wave can hold as many as the pool has.
+
+**A resumed lane and a re-told one are different facts, and are labelled differently.** When the same participant speaks again its own session is picked back up, so it is still holding what it said and what it was shown — and it is then sent only what is NEW since its last turn rather than the conversation again. Where the delegate's engine has no resume vocabulary the speaker gets a fresh session with the exchange reproduced as a record, and the run calls that `handoff`. It is asked (`canResumeLane`) rather than assumed, because an engine handed a session id it has no flag for ignores it and quietly opens a new conversation — and the run would then be claiming a continuity it does not have.
+
+**A turn that came back clean with nothing in it is a failure, not an empty message.** It matters because a settling intent CLOSES what it names: an empty "response" would mark a challenge answered by a turn that said nothing, and the conversation would read as resolved. What is unanswered is a fact of the record — `question` and `challenge` put something to somebody; a proposal nobody argued with is not a loose end.
+
+**The lead gets a bounded digest, and readers get the transcript.** The planner session is resumed every round, so a whole transcript in front of it would be paid for once per round for the rest of the run and would grow while it did it. Between rounds the lead is given what is still unanswered, the last few turns in one line each, and the ids it may name. `missions.conversation` returns the real messages in full — speaker, addressee, intent, refs, text, and the task and session deep links — and `missions.status` carries a summary of each conversation with its open count.
+
+**And a speaking turn survives a reload.** The step lookup read `kind !== 'task'` and would have repeated X-45's own bug one primitive later: a turn that finished while the window was closed would have come back "fate unknown", its message would never have been delivered, and the lead — told nothing happened — would have ordered the same turn again and paid for it twice. A conversation turn is a task and is now looked up as one.
+
 ## 3.225.0 — the bridge helper writes the file itself, and the encoding fixer survives a bad one (2026-08-22)
 
 **Three traps that were being written down instead of removed.** Each had been met, understood, and passed on to the next session as a warning — which is the wrong artefact. A warning has to be read to work; a fix does not.

@@ -16,6 +16,11 @@ import {
     primitivesFor, TaskIntent, unknownActionError
 } from './missionPrimitives';
 import { describeFailure, failure, StepFailure } from './missionFailure';
+import {
+    buildSpeakerPrompt, conversationDigest, conversationMessages, intentKind, LaneCarry,
+    MessageIntent, messageIntentMenu, MissionConversation, MissionMessage, newConversationId,
+    newMessageId, refuseMessage
+} from './missionConversation';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -53,6 +58,16 @@ export {
 export type {
     MissionPrimitive, PrimitiveIntent, PrimitiveName, PrimitiveShape, TaskIntent
 } from './missionPrimitives';
+
+export {
+    buildSpeakerPrompt, conversationDigest, conversationMessages, intentKind, MESSAGE_INTENT_NAMES,
+    MESSAGE_INTENTS, messageIntentMenu, messageLine, newConversationId, newMessageId, openThreads,
+    participantBusy, refuseMessage
+} from './missionConversation';
+export type {
+    ConversationDigest, LaneCarry, MessageIntent, MessageIntentKind, MessageRequest, MessageState,
+    MissionConversation, MissionMessage
+} from './missionConversation';
 
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, describeDelegateRun, isAdaptive, missionModeOf,
@@ -286,6 +301,28 @@ export interface MissionStep {
     workflowId?: string;
     /** the real record a workflow step became — filled when the run starts */
     workflowRunId?: string;
+    /**
+     * ‼️ M-19 — THIS STEP IS A SPEAKING TURN, and this is the message it is
+     * going to become. The message itself lives on the run (`run.messages`)
+     * because the conversation is a record of its own; what the step carries is
+     * the link and the two facts only the step can know — which session the
+     * speaker's lane resumes, and whether it was really a resume.
+     */
+    message?: {
+        conversationId: string;
+        messageId: string;
+        carried: LaneCarry;
+        /** the session this turn continues; absent on a new or re-told lane */
+        resumeSessionId?: string;
+    };
+    /**
+     * ‼️ M-19 — THE SESSION THE DELEGATE ACTUALLY RAN IN, copied from the task
+     * once it is bound. It is what a later turn of the SAME participant
+     * resumes, and it is a deep link the transcript surface can open. Written
+     * for every step, not only a speaking one: a conversation is not the only
+     * thing that would want to continue a lane.
+     */
+    runSessionId?: string;
     /** ‼️ M-18 — the child objective this step asked for, and the run it became */
     child?: ChildObjectiveReq;
     missionRunId?: string;
@@ -335,7 +372,7 @@ export interface MissionStep {
  */
 export type MissionAction =
     'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate'
-    | 'parallel' | 'run_workflow' | 'run_mission' | TaskIntent;
+    | 'parallel' | 'run_workflow' | 'run_mission' | 'message' | TaskIntent;
 
 export interface MissionRound {
     n: number;
@@ -486,6 +523,21 @@ export interface MissionRun {
      * out-of-order replay.
      */
     evaluations?: MissionEvaluation[];
+    /**
+     * ‼️ M-19 — THE CONVERSATIONS THIS RUN OPENED, AND EVERY MESSAGE IN THEM.
+     *
+     * Append-only in practice: a message is added when a speaking turn is
+     * ordered and its state settles in place, exactly as a step's does. Kept on
+     * the run rather than derived from the journal because the ENGINE reads it
+     * every round — to refuse a second turn from a participant already
+     * speaking, to check a ref against the ids that really exist, and to build
+     * the next speaker's prompt out of what was really said. The journal keeps
+     * the same facts as history; this is the current record.
+     *
+     * Absent on every classic run and on every adaptive run that never spoke.
+     */
+    conversations?: MissionConversation[];
+    messages?: MissionMessage[];
 }
 
 export interface MissionGuidance {
@@ -562,6 +614,13 @@ export interface PlannerTaskReq {
     workflowId?: string;
     /** ‼️ M-18 — what a `mission` unit is: the child objective to be born. */
     child?: ChildObjectiveReq;
+    /** ‼️ M-19 — what a `conversation` unit is: the message this turn becomes. */
+    message?: {
+        conversationId: string;
+        messageId: string;
+        carried: LaneCarry;
+        resumeSessionId?: string;
+    };
 }
 
 /**
@@ -679,6 +738,30 @@ type PlannerDecisionCore =
          *  lead is not the thing that can promise that */
         successCriteria?: { text: string; required: boolean }[];
         constraints?: string[]; title?: string;
+    }
+    /**
+     * ‼️ M-19 — ONE SPEAKING TURN. The lead chooses WHO speaks, TO WHOM, WITH
+     * WHAT INTENT and — the part that makes it a conversation rather than a
+     * round of parallel questions — WHICH REAL MESSAGES that speaker is
+     * answering. There is deliberately no field here for what the previous
+     * speaker said: the engine attaches the words behind `refs`, so a lead
+     * cannot hand a participant its own version of somebody else's position.
+     *
+     * `conversation` absent means "open one", which needs `objective` and
+     * `participants`. Everything else about the turn — the session it resumes,
+     * whether it can be resumed at all, the writer lane — is the engine's.
+     */
+    | {
+        action: 'message'; thought: string;
+        conversation?: string;
+        objective?: string;
+        participants?: string[];
+        from: string;
+        to: string[];
+        intent: MessageIntent;
+        refs: string[];
+        ask?: string;
+        title?: string;
     }
     | {
         action: 'evaluate'; thought: string; targets: string[];
@@ -896,6 +979,84 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             action: 'run_workflow', thought, workflow,
             ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
             ...(crit.ids ? { criteria: crit.ids } : {})
+        });
+    }
+    // ---- one speaking turn in a conversation (M-19) ----
+    if (action === 'message') {
+        const allowed = allowedAgents(spec);
+        const byName = (raw: string) =>
+            allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
+        const speaker = byName(String(o.from ?? o.speaker ?? ''));
+        if (!speaker) {
+            return {
+                ok: false,
+                error: '"message" needs a "from" — the ONE pool agent that speaks this turn. '
+                    + `The pool is: ${allowed.map(m => m.agentName).join(', ')}`
+            };
+        }
+        const intent = String(o.intent ?? '').trim();
+        if (!intentKind(intent)) {
+            return { ok: false, error: `"message" needs an "intent" — one of: ${messageIntentMenu()}` };
+        }
+        const list = (v: unknown) => (Array.isArray(v)
+            ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
+            : []);
+        // ‼️ NAMES IN, IDS OUT. The lead speaks in agent NAMES because that is
+        // what its briefing lists; every id below is resolved here, once, so
+        // nothing downstream has to guess which of the two a string is.
+        const unknownTo = list(o.to).filter(n => !byName(n));
+        if (unknownTo.length) {
+            return {
+                ok: false,
+                error: `"message" is addressed to ${unknownTo.map(n => `"${n}"`).join(', ')}, `
+                    + `who ${unknownTo.length > 1 ? 'are' : 'is'} not in the pool `
+                    + `(${allowed.map(m => m.agentName).join(', ')}). Leave "to" empty to address everyone.`
+            };
+        }
+        const conversation = String(o.conversation ?? o.conversationId ?? '').trim();
+        const participants = list(o.participants);
+        const unknownIn = participants.filter(n => !byName(n));
+        if (unknownIn.length) {
+            return {
+                ok: false,
+                error: `"participants" names ${unknownIn.map(n => `"${n}"`).join(', ')}, `
+                    + `who ${unknownIn.length > 1 ? 'are' : 'is'} not in the pool `
+                    + `(${allowed.map(m => m.agentName).join(', ')}).`
+            };
+        }
+        const objective = String(o.objective ?? '').trim().slice(0, 500);
+        // ‼️ A CONVERSATION OPENS WITH A PURPOSE AND A CAST, OR IT DOES NOT
+        // OPEN. Both are what every later turn is checked against — a speaker
+        // outside the cast is refused, and the purpose is what each participant
+        // is told it is there for. Defaulting either would mean inventing the
+        // one fact the lead is supposed to be deciding.
+        if (!conversation) {
+            if (!objective) {
+                return {
+                    ok: false,
+                    error: '"message" with no "conversation" opens a new one, which needs an "objective" — '
+                        + 'one line saying what the conversation is for. Name an existing conversation id to continue one.'
+                };
+            }
+            if (participants.length < 2) {
+                return {
+                    ok: false,
+                    error: 'opening a conversation needs at least two "participants" from the pool — '
+                        + 'one agent talking to nobody is a delegation, and "delegate" is the primitive for that.'
+                };
+            }
+        }
+        return done({
+            action: 'message', thought,
+            ...(conversation ? { conversation } : {}),
+            ...(objective ? { objective } : {}),
+            ...(participants.length ? { participants: participants.map(n => byName(n)!.agentId) } : {}),
+            from: speaker.agentId,
+            to: list(o.to).map(n => byName(n)!.agentId),
+            intent: intent as MessageIntent,
+            refs: list(o.refs).slice(0, 20),
+            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {})
         });
     }
     // ---- typed task intents: review | compare | revise (M-18) ----
@@ -1299,6 +1460,12 @@ function adaptiveDecisionSchema(): string {
     const menu = prims.map(p => `"${p.name}"`).join(' | ');
     const what = prims.map(p => `- "${p.name}" — ${p.describe}`).join('\n');
     const extraRules = prims.flatMap(p => p.rules ?? []).map(r => `- ${r}`).join('\n');
+    // ‼️ M-19 — AND THE FIELDS A PRIMITIVE NEEDS COME FROM THE SAME ROW. They
+    // were declared on the registry and then hand-written into the block below,
+    // which is the drift the registry exists to prevent one level down: a
+    // primitive could be offered with the parser reading a field the lead was
+    // never shown. Generated here, a new primitive brings its own vocabulary.
+    const extraFields = prims.flatMap(p => p.fields ?? []).map(f => `  ${f},`).join('\n');
     return `Reply with ONLY one JSON object (no prose around it):
 {
   "rationale": "one short sentence, written to be SHOWN to the user: why this decision, now",
@@ -1316,6 +1483,7 @@ function adaptiveDecisionSchema(): string {
   "findings": [ { "criterion": "<criterion id>", "verdict": "pass" | "fail" | "unknown", "evidence": "what you actually saw", "gap": "what is missing" } ],
   "advice": "for evaluate: finish | revise | replan | explore | ask_user | partial | failed",
   "question": "only for ask_user",
+${extraFields}
   "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains",
   "stopReason": "for finish/abort: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
 }
@@ -1325,6 +1493,7 @@ ${what}
 
 Rules:
 - "review", "compare" and "revise" work on results this run ALREADY produced: you name the ids in "targets" and the engine attaches the real output to the prompt. Do not paste the work into "ask" — name it.
+- "ask" is also what you want from a "message": what this speaker should address, in your own words. It is labelled as yours in the prompt and is never presented as somebody else's message.
 - A "revise" is charged to the same criteria as the work it revises, so any pass recorded about the old version goes stale. That is the point of it.
 ${extraRules}
 - ‼️ "finish" with "success" is REFUSED unless every REQUIRED criterion has a current PASS on record. A criterion is judged by an "evaluate", never by a delegation finishing — a delegate exiting cleanly says the work RAN, not that the objective is met.
@@ -1399,6 +1568,18 @@ export function ledgerLine(round: MissionRound): string {
             `${s.agentName}:"${s.title}"(${s.status}${s.costUSD !== undefined ? `,$${s.costUSD.toFixed(2)}` : ''})`).join(' · ');
         const on = round.steps[0]?.sources?.length ? ` on ${round.steps[0].sources.join(',')}` : '';
         return `R${round.n} ${round.action}${on} — ${steps}${round.rejectedReason ? ` [${round.rejectedReason}]` : ''}`;
+    }
+    // ‼️ M-19 — A SPEAKING TURN IS NAMED BY WHAT IT WAS, in the conversation it
+    // was in. A lead re-seeded from the ledger after a reload has to be able to
+    // tell "a3 challenged m2 in c1" from a delegation, or it will order the
+    // turn again — and the second copy would be a message nobody answered.
+    if (round.action === 'message') {
+        const s = round.steps[0];
+        const link = s?.message;
+        const carried = link && link.carried !== 'new' ? `,${link.carried}` : '';
+        return `R${round.n} message ${link?.conversationId ?? '?'}/${link?.messageId ?? '?'}`
+            + ` — ${s?.agentName ?? '?'}:"${s?.title ?? ''}"(${s?.status ?? '?'}${carried})`
+            + (round.rejectedReason ? ` [${round.rejectedReason}]` : '');
     }
     if (round.action === 'ask_user') {
         return `R${round.n} ask_user — Q: ${round.question?.slice(0, 120) ?? ''} A: ${round.answer?.slice(0, 120) ?? '(pending)'}`;
@@ -1633,6 +1814,22 @@ export interface MissionEngineDeps {
      * the problem on.
      */
     ancestry?(): { runId: string; goal: string }[];
+    /**
+     * ‼️ M-19 — CAN THIS AGENT'S LANE REALLY BE PICKED UP AGAIN?
+     *
+     * The engine knows a participant has spoken before and holds the session it
+     * spoke in. What it cannot know is whether the CLI that agent runs on has a
+     * resume vocabulary at all — that depends on the engine resolved for this
+     * delegate, which is settled by the same ladder a launch climbs and lives
+     * where the settings do.
+     *
+     * It is asked rather than assumed because the honest default is `false`: an
+     * engine with no resume flag handed a session id ignores it and starts a
+     * NEW conversation, and the run would then be labelling as "resumed" a lane
+     * that was silently re-begun. Absent means no lane is ever claimed as
+     * continued, which is a true statement about a harness that cannot check.
+     */
+    canResumeLane?(agentId: string): boolean;
     now(): number;
 }
 
@@ -1929,14 +2126,181 @@ export class MissionEngine {
         return base.includes(marker) ? base.replace(marker, block + marker) : base + '\n\n' + block;
     }
 
+    /**
+     * ‼️ M-19 — TURN A DECISION TO SPEAK INTO ONE ORDINARY DELEGATION.
+     *
+     * Everything that makes this a conversation rather than a round of parallel
+     * questions happens here, and all of it happens BEFORE anything spawns:
+     * the conversation is opened or found, the turn is refused for a reason the
+     * lead can act on, the speaker's lane is resolved, and the prompt is built
+     * out of the REAL text of the messages it names. What comes back is a
+     * `PlannerTaskReq` like any other — the wave, the writer rule, the budget,
+     * the approval gate and the cancel are all the ordinary path's.
+     */
+    private prepareMessage(
+        run: MissionRun, spec: MissionSpec,
+        d: Extract<PlannerDecision, { action: 'message' }>,
+        now: number
+    ): { refusal?: string; task?: PlannerTaskReq } {
+        const roster = allowedAgents(spec);
+        const nameOf = (id: string) =>
+            roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'the lead' : id);
+        run.conversations ??= [];
+        run.messages ??= [];
+
+        // A conversation the lead named must exist; one it did not name is
+        // opened here — and NOT recorded until the turn survives every refusal
+        // below, so a rejected first message cannot leave an empty conversation
+        // on the run for ever.
+        const conv: MissionConversation | undefined = d.conversation
+            ? run.conversations.find(c => c.id === d.conversation)
+            : {
+                id: newConversationId(run.conversations),
+                ...(this.lastDecisionId ? { sourceActionId: this.lastDecisionId } : {}),
+                objective: d.objective ?? '',
+                participants: [...new Set(d.participants ?? [])],
+                openedAt: now
+            };
+        const refusal = refuseMessage(
+            {
+                conversationId: conv?.id ?? d.conversation ?? '',
+                from: d.from, to: d.to, intent: d.intent, refs: d.refs
+            },
+            conv, run.messages,
+            roster.map(m => ({ id: m.agentId, name: m.agentName })));
+        if (refusal) { return { refusal }; }
+
+        const all = conversationMessages(run.messages, conv!.id);
+        const said = all.filter(m => m.state === 'delivered');
+        const mine = said.filter(m => m.from === d.from);
+        const last = mine[mine.length - 1];
+        // ‼️ THE LANE, AND THE THREE HONEST ANSWERS ABOUT IT. A first turn is
+        // `new`. A later turn is `resumed` only when there is a session to
+        // continue AND the delegate's own engine can continue one; otherwise it
+        // is a `handoff` — a fresh session that is TOLD it is reading a record
+        // rather than carrying on. Calling the third case "resumed" is the
+        // failure this distinction exists to prevent.
+        const resumeSessionId = last?.sessionId;
+        const canResume = !!resumeSessionId && (this.deps.canResumeLane?.(d.from) ?? false);
+        const carried: LaneCarry = !last ? 'new' : (canResume ? 'resumed' : 'handoff');
+        const referenced = d.refs
+            .map(r => said.find(m => m.id === r))
+            .filter((m): m is MissionMessage => !!m);
+        // On a resumed lane the speaker is already holding everything up to its
+        // own last turn — sending it again pays for the same tokens twice.
+        const context = carried === 'resumed'
+            ? said.slice(said.findIndex(m => m.id === last!.id) + 1)
+            : said;
+
+        const messageId = newMessageId(run.messages);
+        if (!d.conversation) { run.conversations.push(conv!); }
+        run.messages.push({
+            id: messageId,
+            conversationId: conv!.id,
+            ...(this.lastDecisionId ? { sourceActionId: this.lastDecisionId } : {}),
+            from: d.from,
+            fromName: nameOf(d.from),
+            to: [...d.to],
+            intent: d.intent,
+            refs: [...d.refs],
+            ...(d.ask ? { ask: d.ask } : {}),
+            orderedAt: now,
+            state: 'pending',
+            carried
+        });
+        if (!d.conversation) {
+            this.deps.trace?.('conversation.opened', {
+                actionId: conv!.id, text: conv!.objective,
+                to: conv!.participants.join(', ')
+            });
+        }
+        return {
+            task: {
+                agent: nameOf(d.from),
+                title: d.title || `${d.intent} in ${conv!.id}`,
+                prompt: buildSpeakerPrompt({
+                    conversation: conv!, intent: d.intent, speakerName: nameOf(d.from),
+                    referenced, context, ...(d.ask ? { ask: d.ask } : {}),
+                    goal: spec.goal, carried, nameOf
+                }),
+                // ‼️ SPEAKING DOES NOT WRITE. A turn produces a message, and
+                // that is why participants can speak at the same time at all —
+                // an independent first round is exactly two readonly steps in
+                // one wave. A speaker that edited the folder would be doing
+                // work, and work is what `delegate` is for.
+                readonly: true,
+                kind: 'conversation',
+                message: {
+                    conversationId: conv!.id, messageId, carried,
+                    ...(canResume ? { resumeSessionId: resumeSessionId! } : {})
+                }
+            }
+        };
+    }
+
+    /**
+     * ‼️ M-19 — A MESSAGE EXISTS ONLY WHEN A TURN REALLY PRODUCED ONE.
+     *
+     * Called once per round, after the waves. The message was ordered before
+     * anything spawned; this is where it becomes what actually happened —
+     * delivered with the speaker's own words, or failed with the reason.
+     *
+     * ‼️ AND A TURN THAT CAME BACK CLEAN WITH NOTHING IN IT IS A FAILURE, not
+     * an empty message. It matters because a settling intent CLOSES what it
+     * names: an empty "response" would mark a challenge answered by a turn that
+     * said nothing, and the conversation would read as resolved.
+     */
+    private settleMessages(run: MissionRun, round: MissionRound, now: number): void {
+        for (const step of round.steps) {
+            const link = step.message;
+            if (!link) { continue; }
+            const msg = (run.messages ?? []).find(m => m.id === link.messageId);
+            if (!msg || msg.state !== 'pending') { continue; }
+            msg.carried = link.carried;
+            msg.settledAt = now;
+            if (step.taskId) { msg.taskId = step.taskId; }
+            if (step.runSessionId) { msg.sessionId = step.runSessionId; }
+            if (step.outputFile) { msg.contentRef = step.outputFile; }
+            const body = step.outputFile ? this.deps.readOutputBody(step.outputFile) : '';
+            const text = (body || step.resultText || '').trim();
+            if (step.status === 'done' && text) {
+                msg.excerpt = outputExcerpt(text, 1200, 600);
+                msg.state = 'delivered';
+                this.deps.trace?.('message.sent', {
+                    actionId: step.id, kind: 'conversation', refId: msg.id,
+                    agentId: msg.from, agentName: msg.fromName,
+                    to: msg.to.length ? msg.to.join(', ') : 'all',
+                    text: (msg.excerpt ?? '').slice(0, 600),
+                    ...(msg.contentRef ? { outputFile: msg.contentRef } : {})
+                });
+                continue;
+            }
+            msg.state = step.status === 'cancelled' ? 'cancelled' : 'failed';
+            if (step.status === 'done') {
+                msg.note = 'the turn came back with no text — nothing was said';
+                step.failure = failure('delegate-failed', step, msg.note);
+            } else {
+                msg.note = step.failure?.detail || step.note || 'the speaking turn did not come back';
+            }
+        }
+    }
+
     private stepResults(steps: MissionStep[]): StepResult[] {
         return steps.map(step => ({
             step,
-            // ‼️ M-18 — a unit whose result IS a sentence (a child objective's
-            // verdict) says so directly; everything else is read out of the
-            // archive it wrote, as it always was.
-            excerpt: step.resultText
-                ?? (step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile)) : '')
+            // ‼️ M-19 — A SPEAKING TURN'S RESULT IS ITS MESSAGE, AND THE
+            // CONVERSATION IS WHERE THAT LIVES. Reading the same words back
+            // here as well would put one fact on two surfaces of the same
+            // reply — and it is the expensive copy: the digest is bounded on
+            // purpose because the planner is resumed every round, and a full
+            // transcript beside it would undo exactly that.
+            excerpt: step.message
+                ? `spoken in ${step.message.conversationId} as ${step.message.messageId} — see the conversation below`
+                : (step.resultText
+                    // ‼️ M-18 — a unit whose result IS a sentence (a child
+                    // objective's verdict) says so directly; everything else is
+                    // read out of the archive it wrote, as it always was.
+                    ?? (step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile)) : ''))
         }));
     }
 
@@ -2308,6 +2672,14 @@ export class MissionEngine {
                     kind: 'workflow', workflowId: wf.id,
                     ...(d.criteria?.length ? { criteria: d.criteria } : {})
                 }];
+            } else if (d.action === 'message') {
+                const spoken = this.prepareMessage(run, spec, d, deps.now());
+                if (spoken.refusal) {
+                    run.ledger.push(`R? message rejected — ${spoken.refusal.split('\n')[0]}`);
+                    roundMsg = `${spoken.refusal}\nReply with ONLY the JSON decision object.`;
+                    continue;
+                }
+                requested = [spoken.task!];
             } else if (d.action === 'delegate' || d.action === 'parallel') {
                 requested = d.tasks;
             } else {
@@ -2361,6 +2733,7 @@ export class MissionEngine {
                     ...(t.kind && t.kind !== 'task' ? { kind: t.kind } : {}),
                     ...(t.workflowId ? { workflowId: t.workflowId } : {}),
                     ...(t.child ? { child: t.child } : {}),
+                    ...(t.message ? { message: t.message } : {}),
                     status: 'queued' as MissionStepStatus
                 };
             });
@@ -2446,6 +2819,11 @@ export class MissionEngine {
                 deps.onUpdate(run);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
             }
+            // ‼️ M-19 — BEFORE THE LEDGER AND BEFORE THE LEAD IS TOLD ANYTHING.
+            // A speaking turn's step is settled by the wave; the MESSAGE it was
+            // ordered as is settled here, so the digest the lead reads a few
+            // lines below is already the record rather than a promise of one.
+            this.settleMessages(run, round, deps.now());
             run.totalCostUSD += round.steps.reduce((a, s) => a + (s.costUSD ?? 0), 0);
             // ‼️ …and the tokens, which is the half that moves on a plan-billed
             // delegate. Without this a wave of Codex steps advanced no limit at
@@ -2463,6 +2841,25 @@ export class MissionEngine {
                 this.stepResults(round.steps),
                 remainingBudget(spec, run, deps.now()),
                 notes);
+            // ‼️ M-19 — AND THE CONVERSATION IT SPOKE IN, as the record now
+            // stands: what is still unanswered, the last few turns, the ids it
+            // may name next. Bounded on purpose — the planner session is
+            // resumed each round, so a whole transcript here would be paid for
+            // once per round for the rest of the run and would grow while it
+            // did it. The full text is one message id away, and the user's
+            // surfaces read it in full without paying for a token.
+            const spokenIn = [...new Set(
+                round.steps.map(s => s.message?.conversationId).filter((c): c is string => !!c))];
+            if (spokenIn.length) {
+                const roster = allowedAgents(spec);
+                const nameOf = (id: string) =>
+                    roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'you' : id);
+                const digests = spokenIn
+                    .map(cid => (run.conversations ?? []).find(c => c.id === cid))
+                    .filter((c): c is MissionConversation => !!c)
+                    .map(c => conversationDigest(c, run.messages ?? [], { nameOf }).text);
+                if (digests.length) { roundMsg += `\n\n${digests.join('\n\n')}`; }
+            }
         }
     }
 }

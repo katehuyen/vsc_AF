@@ -123,9 +123,9 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
     eq('and the menu string is generated from that same list',
         M.primitiveMenu(false), 'delegate | finish | ask_user | abort');
     ok('an objective sees the whole set',
-        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'run_workflow', 'run_mission', 'replan', 'finish', 'ask_user', 'abort']
+        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'run_workflow', 'run_mission', 'message', 'replan', 'finish', 'ask_user', 'abort']
             .every(n => adaptive.includes(n)));
-    ok('…and nothing else', adaptive.length === 12);
+    ok('…and nothing else', adaptive.length === 13);
     ok('every classic primitive is in the adaptive set too',
         classic.every(n => adaptive.includes(n)));
 
@@ -166,7 +166,7 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
         !c2.ok && c2.error === 'unknown "action": "replan" (use delegate | finish | ask_user | abort)');
     const a = M.parseAdaptiveDecision(JSON.stringify({ ...reflect(), action: 'summon' }), spec());
     ok('an objective gets the full menu, including the ones added since',
-        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| run_workflow \| run_mission \| replan \| finish \| ask_user \| abort/.test(a.error));
+        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| run_workflow \| run_mission \| message \| replan \| finish \| ask_user \| abort/.test(a.error));
     ok('‼️ and "evaluate" is in it — the hand-written list had forgotten it',
         !a.ok && /evaluate/.test(a.error));
 
@@ -235,7 +235,7 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
 
     console.log('\n-- the prompt the lead is shown is built from the list');
     const brief = M.protocolFor(spec()).briefing(spec(), [], { rounds: 8, tasks: 12, costUSD: 5, minutes: 120, tokens: Infinity });
-    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "run_workflow" \| "run_mission" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
+    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "run_workflow" \| "run_mission" \| "message" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
     ok('and explains each of them in its own words', /- "compare" — ask a pool agent to weigh/.test(brief));
     ok('‼️ including the rule that makes parallel honest', /The engine still obeys the one-writer-per-folder rule/.test(brief));
     ok('and it says the ids are named, not pasted', /Do not paste the work into "ask" — name it/.test(brief));

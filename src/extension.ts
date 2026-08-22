@@ -264,6 +264,7 @@ import {
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
+    conversationDigest, conversationMessages, messageIntentMenu, openThreads,
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
@@ -3272,7 +3273,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 status: cr.status, costUSD: cr.totalCostUSD, tokens: cr.totalTokens
             } : undefined;
         }
-        if (kind !== 'task') { return undefined; }
+        // ‼️ M-19 — A SPEAKING TURN IS A TASK, and is looked up in the task
+        // store like any other. This read `kind !== 'task'` and would have
+        // repeated X-45's own bug one primitive later: a conversation turn that
+        // finished while the window was closed would come back "fate unknown",
+        // its message would never be delivered, and the lead — told nothing had
+        // happened — would order the same turn again and pay for it twice.
+        if (kind !== 'task' && kind !== 'conversation') { return undefined; }
         const t = taskManager.tasks.find(x => x.id === refId);
         return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
     };
@@ -3721,6 +3728,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // file nobody remembers writing.
                     const dimNote = describeDelegateRun(dims);
                     if (dimNote) { step.runNote = dimNote; }
+                    // ‼️ M-19 — THE SPEAKER PICKS ITS OWN LANE BACK UP. When the
+                    // same participant speaks again, this is the whole of the
+                    // mechanism: the session its last turn ran in becomes this
+                    // task's `resumeSessionId`, so the agent is still holding
+                    // what it said and what it was shown. The task layer owns
+                    // everything that follows — the session-busy lock, the
+                    // resume cost delta, and the refusal for an engine with no
+                    // resume vocabulary — and the engine only ever proposed a
+                    // lane it had already asked `canResumeLane` about.
+                    if (step.message?.resumeSessionId) {
+                        task.resumeSessionId = step.message.resumeSessionId;
+                        if (dims.engine) { task.resumedEngine = dims.engine; }
+                    }
                     step.taskId = task.id;
                     step.status = 'running';
                     // ‼️ WRITTEN BEFORE THE PROCESS EXISTS. This line is the
@@ -3728,7 +3748,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // this" to "that task record over there" — if it were
                     // written after startTask, a crash in between would leave
                     // real work running that nothing could ever claim.
-                    traceEvent(run, 'action.started', { actionId: step.id, kind: 'task', refId: task.id });
+                    traceEvent(run, 'action.started',
+                        { actionId: step.id, kind: step.kind ?? 'task', refId: task.id });
                     taskManager.startTask(task);
                 }
                 if (!steps.some(s => s.taskId || s.workflowRunId || s.missionRunId)) { resolve(); return; }
@@ -3823,6 +3844,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         step.costUSD = t.costUSD;
                         step.tokens = t.tokens;
                         step.outputFile = t.outputFile;
+                        // ‼️ M-19 — THE SESSION IT ACTUALLY RAN IN, copied as
+                        // soon as the launch binds one. It is what the SAME
+                        // participant's next turn resumes, and it is the deep
+                        // link a reader opens to see the turn in full. Read
+                        // from the task rather than assumed from the request:
+                        // an engine may open a different session than the one
+                        // asked for, and the lane that matters is the real one.
+                        if (t.runSessionId) { step.runSessionId = t.runSessionId; }
                         if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
                             // settled ONCE — check() runs on every task event
                             if (step.status !== t.status) {
@@ -3838,7 +3867,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     step.failure = classifyTaskFailure(step, t);
                                 }
                                 traceEvent(run, 'action.settled', {
-                                    actionId: step.id, kind: 'task', refId: t.id, outcome: t.status,
+                                    actionId: step.id, kind: step.kind ?? 'task', refId: t.id, outcome: t.status,
                                     ...(t.costUSD !== undefined ? { costUSD: t.costUSD } : {}),
                                     ...(t.tokens !== undefined ? { tokens: t.tokens } : {}),
                                     ...(t.outputFile ? { outputFile: t.outputFile } : {})
@@ -3991,6 +4020,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             id: w.id, title: w.title, steps: w.steps.length
         })),
         ancestry: () => missionAncestry(run),
+        // ‼️ M-19 — CAN THIS PARTICIPANT'S LANE REALLY BE CONTINUED? Resolved
+        // by the SAME ladder a delegation's engine is (`resolveDelegateRun`),
+        // and then asked of the one function that has measured each CLI's
+        // resume vocabulary. Both halves matter: an agent could hold a session
+        // and still run on an engine that would ignore the id and quietly open
+        // a new conversation — which is precisely the lane the run must not
+        // then describe as "resumed".
+        canResumeLane: (agentId) => {
+            const agent = agents.find(a => a.id === agentId);
+            if (!agent) { return false; }
+            const cast = allowedAgents(spec);
+            const member = cast.find(m => m.agentId === agentId);
+            const dims = resolveDelegateRun(member, spec, {
+                farm: (engine) => storedDefault(
+                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                    agent.dir, engine as EngineId),
+                launch: launchDefaults()
+            });
+            return headlessResumeRefusal(dims.engine) === '';
+        },
         // ‼️ M-18 — read at the moment the lead is briefed, like the workflow
         // list: a project renamed mid-run is a name the lead would otherwise
         // keep repeating back at a user who no longer uses it.
@@ -5498,10 +5547,74 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 }
                             } : {}),
                             // what it RAN with and which layer decided each part
-                            ...(s.runNote ? { ran: s.runNote } : {})
+                            ...(s.runNote ? { ran: s.runNote } : {}),
+                            // ‼️ M-19 — a speaking turn says which message it
+                            // became, so a caller reading a round can follow it
+                            // into the conversation instead of seeing a task
+                            // whose output it cannot place.
+                            ...(s.message ? {
+                                spoke: {
+                                    conversation: s.message.conversationId,
+                                    message: s.message.messageId,
+                                    carried: s.message.carried
+                                }
+                            } : {})
                         }))
-                    }))
+                    })),
+                    // ‼️ M-19 — WHAT WAS ACTUALLY SAID, AND WHAT IS STILL OPEN.
+                    // Summary here and full text through missions.conversation:
+                    // a status call is a status call, and a run with two hundred
+                    // messages would otherwise return a transcript to anybody
+                    // asking whether it is still going.
+                    conversations: (r.conversations ?? []).map(c => {
+                        const dg = conversationDigest(c, r.messages ?? []);
+                        return {
+                            id: c.id, objective: c.objective, participants: c.participants,
+                            messages: dg.total, open: dg.open,
+                            closed: c.closedAt ? (c.closeReason || 'closed') : null
+                        };
+                    })
                 };
+            }
+        },
+        {
+            op: 'missions.conversation',
+            describe: '‼️ M-19 — THE REAL TRANSCRIPT of one conversation inside a run: every message '
+                + 'in order with its speaker, who it was addressed to, its intent ('
+                + messageIntentMenu()
+                + '), the message ids it answers as `refs`, its full text, and the task and session it '
+                + 'was produced by. This is the record, not a rendering: a message exists here only '
+                + 'because a real speaking turn produced it, so a lead cannot report a discussion that '
+                + 'did not happen. `carried` says how the speaker\'s lane was continued — `resumed` is '
+                + 'its own session picked back up, `handoff` is a NEW session that was given the '
+                + 'exchange as text (the two are not the same and are never labelled the same), `new` '
+                + 'is a first turn. `open` lists the questions and challenges nothing has answered '
+                + 'yet. Omit `conversation` to get every conversation of the run. args: id (run id), '
+                + 'conversation? (c1, c2…)',
+            handler: (args) => {
+                const run = missionStore.run(argStr(args, 'id'));
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                const wanted = optStr(args, 'conversation');
+                const list = (r.conversations ?? []).filter(c => !wanted || c.id === wanted);
+                need(list.length, wanted
+                    ? `No conversation "${wanted}" in this run.`
+                    : 'This run has held no conversations.');
+                return list.map(c => ({
+                    id: c.id, objective: c.objective, participants: c.participants,
+                    openedAt: c.openedAt, closedAt: c.closedAt ?? null,
+                    closeReason: c.closeReason ?? null,
+                    open: openThreads(r.messages ?? [], c.id).map(m => m.id),
+                    messages: conversationMessages(r.messages ?? [], c.id).map(m => ({
+                        id: m.id, from: m.from, fromName: m.fromName ?? null,
+                        to: m.to, intent: m.intent, refs: m.refs,
+                        state: m.state, carried: m.carried ?? null,
+                        text: m.excerpt ?? null, note: m.note ?? null,
+                        taskId: m.taskId ?? null, sessionId: m.sessionId ?? null,
+                        outputFile: m.contentRef ?? null,
+                        orderedAt: m.orderedAt, settledAt: m.settledAt ?? null
+                    }))
+                }));
             }
         },
         {

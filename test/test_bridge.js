@@ -852,6 +852,69 @@ const { opencodeStatus, syncToOpencode } =
         const trGone = await reg.dispatch('missions.trace', { id: 'nope' });
         ok('…and an unknown run is refused by name', !trGone.ok && /missions\.list/.test(trGone.error));
 
+        // ‼️ M-19 — THE CONVERSATION IS READABLE FROM THE BRIDGE, in full. The
+        // planner is deliberately given a bounded digest between rounds; an
+        // agent (or the user, through a surface) asking what was actually said
+        // gets the real messages, because "did they really talk?" is a question
+        // a summary cannot answer.
+        const MC = require(path.join(__dirname, '..', 'out', 'core', 'missions.js'));
+        const talked = {
+            id: 'm12', specId: 's1', status: 'done',
+            conversations: [{ id: 'c1', objective: 'per engine or shared?', participants: ['a1', 'a2'], openedAt: 1 }],
+            messages: [
+                { id: 'm1', conversationId: 'c1', from: 'a1', fromName: 'Ada', to: [], intent: 'proposal', refs: [], state: 'delivered', excerpt: 'Per engine.', orderedAt: 1, settledAt: 2, taskId: 't1', sessionId: 's-ada', carried: 'new' },
+                { id: 'm2', conversationId: 'c1', from: 'a2', fromName: 'Rev', to: ['a1'], intent: 'challenge', refs: ['m1'], state: 'delivered', excerpt: 'That duplicates it.', orderedAt: 3, settledAt: 4, carried: 'new' }
+            ]
+        };
+        store.runs = [...store.runs, talked];
+        reg.register([{
+            op: 'missions.conversation',
+            describe: `The real transcript. intents: ${MC.messageIntentMenu()}. args: id, conversation?`,
+            handler: (args) => {
+                const r = store.run(argStr(args, 'id'));
+                need(r, 'Run not found — missions.list shows current ids.');
+                const wanted = optStr(args, 'conversation');
+                const list = (r.conversations ?? []).filter(c => !wanted || c.id === wanted);
+                need(list.length, wanted ? `No conversation "${wanted}" in this run.` : 'This run has held no conversations.');
+                return list.map(c => ({
+                    id: c.id, objective: c.objective, participants: c.participants,
+                    open: MC.openThreads(r.messages ?? [], c.id).map(m => m.id),
+                    messages: MC.conversationMessages(r.messages ?? [], c.id).map(m => ({
+                        id: m.id, from: m.from, fromName: m.fromName ?? null, to: m.to,
+                        intent: m.intent, refs: m.refs, state: m.state, carried: m.carried ?? null,
+                        text: m.excerpt ?? null, taskId: m.taskId ?? null, sessionId: m.sessionId ?? null
+                    }))
+                }));
+            }
+        }]);
+        const cv = await reg.dispatch('missions.conversation', { id: 'm12' });
+        ok('missions.conversation returns the real messages in order',
+            cv.ok && cv.result[0].messages.map(m => m.id).join(',') === 'm1,m2');
+        ok('‼️ …with the full text, not a count', cv.result[0].messages[0].text === 'Per engine.');
+        ok('…and what each message ANSWERS, by id', cv.result[0].messages[1].refs.join(',') === 'm1');
+        ok('…and the deep links a reader opens',
+            cv.result[0].messages[0].taskId === 't1' && cv.result[0].messages[0].sessionId === 's-ada');
+        ok('‼️ …and what nothing has answered yet', cv.result[0].open.join(',') === 'm2');
+        ok('the intents are named from the one registry, never a copy in the describe',
+            reg.catalog().find(o => o.op === 'missions.conversation').describe.includes(MC.messageIntentMenu()));
+        const cvOne = await reg.dispatch('missions.conversation', { id: 'm12', conversation: 'c9' });
+        ok('a conversation that is not there is refused by name', !cvOne.ok && /No conversation "c9"/.test(cvOne.error));
+        const cvNone = await reg.dispatch('missions.conversation', { id: 'm10' });
+        ok('‼️ …and a run that never spoke says so, rather than returning an empty transcript',
+            !cvNone.ok && /held no conversations/.test(cvNone.error));
+
+        // …and the REAL op exists in the extension, with the same contract.
+        {
+            const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+            ok('the extension registers missions.conversation', /op: 'missions\.conversation'/.test(ext));
+            ok('…and its describe names the intents from the registry, not a copy',
+                /\+ messageIntentMenu\(\)/.test(ext));
+            ok('‼️ …and missions.status carries the conversation summary, not the transcript',
+                /conversations: \(r\.conversations \?\? \[\]\)\.map/.test(ext));
+            ok('‼️ …and a speaking step says which message it became',
+                /spoke: \{\s*conversation: s\.message\.conversationId/.test(ext));
+        }
+
         // ‼️ M-16 — A STEER IS RECORDED, NOT DELIVERED. The one thing this op
         // must never do is imply it reached the delegate that is running right
         // now: a task's prompt is fixed when it starts. So the answer states
