@@ -58,6 +58,14 @@ const newRun = (id = 'r') => ({
 });
 
 /** A planner that replies with the given scripted objects, in order. */
+/**
+ * ‼️ X-67 — the ids a lead may name are RUNTIME ids, so a scripted reply may be
+ * a FUNCTION of the prompt it is answering. That is what a real lead does: the
+ * round message carries `[id: …]` for every result, and an evaluation has to
+ * name one of them or it is a verdict bound to nothing.
+ */
+const idsIn = (prompt) => [...String(prompt).matchAll(/\[id: ([^\]]+)\]/g)].map(m => m[1]);
+
 function scripted(replies) {
     let i = 0;
     const prompts = [];
@@ -66,8 +74,9 @@ function scripted(replies) {
         calls: () => i,
         runPlanner: async (prompt) => {
             prompts.push(prompt);
-            const r = replies[Math.min(i, replies.length - 1)];
+            let r = replies[Math.min(i, replies.length - 1)];
             i++;
+            if (typeof r === 'function') { r = r(prompt); }
             return { ok: true, costUSD: 0, tokens: 0, raw: typeof r === 'string' ? r : JSON.stringify(r) };
         }
     };
@@ -127,7 +136,7 @@ const reflect = (over = {}) => ({
     // exiting cleanly says the work ran, not that the objective is met.
     const p = scripted([
         { ...reflect(), thought: 'one writer will do', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write docs', prompt: 'document every op', expect: 'c1', criteria: ['c1'], readonly: false }] },
-        { ...reflect({ currentPhase: 'verifying' }), thought: 'check it', action: 'evaluate', targets: [], findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all nine ops have a paragraph' }], advice: 'finish' },
+        (prompt) => ({ ...reflect({ currentPhase: 'verifying' }), thought: 'check it', action: 'evaluate', targets: idsIn(prompt), findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all nine ops have a paragraph' }], advice: 'finish' }),
         { ...reflect({ currentPhase: 'verifying' }), thought: 'it is done', action: 'finish', verdict: 'success', summary: 'documented', stopReason: 'criteria-satisfied' }
     ]);
     const { seen, d } = deps(p);

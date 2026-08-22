@@ -65,11 +65,29 @@ export interface MissionEvaluator {
 export interface MissionEvaluation {
     id: string;
     /**
-     * The action/graph-node ids this verdict is ABOUT. Empty is legal and
-     * means "the run so far" — such an evaluation goes stale as soon as any
-     * work for one of its criteria settles, which is the honest reading.
+     * ‼️ X-67 — The action ids this verdict is ABOUT, and there is always at
+     * least one.
+     *
+     * The comment at the top of this file has always said that every
+     * evaluation names what it looked at, and gave the reason: a verdict bound
+     * to nothing can never go out of date, and one that can never go out of
+     * date is a permanent pass — the exact thing that would let a run revise
+     * its work and still finish on a judgement about the old version. Nothing
+     * enforced it. The type allowed `[]`, the engine accepted it, and the
+     * tests for self and independent evaluation used it.
      */
     targets: string[];
+    /**
+     * ‼️ X-67 — WHICH VERSION of each target was judged.
+     *
+     * A step id is already immutable here — a step settles once and is never
+     * re-run under the same id — but the moment it settled is what lets a
+     * reader prove the verdict is about the artefact that existed THEN and not
+     * the one that exists now. Written when the verdict is recorded, never
+     * recomputed, because recomputing it would follow the artefact forward and
+     * a version ref that moves is not a version ref.
+     */
+    targetVersions?: { id: string; at: number }[];
     evaluator: MissionEvaluator;
     findings: CriterionFinding[];
     advice: EvaluationAdvice;
@@ -80,31 +98,60 @@ export interface MissionEvaluation {
 }
 
 /**
+/** ‼️ X-67 — one settled piece of work, in the terms staleness needs. */
+export interface SettledWork {
+    /** the step's own id: the immutable version ref of what it produced */
+    id?: string;
+    at: number;
+    /** the criteria the work was aimed at, when it stated any */
+    criteria?: readonly string[];
+    /** the earlier results it was built from — a revise names what it revises */
+    sources?: readonly string[];
+}
+
+/**
  * ‼️ WHY AN EVALUATION EXPIRES, AND WHAT "STALE" IS NOT.
  *
  * It is not age. An hour-old verdict on work nobody touched is still true, and
  * expiring it would cost a review round for nothing. What ends a verdict is the
- * WORK MOVING: once a delegation serving one of the criteria it judged settles
- * after it, the artefact it looked at is not the artefact that now exists, and
- * the pass it recorded is about a version the run has left behind.
+ * WORK MOVING: the artefact it looked at is not the artefact that now exists,
+ * and the pass it recorded is about a version the run has left behind.
+ *
+ * ‼️ X-67 — AND "THE WORK MOVED" HAS TWO WITNESSES, NOT ONE.
+ *
+ * This asked only whether later work carried a CRITERIA LABEL the verdict had
+ * judged. A label is optional on an adaptive delegation, so the artefact could
+ * be rewritten by work that named no criteria at all and the old pass stayed
+ * CURRENT — holding the success gate open on a judgement of a version nobody
+ * could still produce. So LINEAGE counts too: work that names one of this
+ * verdict's own targets among its sources is that target's successor, label or
+ * no label.
+ *
+ * What still does NOT stale a verdict is unrelated work — neither aimed at a
+ * criterion it judged nor descended from anything it looked at. Expiring on
+ * that would cost a review round every time anything happened anywhere.
  *
  * Derived, never stored — a stored flag is a second copy of a fact the
  * timeline already states, and the two would disagree the first time a journal
  * was replayed out of order.
  */
-export function isStale(
-    ev: MissionEvaluation,
-    settled: readonly { at: number; criteria?: readonly string[] }[]
-): boolean {
+export function isStale(ev: MissionEvaluation, settled: readonly SettledWork[]): boolean {
     const judged = new Set(ev.findings.map(f => f.criterionId));
-    return settled.some(s =>
-        s.at > ev.at && (s.criteria ?? []).some(c => judged.has(c)));
+    const looked = new Set<string>([
+        ...ev.targets,
+        ...(ev.targetVersions ?? []).map(t => t.id)
+    ]);
+    return settled.some(s => {
+        if (s.at <= ev.at) { return false; }
+        if ((s.criteria ?? []).some(c => judged.has(c))) { return true; }
+        return (s.sources ?? []).some(src => looked.has(src));
+    });
 }
 
 /** The evaluations that still speak for the work as it is now. */
 export function currentEvaluations(
     evals: readonly MissionEvaluation[],
-    settled: readonly { at: number; criteria?: readonly string[] }[]
+    settled: readonly SettledWork[]
 ): MissionEvaluation[] {
     return evals.filter(e => !isStale(e, settled));
 }

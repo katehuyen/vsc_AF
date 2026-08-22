@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.240.0 — A verdict names the version it judged, and dies with it (2026-08-23)
+
+### X-67 — an evaluation bound to nothing was a permanent pass
+The top of `missionEvaluation.ts` has said since M-17 that every evaluation
+names what it looked at, and gave the reason in the same breath: *a verdict
+bound to nothing can never go out of date, and one that can never go out of date
+is a permanent pass* — exactly how a run revises its work and still finishes on
+a judgement of the version it replaced.
+
+Nothing enforced it. The type allowed `targets: []`, the engine accepted it, and
+the tests for self and independent evaluation used it. An `evaluate` now needs
+at least one target that really settled, refused with the settled ids in hand
+and, before anything has run, told plainly that there is nothing to evaluate
+yet. A reviewer's material is built only from the named targets — it used to
+fall back to "the last six done steps", so a reviewer could be handed work the
+verdict was never bound to.
+
+Each verdict now pins `targetVersions`: the id **and the moment it settled**. A
+step id is already immutable here (a step settles once and is never re-run under
+the same id), but the moment is what lets a reader prove the verdict is about
+the artefact that existed then rather than the one that exists now.
+
+### X-67 — staleness had one witness, and it was optional
+`isStale` asked only whether later work carried a **criteria label** the verdict
+had judged. That label is optional on an adaptive delegation — so the artefact
+could be rewritten by work that named no criteria at all, the old pass stayed
+`current`, and the success gate opened on a judgement of a version nobody could
+still produce.
+
+Lineage is now the second witness: work that names one of a verdict's own
+targets among its `sources` is that target's successor, label or no label, and
+it ends the verdict. What still does **not** stale an evaluation is unrelated
+work — neither aimed at a criterion it judged nor descended from anything it
+looked at — because expiring on that would cost a review round every time
+anything happened anywhere. `settledCriteriaWork` reports every settled step now
+instead of filtering on the label itself: its job is to say what happened, and
+`isStale`'s job is to judge it.
+
+Acceptance measures both witnesses in isolation and the whole path in the
+engine: a revise that carries no criteria label stales the pass on what it
+replaced, and the run can no longer finish as `success` on it.
+
+‼️ This closes **X-59** — all nine Adaptive Missions phase-2 corrections
+(X-60 … X-68) are done.
+
 ## 3.239.0 — An ending that says why, and a request judged on what was sent (2026-08-23)
 
 ### X-68 — every adaptive ending says why it stopped, and what is still open

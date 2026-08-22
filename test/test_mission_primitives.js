@@ -441,7 +441,8 @@ async function staleAfterReviseTest() {
             if (i === 2) {
                 return {
                     ok: true, raw: JSON.stringify({
-                        ...reflect(), thought: 'judge', action: 'evaluate', targets: [],
+                        ...reflect(), thought: 'judge', action: 'evaluate',
+                        targets: [...String(prompt).matchAll(/\[id: ([^\]]+)\]/g)].map(m => m[1]),
                         findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'it rendered' }], advice: 'finish'
                     })
                 };

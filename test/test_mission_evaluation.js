@@ -58,6 +58,14 @@ const reflect = (over = {}) => ({
     rationale: 'r', currentPhase: 'p', strategy: 'delegate then verify', basedOn: [], ...over
 });
 
+/**
+ * ‼️ X-67 — the ids a lead may name are RUNTIME ids, so a scripted reply may be
+ * a FUNCTION of the prompt it is answering. That is what a real lead does: the
+ * round message carries `[id: …]` for every result, and an evaluation has to
+ * name one of them or it is a verdict bound to nothing.
+ */
+const idsIn = (prompt) => [...String(prompt).matchAll(/\[id: ([^\]]+)\]/g)].map(m => m[1]);
+
 function scripted(replies) {
     let i = 0;
     const prompts = [];
@@ -66,8 +74,9 @@ function scripted(replies) {
         calls: () => i,
         runPlanner: async (prompt) => {
             prompts.push(prompt);
-            const r = replies[Math.min(i, replies.length - 1)];
+            let r = replies[Math.min(i, replies.length - 1)];
             i++;
+            if (typeof r === 'function') { r = r(prompt); }
             return { ok: true, costUSD: 0, tokens: 0, raw: typeof r === 'string' ? r : JSON.stringify(r) };
         }
     };
@@ -107,7 +116,12 @@ function deps(planner, outputs = {}, over = {}) {
 }
 
 const DELEGATE = { ...reflect(), thought: 'write', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write docs', prompt: 'do it', criteria: ['c1'] }] };
-const selfEval = (findings, advice = 'finish') => ({ ...reflect(), thought: 'judge', action: 'evaluate', targets: [], findings, advice });
+// ‼️ X-67 — a self-evaluation names the results it read, off the prompt it was
+// given. It used to send `targets: []`, which the engine accepted — and a
+// verdict bound to nothing can never go stale, so it was a permanent pass.
+const selfEval = (findings, advice = 'finish') => (prompt) => ({
+    ...reflect(), thought: 'judge', action: 'evaluate', targets: idsIn(prompt), findings, advice
+});
 const FINISH_OK = { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'shipped', stopReason: 'criteria-satisfied' };
 
 // ============================================ 1. pure functions
@@ -140,6 +154,23 @@ const FINISH_OK = { ...reflect(), thought: 'done', action: 'finish', verdict: 's
         !M.isStale(ev, [{ at: 50, criteria: ['c1'] }]));
     eq('and currentEvaluations drops exactly those',
         M.currentEvaluations([ev], [{ at: 200, criteria: ['c1'] }]).length, 0);
+
+    // ‼️ X-67 — AND THE SECOND WITNESS: LINEAGE. A criteria label is OPTIONAL on
+    // an adaptive delegation, so the artefact could be rewritten by work that
+    // named none at all and this pass stayed CURRENT — holding the success gate
+    // open on a judgement of a version nobody could still produce.
+    ok('‼️ a successor of what it judged, carrying NO criteria label → stale',
+        M.isStale(ev, [{ id: 's2', at: 200, sources: ['s1'] }]));
+    ok('…and the version it pinned counts as much as the target it named',
+        M.isStale(
+            { ...ev, targets: [], targetVersions: [{ id: 's1', at: 90 }] },
+            [{ id: 's2', at: 200, sources: ['s1'] }]));
+    ok('…while a successor of something ELSE leaves it standing',
+        !M.isStale(ev, [{ id: 's3', at: 200, sources: ['sX'] }]));
+    ok('…and unrelated work with no label and no lineage never touches it',
+        !M.isStale(ev, [{ id: 's4', at: 200 }]));
+    ok('…nor does a successor that settled BEFORE the verdict',
+        !M.isStale(ev, [{ id: 's2', at: 50, sources: ['s1'] }]));
 
     console.log('\n-- the parser has one definition of a verdict, whoever wrote it');
     const p1 = M.parseEvaluation('{"findings":[{"criterion":"c1","verdict":"pass","evidence":"saw it"}],"advice":"finish"}', CRITERIA);
@@ -242,8 +273,10 @@ function part4() {
         eq('by id', run.result.unmet[0].id, 'c1');
         eq('refused once, taken the second time — no standoff', p.calls(), 2);
 
-        // required "unknown" lands in the same place
-        const p2 = scripted([selfEval([{ criterion: 'c1', verdict: 'unknown', gap: 'could not open the file' }], 'partial'), FINISH_OK]);
+        // required "unknown" lands in the same place. ‼️ X-67 — the delegation
+        // in front of it is not decoration: an evaluation names what it looked
+        // at, so there has to be something to look at first.
+        const p2 = scripted([DELEGATE, selfEval([{ criterion: 'c1', verdict: 'unknown', gap: 'could not open the file' }], 'partial'), FINISH_OK]);
         const two = deps(p2);
         const run2 = newRun('r4b');
         return new M.MissionEngine(spec(), run2, [], two.d).execute().then(() => {
@@ -257,7 +290,7 @@ function part4() {
 // ============================================ 6. the independent reviewer
 function part5() {
     console.log('\n-- an independent review is an ordinary delegation, judged by the same parser');
-    const REVIEW = { ...reflect(), thought: 'get a second pair of eyes', action: 'evaluate', targets: [], reviewer: 'Rev' };
+    const REVIEW = (prompt) => ({ ...reflect(), thought: 'get a second pair of eyes', action: 'evaluate', targets: idsIn(prompt), reviewer: 'Rev' });
     const p = scripted([DELEGATE, REVIEW, FINISH_OK]);
     const { d, seen } = deps(p, {
         Rev: JSON.stringify({ findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'checked all nine' }], advice: 'finish' }),
@@ -282,7 +315,9 @@ function part5() {
             ['a review that failed outright', { Rev: '' }, 'failed']
         ];
         const runOne = ([name, outputs, status]) => {
-            const pp = scripted([REVIEW, { ...reflect(), thought: 'honest', action: 'finish', verdict: 'partial', summary: 'unverified', stopReason: 'no-new-information' }]);
+            // ‼️ X-67 — the delegation first: a review names the results it
+            // was sent to read, and there has to be one.
+            const pp = scripted([DELEGATE, REVIEW, { ...reflect(), thought: 'honest', action: 'finish', verdict: 'partial', summary: 'unverified', stopReason: 'no-new-information' }]);
             const dd = deps(pp, outputs);
             dd.d.delegateWave = dd.settle(status);
             const rr = newRun('r5-' + name.slice(0, 4));
@@ -453,7 +488,7 @@ function part7() {
             // ---- a run that really met its criteria carries no open list
             const clean = scripted([
                 { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write', prompt: 'p', criteria: ['c1'] }] },
-                { ...reflect(), thought: 'judge', action: 'evaluate', targets: [], findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all documented' }], advice: 'finish' },
+                (prompt) => ({ ...reflect(), thought: 'judge', action: 'evaluate', targets: idsIn(prompt), findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all documented' }], advice: 'finish' }),
                 { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'shipped', stopReason: 'criteria-satisfied' }
             ]);
             const cd = deps(clean, { Ada: 'body' });
@@ -464,6 +499,72 @@ function part7() {
                 cleanRun.result.unmet === undefined);
             ok('…and its summary is the lead\'s own words, untouched',
                 !/Still open/.test(cleanRun.result.summary));
+
+            // ============================================================
+            // ‼️ X-67 — AN EVALUATION IS BOUND TO A VERSION, OR IT IS A
+            // PERMANENT PASS.
+            //
+            // The top of this file has said since M-17 that every evaluation
+            // names what it looked at, and gave the reason: a verdict bound to
+            // nothing can never go out of date, and one that can never go out
+            // of date is a permanent pass — exactly how a run revises its work
+            // and still finishes on a judgement of the old version. Nothing
+            // enforced it. The type allowed [], the engine took it, and these
+            // very tests used it.
+            console.log('\n-- ‼️ X-67 a verdict names the version it judged, and dies with it');
+
+            const bare = scripted([
+                { ...reflect(), thought: 'judge', action: 'evaluate', targets: [], findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'trust me' }], advice: 'finish' },
+                FINISH_OK
+            ]);
+            const bd = deps(bare);
+            const bareRun = newRun('x67-bare');
+            await new M.MissionEngine(spec(), bareRun, [], bd.d).execute();
+            ok('‼️ an evaluation that names nothing is refused',
+                bareRun.ledger.some(l => /evaluate rejected — it named nothing to judge/.test(l)));
+            ok('…in the words the rule was already written in',
+                bare.prompts.some(t => /permanent pass/.test(t)));
+            ok('…and before anything has run, it is told there is nothing to evaluate yet',
+                bare.prompts.some(t => /Nothing has settled in this run yet/.test(t)));
+            ok('…so no verdict was ever recorded on nothing',
+                (bareRun.evaluations ?? []).length === 0);
+
+            // ---- a real verdict pins the version it judged
+            const bound = scripted([DELEGATE, selfEval([{ criterion: 'c1', verdict: 'pass', evidence: 'read it' }]), FINISH_OK]);
+            const bnd = deps(bound, { Ada: 'the docs' });
+            const boundRun = newRun('x67-bound');
+            await new M.MissionEngine(spec(), boundRun, [], bnd.d).execute();
+            const written = boundRun.rounds[0].steps[0].id;
+            eq('a verdict names the result it read', boundRun.evaluations[0].targets.join(), written);
+            ok('‼️ …and pins WHICH VERSION of it, so a reader can prove what was judged',
+                boundRun.evaluations[0].targetVersions
+                && boundRun.evaluations[0].targetVersions[0].id === written
+                && typeof boundRun.evaluations[0].targetVersions[0].at === "number");
+            eq('and the run really does finish on it', boundRun.result.verdict, 'success');
+
+            // ---- ‼️ AND THE FAILURE THIS ITEM IS ABOUT: a revise that carries no
+            // criteria label used to leave the old pass CURRENT, so the gate
+            // opened on a judgement of a version the run had already replaced.
+            let judged;
+            const revised = scripted([
+                DELEGATE,
+                (prompt) => { judged = idsIn(prompt); return { ...reflect(), thought: 'judge', action: 'evaluate', targets: judged, findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'read it' }], advice: 'finish' }; },
+                () => ({ ...reflect(), thought: 'one more pass', action: 'revise', agent: 'Ada', targets: judged, ask: 'tighten it' }),
+                FINISH_OK
+            ]);
+            const rvd = deps(revised, { Ada: 'the docs' });
+            const revisedRun = newRun('x67-revise');
+            await new M.MissionEngine(spec(), revisedRun, [], rvd.d).execute();
+
+            const first = revisedRun.evaluations[0];
+            const settled = M.settledCriteriaWork(revisedRun);
+            ok('the revise names what it revises', settled.some(w => (w.sources || []).includes(judged[0])));
+            ok('‼️ …so the verdict on the version it replaced is STALE',
+                M.isStale(first, settled));
+            eq('…and no longer speaks for the work', M.currentEvaluations([first], settled).length, 0);
+            eq('‼️ …so the run cannot finish as success on it', revisedRun.result.verdict, 'partial');
+            ok('…and says which criterion is open', revisedRun.result.unmet.some(u => u.id === 'c1'));
+
         })().then(() => {
             console.log(`\n${pass} passed, ${fail} failed`);
             process.exit(fail ? 1 : 0);

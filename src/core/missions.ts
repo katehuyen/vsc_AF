@@ -6,8 +6,8 @@ import {
 } from './missionMode';
 import {
     buildReviewPrompt, CriterionFinding, currentEvaluations, EVALUATION_SCHEMA, EvaluationAdvice,
-    isStopReason, MissionEvaluation, parseEvaluation, STOP_REASONS, StopReason, successGate,
-    unreadableEvaluation
+    isStopReason, MissionEvaluation, parseEvaluation, SettledWork, STOP_REASONS, StopReason,
+    successGate, unreadableEvaluation
 } from './missionEvaluation';
 import {
     MissionActionKind, MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
@@ -46,7 +46,7 @@ export {
 } from './missionEvaluation';
 export type {
     CriterionFinding, CriterionVerdict, EvaluationAdvice, GateResult, MissionEvaluation,
-    MissionEvaluator, ParsedEvaluation, StopReason
+    MissionEvaluator, ParsedEvaluation, SettledWork, StopReason
 } from './missionEvaluation';
 
 export {
@@ -701,13 +701,23 @@ export function reopenGuidance(run: MissionRun): MissionGuidance[] {
  * criteria, not work on them, and letting one count would mean no evaluation
  * could survive the round that produced it.
  */
-export function settledCriteriaWork(run: MissionRun): { at: number; criteria?: string[] }[] {
-    const out: { at: number; criteria?: string[] }[] = [];
+export function settledCriteriaWork(run: MissionRun): SettledWork[] {
+    const out: SettledWork[] = [];
     for (const r of run.rounds) {
         for (const s of r.steps) {
             if (s.evaluates) { continue; }
             if (s.status !== 'done' && s.status !== 'failed') { continue; }
-            if (s.criteria?.length) { out.push({ at: r.at, criteria: s.criteria }); }
+            // ‼️ X-67 — EVERY settled step is in here now, not only the ones
+            // that stated a criterion. A criteria label is optional on an
+            // adaptive delegation, so filtering on it here meant a revise that
+            // named none could never stale anything — the artefact changed and
+            // the old pass stayed current. `isStale` decides what counts;
+            // this function's job is to report what happened, not to judge it.
+            out.push({
+                id: s.id, at: r.at,
+                ...(s.criteria?.length ? { criteria: s.criteria } : {}),
+                ...(s.sources?.length ? { sources: s.sources } : {})
+            });
         }
     }
     return out;
@@ -2648,9 +2658,18 @@ export class MissionEngine {
         round: MissionRound, targets: string[], evaluator: MissionEvaluation['evaluator'],
         v: { findings: CriterionFinding[]; advice: EvaluationAdvice; confidence?: number; note?: string }
     ): MissionEvaluation {
+        // ‼️ X-67 — the exact version of each target, pinned at this moment.
+        const settledAt = new Map<string, number>();
+        for (const r of this.run.rounds) {
+            for (const st of r.steps) { settledAt.set(st.id, r.at); }
+        }
+        const targetVersions = targets
+            .filter(id => settledAt.has(id))
+            .map(id => ({ id, at: settledAt.get(id) as number }));
         const ev: MissionEvaluation = {
             id: 'e' + round.n + '-' + ((this.run.evaluations?.length ?? 0) + 1),
             targets: [...targets], evaluator,
+            ...(targetVersions.length ? { targetVersions } : {}),
             findings: v.findings, advice: v.advice,
             ...(v.confidence !== undefined ? { confidence: v.confidence } : {}),
             ...(v.note ? { note: v.note } : {}),
@@ -3236,7 +3255,24 @@ export class MissionEngine {
             // never checked its targets at all, so a verdict could be recorded
             // against an id no step ever had — a pass on nothing, which the
             // success gate then reads as met.
-            if (d.action === 'evaluate' && d.targets.length) {
+            if (d.action === 'evaluate') {
+                // ‼️ X-67 — AND IT MUST NAME WHAT IT LOOKED AT. The reason has
+                // been written at the top of missionEvaluation.ts since M-17
+                // and nothing ever enforced it: a verdict bound to nothing can
+                // never go out of date, and one that can never go out of date
+                // is a permanent pass — which is exactly how a run revises its
+                // work and still finishes on a judgement of the old version.
+                if (!d.targets.length) {
+                    run.ledger.push('R? evaluate rejected — it named nothing to judge');
+                    roundMsg = 'An evaluation must name what it looked at: a verdict bound to nothing'
+                        + ' can never go out of date, and one that can never go out of date is a'
+                        + ' permanent pass.\n'
+                        + (refs.results.length
+                            ? `Put the result ids in "targets" — the settled ones are: ${refs.results.slice(-10).join(', ')}.`
+                            : 'Nothing has settled in this run yet, so there is nothing to evaluate — delegate first.')
+                        + '\nReply with ONLY the JSON decision object.';
+                    continue;
+                }
                 const badTargets = d.targets.filter(id => !refs.results.includes(id));
                 if (badTargets.length) {
                     run.ledger.push(`R? evaluate rejected — no settled result with id ${badTargets.join(', ')}`);
@@ -3332,9 +3368,13 @@ export class MissionEngine {
                 // same waves, same cancel. Nothing about a reviewer earns it a
                 // private execution path.
                 const member = allowedAgents(spec).find(m => m.agentName === d.reviewer);
+                // ‼️ X-67 — ONLY the named targets. This fell back to "the last
+                // six done steps" when nothing was named, so a reviewer could
+                // be handed material the verdict was never bound to — and the
+                // verdict then went stale, or did not, on work it had not read.
                 const material = this.stepResults(
                     run.rounds.flatMap(r => r.steps)
-                        .filter(s => d.targets.length ? d.targets.includes(s.id) : s.status === 'done')
+                        .filter(s => d.targets.includes(s.id))
                         .slice(-6))
                     .map(r => `### ${r.step.agentName} — "${r.step.title}" (${r.step.status})\n${r.excerpt || '(no output)'}`)
                     .join('\n\n');
