@@ -237,18 +237,88 @@ function part3() {
         const end = g.graph.find(n => n.kind === 'finish');
         eq('and the ending hangs under the last decision', end.parentRefs[0], 'd2');
 
-        // the lead may name its own fan-in, and then that is what is recorded
+        // ‼️ X-65 — THE LEAD MAY NAME ITS OWN FAN-IN, AND IT MUST BE REAL.
+        //
+        // This used to approve the opposite: an id no step or decision ever had
+        // went into the graph exactly as typed, because `basedOn` was checked
+        // for being a string and nothing else. An audit graph carrying an edge
+        // to work that never happened is not evidence of anything — and it is
+        // the one thing a reader of it cannot detect from the inside.
         const p2 = scripted([
             { ...reflect(), thought: 'both', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
-            { ...reflect({ basedOn: ['made-up-id'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            { ...reflect({ basedOn: ['made-up-id'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' },
+            { ...reflect({ basedOn: ['d1'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
         ]);
         const two = deps(p2);
         const run2 = newRun('r3b');
         return new M.MissionEngine(spec(), run2, [], two.d).execute().then(() => {
             const gg = M.projectTrace(two.seen.map((e, i) => ({ v: 2, seq: i + 1, ts: i + 1, ...e })));
-            eq('‼️ when the lead names what it built on, THAT is the edge — not what we assumed',
-                gg.graph.find(n => n.id === 'd2').inputRefs.join(), 'made-up-id');
-            return part4();
+            ok('‼️ a made-up id is never drawn as an edge',
+                !two.seen.some(e => (e.inputRefs || []).includes('made-up-id')));
+            ok('…the lead is refused and told so in its own ledger',
+                run2.ledger.some(l => /no node with id made-up-id/.test(l)));
+            ok('…and the refusal names the ids it MAY use',
+                p2.prompts.some(t => /The ids you may name are: /.test(t) && /d1/.test(t)));
+            eq('‼️ and when it names REAL earlier work, THAT is the edge — not what we assumed',
+                gg.graph.find(n => n.id === 'd2').inputRefs.join(), 'd1');
+            return part3b();
+        });
+    });
+}
+
+// ================== 3b. X-65 an edge to work that never happened is refused
+function part3b() {
+    console.log('\n-- ‼️ X-65 the graph may only point at what really happened, in a state it can be read in');
+
+    // a decision cannot rest on ITSELF: the round being decided is not yet a node
+    const pSelf = scripted([
+        { ...reflect({ basedOn: ['d1'] }), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
+        { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
+        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+    ]);
+    const selfDeps = deps(pSelf);
+    const runSelf = newRun('r-self');
+    return new M.MissionEngine(spec(), runSelf, [], selfDeps.d).execute().then(() => {
+        ok('‼️ a decision cannot rest on the round it is being taken in',
+            runSelf.ledger.some(l => /no node with id d1/.test(l)));
+        ok('…and nothing self-referential reached the journal',
+            !selfDeps.seen.some(e => e.type === 'decision.made' && (e.inputRefs || []).includes(e.nodeId)));
+
+        // ---- an evaluate on an id no step ever had is refused outright
+        const pEval = scripted([
+            { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
+            { ...reflect(), thought: 'judge', action: 'evaluate', targets: ['ghost-id'], reviewer: 'Ada' },
+            { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+        ]);
+        const evalDeps = deps(pEval);
+        const runEval = newRun('r-eval');
+        return new M.MissionEngine(spec(), runEval, [], evalDeps.d).execute().then(() => {
+            ok('‼️ a verdict is never recorded against an id no step ever had',
+                runEval.ledger.some(l => /evaluate rejected — no settled result with id ghost-id/.test(l)));
+            ok('…and no evaluation event carries it',
+                !evalDeps.seen.some(e => e.type === 'evaluation.recorded'
+                    && (e.inputRefs || []).includes('ghost-id')));
+            ok('…the lead is shown the ids that ARE real',
+                pEval.prompts.some(t => /The ids you may name are: /.test(t)));
+
+            // ---- ‼️ AND A STUBBORN LEAD IS NOT SPUN TO THE CALL CAP: the second
+            // offence drops the claim it cannot make and keeps the decision.
+            const pStub = scripted([
+                { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
+                { ...reflect({ basedOn: ['nope-1'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' },
+                { ...reflect({ basedOn: ['nope-2'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            ]);
+            const stubDeps = deps(pStub);
+            const runStub = newRun('r-stub');
+            return new M.MissionEngine(spec(), runStub, [], stubDeps.d).execute().then(() => {
+                eq('the run still ends', runStub.status, 'done');
+                ok('…and it did not spin to the call cap arguing', pStub.calls() <= 6);
+                ok('the claim it could not make was dropped, by name',
+                    runStub.ledger.some(l => /unverifiable basedOn dropped: nope-2/.test(l)));
+                ok('…and no invented edge is in the journal',
+                    !stubDeps.seen.some(e => (e.inputRefs || []).some(r => /^nope-/.test(r))));
+                return part4();
+            });
         });
     });
 }
@@ -309,6 +379,58 @@ function part4() {
                 !!reseed && /You are the LEAD of an OBJECTIVE/.test(reseed));
             ok('…and it is labelled as already in force, so it is not acted on twice',
                 /not new instructions/.test(reseed));
+        }
+
+        // ‼️ X-66 — THE CRASH WINDOW: MARKED BEFORE THE CALL, NEVER DELIVERED.
+        //
+        // The mark used to go on before the planner call, so a window that
+        // closed in between left a steer that had never reached the lead
+        // recorded as delivered for ever: buildResumeMessage does not carry
+        // applied guidance, and a planner session that resumed successfully
+        // skipped the history fallback too. The user typed it, it never
+        // landed, and nothing said so.
+        {
+            const killed = {
+                prompts: [],
+                runPlanner: async (prompt) => {
+                    killed.prompts.push(prompt);
+                    throw new Error('the window closed mid-call');
+                }
+            };
+            const k = deps(killed);
+            const runK = newRun('r4d');
+            M.addGuidance(runK, 'always cite the source', 10);
+            await new M.MissionEngine(spec(), runK, [], k.d).execute()
+                .catch(() => { /* the process died — that is the scenario */ });
+
+            ok('the steer did reach the prompt', /always cite the source/.test(killed.prompts[0]));
+            ok('‼️ but it is NOT recorded as delivered — nobody can say the lead read it',
+                runK.guidance[0].appliedAt === undefined);
+            ok('…it is held in flight, which is the honest middle state',
+                runK.guidance[0].inflightAt !== undefined);
+            ok('…and the journal claims no delivery either',
+                !k.seen.some(e => e.type === 'human.guided' && e.applied));
+            eq('nothing is due while a call is holding it', M.pendingGuidance(runK).length, 0);
+
+            // the reload: a NEW engine takes the same run over
+            const back = scripted([
+                { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            ]);
+            const b = deps(back);
+            await new M.MissionEngine(spec(), runK, [], b.d).execute();
+
+            ok('‼️ the steer is put back in front of the lead rather than lost',
+                back.prompts.some(t => /always cite the source/.test(t)));
+            ok('…labelled as already in force, so a lead that read it does not act twice',
+                back.prompts.some(t => /already in force/.test(t) && /standing instruction/.test(t)));
+            ok('…carrying its own id, so the two deliveries are one instruction',
+                back.prompts.some(t => t.includes(runK.guidance[0].id)));
+            ok('…and the ledger says why it came again',
+                runK.ledger.some(l => /was in flight when the window closed/.test(l)));
+            ok('now the delivery is a fact', runK.guidance[0].appliedAt !== undefined);
+            ok('…and the standing label is spent', !runK.guidance[0].standing);
+            eq('the journal records the delivery once, not twice',
+                b.seen.filter(e => e.type === 'human.guided' && e.applied).length, 1);
         }
 
         // a steer that arrives mid-run waits for the NEXT boundary

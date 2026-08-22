@@ -2,6 +2,59 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.238.0 — An audit graph of what really happened, and a steer that cannot be lost (2026-08-23)
+
+### X-65 — the graph may only point at work that really happened
+`basedOn` and `evaluate.targets` are the audit graph's causality edges, and
+both arrived as free strings that nothing checked. A lead could rest a decision
+on an id no step or round ever had, on work that had not finished, or on the
+round it was deciding — and the graph recorded that dependency as though it had
+happened. A test approved exactly that. A graph you cannot trust to be real is
+not evidence of anything, and it is the one thing a reader of it cannot detect
+from the inside.
+
+The engine now builds the allowlist from the run itself: **results** (steps that
+have settled and left a record) and **nodes** (those plus the decisions and
+evaluations already taken). The round being decided is deliberately not among
+them, so a decision can never claim to rest on itself. An invented, future or
+self-referential id is refused with the real ids in hand; a lead that insists a
+second time has the *claim* dropped and keeps its decision, because the edge is
+the provenance, not the work — and spinning the run to its call cap over a
+footnote would cost more than the footnote is worth.
+
+`evaluate` never checked its targets at all, so a verdict could be recorded
+against an id no step ever had — a pass on nothing, which the success gate then
+reads as met. And `review` / `compare` / `revise` asked only whether a step with
+that id existed *anywhere* in the run, so a queued or still-running step could
+be reviewed: reading an output that had not been written yet. Both now require
+a target that has really settled.
+
+### X-66 — a steer marked delivered before it was delivered
+Guidance was marked **applied** — on the run and in the journal — immediately
+before the planner call, on the reasoning that a crash mid-call must lose the
+steer rather than repeat it. The reasoning was sound and the implementation was
+not: a window that closed between the mark and the reply left a steer that had
+**never reached the lead** recorded as delivered for ever. `buildResumeMessage`
+does not carry applied guidance, and if the old planner session resumed
+successfully the history fallback did not run either. The user typed it, it
+never landed, and nothing said so.
+
+Delivery is now two-phase: **pending → inflight → acknowledged**. Taking a steer
+only puts it in flight; it becomes a fact — on the run and in the journal — once
+the lead has actually answered a call that carried it. A crash in between leaves
+it in flight, which is the honest middle state, and an engine taking the run
+over re-opens it and sends it again **labelled as already in force, with its own
+id**: a lead that did read it does not act twice, and a lead that never saw it
+does not lose it. The ledger says why it came again.
+
+The resume-fallback prompt now carries in-flight guidance too. It builds a
+brand-new prompt, so a steer that lived only in the prompt that just failed was
+being dropped on the floor by the retry that replaced it.
+
+Acceptance covers the crash window itself (a planner call that never returns,
+then a new engine over the same run), the session-resume fallback, normal single
+delivery, and that no duplicate action is produced.
+
 ## 3.237.0 — An atomic save that is not undone by its own fallback (2026-08-23)
 
 ### X-62 — the snapshot keeps the guarantee it advertises

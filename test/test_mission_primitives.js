@@ -424,7 +424,7 @@ async function unknownTargetTest() {
     ok('the lead is told which id does not exist', /No result of this run carries the id "nope"/.test(prompts[2]));
     ok('…and which ones do', prompts[2].includes(run.rounds[0].steps[0].id));
     ok('and the refusal is in the ledger, so a resumed lead sees it too',
-        run.ledger.some(l => /revise rejected — no result with id nope/.test(l)));
+        run.ledger.some(l => /revise rejected — no settled result with id nope/.test(l)));
 }
 
 async function staleAfterReviseTest() {

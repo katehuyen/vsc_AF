@@ -630,8 +630,25 @@ export interface MissionGuidance {
     id: string;
     text: string;
     at: number;
-    /** when the loop actually put it in front of the lead; absent = still due */
+    /**
+     * ‼️ X-66 — when the lead ANSWERED a call that carried it. This is the only
+     * moment delivery is a fact; it used to be written before the call, which
+     * made a crash in between look identical to a delivery that landed.
+     */
     appliedAt?: number;
+    /**
+     * ‼️ X-66 — when it was handed to a planner call that had not come back
+     * yet. Neither pending nor delivered, and that is the honest state: nobody
+     * can say which it was. A reload re-opens it as `standing`.
+     */
+    inflightAt?: number;
+    /**
+     * ‼️ X-66 — this steer was in flight when a window closed, so it is being
+     * put in front of the lead AGAIN. Labelled rather than repeated silently:
+     * a lead that already read it must not act on it twice, and a lead that
+     * never saw it must not lose it.
+     */
+    standing?: boolean;
 }
 
 /** Queue a steer for the next planner boundary. Returns the record so the
@@ -646,9 +663,33 @@ export function addGuidance(run: MissionRun, text: string, now: number): Mission
     return g;
 }
 
-/** The steers this run has not shown the lead yet, oldest first. */
+/**
+ * The steers this run has not shown the lead yet, oldest first.
+ *
+ * ‼️ X-66 — one that is IN FLIGHT is not pending: it is in a prompt the lead is
+ * answering right now, and handing it out again in the same process would be
+ * the double delivery the whole mechanism exists to prevent. A reload clears
+ * the in-flight mark (`reopenGuidance`), so an unanswered one comes back.
+ */
 export function pendingGuidance(run: MissionRun): MissionGuidance[] {
-    return (run.guidance ?? []).filter(g => g.appliedAt === undefined);
+    return (run.guidance ?? []).filter(g => g.appliedAt === undefined && g.inflightAt === undefined);
+}
+
+/**
+ * ‼️ X-66 — WHAT A RELOAD DOES TO A STEER NOBODY CAN ACCOUNT FOR.
+ *
+ * A guidance that was in flight when the process died was either read by the
+ * lead or never reached it, and the record cannot tell which. Losing it is the
+ * worse failure of the two — the user typed it, it never landed, and nothing
+ * ever said so — so it is re-opened and marked `standing`, which is how it is
+ * re-delivered as an instruction already in force rather than as a new one.
+ *
+ * Called once when an engine takes a run over; idempotent.
+ */
+export function reopenGuidance(run: MissionRun): MissionGuidance[] {
+    const stuck = (run.guidance ?? []).filter(g => g.appliedAt === undefined && g.inflightAt !== undefined);
+    for (const g of stuck) { g.inflightAt = undefined; g.standing = true; }
+    return stuck;
 }
 
 /**
@@ -2376,24 +2417,66 @@ export class MissionEngine {
     }
 
     /**
-     * ‼️ M-16 — ONE PLANNER BOUNDARY, ONE INJECTION. The steers due now are
-     * taken, marked applied on the run AND in the journal, and appended to the
-     * prompt. Marking BEFORE the planner call is deliberate: a crash mid-call
-     * must lose the steer rather than deliver it twice, because the lead may
-     * already have read it and a repeated instruction is a repeated action.
+     * ‼️ M-16 / X-66 — ONE PLANNER BOUNDARY, ONE DELIVERY — IN TWO PHASES.
+     *
+     * This used to mark the steer APPLIED and write the journal line before the
+     * planner call, on the reasoning that a crash mid-call must lose it rather
+     * than repeat it. The reasoning was sound and the implementation was not:
+     * marked-before-the-call means a window that closed between the mark and
+     * the reply left a steer that had NEVER been delivered recorded as
+     * delivered for ever — `buildResumeMessage` does not carry applied
+     * guidance, and if the old planner session resumed successfully the
+     * history fallback did not run either. The user typed it, it never landed,
+     * and nothing said so.
+     *
+     * So delivery is now pending → inflight → acknowledged. Taking a steer only
+     * puts it IN FLIGHT; `settleGuidance` makes it a fact once the lead has
+     * actually answered a call that carried it. A crash in between leaves it
+     * in flight, an engine taking the run over re-opens it (`reopenGuidance`),
+     * and it comes back labelled as ALREADY IN FORCE — which is what stops a
+     * lead that did read it from acting on it twice.
      */
     private takeGuidance(): string {
         const due = pendingGuidance(this.run);
         if (!due.length) { return ''; }
         const at = this.deps.now();
-        for (const g of due) {
+        for (const g of due) { g.inflightAt = at; }
+        this.deps.onUpdate(this.run);
+        const fresh = due.filter(g => !g.standing);
+        const again = due.filter(g => g.standing);
+        let out = '';
+        if (fresh.length) {
+            out += `\n\n## Guidance from the user${fresh.length > 1 ? ` (${fresh.length} messages)` : ''}\n`
+                + fresh.map(g => g.text).join('\n\n')
+                + '\nTake this into account from this decision onward. It is NOT an instruction to work already in flight.';
+        }
+        if (again.length) {
+            out += `\n\n## Guidance already in force${again.length > 1 ? ` (${again.length} messages)` : ''}\n`
+                + again.map(g => `- [${g.id}] ${g.text}`).join('\n')
+                + '\nA window closed while this was being sent to you, so it is repeated to be safe.'
+                + ' If you have already acted on it, do not act again — it is a standing instruction, not a new one.';
+        }
+        return out;
+    }
+
+    /**
+     * ‼️ X-66 — DELIVERY BECOMES A FACT HERE, and only here: the lead has come
+     * back from a call that carried the steer, so it has read it. The journal
+     * line is written at this moment for the same reason — it is the record
+     * every later reader trusts for "exactly once", so it must not exist for a
+     * delivery that never happened.
+     */
+    private settleGuidance(): void {
+        const inflight = (this.run.guidance ?? []).filter(g => g.appliedAt === undefined && g.inflightAt !== undefined);
+        if (!inflight.length) { return; }
+        const at = this.deps.now();
+        for (const g of inflight) {
             g.appliedAt = at;
+            g.inflightAt = undefined;
+            g.standing = undefined;
             this.deps.trace?.('human.guided', { askId: g.id, text: g.text, applied: true, actor: 'user' });
         }
         this.deps.onUpdate(this.run);
-        return `\n\n## Guidance from the user${due.length > 1 ? ` (${due.length} messages)` : ''}\n`
-            + due.map(g => g.text).join('\n\n')
-            + '\nTake this into account from this decision onward. It is NOT an instruction to work already in flight.';
     }
 
     /**
@@ -2409,7 +2492,11 @@ export class MissionEngine {
      * it does not act on it twice.
      */
     private guidanceHistory(): string {
-        const taken = (this.run.guidance ?? []).filter(g => g.appliedAt !== undefined);
+        // ‼️ X-66 — INCLUDING WHAT IS IN FLIGHT RIGHT NOW. The fallback builds a
+        // brand-new prompt, so a steer that was only in the prompt that just
+        // failed would be dropped on the floor by the retry that replaces it.
+        const taken = (this.run.guidance ?? [])
+            .filter(g => g.appliedAt !== undefined || g.inflightAt !== undefined);
         if (!taken.length) { return ''; }
         return '\n\n## Guidance the user has given (already in force, not new instructions)\n'
             + taken.map(g => `- ${g.text}`).join('\n');
@@ -2460,6 +2547,49 @@ export class MissionEngine {
         }
         this.lastDecisionId = nodeId;
         return changed;
+    }
+
+    /**
+     * ‼️ M-16 / X-65 — THE IDS THAT REALLY EXIST IN THIS RUN, AND IN WHAT STATE.
+     *
+     * `basedOn` and `targets` are the audit graph's causality edges, and both
+     * arrived as free strings that nothing checked: a lead could rest a decision
+     * on an id that had never been produced, on work that had not finished, or
+     * on the round it was deciding — and the graph recorded that dependency as
+     * though it had happened. A graph you cannot trust to be real is not
+     * evidence of anything, and the whole point of M-16 was evidence.
+     *
+     *   * `results` — work that has SETTLED and left a record: it can be read,
+     *     reviewed and evaluated. Queued and running steps are deliberately not
+     *     here; a review of work that has not finished reviews nothing.
+     *   * `nodes` — the results plus the decisions and evaluations already taken.
+     *     The round being decided right now is NOT among them, so a decision
+     *     can never claim to rest on itself.
+     */
+    private knownRefs(): { results: string[]; nodes: string[] } {
+        const results: string[] = [];
+        for (const r of this.run.rounds) {
+            for (const st of r.steps) {
+                if (st.status === 'done' || st.status === 'failed') { results.push(st.id); }
+            }
+        }
+        const nodes = [
+            ...results,
+            ...this.run.rounds.map(r => 'd' + r.n),
+            ...(this.run.evaluations ?? []).map(e => e.id)
+        ];
+        return { results, nodes };
+    }
+
+    /** The correction a lead is sent when it named an id that is not real. */
+    private refusalFor(field: string, bad: string[], valid: string[]): string {
+        return `No ${field === 'targets' ? 'result' : 'earlier node'} of this run carries the id `
+            + bad.map(b => `"${b}"`).join(', ') + '. '
+            + (valid.length
+                ? `The ids you may name are: ${valid.slice(-10).join(', ')}.`
+                : 'Nothing has settled in this run yet, so there is nothing to name.')
+            + ` Name real ids in "${field}", or leave it out.`
+            + '\nReply with ONLY the JSON decision object.';
     }
 
     /** The verdicts that still speak for the work as it stands now. */
@@ -2927,9 +3057,17 @@ export class MissionEngine {
         if (run.messages?.some(m => m.state === 'pending')) {
             this.settleMessages(run, run.rounds.flatMap(r => r.steps), deps.now());
         }
+        // ‼️ X-66 — a steer that was in flight when the process died is neither
+        // delivered nor pending, and the honest answer is to put it back in
+        // front of the lead LABELLED, never to record it as landed.
+        for (const g of reopenGuidance(run)) {
+            run.ledger.push(`(guidance ${g.id} was in flight when the window closed — sending it again)`);
+        }
         let roundMsg: string | undefined = initialMsg;
         let parseRetried = false;
         let guardNudged = false;
+        /** ‼️ X-65 — a lead is corrected on invented provenance once. */
+        let basedOnNudged = false;
         let plannerCalls = 0;
         const seenWork = new Set<string>(
             run.rounds.flatMap(r => r.steps.map(s => dupKey(s.agentName, s.prompt))));
@@ -2981,6 +3119,9 @@ export class MissionEngine {
                 return;
             }
             if (pr.sessionId) { run.plannerSessionId = pr.sessionId; }
+            // ‼️ X-66 — the lead answered a call that carried the steer, so the
+            // delivery is now a fact and is written as one.
+            this.settleGuidance();
             run.totalCostUSD += pr.costUSD ?? 0;
             run.totalTokens = (run.totalTokens ?? 0) + (pr.tokens ?? 0);
 
@@ -3012,6 +3153,41 @@ export class MissionEngine {
                 guardNudged = true;
                 roundMsg = `Not allowed: ${guard}. Reply with "finish" or "abort" only.`;
                 continue;
+            }
+
+            // ‼️ M-16 / X-65 — A CAUSALITY EDGE IS CHECKED BEFORE IT IS DRAWN.
+            // `basedOn` went into the graph as whatever the lead typed, so a
+            // made-up, future or self-referential id became a recorded
+            // dependency on work that never happened — and a test used to
+            // approve exactly that. Refused ONCE with the real ids in hand; a
+            // lead that insists has its provenance dropped rather than the run
+            // spun to its call cap, because the edge is the claim, not the work.
+            const refs = this.knownRefs();
+            const badBasedOn = (d.reflection?.basedOn ?? []).filter(id => !refs.nodes.includes(id));
+            if (badBasedOn.length) {
+                if (!basedOnNudged) {
+                    basedOnNudged = true;
+                    run.ledger.push(`R? ${d.action} rejected — no node with id ${badBasedOn.join(', ')}`);
+                    roundMsg = this.refusalFor('basedOn', badBasedOn, refs.nodes);
+                    continue;
+                }
+                // second offence: keep the decision, drop the claim it cannot make
+                d.reflection!.basedOn = d.reflection!.basedOn.filter(id => refs.nodes.includes(id));
+                run.ledger.push(`(unverifiable basedOn dropped: ${badBasedOn.join(', ')})`);
+            }
+            basedOnNudged = false;
+
+            // ‼️ AND AN EVALUATION IS ABOUT SOMETHING THAT REALLY RAN. `evaluate`
+            // never checked its targets at all, so a verdict could be recorded
+            // against an id no step ever had — a pass on nothing, which the
+            // success gate then reads as met.
+            if (d.action === 'evaluate' && d.targets.length) {
+                const badTargets = d.targets.filter(id => !refs.results.includes(id));
+                if (badTargets.length) {
+                    run.ledger.push(`R? evaluate rejected — no settled result with id ${badTargets.join(', ')}`);
+                    roundMsg = this.refusalFor('targets', badTargets, refs.results);
+                    continue;
+                }
             }
 
             const round: MissionRound = {
@@ -3192,17 +3368,19 @@ export class MissionEngine {
             let sources: string[] | undefined;
             if (d.action === 'review' || d.action === 'compare' || d.action === 'revise') {
                 const prim = intentPrimitive(d.action) as MissionPrimitive;
+                // ‼️ X-65 — AND THE TARGET MUST HAVE SETTLED, not merely exist.
+                // This asked only whether a step with that id was anywhere in
+                // the run, so a queued or still-running step could be reviewed,
+                // compared or revised — reading an output that had not been
+                // written yet and recording a verdict on it.
                 const all = run.rounds.flatMap(r => r.steps);
                 const known = d.targets
-                    .map(id => all.find(s => s.id === id))
-                    .filter((s): s is MissionStep => !!s);
-                const missing = d.targets.filter(id => !all.some(s => s.id === id));
+                    .map(id => all.find(st => st.id === id && (st.status === 'done' || st.status === 'failed')))
+                    .filter((st): st is MissionStep => !!st);
+                const missing = d.targets.filter(id => !known.some(st => st.id === id));
                 if (missing.length) {
-                    run.ledger.push(`R? ${d.action} rejected — no result with id ${missing.join(', ')}`);
-                    roundMsg = `No result of this run carries the id ${missing.map(m => `"${m}"`).join(', ')}. `
-                        + `The ids you may name are the ones shown with each round's results`
-                        + (all.length ? `: ${all.slice(-8).map(s => s.id).join(', ')}` : ' — and nothing has run yet.')
-                        + '\nName real ids, or choose different work. Reply with ONLY the JSON decision object.';
+                    run.ledger.push(`R? ${d.action} rejected — no settled result with id ${missing.join(', ')}`);
+                    roundMsg = this.refusalFor('targets', missing, refs.results);
                     continue;
                 }
                 intent = d.action;
