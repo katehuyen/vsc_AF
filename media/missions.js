@@ -151,6 +151,14 @@
     };
     const fmtTime = (ts) => (ts ? window.AFTime.full(ts) : '—');
     const usd = (n) => '$' + (n || 0).toFixed(2);
+    // ‼️ A LIMIT OF 0 IS NO LIMIT, AND IT IS DRAWN THAT WAY. Every ceiling on
+    // a mission is the user's to set and any of them may be left off; a bare
+    // "0 rounds" on the row would read as a run with nothing left.
+    const capN = (v, unit) => (v > 0 ? `${v}${unit ? ' ' + unit : ''}` : `∞${unit ? ' ' + unit : ''}`);
+    const capUsd = (v) => (v > 0 ? usd(v) : '$∞');
+    // The spec summary prints the ceiling as the user typed it, not padded to
+    // cents — `$5`, not `$5.00`; only the spent-vs-budget bar pads both sides.
+    const capUsdRaw = (v) => (v > 0 ? '$' + v : '$∞');
     const elapsed = (since) => {
         const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
         return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
@@ -350,9 +358,12 @@
                     value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
             </div>`;
         }).join('');
+        // ‼️ NO FIELD HERE HAS A MAXIMUM, AND EVERY ONE OF THEM TAKES 0.
+        // The ceilings belong to whoever pays for the run; the form's job is to
+        // say so on every field rather than to argue with the figure typed.
         const lim = (key, label, hint) => `
-            <label class="limfield" title="${C.esc(hint)}">${label}
-                <input type="number" id="lim-${key}" value="${C.esc(String(form[key] !== '' ? form[key] : DATA.defaults[key]))}">
+            <label class="limfield" title="${C.esc(hint + ' — 0 = UNLIMITED on this axis; no upper cap is imposed.')}">${label}
+                <input type="number" id="lim-${key}" min="0" value="${C.esc(String(form[key] !== '' ? form[key] : DATA.defaults[key]))}">
             </label>`;
         const adaptive = form.mode === 'adaptive';
         /**
@@ -420,11 +431,14 @@
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
             <div class="frow limrow">
                 ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent. Only an engine that states a per-turn price can move this figure — ' + priced + ' do; on ' + unpriced + ' it can never be reached, and the token ceiling beside it is what fences that run')}
-                ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. 0 = no token ceiling. This is the ONLY hard budget for a team delegating on ' + unpriced)}
+                ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. This is the ONLY hard budget for a team delegating on ' + unpriced)}
                 ${lim('maxRounds', 'Max rounds', 'Planner decisions')}
                 ${lim('maxTasks', 'Max tasks', 'Total delegations')}
                 ${lim('maxMinutes', 'Max minutes', 'Wall clock; waiting on you does not count')}
-                ${lim('maxParallel', 'Max parallel', 'Delegations per wave')}
+                ${lim('maxParallel', 'Max parallel', 'Delegations per wave; 0 runs a whole round in one wave')}
+                <span class="muted small">These are your ceilings, not ours — nothing is capped from above.
+                <b>0 on any field = unlimited</b>, and a mission with no ceilings stops only when the lead
+                finishes it, you cancel it, or the fleet budget bites.</span>
             </div>
             <div class="frow"><label>Delegation engine
                 <select id="f-engine">${engineOpts(form.engine, 'Claude Code (default)')}</select></label>
@@ -841,7 +855,7 @@
             // A run whose delegations went to Codex and whose only real fence
             // was the token cap used to read as a $-budgeted Claude run.
             `engines: delegations ${sp.engine || 'claude'} · planner claude (always)`,
-            `limits: $${sp.limits.maxCostUSD}${sp.limits.maxTokens ? ` · ${C.fmtTok(sp.limits.maxTokens)} tok` : ' · no token ceiling'} · ${sp.limits.maxRounds} rounds · ${sp.limits.maxTasks} tasks · ${sp.limits.maxMinutes} min · ${sp.limits.maxParallel} parallel`,
+            `limits: ${capUsdRaw(sp.limits.maxCostUSD)}${sp.limits.maxTokens ? ` · ${C.fmtTok(sp.limits.maxTokens)} tok` : ' · no token ceiling'} · ${capN(sp.limits.maxRounds, 'rounds')} · ${capN(sp.limits.maxTasks, 'tasks')} · ${capN(sp.limits.maxMinutes, 'min')} · ${capN(sp.limits.maxParallel, 'parallel')}`,
             `delegations: ${st.total}${st.failed ? ` (${st.failed} failed)` : ''} · ${mins} min${sp.workdir ? ` · workdir: ${sp.workdir}` : ''} · approval: ${sp.approvalMode}`
         ];
         if (shares.length) { lines.push(`tokens: ${shares.map(x => `${x.name} ${x.pct}%`).join(' · ')}`); }
@@ -1326,11 +1340,11 @@
             ${isAdaptive(sp) ? guideSection(run, sp, active) : ''}
             ${run.pausePending ? `<div class="nowstrip paused"><span class="nowdot hold"></span> pausing — the current activity finishes first, then the run holds</div>` : ''}
             ${liveSection(run, sp)}
-            <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
+            <div class="budget" title="Spent ${usd(run.totalCostUSD)} of ${sp.limits.maxCostUSD > 0 ? 'the ' + usd(sp.limits.maxCostUSD) + ' budget' : 'an unlimited budget'}">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
-                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)}${runTokens(run)
+                <span class="muted small">${usd(run.totalCostUSD)} / ${capUsd(sp.limits.maxCostUSD)}${runTokens(run)
                     ? ` · ${C.fmtTok(runTokens(run))}${sp.limits.maxTokens ? ` / ${C.fmtTok(sp.limits.maxTokens)}` : ''} tok`
-                    : ''} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
+                    : ''} · ${run.rounds.length}/${capN(sp.limits.maxRounds)} rounds · ${tasksUsed}/${capN(sp.limits.maxTasks)} tasks · ${wallMin}/${capN(sp.limits.maxMinutes)} min · started ${fmtTime(run.startedAt)}</span>
             </div>
             ${(() => {
                 const shares = tokenShares(run, sp);
@@ -1437,7 +1451,7 @@
                     ? ' <span class="mchip adpt">ADPT</span>' : ''}</td>
                 <td>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
                 <td>${chip(r.status)}${verdict}</td>
-                <td>R${r.rounds.length}/${sp.limits.maxRounds}</td>
+                <td>R${r.rounds.length}/${capN(sp.limits.maxRounds)}</td>
                 <td>${st.total ? `${st.total}${st.failed ? ` <span class="mchip bad">${st.failed}✕</span>` : ''}` : '—'}</td>
                 <td class="num">${tok ? C.fmtTok(tok) : '—'}</td>
                 <td class="num">${usd(r.totalCostUSD)}</td>

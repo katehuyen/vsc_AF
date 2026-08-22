@@ -1798,6 +1798,34 @@ window against a $5 ceiling it can never reach. `maxTokens` (default 2 000 000,
 the planner is told the token budget in its briefing — a lead that only ever saw
 "$5.00 left" would plan as if nothing had been spent.
 
+### The ceilings belong to whoever pays for the run (3.231.0) {#mission-limits-free}
+
+The limits above are the user's, and for a while they were not. `missions.start`
+clamped what was typed — 24 hours of wall clock, $500 of budget, 30 rounds, 60
+tasks, 6 parallel — and clamped it **silently**, which is worse than refusing it:
+a run asked for a five-day marathon, got two days, and ended early for a reason
+nobody had written down. Those figures were invented here, for somebody else's
+money. A command centre hands out DEFAULTS; the ceiling is a decision its owner
+is entitled to make and to pay for.
+
+So nothing is capped from above, and **`0` means UNLIMITED on every axis** —
+`maxRounds`, `maxTasks`, `maxCostUSD`, `maxTokens`, `maxMinutes`,
+`maxParallel`. It is the one word `maxTokens` already spoke, now spoken by all
+six, so a reader learns it once instead of six special cases. What survives is
+the FLOOR: a POSITIVE figure below the smallest workable value is a typo rather
+than a request and is lifted to it; `0` is how a missing ceiling is spelled.
+
+‼️ **Two leashes were hiding behind the round ceiling** and had to come out with
+it. `hardCallCap` was `maxRounds + 6`, so the field that says "run as long as it
+takes" would have produced the tightest limit in the file — six planner calls;
+and the planner's budget line would have told the lead it had "Infinity round(s)"
+left. `maxParallel: 0` runs a whole round in one wave, and the one-writer rule
+still splits it, because that rule is about correctness rather than pacing.
+
+The rule left the caller and became `normalizeMissionLimits()` in
+`src/core/missions.ts`, because a rule inside a closure cannot be held by a test.
+`test/test_mission_limits.js` holds it.
+
 ### The model box asks the engine itself (3.103.0) {#engine-models}
 
 The engine axis reached every surface, but **the box beside it did not**:

@@ -179,6 +179,19 @@ export interface MissionTeamMember {
     permissionMode?: string;
 }
 
+/**
+ * ‼️ EVERY CEILING HERE IS THE USER'S TO SET, AND `0` MEANS UNLIMITED.
+ *
+ * A command centre hands out sane DEFAULTS; it does not get to decide on the
+ * owner's behalf that no mission may cost more than $500 or run longer than a
+ * day. Whoever pays the bill takes the risk and names the number, so nothing in
+ * this codebase clamps these figures from above.
+ *
+ * `0` is the one word for "no ceiling on this axis" — the convention
+ * `maxTokens` already spoke (X-19), now spoken by all six, so a reader learns
+ * it once instead of six special cases. `remainingBudget` turns a 0 into
+ * `Infinity`, which is what makes `guardReason` never fire on that axis.
+ */
 export interface MissionLimits {
     maxRounds: number;
     maxTasks: number;
@@ -209,6 +222,43 @@ export const DEFAULT_MISSION_LIMITS: MissionLimits = {
     maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxTokens: 2_000_000,
     maxMinutes: 120, maxParallel: 2
 };
+
+/**
+ * ‼️ NO UPPER CLAMP. THE CEILING IS THE USER'S TO NAME.
+ *
+ * This used to refuse more than 24 hours, more than $500, more than 30 rounds —
+ * numbers this extension invented for somebody else's money. A five-day
+ * marathon or a high-budget research run is a decision its owner is entitled to
+ * make and to pay for, and silently clamping the figure that was typed is worse
+ * than refusing it: the run then ends early for a reason nobody wrote down.
+ *
+ * What survives is the FLOOR and the word `0`. A POSITIVE figure below the
+ * smallest workable value is a typo rather than a request, so it is lifted to
+ * that floor; `0` (or anything below it) is the one spelling of "no ceiling on
+ * this axis" — the word `maxTokens` has meant since X-19, now spoken by all six.
+ *
+ * It lives here rather than in the caller because it is the RULE, and a rule
+ * inside a closure cannot be held by a test (Principle 1).
+ */
+export function normalizeMissionLimits(input: Record<string, unknown>): MissionLimits {
+    const num = (v: unknown, d: number, min: number, integer = false): number => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) { return d; }
+        if (n <= 0) { return 0; }
+        return Math.max(min, integer ? Math.round(n) : Math.round(n * 100) / 100);
+    };
+    return {
+        maxRounds: num(input.maxRounds, DEFAULT_MISSION_LIMITS.maxRounds, 1, true),
+        maxTasks: num(input.maxTasks, DEFAULT_MISSION_LIMITS.maxTasks, 1, true),
+        maxCostUSD: num(input.maxCostUSD, DEFAULT_MISSION_LIMITS.maxCostUSD, 0.01),
+        // ‼️ X-19 — the ceiling that still binds on a plan-billed delegate.
+        // 0 means "no token ceiling", which is what a mission created before
+        // token ceilings existed had.
+        maxTokens: num(input.maxTokens, DEFAULT_MISSION_LIMITS.maxTokens, 1000, true),
+        maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 1, true),
+        maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, true)
+    };
+}
 
 export interface MissionSpec {
     id: string;
@@ -1358,12 +1408,15 @@ export function remainingBudget(spec: MissionSpec, run: MissionRun, now: number)
     // A spec written before token ceilings existed has no `maxTokens` field at
     // all; `?? 0` is what makes that mission behave exactly as it always did.
     const maxTokens = spec.limits.maxTokens ?? 0;
+    // 0 on any axis = the user asked for no ceiling there, so nothing is ever
+    // "left" to run out: Infinity is what `guardReason` reads as never spent.
     return {
-        rounds: spec.limits.maxRounds - run.rounds.length,
-        tasks: spec.limits.maxTasks - spentTasks,
-        costUSD: Math.round((spec.limits.maxCostUSD - run.totalCostUSD) * 100) / 100,
+        rounds: spec.limits.maxRounds > 0 ? spec.limits.maxRounds - run.rounds.length : Infinity,
+        tasks: spec.limits.maxTasks > 0 ? spec.limits.maxTasks - spentTasks : Infinity,
+        costUSD: spec.limits.maxCostUSD > 0
+            ? Math.round((spec.limits.maxCostUSD - run.totalCostUSD) * 100) / 100 : Infinity,
         tokens: maxTokens > 0 ? maxTokens - (run.totalTokens ?? 0) : Infinity,
-        minutes: Math.round(spec.limits.maxMinutes - elapsedMin)
+        minutes: spec.limits.maxMinutes > 0 ? Math.round(spec.limits.maxMinutes - elapsedMin) : Infinity
     };
 }
 
@@ -1402,7 +1455,14 @@ function remLine(rem: RemainingBudget): string {
     // "$5.00 left" would plan as if nothing had been spent.
     const tokens = isFinite(rem.tokens)
         ? `, ${Math.max(0, Math.round(rem.tokens / 1000))}k tokens` : '';
-    return `Remaining budget: ${rem.rounds} round(s), ${rem.tasks} task(s), $${rem.costUSD.toFixed(2)}${tokens}, ~${rem.minutes} min.`;
+    // An axis the user left unlimited is SAID to be unlimited rather than
+    // printed as "Infinity round(s)" — a lead that reads a broken figure
+    // plans around a limit nobody set.
+    const rounds = isFinite(rem.rounds) ? `${rem.rounds} round(s)` : 'unlimited rounds';
+    const tasks = isFinite(rem.tasks) ? `${rem.tasks} task(s)` : 'unlimited tasks';
+    const cost = isFinite(rem.costUSD) ? `$${rem.costUSD.toFixed(2)}` : 'no cost ceiling';
+    const mins = isFinite(rem.minutes) ? `~${rem.minutes} min` : 'no time limit';
+    return `Remaining budget: ${rounds}, ${tasks}, ${cost}${tokens}, ${mins}.`;
 }
 
 export interface TeamHint { name: string; role?: string; hint?: string }
@@ -1790,7 +1850,9 @@ export function ledgerLine(round: MissionRound): string {
  * maxParallel.
  */
 export function planWaves(tasks: PlannerTaskReq[], hasWorkdir: boolean, maxParallel: number): PlannerTaskReq[][] {
-    const cap = Math.max(1, maxParallel);
+    // 0 = unlimited: one wave holds the whole round. The one-writer rule still
+    // splits it, because that rule is about correctness, not about pacing.
+    const cap = maxParallel > 0 ? maxParallel : Infinity;
     const waves: PlannerTaskReq[][] = [];
     let wave: PlannerTaskReq[] = [];
     let waveHasWriter = false;
@@ -2041,7 +2103,10 @@ export const MAX_MISSION_DEPTH = 3;
 /** Absolute ceiling on planner calls per run: rounds + parse retries + guard
  *  nudges can never spin past this, whatever the planner does. */
 function hardCallCap(spec: MissionSpec): number {
-    return spec.limits.maxRounds + 6;
+    // ‼️ A ROUND CEILING OF 0 IS "NO CEILING", NOT "SIX CALLS". Reading it
+    // as a number here would turn the one field that says "run as long as it
+    // takes" into the tightest leash in the file.
+    return spec.limits.maxRounds > 0 ? spec.limits.maxRounds + 6 : Infinity;
 }
 
 export class MissionEngine {

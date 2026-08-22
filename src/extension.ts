@@ -268,6 +268,7 @@ import {
     messageIntentMenu, openThreads, tallyVotes,
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
+    normalizeMissionLimits,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
@@ -3566,8 +3567,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): MissionSpec => {
         const req = step.child as NonNullable<typeof step.child>;
         const rem = remainingBudget(parent, parentRun, Date.now());
+        // An unlimited parent hands down an unlimited ceiling: half of no limit
+        // is still no limit, and 0 is how this spec spells that.
         const cap = (left: number, share: number): number =>
-            Math.max(1, Math.floor(Number.isFinite(left) ? left * share : share));
+            Number.isFinite(left) ? Math.max(1, Math.floor(left * share)) : 0;
         return {
             id: newMissionId(),
             title: req.title || `Sub-objective of ${parent.title}`.slice(0, 120),
@@ -4449,21 +4452,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const workdir = String(input.workdir ?? '').trim();
         if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
-        const num = (v: unknown, d: number, min: number, max: number) => {
-            const n = Number(v);
-            return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n * 100) / 100)) : d;
-        };
-        const limits: MissionLimits = {
-            maxRounds: num(input.maxRounds, DEFAULT_MISSION_LIMITS.maxRounds, 1, 30),
-            maxTasks: num(input.maxTasks, DEFAULT_MISSION_LIMITS.maxTasks, 1, 60),
-            maxCostUSD: num(input.maxCostUSD, DEFAULT_MISSION_LIMITS.maxCostUSD, 0.1, 500),
-            // ‼️ X-19 — the ceiling that still binds on a plan-billed delegate.
-            // 0 is allowed and means "no token ceiling", which is what a mission
-            // created before this had.
-            maxTokens: num(input.maxTokens, DEFAULT_MISSION_LIMITS.maxTokens, 0, 200_000_000),
-            maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 5, 24 * 60),
-            maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, 6)
-        };
+        // ‼️ Nothing here is clamped from above and 0 = unlimited on every axis:
+        // the rule and its reasons live in `normalizeMissionLimits`.
+        const limits: MissionLimits = normalizeMissionLimits(input);
         // ‼️ WHICH PROJECT THIS MISSION IS FOR — settled HERE, once, before the
         // planner has spent a turn. `project` may be an id, a name, or the
         // literal `''` a caller passes to mean "deliberately none"; only when
@@ -5419,11 +5410,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'and --max-turns, none of which the other engine has. An engine that cannot run here is '
                 + 'refused before the mission is created), '
                 + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
+                + '(‼️ EVERY LIMIT IS YOURS TO SET: nothing is clamped from above, and 0 on ANY '
+                + 'of maxRounds/maxTasks/maxCostUSD/maxTokens/maxMinutes/maxParallel means UNLIMITED on '
+                + 'that axis — an unlimited mission stops only when the planner finishes it, is cancelled, '
+                + 'or hits the fleet budget) '
                 + 'maxTokens? (‼️ THE CEILING THAT STILL BINDS WHEN THE ENGINE STATES NO PRICE — a delegate on '
                 + 'an engine that reports tokens and no dollars ('
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
                 + ') can never reach maxCostUSD, so that budget is not a brake there and this one is; '
-                + 'default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel?, '
+                + 'default 2000000, 0 = no token ceiling), maxMinutes?, maxParallel? (0 = one wave, '
+                + 'the one-writer rule still applies), '
                 + 'project? (id or name — the mission AND every delegation it makes are filed under it, so the '
                 + 'project\'s Work tab shows the whole run; pass "" for deliberately none. Omit it and the '
                 + 'window\'s active project is used, which is only right when a person just started this). '
@@ -11277,7 +11273,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const spec = run ? missionStore.spec(run.specId) : undefined;
             if (!run || !spec) { return; }
             const pick = await vscode.window.showWarningMessage(
-                `Run mission "${spec.title}" again? Same goal, team and limits (max $${spec.limits.maxCostUSD}).`,
+                `Run mission "${spec.title}" again? Same goal, team and limits (max ${spec.limits.maxCostUSD > 0 ? '$' + spec.limits.maxCostUSD : 'cost: no ceiling'}).`,
                 { modal: true }, 'Run again');
             if (pick !== 'Run again') { return; }
             rerunMissionRun(run);

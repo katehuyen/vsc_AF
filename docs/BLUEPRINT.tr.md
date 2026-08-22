@@ -1839,6 +1839,35 @@ denetlenir, hangisi önce biterse koşu orada durur, ve **planlayıcıya brief'i
 token bütçesi de söylenir** — yalnızca "$5.00 left" gören bir lead hiç harcama
 yapılmamış gibi plan yapardı.
 
+### Tavanlar koşunun parasını ödeyene aittir (3.231.0) {#mission-limits-free}
+
+Yukarıdaki sınırlar kullanıcınındır; bir süre değildi. `missions.start` yazılan
+rakamı kırpıyordu — 24 saat duvar saati, 500 dolar bütçe, 30 tur, 60 görev, 6
+paralel — ve bunu **sessizce** yapıyordu ki bu reddetmekten kötüdür: beş günlük
+bir maraton istenen koşu iki gün alıyor ve kimsenin yazmadığı bir sebeple erken
+bitiyordu. O rakamlar burada, başkasının parası için uyduruldu. Bir komuta
+merkezi VARSAYILAN dağıtır; tavan, sahibinin verme ve ödeme hakkı olan bir
+karardır.
+
+Dolayısıyla hiçbir eksen yukarıdan kelepçelenmiyor ve **`0` her eksende
+LİMİTSİZ demek** — `maxRounds`, `maxTasks`, `maxCostUSD`, `maxTokens`,
+`maxMinutes`, `maxParallel`. Bu, `maxTokens`'ın zaten söylediği tek kelimedir;
+artık altısı da onu söylüyor, böylece okuyan altı özel durum yerine bir kural
+öğreniyor. Ayakta kalan şey TABAN: en küçük çalışabilir değerin altındaki
+POZİTİF bir rakam istek değil yazım hatasıdır ve o tabana çekilir; `0` ise
+"tavan yok"un yazılışıdır.
+
+‼️ **Tur tavanının arkasında iki tasma saklıydı** ve onunla birlikte çıkarılması
+gerekti. `hardCallCap` `maxRounds + 6` idi; yani "ne kadar sürerse sürsün koş"
+diyen alan dosyanın en dar sınırını üretecekti — altı planlayıcı çağrısı. Ve
+planlayıcının bütçe satırı lead'e "Infinity round(s)" kaldığını söyleyecekti.
+`maxParallel: 0` bir turun tamamını tek dalgada koşar; tek-yazar kuralı yine de
+böler, çünkü o kural hız değil doğruluk kuralıdır.
+
+Kural çağıranın içinden çıkıp `src/core/missions.ts` içinde
+`normalizeMissionLimits()` oldu, çünkü bir kapanışın içindeki kuralı hiçbir test
+tutamaz. `test/test_mission_limits.js` onu tutuyor.
+
 ### Model kutusu motorun kendisine sorar (3.103.0) {#engine-models}
 
 Motor ekseni indi ama **yanındaki kutu inmedi**: hangi motor seçilirse seçilsin

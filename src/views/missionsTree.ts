@@ -94,11 +94,13 @@ export class MissionsTreeProvider implements vscode.TreeDataProvider<MissionNode
         const label = run.status === 'done' && run.result ? `done · ${run.result.verdict}`
             : run.pausePending ? '⏸ pausing…'
                 : (active && run.now ? run.now.what : m.label);
-        const rounds = `R${run.rounds.length}${spec ? '/' + spec.limits.maxRounds : ''}`;
+        // 0 = the user set no round ceiling; ∞ is what that reads as on a row.
+        const roundCap = spec ? (spec.limits.maxRounds > 0 ? String(spec.limits.maxRounds) : '∞') : '';
+        const rounds = `R${run.rounds.length}${roundCap ? '/' + roundCap : ''}`;
         item.description = `${label} • ${rounds} • $${run.totalCostUSD.toFixed(2)} • ${relTime(run.endedAt ?? run.startedAt)}`;
         item.tooltip = `${spec?.title ?? run.id}\n[${run.status}] lead: ${spec?.leadAgentName ?? '?'}${spec?.plannerModel ? ` (planner: ${spec.plannerModel})` : ''} · team: ${spec?.team.map(t => t.agentName + (t.model ? ` (${t.model})` : '')).join(', ') ?? '?'}`
             + (run.pausePending ? '\npause requested — takes effect before the next planner round (Pause again withdraws it)' : '')
-            + (spec ? `\nbudget: $${run.totalCostUSD.toFixed(2)} of $${spec.limits.maxCostUSD} · ${run.rounds.length} of ${spec.limits.maxRounds} rounds` : '')
+            + (spec ? `\nbudget: $${run.totalCostUSD.toFixed(2)} of ${spec.limits.maxCostUSD > 0 ? '$' + spec.limits.maxCostUSD : 'no cost ceiling'} · ${run.rounds.length} of ${roundCap} rounds` : '')
             + (spec ? `\n\ngoal: ${spec.goal}` : '')
             + (run.result ? `\n\n${run.result.verdict}: ${run.result.summary}` : '')
             + (run.note ? `\nnote: ${run.note}` : '');

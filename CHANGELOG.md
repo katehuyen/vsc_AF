@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.231.0 — The ceilings on a mission belong to whoever pays for it (2026-08-22)
+
+### The arbitrary upper clamps are gone, and `0` means unlimited on every axis
+`missions.start` used to clamp what the user typed — 24 hours of wall clock,
+$500 of budget, 30 rounds, 60 tasks, 6 parallel — figures this extension invented
+for somebody else's money and applied **silently**, so a run asked for a five-day
+marathon ended on the second day for a reason nobody had written down. A command
+centre hands out DEFAULTS; it does not hand out limits.
+
+Nothing is capped from above any more, and **`0` on any of `maxRounds`,
+`maxTasks`, `maxCostUSD`, `maxTokens`, `maxMinutes`, `maxParallel` means
+UNLIMITED** on that axis — the one word `maxTokens` already spoke (X-19), now
+spoken by all six. The FLOOR survives: a POSITIVE figure below the smallest
+workable value is a typo rather than a request and is lifted to it.
+
+‼️ **Two leashes were hiding behind the round ceiling.** `hardCallCap` read it as
+a number (`maxRounds + 6`), so a mission asking for NO round ceiling would have
+been cut off after six planner calls — the tightest limit in the file, produced
+by the field that says "run as long as it takes". And the planner's budget line
+would have told the lead it had "Infinity round(s)" left; every unlimited axis is
+now said in words ("unlimited rounds", "no cost ceiling", "no time limit").
+`maxParallel: 0` runs a whole round in one wave, and the one-writer rule still
+splits it.
+
+The rule left the caller and became `normalizeMissionLimits()` in
+`src/core/missions.ts` — a rule inside a closure cannot be held by a test.
+`test/test_mission_limits.js` holds it, and every surface that prints a ceiling
+(the form, the spec summary, the budget bar, the runs table, the tree row, the
+rerun prompt, the `missions.start` bridge description) says ∞ rather than 0.
+
 ## 3.230.0 — U-64: Classic and Adaptive in one Missions room, and a run that says what it is doing and why (2026-08-22)
 
 ### One form, two kinds of work
