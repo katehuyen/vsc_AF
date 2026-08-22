@@ -386,6 +386,15 @@ const ADAPTIVE_RUN = {
                 + 'ran last — not the one the mission thinks is primary.',
             taskId: 't-m10', sessionId: 'sess-basit-2', carried: 'new',
             orderedAt: Date.now() - 12 * 60000, settledAt: Date.now() - 10 * 60000, state: 'delivered'
+        },
+        {
+            // ‼️ X-81 — a turn that is ORDERED and still out. It is neither a
+            // speaker nor a silence, and the fixture carries one so the third
+            // state is something a reader can actually be shown.
+            id: 'm11', conversationId: 'c1', from: 'a1', fromName: 'developer', to: ['a2'],
+            intent: 'response', refs: [],
+            ask: 'Say which of the two transcripts the row should link to, and why.',
+            orderedAt: Date.now() - 9 * 60000, state: 'pending'
         }
     ],
     rounds: [

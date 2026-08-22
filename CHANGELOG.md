@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.249.0 - X-81: ordered, spoken and silent are three facts (2026-08-23)
+
+U-65 fixed the counter — a conversation's summary counts only turns whose
+state is `delivered` — and left the row below it saying the opposite. The
+transcript asked one question, `state === 'failed' || 'cancelled'`, and drew
+everything else as an ordinary message: a `pending` turn got a real speaker, a
+real intent and an empty body. One record, two answers, in the same box.
+
+A turn is now drawn as what it is. `delivered` draws speech and is the only
+state that ever does. `failed`/`cancelled` draw the ORDER and the reason it
+produced none, as they already did. `pending` draws neither — it says it is
+waiting, when it was ordered and what the lead asked for, wears its state as a
+chip, and its speaker is dimmed rather than presented as somebody who spoke.
+
+The summary counts three things instead of two: `4 spoken · 1 silent · 1
+waiting`. A turn still in flight is neither said nor lost, and counting it as
+either is exactly how the row and the transcript below it started disagreeing.
+
 ## 3.248.0 - X-85: who spoke is a fact about the past (2026-08-23)
 
 M-19/M-20 added a name beside every id in a mission's cast, because an id on

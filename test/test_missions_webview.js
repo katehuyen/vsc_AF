@@ -825,6 +825,36 @@ msgHandler({ data: { type: 'created' } });
             html().includes('>psikolog<') && !html().includes('>a9<'));
     }
 
+    // ‼️ X-81 — ORDERED, SPOKEN AND SILENT ARE THREE FACTS. The row asked only
+    // whether a turn had FAILED, so a `pending` one was drawn as an ordinary
+    // message — real speaker, real intent, empty body — while the summary above
+    // it correctly said the turn had not been spoken. One record, two answers.
+    {
+        const live = JSON.parse(JSON.stringify(A_RUN));
+        live.messages.push({
+            id: 'm10', conversationId: 'cv1', from: 'a2', fromName: 'basit', to: ['a1'],
+            intent: 'question', refs: [], ask: 'Say what the price column would show for Codex.',
+            excerpt: '', orderedAt: 3000, state: 'pending'
+        });
+        msgHandler({
+            data: {
+                type: 'data', data: {
+                    ...DATA, specs: [A_SPEC, DATA.specs[0]], runs: [live, RUN],
+                    traces: { run3: A_TRACE }, pending: { questions: [], approvals: [] }
+                }
+            }
+        });
+        ok('‼️ a turn still in flight draws no speech — it says it is waiting',
+            html().includes('Waiting: ordered')
+            && html().includes('Say what the price column would show for Codex.'));
+        ok('…and wears its state, so the row is not read as a silent speaker',
+            html().includes('>pending<') && html().includes('cvmsg pend'));
+        ok('…the summary counts it as neither spoken nor silent',
+            html().includes('4 spoken') && html().includes('1 silent') && html().includes('1 waiting'));
+        ok('…and a delivered turn is still the only one that draws words',
+            html().includes('A zero on an engine that states no price is a MISSING price.'));
+    }
+
     wired.cvthread[0]._click();
     ok('…and the exchange folds again on the same row',
         !html().includes('A zero on an engine that states no price is a MISSING price.'));

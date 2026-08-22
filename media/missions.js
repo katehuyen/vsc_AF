@@ -1355,9 +1355,20 @@
         const toNames = (m.to || []).map(t => speakerName(run, t));
         const short = INTENT_SHORT[m.intent] || m.intent || '?';
         const failed = m.state === 'failed' || m.state === 'cancelled';
-        // ‼️ NO FAKE SPEAKER. A turn that never came back has no words, so it
-        // draws no speech — it draws the ORDER and the reason it produced none.
-        const body = failed ? '' : (m.excerpt || '');
+        /**
+         * ‼️ NO FAKE SPEAKER. A turn that never came back has no words, so it
+         * draws no speech — it draws the ORDER and the reason it produced none.
+         *
+         * ‼️ X-81 — AND A TURN THAT HAS NOT COME BACK YET IS A THIRD THING. This
+         * asked only whether the turn had FAILED, so a `pending` one was drawn
+         * as an ordinary message with a real speaker, a real intent and an empty
+         * body: the summary above it said the turn had not been spoken while
+         * the transcript below acted as though it had. Three states, three
+         * different sentences, and only `delivered` ever draws speech.
+         */
+        const spoken = m.state === 'delivered';
+        const waiting = !spoken && !failed;
+        const body = spoken ? (m.excerpt || '') : '';
         const refChips = (m.refs || []).map(r => {
             const src = byId[r];
             return `<a class="cvref" data-cvjump="${C.esc(r)}"
@@ -1373,10 +1384,12 @@
             m.carried ? CARRY_LONG[m.carried] || m.carried : '',
             m.ask ? 'the lead asked for: ' + m.ask : '',
             '',
-            failed ? 'This turn produced NO message: ' + (m.note || 'it did not come back.') : body
+            failed ? 'This turn produced NO message: ' + (m.note || 'it did not come back.')
+                : waiting ? 'This turn is ORDERED and has not come back — nothing has been said yet.'
+                    : body
         ]);
         const marked = convMark === m.id ? ' marked' : '';
-        return `<div class="cvmsg${failed ? ' bad' : ''}${marked}" id="cvm-${C.esc(run.id)}-${C.esc(m.id)}">
+        return `<div class="cvmsg${failed ? ' bad' : ''}${waiting ? ' pend' : ''}${marked}" id="cvm-${C.esc(run.id)}-${C.esc(m.id)}">
             <div class="cvmhead">
                 ${window.AFTip.wrap(
                     `<span class="mchip cvi ${C.esc(m.intent || '')}">${C.esc(short)}</span>`, head, tipBody)}
@@ -1385,12 +1398,16 @@
                 ${refChips ? `<span class="cvrefs" title="The messages this one is about — click to jump">↩ ${refChips}</span>` : ''}
                 ${m.carried ? `<span class="mchip lane ${C.esc(m.carried)}" title="${C.esc(CARRY_LONG[m.carried] || m.carried)}">${C.esc(m.carried)}</span>` : ''}
                 ${failed ? `<span class="mchip bad" title="${C.esc(m.note || 'the turn did not come back')}">${C.esc(m.state)}</span>` : ''}
+                ${waiting ? `<span class="mchip wait" title="${C.esc('ordered ' + fmtTime(m.orderedAt) + ' — this turn has not come back, so nothing has been said')}">${C.esc(m.state || 'pending')}</span>` : ''}
                 <span class="cvts muted small">${C.esc(fmtTime(m.settledAt || m.orderedAt))}</span>
                 ${links ? `<span class="cvlinks">${links}</span>` : ''}
             </div>
             ${failed
                 ? `<div class="cvtext muted">No message: ${C.esc(m.note || 'the turn did not come back.')}</div>`
-                : `<div class="cvtext">${C.esc(body)}</div>`}
+                : waiting
+                    ? `<div class="cvtext muted">Waiting: ordered ${C.esc(fmtTime(m.orderedAt))}${
+                        m.ask ? ' — ' + C.esc(m.ask) : ''}</div>`
+                    : `<div class="cvtext">${C.esc(body)}</div>`}
         </div>`;
     }
 
@@ -1411,6 +1428,11 @@
                 .slice().sort((a, b) => (a.orderedAt || 0) - (b.orderedAt || 0));
             const said = msgs.filter(m => m.state === 'delivered').length;
             const lost = msgs.filter(m => m.state === 'failed' || m.state === 'cancelled').length;
+            // ‼️ X-81 — ordered · spoken · silent are THREE facts, and the row
+            // used to hold two. A turn still in flight is neither said nor lost,
+            // and counting it as either is how the summary and the transcript
+            // below it started telling a reader two different things.
+            const inflight = msgs.length - said - lost;
             const open = openRefs(msgs);
             const isOpen = convThread === c.id;
             // ‼️ U-65 — what arrived while the reader was somewhere else. Only
@@ -1434,7 +1456,8 @@
                 k ? 'chair: ' + speakerName(run, k.chair) : '',
                 k && k.options && k.options.length ? 'options: ' + k.options.join(' | ') : '',
                 k ? 'turns: ' + msgs.filter(m => m.state !== 'cancelled').length + '/' + k.maxTurns : '',
-                said + ' spoken' + (lost ? ' · ' + lost + ' turn(s) produced nothing' : ''),
+                said + ' spoken' + (lost ? ' · ' + lost + ' turn(s) produced nothing' : '')
+                    + (inflight ? ' · ' + inflight + ' ordered and still out' : ''),
                 open.length ? open.length + ' still awaiting an answer' : 'nothing left unanswered',
                 k && k.votes && k.votes.length
                     ? 'votes: ' + k.votes.map(v => speakerName(run, v.member)
@@ -1456,6 +1479,7 @@
                     <span class="cvq">${C.esc((k && k.question) || c.objective || '')}</span>
                     <span class="muted small">${cast.join(', ')}${k ? ' · chair ' + C.esc(speakerName(run, k.chair)) : ''}</span>
                     <span class="muted small">${said} spoken${lost ? ` · ${lost} silent` : ''}${
+                        inflight ? ` · ${inflight} waiting` : ''}${
                         k ? ` · ${msgs.filter(m => m.state !== 'cancelled').length}/${k.maxTurns}` : ''}</span>
                     ${open.length ? `<span class="mchip wait" title="${C.esc(open.length + ' question(s) or challenge(s) that nothing in this exchange has answered')}">${open.length} unanswered</span>` : ''}
                     ${votes}
@@ -1870,6 +1894,8 @@
                 .cvmsg { padding:4px 0 5px; border-bottom:1px dotted var(--vscode-widget-border, #242424); }
                 .cvmsg:last-child { border-bottom:none; }
                 .cvmsg.bad .cvwho { opacity:.7; }
+                /* ‼️ X-81 — an ORDERED turn is not a quiet one: it has not happened yet. */
+                .cvmsg.pend .cvwho { opacity:.7; font-style:italic; }
                 .cvmsg.marked { background:var(--vscode-editor-findMatchHighlightBackground, #3a3a1a);
                     outline:1px solid var(--vscode-focusBorder, #007fd4); border-radius:3px; }
                 .cvmhead { display:flex; gap:7px; align-items:baseline; flex-wrap:wrap; font-size:11px; }
