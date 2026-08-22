@@ -28,6 +28,18 @@
 const NOW = Date.now();
 const min = n => NOW - n * 60000;
 
+/**
+ * ‼️ n minutes ago, BUT NEVER BEFORE THIS LOCAL MIDNIGHT.
+ *
+ * A fixture pins a relative time; the 🏁 today figure asks an absolute question
+ * ("since midnight") — and the two agree only after a certain hour of the day.
+ * A run pinned at 320 minutes ago fell into yesterday for anyone running the
+ * suite before 05:20, the derived list emptied, the panel became a one-liner
+ * and two assertions failed on the clock rather than on the code. Any row whose
+ * TODAY-ness a test relies on is anchored with this, not with `min`.
+ */
+const todayMin = n => Math.max(min(n), new Date(NOW).setHours(0, 0, 0, 0) + 60000);
+
 /** The panel derives this from the transcript's file name; the fixture says it
  *  the same way rather than inventing a second spelling. */
 const sid = f => (f || '').split(/[\\/]/).pop().replace(/\.jsonl$/, '');
@@ -111,7 +123,7 @@ const runs = () => ([
     {
         id: 'r5', title: 'günün notlarını topla', agentName: 'psikolog',
         mode: 'headless', status: 'failed', source: 'Günlük tarama', sourceKind: 'trigger',
-        when: min(320), durMin: 2, detail: '', costUSD: 0,
+        when: todayMin(320), durMin: 2, detail: '', costUSD: 0,
         engine: 'gemini', reportsCost: false, tokens: 18_204,
         hasOutput: true, outputFile: 'D:\\out\\r5.md',
         prompt: 'bugünün notlarını topla ve tek paragrafta özetle'

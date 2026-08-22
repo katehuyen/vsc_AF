@@ -3280,6 +3280,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (live) { return live; }
         if (!run.trace?.file) { return undefined; }
         const w = MissionTraceWriter.open(run.trace.file);
+        // ‼️ X-61/X-64 — A WRITER THAT REFUSES SAYS SO ON THE RUN. The mission
+        // carries on (a run never fails because of its audit trail), but it is
+        // now snapshot-only, and a surface drawing a journal that has silently
+        // stopped growing is the failure this whole item exists to prevent.
+        if (w.blocked && !run.traceDegraded) { run.traceDegraded = w.blocked.message; }
         missionTraceWriters.set(run.id, w);
         return w;
     };
@@ -10352,7 +10357,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     counts: {
                         events: read.events.length, badLines: read.badLines,
                         duplicates: read.duplicates, fromFuture: read.fromFuture,
-                        truncatedTail: read.truncatedTail
+                        truncatedTail: read.truncatedTail,
+                        // ‼️ X-63/X-64 — the four a reader could not ask about
+                        // before: what is MISSING, what is out of order, what
+                        // could never be ordered, and what was readable but sat
+                        // beyond the break and was therefore not applied.
+                        gaps: read.gaps, outOfOrder: read.outOfOrder,
+                        invalidSeq: read.invalidSeq, beyondPrefix: read.beyondPrefix,
+                        physicalLastSeq: read.physicalLastSeq
                     },
                     // ‼️ M-16 — WHAT IT IS DOING AND WHY, which is the question
                     // this surface exists to answer. `rationale` per decision,

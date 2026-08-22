@@ -155,13 +155,166 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
     const file = f('r-damaged.jsonl');
     writeLines(file, [line(1, 'strategy.changed'), 'not json at all', line(3, 'run.finished', { status: 'done' }), '']);
     const read = T.readTrace(file);
-    eq('what could be read is returned', read.events.length, 2);
+    // ‼️ X-63 — the bad line WAS a seq, so what follows it is not "the rest of
+    // the history", it is the history after a hole. This used to return both
+    // survivors and call the run readable; a projection built that way shows a
+    // run that jumped from its first strategy straight to finished.
+    eq('the chain stops at the hole', read.events.length, 1);
+    eq('and says how much is missing', read.gaps, 1);
+    eq('what was readable past it is counted, not applied', read.beyondPrefix, 1);
     eq('the bad line is counted', read.badLines, 1);
     eq('health is damaged', read.health, 'damaged');
     ok('reading never throws — the run list has to open', true);
 
     const clean = T.reconcileRun(read, 3);
     eq('damage with nothing in flight can be re-briefed', clean.resume, 'rebrief');
+    eq('and no phantom catch-up is promised', clean.snapshotBehind, 0);
+}
+
+// =================================== 5b. X-61 the tail is repaired, not stepped over
+{
+    console.log('\n-- ‼️ X-61 a half-written tail is REPAIRED before anything appends to it');
+    const file = f('r-halftail.jsonl');
+    // a crash mid-append: two whole events, then half of a third, no newline
+    fs.writeFileSync(file,
+        line(1, 'strategy.changed', { strategy: 'first' }) + '\n'
+        + line(2, 'action.created', { actionId: 'st1', kind: 'task' }) + '\n'
+        + '{"v":2,"seq":3,"ts":3000,"type":"acti', 'utf8');
+
+    const before = T.readTrace(file);
+    eq('the reader still calls it truncated', before.health, 'truncated');
+
+    const w = T.MissionTraceWriter.open(file);
+    ok('the writer opens', !w.blocked);
+    eq('continuing after the last complete event', w.lastSeq, 2);
+    ok('having cut the half line off', !!(w.repair && w.repair.repaired));
+    ok('and kept it rather than destroyed it', fs.existsSync(file + '.broken'));
+    ok('the quarantined bytes are the half line',
+        fs.readFileSync(file + '.broken', 'utf8').indexOf('"seq":3') >= 0);
+
+    w.append('action.settled', { actionId: 'st1', outcome: 'done' });
+    const after = T.readTrace(file);
+    // ‼️ WITHOUT THE REPAIR this is where the damage happened: the new JSON
+    // landed flush against the half line and BOTH became one unreadable line.
+    eq('the new event is a whole line of its own', after.events.length, 3);
+    eq('numbered next, never reusing the lost one', after.lastSeq, 3);
+    eq('nothing broken is left behind it', after.badLines, 0);
+    eq('and the journal is healthy again', after.health, 'ok');
+}
+
+// ================= 5c. X-61 a COMPLETE last line with no newline is terminated
+{
+    console.log('\n-- ‼️ X-61 a crash on the newline byte loses no event either');
+    const file = f('r-noeol.jsonl');
+    // both lines are whole; only the final newline never made it to disk
+    fs.writeFileSync(file,
+        line(1, 'strategy.changed', { strategy: 'first' }) + '\n'
+        + line(2, 'action.created', { actionId: 'st1', kind: 'task' }), 'utf8');
+
+    const before = T.readTrace(file);
+    eq('the reader sees no damage at all', before.health, 'ok');
+    eq('both events are there', before.events.length, 2);
+
+    const w = T.MissionTraceWriter.open(file);
+    ok('the writer opens', !w.blocked);
+    ok('and the missing byte was added, not the line cut', !!(w.repair && w.repair.terminated));
+    eq('nothing was removed', w.repair.removedBytes, 0);
+    ok('so nothing was quarantined', !fs.existsSync(file + '.broken'));
+
+    w.append('action.settled', { actionId: 'st1', outcome: 'done' });
+    const after = T.readTrace(file);
+    eq('the good event survived the append', after.events.length, 3);
+    eq('health is still clean', after.health, 'ok');
+}
+
+// ============================================ 5d. X-63 a hole is loss, not order
+{
+    console.log('\n-- ‼️ X-63 a gap, a backwards seq and an unusable seq are damage');
+
+    const gap = f('r-gap.jsonl');
+    writeLines(gap, [line(1, 'strategy.changed'), line(3, 'run.finished', { status: 'done' }), '']);
+    const g = T.readTrace(gap);
+    eq('the chain is only as long as it is provable', g.events.length, 1);
+    eq('the last seq is the prefix, not the maximum', g.lastSeq, 1);
+    eq('the physical maximum is remembered separately', g.physicalLastSeq, 3);
+    eq('one seq is missing', g.gaps, 1);
+    eq('health is damaged', g.health, 'damaged');
+    // ‼️ and the catch-up figure follows the prefix, so the snapshot is never
+    // told to wait for events that are not coming
+    eq('snapshotBehind is honest', T.reconcileRun(g, 1).snapshotBehind, 0);
+    ok('and the sentence names the loss',
+        T.reconcileRun(g, 1).degraded.indexOf('1 event(s) missing') >= 0);
+
+    // ‼️ AND THE WRITER CONTINUES FROM WHAT THE FILE SPENT, not from what this
+    // build can apply — filling the hole would put a new event physically after
+    // seq 3 while claiming to be seq 2.
+    eq('the writer never reuses a spent number', T.MissionTraceWriter.open(gap).lastSeq, 3);
+
+    const back = f('r-backwards.jsonl');
+    writeLines(back, [line(2, 'action.created', { actionId: 'a' }), line(1, 'strategy.changed'), '']);
+    const b = T.readTrace(back);
+    eq('order is evidence, not something to sort away', b.outOfOrder, 1);
+    eq('nothing is applied from a file whose order is wrong', b.events.length, 0);
+    eq('health is damaged', b.health, 'damaged');
+
+    const bad = f('r-badseq.jsonl');
+    writeLines(bad, [
+        line(0, 'strategy.changed'), line(-1, 'strategy.changed'),
+        JSON.stringify({ v: 2, seq: 1.5, ts: 1, type: 'strategy.changed' }),
+        line(1, 'strategy.changed'), ''
+    ]);
+    const x = T.readTrace(bad);
+    eq('a seq that cannot be ordered is never in the chain', x.invalidSeq, 3);
+    eq('the one real event still reads', x.events.length, 1);
+    eq('health is damaged', x.health, 'damaged');
+
+    // ‼️ AND A HOLE OVER WORK IN FLIGHT IS NOT RE-BRIEFABLE — the run cannot
+    // say what it already set in motion, which is the one case resume refuses.
+    const lost = f('r-gap-inflight.jsonl');
+    writeLines(lost, [
+        line(1, 'action.created', { actionId: 'st1', kind: 'task', title: 'work' }),
+        line(2, 'action.started', { actionId: 'st1', refId: 't1' }),
+        line(4, 'decision.made', { nodeId: 'd2' }), ''
+    ]);
+    const rec = T.reconcileRun(T.readTrace(lost), 2);
+    eq('one action of unknown fate', rec.interrupted, 1);
+    eq('so the resume is refused', rec.resume, 'refuse');
+}
+
+// ============================================ 5e. X-64 a future journal is read-only
+{
+    console.log('\n-- ‼️ X-64 a journal from a newer build is never mutated');
+    const file = f('r-future.jsonl');
+    writeLines(file, [
+        line(1, 'strategy.changed', { strategy: 'first' }),
+        JSON.stringify({ v: T.MISSION_TRACE_SCHEMA + 7, seq: 2, ts: 2000, type: 'something.new' }),
+        ''
+    ]);
+    const bytes = fs.readFileSync(file);
+
+    const read = T.readTrace(file);
+    eq('the future line is counted, not applied', read.fromFuture, 1);
+    eq('health is future', read.health, 'future');
+    eq('and the number it spent is remembered', read.physicalLastSeq, 2);
+
+    const w = T.MissionTraceWriter.open(file);
+    ok('the writer refuses to write', !!w.blocked);
+    eq('by name', w.blocked.reason, 'future');
+    ok('saying what the user has to do',
+        w.blocked.message.indexOf('newer version of Agent Farm') >= 0);
+    eq('and it never hands out a number the newer build used', w.lastSeq, 2);
+
+    w.append('run.finished', { status: 'done', verdict: 'success' });
+    eq('an append moves nothing', w.lastSeq, 2);
+    ok('and the file is byte-identical', fs.readFileSync(file).equals(bytes));
+
+    // ‼️ THE OTHER HALF OF THE SAME RULE. This used to answer \'rebrief\'
+    // whenever nothing was in flight — and a rebrief RUNS the mission, so an
+    // old build would then append its own events into a file a newer one had
+    // already numbered.
+    const rec = T.reconcileRun(read, 1);
+    eq('a resume is refused outright, in-flight work or not', rec.resume, 'refuse');
+    ok('and the sentence says to update', rec.degraded.indexOf('update Agent Farm') >= 0);
 }
 
 // ============================================ 6. duplicate seq is a replay
@@ -388,13 +541,21 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
         fs.writeFileSync(path.join(dir, n), line(1, 'strategy.changed') + '\n', 'utf8');
     }
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'not ours', 'utf8');
+    // ‼️ X-61 — a quarantined tail belongs to its run and is swept with it; a
+    // suffix the sweep did not know would grow the folder for ever, which is
+    // the one thing splitting the journal out was meant to stop.
+    fs.writeFileSync(path.join(dir, 'run-b.jsonl.broken'), 'half a line', 'utf8');
+    fs.writeFileSync(path.join(dir, 'run-a.jsonl.broken'), 'half a line', 'utf8');
     const orphans = T.orphanTraceFiles(fs.readdirSync(dir), ['run-a']);
-    eq('two runs are gone, so two journals are orphans', orphans.length, 2);
+    eq('two runs are gone, so two journals are orphans', orphans.length, 3);
+    ok('including the tail quarantined out of one', orphans.includes('run-b.jsonl.broken'));
     ok('the live run keeps its journal', !orphans.includes('run-a.jsonl'));
+    ok('and its quarantine with it', !orphans.includes('run-a.jsonl.broken'));
     ok('‼️ a file that is not ours by name is never touched', !orphans.includes('notes.txt'));
 
     T.deleteTrace(path.join(dir, 'run-b.jsonl'));
     ok('a deleted run\'s journal is gone', !fs.existsSync(path.join(dir, 'run-b.jsonl')));
+    ok('and takes its quarantine with it', !fs.existsSync(path.join(dir, 'run-b.jsonl.broken')));
     T.deleteTrace(path.join(dir, 'run-b.jsonl'));
     ok('deleting one twice is not an error', true);
 

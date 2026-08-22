@@ -2,6 +2,69 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.236.0 — A journal you can append to, and a hole you cannot step over (2026-08-23)
+
+### X-61 — the half-written tail is repaired before anything appends to it
+`readTrace` has always recognised a truncated last line and stepped over it,
+which is the right answer for a reader. A writer stepping over it was a
+different thing: the half line was still on disk with no newline after it, so
+the next append landed flush against it and the two became **one unreadable
+line** — the crash's damage and the new event lost together, and every later
+read counting a bad line where there had only ever been a survivable tail.
+
+`MissionTraceWriter.open` now repairs before it is usable. The tail is cut back
+to the last complete line **byte-exactly** (a crash can stop in the middle of a
+UTF-8 character, so this is never done on a string) and the removed bytes are
+kept beside the journal as `<run>.jsonl.broken` rather than destroyed. A repair
+that does not take blocks the writer instead of appending into the wreckage.
+
+‼️ And cutting is only one of the two repairs. A crash can equally stop **on**
+the newline byte, leaving a last line that is complete and simply unterminated:
+the reader sees no damage at all, so nothing called it damage — and appending
+after it glued the next event onto a good one and lost **both**. That case is
+terminated, never cut. The line is evidence; the missing byte is the only thing
+wrong with it.
+
+### X-63 — a gap in the chain is loss, and order is evidence
+The reader sorted the events it had parsed and then read the last element, so a
+journal of seq 1 and seq 3 answered *"two events, up to seq 3"*: the hole was
+invisible, and `snapshotBehind`, derived from that same maximum, promised the
+snapshot a catch-up that could never arrive.
+
+A journal is now read as the **proven prefix** — seq 1, 2, 3 … in the order the
+lines physically sit in the file, stopping at the first break. Only that prefix
+is projected, and `snapshotBehind` follows it. Gaps, backwards seq and a seq
+that is not a positive whole number are each diagnosed by name and each make
+the trace `damaged`; what was readable beyond the break is counted and reported,
+never applied. A hole over work still in flight refuses a resume, because the
+run cannot say what it already set in motion.
+
+### X-64 — a journal from a newer build is read-only, full stop
+The writer continued from the last seq **this** build could apply, so a line
+written by a newer schema at seq 2 left the old build handing out seq 2 again;
+and reconciliation answered `rebrief` whenever nothing was outstanding — and a
+rebrief *runs* the mission. Two different truths then sat under one sequence
+number and no later version could separate them.
+
+The physical high-water mark is now kept apart from the applicable one, so a
+number the file has spent is never handed out twice. A trace containing a
+future line opens **blocked**: appends write nothing, the file stays
+byte-identical, `lastSeq` does not move, and the run says it needs a newer
+Agent Farm. A resume is refused outright, in-flight work or not.
+
+### Also
+`missions.trace` reports the four diagnoses it could not make before (`gaps`,
+`outOfOrder`, `invalidSeq`, `beyondPrefix`) alongside `physicalLastSeq`. The
+orphan sweep and `deleteTrace` know the `.jsonl.broken` suffix, so a quarantined
+tail is culled with its run rather than kept for ever. A blocked writer sets the
+run's degraded sentence, so a journal that has silently stopped growing says so.
+
+‼️ And one fixture was green only after 05:20. `test_tasks_header_tips.js` asks
+an absolute question ("since midnight") of a row pinned at a relative time (320
+minutes ago); before 05:20 local the row fell into yesterday, the derived list
+emptied and two assertions failed on the clock rather than on the code. Rows
+whose today-ness a test relies on are now anchored with `todayMin`.
+
 ## 3.235.0 — A full Codex transcript cannot become nine loose replies (2026-08-23)
 
 ### Codex 0.149 changed the stored dialogue envelope

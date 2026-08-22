@@ -157,14 +157,31 @@ export function runIdOfTraceFile(name: string): string | undefined {
 }
 
 /**
+ * Why a journal refuses to be written to. Never a reason to fail a run — the
+ * mission carries on snapshot-only and this is the sentence that says so.
+ */
+export interface TraceBlock {
+    reason: 'future' | 'unrepaired';
+    message: string;
+}
+
+/**
  * The append side. Holds only the last sequence number, because that is the
  * only state a writer needs and holding more would make it a cache that can
  * disagree with the file.
  */
 export class MissionTraceWriter {
     private seq: number;
+    /** set when this file may NOT be appended to; `append` becomes a no-op */
+    readonly blocked?: TraceBlock;
+    /** what `open` had to do to the file before it could be used */
+    readonly repair?: TraceRepair;
 
-    private constructor(readonly file: string, seq: number) { this.seq = seq; }
+    private constructor(readonly file: string, seq: number, blocked?: TraceBlock, repair?: TraceRepair) {
+        this.seq = seq;
+        if (blocked) { this.blocked = blocked; }
+        if (repair) { this.repair = repair; }
+    }
 
     /** A writer for a run that has no journal yet. */
     static create(file: string): MissionTraceWriter {
@@ -173,13 +190,48 @@ export class MissionTraceWriter {
     }
 
     /**
-     * A writer that continues an existing journal. The next seq comes from the
-     * FILE, never from the snapshot: the snapshot is allowed to lag, and a
-     * writer that trusted it would hand out a number already on disk.
+     * A writer that continues an existing journal.
+     *
+     * The next seq comes from the FILE, never from the snapshot: the snapshot
+     * is allowed to lag, and a writer that trusted it would hand out a number
+     * already on disk. ‼️ X-63/X-64 — and it comes from the file's PHYSICAL
+     * high-water mark, not from the prefix this build can apply. A journal with
+     * a hole in it, or a line from a newer schema, still has those numbers
+     * spent; reusing one would put two different events under one seq and make
+     * the damage permanent.
+     *
+     * Two things happen before the writer is usable, and both of them are
+     * refusals rather than repairs-in-passing:
+     *
+     *   * ‼️ X-64 — a journal containing a line from a NEWER schema is opened
+     *     read-only. This build cannot know what that line means, so appending
+     *     to it would interleave old events into a record a newer Agent Farm
+     *     has already numbered, and no later reader could tell the two apart.
+     *     The file is left byte-identical and the block says what to do.
+     *   * ‼️ X-61 — a half-written tail is CUT BACK first (see
+     *     `repairTraceTail`), and the result is re-read: a repair that did not
+     *     take blocks the writer rather than appending into the wreckage.
      */
     static open(file: string): MissionTraceWriter {
         try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { /* exists */ }
-        return new MissionTraceWriter(file, readTrace(file).lastSeq);
+        const read = readTrace(file);
+        if (read.fromFuture > 0) {
+            return new MissionTraceWriter(file, read.physicalLastSeq, {
+                reason: 'future',
+                message: 'this run was journalled by a newer version of Agent Farm'
+                    + ' — update Agent Farm to continue it'
+            });
+        }
+        const repair = repairTraceTail(file, read);
+        const blocked = (why: string): MissionTraceWriter => new MissionTraceWriter(
+            file, readTrace(file).physicalLastSeq,
+            { reason: 'unrepaired', message: "this run's journal could not be made safe to append to — " + why },
+            repair);
+        if (repair.error) { return blocked(repair.error); }
+        if (!repair.repaired) { return new MissionTraceWriter(file, read.physicalLastSeq); }
+        const after = readTrace(file);
+        if (after.truncatedTail) { return blocked('the half-written line is still there'); }
+        return new MissionTraceWriter(file, after.physicalLastSeq, undefined, repair);
     }
 
     get lastSeq(): number { return this.seq; }
@@ -191,6 +243,11 @@ export class MissionTraceWriter {
      */
     append(type: MissionTraceType, payload: Partial<MissionTraceEvent> = {}, now = Date.now()): MissionTraceEvent {
         const ev: MissionTraceEvent = { v: MISSION_TRACE_SCHEMA, seq: this.seq + 1, ts: now, type, ...payload };
+        // ‼️ X-64 — A BLOCKED WRITER WRITES NOTHING AND SAYS NOTHING TO THE
+        // ENGINE. The event is still returned so every caller's shape is
+        // unchanged, the file stays byte-identical, and `lastSeq` does not
+        // move — so the snapshot never claims a line the journal does not have.
+        if (this.blocked) { return ev; }
         try {
             fs.appendFileSync(this.file, JSON.stringify(ev) + '\n', 'utf8');
             this.seq = ev.seq;
@@ -206,8 +263,23 @@ export class MissionTraceWriter {
 export type TraceHealth = 'ok' | 'missing' | 'truncated' | 'damaged' | 'future';
 
 export interface TraceRead {
+    /**
+     * ‼️ X-63 — THE PROVEN PREFIX, NOT EVERYTHING THAT PARSED.
+     *
+     * seq 1, 2, 3 … in the order the lines physically sit in the file, stopping
+     * at the first break. A hole in a journal is LOSS, and events read after
+     * that hole describe a run whose middle nobody can state; projecting them
+     * would build a history out of the surviving half and present it as whole.
+     */
     events: MissionTraceEvent[];
+    /** last seq of that prefix — never a number the chain cannot account for */
     lastSeq: number;
+    /**
+     * ‼️ X-64 — the highest seq PHYSICALLY on disk, counting lines this build
+     * cannot apply. A writer that continued from `lastSeq` would hand out a
+     * number a newer build has already used, so the two are never one field.
+     */
+    physicalLastSeq: number;
     health: TraceHealth;
     /** a crash mid-append left half a line at the END — expected, not damage */
     truncatedTail: boolean;
@@ -217,6 +289,14 @@ export interface TraceRead {
     duplicates: number;
     /** lines written by a newer schema than this build understands */
     fromFuture: number;
+    /** ‼️ X-63 — how many seq values are MISSING from the chain */
+    gaps: number;
+    /** events whose seq went backwards against the physical line order */
+    outOfOrder: number;
+    /** seq that is not a positive whole number — 0, negative, fractional, NaN */
+    invalidSeq: number;
+    /** readable events dropped because they sit beyond the first break */
+    beyondPrefix: number;
 }
 
 /**
@@ -228,14 +308,20 @@ export interface TraceRead {
  *   * a broken LAST line is a crash mid-append — expected, dropped, `truncated`;
  *   * a broken line anywhere else is real loss — `damaged`;
  *   * a repeated seq is a replay — the FIRST wins, because it is the one every
- *     earlier reader already saw.
+ *     earlier reader already saw;
+ *   * ‼️ X-63 — a HOLE, a seq that goes backwards, or a seq that is not a
+ *     positive whole number is damage of a fourth kind: the line parses, so
+ *     none of the three above sees it, and the chain it belongs to can no
+ *     longer be trusted to be the run's whole history. Diagnosed by name, and
+ *     the projection is cut back to the prefix that is still provable.
  */
 export function readTrace(file: string): TraceRead {
     let raw: string;
     try { raw = fs.readFileSync(file, 'utf8'); } catch {
         return {
-            events: [], lastSeq: 0, health: 'missing',
-            truncatedTail: false, badLines: 0, duplicates: 0, fromFuture: 0
+            events: [], lastSeq: 0, physicalLastSeq: 0, health: 'missing',
+            truncatedTail: false, badLines: 0, duplicates: 0, fromFuture: 0,
+            gaps: 0, outOfOrder: 0, invalidSeq: 0, beyondPrefix: 0
         };
     }
     const lines = raw.split('\n');
@@ -243,9 +329,10 @@ export function readTrace(file: string): TraceRead {
     const endedClean = lines.length > 0 && lines[lines.length - 1] === '';
     if (endedClean) { lines.pop(); }
 
-    const events: MissionTraceEvent[] = [];
+    const parsed: MissionTraceEvent[] = [];
     const seen = new Set<number>();
     let badLines = 0, duplicates = 0, fromFuture = 0, truncatedTail = false;
+    let invalidSeq = 0, physicalLastSeq = 0;
 
     lines.forEach((line, i) => {
         const isLast = i === lines.length - 1;
@@ -256,20 +343,115 @@ export function readTrace(file: string): TraceRead {
             if (isLast && !endedClean) { truncatedTail = true; } else { badLines++; }
             return;
         }
+        // ‼️ X-63 — a seq that is not a positive whole number is not a late
+        // event, it is a corrupt one: it can be neither ordered nor used as an
+        // idempotency key, so it is never allowed to stand in the chain.
+        if (!Number.isInteger(ev.seq) || ev.seq < 1) { invalidSeq++; return; }
+        // ‼️ X-64 — the high-water mark counts a line this build cannot APPLY
+        // exactly the same, because a newer build has already spent that number.
+        if (ev.seq > physicalLastSeq) { physicalLastSeq = ev.seq; }
         if (typeof ev.v === 'number' && ev.v > MISSION_TRACE_SCHEMA) { fromFuture++; return; }
         if (seen.has(ev.seq)) { duplicates++; return; }
         seen.add(ev.seq);
-        events.push(ev);
+        parsed.push(ev);
     });
 
-    events.sort((a, b) => a.seq - b.seq);
+    // ‼️ X-63 — ORDER IS EVIDENCE, so it is checked against the file and not
+    // repaired by sorting. This sorted first and then read the last element,
+    // which meant a journal of 1 and 3 answered "three events, up to seq 3" —
+    // the hole was invisible and `snapshotBehind`, derived from that same max,
+    // counted a catch-up that could never arrive.
+    let outOfOrder = 0;
+    for (let i = 1; i < parsed.length; i++) {
+        if (parsed[i].seq < parsed[i - 1].seq) { outOfOrder++; }
+    }
+    let gaps = 0, want = 1;
+    for (const ev of parsed.slice().sort((a, b) => a.seq - b.seq)) {
+        if (ev.seq > want) { gaps += ev.seq - want; }
+        want = ev.seq + 1;
+    }
+    // the prefix that is still provable: physically in order, contiguous, from 1
+    const events: MissionTraceEvent[] = [];
+    for (const ev of parsed) {
+        if (ev.seq !== events.length + 1) { break; }
+        events.push(ev);
+    }
+    const beyondPrefix = parsed.length - events.length;
+
     const lastSeq = events.length ? events[events.length - 1].seq : 0;
     const health: TraceHealth =
         fromFuture > 0 ? 'future'
-            : badLines > 0 ? 'damaged'
+            : (badLines > 0 || gaps > 0 || outOfOrder > 0 || invalidSeq > 0) ? 'damaged'
                 : truncatedTail ? 'truncated'
                     : 'ok';
-    return { events, lastSeq, health, truncatedTail, badLines, duplicates, fromFuture };
+    return {
+        events, lastSeq, physicalLastSeq, health, truncatedTail,
+        badLines, duplicates, fromFuture, gaps, outOfOrder, invalidSeq, beyondPrefix
+    };
+}
+
+/** What `repairTraceTail` did — nothing, when there was nothing to do. */
+export interface TraceRepair {
+    repaired: boolean;
+    /** bytes taken off the end: the half line a crash left behind */
+    removedBytes: number;
+    /** the last line was COMPLETE and only its newline was missing */
+    terminated?: boolean;
+    /** where those bytes were kept, so nothing is destroyed to make room */
+    quarantine?: string;
+    /** why it could not be done, when it could not */
+    error?: string;
+}
+
+/** Where a half-written tail is kept once it is cut off the journal. */
+export function quarantineFileFor(file: string): string { return file + '.broken'; }
+
+/**
+ * ‼️ X-61 — A HALF-WRITTEN LAST LINE IS REPAIRED BEFORE ANYTHING APPENDS TO IT.
+ *
+ * `readTrace` has always recognised a truncated tail and stepped over it, which
+ * is the right answer for a READER. A WRITER stepping over it is a different
+ * thing entirely: the half line is still on disk with no newline after it, so
+ * the next append lands flush against it and the two become ONE unreadable
+ * line. The crash's damage and the new event are then lost together — and the
+ * loss is silent, because every later read counts a bad line where there had
+ * only ever been a survivable tail.
+ *
+ * So the tail is cut back to the last complete line, BYTE-exactly (a crash can
+ * stop in the middle of a UTF-8 character, so this is never done on a string),
+ * and the bytes removed are kept beside the file rather than thrown away.
+ *
+ * ‼️ AND CUTTING IS ONLY ONE OF THE TWO REPAIRS. A crash can equally stop on
+ * the newline BYTE, leaving a last line that is complete and simply
+ * unterminated. `readTrace` reads it perfectly — so nothing calls it damage — but
+ * appending after it glues the next event onto a good one and loses BOTH. That
+ * case is terminated, never cut: the line is evidence and the missing byte is
+ * the only thing wrong with it.
+ */
+export function repairTraceTail(file: string, read: TraceRead = readTrace(file)): TraceRepair {
+    let buf: Buffer;
+    try { buf = fs.readFileSync(file); } catch { return { repaired: false, removedBytes: 0 }; }
+    // a journal that ends clean, or has nothing in it, is already safe to append to
+    if (!buf.length || buf[buf.length - 1] === 0x0a) { return { repaired: false, removedBytes: 0 }; }
+    if (!read.truncatedTail) {
+        try { fs.appendFileSync(file, '\n', 'utf8'); } catch (e) {
+            return { repaired: false, removedBytes: 0, error: String(e).slice(0, 200) };
+        }
+        return { repaired: true, removedBytes: 0, terminated: true };
+    }
+    const cut = buf.lastIndexOf(0x0a) + 1;   // 0 when the whole file is one half line
+    const tail = buf.subarray(cut);
+    if (!tail.length) { return { repaired: false, removedBytes: 0 }; }
+    const quarantine = quarantineFileFor(file);
+    let kept: string | undefined;
+    try {
+        fs.appendFileSync(quarantine, Buffer.concat([tail, Buffer.from('\n', 'utf8')]));
+        kept = quarantine;
+    } catch { /* nowhere to keep it; the repair itself still has to happen */ }
+    try { fs.truncateSync(file, cut); } catch (e) {
+        return { repaired: false, removedBytes: 0, error: String(e).slice(0, 200), ...(kept ? { quarantine: kept } : {}) };
+    }
+    return { repaired: true, removedBytes: tail.length, ...(kept ? { quarantine: kept } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -782,8 +964,15 @@ export function reconcileRun(
     const snapshotBehind = Math.max(0, p.lastSeq - snapshotLastSeq);
     const notes: string[] = [];
     if (read.health === 'missing') { notes.push('this run has no trace on disk'); }
-    if (read.fromFuture) { notes.push(read.fromFuture + ' event(s) written by a newer version of Agent Farm'); }
+    if (read.fromFuture) {
+        notes.push(read.fromFuture + ' event(s) written by a newer version of Agent Farm'
+            + ' — update Agent Farm to continue this run');
+    }
     if (read.badLines) { notes.push(read.badLines + ' unreadable line(s) in the trace'); }
+    if (read.invalidSeq) { notes.push(read.invalidSeq + ' event(s) with an unusable sequence number'); }
+    if (read.gaps) { notes.push(read.gaps + ' event(s) missing from the journal'); }
+    if (read.outOfOrder) { notes.push('the journal is out of order'); }
+    if (read.beyondPrefix) { notes.push(read.beyondPrefix + ' event(s) after the break were not applied'); }
     if (read.truncatedTail) { notes.push('the last event was cut off by a crash'); }
     if (read.duplicates) { notes.push(read.duplicates + ' repeated event(s) ignored'); }
     if (snapshotLastSeq > p.lastSeq) { notes.push('the snapshot claims events the trace does not have'); }
@@ -794,12 +983,20 @@ export function reconcileRun(
     // snapshot and the lead can be briefed again from it. Rubble PLUS work of
     // unknown fate is not: resuming would either duplicate it or build on a
     // result that never came.
-    const lost = read.health === 'damaged' || read.health === 'future'
-        || snapshotLastSeq > p.lastSeq;
+    //
+    // ‼️ X-64 — AND A JOURNAL FROM THE FUTURE IS NEVER RESUMED, in-flight work
+    // or not. `rebrief` was the answer here whenever nothing was outstanding,
+    // and rebriefing RUNS the mission: an old build would then append its own
+    // events into a file a newer one had already numbered, leaving two
+    // different truths under one seq that no later version can separate. It is
+    // not a matter of how much history was lost — it is that continuing at all
+    // damages a record this build cannot read.
+    const lost = read.health === 'damaged' || snapshotLastSeq > p.lastSeq;
     const resume: Reconciliation['resume'] =
-        lost && interrupted ? 'refuse'
-            : lost || read.health === 'missing' ? 'rebrief'
-                : 'ok';
+        read.health === 'future' ? 'refuse'
+            : lost && interrupted ? 'refuse'
+                : lost || read.health === 'missing' ? 'rebrief'
+                    : 'ok';
 
     return {
         projection: p, actions, recovered, interrupted, snapshotBehind,
@@ -823,13 +1020,18 @@ export function reconcileRun(
 export function orphanTraceFiles(fileNames: readonly string[], liveRunIds: readonly string[]): string[] {
     const live = new Set(liveRunIds);
     return fileNames.filter(n => {
-        if (!n.endsWith('.jsonl')) { return false; }
-        const id = runIdOfTraceFile(n);
+        // ‼️ X-61 — a quarantined tail belongs to the same run and is swept with
+        // it. A file kept for ever because the sweep only knew one suffix is
+        // exactly the unbounded growth the journal split exists to prevent.
+        const jsonl = n.endsWith('.jsonl') ? n : n.endsWith('.jsonl.broken') ? n.slice(0, -7) : undefined;
+        if (!jsonl) { return false; }
+        const id = runIdOfTraceFile(jsonl);
         return !!id && !live.has(id);
     });
 }
 
-/** Delete a run's journal. Task output archives are NOT ours to remove. */
+/** Delete a run's journal, and any tail quarantined out of it (X-61). */
 export function deleteTrace(file: string): void {
     try { fs.unlinkSync(file); } catch { /* already gone */ }
+    try { fs.unlinkSync(quarantineFileFor(file)); } catch { /* never had one */ }
 }
