@@ -15,6 +15,14 @@
  *   node af.js notices.list '{"handled": false}'
  *   node af.js notices.post @notice.json
  *   node af.js tasks.add @task.json
+ *   node af.js farm.ops --out catalog.json
+ *
+ * `--out` exists because the obvious alternative is a trap: `node af.js <op> > file`
+ * hands the bytes to the SHELL, and Windows PowerShell 5.1 re-encodes them on the way
+ * out (UTF-16LE, or the ANSI codepage, or UTF-8 with a BOM depending on the operator).
+ * The catalog dump that reaches disk that way is mojibake the repo's own encoding gate
+ * then rejects. Writing the file here keeps it UTF-8 without a BOM, whatever shell
+ * invoked us.
  *
  * Zero external dependencies: Node.js standard library only (fs, path, os, crypto).
  */
@@ -32,6 +40,7 @@ export interface CliOptions {
     timeoutMs: number;
     bridgeDir?: string;
     rawOutput: boolean;
+    outFile?: string;
     help: boolean;
 }
 
@@ -87,6 +96,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
             opts.bridgeDir = argv[++i];
         } else if (arg.startsWith('--bridge-dir=')) {
             opts.bridgeDir = arg.slice('--bridge-dir='.length);
+        } else if (arg === '--out' || arg === '-o') {
+            opts.outFile = argv[++i];
+        } else if (arg.startsWith('--out=')) {
+            opts.outFile = arg.slice('--out='.length);
         } else if (arg === '-') {
             opts.fromStdin = true;
         } else {
@@ -163,6 +176,9 @@ Options:
   -t, --timeout <ms>    Timeout in milliseconds (default: 20000)
   -b, --bridge-dir <p>  Custom bridge directory path
   -r, --raw             Output compact raw JSON instead of pretty-printed JSON
+  -o, --out <file>      Write the response to <file> as UTF-8 (no BOM) and print a
+                        one-line summary. Use this instead of a shell redirection:
+                        "> file" is re-encoded by the shell and corrupts the bytes.
   -h, --help            Show this help message
 
 Examples:
@@ -171,6 +187,7 @@ Examples:
   node af.js notices.list '{"handled": false}'
   node af.js notices.post @report.json
   cat payload.json | node af.js tasks.add -
+  node af.js farm.ops --out docs/farm_ops_catalog.json
 `);
 }
 
@@ -227,6 +244,25 @@ export async function executeBridgeRequest(
     });
 }
 
+/**
+ * Write the response where the shell cannot touch the bytes. Returns the summary line
+ * the caller prints in place of the payload — with `--out` the payload is on disk, so
+ * echoing it to stdout as well would only make the reader pay for it twice.
+ */
+export function writeResponseFile(
+    outFile: string,
+    body: string
+): { path: string; bytes: number } {
+    const absPath = path.resolve(outFile);
+    const dir = path.dirname(absPath);
+    if (dir && !fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    const text = body.endsWith('\n') ? body : `${body}\n`;
+    fs.writeFileSync(absPath, Buffer.from(text, 'utf8'));
+    return { path: absPath, bytes: Buffer.byteLength(text, 'utf8') };
+}
+
 export async function main(): Promise<void> {
     const opts = parseCliArgs(process.argv);
 
@@ -248,10 +284,15 @@ export async function main(): Promise<void> {
 
     try {
         const response = await executeBridgeRequest(opts.op, payload, bridgeDirectory, opts.timeoutMs);
-        if (opts.rawOutput) {
-            console.log(JSON.stringify(response));
+        const body = opts.rawOutput ? JSON.stringify(response) : JSON.stringify(response, null, 2);
+        if (opts.outFile) {
+            const written = writeResponseFile(opts.outFile, body);
+            console.log(`${response.ok ? 'ok' : 'error'} ${opts.op} -> ${written.path} (${written.bytes} bytes, utf8)`);
+            if (!response.ok && response.error) {
+                console.error(response.error);
+            }
         } else {
-            console.log(JSON.stringify(response, null, 2));
+            console.log(body);
         }
         process.exit(response.ok ? 0 : 1);
     } catch (e) {

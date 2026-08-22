@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.225.0 — the bridge helper writes the file itself, and the encoding fixer survives a bad one (2026-08-22)
+
+**Three traps that were being written down instead of removed.** Each had been met, understood, and passed on to the next session as a warning — which is the wrong artefact. A warning has to be read to work; a fix does not.
+
+**`af.js` now has `--out <file>`.** Everything the gateway exists for was true in one direction only: arguments went in through `@file.json` and never met a shell, but the answer came back through **stdout**, and `node af.js farm.ops > catalog.json` hands those bytes to Windows PowerShell 5.1, which re-encodes them on the way out — UTF-16LE, the ANSI codepage, or UTF-8 with a BOM depending on the operator. A catalog dump taken that way was mojibake that the repo's own encoding gate then refused at the commit. `--out` writes the file from inside the helper, always UTF-8 without a BOM, creates missing folders, and prints a one-line summary instead of the payload — so a large result also stays out of the caller's context.
+
+**`test/test_encoding.js --fix` no longer abandons the rest of the tree over one file.** Its refusal to write invalid JSON was a bare `JSON.parse` that threw straight out of the loop: every file after the damaged one went unrepaired, and the crash read as "the fixer is broken" rather than "this one file is". A refusal is now about the one file — named, counted, and the pass carries on. The scan still fails the build afterwards, so nothing is swept under the rug.
+
+**And a leading BOM is now damage the gate can see.** It is exactly what a shell leaves behind when it re-encodes a file it was only asked to redirect, and in JSON it is not cosmetic: `JSON.parse` refuses it outright. Only position 0 counts — a U+FEFF *inside* a line is deliberate source here, written literally inside the nine regexes and fixtures that handle other people's BOMs, and flagging those would have made `--fix` delete the very code that deals with the damage. One real one was already in the tree, at the top of `src/core/projects.ts`, seen by nothing.
+
+**`.gitignore` names the kind, not the file.** `.tmp/` holds both the session's scratch and the reusable tools that live there on purpose, and the rule listed two literal scratch names — so a session that called its commit message anything but `msg.txt` put it in the commit, and had to be warned about that by name. Everything under `.tmp/` is now scratch unless it is a `.js` tool.
+
 ## 3.224.0 — M-18: resuming a run settles every kind of round, not only a delegation (2026-08-22)
 
 **A resumed mission was freezing its last round for ever.** The resume path asked `action === 'delegate'` — the whole vocabulary when it was written, and not any more. A round that was `parallel`, `review`, `compare`, `revise`, `run_workflow` or `run_mission` was skipped entirely: its steps stayed at "running" with nothing ever settling them, and the lead was re-briefed as though the round had never happened — which is the one way to make it order the same work a second time. Having steps is now the condition; the actions that produce none are excluded by that and need no list of their own.

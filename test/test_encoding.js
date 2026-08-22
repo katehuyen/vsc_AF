@@ -33,6 +33,16 @@ const C1 = new RegExp('[' + String.fromCharCode(0x80) + '-' + String.fromCharCod
 const C0 = new RegExp('[' + String.fromCharCode(0x00) + '-' + String.fromCharCode(0x08)
   + String.fromCharCode(0x0B) + String.fromCharCode(0x0C)
   + String.fromCharCode(0x0E) + '-' + String.fromCharCode(0x1F) + ']', 'g');
+// A LEADING byte-order mark is what a Windows shell leaves behind when it re-encodes a
+// file it was only asked to redirect. It is worse than cosmetic in JSON: JSON.parse
+// refuses it, so the file is unreadable to every tool that reads it as data rather than
+// as text - and that is how a bridge dump taken with `> file` broke the repair pass.
+// ONLY position 0 counts. A U+FEFF INSIDE a line is deliberate source in this repo:
+// nine files write the character literally inside the regex that strips it off somebody
+// else's input (`raw.replace(/^<bom>/, '')`) and inside fixtures that build BOM-prefixed
+// content on purpose. Flagging those would make --fix delete the very code that handles
+// the damage.
+const BOM = /^\uFEFF/;
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 const ROOT = path.join(__dirname, '..');
@@ -51,7 +61,7 @@ function decodeRun(run) {
 }
 
 function repair(s) {
-  let cur = s;
+  let cur = s.replace(BOM, '');
   for (let i = 0; i < 6; i++) {
     const next = cur.replace(RUN, (m) => decodeRun(m) ?? m);
     if (next === cur) break;
@@ -70,7 +80,7 @@ function walk(dir, out = []) {
 
 const fix = process.argv.includes('--fix');
 const files = walk(ROOT);
-let findings = 0, repaired = 0;
+let findings = 0, repaired = 0, skipped = 0;
 let pass = 0, fail = 0;
 
 for (const file of files) {
@@ -80,10 +90,23 @@ for (const file of files) {
   if (fix) {
     const next = repair(text);
     if (next !== text) {
-      if (path.extname(file) === '.json') JSON.parse(next);   // never write invalid JSON
-      fs.writeFileSync(file, next, 'utf8');
-      console.log(`fixed  ${rel}`);
-      text = next; repaired++;
+      // Never write invalid JSON. This used to be a bare JSON.parse, which threw out of
+      // the loop and abandoned EVERY REMAINING FILE unrepaired - one damaged file took
+      // the whole repair run down with it, and the operator read the crash as "the fixer
+      // is broken" rather than "this one file is". A refusal is about one file; say so
+      // and carry on. The scan below still fails the build, so nothing is swept away.
+      let writable = true;
+      if (path.extname(file) === '.json') {
+        try { JSON.parse(next); } catch (e) {
+          console.log(`  SKIP ${rel}  repair would not parse as JSON: ${e.message}`);
+          writable = false; skipped++;
+        }
+      }
+      if (writable) {
+        fs.writeFileSync(file, next, 'utf8');
+        console.log(`fixed  ${rel}`);
+        text = next; repaired++;
+      }
     }
   }
 
@@ -91,7 +114,11 @@ for (const file of files) {
   // plenty of lead+continuation pairs by accident ("ac..." is c-cedilla + ellipsis) and
   // those are not damage - if it cannot be reversed, there is nothing to report.
   const runs = [...text.matchAll(RUN)].filter(m => decodeRun(m[0]) !== null);
-  const ctrls = [...text.matchAll(C1), ...text.matchAll(C0)];
+  // BOM is anchored, so it carries no /g flag and cannot go through matchAll: it is one
+  // position or none. Give it the shape matchAll yields so the report loop below stays a
+  // single loop over a single kind of thing.
+  const bom = BOM.test(text) ? [Object.assign(['\uFEFF'], { index: 0 })] : [];
+  const ctrls = [...text.matchAll(C1), ...text.matchAll(C0), ...bom];
   if (!runs.length && !ctrls.length) { pass++; continue; }
   fail++;
   for (const m of [...runs, ...ctrls]) {
@@ -102,7 +129,7 @@ for (const file of files) {
   }
 }
 
-if (fix) console.log(`${repaired} file(s) repaired.`);
+if (fix) console.log(`${repaired} file(s) repaired${skipped ? `, ${skipped} skipped (repair would not parse)` : ''}.`);
 if (findings) console.log(`${findings} finding(s) - repair with: node test/test_encoding.js --fix`);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1959,7 +1959,19 @@ Eklenti her başlatıldığında, `af.js` CLI yardımcısını platformun global
    node <bridgeDir>/af.js notices.post @args.json
    ```
 
-4. **Klasik Ham Dosya Bırakma (Alternatif):**
+4. **Yanıtı Dosyaya Yazdırma (`--out` / `-o`):**
+   Ters yön, aynı gerekçe. `node af.js farm.ops > catalog.json` baytları **kabuğa**
+   teslim eder; Windows PowerShell 5.1 çıkışta yeniden kodlar — operatöre göre
+   UTF-16LE, ANSI kod sayfası ya da BOM'lu UTF-8. Diske düşen şey mojibake olur ve
+   baştaki BOM'u `JSON.parse` doğrudan reddeder. `--out` dosyayı yardımcının kendi
+   içinden, her zaman BOM'suz UTF-8 olarak yazar ve gövde yerine tek satır özet basar:
+   ```bash
+   node <bridgeDir>/af.js farm.ops --out docs/farm_ops_catalog.json
+   # ok farm.ops -> D:\...\docs\farm_ops_catalog.json (184213 bytes, utf8)
+   ```
+   Olmayan klasörler oluşturulur; `--raw` yine sıkışık/okunaklı biçimi seçer.
+
+5. **Klasik Ham Dosya Bırakma (Alternatif):**
    Gerekli hallerde istek `<bridgeDir>/<id>.request.json` olarak yazılıp `<id>.response.json` beklenerek de doğrudan kullanılabilir.
 
 ## Webhook Köprüsü

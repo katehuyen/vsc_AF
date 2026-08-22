@@ -4446,7 +4446,7 @@ const { opencodeStatus, syncToOpencode } =
         ok('stageBridgeCli is idempotent when version matches', !r2.staged && fs.existsSync(r2.path));
 
         // 2. Test af.js module
-        const { parseCliArgs, resolvePayload, executeBridgeRequest } =
+        const { parseCliArgs, resolvePayload, executeBridgeRequest, writeResponseFile } =
             require(path.join(extPath, 'out', 'service', 'af.js'));
 
         // parseCliArgs
@@ -4470,6 +4470,32 @@ const { opencodeStatus, syncToOpencode } =
         fs.writeFileSync(sampleArgFile, JSON.stringify({ title: 'Test Notice', priority: 1 }), 'utf8');
         const p3 = resolvePayload({ argsFile: sampleArgFile, timeoutMs: 1000, rawOutput: false, help: false });
         ok('resolvePayload reads from JSON file', p3.title === 'Test Notice' && p3.priority === 1);
+
+        // --out: the answer to `node af.js <op> > file`, which hands the bytes to a shell
+        // that re-encodes them. A catalog dump taken that way arrived with a BOM and broke
+        // the repo's own encoding repair pass, so the gateway writes the file itself.
+        const c4 = parseCliArgs(['node', 'af.js', 'farm.ops', '--out', 'catalog.json']);
+        ok('af.js parses --out', c4.op === 'farm.ops' && c4.outFile === 'catalog.json');
+        const c5 = parseCliArgs(['node', 'af.js', 'farm.ops', '-o', 'catalog.json', '-r']);
+        ok('af.js parses -o with --raw', c5.outFile === 'catalog.json' && c5.rawOutput);
+        const c6 = parseCliArgs(['node', 'af.js', 'farm.ops', '--out=deep/catalog.json']);
+        ok('af.js parses --out= form', c6.outFile === 'deep/catalog.json');
+        // A path that looks like an args file must not be mistaken for one: --out consumes
+        // its value, so the positional slot stays empty and the op runs with no args.
+        ok('--out value is not read as args', !c4.argsFile && !c4.rawArgs);
+
+        const outTarget = path.join(tmpStorage, 'nested', 'response.json');
+        const written = writeResponseFile(outTarget, JSON.stringify({ ok: true, result: { note: 'ünïcødé — ✓' } }, null, 2));
+        const outBytes = fs.readFileSync(outTarget);
+        ok('writeResponseFile creates missing directories', fs.existsSync(outTarget) && written.path === outTarget);
+        ok('writeResponseFile writes UTF-8 without a BOM',
+            !(outBytes[0] === 0xEF && outBytes[1] === 0xBB && outBytes[2] === 0xBF)
+            && JSON.parse(outBytes.toString('utf8')).result.note === 'ünïcødé — ✓');
+        ok('writeResponseFile ends the file with one newline',
+            outBytes.toString('utf8').endsWith('}\n') && written.bytes === outBytes.length);
+        const written2 = writeResponseFile(outTarget, '{"ok":true}\n');
+        ok('writeResponseFile does not double the trailing newline',
+            fs.readFileSync(outTarget, 'utf8') === '{"ok":true}\n' && written2.bytes === 12);
 
         // 3. Test executeBridgeRequest with mock receiver
         const bridgeDir = path.join(tmpStorage, 'bridge');

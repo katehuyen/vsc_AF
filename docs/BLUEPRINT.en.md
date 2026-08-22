@@ -1938,7 +1938,20 @@ On extension activation, `af.js` is automatically staged into the global storage
    node <bridgeDir>/af.js notices.post @args.json
    ```
 
-4. **Raw File Drop (Alternative):**
+4. **Answer to a File (`--out` / `-o`):**
+   The reverse direction, and the same reason. `node af.js farm.ops > catalog.json`
+   hands the bytes to the **shell**, and Windows PowerShell 5.1 re-encodes them on the
+   way out — UTF-16LE, the ANSI codepage, or UTF-8 with a BOM depending on the operator.
+   What lands on disk is mojibake, and `JSON.parse` refuses a leading BOM outright.
+   `--out` writes the file from inside the helper, always UTF-8 without a BOM, and
+   prints one summary line instead of the payload:
+   ```bash
+   node <bridgeDir>/af.js farm.ops --out docs/farm_ops_catalog.json
+   # ok farm.ops -> D:\...\docs\farm_ops_catalog.json (184213 bytes, utf8)
+   ```
+   Missing directories are created; `--raw` still chooses compact vs. pretty.
+
+5. **Raw File Drop (Alternative):**
    Write `<id>.request.json` and await `<id>.response.json`.
 
 ## Standing Duties {#nobet-gorevleri}

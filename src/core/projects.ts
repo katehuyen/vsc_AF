@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Projects — the umbrella entity.
  *
  * A project used to be a name over a set of agents: enough to ask "what did
