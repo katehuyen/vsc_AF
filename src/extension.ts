@@ -3424,7 +3424,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // form value can never smuggle shell syntax into the command line
                 const model = spec.plannerModel && modelIdOk(spec.plannerModel)
                     ? `--model ${spec.plannerModel} ` : '';
-                const command = `claude ${extra ? extra + ' ' : ''}${model}` +
+                // ‼️ M-18 — THE LEAD IS TOLD WHICH PROJECT IT IS PLANNING FOR.
+                //
+                // Every delegation this mission makes has carried the project
+                // since the wave was written, and the one participant that never
+                // did was the LEAD — which is the wrong way round: the delegate
+                // does one prompt's worth of work and the lead decides what the
+                // whole run is for. It planned against the goal sentence alone,
+                // with no idea what the project is, what is already open on it,
+                // or which documents hold which role.
+                //
+                // Same file and same flag every other Claude surface uses, so
+                // there is one brief and one budget for it — never a second
+                // copy pasted into the briefing prose.
+                //
+                // ‼️ ON THE FIRST CALL ONLY. Every later round is a `--resume`
+                // of the same session: the brief is already in that
+                // conversation, and repeating it would pay for the same tokens
+                // once per round for the whole run.
+                const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId);
+                const ctx = ctxFile && !ctxFile.includes('"')
+                    ? `--append-system-prompt-file "${ctxFile}" ` : '';
+                const command = `claude ${extra ? extra + ' ' : ''}${model}${ctx}` +
                     `--disallowedTools "${MISSION_PLANNER_DISALLOWED_TOOLS}" ` +
                     `--max-turns ${MISSION_PLANNER_MAX_TURNS} ` +
                     `${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
@@ -3951,6 +3972,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             id: w.id, title: w.title, steps: w.steps.length
         })),
         ancestry: () => missionAncestry(run),
+        // ‼️ M-18 — read at the moment the lead is briefed, like the workflow
+        // list: a project renamed mid-run is a name the lead would otherwise
+        // keep repeating back at a user who no longer uses it.
+        project: () => {
+            const p = spec.projectId ? projectStore.get(spec.projectId) : undefined;
+            return p ? { name: p.name } : undefined;
+        },
         now: () => Date.now()
     });
 

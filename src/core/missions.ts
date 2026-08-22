@@ -1612,6 +1612,20 @@ export interface MissionEngineDeps {
      */
     workflows?(): { id: string; title: string; steps: number }[];
     /**
+     * ‼️ M-18 — THE PROJECT THIS RUN IS WORK FOR, if it is work for one.
+     *
+     * The lead's system prompt carries the project's generated brief (the
+     * extension passes the same file every other Claude surface gets), but a
+     * brief describes the project — it does not say what the LEAD's relationship
+     * to it is. That is what this produces: the name, so the run can be talked
+     * about, and the fact that keeping the project's own records straight is
+     * something the lead ORDERS rather than does.
+     *
+     * Optional and absent-means-none, like every other dep here: a mission with
+     * no project reads exactly as it did.
+     */
+    project?(): { name: string; docs?: string } | undefined;
+    /**
      * ‼️ M-18 — the objectives ABOVE this run, nearest first. Empty for a root
      * run, and absent in a harness that does not nest. It is what makes a cycle
      * detectable: a child asked to reach a goal that is already its own
@@ -1874,12 +1888,43 @@ export class MissionEngine {
      */
     private briefingText(rem: RemainingBudget): string {
         const base = this.protocol.briefing(this.spec, this.hints, rem);
+        const blocks: string[] = [];
+
+        // ‼️ M-18 — WHICH PROJECT, AND WHAT THE LEAD'S PART IN IT IS.
+        //
+        // Every delegation this mission makes has carried the project since the
+        // wave was written; the one participant that never did was the LEAD —
+        // the wrong way round, since the delegate does one prompt's worth of
+        // work and the lead decides what the whole run is for. The generated
+        // brief reaches it through its system prompt (one brief, one budget,
+        // never a copy pasted in here). What the brief cannot say is this: the
+        // planner has no write tools ON PURPOSE, so the project's own records
+        // are updated by DELEGATION or not at all. Saying it here is what stops
+        // a lead from either trying (and failing on a disabled tool) or
+        // finishing a run that changed a project and left its plan lying.
+        const proj = this.deps.project?.();
+        if (proj?.name) {
+            blocks.push(`## Project — this run is work for "${proj.name}"\n`
+                + 'Its brief is already in your instructions above: what it is, what is open on it, and which '
+                + 'document holds which role.\n'
+                + '‼️ You cannot write to it. You have no write tools, deliberately — so if this run changes what '
+                + 'is true of the project (something shipped, a plan item finished, a decision settled, a backlog '
+                + 'item closed), RECORDING THAT IS A DELEGATION like any other. Every delegate you send runs under '
+                + 'this project and is given the same brief, so it can be told "update the plan/backlog/worklog" '
+                + 'and will know where. A run that moved the project and recorded nothing has left the next '
+                + 'session blind.\n');
+        }
+
         const list = isAdaptive(this.spec) ? (this.deps.workflows?.() ?? []) : [];
-        if (!list.length) { return base; }
-        const block = '## Workflows you may run\n'
-            + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`).join('\n')
-            + '\nThese are chains that already exist. Run one with "run_workflow" when it encodes the work you need;'
-            + ' you cannot compose a new one, and you do not drive its steps.\n\n';
+        if (list.length) {
+            blocks.push('## Workflows you may run\n'
+                + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`).join('\n')
+                + '\nThese are chains that already exist. Run one with "run_workflow" when it encodes the work you need;'
+                + ' you cannot compose a new one, and you do not drive its steps.\n');
+        }
+
+        if (!blocks.length) { return base; }
+        const block = blocks.join('\n') + '\n';
         const marker = '## How to answer';
         return base.includes(marker) ? base.replace(marker, block + marker) : base + '\n\n' + block;
     }

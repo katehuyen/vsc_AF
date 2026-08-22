@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.223.0 — M-18: the lead is told which project it is planning for (2026-08-22)
+
+**Every delegation a mission makes has carried the project. The lead never did** — which is the wrong way round: a delegate does one prompt's worth of work and the lead decides what the whole run is for. It planned against the goal sentence alone, with no idea what the project is, what is already open on it, or which document holds which role.
+
+The project's generated brief now reaches the planner through its **system prompt**, on the same file and the same flag every other Claude surface gets — one brief, one budget for it, and never a second copy pasted into the briefing text. It goes in on the **first call only**: every later round resumes that same session, so repeating it would pay for the same tokens once per round for the whole run.
+
+**And the lead is told what its part in the project is**, which a brief cannot say. The planner has no write tools, deliberately — so if a run changes what is true of the project (something shipped, a plan item finished, a decision settled), **recording that is a delegation like any other**. Every delegate it sends already runs under the project and gets the same brief, so it can be told "update the plan" and will know where. A run that moved a project and recorded nothing leaves the next session blind.
+
 ## 3.222.0 — M-18 (X-45): a reload recovers a child objective and a chain, not only a task (2026-08-22)
 
 **A window reload was throwing away two thirds of a nested run.** X-45 taught a mission to survive a reload — the journal says what was set in motion, the stores say whether it finished while we were gone, and nothing is ever silently restarted. Then the lead was given two primitives that start something other than a task, and the recovery was never measured against either: the lookup began by refusing every kind but `task`, so a workflow chain or a child objective that **finished perfectly** while the window was closed came back as "interrupted — fate unknown". Its cost vanished from the parent's ledger, its verdict was never read, and a lead told nothing happened orders it again — which for a child objective means paying for the whole run twice.
