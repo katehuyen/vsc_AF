@@ -27,7 +27,7 @@ export type TaskIntent = 'review' | 'compare' | 'revise';
 
 export type PrimitiveName =
     | 'delegate' | 'parallel' | TaskIntent
-    | 'evaluate' | 'run_workflow' | 'replan' | 'finish' | 'ask_user' | 'abort';
+    | 'evaluate' | 'run_workflow' | 'run_mission' | 'replan' | 'finish' | 'ask_user' | 'abort';
 
 /**
  * What the engine DOES with a decision — not a category, a dispatch.
@@ -134,6 +134,17 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             '"run_workflow" runs a chain that ALREADY EXISTS — you cannot compose one, and you do not drive its steps. '
             + 'To you it is one unit of work: it finishes, fails or stops short, and what comes back is what its last '
             + 'completed step produced. Use it when the chain already encodes the work; delegate when it does not.'
+        ]
+    },
+    {
+        name: 'run_mission', scope: 'adaptive', shape: 'work', kind: 'mission',
+        describe: 'hand a whole sub-objective to a child run with its own lead, and take back its verdict',
+        rules: [
+            '"run_mission" is for a piece of the objective big enough to need its own planning — it gets a lead of its '
+            + 'own, works from the same pool and the same folder, and comes back with a verdict rather than an output. '
+            + 'It spends YOUR budget: what the child costs is charged to this run once, and its limits are cut from what '
+            + 'you have left. Do not use it for work one delegation can do, and do not nest it deeply — there is a cap, '
+            + 'and an objective already inside itself is refused.'
         ]
     },
     {

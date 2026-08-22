@@ -265,6 +265,16 @@ export interface MissionStep {
     workflowId?: string;
     /** the real record a workflow step became — filled when the run starts */
     workflowRunId?: string;
+    /** ‼️ M-18 — the child objective this step asked for, and the run it became */
+    child?: ChildObjectiveReq;
+    missionRunId?: string;
+    /**
+     * ‼️ M-18 — WHAT THIS STEP HANDED BACK when it is not a file. A child
+     * objective returns a VERDICT, which no output archive holds; without this
+     * the lead would be shown an empty excerpt for the one primitive whose
+     * whole result is a sentence.
+     */
+    resultText?: string;
     taskId?: string;
     status: MissionStepStatus;
     costUSD?: number;
@@ -284,7 +294,7 @@ export interface MissionStep {
  */
 export type MissionAction =
     'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate'
-    | 'parallel' | 'run_workflow' | TaskIntent;
+    | 'parallel' | 'run_workflow' | 'run_mission' | TaskIntent;
 
 export interface MissionRound {
     n: number;
@@ -362,6 +372,21 @@ export interface MissionRun {
     pausePending?: boolean;
     result?: MissionResult;
     note?: string;
+    /**
+     * ‼️ M-18 — WHERE THIS RUN SITS WHEN IT IS SOMEBODY'S CHILD. Absent on
+     * every run that was started by a person, which is nearly all of them.
+     *
+     * `parentRunId` is who ordered it and `sourceActionId` is the step that
+     * did — together they are what lets a cancel travel down and a cost travel
+     * up. `rootRunId` is carried rather than walked because the chain is what a
+     * cancel is racing: at the moment a run is being torn down, the ancestor
+     * you need is the one you can name without following pointers through
+     * records that are also being torn down. `depth` is the cap's subject.
+     */
+    parentRunId?: string;
+    rootRunId?: string;
+    sourceActionId?: string;
+    depth?: number;
     /**
      * ‼️ M-15 — WHO THE LEAD PUT TO WORK, AND AS WHAT (adaptive runs only).
      *
@@ -494,6 +519,24 @@ export interface PlannerTaskReq {
      */
     kind?: MissionActionKind;
     workflowId?: string;
+    /** ‼️ M-18 — what a `mission` unit is: the child objective to be born. */
+    child?: ChildObjectiveReq;
+}
+
+/**
+ * ‼️ M-18 — WHAT THE LEAD ASKED FOR, NOT THE SPEC ITSELF. The child's ids, its
+ * pool, its lead, its ceilings and its project are all decided where the run is
+ * born — from the parent, which is the only place that knows them. The lead
+ * states the outcome and what would count as reaching it; everything that makes
+ * the child *safe* is inherited rather than requested.
+ */
+export interface ChildObjectiveReq {
+    goal: string;
+    successCriteria: { text: string; required: boolean }[];
+    constraints?: string[];
+    title?: string;
+    /** the child's depth — the parent's plus one, computed by the engine */
+    depth: number;
 }
 
 /**
@@ -573,6 +616,29 @@ type PlannerDecisionCore =
      * this window actually has, and the lead is told the real list.
      */
     | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[] }
+    /**
+     * ‼️ M-18 — A NESTED OBJECTIVE IS A REAL RUN, not a bigger delegation. It
+     * gets a lead of its own and comes back with a VERDICT rather than an
+     * output, which is the whole reason to reach for it: work that needs its
+     * own planning cannot be expressed as one prompt.
+     *
+     * Two things make it safe rather than a way to fork forever, and both are
+     * checked by the engine because only it knows where this run sits: the
+     * DEPTH cap, and the refusal to start an objective that is already an
+     * ancestor of this one. It also spends the parent's budget — the child's
+     * ceilings are cut from what the parent has left, and what it spends is
+     * charged upward exactly once.
+     */
+    | {
+        action: 'run_mission'; thought: string; goal: string;
+        /** the PARENT's criterion ids this sub-objective serves */
+        criteria?: string[];
+        /** the CHILD's own criteria — ids are minted where the child is born,
+         *  never by the lead: an id has to be unique inside its own run and the
+         *  lead is not the thing that can promise that */
+        successCriteria?: { text: string; required: boolean }[];
+        constraints?: string[]; title?: string;
+    }
     | {
         action: 'evaluate'; thought: string; targets: string[];
         /** absent = the lead judges it itself, from what it already has */
@@ -735,6 +801,47 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         const question = typeof o.question === 'string' ? o.question.trim() : '';
         if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
         return done({ action, thought, question });
+    }
+    if (action === 'run_mission') {
+        const goal = String(o.goal ?? '').trim().slice(0, 2000);
+        if (!goal) {
+            return { ok: false, error: '"run_mission" needs a "goal" — the outcome the child run must reach, not a recipe' };
+        }
+        const sc = Array.isArray(o.successCriteria) ? o.successCriteria : [];
+        const successCriteria = sc
+            .map(x => {
+                const r = (x && typeof x === 'object' ? x : { text: x }) as Record<string, unknown>;
+                return { text: String(r.text ?? '').trim().slice(0, 500), required: r.required !== false };
+            })
+            .filter(c => c.text)
+            .slice(0, 20);
+        // ‼️ A CHILD OBJECTIVE WITH NOTHING TO MEET IS A DELEGATION WEARING A
+        // COSTUME. The whole reason to spend a run on it is that it comes back
+        // with a verdict, and a verdict needs something to be about.
+        if (!successCriteria.length) {
+            return {
+                ok: false,
+                error: '"run_mission" needs at least one entry in "successCriteria" — a child objective '
+                    + 'returns a VERDICT, and without a criterion there is nothing for it to be a verdict about. '
+                    + 'If the work has no criteria of its own, delegate it instead.'
+            };
+        }
+        if (!successCriteria.some(c => c.required)) {
+            return { ok: false, error: '"run_mission": every criterion you gave the child is optional — then nothing decides whether it succeeded' };
+        }
+        const crit = readCriteriaIds(o.criteria, spec, '"run_mission"', adaptive);
+        if (!crit.ok) { return { ok: false, error: crit.error }; }
+        return done({
+            action: 'run_mission', thought, goal, successCriteria,
+            ...(Array.isArray(o.constraints)
+                ? {
+                    constraints: o.constraints.filter(x => typeof x === 'string' && x.trim())
+                        .map(x => String(x).trim().slice(0, 500)).slice(0, 20)
+                }
+                : {}),
+            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+            ...(crit.ids ? { criteria: crit.ids } : {})
+        });
     }
     if (action === 'run_workflow') {
         const workflow = String(o.workflow ?? o.workflowId ?? o.title ?? '').trim().slice(0, 200);
@@ -1432,8 +1539,25 @@ export interface MissionEngineDeps {
      * would be a second opinion about what exists.
      */
     workflows?(): { id: string; title: string; steps: number }[];
+    /**
+     * ‼️ M-18 — the objectives ABOVE this run, nearest first. Empty for a root
+     * run, and absent in a harness that does not nest. It is what makes a cycle
+     * detectable: a child asked to reach a goal that is already its own
+     * ancestor would restate it for ever, every level convinced it had handed
+     * the problem on.
+     */
+    ancestry?(): { runId: string; goal: string }[];
     now(): number;
 }
+
+/**
+ * ‼️ M-18 — HOW DEEP AN OBJECTIVE MAY NEST. Not a tuning knob: nesting is how a
+ * run buys itself another lead, and each level multiplies the planner calls
+ * under one ceiling. Three levels is enough for "objective → sub-objective →
+ * one more" and beyond that the honest answer is that the work should be
+ * delegated, which is what the refusal says.
+ */
+export const MAX_MISSION_DEPTH = 3;
 
 /** Absolute ceiling on planner calls per run: rounds + parse retries + guard
  *  nudges can never spin past this, whatever the planner does. */
@@ -1691,7 +1815,11 @@ export class MissionEngine {
     private stepResults(steps: MissionStep[]): StepResult[] {
         return steps.map(step => ({
             step,
-            excerpt: step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile)) : ''
+            // ‼️ M-18 — a unit whose result IS a sentence (a child objective's
+            // verdict) says so directly; everything else is read out of the
+            // archive it wrote, as it always was.
+            excerpt: step.resultText
+                ?? (step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile)) : '')
         }));
     }
 
@@ -1996,6 +2124,45 @@ export class MissionEngine {
                     readonly: prim.intent!.readonly,
                     ...(criteria.length ? { criteria } : {})
                 }];
+            } else if (d.action === 'run_mission') {
+                // ‼️ THE TWO THINGS THAT KEEP NESTING FROM BEING A FORK BOMB,
+                // checked HERE because only the run knows where it sits: how
+                // deep it already is, and what objectives are above it. An
+                // objective that is already its own ancestor is the cycle —
+                // it would restate the same goal for ever, each level convinced
+                // it had delegated the problem.
+                const depth = (run.depth ?? 0) + 1;
+                if (depth > MAX_MISSION_DEPTH) {
+                    run.ledger.push(`R? run_mission rejected — depth cap (${MAX_MISSION_DEPTH})`);
+                    roundMsg = `Refused: this run is already ${run.depth ?? 0} level(s) deep and the cap is `
+                        + `${MAX_MISSION_DEPTH}. Do this work with delegations instead of another child objective.`
+                        + '\nReply with ONLY the JSON decision object.';
+                    continue;
+                }
+                const above = (deps.ancestry?.() ?? []).map(a => normalizeStrategy(a.goal));
+                if (above.includes(normalizeStrategy(d.goal))) {
+                    run.ledger.push('R? run_mission rejected — that objective is already an ancestor of this run');
+                    roundMsg = 'Refused: an objective with that goal is already running above this one. '
+                        + 'Starting it again would be this run asking itself for the same thing. '
+                        + 'Break the work down differently, or do it with delegations.'
+                        + '\nReply with ONLY the JSON decision object.';
+                    continue;
+                }
+                requested = [{
+                    agent: d.title || 'child objective',
+                    title: d.title || `sub-objective: ${d.goal.slice(0, 80)}`,
+                    prompt: d.goal,
+                    readonly: false,
+                    kind: 'mission',
+                    child: {
+                        goal: d.goal,
+                        successCriteria: d.successCriteria ?? [],
+                        ...(d.constraints?.length ? { constraints: d.constraints } : {}),
+                        ...(d.title ? { title: d.title } : {}),
+                        depth
+                    },
+                    ...(d.criteria?.length ? { criteria: d.criteria } : {})
+                }];
             } else if (d.action === 'run_workflow') {
                 // ‼️ THE CHAIN HAS TO REALLY EXIST, and if it does not the lead
                 // is shown what this window actually has rather than a refusal
@@ -2076,6 +2243,7 @@ export class MissionEngine {
                     ...(intent ? { intent, ...(sources ? { sources } : {}) } : {}),
                     ...(t.kind && t.kind !== 'task' ? { kind: t.kind } : {}),
                     ...(t.workflowId ? { workflowId: t.workflowId } : {}),
+                    ...(t.child ? { child: t.child } : {}),
                     status: 'queued' as MissionStepStatus
                 };
             });

@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.219.0 — M-18 (X-32): an objective can hand a piece of itself to a child run (2026-08-22)
+
+**`run_mission` is for work that needs its own planning.** A delegation is one prompt to one agent; some pieces of an objective are not that shape — they need a lead of their own, several rounds and a verdict at the end. The lead names an outcome and what would count as reaching it, and gets back a **verdict**, not an output. A child objective with no criteria is refused by name and told to delegate instead: the only reason to spend a whole run on something is that it comes back judged, and a verdict needs a subject.
+
+**Everything that makes a child safe is INHERITED, not requested.** The lead states the goal, the criteria and any extra constraints. The pool it may draw on, the working folder, the engine and permissions, the approval mode, the autonomy and the project it is work for all come from the parent — a lead cannot give a child a wider reach than it has itself. The parent's constraints bind the child too: a limit somebody put on an objective is not escaped by delegating a piece of it.
+
+**And it spends the parent's budget.** The child's ceilings are cut from what the parent has **left** rather than copied, so a chain of children cannot spend the parent's budget once each; what the child actually spends is charged upward **exactly once**, on the parent's step, because the parent counts its own steps and nothing else.
+
+**‼️ Two things keep nesting from being a fork bomb, and both are checked where the run is — the only place that knows.** A **depth cap** of three, stated by number in the refusal along with the thing to do instead; and a **cycle refusal** — an objective whose goal is already an ancestor of this run is not started, because that is a run asking itself for the same thing, and each level would be convinced it had handed the problem on. The match is on the normalised goal, so re-punctuating it is not a new objective.
+
+**A cancel travels down, and so does a pause.** A child is real work with its own lead and its own delegations; stopping the parent and leaving it running would spend a cancelled run's budget on an answer nobody is waiting for. The pause is the subtler one: a paused parent is waiting on its child's wave, so the one thing still costing money is exactly the thing the pause did not reach. Both walk descendants only — a child never stops work it did not order.
+
+The child run records **who ordered it** (`parentRunId`, `sourceActionId`), **which tree it belongs to** (`rootRunId`, carried rather than walked, because a cancel is racing the same records it would have to follow) and **how deep it sits**. A step whose result is a sentence rather than a file now says so directly, so the lead reads the child's verdict, its stop reason and anything left unmet instead of an empty excerpt.
+
+116 checks on the primitives; the full suite is 204 files and 12 350 checks.
+
 ## 3.218.0 — M-18 (X-32): a workflow run becomes something you can ask about, and an objective can run one (2026-08-22)
 
 **`runWorkflow` returned `void` and announced its ending in a toast.** That is enough for a person watching the window and useless to everything else: a caller could start a chain and had no way to learn its id, whether it finished, where it stopped or what it produced. A mission that wanted a workflow as one of its steps therefore could not have one, and the only route left would have been a second workflow engine inside missions — the duplication this whole family refuses.

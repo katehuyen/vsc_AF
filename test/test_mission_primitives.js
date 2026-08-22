@@ -123,9 +123,9 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
     eq('and the menu string is generated from that same list',
         M.primitiveMenu(false), 'delegate | finish | ask_user | abort');
     ok('an objective sees the whole set',
-        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'run_workflow', 'replan', 'finish', 'ask_user', 'abort']
+        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'run_workflow', 'run_mission', 'replan', 'finish', 'ask_user', 'abort']
             .every(n => adaptive.includes(n)));
-    ok('…and nothing else', adaptive.length === 11);
+    ok('…and nothing else', adaptive.length === 12);
     ok('every classic primitive is in the adaptive set too',
         classic.every(n => adaptive.includes(n)));
 
@@ -166,7 +166,7 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
         !c2.ok && c2.error === 'unknown "action": "replan" (use delegate | finish | ask_user | abort)');
     const a = M.parseAdaptiveDecision(JSON.stringify({ ...reflect(), action: 'summon' }), spec());
     ok('an objective gets the full menu, including the ones added since',
-        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| run_workflow \| replan \| finish \| ask_user \| abort/.test(a.error));
+        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| run_workflow \| run_mission \| replan \| finish \| ask_user \| abort/.test(a.error));
     ok('‼️ and "evaluate" is in it — the hand-written list had forgotten it',
         !a.ok && /evaluate/.test(a.error));
 
@@ -214,9 +214,28 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
     ok('and a classic lead may not reach for it at all',
         !wfClassic.ok && /use delegate \| finish \| ask_user \| abort/.test(wfClassic.error));
 
+    console.log('\n-- run_mission asks for an outcome, not a spec');
+    const child = (over = {}) => JSON.stringify({
+        ...reflect(), action: 'run_mission', goal: 'the API reference is complete',
+        successCriteria: [{ text: 'every endpoint has an example', required: true }], ...over
+    });
+    const rm = M.parseAdaptiveDecision(child(), spec());
+    ok('a well-formed child objective parses', rm.ok && rm.decision.goal === 'the API reference is complete');
+    ok('‼️ the lead states TEXT, not ids — an id has to be unique inside its own run',
+        rm.ok && rm.decision.successCriteria[0].id === undefined);
+    const noGoal = M.parseAdaptiveDecision(child({ goal: '' }), spec());
+    ok('no goal → refused', !noGoal.ok && /"run_mission" needs a "goal"/.test(noGoal.error));
+    const noCrit = M.parseAdaptiveDecision(child({ successCriteria: [] }), spec());
+    ok('‼️ no criteria → refused: a child returns a VERDICT, and a verdict needs a subject',
+        !noCrit.ok && /needs at least one entry in "successCriteria"/.test(noCrit.error));
+    ok('…and it says what to do instead', !noCrit.ok && /delegate it instead/.test(noCrit.error));
+    const allOpt = M.parseAdaptiveDecision(child({ successCriteria: [{ text: 'nice to have', required: false }] }), spec());
+    ok('all-optional criteria → refused: nothing would decide whether it succeeded',
+        !allOpt.ok && /every criterion you gave the child is optional/.test(allOpt.error));
+
     console.log('\n-- the prompt the lead is shown is built from the list');
     const brief = M.protocolFor(spec()).briefing(spec(), [], { rounds: 8, tasks: 12, costUSD: 5, minutes: 120, tokens: Infinity });
-    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "run_workflow" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
+    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "run_workflow" \| "run_mission" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
     ok('and explains each of them in its own words', /- "compare" — ask a pool agent to weigh/.test(brief));
     ok('‼️ including the rule that makes parallel honest', /The engine still obeys the one-writer-per-folder rule/.test(brief));
     ok('and it says the ids are named, not pasted', /Do not paste the work into "ask" — name it/.test(brief));
@@ -544,6 +563,104 @@ async function noWorkflowsTest() {
         /"run_workflow"/.test(prompts[0]));
 }
 
+async function nestedMissionTest() {
+    console.log('\n-- a child objective is a real run, and its verdict is what comes back');
+    const run = newRun();
+    let i = 0;
+    const prompts = [];
+    const planner = {
+        prompts,
+        runPlanner: async (prompt) => {
+            prompts.push(prompt);
+            i++;
+            if (i === 1) {
+                return {
+                    ok: true, raw: JSON.stringify({
+                        ...reflect(), thought: 'split it', action: 'run_mission',
+                        title: 'Reference pass', goal: 'the API reference is complete',
+                        successCriteria: [{ text: 'every endpoint has an example', required: true }],
+                        constraints: ['do not touch the changelog'], criteria: ['c1']
+                    })
+                };
+            }
+            return { ok: true, raw: JSON.stringify(FINISH) };
+        }
+    };
+    const { d, seen, waves } = deps(planner, {}, {
+        delegateWave: async (_run, steps) => {
+            waves.push(steps.map(s => s.title));
+            for (const s of steps) {
+                // what the extension does for a settled child, in miniature
+                s.status = 'done';
+                s.costUSD = 1.5;
+                s.resultText = 'Child objective success (criteria-satisfied): every endpoint documented.';
+            }
+        }
+    });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const step = run.rounds[0].steps[0];
+    eq('the round ran one unit', run.rounds[0].steps.length, 1);
+    eq('‼️ and it is a MISSION unit', step.kind, 'mission');
+    eq('carrying the goal the lead stated', step.child.goal, 'the API reference is complete');
+    eq('and the child\'s own criteria, still as text', step.child.successCriteria[0].text, 'every endpoint has an example');
+    eq('the child sits one level below this run', step.child.depth, 1);
+    eq('the PARENT criteria it serves ride along, for staleness', (step.criteria || []).join(','), 'c1');
+    const created = seen.filter(e => e.type === 'action.created');
+    eq('the graph node says what kind of thing it is', created[0].kind, 'mission');
+    ok('‼️ the lead is shown the child\'s VERDICT, not an empty excerpt',
+        /Child objective success/.test(prompts[1]));
+    eq('and the child\'s spend is charged to this run once', run.totalCostUSD, 1.5);
+    ok('the ledger names the primitive', /R1 run_mission — /.test(run.ledger[0]));
+}
+
+async function nestingCapsTest() {
+    console.log('\n-- ‼️ the two things that stop nesting being a fork bomb');
+    const deep = newRun();
+    deep.depth = 3;
+    let i = 0;
+    const prompts = [];
+    const req = {
+        ...reflect(), thought: 'go deeper', action: 'run_mission', goal: 'another layer',
+        successCriteria: [{ text: 'it is done', required: true }]
+    };
+    const planner = {
+        prompts,
+        runPlanner: async (prompt) => {
+            prompts.push(prompt);
+            i++;
+            return { ok: true, raw: JSON.stringify(i === 1 ? req : FINISH) };
+        }
+    };
+    const { d, waves } = deps(planner, {});
+    await new M.MissionEngine(spec(), deep, [], d).execute();
+    eq('a run already at the cap starts no child', waves.length, 0);
+    ok('and is told the cap by number', /this run is already 3 level\(s\) deep and the cap is 3/.test(prompts[1]));
+    ok('…with the thing to do instead', /Do this work with delegations/.test(prompts[1]));
+
+    const cyc = newRun('r2');
+    let j = 0;
+    const p2 = [];
+    const planner2 = {
+        runPlanner: async (prompt) => {
+            p2.push(prompt);
+            j++;
+            return {
+                ok: true, raw: JSON.stringify(j === 1
+                    ? { ...reflect(), thought: 'again', action: 'run_mission', goal: 'The page   WORKS.', successCriteria: [{ text: 'x', required: true }] }
+                    : FINISH)
+            };
+        }
+    };
+    const { d: d2, waves: w2 } = deps(planner2, {}, {
+        ancestry: () => [{ runId: 'up', goal: 'the page works' }]
+    });
+    await new M.MissionEngine(spec(), cyc, [], d2).execute();
+    eq('an objective that is already its own ancestor starts nothing', w2.length, 0);
+    ok('‼️ and the match is on the NORMALISED goal — punctuation and spacing are not a new objective',
+        /already running above this one/.test(p2[1]));
+    ok('it says why that would never end', /asking itself for the same thing/.test(p2[1]));
+}
+
 async function classicUntouchedTest() {
     console.log('\n-- classic is where it was, to the character');
     const run = newRun();
@@ -585,6 +702,8 @@ async function classicUntouchedTest() {
     await runWorkflowTest();
     await unknownWorkflowTest();
     await noWorkflowsTest();
+    await nestedMissionTest();
+    await nestingCapsTest();
     await classicUntouchedTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

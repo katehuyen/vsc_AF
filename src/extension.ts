@@ -257,7 +257,8 @@ import {
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
-    addGuidance, buildResumeMessage, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive,
+    addGuidance, buildResumeMessage, DEFAULT_AUTONOMY, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive,
+    normalizeCriteria,
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
@@ -3437,6 +3438,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /** Run one wave of delegations as ordinary FarmTasks and wait them out. */
+    /**
+     * ‼️ M-18 — THE CHILD OBJECTIVE'S SPEC, BUILT FROM THE PARENT.
+     *
+     * The lead states an outcome and what would count as reaching it. Every
+     * other field is inherited, and that is the safety property: a lead cannot
+     * give a child a bigger budget, a different folder, a wider pool or another
+     * project than the one it is working under. The ceilings are cut from what
+     * the parent has LEFT — not copied — so a chain of children cannot spend the
+     * parent's budget once each.
+     */
+    const missionChildSpec = (
+        parent: MissionSpec, parentRun: MissionRun, step: MissionRun['rounds'][number]['steps'][number]
+    ): MissionSpec => {
+        const req = step.child as NonNullable<typeof step.child>;
+        const rem = remainingBudget(parent, parentRun, Date.now());
+        const cap = (left: number, share: number): number =>
+            Math.max(1, Math.floor(Number.isFinite(left) ? left * share : share));
+        return {
+            id: newMissionId(),
+            title: req.title || `Sub-objective of ${parent.title}`.slice(0, 120),
+            goal: req.goal,
+            leadAgentId: parent.leadAgentId,
+            leadAgentName: parent.leadAgentName,
+            team: [],
+            mode: 'adaptive',
+            pool: parent.pool ?? [],
+            successCriteria: normalizeCriteria(req.successCriteria),
+            // The parent's constraints bind the child too — a limit somebody
+            // put on this objective is not escaped by delegating a piece of it.
+            constraints: [...(parent.constraints ?? []), ...(req.constraints ?? [])],
+            autonomy: parent.autonomy ?? DEFAULT_AUTONOMY,
+            ...(parent.workdir ? { workdir: parent.workdir } : {}),
+            ...(parent.engine ? { engine: parent.engine } : {}),
+            ...(parent.plannerModel ? { plannerModel: parent.plannerModel } : {}),
+            ...(parent.projectId ? { projectId: parent.projectId } : {}),
+            approvalMode: parent.approvalMode,
+            limits: {
+                maxRounds: cap(rem.rounds, 0.5),
+                maxTasks: cap(rem.tasks, 0.5),
+                maxCostUSD: Number.isFinite(rem.costUSD) ? Math.max(0.01, rem.costUSD * 0.5) : parent.limits.maxCostUSD,
+                maxTokens: Number.isFinite(rem.tokens) ? Math.floor(rem.tokens * 0.5) : parent.limits.maxTokens,
+                maxMinutes: cap(rem.minutes, 0.5),
+                maxParallel: parent.limits.maxParallel
+            },
+            createdAt: Date.now()
+        };
+    };
+
+    /** The goals of every objective above a run, nearest first. Walked once,
+     *  by `parentRunId`, and capped so a corrupted chain cannot spin here. */
+    const missionAncestry = (run: MissionRun): { runId: string; goal: string }[] => {
+        const out: { runId: string; goal: string }[] = [];
+        let cur = run;
+        for (let i = 0; i < 16 && cur.parentRunId; i++) {
+            const up = missionStore.run(cur.parentRunId);
+            if (!up) { break; }
+            const s = missionStore.spec(up.specId);
+            out.push({ runId: up.id, goal: s?.goal ?? '' });
+            cur = up;
+        }
+        return out;
+    };
+
     const missionDelegateWave = (spec: MissionSpec) =>
         (run: MissionRun, steps: MissionRun['rounds'][number]['steps']): Promise<void> =>
             new Promise(resolve => {
@@ -3447,6 +3511,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // budget roll-up, the cancel — is a property of this path,
                     // so a chain that ran anywhere else would quietly have none
                     // of them. The only difference is what gets started.
+                    // ‼️ M-18 — A CHILD OBJECTIVE IS BORN HERE, out of the
+                    // parent. Everything that makes it safe is INHERITED and
+                    // none of it is requested: the pool it may draw on, the
+                    // folder it works in, the engine and permissions, the
+                    // project it is work for — and its ceilings, which are cut
+                    // from what the parent has left so a child cannot spend
+                    // budget its parent no longer has.
+                    if (step.kind === 'mission' && step.child) {
+                        const child = missionChildSpec(spec, run, step);
+                        const bad = validateObjective(child);
+                        if (bad.length) {
+                            step.status = 'failed';
+                            step.note = 'child objective refused — ' + bad[0];
+                            continue;
+                        }
+                        const childRun = startMission(child);
+                        childRun.parentRunId = run.id;
+                        childRun.rootRunId = run.rootRunId ?? run.id;
+                        childRun.sourceActionId = step.id;
+                        childRun.depth = step.child.depth;
+                        step.missionRunId = childRun.id;
+                        step.status = 'running';
+                        traceEvent(run, 'action.started', { actionId: step.id, kind: 'mission', refId: childRun.id });
+                        continue;
+                    }
                     if (step.kind === 'workflow') {
                         const wf = taskManager.workflows.find(x => x.id === step.workflowId);
                         if (!wf) {
@@ -3510,7 +3599,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     traceEvent(run, 'action.started', { actionId: step.id, kind: 'task', refId: task.id });
                     taskManager.startTask(task);
                 }
-                if (!steps.some(s => s.taskId || s.workflowRunId)) { resolve(); return; }
+                if (!steps.some(s => s.taskId || s.workflowRunId || s.missionRunId)) { resolve(); return; }
                 let finished = false;
                 const check = () => {
                     if (finished) { return; }
@@ -3522,6 +3611,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // "produced" mean for a chain is the workflow engine's
                         // answer to give, and a second reading of the same rows
                         // would be a second opinion about the same run.
+                        // ‼️ M-18 — A CHILD OBJECTIVE COMES BACK AS A VERDICT,
+                        // not as an output. Its cost is charged upward HERE and
+                        // exactly once: the parent counts its own steps and
+                        // nothing else, so the child's own ledger and this one
+                        // cannot both claim the same dollar.
+                        if (step.missionRunId) {
+                            const cr = missionStore.run(step.missionRunId);
+                            if (!cr) { step.status = 'failed'; step.note = 'child run record lost'; continue; }
+                            step.costUSD = cr.totalCostUSD;
+                            step.tokens = cr.totalTokens;
+                            if (cr.status !== 'done' && cr.status !== 'failed' && cr.status !== 'cancelled') {
+                                allDone = false;
+                                continue;
+                            }
+                            const settled = cr.status === 'done' ? 'done' : cr.status;
+                            if (step.status !== settled) {
+                                step.status = settled;
+                                step.resultText = cr.result
+                                    ? `Child objective ${cr.result.verdict}`
+                                    + (cr.result.stopReason ? ` (${cr.result.stopReason})` : '')
+                                    + `: ${cr.result.summary}`
+                                    + (cr.result.unmet?.length
+                                        ? `\nStill unmet: ${cr.result.unmet.map(u => `[${u.id}] ${u.text} → ${u.verdict}`).join('; ')}`
+                                        : '')
+                                    : `Child objective ${cr.status}${cr.note ? ` — ${cr.note}` : ''}`;
+                                traceEvent(run, 'action.settled', {
+                                    actionId: step.id, kind: 'mission', refId: cr.id,
+                                    outcome: settled === 'done' ? 'done' : (settled === 'cancelled' ? 'cancelled' : 'failed'),
+                                    ...(cr.totalCostUSD ? { costUSD: cr.totalCostUSD } : {}),
+                                    ...(cr.totalTokens ? { tokens: cr.totalTokens } : {}),
+                                    ...(cr.result?.verdict ? { verdict: cr.result.verdict } : {}),
+                                    text: step.resultText.slice(0, 600)
+                                });
+                            }
+                            continue;
+                        }
                         if (step.workflowRunId) {
                             const st = taskManager.workflowRunState(step.workflowRunId);
                             if (!st) { allDone = false; continue; }
@@ -3707,6 +3832,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflows: () => taskManager.workflows.map(w => ({
             id: w.id, title: w.title, steps: w.steps.length
         })),
+        ancestry: () => missionAncestry(run),
         now: () => Date.now()
     });
 
@@ -3829,9 +3955,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         missionChanged();
     };
 
+    /**
+     * ‼️ M-18 — A PAUSE TRAVELS DOWN TOO. A parent whose child keeps working is
+     * paused in name only: the parent's own wave is waiting on that child, so
+     * the one thing still spending money is the one thing the pause did not
+     * reach. Descendants only — pausing a child never pauses its parent, which
+     * would be a child stopping work it did not order.
+     */
+    const pauseMissionChildren = (runId: string, pause: boolean): void => {
+        for (const child of missionStore.runs) {
+            if (child.parentRunId !== runId || child.id === runId) { continue; }
+            const e = missionEngines.get(child.id);
+            if (pause) { e?.pause(); } else { e?.unpause(); }
+            pauseMissionChildren(child.id, pause);
+        }
+    };
+
     const cancelMission = (runId: string): void => {
         const run = missionStore.run(runId);
         if (!run) { return; }
+        // ‼️ M-18 — A CANCEL TRAVELS DOWN. A child objective is real work with
+        // its own lead and its own delegations; stopping the parent and leaving
+        // it running would spend a cancelled run's budget on an answer nobody
+        // is waiting for. Depth-first and BEFORE this run's own teardown, so a
+        // grandchild is reached even if the middle run settles as we go.
+        for (const child of missionStore.runs) {
+            if (child.parentRunId === runId && child.id !== runId
+                && child.status !== 'done' && child.status !== 'failed' && child.status !== 'cancelled') {
+                cancelMission(child.id);
+            }
+        }
         missionEngines.get(runId)?.cancel();
         const apId = missionApprovals.get(runId);
         if (apId) { approvalQueue.settle(apId, false); }
@@ -9446,6 +9599,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const run = missionStore.run(runId);
                 need(run, 'Run not found — missions.list shows current ids.');
                 const engine = missionEngines.get(runId);
+                pauseMissionChildren(runId, true);
                 if (engine) { engine.pause(); }
                 else {
                     const r = run as MissionRun;
@@ -10376,6 +10530,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         control: (action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string) => {
             if (action === 'pause') {
                 const engine = missionEngines.get(runId);
+                pauseMissionChildren(runId, true);
                 if (engine) { engine.pause(); }
                 else {
                     // stale 'running' without an engine (shouldn't happen) — park it honestly
@@ -10519,6 +10674,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!run) { return; }
             // second click withdraws a pause that hasn't taken effect yet
             const engine = missionEngines.get(run.id);
+            pauseMissionChildren(run.id, !run.pausePending);
             if (run.pausePending) { engine?.unpause(); } else { engine?.pause(); }
             missionChanged();
         }),
