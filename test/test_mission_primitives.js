@@ -457,7 +457,7 @@ async function staleAfterReviseTest() {
             if (i === 4) {
                 return {
                     ok: true, raw: JSON.stringify({
-                        ...reflect(), thought: 'ship', action: 'finish', verdict: 'success',
+                        ...reflect(), thought: 'ship', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied',
                         summary: 'done', stopReason: 'criteria-satisfied'
                     })
                 };
@@ -679,7 +679,7 @@ async function classicUntouchedTest() {
                     })
                 };
             }
-            return { ok: true, raw: JSON.stringify({ thought: 'done', action: 'finish', verdict: 'success', summary: 's' }) };
+            return { ok: true, raw: JSON.stringify({ thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 's' }) };
         }
     };
     const { d, waves } = deps(planner, {});

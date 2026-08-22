@@ -2,6 +2,63 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.239.0 — An ending that says why, and a request judged on what was sent (2026-08-23)
+
+### X-68 — every adaptive ending says why it stopped, and what is still open
+`stopReason` was optional. Most endings therefore carried no reason at all, so
+the one question the field exists to answer — did this run reach its objective,
+or run out of rope? — was answerable for some terminals and not for others, from
+the same screen. It is now required on an adaptive `finish` or `abort`, refused
+by name with the closed list in the error.
+
+`unmet` was worse: it was filled in exactly **one** place — a lead claimed
+"success", the gate refused, the lead insisted, and the verdict came down to
+`partial`. Every other way a run can end short (an honest partial, an explicit
+failure, an abort, a ceiling reached mid-wave) recorded no structured gaps at
+all and left saying what was missing to whatever prose the model happened to
+write. The same `partial` verdict sometimes showed the reader which criteria
+were open and sometimes could not.
+
+Every adaptive terminal now goes through one door. The criteria state is read
+there, once, for anything that is not a stated success; the summary is
+**deterministically completed** when the model's own words skipped the gaps; and
+the engine's own terminals — the planner-call cap, an unreachable lead, a reply
+that could not be read twice — carry a verdict and a reason like any other
+ending instead of a bare note. A real success still carries no open list: an
+empty one would read as a doubt.
+
+### X-60 — a bad request became a different, valid-looking mission
+`createMission` normalised the request into a valid spec and then asked
+`validateObjective` to judge **its own output**. Every fault below was therefore
+already gone by the time anything looked for it, and none of them produced an
+error — each produced a different mission the caller was told was theirs:
+
+- a misspelled `mode` ("adptive") started a **classic** mission;
+- an unknown `autonomy` became `ask-when-unsure`;
+- two criteria the caller gave the **same id** became `c1` and `c2`, so the run
+  judged two things under names the caller never used;
+- a `pool` naming three agents that do not exist expanded to the **whole fleet**,
+  because "nothing resolved" and "nothing asked for" were one test;
+- an unknown member `engine` was dropped and the member ran on the default;
+- and `pool` / `team` / `constraints` / `successCriteria` sent as anything but a
+  list were read as empty.
+
+A raw-input validator now runs **first**, on the fields as they were sent, and
+reports every fault at once. ‼️ An absent field is still not a bad one: a
+classic Start sends no `mode` key at all (M-15), an objective with no `pool`
+really does mean the whole fleet, and an omitted `autonomy` takes the documented
+default. Only a field that was **given** and cannot be honoured is refused.
+
+The unknown-engine case reverses an earlier deliberate drop. The reason is the
+codebase's own, stated one line away in the `permissionMode` check: falling back
+to a default is the exact silence a stated dimension exists to end. The runtime
+fallback in `engineOf` is untouched — that is about a spec read off disk, not a
+request somebody just made.
+
+Acceptance measures the validator, the ORDER inside `createMission` (raw check
+before the normaliser, before a single field is read), and the same broken
+inputs dispatched through a `missions.start` handler shaped like the real one.
+
 ## 3.238.0 — An audit graph of what really happened, and a steer that cannot be lost (2026-08-23)
 
 ### X-65 — the graph may only point at work that really happened

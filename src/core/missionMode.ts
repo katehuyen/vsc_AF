@@ -250,6 +250,108 @@ export function validateObjective(spec: {
     return errors;
 }
 
+/**
+ * ‼️ X-60 (M-15) — WHAT THE CALLER ACTUALLY SENT, CHECKED BEFORE IT IS CHANGED.
+ *
+ * `normalizeObjective` and the create path do a LOSSY job on purpose: they take
+ * whatever arrived and produce a valid spec. That is right for a spec being
+ * re-read off disk, and wrong for a request somebody just made — because the
+ * normalisation runs FIRST and `validateObjective` then judges the result, so
+ * every fault below was already gone by the time anything looked for it:
+ *
+ *   * a misspelled `mode` ("adptive") started a CLASSIC mission;
+ *   * an unknown `autonomy` became `ask-when-unsure`;
+ *   * two criteria the caller gave the SAME id became c1 and c2, so the run
+ *     judged two different things under names the caller never used;
+ *   * a `pool` naming three agents that do not exist expanded to the WHOLE
+ *     FLEET, because "nothing resolved" and "nothing asked for" were one test;
+ *   * an unknown member `engine` was dropped and the member ran on the
+ *     default — the same silence the `permissionMode` check already refuses;
+ *   * and `pool`/`team`/`constraints`/`successCriteria` sent as anything but
+ *     an array were read as empty.
+ *
+ * None of these produced an error. Each produced a DIFFERENT, valid-looking
+ * mission — and the caller was told it was theirs.
+ *
+ * ‼️ AN ABSENT FIELD IS NOT A BAD ONE. A classic Start sends no `mode` key at
+ * all (M-15), an objective with no `pool` really does mean the whole fleet, and
+ * a caller that omits `autonomy` gets the documented default. Only a field that
+ * was GIVEN and cannot be honoured is refused.
+ */
+export function validateMissionInput(
+    raw: Record<string, unknown>,
+    known: { agentIds?: readonly string[]; engines?: readonly string[] } = {}
+): string[] {
+    const errors: string[] = [];
+    const given = (k: string) => raw[k] !== undefined && raw[k] !== null;
+
+    if (given('mode')) {
+        const m = String(raw.mode).trim();
+        if (m && m !== 'adaptive' && m !== 'classic') {
+            errors.push(`unknown mode "${m}" (use adaptive | classic, or leave it out for classic)`);
+        }
+    }
+    if (given('autonomy')) {
+        const a = String(raw.autonomy).trim();
+        if (a && a !== 'ask-when-unsure' && a !== 'decide-alone') {
+            errors.push(`unknown autonomy "${a}" (use ask-when-unsure | decide-alone)`);
+        }
+    }
+    for (const k of ['pool', 'team', 'constraints', 'successCriteria'] as const) {
+        if (given(k) && !Array.isArray(raw[k])) {
+            errors.push(`"${k}" must be a list — it was sent as ${typeof raw[k]}`);
+        }
+    }
+
+    // ‼️ THE IDS THE CALLER CHOSE ARE THE CALLER'S. Two criteria under one id is
+    // a mistake in the request; renaming one of them files a verdict under a
+    // name the caller will never look for.
+    if (Array.isArray(raw.successCriteria)) {
+        const seen = new Set<string>();
+        for (const item of raw.successCriteria) {
+            const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+            const id = String(o.id ?? '').trim();
+            if (!id) { continue; }
+            if (seen.has(id)) { errors.push(`two success criteria were given the id "${id}"`); }
+            seen.add(id);
+        }
+    }
+
+    // ‼️ "NOBODY RESOLVED" IS NOT "NOBODY ASKED FOR". A pool that was given and
+    // whose members are all unknown must not quietly become the entire fleet.
+    if (Array.isArray(raw.pool) && known.agentIds) {
+        const fleet = new Set(known.agentIds);
+        const missing = raw.pool
+            .map(m => String(((m ?? {}) as Record<string, unknown>).agentId ?? '').trim())
+            .filter(id => id && !fleet.has(id));
+        if (missing.length) {
+            errors.push(`no agent in this fleet is ${missing.map(m => '"' + m + '"').join(', ')}`);
+        }
+        const named = raw.pool.filter(m => String(((m ?? {}) as Record<string, unknown>).agentId ?? '').trim());
+        if (raw.pool.length && !named.length) {
+            errors.push('the pool was given but no member names an agentId');
+        }
+    }
+
+    // ‼️ AN UNKNOWN ENGINE IS REFUSED, NOT DROPPED — for the reason the
+    // permissionMode check already gives: falling back to a default is the
+    // exact silence a stated dimension exists to end.
+    if (known.engines) {
+        const ok = new Set(known.engines);
+        for (const k of ['pool', 'team'] as const) {
+            if (!Array.isArray(raw[k])) { continue; }
+            for (const item of raw[k] as unknown[]) {
+                const o = (item ?? {}) as Record<string, unknown>;
+                const eng = String(o.engine ?? '').trim().toLowerCase();
+                if (eng && !ok.has(eng)) {
+                    errors.push(`unknown engine "${eng}" in ${k} (this build knows: ${[...ok].join(', ')})`);
+                }
+            }
+        }
+    }
+    return errors;
+}
+
 export interface FleetAgent { id: string; name: string; role?: string }
 
 /**

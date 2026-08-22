@@ -328,7 +328,7 @@ function part7() {
         team: [{ agentId: 'a1', agentName: 'Ada' }],
         limits: { ...LIMITS }, approvalMode: 'auto', createdAt: 1
     };
-    const p = scripted([{ thought: 'done', action: 'finish', verdict: 'success', summary: 'shipped' }]);
+    const p = scripted([{ thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'shipped' }]);
     const { d } = deps(p);
     const run = newRun('r7');
     return new M.MissionEngine(classic, run, [], d).execute().then(() => {
@@ -355,7 +355,118 @@ function part7() {
         ok('a delegation aimed at a criterion that does not exist is refused by name',
             !badCrit.ok && /unknown criterion "c9"/.test(badCrit.error));
 
-        console.log(`\n${pass} passed, ${fail} failed`);
-        process.exit(fail ? 1 : 0);
+        // ================================================================
+        // ‼️ X-68 — EVERY ADAPTIVE ENDING SAYS WHY, AND WHAT IS STILL OPEN.
+        //
+        // `unmet` used to be filled in exactly one place: a lead claimed
+        // "success", the gate refused, the lead insisted, and the verdict came
+        // down to partial. Every other way a run can end short — an honest
+        // partial, an explicit failed, an abort, a ceiling reached mid-wave —
+        // recorded no structured gaps at all and left saying what was missing
+        // to whatever prose the model happened to write. The SAME partial
+        // verdict sometimes told the reader which criteria were open and
+        // sometimes could not, from the same surface.
+        return (async () => {
+            console.log('\n-- ‼️ X-68 stopReason is required, and unmet is on every terminal that fell short');
+
+            // ---- the field is required, not merely validated when offered
+            const noReason = M.parseAdaptiveDecision(JSON.stringify({
+                rationale: 'r', currentPhase: 'p', strategy: 's',
+                action: 'finish', verdict: 'partial', summary: 'as far as it went'
+            }), spec());
+            ok('‼️ an adaptive finish that does not say why it stopped is refused',
+                !noReason.ok && /must say WHY it is stopping/.test(noReason.error));
+            ok('…and the refusal lists the words it may use',
+                /criteria-satisfied/.test(noReason.error) && /hard-limit/.test(noReason.error));
+            const noReasonAbort = M.parseAdaptiveDecision(JSON.stringify({
+                rationale: 'r', currentPhase: 'p', strategy: 's',
+                action: 'abort', verdict: 'failed', summary: 'giving up'
+            }), spec());
+            ok('…an abort is held to the same rule', !noReasonAbort.ok);
+
+            /** Run one adaptive mission to a terminal and hand back the run. */
+            const endWith = async (id, terminal, waveVerdict) => {
+                const p = scripted([
+                    { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write', prompt: 'p', criteria: ['c1'] }] },
+                    { ...reflect(), ...terminal }
+                ]);
+                const dd = deps(p, { Ada: 'body' });
+                const run = newRun(id);
+                if (waveVerdict) { dd.d.delegateWave = dd.settle(waveVerdict); }
+                await new M.MissionEngine(spec(), run, [], dd.d).execute();
+                return { run, seen: dd.seen };
+            };
+
+            // ---- an HONEST partial: nobody claimed success, so nothing was gated
+            const honest = await endWith('x68-a', {
+                thought: 'out of rope', action: 'finish', verdict: 'partial',
+                summary: 'got most of the way', stopReason: 'no-new-information'
+            });
+            eq('an honest partial keeps its own reason', honest.run.result.stopReason, 'no-new-information');
+            ok('‼️ …and now carries the criteria it never met',
+                !!honest.run.result.unmet && honest.run.result.unmet.some(u => u.id === 'c1'));
+            eq('…with the verdict that made them open', honest.run.result.unmet[0].verdict, 'unjudged');
+            ok('…and the summary says so even though the model did not',
+                /Still open: \[c1\]/.test(honest.run.result.summary));
+            ok('…an optional criterion never holds the door', 
+                !honest.run.result.unmet.some(u => u.id === 'c2'));
+
+            // ---- an EXPLICIT failed
+            const failed = await endWith('x68-b', {
+                thought: 'it cannot be done', action: 'finish', verdict: 'failed',
+                summary: 'the source is missing', stopReason: 'sufficient-evidence'
+            });
+            eq('an explicit failure says why too', failed.run.result.stopReason, 'sufficient-evidence');
+            ok('…and names what was left open', !!failed.run.result.unmet.length);
+
+            // ---- an ABORT
+            const aborted = await endWith('x68-c', {
+                thought: 'stop', action: 'abort', verdict: 'failed',
+                summary: 'the constraints cannot be met', stopReason: 'execution-over-discussion'
+            });
+            eq('an abort ends the run as failed', aborted.run.status, 'failed');
+            eq('…carrying its reason', aborted.run.result.stopReason, 'execution-over-discussion');
+            ok('…and its open criteria', !!aborted.run.result.unmet.length);
+
+            // ---- a COERCED partial: the one path that always worked, still does
+            const coerced = await endWith('x68-d', {
+                thought: 'done', action: 'finish', verdict: 'success',
+                summary: 'shipped', stopReason: 'criteria-satisfied'
+            });
+            eq('an insisted success is recorded as partial', coerced.run.result.verdict, 'partial');
+            ok('…with the gate\'s own list', coerced.run.result.unmet.some(u => u.id === 'c1'));
+            ok('…and the reason the lead gave is not overwritten',
+                coerced.run.result.stopReason === 'criteria-satisfied');
+
+            // ---- ‼️ AND THE PARITY THIS ITEM IS ABOUT: four different ways to
+            // end short, one shape of answer.
+            const all = [honest.run, failed.run, aborted.run, coerced.run];
+            ok('every terminal that fell short says WHY', all.every(r => !!r.result.stopReason));
+            ok('…and every one of them lists what is still open',
+                all.every(r => Array.isArray(r.result.unmet) && r.result.unmet.length > 0));
+            ok('…each entry carrying id, text and verdict, never a bare id',
+                all.every(r => r.result.unmet.every(u => !!u.id && !!u.text && !!u.verdict)));
+            ok('…and the journal records the reason for each',
+                [honest, failed, aborted, coerced].every(x =>
+                    x.seen.some(e => e.type === 'run.finished' && !!e.reason)));
+
+            // ---- a run that really met its criteria carries no open list
+            const clean = scripted([
+                { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write', prompt: 'p', criteria: ['c1'] }] },
+                { ...reflect(), thought: 'judge', action: 'evaluate', targets: [], findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all documented' }], advice: 'finish' },
+                { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'shipped', stopReason: 'criteria-satisfied' }
+            ]);
+            const cd = deps(clean, { Ada: 'body' });
+            const cleanRun = newRun('x68-e');
+            await new M.MissionEngine(spec(), cleanRun, [], cd.d).execute();
+            eq('a real success is still a success', cleanRun.result.verdict, 'success');
+            ok('‼️ …and carries no open list at all — an empty one would read as a doubt',
+                cleanRun.result.unmet === undefined);
+            ok('…and its summary is the lead\'s own words, untouched',
+                !/Still open/.test(cleanRun.result.summary));
+        })().then(() => {
+            console.log(`\n${pass} passed, ${fail} failed`);
+            process.exit(fail ? 1 : 0);
+        });
     });
 }

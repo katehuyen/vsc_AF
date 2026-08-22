@@ -250,7 +250,7 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
         !M.parsePlannerDecision(reply('Zoe'), adaptiveSpec({ pool: [], team: [] })).ok);
     // Everything else about the parse is one contract for both.
     ok('the finish action is the same in both modes',
-        M.parsePlannerDecision(JSON.stringify({ action: 'finish', verdict: 'success', summary: 's' }), adaptiveSpec()).ok);
+        M.parsePlannerDecision(JSON.stringify({ action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 's' }), adaptiveSpec()).ok);
     ok('an unknown action is refused in both',
         !M.parsePlannerDecision(JSON.stringify({ action: 'improvise' }), adaptiveSpec()).ok);
 }
@@ -293,6 +293,84 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
         new M.MissionEngine(adaptiveSpec(), run, [], deps).protocol.mode, 'adaptive');
     ok('a classic run carries no roles — nothing was added to its shape',
         run.roles === undefined);
+}
+
+// ‼️ X-60 (M-15) — THE REQUEST IS JUDGED ON WHAT WAS SENT, NOT ON WHAT IT
+// BECAME. createMission normalised first and validated its own output, so
+// every fault below was already gone by the time anything looked for it — and
+// each one produced a DIFFERENT, valid-looking mission the caller was told was
+// theirs.
+{
+    console.log('\n-- ‼️ X-60 a bad request is refused, not quietly turned into a different one');
+
+    const FLEET = ['a1', 'a2'];
+    const ENGINES = ['claude', 'codex', 'gemini'];
+    const bad = (raw) => M.validateMissionInput(raw, { agentIds: FLEET, engines: ENGINES });
+
+    // ---- a misspelled mode used to start a CLASSIC mission
+    ok('‼️ a misspelled mode is refused, never read as classic',
+        bad({ mode: 'adptive' }).some(e => /unknown mode "adptive"/.test(e)));
+    eq('the two real modes pass', bad({ mode: 'adaptive' }).length + bad({ mode: 'classic' }).length, 0);
+    // ‼️ AND AN ABSENT MODE IS STILL CLASSIC. A classic Start sends no `mode`
+    // key at all (M-15) — refusing that would break every caller ever written.
+    eq('an absent mode is not a fault', bad({}).length, 0);
+
+    // ---- an unknown autonomy used to become the default
+    ok('an unknown autonomy is refused',
+        bad({ autonomy: 'yolo' }).some(e => /unknown autonomy "yolo"/.test(e)));
+    eq('an omitted one still takes the documented default', bad({ mode: 'adaptive' }).length, 0);
+
+    // ---- ‼️ two criteria the CALLER gave one id used to be renumbered, so the
+    // run judged two things under names the caller never used
+    ok('a duplicate criterion id the caller chose is refused', bad({
+        successCriteria: [{ id: 'c1', text: 'one' }, { id: 'c1', text: 'two' }]
+    }).some(e => /two success criteria were given the id "c1"/.test(e)));
+    eq('…while criteria with no ids are still the normaliser\'s job', bad({
+        successCriteria: [{ text: 'one' }, { text: 'two' }]
+    }).length, 0);
+
+    // ---- ‼️ a pool of agents that do not exist used to become the WHOLE FLEET
+    ok('an unknown pool member is refused by name', bad({
+        pool: [{ agentId: 'ghost' }, { agentId: 'a1' }]
+    }).some(e => /no agent in this fleet is "ghost"/.test(e)));
+    eq('a pool of real agents passes', bad({ pool: [{ agentId: 'a1' }] }).length, 0);
+    // and "nobody asked for" is still the whole fleet — that is the feature
+    eq('an ABSENT pool is not a fault', bad({ mode: 'adaptive', goal: 'g' }).length, 0);
+
+    // ---- an unknown engine used to be dropped and the member ran on the default
+    ok('an unknown member engine is refused, not dropped', bad({
+        pool: [{ agentId: 'a1', engine: 'nope' }]
+    }).some(e => /unknown engine "nope" in pool/.test(e)));
+    ok('…and the same on a classic team', bad({
+        team: [{ agentId: 'a1', engine: 'nope' }]
+    }).some(e => /unknown engine "nope" in team/.test(e)));
+    eq('a known engine passes', bad({ pool: [{ agentId: 'a1', engine: 'codex' }] }).length, 0);
+
+    // ---- a dimension sent as the wrong type used to be read as empty
+    for (const k of ['pool', 'team', 'constraints', 'successCriteria']) {
+        ok(`a "${k}" that is not a list is refused`,
+            bad({ [k]: 'not a list' }).some(e => new RegExp('"' + k + '" must be a list').test(e)));
+    }
+
+    // ---- ‼️ every fault at once, because a form filled in four times is a
+    // form nobody fills in
+    const many = bad({
+        mode: 'adptive', autonomy: 'yolo', constraints: 'one',
+        pool: [{ agentId: 'ghost', engine: 'nope' }],
+        successCriteria: [{ id: 'c1', text: 'a' }, { id: 'c1', text: 'b' }]
+    });
+    ok('all of them are reported together', many.length >= 5);
+
+    // ---- ‼️ AND THE ORDER IS THE WHOLE ITEM: the raw check must come BEFORE
+    // the normaliser, because after it there is nothing left to catch.
+    const dupe = { mode: 'adaptive', successCriteria: [{ id: 'c1', text: 'a' }, { id: 'c1', text: 'b' }] };
+    const normalised = M.normalizeObjective(dupe);
+    eq('the normaliser renames the duplicate away, exactly as it always did',
+        normalised.successCriteria.map(c => c.id).join(), 'c1,c2');
+    eq('…so validateObjective on its output finds nothing wrong',
+        M.validateObjective({ mode: 'adaptive', goal: 'g', leadAgentId: 'l', leadAgentName: 'L', ...normalised, pool: [{ agentId: 'a1', agentName: 'A' }] })
+            .filter(e => /share the id/.test(e)).length, 0);
+    ok('…and only the RAW check ever sees it', bad(dupe).some(e => /given the id "c1"/.test(e)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

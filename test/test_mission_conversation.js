@@ -374,7 +374,7 @@ function deps(replies, outputs = {}, over = {}) {
     };
 }
 const FINISH = {
-    ...reflect(), thought: 'done', action: 'finish', verdict: 'partial',
+    ...reflect(), thought: 'done', action: 'finish', verdict: 'partial', stopReason: 'no-new-information',
     summary: 'as far as it goes', stopReason: 'sufficient-evidence'
 };
 

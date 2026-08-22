@@ -268,6 +268,7 @@ import {
     messageIntentMenu, openThreads, tallyVotes,
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
+    validateMissionInput,
     normalizeMissionLimits,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
@@ -4436,6 +4437,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const createMission = (input: Record<string, unknown>): string | undefined => {
+        // ‼️ X-60 (M-15) — WHAT WAS SENT IS JUDGED BEFORE IT IS CHANGED.
+        //
+        // Everything below this line normalises: it takes whatever arrived and
+        // produces a valid spec. That is right for a spec read off disk and
+        // wrong for a request somebody just made, because the normalisation ran
+        // FIRST and `validateObjective` then judged its own output. A
+        // misspelled mode started a classic mission, an unknown autonomy became
+        // the default, duplicate criterion ids were renumbered, a pool of three
+        // agents that do not exist became the WHOLE FLEET, and a dimension sent
+        // as the wrong type was read as empty — each one a different, valid
+        // looking mission the caller was told was theirs.
+        const rawBad = validateMissionInput(input, {
+            agentIds: agents.map(a => a.id),
+            engines: Object.keys(ENGINES)
+        });
+        if (rawBad.length) { return `This mission cannot start — ${rawBad.join('; ')}.`; }
         const goal = String(input.goal ?? '').trim();
         if (!goal) { return 'Goal is required.'; }
         // ‼️ M-15 (X-32) — WHICH KIND OF MISSION IS BEING STARTED, decided here
@@ -5601,7 +5618,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '(pass / fail / unknown / unjudged) and the evidence behind it, `evaluations` is '
                 + 'every verdict ever recorded with `stale` saying whether the work has since moved '
                 + 'on, `stopReason` says why the run stopped from a closed list, and `unmet` names '
-                + 'the required criteria a `partial` did not reach. A delegate exiting cleanly is '
+                + 'the required criteria that were not reached. ‼️ X-68: BOTH are on EVERY adaptive '
+                + 'ending that fell short — an honest partial, an explicit failure, an abort and a '
+                + 'ceiling reached mid-wave, not only a success the gate brought down. A delegate exiting cleanly is '
                 + 'NOT a criterion being met — only an evaluation is. ‼️ M-18: a step that FAILED '
                 + 'carries `failure` — `class` from a closed set ('
                 + Object.keys(FAILURE_KINDS).join(', ')

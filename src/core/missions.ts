@@ -84,7 +84,7 @@ export type { CouncilExit, CouncilTally, CouncilVote, MissionCouncil } from './m
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, describeDelegateRun, isAdaptive, missionModeOf,
     normalizeCriteria, normalizeObjective, normalizePool, poolFromFleet, resolveDelegateRun,
-    resolveLead, validateObjective
+    resolveLead, validateMissionInput, validateObjective
 } from './missionMode';
 export type {
     DelegateOrigin, DelegateRun, DelegateRunLayers, FleetAgent, MissionAutonomy, MissionMode,
@@ -1069,10 +1069,21 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         let stopReason: StopReason | undefined;
         if (adaptive) {
             const s = String(o.stopReason ?? o.stop_reason ?? '').trim();
-            if (s && !isStopReason(s)) {
+            // ‼️ X-68 — AND IT IS REQUIRED, not merely validated when offered.
+            // Optional meant most endings carried no reason at all, so the one
+            // question the field exists to answer — did this run reach its
+            // objective or run out of rope? — was answerable for some
+            // terminals and not for others, from the same UI.
+            if (!s) {
+                return {
+                    ok: false,
+                    error: `"${action}" must say WHY it is stopping — add "stopReason", one of: ${STOP_REASONS.join(' | ')}`
+                };
+            }
+            if (!isStopReason(s)) {
                 return { ok: false, error: `"stopReason" must be one of: ${STOP_REASONS.join(' | ')} (got "${s}")` };
             }
-            if (s) { stopReason = s as StopReason; }
+            stopReason = s as StopReason;
         }
         return done(action === 'finish'
             ? { action: 'finish', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) }
@@ -2373,11 +2384,46 @@ export class MissionEngine {
     /** The honest ending for a ceiling reached mid-wave: `hard-limit` naming the
      *  ceiling, never the `cancelled` that would claim a hand did it. */
     private endAtCeiling(reason: string): void {
-        this.end('failed', {
+        this.finish('failed', {
             verdict: 'partial',
             summary: `Stopped in the middle of a round: ${reason}. The delegations in flight were cancelled.`,
             stopReason: 'hard-limit'
         }, reason);
+    }
+
+    /**
+     * ‼️ M-17 / X-68 — EVERY ADAPTIVE ENDING GOES THROUGH ONE DOOR.
+     *
+     * `unmet` used to be filled in exactly one place: when a lead claimed
+     * "success", the gate refused, the lead insisted, and the verdict was
+     * brought down to `partial`. Every other way a run can end short — an
+     * honest `partial`, an explicit `failed`, an `abort`, a ceiling reached
+     * mid-wave — recorded no structured gaps at all, and left saying what was
+     * missing to whatever prose the model happened to write. So the SAME
+     * partial verdict sometimes showed the reader which criteria were open and
+     * sometimes could not, from the same surface, with nothing to distinguish
+     * the two cases.
+     *
+     * Now the criteria state is read here, once, for every terminal that is not
+     * a stated success — and the summary is DETERMINISTICALLY completed when
+     * the model's own words skipped the gaps.
+     */
+    private finish(status: MissionRunStatus, result: MissionResult, note?: string): void {
+        if (!isAdaptive(this.spec) || result.verdict === 'success') {
+            this.end(status, result, note);
+            return;
+        }
+        const gate = successGate(this.spec.successCriteria ?? [], this.liveEvaluations());
+        const unmet = result.unmet?.length ? result.unmet : gate.unmet;
+        let summary = result.summary;
+        if (unmet.length && !unmet.every(u => summary.includes(u.id))) {
+            summary += '\n\nStill open: '
+                + unmet.map(u => `[${u.id}] ${u.text} (${u.verdict})`).join('; ') + '.';
+        }
+        this.end(status, {
+            ...result, summary,
+            ...(unmet.length ? { unmet } : {})
+        }, note);
     }
     /** Sets the pause flag and shows it immediately (pausePending) — the run
      *  actually pauses before the NEXT planner round; the current activity
@@ -3082,7 +3128,10 @@ export class MissionEngine {
                 return;
             }
             if (++plannerCalls > hardCallCap(spec)) {
-                this.end('failed', undefined, 'hard planner-call cap reached — possible planning loop');
+                this.finish('failed', {
+                    verdict: 'failed', stopReason: 'hard-limit',
+                    summary: 'Stopped at the planner-call cap — the lead kept planning without reaching an ending.'
+                }, 'hard planner-call cap reached — possible planning loop');
                 return;
             }
 
@@ -3115,7 +3164,10 @@ export class MissionEngine {
                 pr = await deps.runPlanner(fb, undefined);
             }
             if (!pr.ok) {
-                this.end('failed', undefined, `planner call failed — ${pr.error ?? 'unknown error'}`);
+                this.finish('failed', {
+                    verdict: 'failed', stopReason: 'hard-limit',
+                    summary: `The lead could not be reached — ${pr.error ?? 'unknown error'}.`
+                }, `planner call failed — ${pr.error ?? 'unknown error'}`);
                 return;
             }
             if (pr.sessionId) { run.plannerSessionId = pr.sessionId; }
@@ -3128,7 +3180,10 @@ export class MissionEngine {
             const parsed = this.protocol.parse(pr.raw ?? '', spec);
             if (!parsed.ok) {
                 if (parseRetried) {
-                    this.end('failed', undefined, `planner returned an invalid decision twice — ${parsed.error}`);
+                    this.finish('failed', {
+                        verdict: 'failed', stopReason: 'hard-limit',
+                        summary: `The lead's reply could not be read twice in a row — ${parsed.error}.`
+                    }, `planner returned an invalid decision twice — ${parsed.error}`);
                     return;
                 }
                 parseRetried = true;
@@ -3141,7 +3196,7 @@ export class MissionEngine {
 
             if (guard && d.action === 'delegate') {
                 if (guardNudged) {
-                    this.end('failed',
+                    this.finish('failed',
                         {
                             verdict: 'partial',
                             summary: 'Stopped at the budget limit; the planner kept delegating.',
@@ -3248,7 +3303,7 @@ export class MissionEngine {
                 round.stopReason = d.stopReason;
                 run.rounds.push(round);
                 run.ledger.push(ledgerLine(round));
-                this.end(d.action === 'finish' ? 'done' : 'failed', {
+                this.finish(d.action === 'finish' ? 'done' : 'failed', {
                     verdict, summary,
                     ...(d.stopReason ? { stopReason: d.stopReason } : {}),
                     ...(gate && !gate.ok ? { unmet: gate.unmet } : {})

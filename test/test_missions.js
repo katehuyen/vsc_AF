@@ -126,7 +126,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
     {
         const { deps, calls } = makeDeps([
             { raw: { thought: 'split work', action: 'delegate', tasks: [{ agent: 'coder', title: 'fix', prompt: 'fix it', readonly: false }, { agent: 'reviewer', title: 'review', prompt: 'review it', readonly: true }] }, sid: 'S1' },
-            { raw: { action: 'finish', verdict: 'success', summary: 'all green' }, sid: 'S1' }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'all green' }, sid: 'S1' }
         ]);
         const run = newRun();
         await new M.MissionEngine(spec(), run, HINTS, deps).execute();
@@ -149,7 +149,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         let first = true;
         const { deps, calls } = makeDeps([
             { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'risky', prompt: 'rm -rf' }] } },
-            { raw: { action: 'finish', verdict: 'partial', summary: 'stopped' } }
+            { raw: { action: 'finish', verdict: 'partial', stopReason: 'no-new-information', summary: 'stopped' } }
         ], { approve: () => { const v = !first ? true : false; first = false; return v; } });
         const run = newRun();
         await new M.MissionEngine(spec({ approvalMode: 'each-round' }), run, HINTS, deps).execute();
@@ -163,7 +163,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
     {
         const { deps, calls } = makeDeps([
             { raw: 'gibberish, not json' },
-            { raw: { action: 'finish', verdict: 'success', summary: 'ok now' } }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok now' } }
         ]);
         const run = newRun();
         await new M.MissionEngine(spec(), run, HINTS, deps).execute();
@@ -180,7 +180,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
     // ---------- budget guard: finish-only round ----------
     {
         const { deps, calls } = makeDeps([
-            { raw: { action: 'finish', verdict: 'failed', summary: 'no budget to start' } }
+            { raw: { action: 'finish', verdict: 'failed', stopReason: 'hard-limit', summary: 'no budget to start' } }
         ]);
         const run = newRun();
         run.totalCostUSD = 99;
@@ -206,7 +206,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         const { deps, calls } = makeDeps([
             { raw: { action: 'delegate', tasks: [sameTask] } },
             { raw: { action: 'delegate', tasks: [sameTask] } },
-            { raw: { action: 'finish', verdict: 'partial', summary: 'loop detected, stopping' } }
+            { raw: { action: 'finish', verdict: 'partial', stopReason: 'no-new-information', summary: 'loop detected, stopping' } }
         ]);
         const run = newRun();
         await new M.MissionEngine(spec(), run, HINTS, deps).execute();
@@ -219,7 +219,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
     {
         const { deps, calls } = makeDeps([
             { raw: { action: 'ask_user', question: 'which repo?' } },
-            { raw: { action: 'finish', verdict: 'success', summary: 'done with repo X' } }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'done with repo X' } }
         ]);
         const run = newRun();
         await new M.MissionEngine(spec(), run, HINTS, deps).execute();
@@ -235,7 +235,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         const { deps, calls } = makeDeps([
             { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'fix', prompt: 'fix it' }] }, sid: 'S9' },
             { fail: 'resume: session not found' },
-            { raw: { action: 'finish', verdict: 'success', summary: 'recovered' }, sid: 'S10' }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'recovered' }, sid: 'S10' }
         ]);
         const run = newRun();
         await new M.MissionEngine(spec(), run, HINTS, deps).execute();
@@ -353,7 +353,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         const seen = { pendingDuringRun: false, nowValues: [] };
         const h = makeDeps([
             { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'slow', prompt: 'work' }] } },
-            { raw: { action: 'finish', verdict: 'success', summary: 'never reached' } }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'never reached' } }
         ], { cancelDuringWave: () => engine.pause() });
         h.deps.onUpdate = (r) => {
             if (r.pausePending) { seen.pendingDuringRun = true; }
@@ -375,7 +375,7 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         let engine;
         const { deps } = makeDeps([
             { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'w', prompt: 'p' }] } },
-            { raw: { action: 'finish', verdict: 'success', summary: 'done' } }
+            { raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'done' } }
         ], { cancelDuringWave: () => { engine.pause(); engine.unpause(); } });
         const run = newRun();
         engine = new M.MissionEngine(spec(), run, HINTS, deps);

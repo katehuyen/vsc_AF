@@ -718,7 +718,7 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
     const deps = {
         runPlanner: async () => ({
             ok: true, costUSD: 0,
-            raw: JSON.stringify({ action: 'finish', thought: 'the plan', verdict: 'success', summary: 'done here' })
+            raw: JSON.stringify({ action: 'finish', thought: 'the plan', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'done here' })
         }),
         delegateWave: async () => { },
         readOutputBody: () => '',

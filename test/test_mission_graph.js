@@ -175,7 +175,7 @@ function part2() {
             thought: 'replan', action: 'replan'
         },
         { ...reflect({ strategy: 'read the source first, then write' }), thought: 'now delegate the reading', action: 'delegate', tasks: [{ agent: 'Bo', title: 'read the source', prompt: 'list every op', expect: 'c1', readonly: true }] },
-        { ...reflect({ strategy: 'read the source first, then write' }), thought: 'good enough', action: 'finish', verdict: 'partial', summary: 'listed, not written' }
+        { ...reflect({ strategy: 'read the source first, then write' }), thought: 'good enough', action: 'finish', verdict: 'partial', stopReason: 'no-new-information', summary: 'listed, not written' }
     ]);
     const { seen, d, settleAs } = deps(p);
     d.delegateWave = settleAs(s => s.agentName === 'Ada' ? 'failed' : 'done');
@@ -221,7 +221,7 @@ function part3() {
                 { agent: 'Bo', title: 'read B', prompt: 'read b', readonly: true }
             ]
         },
-        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'both read' }
+        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'both read' }
     ]);
     const { seen, d } = deps(p);
     const run = newRun('r3');
@@ -246,8 +246,8 @@ function part3() {
         // the one thing a reader of it cannot detect from the inside.
         const p2 = scripted([
             { ...reflect(), thought: 'both', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
-            { ...reflect({ basedOn: ['made-up-id'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' },
-            { ...reflect({ basedOn: ['d1'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            { ...reflect({ basedOn: ['made-up-id'] }), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' },
+            { ...reflect({ basedOn: ['d1'] }), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
         ]);
         const two = deps(p2);
         const run2 = newRun('r3b');
@@ -274,7 +274,7 @@ function part3b() {
     const pSelf = scripted([
         { ...reflect({ basedOn: ['d1'] }), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
         { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
-        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
     ]);
     const selfDeps = deps(pSelf);
     const runSelf = newRun('r-self');
@@ -288,7 +288,7 @@ function part3b() {
         const pEval = scripted([
             { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
             { ...reflect(), thought: 'judge', action: 'evaluate', targets: ['ghost-id'], reviewer: 'Ada' },
-            { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
         ]);
         const evalDeps = deps(pEval);
         const runEval = newRun('r-eval');
@@ -305,8 +305,8 @@ function part3b() {
             // offence drops the claim it cannot make and keeps the decision.
             const pStub = scripted([
                 { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
-                { ...reflect({ basedOn: ['nope-1'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' },
-                { ...reflect({ basedOn: ['nope-2'] }), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+                { ...reflect({ basedOn: ['nope-1'] }), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' },
+                { ...reflect({ basedOn: ['nope-2'] }), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
             ]);
             const stubDeps = deps(pStub);
             const runStub = newRun('r-stub');
@@ -329,7 +329,7 @@ function part4() {
     const p = scripted([
         { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
         { ...reflect(), thought: 'again', action: 'delegate', tasks: [{ agent: 'Bo', title: 'y', prompt: 'y' }] },
-        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+        { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
     ]);
     const { seen, d } = deps(p);
     const run = newRun('r4');
@@ -364,7 +364,7 @@ function part4() {
                         ok: true, costUSD: 0, sessionId: 'sess',
                         raw: JSON.stringify(n <= 2
                             ? { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] }
-                            : { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' })
+                            : { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' })
                     };
                 }
             };
@@ -414,7 +414,7 @@ function part4() {
 
             // the reload: a NEW engine takes the same run over
             const back = scripted([
-                { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+                { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
             ]);
             const b = deps(back);
             await new M.MissionEngine(spec(), runK, [], b.d).execute();
@@ -436,7 +436,7 @@ function part4() {
         // a steer that arrives mid-run waits for the NEXT boundary
         const p2 = scripted([
             { ...reflect(), thought: 'go', action: 'delegate', tasks: [{ agent: 'Ada', title: 'x', prompt: 'x' }] },
-            { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', summary: 'ok' }
+            { ...reflect(), thought: 'done', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
         ]);
         const run2 = newRun('r4b');
         const two = deps(p2);
@@ -478,7 +478,7 @@ function part5() {
             /Your last reply was invalid/.test(p.prompts[1]));
 
         // a reply missing the M-16 fields is invalid in the same way
-        const p2 = scripted([{ thought: 'x', action: 'finish', verdict: 'success', summary: 'ok' }]);
+        const p2 = scripted([{ thought: 'x', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }]);
         const two = deps(p2);
         const run2 = newRun('r5b');
         return new M.MissionEngine(spec(), run2, [], two.d).execute().then(() => {
@@ -494,7 +494,7 @@ function part5() {
                 team: [{ agentId: 'a1', agentName: 'Ada' }],
                 limits: { ...LIMITS }, approvalMode: 'auto', createdAt: 1
             };
-            const p3 = scripted([{ thought: 'x', action: 'finish', verdict: 'success', summary: 'ok' }]);
+            const p3 = scripted([{ thought: 'x', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }]);
             const three = deps(p3);
             const run3 = newRun('r5c');
             return new M.MissionEngine(classic, run3, [], three.d).execute().then(() => {
@@ -534,7 +534,7 @@ function part6() {
 
         // one honest finish at the limit is accepted
         const p2 = scripted([
-            { ...reflect(), thought: 'out of rope', action: 'finish', verdict: 'partial', summary: 'as far as it went' }
+            { ...reflect(), thought: 'out of rope', action: 'finish', verdict: 'partial', stopReason: 'no-new-information', summary: 'as far as it went' }
         ]);
         const two = deps(p2);
         const run2 = newRun('r6b');
@@ -550,7 +550,7 @@ function part6() {
 function part7() {
     console.log('\n-- a reload is not a change of mind');
     const p = scripted([
-        { ...reflect(), thought: 'carry on', action: 'finish', verdict: 'success', summary: 'ok' }
+        { ...reflect(), thought: 'carry on', action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'ok' }
     ]);
     const { seen, d } = deps(p);
     const run = newRun('r7');

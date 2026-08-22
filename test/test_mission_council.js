@@ -69,7 +69,7 @@ const say = (over = {}) => JSON.stringify({
     ...reflect(), thought: 't', action: 'message', conversation: 'c1', ...over
 });
 const FINISH = {
-    ...reflect(), thought: 'done', action: 'finish', verdict: 'partial',
+    ...reflect(), thought: 'done', action: 'finish', verdict: 'partial', stopReason: 'no-new-information',
     summary: 'as far as it goes', stopReason: 'sufficient-evidence'
 };
 

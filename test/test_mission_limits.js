@@ -162,7 +162,7 @@ function makeDeps(replies) {
     for (let i = 0; i < 12; i++) {
         replies.push({ raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'w' + i, prompt: 'p' + i }] } });
     }
-    replies.push({ raw: { action: 'finish', verdict: 'success', summary: 'twelve rounds later' } });
+    replies.push({ raw: { action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied', summary: 'twelve rounds later' } });
     const { deps } = makeDeps(replies);
     const r = run();
     const limits = N({ maxRounds: 0, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 });

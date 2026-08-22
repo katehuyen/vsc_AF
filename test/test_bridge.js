@@ -2850,6 +2850,59 @@ const { opencodeStatus, syncToOpencode } =
                 /is not a cheap\s*'?\s*\+?\s*'?run/.test(listBlock.replace(/\s+/g, ' '))
                 && /reportsCost/.test(listBlock));
 
+            // ‼️ X-60 — THE ORDER IS THE ITEM. createMission normalised the
+            // request into a valid spec and then validated its own output, so a
+            // misspelled mode, an unknown autonomy, a duplicate criterion id,
+            // an unresolvable pool and an unknown engine were all gone before
+            // anything looked for them. The raw check must run FIRST or there
+            // is nothing left to catch.
+            {
+                const create = src.slice(src.indexOf('const createMission = '),
+                    src.indexOf('const createMission = ') + 12000);
+                const rawAt = create.indexOf('validateMissionInput(');
+                const normAt = create.indexOf('normalizeObjective(');
+                const goalAt = create.indexOf("String(input.goal");
+                ok('‼️ createMission judges the RAW request', rawAt > 0);
+                ok('…before it normalises anything', rawAt < normAt);
+                ok('…before it reads a single field out of it', rawAt < goalAt);
+                ok('…against this window\'s real fleet and engines',
+                    /agentIds: agents\.map\(a => a\.id\)/.test(create)
+                    && /engines: Object\.keys\(ENGINES\)/.test(create));
+
+                // and the same faults, through a handler shaped like the real one
+                const MM = require(path.join(__dirname, "..", "out", "core", "missions.js"));
+                const startReg = new BridgeRegistry();
+                startReg.register([{
+                    op: 'missions.start',
+                    describe: 'Start a mission. args: goal, mode?, pool?, team?, successCriteria?, autonomy?',
+                    handler: (args) => {
+                        const bad = MM.validateMissionInput(args, {
+                            agentIds: ['a1', 'a2'], engines: ['claude', 'codex']
+                        });
+                        need(!bad.length, 'This mission cannot start — ' + bad.join('; ') + '.');
+                        return { id: 'm1', mode: String(args.mode ?? '') === 'adaptive' ? 'adaptive' : 'classic' };
+                    }
+                }]);
+                const typo = await startReg.dispatch('missions.start', { goal: 'g', mode: 'adptive' });
+                ok('‼️ the bridge refuses a misspelled mode instead of starting a CLASSIC run',
+                    !typo.ok && /unknown mode "adptive"/.test(typo.error));
+                const ghost = await startReg.dispatch('missions.start', { goal: 'g', mode: 'adaptive', pool: [{ agentId: 'ghost' }] });
+                ok('…a pool that resolves to nobody, instead of expanding to the whole fleet',
+                    !ghost.ok && /no agent in this fleet is "ghost"/.test(ghost.error));
+                const dupe = await startReg.dispatch('missions.start', { goal: 'g', mode: 'adaptive', successCriteria: [{ id: 'c1', text: 'a' }, { id: 'c1', text: 'b' }] });
+                ok('…two criteria under one id, instead of renumbering one of them',
+                    !dupe.ok && /given the id "c1"/.test(dupe.error));
+                const eng = await startReg.dispatch('missions.start', { goal: 'g', mode: 'adaptive', pool: [{ agentId: 'a1', engine: 'nope' }] });
+                ok('…an unknown engine, instead of dropping it to the default',
+                    !eng.ok && /unknown engine "nope"/.test(eng.error));
+                const shape = await startReg.dispatch('missions.start', { goal: 'g', mode: 'adaptive', pool: 'a1' });
+                ok('…and a list sent as a string, instead of reading it as empty',
+                    !shape.ok && /"pool" must be a list/.test(shape.error));
+                const fine = await startReg.dispatch('missions.start', { goal: 'g' });
+                ok('‼️ while a classic start that names no mode at all still works',
+                    fine.ok && fine.result.mode === 'classic');
+            }
+
             const misBlock = src.slice(src.indexOf("op: 'missions.start'"), src.indexOf("op: 'missions.status'"));
             ok('missions.start takes an engine for its DELEGATIONS', /engine\? \(which engine the DELEGATIONS/.test(misBlock));
             ok('…per team member as well', /\{agent, role\?, model\?, engine\?, /.test(misBlock));
