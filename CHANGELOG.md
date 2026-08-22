@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.244.0 - X-70: a spent ceiling stops all work, not the one word (2026-08-23)
+
+The budget guard asked `d.action === 'delegate'`. That was the whole vocabulary
+when it was written and has not been since M-18.
+
+Measured before the fix, with the cost budget fully spent: `parallel`, `review`,
+`revise` and a reviewer-d `evaluate` each started a real wave and wrote a real
+`action.created`. `compare`, `run_workflow` and `run_mission` take the identical
+branch and were stopped, in that harness, only by unrelated validation. The
+in-flight guard (X-46b) does catch them, but only AFTER the work has begun and
+up to one guard interval of spending has happened.
+
+The question is now answered by the PRIMITIVE REGISTRY - a primitive whose
+`shape` is `work` orders work - rather than by a list of names somebody has to
+remember to grow. One exemption, and it is not an oversight: an `evaluate` with
+no reviewer orders nothing and is exactly what lets a run close honestly as
+`partial` with real verdicts.
+
+`test/test_mission_guard.js` measures every work primitive against every one of
+the five ceilings the guard names.
+
 ## 3.243.0 — U-65: a live repaint does not take the reader's place (2026-08-23)
 
 The Missions page redraws once a second while a mission runs, and the

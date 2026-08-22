@@ -3215,19 +3215,50 @@ export class MissionEngine {
             parseRetried = false;
             const d = parsed.decision;
 
-            if (guard && d.action === 'delegate') {
+            // ‼️ X-70 — A SPENT CEILING STOPS ALL WORK, NOT THE ONE WORD.
+            //
+            // This asked `d.action === 'delegate'` — the whole vocabulary when it
+            // was written, and not since M-18. Measured on the current build
+            // with the cost budget fully spent: `parallel`, `review`, `revise` and
+            // a reviewer'd `evaluate` each started a real wave and wrote a real
+            // `action.created`; `compare`, `run_workflow` and `run_mission` take the
+            // same branch and were only stopped, in that harness, by unrelated
+            // validation. The in-flight guard (X-46b) does catch them — but it
+            // catches them AFTER the work has started and up to one guard
+            // interval of spending and side effects has happened. Work that
+            // must not run should never begin.
+            //
+            // So the question is answered by the REGISTRY, not by a list of
+            // names somebody has to remember to grow: a primitive whose shape
+            // is `work` orders work. The next primitive is covered on the day it
+            // is declared, which is the only version of this that stays true.
+            //
+            // ‼️ ONE EXEMPTION, AND IT IS NOT AN OVERSIGHT. An `evaluate` with no
+            // reviewer is the lead judging what it ALREADY holds, in the same
+            // round, ordering nothing — and it is exactly what a run needs to
+            // close honestly as `partial` with real verdicts instead of guessing.
+            // Refusing it at a spent ceiling would block the one action that
+            // makes the ending true.
+            const ordersWork = (() => {
+                const prim = primitiveFor(d.action, isAdaptive(spec));
+                if (!prim || prim.shape !== 'work') { return false; }
+                if (d.action === 'evaluate' && !(d as { reviewer?: string }).reviewer) { return false; }
+                return true;
+            })();
+            if (guard && ordersWork) {
                 if (guardNudged) {
                     this.finish('failed',
                         {
                             verdict: 'partial',
-                            summary: 'Stopped at the budget limit; the planner kept delegating.',
+                            summary: `Stopped at the budget limit; the planner kept ordering work (${d.action}).`,
                             stopReason: 'hard-limit'
                         },
                         'budget exhausted');
                     return;
                 }
                 guardNudged = true;
-                roundMsg = `Not allowed: ${guard}. Reply with "finish" or "abort" only.`;
+                roundMsg = `Not allowed: ${guard}. "${d.action}" would start new work, and there is no budget left for it.`
+                    + ' Reply with "finish" or "abort" only.';
                 continue;
             }
 
