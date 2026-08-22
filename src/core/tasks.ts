@@ -946,6 +946,54 @@ export function archivedOutputBody(content: string): string {
     return body;
 }
 
+/**
+ * ‼️ WHAT THE AGENT ACTUALLY SAID — not what its CLI printed. KEYED ON THE
+ * ENGINE, never sniffed out of the content.
+ *
+ * `archivedOutputBody` strips OUR header and footer; what is left is whatever
+ * the engine wrote to stdout, and on two engines that is not prose. A headless
+ * OpenCode turn runs `run --format json`, so its archive is a JSONL event
+ * stream (`step_start`, `text`, `tool_use`, `step_finish`); Antigravity prints
+ * one envelope whose answer is `response`. M-14 found both by handing a
+ * workflow's second step the first one's wall of envelopes.
+ *
+ * ‼️ The same fault was measured again on a REAL M-19 run: a speaking turn's
+ * message text is this body, so the next speaker was going to be shown 4 KB of
+ * OpenCode transport as "what the other agent said" — and the same body is the
+ * material a `review`, `compare` or `revise` delegate is handed. A record that
+ * reads like a discussion and contains an event stream is the M-19 failure
+ * wearing a different coat. So the unwrapping lives HERE, once, rather than
+ * beside each caller: a second copy is how the next surface gets it wrong.
+ *
+ * The engine decides, because a bare `response` field in somebody's own output
+ * contract is their data and not a wrapper for us to unwrap. `undefined` means
+ * "this engine's shape was recognised and carried no prose" — the caller's own
+ * rule about an empty answer is then the one that should fire, which is not the
+ * same thing as showing the reader a transport envelope.
+ */
+export function engineReplyText(body: string, engine?: string): string | undefined {
+    const id = engineOf(engine).id;
+    if (id === 'opencode') {
+        const run = readOpencodeRun(body);
+        // Nothing parsed at ALL is not an empty answer, it is not this shape —
+        // a spawn error or a plugin banner can be the only thing in the archive
+        // and the reader must see it rather than be told nothing was said.
+        if (!run.steps.length && !run.text) { return body; }
+        return run.text.trim() || undefined;
+    }
+    if (id === 'agy') {
+        const env = extractJson(body) as { response?: unknown } | undefined;
+        if (env && typeof env.response === 'string' && env.response.trim()) { return env.response.trim(); }
+        return body;
+    }
+    return body;
+}
+
+/** One archive, read as what the agent said. Empty when it said nothing. */
+export function archivedReplyText(content: string, engine?: string): string {
+    return engineReplyText(archivedOutputBody(content), engine) ?? '';
+}
+
 const MAX_TASKS = 300;
 
 interface StoreShape {
@@ -3963,34 +4011,14 @@ export class TaskManager implements vscode.Disposable {
             const body = archivedOutputBody(fs.readFileSync(task.outputFile, 'utf8')).trim();
             handoff.text = body;
             // ‼️ M-14 — THE NEXT STEP IS HANDED THE ANSWER, NOT THE TRANSCRIPT.
-            // On Claude the archive body IS the answer, so `{prev_text}` could be
-            // the body itself. OpenCode's archive is deliberately the engine's own
-            // JSONL event stream (OPENCODE_RUN_OUTPUT_NOTE), so the same line
-            // handed step 2 a wall of `step_start` / `tool_use` / `step_finish`
-            // objects with the answer buried in one of them — measured on a real
-            // two-step chain. `readOpencodeRun` is the reader that already exists
-            // for this and it is the only one; the archive keeps the raw document
-            // either way, which is the point of keeping it.
-            if (engineOf(task.engine).id === 'opencode') {
-                const answer = readOpencodeRun(body).text.trim();
-                if (answer) { handoff.text = answer; }
-            }
-            // ‼️ M-14 — AND THE SAME FAULT ON ANTIGRAVITY, found by reading every
-            // archive on this machine rather than by running it again. `agy
-            // --output-format json` prints ONE envelope
-            // (`{conversation_id, status, response, …}`, see core/agy.ts) and the
-            // answer is `response`. The unwrap below knows only `result`, which is
-            // Claude's `--output-format json` word, so an Antigravity step handed
-            // the next one the whole envelope — id, status, timings and all.
-            // Keyed on the engine, like the OpenCode branch: a bare `response`
-            // field in somebody's own JSON output contract is their data, not a
-            // wrapper for us to unwrap.
-            if (engineOf(task.engine).id === 'agy') {
-                const env = extractJson(body) as { response?: unknown } | undefined;
-                if (env && typeof env.response === 'string' && env.response.trim()) {
-                    handoff.text = env.response.trim();
-                }
-            }
+            // On Claude the archive body IS the answer; OpenCode's is its own
+            // JSONL event stream (OPENCODE_RUN_OUTPUT_NOTE) and Antigravity's is
+            // one envelope. `engineReplyText` is the one place that knows which
+            // is which — it used to be two branches here, and M-19's speaking
+            // turns then read the same archives raw, so the rule now lives where
+            // every reader of an archive can reach it.
+            const said = engineReplyText(body, task.engine);
+            if (said) { handoff.text = said; }
             const envelope = extractJson(handoff.text);
             if (envelope && typeof envelope === 'object') {
                 const env = envelope as { result?: unknown };

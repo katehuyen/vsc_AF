@@ -245,7 +245,7 @@ import {
     needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
-    archivedOutputBody, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
+    archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
     FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     InteractiveClose, InteractiveTarget,
@@ -264,7 +264,8 @@ import {
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
-    conversationDigest, conversationMessages, messageIntentMenu, openThreads,
+    chairCall, conversationDigest, conversationMessages, COUNCIL_EXITS, councilExitMenu, councilTurns,
+    messageIntentMenu, openThreads, tallyVotes,
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
@@ -3858,6 +3859,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
                             // settled ONCE — check() runs on every task event
                             if (step.status !== t.status) {
+                                step.held = undefined;
                                 step.status = t.status;
                                 // ‼️ M-18 — AND THE TWO WAYS A TASK FAILS ARE
                                 // DIFFERENT FACTS. A run refused before a
@@ -3877,6 +3879,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 });
                             }
                         } else {
+                            // ‼️ A DELEGATION A CEILING IS HOLDING SAYS SO, in
+                            // the ceiling's own sentence. This branch used to be
+                            // one comment: a task parked by the fleet's daily
+                            // budget left its step reading "running" on every
+                            // surface, the mission burned its wall clock waiting
+                            // for a process that was never launched, and then
+                            // stopped with "hard-limit" — three true statements
+                            // and not one of them the reason. Measured on a real
+                            // objective. The park's own words travel because a
+                            // ceiling is a thing the user can lift, and they can
+                            // only lift the one they are told about.
+                            const held = t.status === 'queued'
+                                ? (t.deferredReason || undefined) : undefined;
+                            if (step.held !== held) { step.held = held; missionChanged(); }
                             allDone = false; // queued (deferred) or running — keep waiting
                         }
                     }
@@ -4004,8 +4020,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { name: m.agentName, role: m.role, hint };
     });
 
-    const missionReadBody = (file: string): string => {
-        try { return archivedOutputBody(fs.readFileSync(file, 'utf8')); } catch { return ''; }
+    // ‼️ The delegate's ENGINE decides how its archive is read — an OpenCode run
+    // writes its own JSONL event stream and an Antigravity one an envelope, so
+    // a mission that read the body raw put 4 KB of transport into a message and
+    // handed it to the next speaker as "what the other agent said" (measured).
+    // The task is looked up rather than guessed at, and an archive whose task
+    // has since rolled out of the store is read as itself.
+    const missionReadBody = (file: string, taskId?: string): string => {
+        const engine = taskId ? taskManager.tasks.find(t => t.id === taskId)?.engine : undefined;
+        try { return archivedReplyText(fs.readFileSync(file, 'utf8'), engine); } catch { return ''; }
     };
 
     const missionDepsFor = (spec: MissionSpec, run: MissionRun): MissionEngineDeps => ({
@@ -5554,6 +5577,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             } : {}),
                             // what it RAN with and which layer decided each part
                             ...(s.runNote ? { ran: s.runNote } : {}),
+                            // ‼️ A CEILING IS NOT PROGRESS. A delegation a
+                            // budget or a concurrency limit is holding sits at
+                            // "running" on every surface while nothing runs, and
+                            // the reason lives only on the task row — measured
+                            // on a real objective that spent its whole wall
+                            // clock parked and then reported "hard-limit".
+                            ...(s.held ? { held: s.held } : {}),
                             // ‼️ M-19 — a speaking turn says which message it
                             // became, so a caller reading a round can follow it
                             // into the conversation instead of seeing a task
@@ -5579,7 +5609,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             messages: dg.total, open: dg.open,
                             closed: c.closedAt ? (c.closeReason || 'closed') : null
                         };
-                    })
+                    }),
+                    // ‼️ M-20 — and which of those conversations is a CHAIRED
+                    // debate with a cap. One line each: the whole record is
+                    // missions.council, and a status call that returned every
+                    // vote would be answering a question nobody asked.
+                    ...((r.councils ?? []).length ? {
+                        councils: (r.councils ?? []).map(k => ({
+                            id: k.id, question: k.question, conversation: k.conversationId,
+                            chair: k.chair, members: k.members,
+                            turns: councilTurns(r.messages ?? [], k.conversationId),
+                            maxTurns: k.maxTurns,
+                            votes: (k.votes ?? []).length,
+                            exit: k.exit ?? null
+                        }))
+                    } : {})
                 };
             }
         },
@@ -5621,6 +5665,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         orderedAt: m.orderedAt, settledAt: m.settledAt ?? null
                     }))
                 }));
+            }
+        },
+        {
+            op: 'missions.council',
+            describe: '‼️ M-20 — ONE CHAIRED DEBATE inside a run: the question it exists to settle, its '
+                + 'chair, its members, how many of its turns are spent, what is still unanswered, the '
+                + 'votes as they stand and — if it has ended — which of its seven stated ways out it took ('
+                + councilExitMenu()
+                + '). A council is a MANDATE over an ordinary conversation, not a record of its own: '
+                + '`conversation` names the transcript, and `missions.conversation` reads it in full. '
+                + '‼️ `votes` is what the members SAID, never a verdict on a success criterion — a vote '
+                + 'whose choice could not be read from the voter\'s own words is `unclear` rather than '
+                + 'resolved into the likeliest option, and a TIE is reported as a tie. Only '
+                + '`missions.status` → `criteria` judges the objective. Omit `council` for every one of '
+                + 'the run. args: id (run id), council? (k1, k2…)',
+            handler: (args) => {
+                const run = missionStore.run(argStr(args, 'id'));
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                const wanted = optStr(args, 'council');
+                const list = (r.councils ?? []).filter(k => !wanted || k.id === wanted);
+                need(list.length, wanted
+                    ? `No council "${wanted}" in this run.`
+                    : 'This run has held no councils.');
+                const nameOf = (id: string) => (id === 'lead'
+                    ? (r.specId && missionStore.spec(r.specId)?.leadAgentName) || 'the lead'
+                    : agents.find(a => a.id === id)?.name ?? id);
+                return list.map(k => {
+                    const t = tallyVotes(k);
+                    const call = chairCall(k, r.messages ?? []);
+                    return {
+                        id: k.id, question: k.question,
+                        conversation: k.conversationId,
+                        chair: k.chair, chairName: nameOf(k.chair),
+                        members: k.members, memberNames: k.members.map(nameOf),
+                        turns: councilTurns(r.messages ?? [], k.conversationId),
+                        maxTurns: k.maxTurns,
+                        open: openThreads(r.messages ?? [], k.conversationId).map(m => m.id),
+                        chairLastSaid: call?.id ?? null,
+                        options: k.options ?? null,
+                        votes: (k.votes ?? []).map(v => ({
+                            message: v.messageId, member: v.member, memberName: nameOf(v.member),
+                            choice: v.choice ?? null, unclear: v.unclear === true
+                        })),
+                        tally: k.options?.length
+                            ? { counts: t.counts, unclear: t.unclear, leader: t.leader ?? null, tie: t.tie }
+                            : null,
+                        verdictRefs: k.verdictRefs ?? null,
+                        openedAt: k.openedAt, closedAt: k.closedAt ?? null,
+                        exit: k.exit ?? null,
+                        exitMeans: k.exit ? COUNCIL_EXITS[k.exit] : null
+                    };
+                });
             }
         },
         {

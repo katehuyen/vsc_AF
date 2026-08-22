@@ -28,7 +28,7 @@ export type TaskIntent = 'review' | 'compare' | 'revise';
 
 export type PrimitiveName =
     | 'delegate' | 'parallel' | TaskIntent
-    | 'evaluate' | 'run_workflow' | 'run_mission' | 'message'
+    | 'evaluate' | 'run_workflow' | 'run_mission' | 'message' | 'council'
     | 'replan' | 'finish' | 'ask_user' | 'abort';
 
 /**
@@ -179,6 +179,32 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             + 'you do not manage that, and the record says which of the two actually happened.',
             'Close a conversation with "close" when it is finished, saying why in one line. A conversation left '
             + 'open is one you may still speak in; one that is closed is a finished record.'
+        ]
+    },
+    {
+        name: 'council', scope: 'adaptive', shape: 'work', kind: 'conversation',
+        describe: 'open a CHAIRED debate on one question — a conversation with a chair, a cap and a named way out',
+        fields: [
+            '"question": "for council: the ONE question this council settles — narrower than the objective"',
+            '"members": ["for council: the pool agents who debate it — at least two"]',
+            '"chair": "for council: the pool agent that directs it; omit it and YOU chair"',
+            '"from": ["for council: who speaks the opening turn — several to have each open '
+            + 'without seeing the others"]',
+            '"maxTurns": "for council: the ceiling on turns in it (default 8)"',
+            '"options": ["for council: what a vote in it would be between; a voter has to name one of these"]'
+        ],
+        rules: [
+            '"council" is "message" with a chair, a cap and a stated way out — nothing else. It runs on an '
+            + 'ordinary conversation and every turn in it is an ordinary speaking turn, so you go on using '
+            + '"message" to run it. There is no debate protocol: whose turn it is, and about what, is yours '
+            + 'to decide each round from what has actually been said.',
+            '‼️ If you name a "chair" other than yourself, you may not order a turn it did not call for: a '
+            + 'turn by anybody else has to name the chair\'s latest message in "refs", which is what makes '
+            + 'the speaker read what the chair really wrote instead of your account of it.',
+            'A council closes with "close" and one of its OWN reasons, never a sentence of your own — and '
+            + 'reaching the turn cap is one of them ("hard limit"), not a failure.',
+            '‼️ A council decides ITS question. A vote in it is what the members think, not a verdict on a '
+            + 'success criterion — only "evaluate" judges those, and a majority never stands in for one.'
         ]
     },
     {

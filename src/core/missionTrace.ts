@@ -48,6 +48,11 @@ export type MissionTraceType =
      *  is DELIVERED, never when it is ordered: a turn that failed or said
      *  nothing leaves no message, which is the whole point of the item. */
     | 'message.sent'
+    /** ‼️ M-20 — a CHAIRED debate opened over a conversation, and later ended
+     *  for one of its seven stated reasons. Two events rather than one node
+     *  rewritten, because "it is still going" and "it ended, and why" are what a
+     *  reader of the journal is actually asking at two different moments. */
+    | 'council.opened' | 'council.closed'
     | 'human.asked' | 'human.answered' | 'human.guided'
     | 'run.finished';
 
@@ -397,6 +402,13 @@ export interface TraceProjection {
      */
     conversations: number;
     messages: number;
+    /**
+     * ‼️ M-20 — councils opened, and how many of those have ended. The pair is
+     * the useful one: an open council is a debate still costing turns, and a
+     * count of openings alone cannot tell that from a finished one.
+     */
+    councils: number;
+    councilsClosed: number;
     /** an ask nobody answered — this is what becomes `paused + needs-you` */
     pending?: PendingHuman;
     /**
@@ -417,7 +429,8 @@ export interface TraceProjection {
 export function projectTrace(events: readonly MissionTraceEvent[]): TraceProjection {
     const p: TraceProjection = {
         lastSeq: 0, strategies: [], graph: [], guidance: [],
-        actions: [], evaluations: [], conversations: 0, messages: 0, answers: {}
+        actions: [], evaluations: [], conversations: 0, messages: 0,
+        councils: 0, councilsClosed: 0, answers: {}
     };
     const byId = new Map<string, TraceAction>();
     const evalById = new Map<string, TraceEvaluation>();
@@ -566,6 +579,12 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 break;
             case 'message.sent':
                 p.messages++;
+                break;
+            case 'council.opened':
+                p.councils++;
+                break;
+            case 'council.closed':
+                p.councilsClosed++;
                 break;
             case 'human.asked':
                 if (ev.askId) {

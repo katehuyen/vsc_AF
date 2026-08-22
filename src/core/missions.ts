@@ -21,6 +21,10 @@ import {
     MessageIntent, messageIntentMenu, MissionConversation, MissionMessage, newConversationId,
     newMessageId, refuseMessage
 } from './missionConversation';
+import {
+    councilBrief, councilDigest, councilExit, councilOf, MissionCouncil, newCouncilId,
+    readVoteChoice, refuseCouncilTurn
+} from './missionCouncil';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -68,6 +72,13 @@ export type {
     ConversationDigest, LaneCarry, MessageIntent, MessageIntentKind, MessageRequest, MessageState,
     MissionConversation, MissionMessage
 } from './missionConversation';
+
+export {
+    chairCall, COUNCIL_EXIT_NAMES, COUNCIL_EXITS, councilBrief, councilDigest, councilExit,
+    councilExitMenu, councilOf, councilTurns, newCouncilId, readVoteChoice, refuseCouncilTurn,
+    tallyVotes
+} from './missionCouncil';
+export type { CouncilExit, CouncilTally, CouncilVote, MissionCouncil } from './missionCouncil';
 
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, describeDelegateRun, isAdaptive, missionModeOf,
@@ -328,6 +339,18 @@ export interface MissionStep {
      * thing that would want to continue a lane.
      */
     runSessionId?: string;
+    /**
+     * ‼️ THE CEILING THAT IS HOLDING THIS DELEGATION, in its own words — a
+     * budget, a concurrency limit, a retry's wait. Set while the task is parked
+     * and cleared the moment it launches or settles.
+     *
+     * A parked delegation is not slow work, it is no work: the step read
+     * "running" everywhere while nothing had been launched, the objective spent
+     * its wall clock waiting and then stopped with "hard-limit". Every sentence
+     * true, none of them the reason. A ceiling is something the user can lift,
+     * and they can only lift the one they were told about.
+     */
+    held?: string;
     /** ‼️ M-18 — the child objective this step asked for, and the run it became */
     child?: ChildObjectiveReq;
     missionRunId?: string;
@@ -377,7 +400,7 @@ export interface MissionStep {
  */
 export type MissionAction =
     'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate'
-    | 'parallel' | 'run_workflow' | 'run_mission' | 'message' | TaskIntent;
+    | 'parallel' | 'run_workflow' | 'run_mission' | 'message' | 'council' | TaskIntent;
 
 export interface MissionRound {
     n: number;
@@ -543,6 +566,13 @@ export interface MissionRun {
      */
     conversations?: MissionConversation[];
     messages?: MissionMessage[];
+    /**
+     * ‼️ M-20 — the CHAIRED debates, each one a mandate over a conversation
+     * above rather than a record of its own. A council holds what the record
+     * cannot state for itself: the question, the chair, the cap and the stated
+     * way out. Absent on every run that never called one, which is most.
+     */
+    councils?: MissionCouncil[];
 }
 
 export interface MissionGuidance {
@@ -778,6 +808,24 @@ type PlannerDecisionCore =
         title?: string;
         /** this turn ends the conversation, and this is the stated reason */
         close?: string;
+    }
+    /**
+     * ‼️ M-20 — A COUNCIL IS A CONVERSATION WITH A CHAIR AND A MANDATE. It opens
+     * one and orders its opening turns in the SAME decision, which is why it is
+     * composite rather than new: everything after this is ordinary `message`.
+     */
+    | {
+        action: 'council'; thought: string;
+        question: string;
+        members: string[];
+        /** agent id, or `lead` — the objective's own lead chairs it by default */
+        chair: string;
+        from: string[];
+        intent: MessageIntent;
+        maxTurns: number;
+        options?: string[];
+        ask?: string;
+        title?: string;
     }
     | {
         action: 'evaluate'; thought: string; targets: string[];
@@ -1087,6 +1135,107 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
             ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
             ...(typeof o.close === 'string' && o.close.trim() ? { close: o.close.trim().slice(0, 200) } : {})
+        });
+    }
+    // ---- open a chaired debate on one question (M-20) ----
+    if (action === 'council') {
+        const allowed = allowedAgents(spec);
+        const byName = (raw: string) =>
+            allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
+        const list = (v: unknown) => (Array.isArray(v)
+            ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
+            : []);
+        const question = String(o.question ?? '').trim().slice(0, 500);
+        if (!question) {
+            return {
+                ok: false,
+                error: '"council" needs a "question" — the ONE thing it settles, in a line. A council with no '
+                    + 'question is a conversation, and "message" is the primitive for that.'
+            };
+        }
+        const memberNames = list(o.members);
+        const unknownMembers = memberNames.filter(n => !byName(n));
+        if (unknownMembers.length) {
+            return {
+                ok: false,
+                error: `"members" names ${unknownMembers.map(n => `"${n}"`).join(', ')}, `
+                    + `who ${unknownMembers.length > 1 ? 'are' : 'is'} not in the pool `
+                    + `(${allowed.map(m => m.agentName).join(', ')}).`
+            };
+        }
+        const members = [...new Set(memberNames.map(n => byName(n)!.agentId))];
+        if (members.length < 2) {
+            return {
+                ok: false,
+                error: 'a council needs at least two "members" from the pool — one agent debating nobody is '
+                    + 'a delegation, and "delegate" is the primitive for that.'
+            };
+        }
+        // ‼️ THE CHAIR DEFAULTS TO YOU, and saying so is not a formality: naming
+        // somebody else binds every later turn to what that agent actually
+        // wrote, and a lead that fell into a chair by accident would find its
+        // own turns refused for not citing a message nobody has sent.
+        const chairRaw = String(o.chair ?? '').trim();
+        const chair = !chairRaw || chairRaw.toLowerCase() === 'lead' || chairRaw === spec.leadAgentName
+            ? 'lead' : byName(chairRaw)?.agentId;
+        if (!chair) {
+            return {
+                ok: false,
+                error: `"chair" is "${chairRaw}", who is not in the pool `
+                    + `(${allowed.map(m => m.agentName).join(', ')}). Omit "chair" to chair it yourself.`
+            };
+        }
+        if (chair !== 'lead' && !members.includes(chair)) {
+            return {
+                ok: false,
+                error: 'the chair has to be one of the "members" — it speaks in the council, and a chair '
+                    + 'outside the cast could never be answered.'
+            };
+        }
+        const asked = list(o.from);
+        const speakers = asked.map(byName);
+        if (!asked.length || speakers.some(s => !s)) {
+            return {
+                ok: false,
+                error: '"council" needs a "from" — who speaks its opening turn, or several of them to have '
+                    + `each open without seeing the others. The members are: ${memberNames.join(', ')}`
+            };
+        }
+        const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
+        if (speakerIds.length !== speakers.length) {
+            return { ok: false, error: '"from" names the same agent twice — one agent speaks once per turn.' };
+        }
+        const outside = speakerIds.filter(id => !members.includes(id));
+        if (outside.length) {
+            return {
+                ok: false,
+                error: `"from" names ${outside.map(id => `"${allowed.find(m => m.agentId === id)?.agentName ?? id}"`).join(', ')}, `
+                    + 'who did not get put in "members". A council\'s cast is fixed when it opens.'
+            };
+        }
+        // A chaired council opens with the CHAIR, because everything after the
+        // opening has to cite what the chair said, and there would be nothing.
+        if (chair !== 'lead' && !speakerIds.includes(chair)) {
+            return {
+                ok: false,
+                error: 'a chaired council opens with its chair speaking — every later turn has to name the '
+                    + 'chair\'s message in "refs", and there is none yet. Put the chair in "from".'
+            };
+        }
+        const intent = String(o.intent ?? 'proposal').trim();
+        if (!intentKind(intent)) {
+            return { ok: false, error: `"council" opens with an "intent" — one of: ${messageIntentMenu()}` };
+        }
+        const wanted = Number(o.maxTurns);
+        const maxTurns = Number.isFinite(wanted) && wanted > 0
+            ? Math.min(40, Math.max(2, Math.floor(wanted))) : 8;
+        const options = list(o.options).slice(0, 6).map(s => s.slice(0, 80));
+        return done({
+            action: 'council', thought, question, members, chair,
+            from: speakerIds, intent: intent as MessageIntent, maxTurns,
+            ...(options.length ? { options } : {}),
+            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {})
         });
     }
     // ---- typed task intents: review | compare | revise (M-18) ----
@@ -1603,7 +1752,7 @@ export function ledgerLine(round: MissionRound): string {
     // was in. A lead re-seeded from the ledger after a reload has to be able to
     // tell "a3 challenged m2 in c1" from a delegation, or it will order the
     // turn again — and the second copy would be a message nobody answered.
-    if (round.action === 'message') {
+    if (round.action === 'message' || round.action === 'council') {
         const conv = round.steps[0]?.message?.conversationId ?? '?';
         const turns = round.steps.map(s => {
             const link = s.message;
@@ -1612,7 +1761,11 @@ export function ledgerLine(round: MissionRound): string {
         }).join(' · ');
         // ‼️ Several turns on one line means they were ordered TOGETHER, which
         // is the only way to read "these two did not see each other".
-        return `R${round.n} message ${conv}${round.steps.length > 1 ? ' independent' : ''} — ${turns}`
+        // ‼️ M-20 — and a round that OPENED a council says so, because a lead
+        // re-seeded from the ledger has to know the conversation it is looking
+        // at is chaired and capped. The turns read identically either way,
+        // which is the point: a council adds no way of speaking.
+        return `R${round.n} ${round.action} ${conv}${round.steps.length > 1 ? ' independent' : ''} — ${turns}`
             + (round.rejectedReason ? ` [${round.rejectedReason}]` : '');
     }
     if (round.action === 'ask_user') {
@@ -1796,8 +1949,17 @@ export interface MissionEngineDeps {
     /** Start the wave's steps as tasks and resolve when ALL are settled —
      *  fills each step's taskId/status/costUSD/outputFile. */
     delegateWave(run: MissionRun, steps: MissionStep[]): Promise<void>;
-    /** Archived output body for excerpts (fail-soft ''). */
-    readOutputBody(file: string): string;
+    /**
+     * ‼️ WHAT THE DELEGATE SAID, from its archive (fail-soft '').
+     *
+     * The task id travels with the file because the answer is ENGINE-SHAPED: an
+     * OpenCode run archives its own JSONL event stream and an Antigravity one
+     * archives an envelope, so a reader given only a path hands the next
+     * speaker a transport document and calls it what somebody said. Measured on
+     * a real run — `engineReplyText` in core/tasks.ts is the one place that
+     * knows which shape belongs to which engine.
+     */
+    readOutputBody(file: string, taskId?: string): string;
     /** each-round gate; resolve false = rejected. */
     requestApproval(run: MissionRun, round: MissionRound): Promise<boolean>;
     /** ask_user; resolves with the answer ('' / undefined = skipped). */
@@ -2175,7 +2337,7 @@ export class MissionEngine {
         run: MissionRun, spec: MissionSpec,
         d: Extract<PlannerDecision, { action: 'message' }>,
         now: number
-    ): { refusal?: string; tasks?: PlannerTaskReq[] } {
+    ): { refusal?: string; tasks?: PlannerTaskReq[]; conversationId?: string } {
         const roster = allowedAgents(spec);
         const nameOf = (id: string) =>
             roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'the lead' : id);
@@ -2209,6 +2371,22 @@ export class MissionEngine {
                 conv, run.messages,
                 roster.map(m => ({ id: m.agentId, name: m.agentName })));
             if (refusal) { return { refusal }; }
+        }
+
+        // ‼️ M-20 — AND WHAT THE DEBATE REFUSES, on top of what the record does.
+        // `refuseMessage` answers "is this a legal turn in this conversation";
+        // this answers "is this a legal turn in this COUNCIL" — the cap, the
+        // membership, the chair's call and the closed set of ways out. Two
+        // questions, kept apart, because a council is optional and every rule
+        // below would be wrong for an ordinary conversation.
+        const council = conv ? councilOf(run.councils, conv.id) : undefined;
+        if (council) {
+            for (const from of d.from) {
+                const refusal = refuseCouncilTurn(
+                    council, { from, refs: d.refs, ...(d.close !== undefined ? { close: d.close } : {}) },
+                    run.messages, roster.map(m => ({ id: m.agentId, name: m.agentName })));
+                if (refusal) { return { refusal }; }
+            }
         }
 
         const all = conversationMessages(run.messages, conv!.id);
@@ -2269,7 +2447,17 @@ export class MissionEngine {
                     conversation: conv!, intent: d.intent, speakerName: nameOf(from),
                     referenced, context, ...(d.ask ? { ask: d.ask } : {}),
                     to: d.to, goal: spec.goal, carried, nameOf,
-                    independent: d.from.length > 1
+                    independent: d.from.length > 1,
+                    // ‼️ M-20 — a council speaker is told it is in one, what the
+                    // council is deciding and who chairs it. A vote turn is also
+                    // given the options, because a choice it cannot name in the
+                    // council's own words is recorded as unclear rather than
+                    // resolved into the likeliest one.
+                    ...(council ? {
+                        mandate: councilBrief(council, {
+                            nameOf, voting: d.intent === 'vote'
+                        })
+                    } : {})
                 }),
                 // ‼️ SPEAKING DOES NOT WRITE. A turn produces a message, and
                 // that is why participants can speak at the same time at all —
@@ -2285,7 +2473,71 @@ export class MissionEngine {
                 }
             });
         }
-        return { tasks };
+        return { tasks, conversationId: conv!.id };
+    }
+
+    /**
+     * ‼️ M-20 — OPENING A COUNCIL IS OPENING A CONVERSATION PLUS A MANDATE.
+     *
+     * There is no council machinery below this line: the opening turns are
+     * built by `prepareMessage`, so the participant lock, the ref check, the
+     * lane honesty, the repeat guard and the independent-round rule are the
+     * SAME ones — a debate that had its own copies of those would be the second
+     * engine this item exists to refuse.
+     *
+     * The council is recorded only after the turns survive every refusal, for
+     * the reason a conversation is: a rejected opening must not leave a chaired
+     * debate on the run that nobody ever spoke in.
+     */
+    private prepareCouncil(
+        run: MissionRun, spec: MissionSpec,
+        d: Extract<PlannerDecision, { action: 'council' }>,
+        now: number
+    ): { refusal?: string; tasks?: PlannerTaskReq[] } {
+        run.councils ??= [];
+        run.conversations ??= [];
+        // ‼️ RECORDED BEFORE THE TURNS ARE BUILT, AND TAKEN BACK IF THEY ARE
+        // REFUSED. The opening speakers have to be TOLD they are in a council —
+        // the question, the chair, the vote options — and the only way they can
+        // be is for the council to exist while their prompts are built. So it is
+        // pushed first, against the conversation id `prepareMessage` is about to
+        // mint from the same list, and popped again if anything below refuses:
+        // a rejected opening must not leave a chaired debate on the run that
+        // nobody ever spoke in.
+        const council: MissionCouncil = {
+            id: newCouncilId(run.councils),
+            ...(this.lastDecisionId ? { sourceActionId: this.lastDecisionId } : {}),
+            conversationId: newConversationId(run.conversations),
+            question: d.question,
+            chair: d.chair,
+            members: [...d.members],
+            ...(d.options?.length ? { options: [...d.options] } : {}),
+            maxTurns: d.maxTurns,
+            openedAt: now
+        };
+        run.councils.push(council);
+        const opened = this.prepareMessage(run, spec, {
+            action: 'message', thought: d.thought,
+            objective: d.question,
+            participants: d.members,
+            from: d.from, to: [], intent: d.intent, refs: [],
+            ...(d.ask ? { ask: d.ask } : {}),
+            ...(d.title ? { title: d.title } : {})
+        }, now);
+        if (opened.refusal || !opened.tasks || !opened.conversationId) {
+            run.councils.pop();
+            return opened;
+        }
+        const roster = allowedAgents(spec);
+        const nameOf = (id: string) =>
+            roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'the lead' : id);
+        this.deps.trace?.('council.opened', {
+            actionId: council.id, refId: council.conversationId,
+            text: council.question,
+            agentName: nameOf(council.chair),
+            to: council.members.map(nameOf).join(', ')
+        });
+        return opened;
     }
 
     /**
@@ -2321,18 +2573,56 @@ export class MissionEngine {
             // while" is not a closing; a reader three months later needs the
             // sentence, and `refuseMessage` needs a closed conversation to be
             // closed for something.
+            const council = councilOf(run.councils, link.conversationId);
             if (link.close) {
                 const conv = (run.conversations ?? []).find(c => c.id === link.conversationId);
                 if (conv && !conv.closedAt) {
                     conv.closedAt = now;
                     conv.closeReason = link.close;
                 }
+                // ‼️ M-20 — AND THE COUNCIL ENDS FOR ONE OF ITS OWN SEVEN
+                // REASONS. The parse already refused anything else, so this is
+                // a read rather than a guess; a council whose exit could be a
+                // sentence of the lead's own would let "the discussion finished"
+                // stand for both "they agreed" and "we ran out of turns".
+                if (council && !council.closedAt) {
+                    council.closedAt = now;
+                    const exit = councilExit(link.close);
+                    if (exit) { council.exit = exit; }
+                    this.deps.trace?.('council.closed', {
+                        actionId: council.id, refId: council.conversationId,
+                        text: `${council.exit ?? link.close} — ${council.question}`
+                    });
+                }
             }
-            const body = step.outputFile ? this.deps.readOutputBody(step.outputFile) : '';
+            const body = step.outputFile ? this.deps.readOutputBody(step.outputFile, step.taskId) : '';
             const text = (body || step.resultText || '').trim();
             if (step.status === 'done' && text) {
                 msg.excerpt = outputExcerpt(text, 1200, 600);
                 msg.state = 'delivered';
+                // ‼️ M-20 — A VOTE IS A MESSAGE, AND ITS CHOICE IS THE VOTER'S
+                // OWN WORD FOR IT. Read out of the text that really came back,
+                // against the options the council named; a turn that named none
+                // is recorded as unclear rather than resolved into the likeliest
+                // one, because a tally built on a guess is the M-19 failure with
+                // numbers on it. And a SYNTHESIS carries the ids it rests on,
+                // which the intent already made it name — so "this is where the
+                // council got to" always points at real turns.
+                if (council) {
+                    if (msg.intent === 'vote' && council.options?.length) {
+                        council.votes ??= [];
+                        if (!council.votes.some(v => v.messageId === msg.id)) {
+                            const choice = readVoteChoice(text, council.options);
+                            council.votes.push({
+                                messageId: msg.id, member: msg.from,
+                                ...(choice ? { choice } : { unclear: true })
+                            });
+                        }
+                    }
+                    if (msg.intent === 'synthesis' && msg.refs.length) {
+                        council.verdictRefs = [...msg.refs];
+                    }
+                }
                 this.deps.trace?.('message.sent', {
                     actionId: step.id, kind: 'conversation', refId: msg.id,
                     agentId: msg.from, agentName: msg.fromName,
@@ -2376,7 +2666,7 @@ export class MissionEngine {
                     // ‼️ M-18 — a unit whose result IS a sentence (a child
                     // objective's verdict) says so directly; everything else is
                     // read out of the archive it wrote, as it always was.
-                    ?? (step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile)) : ''))
+                    ?? (step.outputFile ? outputExcerpt(this.deps.readOutputBody(step.outputFile, step.taskId)) : ''))
         }));
     }
 
@@ -2609,7 +2899,7 @@ export class MissionEngine {
                 if (reviewStep.status !== 'done') {
                     parsedEval = unreadableEvaluation(criteria, `the review ${reviewStep.status}`);
                 } else {
-                    const body = reviewStep.outputFile ? deps.readOutputBody(reviewStep.outputFile) : '';
+                    const body = reviewStep.outputFile ? deps.readOutputBody(reviewStep.outputFile, reviewStep.taskId) : '';
                     const p = parseEvaluation(body, criteria);
                     parsedEval = p.ok ? p.value : unreadableEvaluation(criteria, p.error);
                 }
@@ -2761,10 +3051,12 @@ export class MissionEngine {
                     kind: 'workflow', workflowId: wf.id,
                     ...(d.criteria?.length ? { criteria: d.criteria } : {})
                 }];
-            } else if (d.action === 'message') {
-                const spoken = this.prepareMessage(run, spec, d, deps.now());
+            } else if (d.action === 'message' || d.action === 'council') {
+                const spoken = d.action === 'council'
+                    ? this.prepareCouncil(run, spec, d, deps.now())
+                    : this.prepareMessage(run, spec, d, deps.now());
                 if (spoken.refusal) {
-                    run.ledger.push(`R? message rejected — ${spoken.refusal.split('\n')[0]}`);
+                    run.ledger.push(`R? ${d.action} rejected — ${spoken.refusal.split('\n')[0]}`);
                     roundMsg = `${spoken.refusal}\nReply with ONLY the JSON decision object.`;
                     continue;
                 }
@@ -2948,6 +3240,17 @@ export class MissionEngine {
                     .filter((c): c is MissionConversation => !!c)
                     .map(c => conversationDigest(c, run.messages ?? [], { nameOf }).text);
                 if (digests.length) { roundMsg += `\n\n${digests.join('\n\n')}`; }
+                // ‼️ M-20 — and the MANDATE over that record, when there is one:
+                // how many turns are left, whether the chair has spoken, what
+                // the votes stand at and the seven ways out. Bounded for the
+                // same reason the conversation digest is — the planner session
+                // is resumed each round, so anything here is paid for once per
+                // round for the rest of the run.
+                const councils = spokenIn
+                    .map(cid => councilOf(run.councils, cid))
+                    .filter((k): k is MissionCouncil => !!k)
+                    .map(k => councilDigest(k, run.messages ?? [], { nameOf }));
+                if (councils.length) { roundMsg += `\n\n${councils.join('\n\n')}`; }
             }
         }
     }

@@ -227,5 +227,70 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
         && /failed before it started — \$\{refused\}/.test(tasksTs));
 }
 
+// ---------- an archive is read as what the AGENT said, not what the CLI printed ----------
+//
+// ‼️ Found on a real M-19 run, not in a unit test: a speaking turn's message
+// text is the delegate's archived body, and on this engine that body is the
+// event stream. The next speaker was going to be shown `step_start` /
+// `tool_use` / `step_finish` objects as "what the other agent said" — a record
+// that reads like a discussion and contains a transport document. The same body
+// is the material a `review`, `compare` or `revise` delegate is handed, so the
+// unwrapping had to stop being a branch beside one caller.
+{
+    const Module = require('module');
+    const origLoad = Module._load;
+    Module._load = function (request) {
+        if (request === 'vscode') {
+            return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) } };
+        }
+        return origLoad.apply(this, arguments);
+    };
+    const T = require(path.join(ROOT, 'out', 'core', 'tasks.js'));
+    Module._load = origLoad;
+
+    const stream = [
+        '{"type":"step_start","sessionID":"ses_1","part":{"type":"step-start"}}',
+        '{"type":"text","sessionID":"ses_1","part":{"type":"text","text":"Keep it in one file."}}',
+        '{"type":"tool_use","sessionID":"ses_1","part":{"tool":"read","state":{"status":"completed","output":"x"}}}',
+        '{"type":"step_finish","sessionID":"ses_1","part":{"type":"step-finish","reason":"stop","tokens":{"total":10},"cost":0}}'
+    ].join('\n');
+
+    ok('‼️ an OpenCode body is read down to the prose the agent wrote',
+        T.engineReplyText(stream, 'opencode') === 'Keep it in one file.');
+    ok('…and its tool calls are not part of what it said',
+        !String(T.engineReplyText(stream, 'opencode')).includes('tool_use'));
+    ok('‼️ the SAME body on another engine is left exactly as it is — the engine decides, not the content',
+        T.engineReplyText(stream, 'claude') === stream);
+    ok('a stream that carried no prose is "nothing was said", not an envelope',
+        T.engineReplyText(
+            '{"type":"step_finish","sessionID":"s","part":{"type":"step-finish","reason":"stop"}}',
+            'opencode') === undefined);
+    ok('‼️ …but a body this engine\'s reader recognises NOTHING in is shown as itself — a spawn error is not silence',
+        T.engineReplyText('[spawn error] ENOENT', 'opencode') === '[spawn error] ENOENT');
+    ok('an Antigravity envelope is read down to its answer',
+        T.engineReplyText('{"conversation_id":"c","status":"ok","response":"Fragments."}', 'agy') === 'Fragments.');
+    ok('…and one without that field is shown as itself',
+        T.engineReplyText('plain trouble', 'agy') === 'plain trouble');
+
+    const archive = `Task: x\nAgent: y\n\n---\n${stream}\n\n---\nFinished: now · exit 0 · 1 min\n`;
+    ok('‼️ and the whole archive — our header, the stream, our footer — comes back as the sentence',
+        T.archivedReplyText(archive, 'opencode') === 'Keep it in one file.');
+    ok('a Claude archive is unchanged by any of this',
+        T.archivedReplyText(`h\n\n---\nThe answer.\n\n---\nFinished: now\n`, 'claude').trim() === 'The answer.');
+
+    ok('the workflow handoff uses the same one reader rather than its own branches',
+        /const said = engineReplyText\(body, task\.engine\);/.test(tasksTs)
+        && !/if \(engineOf\(task\.engine\)\.id === 'opencode'\) \{/.test(tasksTs));
+
+    const extTs = read('src', 'extension.ts');
+    ok('‼️ and a mission reads a delegate\'s archive through it, with the task\'s own engine',
+        /archivedReplyText\(fs\.readFileSync\(file, 'utf8'\), engine\)/.test(extTs)
+        && /taskManager\.tasks\.find\(t => t\.id === taskId\)\?\.engine/.test(extTs));
+    const misTs = read('src', 'core', 'missions.ts');
+    ok('…and every mission call site names the step\'s task, so the engine is knowable',
+        !/readOutputBody\((step|reviewStep)\.outputFile\)/.test(misTs)
+        && /readOutputBody\(step\.outputFile, step\.taskId\)/.test(misTs));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

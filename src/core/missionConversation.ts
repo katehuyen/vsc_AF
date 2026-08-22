@@ -411,6 +411,12 @@ export function buildSpeakerPrompt(opts: {
      * nobody.
      */
     independent?: boolean;
+    /**
+     * Anything the turn is speaking UNDER that this record does not know about
+     * — M-20 puts a council's question, chair and vote options here. Kept as
+     * text so a conversation never has to learn what a council is.
+     */
+    mandate?: string;
     /** how the speaker names the others — id to display name */
     nameOf?: (id: string) => string;
 }): string {
@@ -463,6 +469,7 @@ export function buildSpeakerPrompt(opts: {
             + 'the other before you send. That is deliberate: an independent position is what is '
             + 'wanted here. Say what you actually think rather than what you expect will be agreed.');
     }
+    if (opts.mandate?.trim()) { parts.push(opts.mandate.trim().startsWith('\n') ? opts.mandate : `\n${opts.mandate}`); }
     if (opts.referenced.length) {
         parts.push(`\n## What you are ${opts.intent === 'response' ? 'answering' : 'addressing'}\n`
             + opts.referenced.map(block).join('\n\n'));

@@ -209,5 +209,29 @@ const eq = (msg, got, want) => ok(msg + (got === want ? '' : ` — got ${JSON.st
         && /\(DATA\.failureKinds \|\| \{\}\)\[f\.class\]/.test(media));
 }
 
+// ============== a delegation a CEILING is holding is not a running one
+//
+// ‼️ Measured on a real objective: its one delegation was parked by the fleet's
+// daily budget, so the step read "running" on every surface while no process
+// had been launched, the run spent its whole wall clock waiting for it, and it
+// then stopped with "hard-limit". Three true statements and not one of them the
+// reason. A ceiling is a thing the user can lift, and they can only lift the
+// one they are told about — so the park's own sentence travels to the step.
+{
+    console.log('\n-- a parked delegation says which ceiling is holding it');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('the wave reads the park reason off the task rather than inventing one',
+        /const held = t\.status === 'queued'\s*\n\s*\? \(t\.deferredReason \|\| undefined\) : undefined;/.test(ext));
+    ok('‼️ …and refreshes the surfaces the moment it changes, so a park is visible while it lasts',
+        /if \(step\.held !== held\) \{ step\.held = held; missionChanged\(\); \}/.test(ext));
+    ok('a step that settles is not left holding a stale ceiling',
+        /step\.held = undefined;\s*\n\s*step\.status = t\.status;/.test(ext));
+    ok('‼️ and the run\'s own status carries it, so an agent asking "why is this not moving" is answered',
+        /\.\.\.\(s\.held \? \{ held: s\.held \} : \{\}\),/.test(ext));
+    const mis = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'missions.ts'), 'utf8');
+    ok('the field is on the step itself, where every reader of a run can see it',
+        /^\s{4}held\?: string;$/m.test(mis));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

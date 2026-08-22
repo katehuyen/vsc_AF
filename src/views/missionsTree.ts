@@ -50,7 +50,10 @@ const ROUND_ICON: Record<MissionRound['action'], string> = {
     // M-18 — a chain that already exists, run as one step; and a child objective
     run_workflow: 'run-all', run_mission: 'type-hierarchy-sub',
     // M-19 — one agent speaking to the others, in a conversation with a record
-    message: 'comment'
+    message: 'comment',
+    // M-20 — the same conversation, opened under a chair with a cap and a
+    // stated way out; the round it opens is still speaking turns
+    council: 'organization'
 };
 
 function themed(icon: string, color?: string): vscode.ThemeIcon {
