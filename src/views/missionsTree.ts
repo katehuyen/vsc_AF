@@ -40,7 +40,9 @@ const STEP_META: Record<MissionStep['status'], { icon: string; color?: string }>
 };
 
 const ROUND_ICON: Record<MissionRound['action'], string> = {
-    delegate: 'list-tree', ask_user: 'comment-discussion', finish: 'flag', abort: 'stop-circle'
+    delegate: 'list-tree', ask_user: 'comment-discussion', finish: 'flag', abort: 'stop-circle',
+    // M-16 — a round in which the lead changed its approach and ordered nothing
+    replan: 'git-branch'
 };
 
 function themed(icon: string, color?: string): vscode.ThemeIcon {

@@ -205,8 +205,27 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
     ok('…and the autonomy in one line', /ASK WHEN UNSURE/.test(ab));
     ok('decide-alone says the other thing',
         /DECIDE ALONE/.test(a.briefing(adaptiveSpec({ autonomy: 'decide-alone' }), [], REM)));
-    ok('both briefings end with the SAME decision schema — the actions do not fork',
-        cb.slice(-400) === ab.slice(-400));
+    // ‼️ M-16 — the two schemas DO differ now, and exactly where they should.
+    // What forks is what the lead must SAY about itself (so a run is
+    // observable) and the fifth action; what must not fork is the engine's
+    // guarantees, so those sentences are checked to be word-for-word the same
+    // in both. A schema is the contract — drift here is a silent behaviour
+    // change, which is why it is measured rather than trusted.
+    const SHARED = [
+        'You are the PLANNER, not the worker.',
+        'Each task prompt must be self-contained',
+        'Never delegate the same prompt to the same agent twice.',
+        'Mind the remaining budget; prefer finishing with a partial result over burning it.'
+    ];
+    ok('the engine\'s own guarantees are stated identically in both schemas',
+        SHARED.every(s => cb.includes(s) && ab.includes(s)));
+    ok('‼️ only the adaptive lead is asked what it is doing and why',
+        /"rationale"/.test(ab) && /"currentPhase"/.test(ab) && /"strategy"/.test(ab)
+        && !/"rationale"/.test(cb) && !/"currentPhase"/.test(cb));
+    ok('‼️ and only the adaptive lead may say "replan"',
+        /replan/.test(ab) && !/replan/.test(cb));
+    ok('a failed delegation is named as evidence only in the adaptive schema',
+        /is evidence, not a verdict/.test(ab) && !/is evidence/.test(cb));
     ok('the round message is the shared one — a wave reads the same in both modes',
         c.roundMessage([], REM) === a.roundMessage([], REM));
 }

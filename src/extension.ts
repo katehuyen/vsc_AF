@@ -257,12 +257,13 @@ import {
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
-    buildResumeMessage, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive, MISSION_TRACE_SCHEMA,
-    MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits, missionLiveSlice, MissionMode,
-    MissionObjective, MissionRun, MissionSpec, MissionStore, MissionTraceEvent, MissionTraceType,
-    MissionTraceWriter, newMissionId, normalizeObjective, orphanTraceFiles, outputExcerpt,
-    parsePlannerEnvelope, PlannerResult, poolFromFleet, projectTrace, readTrace, Reconciliation,
-    reconcileRun, remainingBudget, resolveLead, traceFileFor, validateObjective
+    addGuidance, buildResumeMessage, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive,
+    MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
+    missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
+    MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
+    orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
+    poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
+    resolveLead, traceFileFor, validateObjective
 } from './core/missions';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
@@ -9424,7 +9425,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'this run may be continued (ok), must be briefed again from its objective (rebrief) or '
                 + 'cannot be safely resumed at all (refuse) — a run with work of unknown fate is refused. '
                 + '`snapshotBehind` is how many events the snapshot never caught up to; it is normal after '
-                + 'a crash and is the gap reconciliation replays. args: id, events? (true = every raw '
+                + 'a crash and is the gap reconciliation replays. ‼️ M-16: `strategies` is every '
+                + 'revision of the approach with the reason for each (a version is cut when the '
+                + 'approach MOVED, not once per round), `phase` is the lead\'s own label for where '
+                + 'the run is, and `graph` is what actually happened — a node per decision and per '
+                + 'real primitive, with parentRefs/inputRefs/outputRefs, so parallel work branches '
+                + 'from one parent and a fan-in is visible on the decision that read the results. '
+                + 'args: id, events? (true = every raw '
                 + 'event, default is the folded projection), limit? (default 200, newest last)',
             handler: (args) => {
                 const runId = argStr(args, 'id');
@@ -9452,7 +9459,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         duplicates: read.duplicates, fromFuture: read.fromFuture,
                         truncatedTail: read.truncatedTail
                     },
+                    // ‼️ M-16 — WHAT IT IS DOING AND WHY, which is the question
+                    // this surface exists to answer. `rationale` per decision,
+                    // the strategy AND its revisions with the reason for each,
+                    // and the graph of what actually happened. Never the
+                    // planner's raw text: a showable sentence is the contract.
                     strategy: p.strategy ?? null,
+                    phase: p.phase ?? null,
+                    strategies: p.strategies,
+                    graph: p.graph,
+                    guidance: p.guidance,
                     evaluations: p.evaluations,
                     messages: p.messages,
                     pending: p.pending ?? null,
@@ -9471,6 +9487,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(args.events === true || String(args.events ?? '') === 'true'
                         ? { events: read.events.slice(-limit) }
                         : {})
+                };
+            }
+        },
+        {
+            op: 'missions.guide',
+            describe: '‼️ M-16 — STEER AN ADAPTIVE RUN WITHOUT LYING ABOUT WHEN IT LANDS. The text is '
+                + 'recorded on the run and shown to the lead ONCE, at the next planner boundary. It is '
+                + 'NOT delivered to work already in flight: a delegate\'s prompt is fixed when its task '
+                + 'starts and cannot be renegotiated, so an answer that implied otherwise would be the '
+                + 'lie noticed last. The reply says `appliesAt` — `next-round` while the run is live, '
+                + '`on-resume` while it is paused — and `pending` counts the steers still due. A classic '
+                + 'run has no planner boundary to inject at and is refused by name; so is a run that has '
+                + 'already ended. args: id (run id), text',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const text = argStr(args, 'text');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                const spec = missionStore.spec(r.specId);
+                need(spec && isAdaptive(spec),
+                    'That is a classic mission: it follows the recipe it was given and has no strategy to steer. '
+                    + 'Answer its question (missions.answer) or stop it (missions.cancel).');
+                need(r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled',
+                    `That run has already ended (${r.status}) — there is no next planner boundary. Rerun it instead.`);
+                const g = addGuidance(r, text, Date.now());
+                // The RECEIPT line. The engine writes a second one marked
+                // `applied` when it actually injects it, and the pair is what
+                // makes "exactly once" survive a window reload.
+                traceEvent(r, 'human.guided', { askId: g.id, text: g.text, actor: 'user' });
+                missionChanged();
+                const live = missionEngines.has(runId);
+                return {
+                    id: runId, guidanceId: g.id, title: spec?.title ?? runId,
+                    appliesAt: live ? 'next-round' : 'on-resume',
+                    pending: pendingGuidance(r).length,
+                    note: live
+                        ? 'Recorded. The lead sees it at its next decision — not the delegate that is running now.'
+                        : `Recorded. The run is ${r.status}; the lead sees it when it is resumed.`
                 };
             }
         }

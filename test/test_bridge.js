@@ -851,6 +851,46 @@ const { opencodeStatus, syncToOpencode } =
             trClassic.ok && trClassic.result.trace === null && trClassic.result.mode === 'classic');
         const trGone = await reg.dispatch('missions.trace', { id: 'nope' });
         ok('…and an unknown run is refused by name', !trGone.ok && /missions\.list/.test(trGone.error));
+
+        // ‼️ M-16 — A STEER IS RECORDED, NOT DELIVERED. The one thing this op
+        // must never do is imply it reached the delegate that is running right
+        // now: a task's prompt is fixed when it starts. So the answer states
+        // WHEN it lands, and a run with no next planner boundary — classic, or
+        // already ended — is refused by name rather than silently accepted.
+        const M2 = require(path.join(__dirname, '..', 'out', 'core', 'missions.js'));
+        const live = { id: 'm11', specId: 's1', status: 'running' };
+        store.runs = [...store.runs, live];
+        const engines = new Set(['m11']);
+        reg.register([{
+            op: 'missions.guide',
+            describe: 'Steer an ADAPTIVE run: the text is shown to the lead ONCE, at its next planner '
+                + 'boundary, and is NOT delivered to work already in flight. `appliesAt` is next-round '
+                + 'or on-resume. args: id, text',
+            handler: (args) => {
+                const r = store.run(argStr(args, 'id'));
+                need(r, 'Run not found — missions.list shows current ids.');
+                need(r.id !== 'm10', 'That is a classic mission: it has no strategy to steer.');
+                need(r.status !== 'done', `That run has already ended (${r.status}) — there is no next planner boundary.`);
+                const g = M2.addGuidance(r, argStr(args, 'text'), 1000);
+                return {
+                    id: r.id, guidanceId: g.id,
+                    appliesAt: engines.has(r.id) ? 'next-round' : 'on-resume',
+                    pending: M2.pendingGuidance(r).length
+                };
+            }
+        }]);
+        const gd = await reg.dispatch('missions.guide', { id: 'm11', text: 'prefer the shorter form' });
+        ok('missions.guide records the steer and says when it lands',
+            gd.ok && gd.result.appliesAt === 'next-round' && gd.result.pending === 1);
+        ok('…and it is on the run, waiting, not delivered anywhere',
+            live.guidance.length === 1 && live.guidance[0].appliedAt === undefined);
+        const gd2 = await reg.dispatch('missions.guide', { id: 'm11', text: 'and cite the file' });
+        ok('…a second one queues behind the first rather than replacing it', gd2.result.pending === 2);
+        const gdClassic = await reg.dispatch('missions.guide', { id: 'm10', text: 'x' });
+        ok('‼️ a classic run is refused by name — it follows a recipe, not a strategy',
+            !gdClassic.ok && /no strategy to steer/.test(gdClassic.error));
+        const gdDone = await reg.dispatch('missions.guide', { id: 'm9', text: 'x' });
+        ok('…and so is a run that has already ended', !gdDone.ok && /already ended/.test(gdDone.error));
     }
 
     // ---------- B-5: insights, suggestions, quality and eval cases ----------

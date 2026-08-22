@@ -32,9 +32,13 @@ import * as path from 'path';
  */
 
 /** Bumped when an event's SHAPE changes. A line from the future is not read. */
-export const MISSION_TRACE_SCHEMA = 1;
+export const MISSION_TRACE_SCHEMA = 2;
 
 export type MissionTraceType =
+    /** ‼️ M-16 — one per planner round: the lead decided something. This is a
+     *  NODE, written whether or not the strategy moved, because a round is a
+     *  decision either way and the graph hangs that round's work under it. */
+    | 'decision.made'
     | 'strategy.changed'
     | 'action.created' | 'action.started' | 'action.settled'
     | 'evaluation.recorded'
@@ -86,6 +90,28 @@ export interface MissionTraceEvent {
     /** run.finished */
     status?: string;
     verdict?: string;
+
+    // ---- M-16: the runtime graph rides on the events that already exist ----
+    /** decision.made — the graph id of the node this line CREATES */
+    nodeId?: string;
+    /** the lead's observation label for where the run is ("triage", "verify") */
+    phase?: string;
+    /** why the strategy moved (strategy.changed) */
+    reason?: string;
+    /** the decision node a strategy version came out of (strategy.changed) */
+    sourceAction?: string;
+    /** who did it: an agent id, `lead`, or `user` */
+    actor?: string;
+    /** the node(s) this one hangs under — normally the decision that made it */
+    parentRefs?: string[];
+    /** earlier nodes whose RESULTS this one consumes; a fan-in is visible here
+     *  and nowhere else, which is why it is on the CONSUMER, not the producer */
+    inputRefs?: string[];
+    /** real records this node produced beyond `refId` (files, session ids) */
+    outputRefs?: string[];
+    /** human.guided — a second line on the same askId marks it INJECTED, which
+     *  is what makes "exactly once" survive a reload */
+    applied?: boolean;
 }
 
 /** The snapshot's pointer at its own journal. Absent = the run has no trace. */
@@ -266,9 +292,84 @@ export interface PendingHuman {
     askedAt: number;
 }
 
+/**
+ * ‼️ M-16 — A STRATEGY IS NOT AN IMMUTABLE PLAN, AND NOT A PER-ROUND FIELD.
+ *
+ * The lead states its working strategy on every call, but restating the same
+ * thing is not a change: a version is cut only when the NORMALISED text really
+ * moves (`normalizeStrategy`). So `n` counts revisions of the approach, not
+ * rounds — which is the only reading under which "it changed its mind twice"
+ * means anything. `sourceAction` is the decision node the revision came out of.
+ */
+export interface StrategyVersion {
+    n: number;
+    summary: string;
+    phase?: string;
+    reason?: string;
+    at: number;
+    sourceAction?: string;
+}
+
+/** Two strategies are THE SAME when they say the same thing — casing, spacing
+ *  and a trailing full stop are not a change of mind. */
+export function normalizeStrategy(text: string): string {
+    return (text ?? '').toLowerCase().replace(/\s+/g, ' ').replace(/[.!?;:,\s]+$/, '').trim();
+}
+
+export type GraphNodeKind = 'decision' | 'delegation' | 'question' | 'approval' | 'guidance' | 'finish';
+export type GraphNodeStatus = 'open' | 'running' | 'done' | 'failed' | 'cancelled';
+
+/**
+ * ‼️ M-16 — THE GRAPH IS NEVER DRAWN IN ADVANCE.
+ *
+ * Nothing plans this shape: a node appears at the moment a decision is taken or
+ * a real primitive is set in motion, and the edges are whatever actually
+ * happened. Parallel work of one round shares a `parentRefs` (the decision that
+ * ordered it) so it visibly branches; a round that reads several results back
+ * carries them in its `inputRefs`, so a fan-in is a fact of the graph rather
+ * than an inference from timestamps.
+ *
+ * It does NOT drive the engine. It is a projection of decisions and
+ * dependencies that already occurred — deleting it would lose the view, never
+ * the run.
+ */
+export interface GraphNode {
+    id: string;
+    kind: GraphNodeKind;
+    status: GraphNodeStatus;
+    /** an agent id, `lead`, or `user` */
+    actor: string;
+    label: string;
+    parentRefs: string[];
+    inputRefs: string[];
+    outputRefs: string[];
+    createdAt: number;
+    startedAt?: number;
+    settledAt?: number;
+    phase?: string;
+    /** which revision of the strategy was in force when this node appeared */
+    strategyVersion?: number;
+}
+
+/** One-off steer from the human, and whether the loop has already taken it. */
+export interface TraceGuidance {
+    id: string;
+    text: string;
+    at: number;
+    appliedAt?: number;
+}
+
 export interface TraceProjection {
     lastSeq: number;
     strategy?: { version: number; text: string; at: number };
+    /** every revision in order — `strategy` is the last of these */
+    strategies: StrategyVersion[];
+    /** the lead's latest observation label; absent until it states one */
+    phase?: string;
+    /** what actually happened, as nodes and edges (M-16) */
+    graph: GraphNode[];
+    /** steers the human sent, injected or not */
+    guidance: TraceGuidance[];
     /** creation order, which is the order the lead thought of them */
     actions: TraceAction[];
     /** by criterion id — the LATEST verdict, with how many there have been */
@@ -292,10 +393,47 @@ export interface TraceProjection {
  * event applied twice lands on the same field with the same value.
  */
 export function projectTrace(events: readonly MissionTraceEvent[]): TraceProjection {
-    const p: TraceProjection = { lastSeq: 0, actions: [], evaluations: [], messages: 0, answers: {} };
+    const p: TraceProjection = {
+        lastSeq: 0, strategies: [], graph: [], guidance: [],
+        actions: [], evaluations: [], messages: 0, answers: {}
+    };
     const byId = new Map<string, TraceAction>();
     const evalById = new Map<string, TraceEvaluation>();
     const asks = new Map<string, PendingHuman>();
+    const nodes = new Map<string, GraphNode>();
+    const guideById = new Map<string, TraceGuidance>();
+    /** the decision a node written now hangs under, when the writer said nothing */
+    let lastDecision = '';
+    let strategyVersion = 0;
+
+    const node = (
+        id: string, kind: GraphNodeKind, actor: string, label: string, ev: MissionTraceEvent
+    ): GraphNode => {
+        const found = nodes.get(id);
+        if (found) { return found; }
+        const parents = ev.parentRefs?.length
+            ? [...ev.parentRefs]
+            : (kind !== 'decision' && lastDecision ? [lastDecision] : []);
+        const n: GraphNode = {
+            id, kind, actor, label,
+            status: kind === 'decision' ? 'done' : 'open',
+            parentRefs: parents,
+            inputRefs: ev.inputRefs ? [...ev.inputRefs] : [],
+            outputRefs: ev.outputRefs ? [...ev.outputRefs] : [],
+            createdAt: ev.ts,
+            ...(ev.phase ? { phase: ev.phase } : {}),
+            ...(strategyVersion ? { strategyVersion } : {})
+        };
+        if (kind === 'decision') { n.settledAt = ev.ts; }
+        nodes.set(id, n);
+        p.graph.push(n);
+        return n;
+    };
+    /** A produced record is named once — a settle that repeats a start's refId
+     *  must not make the node look like it produced two different things. */
+    const produced = (n: GraphNode, ref?: string): void => {
+        if (ref && !n.outputRefs.includes(ref)) { n.outputRefs.push(ref); }
+    };
 
     // ‼️ IDEMPOTENT AT THIS LEVEL TOO, not only in the reader. `readTrace`
     // already drops a repeated seq, but the projection is also fed replays and
@@ -309,13 +447,38 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
         applied.add(ev.seq);
         if (ev.seq > p.lastSeq) { p.lastSeq = ev.seq; }
         switch (ev.type) {
-            case 'strategy.changed':
-                p.strategy = {
-                    version: typeof ev.version === 'number' ? ev.version : (p.strategy ? p.strategy.version + 1 : 1),
-                    text: ev.strategy ?? ev.text ?? '',
-                    at: ev.ts
-                };
+            case 'decision.made': {
+                if (typeof ev.version === 'number') { strategyVersion = ev.version; }
+                const id = ev.nodeId || 'd' + ev.seq;
+                const n = node(id, 'decision', ev.actor || 'lead', ev.text ?? '', ev);
+                // ‼️ SET AFTER the node is built, not before: a decision hangs
+                // under the PREVIOUS decision, never under itself.
+                lastDecision = id;
+                if (ev.phase) { p.phase = ev.phase; }
+                if (typeof ev.version === 'number') { n.strategyVersion = ev.version; }
                 break;
+            }
+            case 'strategy.changed': {
+                const version = typeof ev.version === 'number'
+                    ? ev.version
+                    : (p.strategy ? p.strategy.version + 1 : 1);
+                const text = ev.strategy ?? ev.text ?? '';
+                p.strategy = { version, text, at: ev.ts };
+                strategyVersion = version;
+                if (ev.phase) { p.phase = ev.phase; }
+                // A revision recorded twice under the same number is the same
+                // revision — the journal is replayed, and a version list that
+                // grew on replay would be a counter rather than a history.
+                const prior = p.strategies.findIndex(s => s.n === version);
+                const rec: StrategyVersion = {
+                    n: version, summary: text, at: ev.ts,
+                    ...(ev.phase ? { phase: ev.phase } : {}),
+                    ...(ev.reason ? { reason: ev.reason } : {}),
+                    ...(ev.sourceAction ? { sourceAction: ev.sourceAction } : {})
+                };
+                if (prior >= 0) { p.strategies[prior] = rec; } else { p.strategies.push(rec); }
+                break;
+            }
             case 'action.created': {
                 if (!ev.actionId || byId.has(ev.actionId)) { break; }
                 const a: TraceAction = {
@@ -328,6 +491,7 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 };
                 byId.set(a.actionId, a);
                 p.actions.push(a);
+                node(a.actionId, 'delegation', ev.agentId || ev.agentName || 'agent', ev.title ?? '', ev);
                 break;
             }
             case 'action.started': {
@@ -335,6 +499,12 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 if (!a) { break; }
                 a.startedAt = ev.ts;
                 if (ev.refId) { a.refId = ev.refId; }
+                const n = ev.actionId ? nodes.get(ev.actionId) : undefined;
+                if (n) {
+                    n.startedAt = ev.ts;
+                    if (n.status === 'open') { n.status = 'running'; }
+                    produced(n, ev.refId);
+                }
                 break;
             }
             case 'action.settled': {
@@ -346,6 +516,14 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 if (typeof ev.tokens === 'number') { a.tokens = ev.tokens; }
                 if (ev.outputFile) { a.outputFile = ev.outputFile; }
                 if (ev.refId) { a.refId = ev.refId; }
+                const n = ev.actionId ? nodes.get(ev.actionId) : undefined;
+                if (n) {
+                    n.settledAt = ev.ts;
+                    n.status = a.outcome === 'done' ? 'done' : a.outcome;
+                    produced(n, ev.refId);
+                    produced(n, ev.outputFile);
+                    for (const r of ev.outputRefs ?? []) { produced(n, r); }
+                }
                 break;
             }
             case 'evaluation.recorded': {
@@ -365,31 +543,58 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 break;
             case 'human.asked':
                 if (ev.askId) {
+                    const flavor = ev.flavor ?? 'question';
                     asks.set(ev.askId, {
-                        askId: ev.askId,
-                        flavor: ev.flavor ?? 'question',
+                        askId: ev.askId, flavor,
                         text: ev.text ?? '',
                         askedAt: ev.ts
                     });
+                    node('ask:' + ev.askId, flavor === 'approval' ? 'approval' : 'question',
+                        'user', ev.text ?? '', ev);
                 }
                 break;
             case 'human.answered':
                 if (ev.askId) {
                     asks.delete(ev.askId);
                     p.answers[ev.askId] = ev.text ?? '';
+                    const n = nodes.get('ask:' + ev.askId);
+                    if (n) { n.status = 'done'; n.settledAt = ev.ts; }
                 }
                 break;
-            case 'human.guided':
-                // guidance nobody asked for closes nothing — it is an addition
+            case 'human.guided': {
+                // Guidance nobody asked for closes nothing — it is an addition,
+                // and it arrives TWICE on purpose: once when the human sent it,
+                // once when the loop actually injected it. That second line is
+                // what makes "exactly once" a fact on disk rather than a
+                // promise held in a process that can be reloaded away.
+                if (!ev.askId) { break; }
+                const g = guideById.get(ev.askId);
+                if (!g) {
+                    const fresh: TraceGuidance = { id: ev.askId, text: ev.text ?? '', at: ev.ts };
+                    if (ev.applied) { fresh.appliedAt = ev.ts; }
+                    guideById.set(ev.askId, fresh);
+                    p.guidance.push(fresh);
+                } else if (ev.applied && g.appliedAt === undefined) {
+                    g.appliedAt = ev.ts;
+                }
+                const n = node('guide:' + ev.askId, 'guidance', 'user', ev.text ?? '', ev);
+                if (ev.applied) { n.status = 'done'; n.settledAt = ev.ts; }
                 break;
-            case 'run.finished':
+            }
+            case 'run.finished': {
                 p.finished = {
                     status: ev.status ?? 'done',
                     ...(ev.verdict ? { verdict: ev.verdict } : {}),
                     ...(ev.text ? { text: ev.text } : {}),
                     at: ev.ts
                 };
+                const n = node(ev.nodeId || 'end', 'finish', ev.actor || 'lead',
+                    ev.verdict ? `${ev.status ?? 'done'} — ${ev.verdict}` : (ev.status ?? 'done'), ev);
+                n.status = ev.status === 'failed' ? 'failed'
+                    : ev.status === 'cancelled' ? 'cancelled' : 'done';
+                n.settledAt = ev.ts;
                 break;
+            }
         }
     }
 

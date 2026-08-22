@@ -3,18 +3,21 @@ import {
     bindRuntimeRole, isAdaptive, MissionAutonomy, MissionMode, MissionObjective,
     MissionPoolMember, MissionRuntimeRole, missionModeOf, normalizeObjective, validateObjective
 } from './missionMode';
-import { MissionTraceEvent, MissionTraceRef, MissionTraceType } from './missionTrace';
+import {
+    MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
+} from './missionTrace';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
 export {
-    deleteTrace, MISSION_TRACE_SCHEMA, MissionTraceWriter, orphanTraceFiles,
+    deleteTrace, MISSION_TRACE_SCHEMA, MissionTraceWriter, normalizeStrategy, orphanTraceFiles,
     projectTrace, readTrace, reconcileRun, runIdOfTraceFile, traceFileFor
 } from './missionTrace';
 export type {
-    ExternalLookup, ExternalRecord, HumanFlavor, MissionActionKind, MissionActionOutcome,
-    MissionTraceEvent, MissionTraceRef, MissionTraceType, PendingHuman, Reconciliation,
-    TraceAction, TraceEvaluation, TraceHealth, TraceProjection, TraceRead
+    ExternalLookup, ExternalRecord, GraphNode, GraphNodeKind, GraphNodeStatus, HumanFlavor,
+    MissionActionKind, MissionActionOutcome, MissionTraceEvent, MissionTraceRef, MissionTraceType,
+    PendingHuman, Reconciliation, StrategyVersion, TraceAction, TraceEvaluation, TraceGuidance,
+    TraceHealth, TraceProjection, TraceRead
 } from './missionTrace';
 
 export {
@@ -217,7 +220,15 @@ export interface MissionStep {
     note?: string;
 }
 
-export type MissionAction = 'delegate' | 'finish' | 'ask_user' | 'abort';
+/**
+ * ‼️ M-16 — `replan` IS THE FIFTH, AND IT IS ADAPTIVE-ONLY. A classic lead has
+ * a recipe and never needs to say "my approach has changed" as a move of its
+ * own; an adaptive one does, because its strategy is the thing being revised
+ * and burying that inside a delegation would make the revision invisible. It
+ * costs a round and a planner call like every other action — the ceilings are
+ * mechanical authority and nothing here gets a free turn.
+ */
+export type MissionAction = 'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan';
 
 export interface MissionRound {
     n: number;
@@ -226,6 +237,15 @@ export interface MissionRound {
     steps: MissionStep[];
     question?: string;
     answer?: string;
+    /**
+     * ‼️ M-16 — the lead's observation label for where the run is, and which
+     * revision of the strategy was in force. On the ROUND rather than only in
+     * the journal, so "what is it doing and why" is answerable from the
+     * snapshot — the list must not have to read a JSONL file to draw a badge.
+     * Absent on every classic round and on every round written before M-16.
+     */
+    phase?: string;
+    strategyVersion?: number;
     /** Set when the user rejected this round's delegations. */
     rejectedReason?: string;
     plannerCostUSD: number;
@@ -298,6 +318,53 @@ export interface MissionRun {
      * is resumed cleanly. Never a reason to hide the run from the list.
      */
     traceDegraded?: string;
+    /**
+     * ‼️ M-16 — ONE-OFF STEERS FROM THE HUMAN, AND WHETHER THEY LANDED.
+     *
+     * A steer is NOT delivered to work that is already running: a Task in
+     * flight has its prompt and cannot be renegotiated, and pretending
+     * otherwise would be the lie the user notices last. It waits for the next
+     * PLANNER BOUNDARY, is injected exactly once, and `appliedAt` on this
+     * record is what makes "once" survive a window reload — the journal says
+     * the same thing, so a crash between the two cannot double-apply it.
+     */
+    guidance?: MissionGuidance[];
+    /**
+     * ‼️ M-16 — THE STRATEGY IN FORCE RIGHT NOW (adaptive runs only).
+     *
+     * The journal holds the HISTORY of revisions; this holds the current one,
+     * exactly as `result` holds the verdict whose history is `run.finished`. It
+     * earns its place twice: a list can draw "v3 · verifying" without opening a
+     * JSONL file, and a run resumed after a reload can tell whether the lead's
+     * next answer is a real change of approach or the same one restated — which
+     * it cannot do from a version number alone.
+     */
+    strategy?: { version: number; text: string; phase?: string; at: number };
+}
+
+export interface MissionGuidance {
+    id: string;
+    text: string;
+    at: number;
+    /** when the loop actually put it in front of the lead; absent = still due */
+    appliedAt?: number;
+}
+
+/** Queue a steer for the next planner boundary. Returns the record so the
+ *  caller can tell the user WHEN it will land rather than implying "now". */
+export function addGuidance(run: MissionRun, text: string, now: number): MissionGuidance {
+    const g: MissionGuidance = {
+        id: 'g' + ((run.guidance?.length ?? 0) + 1) + '-' + now.toString(36),
+        text: text.trim().slice(0, 4000),
+        at: now
+    };
+    run.guidance = [...(run.guidance ?? []), g];
+    return g;
+}
+
+/** The steers this run has not shown the lead yet, oldest first. */
+export function pendingGuidance(run: MissionRun): MissionGuidance[] {
+    return (run.guidance ?? []).filter(g => g.appliedAt === undefined);
 }
 
 export function newMissionId(): string {
@@ -316,11 +383,37 @@ export interface PlannerTaskReq {
     readonly?: boolean;
 }
 
-export type PlannerDecision =
+/**
+ * ‼️ M-16 — WHAT AN ADAPTIVE LEAD SAYS BESIDES WHAT IT WANTS DONE.
+ *
+ * Not chain-of-thought and never treated as such: every field here is written
+ * to be SHOWN to the user, which is why it is short and why the prompt asks for
+ * a sentence rather than reasoning. The point is that a run can answer "what is
+ * it doing and why" without anybody reading the model's private deliberation —
+ * so the surfaces get this, and the raw planner text stays where it was.
+ */
+export interface AdaptiveReflection {
+    /** one showable sentence: why THIS decision, now */
+    rationale: string;
+    /** the lead's own label for where the run is — an observation, not a stage
+     *  in a pipeline the engine enforces; nothing branches on its value */
+    phase: string;
+    /** the working strategy as the lead now states it */
+    strategy: string;
+    /** only meaningful when the strategy actually moved */
+    changeReason?: string;
+    /** ids of earlier work this decision rests on — the graph's fan-in */
+    basedOn: string[];
+}
+
+type PlannerDecisionCore =
     | { action: 'delegate'; thought: string; tasks: PlannerTaskReq[] }
     | { action: 'finish'; thought: string; verdict: MissionResult['verdict']; summary: string }
     | { action: 'abort'; thought: string; verdict: MissionResult['verdict']; summary: string }
-    | { action: 'ask_user'; thought: string; question: string };
+    | { action: 'ask_user'; thought: string; question: string }
+    | { action: 'replan'; thought: string };
+
+export type PlannerDecision = PlannerDecisionCore & { reflection?: AdaptiveReflection };
 
 const MAX_TASKS_PER_ROUND = 6;
 const MAX_PROMPT_CHARS = 8000;
@@ -344,11 +437,42 @@ export function allowedAgents(spec: MissionSpec): MissionTeamMember[] {
     return spec.team;
 }
 
+type ParseResult = { ok: true; decision: PlannerDecision } | { ok: false; error: string };
+
 /** Validate the planner's raw reply into a decision, or say exactly why not
  *  (the error text is fed back to the planner — write it for the model). */
-export function parsePlannerDecision(
-    raw: string, spec: MissionSpec
-): { ok: true; decision: PlannerDecision } | { ok: false; error: string } {
+export function parsePlannerDecision(raw: string, spec: MissionSpec): ParseResult {
+    return parseDecision(raw, spec, false);
+}
+
+/**
+ * ‼️ M-16 — THE SAME CONTRACT PLUS WHAT MAKES A RUN OBSERVABLE. An adaptive
+ * reply must also state its rationale, its phase and its working strategy, and
+ * may use `replan`. Everything else — the caps, the roster rule, the
+ * self-containment rule — is the shared parse, unforked, because those are the
+ * engine's guarantees and they do not depend on which kind of run this is.
+ */
+export function parseAdaptiveDecision(raw: string, spec: MissionSpec): ParseResult {
+    return parseDecision(raw, spec, true);
+}
+
+/** The reflection fields, read tolerantly — `currentPhase` is what the prompt
+ *  asks for, `phase` is what models write half the time, and both are the same
+ *  thing. Missing pieces are reported by the caller, not invented here. */
+function readReflection(o: Record<string, unknown>, thought: string): AdaptiveReflection {
+    const s = (v: unknown, cap: number): string => typeof v === 'string' ? v.trim().slice(0, cap) : '';
+    return {
+        rationale: s(o.rationale, 600) || thought,
+        phase: s(o.currentPhase, 60) || s(o.phase, 60),
+        strategy: s(o.strategy, 800),
+        ...(s(o.changeReason, 400) ? { changeReason: s(o.changeReason, 400) } : {}),
+        basedOn: Array.isArray(o.basedOn)
+            ? o.basedOn.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 20)
+            : []
+    };
+}
+
+function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): ParseResult {
     const j = extractJson(raw ?? '');
     if (!j || typeof j !== 'object' || Array.isArray(j)) {
         return { ok: false, error: 'reply is not a JSON object' };
@@ -356,6 +480,30 @@ export function parsePlannerDecision(
     const o = j as Record<string, unknown>;
     const thought = typeof o.thought === 'string' ? o.thought.slice(0, 600) : '';
     const action = String(o.action ?? '');
+    // ‼️ Read BEFORE the action is dispatched on, so every branch below can
+    // attach it with one line and none of them can forget.
+    let reflection: AdaptiveReflection | undefined;
+    if (adaptive) {
+        reflection = readReflection(o, thought);
+        const missing: string[] = [];
+        if (!reflection.rationale) { missing.push('"rationale" (one showable sentence on why this decision)'); }
+        if (!reflection.phase) { missing.push('"currentPhase" (your own label for where this run is)'); }
+        if (!reflection.strategy) { missing.push('"strategy" (your working approach, restated in full each time)'); }
+        if (missing.length) {
+            return { ok: false, error: `every adaptive reply needs ${missing.join(', ')}` };
+        }
+    }
+    const done = (d: PlannerDecisionCore): ParseResult =>
+        ({ ok: true, decision: reflection ? { ...d, reflection } : d });
+    // ‼️ ADAPTIVE-ONLY, checked before the shared table: a classic lead that
+    // invents "replan" must still get today's "unknown action" error, because
+    // a classic run's behaviour is not allowed to move by one character.
+    if (action === 'replan') {
+        if (!adaptive) {
+            return { ok: false, error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort)` };
+        }
+        return done({ action: 'replan', thought });
+    }
     if (action === 'finish' || action === 'abort') {
         const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
         if (!summary) { return { ok: false, error: `"${action}" needs a non-empty "summary"` }; }
@@ -364,17 +512,14 @@ export function parsePlannerDecision(
             v === 'success' || v === 'partial' || v === 'failed'
                 ? v
                 : (action === 'finish' ? 'partial' : 'failed'); // tolerant default
-        return {
-            ok: true,
-            decision: action === 'finish'
-                ? { action: 'finish', thought, verdict, summary }
-                : { action: 'abort', thought, verdict, summary }
-        };
+        return done(action === 'finish'
+            ? { action: 'finish', thought, verdict, summary }
+            : { action: 'abort', thought, verdict, summary });
     }
     if (action === 'ask_user') {
         const question = typeof o.question === 'string' ? o.question.trim() : '';
         if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
-        return { ok: true, decision: { action, thought, question } };
+        return done({ action, thought, question });
     }
     if (action === 'delegate') {
         if (!Array.isArray(o.tasks) || !o.tasks.length) {
@@ -411,9 +556,12 @@ export function parsePlannerDecision(
                 readonly: t.readonly === true
             });
         }
-        return { ok: true, decision: { action, thought, tasks } };
+        return done({ action, thought, tasks });
     }
-    return { ok: false, error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort)` };
+    return {
+        ok: false,
+        error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort${adaptive ? ' | replan' : ''})`
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -538,12 +686,19 @@ export function outputExcerpt(body: string, head = 2000, tail = 1500): string {
     return t.slice(0, head) + `\n… [${t.length - head - tail} chars omitted] …\n` + t.slice(-tail);
 }
 
-export function buildRoundMessage(results: StepResult[], rem: RemainingBudget, notes: string[] = []): string {
+/**
+ * `withIds` is M-16 and adaptive-only: the lead is asked which earlier results
+ * a decision rests on (`basedOn`), and it can only name them if it was shown
+ * their ids. A classic round message is byte-identical to what it always was.
+ */
+export function buildRoundMessage(
+    results: StepResult[], rem: RemainingBudget, notes: string[] = [], withIds = false
+): string {
     const parts = results.map(r => {
         const s = r.step;
         const cost = s.costUSD !== undefined ? ` · $${s.costUSD.toFixed(2)}` : '';
         const dur = r.durationMin !== undefined ? ` · ${r.durationMin}m` : '';
-        return `### ${s.agentName} — "${s.title}" → ${s.status.toUpperCase()}${cost}${dur}${s.note ? ` (${s.note})` : ''}
+        return `### ${withIds ? `[id: ${s.id}] ` : ''}${s.agentName} — "${s.title}" → ${s.status.toUpperCase()}${cost}${dur}${s.note ? ` (${s.note})` : ''}
 ${s.expect ? `Expected: ${s.expect}\n` : ''}${r.excerpt ? `Output (excerpt):\n${r.excerpt}` : '(no output)'}
 ${s.outputFile ? `Full output file: ${s.outputFile}` : ''}`;
     });
@@ -650,14 +805,82 @@ ${remLine(rem)}
 Each round you will receive the delegates' results and the updated budget.
 
 ## How to answer
-${DECISION_SCHEMA}`;
+${ADAPTIVE_DECISION_SCHEMA}`;
+}
+
+/**
+ * ‼️ M-16 — WHAT AN OBJECTIVE'S LEAD IS ASKED FOR, ON TOP OF THE DECISION.
+ *
+ * Three extra fields, and each is there for a reason that is not decoration:
+ * `rationale` is what the user reads instead of the model's private
+ * deliberation; `currentPhase` is the lead's own label, so the surfaces can say
+ * where the run is without the engine inventing a pipeline; `strategy` is
+ * restated IN FULL every time precisely so the engine can tell a real change of
+ * approach from a rewording — it compares the normalised text and cuts a
+ * version only when it moved. Asking "has it changed?" would put that judgement
+ * in the model, which is the one place it cannot be checked.
+ */
+const ADAPTIVE_DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose around it):
+{
+  "rationale": "one short sentence, written to be SHOWN to the user: why this decision, now",
+  "currentPhase": "your own short label for where this run is (e.g. \\"triage\\", \\"building\\", \\"verifying\\") — an observation, not a stage anyone enforces",
+  "strategy": "your working approach, restated IN FULL every time — even if it has not changed",
+  "changeReason": "only when the strategy above differs from your last one: what made you change it",
+  "basedOn": ["ids of the earlier results this decision rests on, from the \\"id\\" shown with each round result"],
+  "thought": "one short sentence on your reasoning",
+  "action": "delegate" | "finish" | "ask_user" | "abort" | "replan",
+  "tasks": [ { "agent": "<pool agent name>", "title": "...", "prompt": "full self-contained instructions for that agent", "expect": "how to tell it succeeded, naming the criterion id it serves", "readonly": true|false } ],
+  "question": "only for ask_user",
+  "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains"
+}
+Rules:
+- You are the PLANNER, not the worker. NEVER do the objective's work yourself — do not edit files, run builds or produce the deliverable. Your entire output is the JSON decision; all work happens through delegations. (Write-tools are disabled for you.)
+- "rationale", "currentPhase" and "strategy" are required on EVERY reply, whatever the action.
+- Use "replan" when the APPROACH changed and you need a round to say so before ordering work. It costs a round and a planner call like anything else, so do not use it to think out loud.
+- Scale your effort to the objective. A small, clear goal deserves a small plan: often ONE round with one delegation, then finish. Deep digging is itself a delegation ("readonly": true).
+- Delegate ONLY to the pool agents listed above, by exact name.
+- Each task prompt must be self-contained: the delegate sees nothing but that prompt (plus its own instructions). Include paths, context and acceptance criteria.
+- Mark a task "readonly": true when it does not modify the working folder. Writers must be "readonly": false.
+- Never delegate the same prompt to the same agent twice.
+- A delegation that FAILS is evidence, not a verdict on the objective. Retry, revise, replan, skip it, ask the user, or finish honestly as "partial" — decide, and say which in "rationale".
+- Mind the remaining budget; prefer finishing with a partial result over burning it.`;
+
+/**
+ * ‼️ M-16 — A FAILED DELEGATION IS EVIDENCE, NOT THE END OF THE MISSION.
+ *
+ * The classic round message states the results and asks for the next decision,
+ * which is right for a lead following a recipe: a step that failed failed. An
+ * objective has no recipe, so the same message read as "the plan broke" — and a
+ * lead that treats one bad delegate as the verdict has thrown away the only
+ * thing that made it adaptive. So when something fails, the options are named,
+ * in the reply's own vocabulary, and it is said plainly that finishing now is
+ * one choice among six rather than the default.
+ */
+function adaptiveRoundMessage(results: StepResult[], rem: RemainingBudget, notes?: string[]): string {
+    const base = buildRoundMessage(results, rem, notes ?? [], true);
+    const bad = results.filter(r => r.step.status === 'failed' || r.step.status === 'cancelled');
+    if (!bad.length) { return base; }
+    const names = bad.map(r => `"${r.step.title}" → ${r.step.agentName}`).join(', ');
+    return base + `
+
+## ${bad.length === 1 ? 'A delegation did not succeed' : `${bad.length} delegations did not succeed`}
+${names}
+This is a RESULT, not the end of the objective. Read what came back as evidence
+and choose deliberately — do NOT finish merely because a step failed:
+- retry — the same work, once, when the failure looks transient (a timeout, a lock)
+- revise — the same intent with a better prompt, more context or a different agent
+- replan — the approach itself was wrong: say so with "replan" and state the new strategy
+- skip — that work was not needed for a required criterion after all; say which
+- ask_user — the failure exposes a fork the objective does not settle
+- finish with "partial" — the budget or the evidence says this is as far as it goes
+Say in "rationale" which of these you chose and why.`;
 }
 
 const adaptiveProtocol: MissionProtocol = {
     mode: 'adaptive',
     briefing: adaptiveBriefing,
-    parse: (raw, spec) => parsePlannerDecision(raw, spec),
-    roundMessage: (results, rem, notes) => buildRoundMessage(results, rem, notes)
+    parse: (raw, spec) => parseAdaptiveDecision(raw, spec),
+    roundMessage: (results, rem, notes) => adaptiveRoundMessage(results, rem, notes)
 };
 
 /** The one place a mode becomes behaviour. */
@@ -884,6 +1107,21 @@ export class MissionEngine {
     private cancelRequested = false;
     private pauseRequested = false;
     /**
+     * ‼️ M-16 — THE STRATEGY THE RUN IS ACTUALLY FOLLOWING, normalised, plus
+     * how many times it has really moved. Held here rather than counted off the
+     * rounds because that is the whole distinction the item exists to make: a
+     * lead that restates the same approach for five rounds has one strategy,
+     * not five, and a version number that ticked per round would say the
+     * opposite while looking equally plausible.
+     */
+    private strategyKey = '';
+    private strategyVersion = 0;
+    /** the decision node the next one hangs under — '' before the first round */
+    private lastDecisionId = '';
+    /** the action ids whose results the lead was last shown: the default fan-in
+     *  when the lead does not name its own `basedOn` */
+    private lastResultIds: string[] = [];
+    /**
      * ‼️ M-15 — chosen ONCE, at construction, from the spec's own mode. The loop
      * below never asks which kind of mission it is running: everything that
      * differs between the two is behind this, and everything that does not is
@@ -898,6 +1136,18 @@ export class MissionEngine {
         private deps: MissionEngineDeps
     ) {
         this.protocol = protocolFor(spec);
+        // ‼️ M-16 — A RESUMED RUN PICKS ITS STRATEGY BACK UP. Without this the
+        // first decision after a window reload always looks like a change of
+        // approach (the key is empty, so anything differs from it) and the
+        // version number climbs once per reload — a figure that would say the
+        // lead kept changing its mind when all that happened was a restart.
+        if (run.strategy) {
+            this.strategyVersion = run.strategy.version;
+            this.strategyKey = normalizeStrategy(run.strategy.text);
+        }
+        const last = run.rounds[run.rounds.length - 1];
+        if (last) { this.lastDecisionId = 'd' + last.n; }
+        this.lastResultIds = last?.steps.map(s => s.id) ?? [];
     }
 
     cancel(): void { this.cancelRequested = true; }
@@ -929,9 +1179,99 @@ export class MissionEngine {
         this.deps.trace?.('run.finished', {
             status,
             ...(result ? { verdict: result.verdict } : {}),
-            ...(result?.summary || note ? { text: result?.summary ?? note } : {})
+            ...(result?.summary || note ? { text: result?.summary ?? note } : {}),
+            nodeId: 'end', actor: 'lead',
+            parentRefs: this.lastDecisionId ? [this.lastDecisionId] : [],
+            inputRefs: [...this.lastResultIds]
         });
         this.deps.onUpdate(this.run);
+    }
+
+    /**
+     * ‼️ M-16 — ONE PLANNER BOUNDARY, ONE INJECTION. The steers due now are
+     * taken, marked applied on the run AND in the journal, and appended to the
+     * prompt. Marking BEFORE the planner call is deliberate: a crash mid-call
+     * must lose the steer rather than deliver it twice, because the lead may
+     * already have read it and a repeated instruction is a repeated action.
+     */
+    private takeGuidance(): string {
+        const due = pendingGuidance(this.run);
+        if (!due.length) { return ''; }
+        const at = this.deps.now();
+        for (const g of due) {
+            g.appliedAt = at;
+            this.deps.trace?.('human.guided', { askId: g.id, text: g.text, applied: true, actor: 'user' });
+        }
+        this.deps.onUpdate(this.run);
+        return `\n\n## Guidance from the user${due.length > 1 ? ` (${due.length} messages)` : ''}\n`
+            + due.map(g => g.text).join('\n\n')
+            + '\nTake this into account from this decision onward. It is NOT an instruction to work already in flight.';
+    }
+
+    /**
+     * ‼️ M-16 — STEERS ALREADY TAKEN, REPLAYED WHEN THE SESSION IS RE-SEEDED.
+     *
+     * This is NOT a second application and it does not contradict "exactly
+     * once": the planner session died and the lead is being rebuilt from the
+     * briefing and the ledger, so a standing instruction it was already given
+     * is part of what it knew. Leaving it out would lose the steer for the rest
+     * of the run — and the resume-fallback is common enough that "your
+     * guidance survives unless the session drops" is not a promise worth
+     * making. It is labelled as in force rather than as new, so a lead reading
+     * it does not act on it twice.
+     */
+    private guidanceHistory(): string {
+        const taken = (this.run.guidance ?? []).filter(g => g.appliedAt !== undefined);
+        if (!taken.length) { return ''; }
+        return '\n\n## Guidance the user has given (already in force, not new instructions)\n'
+            + taken.map(g => `- ${g.text}`).join('\n');
+    }
+
+    /**
+     * ‼️ M-16 — THE DECISION NODE, AND A STRATEGY VERSION ONLY IF ONE IS DUE.
+     *
+     * Written in this order every time: the node first, then the revision that
+     * points back at it. That way `sourceAction` is always a BACKWARD reference
+     * to a line already on disk, which is what keeps a replayed tail sane, and
+     * the node carries the version that was in force when it was taken.
+     */
+    private recordDecision(round: MissionRound, d: PlannerDecision): boolean {
+        const r = d.reflection;
+        const text = (r?.strategy || d.thought || '').trim();
+        const key = normalizeStrategy(text);
+        const changed = !!key && key !== this.strategyKey;
+        if (changed) {
+            this.strategyKey = key;
+            this.strategyVersion++;
+            this.run.strategy = {
+                version: this.strategyVersion, text, at: this.deps.now(),
+                ...(r?.phase ? { phase: r.phase } : {})
+            };
+        } else if (this.run.strategy && r?.phase) {
+            // the approach held but the lead moved on — the phase is its own fact
+            this.run.strategy.phase = r.phase;
+        }
+        const nodeId = 'd' + round.n;
+        const inputs = (r?.basedOn ?? []).length ? r!.basedOn : this.lastResultIds;
+        if (r?.phase) { round.phase = r.phase; }
+        if (this.strategyVersion) { round.strategyVersion = this.strategyVersion; }
+        this.deps.trace?.('decision.made', {
+            nodeId, actor: 'lead', text: r?.rationale || d.thought,
+            status: d.action,
+            version: this.strategyVersion,
+            ...(r?.phase ? { phase: r.phase } : {}),
+            parentRefs: this.lastDecisionId ? [this.lastDecisionId] : [],
+            inputRefs: [...inputs]
+        });
+        if (changed) {
+            this.deps.trace?.('strategy.changed', {
+                version: this.strategyVersion, strategy: text, sourceAction: nodeId,
+                ...(r?.phase ? { phase: r.phase } : {}),
+                ...(r?.changeReason ? { reason: r.changeReason } : {})
+            });
+        }
+        this.lastDecisionId = nodeId;
+        return changed;
     }
 
     private stepResults(steps: MissionStep[]): StepResult[] {
@@ -972,6 +1312,12 @@ export class MissionEngine {
                 ? this.protocol.briefing(spec, this.hints, rem)
                 : (roundMsg ?? 'Decide the next round. Reply with ONLY the JSON decision object.');
             if (guard) { prompt += finishOnlyNote(guard); }
+            // ‼️ M-16 — THE PLANNER BOUNDARY IS HERE and nowhere else: the
+            // prompt is complete, the previous wave has settled, and nothing is
+            // in flight to be contradicted. A steer taken anywhere else would
+            // either miss this round or race a running Task.
+            const steer = this.takeGuidance();
+            if (steer) { prompt += steer; }
             roundMsg = undefined;
 
             run.status = 'running';
@@ -983,6 +1329,7 @@ export class MissionEngine {
                 run.plannerSessionId = undefined;
                 let fb = this.protocol.briefing(spec, this.hints, rem) +
                     (run.ledger.length ? '\n\n## History so far (you are mid-mission)\n' + run.ledger.join('\n') : '') +
+                    this.guidanceHistory() +
                     '\n\nDecide the next round. Reply with ONLY the JSON decision object.';
                 if (guard) { fb += finishOnlyNote(guard); }
                 pr = await deps.runPlanner(fb, undefined);
@@ -1030,10 +1377,22 @@ export class MissionEngine {
                 plannerTokens: pr.tokens,
                 at: deps.now()
             };
-            // The lead's reasoning for THIS round is the working strategy — a
-            // round number is the version, because a strategy that survives a
-            // round unchanged is still the strategy of that round.
-            deps.trace?.('strategy.changed', { version: round.n, strategy: d.thought });
+            // ‼️ M-16 — every round is a decision node; a strategy version is
+            // cut only when the approach really moved.
+            const strategyMoved = this.recordDecision(round, d);
+
+            // ---- replan: the approach changed and nothing else this round ----
+            if (d.action === 'replan') {
+                run.rounds.push(round);
+                run.ledger.push(ledgerLine(round));
+                deps.onUpdate(run);
+                roundMsg = (strategyMoved
+                    ? `Recorded as strategy v${this.strategyVersion}.`
+                    : 'That is the strategy you were already following, so no new version was cut.')
+                    + ' Now decide the work it calls for — delegate, ask the user, or finish.'
+                    + '\nReply with ONLY the JSON decision object.';
+                continue;
+            }
 
             if (d.action === 'finish' || d.action === 'abort') {
                 run.rounds.push(round);
@@ -1121,7 +1480,14 @@ export class MissionEngine {
             for (const s of round.steps) {
                 deps.trace?.('action.created', {
                     actionId: s.id, kind: 'task', agentId: s.agentId,
-                    agentName: s.agentName, title: s.title
+                    agentName: s.agentName, title: s.title,
+                    // ‼️ M-16 — every delegation of a round hangs under the SAME
+                    // decision node, which is what makes parallel work read as a
+                    // branch rather than a chain. The fan-in lives on the
+                    // decision (it is the lead that read several results), so it
+                    // is not repeated here — one fact, one place.
+                    actor: s.agentId || s.agentName,
+                    parentRefs: this.lastDecisionId ? [this.lastDecisionId] : []
                 });
             }
             deps.onUpdate(run);
@@ -1171,6 +1537,10 @@ export class MissionEngine {
                 + round.steps.reduce((a, s) => a + (s.tokens ?? 0), 0);
             run.ledger.push(ledgerLine(round));
             deps.onUpdate(run);
+            // What the lead is about to be shown IS the fan-in of its next
+            // decision — recorded here so the graph does not have to guess it
+            // from timestamps when the reply names no `basedOn`.
+            this.lastResultIds = round.steps.map(s => s.id);
             roundMsg = this.protocol.roundMessage(
                 this.stepResults(round.steps),
                 remainingBudget(spec, run, deps.now()),

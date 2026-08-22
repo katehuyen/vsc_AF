@@ -449,9 +449,14 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
         now: () => 0
     };
     return new M.MissionEngine(spec, run, [], deps).execute().then(() => {
-        eq('the round\'s reasoning is recorded as the strategy', seen[0].type, 'strategy.changed');
-        eq('with its round number as the version', seen[0].payload.version, 1);
-        eq('in the lead\'s own words', seen[0].payload.strategy, 'the plan');
+        // ‼️ M-16 — the DECISION node comes first and the revision points back
+        // at it, so `sourceAction` is always a line already on disk.
+        eq('every round opens a decision node', seen[0].type, 'decision.made');
+        eq('in the lead\'s own words', seen[0].payload.text, 'the plan');
+        eq('carrying the strategy version in force', seen[0].payload.version, 1);
+        eq('and the revision follows it', seen[1].type, 'strategy.changed');
+        eq('numbered by revisions, not by rounds', seen[1].payload.version, 1);
+        eq('pointing back at the decision it came out of', seen[1].payload.sourceAction, 'd1');
         eq('and the ending is the last line', seen[seen.length - 1].type, 'run.finished');
         eq('with the verdict', seen[seen.length - 1].payload.verdict, 'success');
 
