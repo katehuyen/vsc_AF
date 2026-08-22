@@ -2,7 +2,7 @@ import * as path from 'path';
 import {
     agyAnnouncedCall, agyArg, agyIsToolStep, AgyStep, agyStepFailed, AgyToolCall,
     agyToolDetail, agyToolName,
-    codexPromptTitle, codexUserText, geminiUserOpening, readFarmConsoleTranscript
+    codexCompletedMessage, codexPromptTitle, codexUserText, geminiUserOpening, readFarmConsoleTranscript
 } from './cliTranscripts';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
 import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
@@ -312,19 +312,27 @@ function parseCodex(raw: string, file: string, pricing: PricingEngine): ParsedCl
             continue;
         }
         const sub = typeof p.type === 'string' ? p.type : '';
-        if (type === 'event_msg' && sub === 'user_message' && typeof p.message === 'string') {
-            const text = codexUserText(p.message);
+        const completed = type === 'event_msg' ? codexCompletedMessage(p) : undefined;
+        const userMessage = type === 'event_msg' && sub === 'user_message' && typeof p.message === 'string'
+            ? p.message : completed?.role === 'user' ? completed.text : undefined;
+        if (typeof userMessage === 'string') {
+            const text = codexUserText(userMessage);
             if (!text) { continue; }
             turn++;
             prompts[turn] = text; started[turn] = ts; turns[turn] = blankTurn();
             if (currentModel) { (turnModels[turn] ?? (turnModels[turn] = new Set())).add(currentModel); }
             if (currentEffort) { (turnAttrs[turn] ?? (turnAttrs[turn] = {})).effort = currentEffort; }
             messages.push({ role: 'user', ts, text, turn, turnStart: true });
-            if (!title) { title = codexPromptTitle(p.message); }
+            if (!title) { title = codexPromptTitle(userMessage); }
             continue;
         }
-        if (type === 'event_msg' && sub === 'agent_message' && typeof p.message === 'string') {
-            addAssistant(p.message, ts); continue;
+        const assistantMessage = type === 'event_msg' && sub === 'agent_message' && typeof p.message === 'string'
+            ? p.message : completed?.role === 'assistant' ? completed.text : undefined;
+        if (typeof assistantMessage === 'string') {
+            // 0.149 writes the same answer once as AgentMessage and once as a
+            // response_item. addAssistant's per-turn key keeps that one answer
+            // one row while still accepting either half if a rollout is torn.
+            addAssistant(assistantMessage, ts); continue;
         }
         if (type === 'event_msg' && sub === 'token_count' && p.info && typeof p.info === 'object') {
             const info = p.info as Record<string, unknown>;

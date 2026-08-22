@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.235.0 — A full Codex transcript cannot become nine loose replies (2026-08-23)
+
+### Codex 0.149 changed the stored dialogue envelope
+Codex did not lose the conversation: one reported session still held 10 MB / 671
+JSONL lines, two human turns, nine agent messages and 101 tool calls. Agent Farm
+lost the boundaries while reading it. Codex 0.149 stores a human turn as
+`event_msg → item_completed → UserMessage`; both Codex transcript readers still
+expected the legacy `event_msg → user_message`. With no recognised human line,
+the viewer produced an empty title, zero turns and only the nine ungrouped agent
+replies that its default Dialog filter could still see.
+
+Both Codex-only readers now accept the measured 0.149 envelope while retaining
+the legacy path. They deliberately do **not** treat every `response_item` whose
+role is `user` as dialogue: Codex writes recommended plugins, AGENTS.md and the
+environment through that same record, and one real session carried 23,758
+characters of that host machinery before the person spoke. Paired
+`AgentMessage` / assistant response records are deduplicated inside their turn.
+
+The original session now parses as two titled turns, two user messages, nine
+agent messages, 101 calls and 101 results, with no orphaned message. Captured
+0.149 fixtures cover the session index, viewer and their turn-number agreement;
+the legacy Codex tests and the Gemini, Antigravity and OpenCode acceptance paths
+remain unchanged and green.
+
 ## 3.234.0 — A participant is a name, and the id travels beside it (2026-08-22)
 
 ### Three ops handed a reader a folder path where a person belonged

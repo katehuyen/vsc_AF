@@ -186,6 +186,36 @@ function agree(engine, info) {
     agree('console', info);
 }
 
+// ------------------------------------------------------------------ codex
+{
+    const home = path.join(root, 'codex');
+    const dir = path.join(home, 'sessions', '2026', '08', '18');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'rollout-0.149.jsonl');
+    const first = '<project-context>machine brief</project-context>\n\nrestore Codex turns';
+    fs.writeFileSync(file, [
+        { timestamp: iso(t0), type: 'session_meta', payload: { session_id: 'codex-turns', cwd: 'D:\\zone', cli_version: '0.149.0' } },
+        { timestamp: iso(t0), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<recommended_plugins>not dialogue</recommended_plugins>' }] } },
+        { timestamp: iso(t0 + 1000), type: 'turn_context', payload: { model: 'gpt-5.6-sol' } },
+        { timestamp: iso(t0 + 2000), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: first }] } },
+        { timestamp: iso(t0 + 2000), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: first }] } } },
+        { timestamp: iso(t0 + 3000), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'first answer' }] } } },
+        { timestamp: iso(t0 + 3000), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'first answer' }] } },
+        { timestamp: iso(t0 + 4000), type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.6-sol', last_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, total_tokens: 120 }, total_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, total_tokens: 120 } } } },
+        { timestamp: iso(t0 + 6000), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'continue safely' }] } },
+        { timestamp: iso(t0 + 6000), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'continue safely' }] } } },
+        { timestamp: iso(t0 + 7000), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'second answer' }] } } },
+        { timestamp: iso(t0 + 7000), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'second answer' }] } }
+    ].map(s => JSON.stringify(s)).join('\n') + '\n', 'utf8');
+    const rows = T.codexSessionsSource(() => home, () => ({}), pricing, 0).scan();
+    ok('codex 0.149: the session is a row', rows.length === 1);
+    const info = rows[0];
+    ok('codex 0.149: two human prompts, two turns, no host-machinery turn',
+        info.turns.length === 2 && info.turns[0].label === 'restore Codex turns'
+        && info.turns[1].label === 'continue safely');
+    agree('codex', info);
+}
+
 // ---------------------------------------------------------------- opencode
 {
     const dir = path.join(root, 'opencode');
@@ -267,11 +297,12 @@ function agree(engine, info) {
         .concat(T.geminiSessionsSource(() => path.join(root, 'gemini'), () => [], pricing, 0).scan())
         .concat(T.agySessionsSource(() => path.join(root, 'agy'), () => ({}), undefined, 0).scan())
         .concat(T.farmConsoleSessionsSource(() => path.join(root, 'console'), () => ({}), 0).scan())
+        .concat(T.codexSessionsSource(() => path.join(root, 'codex'), () => ({}), pricing, 0).scan())
         .concat(T.opencodeSessionsSource(() => path.join(root, 'opencode'), () => ({}), pricing, 0).scan());
     const rows = buildTurnRows(sessions, () => false);
     const engines = [...new Set(rows.map(r => r.engine))].sort();
     ok('‼️ every engine reaches the Turns page — the picker lists what the rows carry',
-        engines.join() === 'agy,gemini,opencode');
+        engines.join() === 'agy,codex,gemini,opencode');
     ok('the page is sorted newest first, across engines',
         rows.every((r, i) => i === 0 || rows[i - 1].ts >= r.ts));
     ok('every row can name the session it belongs to and how many turns that had',

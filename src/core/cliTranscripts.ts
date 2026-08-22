@@ -17,7 +17,7 @@ import { ConsoleMessage, ConsoleSessionState } from './consoleproto';
  * E3b — transcript adapters for external CLIs. Formats were taken from the
  * upstream sources (July 2026): openai/codex `codex-rs/protocol` (rollout
  * lines: session_meta / turn_context / event_msg token_count+user_message /
- * response_item) and google-gemini/gemini-cli session files under
+ * item_completed + response_item) and google-gemini/gemini-cli session files under
  * `~/.gemini/tmp/<sha256(projectRoot)>/chats/` (JSON with `messages[]` or
  * JSONL records; token key aliases as parsed by ccusage). Formats drift —
  * every parser here is fail-soft: a line/file that doesn't match is skipped,
@@ -233,6 +233,11 @@ interface CodexLine {
         model?: string;
         // event_msg
         type?: string; message?: string;
+        item?: {
+            type?: string;
+            text?: string;
+            content?: { type?: string; text?: string }[];
+        };
         /** `external-import-turn-1` on a converted rollout (X-44). */
         turn_id?: string;
         info?: {
@@ -252,6 +257,36 @@ interface CodexLine {
         // response_item function_call
         name?: string;
     };
+}
+
+/**
+ * Dialogue carried by the Codex 0.149 stored-rollout envelope.
+ *
+ * This is deliberately narrower than `response_item role=user`: that record
+ * also carries the recommended-plugin list, AGENTS.md and environment injected
+ * by the Codex host. The matching `item_completed/UserMessage` is the measured
+ * human-turn boundary, so accepting only it keeps machinery out of the session
+ * title and out of the dialogue. The 0.136 `user_message` path remains beside
+ * this one for old rollouts.
+ */
+export function codexCompletedMessage(value: unknown): { role: 'user' | 'assistant'; text: string } | undefined {
+    if (!value || typeof value !== 'object') { return undefined; }
+    const payload = value as Record<string, unknown>;
+    if (payload.type !== 'item_completed' || !payload.item || typeof payload.item !== 'object') {
+        return undefined;
+    }
+    const item = payload.item as Record<string, unknown>;
+    const role = item.type === 'UserMessage' ? 'user'
+        : item.type === 'AgentMessage' ? 'assistant' : undefined;
+    if (!role) { return undefined; }
+    const parts = Array.isArray(item.content) ? item.content : [];
+    const text = parts.map(part => {
+        if (!part || typeof part !== 'object') { return ''; }
+        const t = (part as Record<string, unknown>).text;
+        return typeof t === 'string' ? t : '';
+    }).filter(Boolean).join('\n').trim()
+        || (typeof item.text === 'string' ? item.text.trim() : '');
+    return text ? { role, text } : undefined;
 }
 
 const CODEX_PROMPT_PREFIX = '## My request for Codex:';
@@ -372,7 +407,8 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
 
     /**
      * ‼️ A Codex rollout states every boundary the shape needs, and states them
-     * plainly: `user_message` opens a turn and carries its label and time,
+     * plainly: legacy `user_message` or 0.149's `item_completed/UserMessage`
+     * opens a turn and carries its label and time,
      * `token_count.last_token_usage` is that request's own spend AND the window
      * it ended holding, `response_item` function/custom calls are its tools,
      * `turn_context` names the model. So the turns are built from what the file
@@ -409,15 +445,20 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
             if (typeof p.model === 'string' && p.model) { models.add(p.model); lastModel = p.model; }
         } else if (line.type === 'event_msg') {
             if (typeof p.turn_id === 'string' && EXTERNAL_IMPORT_TURN.test(p.turn_id)) { marks.marked = true; }
-            if (p.type === 'user_message' && typeof p.message === 'string') {
+            const completed = codexCompletedMessage(p);
+            const userMessage = p.type === 'user_message' && typeof p.message === 'string'
+                ? p.message : completed?.role === 'user' ? completed.text : undefined;
+            const assistantMessage = p.type === 'agent_message' && typeof p.message === 'string'
+                ? p.message : completed?.role === 'assistant' ? completed.text : undefined;
+            if (typeof userMessage === 'string') {
                 info.userTurns++;
-                const named = codexPromptTitle(p.message);
+                const named = codexPromptTitle(userMessage);
                 if (named && info.title === 'codex session') {
                     info.title = named; info.autoTitle = named;
                 }
-                openTurn(named || codexUserText(p.message).slice(0, 80),
+                openTurn(named || codexUserText(userMessage).slice(0, 80),
                     Number.isNaN(ts) ? (lastTs || info.mtime) : ts);
-            } else if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
+            } else if (typeof assistantMessage === 'string' && assistantMessage.trim()) {
                 info.assistantMsgs++;
                 const open = turnNow();
                 if (open) { open.steps++; }

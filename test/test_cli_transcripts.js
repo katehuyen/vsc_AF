@@ -115,6 +115,42 @@ check('codex: a raw /goal prompt names the session by its prose',
 // cache: unchanged scan returns same array
 check('codex: unchanged → cached', codex.scan() === list || codex.scan().length === 1);
 
+// ---- Codex 0.149 stored-rollout dialogue envelope (captured, minimized) ----
+// `response_item role=user` is NOT the turn boundary: the host writes its
+// recommended plugins / AGENTS / environment through that same role. The
+// paired item_completed/UserMessage is the measured human message.
+const codex149Home = path.join(tmp, '.codex-149');
+const codex149Day = path.join(codex149Home, 'sessions', '2026', '08', '22');
+fs.mkdirSync(codex149Day, { recursive: true });
+const codex149Prompt = '<project-context>machine brief, not dialogue</project-context>\n\n/goal repair only the Codex transcript';
+fs.writeFileSync(path.join(codex149Day, 'rollout-0.149.jsonl'), [
+    { timestamp: '2026-08-22T20:00:00.000Z', type: 'session_meta', payload: { session_id: 'codex-149', cwd: 'D:\\agents\\kurgucu', originator: 'codex_exec', cli_version: '0.149.0' } },
+    { timestamp: '2026-08-22T20:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<recommended_plugins>host machinery</recommended_plugins>' }] } },
+    { timestamp: '2026-08-22T20:00:02.000Z', type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'high' } },
+    { timestamp: '2026-08-22T20:00:03.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: codex149Prompt }] } },
+    { timestamp: '2026-08-22T20:00:03.000Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: codex149Prompt }] } } },
+    { timestamp: '2026-08-22T20:00:04.000Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'first answer' }] } } },
+    { timestamp: '2026-08-22T20:00:04.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'first answer' }] } },
+    { timestamp: '2026-08-22T20:00:05.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.6-sol', last_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, total_tokens: 120 }, total_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 20, total_tokens: 120 } } } },
+    { timestamp: '2026-08-22T20:01:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'second human turn' }] } },
+    { timestamp: '2026-08-22T20:01:00.000Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'second human turn' }] } } },
+    { timestamp: '2026-08-22T20:01:01.000Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'second answer' }] } } },
+    { timestamp: '2026-08-22T20:01:01.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'second answer' }] } },
+    { timestamp: '2026-08-22T20:01:02.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.6-sol', last_token_usage: { input_tokens: 130, cached_input_tokens: 60, output_tokens: 25, total_tokens: 155 }, total_token_usage: { input_tokens: 230, cached_input_tokens: 100, output_tokens: 45, total_tokens: 275 } } } }
+].map(x => JSON.stringify(x)).join('\n') + '\n', 'utf8');
+const codex149Rows = codexSessionsSource(() => codex149Home, resolveAgent, () => pricing, 0).scan();
+const c149 = codex149Rows[0];
+check('‼️ codex 0.149: the stored rollout is one session, not a silent zero-turn row',
+    codex149Rows.length === 1 && c149.sessionId === 'codex-149' && c149.version === '0.149.0');
+check('‼️ codex 0.149: item_completed/UserMessage opens and labels both real turns',
+    c149.userTurns === 2 && c149.turns.length === 2
+    && c149.title === 'repair only the Codex transcript'
+    && c149.turns[1].label === 'second human turn');
+check('codex 0.149: host role=user machinery opens no phantom turn',
+    !c149.title.includes('host machinery') && c149.userTurns === 2);
+check('codex 0.149: item_completed/AgentMessage counts each answer once',
+    c149.assistantMsgs === 2 && c149.turns.every(t => t.steps >= 1));
+
 // ---- gemini fixture: tmp/<sha256(projectRoot)>/chats/session.json + jsonl ----
 const geminiTmp = path.join(tmp, '.gemini', 'tmp');
 const hash = crypto.createHash('sha256').update(agentDir.replace(/\\/g, '/')).digest('hex');

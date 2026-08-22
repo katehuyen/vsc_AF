@@ -250,6 +250,40 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         && codexData.totalTokens === 120 && codexData.context.limit === 258400
         && codexData.context.tokens === 120);
 
+    // ---- Codex 0.149: the stored rollout changed only its dialogue envelope ----
+    const codex149Tmp = path.join(require('os').tmpdir(), `af-codex-149-view-${Date.now()}.jsonl`);
+    const codex149Prompt = '<project-context>injected 0.149 brief</project-context>\n\n/goal keep every Codex turn';
+    fs.writeFileSync(codex149Tmp, [
+        { timestamp: t1, type: 'session_meta', payload: { session_id: 'codex-thread-149', cwd: 'D:/agents/dev', cli_version: '0.149.0' } },
+        // The host uses role=user for machinery too; parsing this generic record
+        // would put 20k+ characters of AGENTS/environment text into the dialogue.
+        { timestamp: t1, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<recommended_plugins>host machinery</recommended_plugins>' }] } },
+        { timestamp: t1, type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'high' } },
+        { timestamp: t1, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: codex149Prompt }] } },
+        { timestamp: t1, type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: codex149Prompt }] } } },
+        { timestamp: t1, type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'first 0.149 answer' }] } } },
+        // Real 0.149 files duplicate the answer here. It must still draw once.
+        { timestamp: t1, type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'first 0.149 answer' }] } },
+        { timestamp: t2, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'second 0.149 turn' }] } },
+        { timestamp: t2, type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'second 0.149 turn' }] } } },
+        { timestamp: t2, type: 'event_msg', payload: { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'second 0.149 answer' }] } } },
+        { timestamp: t2, type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'second 0.149 answer' }] } }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    const codex149Data = viewer.buildData(codex149Tmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
+        maxMessages: () => 50, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(codex149Tmp);
+    ok('‼️ Codex 0.149 viewer restores the title and every real turn',
+        codex149Data.title === 'keep every Codex turn' && codex149Data.turnCount === 2
+        && codex149Data.turns[1].label === 'second 0.149 turn');
+    ok('Codex 0.149 viewer excludes host machinery and keeps only human prompts',
+        codex149Data.messages.filter(m => m.role === 'user').length === 2
+        && !codex149Data.messages.some(m => String(m.text || '').includes('host machinery')));
+    ok('Codex 0.149 viewer deduplicates paired AgentMessage/response_item answers',
+        codex149Data.messages.filter(m => m.role === 'assistant').length === 2
+        && codex149Data.messages.every(m => m.turn === 1 || m.turn === 2));
+
     // Antigravity's private DB is schema-less protobuf. Console-hosted sessions
     // are therefore mirrored to Agent Farm's versioned, readable JSON instead.
     const agyTmp = path.join(require('os').tmpdir(), `af-agy-view-${Date.now()}.json`);
