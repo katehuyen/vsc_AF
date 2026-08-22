@@ -263,8 +263,11 @@ import {
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
-    resolveLead, traceFileFor, validateObjective
+    resolveLead, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
+// `isStale` is already taken by codexctx (a context measurement going out of
+// date) — a different subject entirely, so this one travels under its own name.
+import { currentEvaluations, isStale as evaluationIsStale } from './core/missionEvaluation';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
@@ -4908,7 +4911,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.status',
-            describe: 'One run in detail (rounds, steps, budget, pending waits). args: id',
+            describe: 'One run in detail (rounds, steps, budget, pending waits). ‼️ M-17: on an '
+                + 'adaptive run `criteria` carries each success criterion with its CURRENT verdict '
+                + '(pass / fail / unknown / unjudged) and the evidence behind it, `evaluations` is '
+                + 'every verdict ever recorded with `stale` saying whether the work has since moved '
+                + 'on, `stopReason` says why the run stopped from a closed list, and `unmet` names '
+                + 'the required criteria a `partial` did not reach. A delegate exiting cleanly is '
+                + 'NOT a criterion being met — only an evaluation is. args: id',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -4917,6 +4926,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
+                    // ‼️ M-17 — WHY IT STOPPED AND WHAT IT DID NOT REACH. A
+                    // `partial` that does not say which required criteria are
+                    // open is a success with a hedge on it, and "did this reach
+                    // its objective or run out of rope?" cannot be answered
+                    // from a summary's wording. Null on a classic run, which
+                    // has no criteria and therefore no gate.
+                    stopReason: r.result?.stopReason ?? null,
+                    unmet: r.result?.unmet ?? null,
+                    criteria: (sp?.successCriteria ?? []).map(c => {
+                        const live = currentEvaluations(r.evaluations ?? [], settledCriteriaWork(r));
+                        const f = live.flatMap(e => e.findings).filter(x => x.criterionId === c.id).pop();
+                        return {
+                            id: c.id, text: c.text, required: c.required,
+                            verdict: f?.verdict ?? 'unjudged',
+                            evidence: f?.evidence ?? null, gap: f?.gap ?? null
+                        };
+                    }),
+                    // Every verdict ever recorded, stale ones included and SAID
+                    // to be stale — deleting them would leave a run that looks
+                    // as if it was never reviewed.
+                    evaluations: (r.evaluations ?? []).map(e => ({
+                        id: e.id, at: e.at, advice: e.advice,
+                        evaluator: e.evaluator, targets: e.targets,
+                        confidence: e.confidence ?? null, note: e.note ?? null,
+                        stale: evaluationIsStale(e, settledCriteriaWork(r)),
+                        findings: e.findings
+                    })),
                     // ‼️ X-19 — the other currency, and on a plan-billed team the
                     // only one that moves. A caller reading `costUSD: 0` off a
                     // mission that ran all morning is not looking at a cheap run.

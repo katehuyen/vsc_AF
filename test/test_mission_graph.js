@@ -122,9 +122,13 @@ const reflect = (over = {}) => ({
 // ============================================ 1. a small objective ends after one delegation
 {
     console.log('\n-- a small objective is one delegation and a finish');
+    // ‼️ M-17 moved the finish line, not the claim: ONE delegation still does
+    // it, but "success" now needs a verdict on the criteria — a delegate
+    // exiting cleanly says the work ran, not that the objective is met.
     const p = scripted([
-        { ...reflect(), thought: 'one writer will do', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write docs', prompt: 'document every op', expect: 'c1', readonly: false }] },
-        { ...reflect({ currentPhase: 'verifying' }), thought: 'it is done', action: 'finish', verdict: 'success', summary: 'documented' }
+        { ...reflect(), thought: 'one writer will do', action: 'delegate', tasks: [{ agent: 'Ada', title: 'write docs', prompt: 'document every op', expect: 'c1', criteria: ['c1'], readonly: false }] },
+        { ...reflect({ currentPhase: 'verifying' }), thought: 'check it', action: 'evaluate', targets: [], findings: [{ criterion: 'c1', verdict: 'pass', evidence: 'all nine ops have a paragraph' }], advice: 'finish' },
+        { ...reflect({ currentPhase: 'verifying' }), thought: 'it is done', action: 'finish', verdict: 'success', summary: 'documented', stopReason: 'criteria-satisfied' }
     ]);
     const { seen, d } = deps(p);
     const run = newRun();
@@ -132,8 +136,9 @@ const reflect = (over = {}) => ({
     return new M.MissionEngine(s, run, [], d).execute().then(() => {
         eq('the run is done', run.status, 'done');
         eq('with an honest verdict', run.result.verdict, 'success');
-        eq('two rounds, no more', run.rounds.length, 2);
-        eq('the lead was called twice', p.calls(), 2);
+        eq('and it says WHY it stopped', run.result.stopReason, 'criteria-satisfied');
+        eq('one delegation, no more', run.rounds.filter(r => r.action === 'delegate').length, 1);
+        eq('three rounds: do it, judge it, finish', run.rounds.length, 3);
         eq('and the round carries the lead\'s own phase label', run.rounds[1].phase, 'verifying');
         eq('‼️ the strategy never moved, so there is exactly ONE version',
             seen.filter(e => e.type === 'strategy.changed').length, 1);
@@ -143,7 +148,7 @@ const reflect = (over = {}) => ({
 
         const g = M.projectTrace(seen.map((e, i) => ({ v: 2, seq: i + 1, ts: i + 1, ...e })));
         eq('the graph has a node per decision, per delegation and one ending',
-            g.graph.length, 4);
+            g.graph.length, 5);
         const d1 = g.graph.find(n => n.id === 'd1');
         const d2 = g.graph.find(n => n.id === 'd2');
         const del = g.graph.find(n => n.kind === 'delegation');

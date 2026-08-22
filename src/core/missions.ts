@@ -4,6 +4,11 @@ import {
     MissionPoolMember, MissionRuntimeRole, missionModeOf, normalizeObjective, validateObjective
 } from './missionMode';
 import {
+    buildReviewPrompt, CriterionFinding, currentEvaluations, EVALUATION_SCHEMA, EvaluationAdvice,
+    isStopReason, MissionEvaluation, parseEvaluation, STOP_REASONS, StopReason, successGate,
+    unreadableEvaluation
+} from './missionEvaluation';
+import {
     MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
 } from './missionTrace';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
@@ -19,6 +24,15 @@ export type {
     PendingHuman, Reconciliation, StrategyVersion, TraceAction, TraceEvaluation, TraceGuidance,
     TraceHealth, TraceProjection, TraceRead
 } from './missionTrace';
+
+export {
+    buildReviewPrompt, currentEvaluations, EVALUATION_ADVICE, EVALUATION_SCHEMA, isStale,
+    isStopReason, parseEvaluation, STOP_REASONS, successGate, unreadableEvaluation
+} from './missionEvaluation';
+export type {
+    CriterionFinding, CriterionVerdict, EvaluationAdvice, GateResult, MissionEvaluation,
+    MissionEvaluator, ParsedEvaluation, StopReason
+} from './missionEvaluation';
 
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, isAdaptive, missionModeOf, normalizeCriteria,
@@ -211,6 +225,18 @@ export interface MissionStep {
     expect?: string;
     /** Planner marks reads-only work; governs the parallel-write rule. */
     readonly?: boolean;
+    /**
+     * ‼️ M-17 — WHICH CRITERIA THIS WORK IS FOR (adaptive only).
+     *
+     * M-15 asked the lead to name the criterion in `expect`, which is prose and
+     * therefore unusable by anything but a reader. As a field it does real
+     * work: it is what tells an evaluation it has gone stale — a pass recorded
+     * before this step settled is a pass about a version of the artefact that
+     * no longer exists.
+     */
+    criteria?: string[];
+    /** ‼️ M-17 — this step IS a review, and its output is parsed as one. */
+    evaluates?: boolean;
     taskId?: string;
     status: MissionStepStatus;
     costUSD?: number;
@@ -228,7 +254,8 @@ export interface MissionStep {
  * costs a round and a planner call like every other action — the ceilings are
  * mechanical authority and nothing here gets a free turn.
  */
-export type MissionAction = 'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan';
+export type MissionAction =
+    'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate';
 
 export interface MissionRound {
     n: number;
@@ -246,6 +273,10 @@ export interface MissionRound {
      */
     phase?: string;
     strategyVersion?: number;
+    /** ‼️ M-17 — the verdict this round recorded, if it recorded one. */
+    evaluationId?: string;
+    /** ‼️ M-17 — why the run stopped, from a closed list (finish/abort only). */
+    stopReason?: StopReason;
     /** Set when the user rejected this round's delegations. */
     rejectedReason?: string;
     plannerCostUSD: number;
@@ -261,6 +292,15 @@ export type MissionRunStatus =
 export interface MissionResult {
     verdict: 'success' | 'partial' | 'failed';
     summary: string;
+    /** ‼️ M-17 — why it stopped, from a closed list. Prose cannot answer "did
+     *  this reach its objective or run out of rope?" and that is the question. */
+    stopReason?: StopReason;
+    /**
+     * ‼️ M-17 — REQUIRED CRITERIA WITH NO CURRENT PASS, carried into the final
+     * record rather than left in the summary's wording. A partial that does not
+     * say WHAT is missing is a success with a hedge on it.
+     */
+    unmet?: { id: string; text: string; verdict: string }[];
 }
 
 export interface MissionRun {
@@ -340,6 +380,17 @@ export interface MissionRun {
      * it cannot do from a version number alone.
      */
     strategy?: { version: number; text: string; phase?: string; at: number };
+    /**
+     * ‼️ M-17 — EVERY VERDICT THIS RUN HAS RECORDED, in order, stale ones kept.
+     *
+     * A stale evaluation is not deleted: "we checked, then changed the thing"
+     * is the history, and throwing it away leaves a run that looks like it was
+     * never reviewed. Staleness is DERIVED from the steps that settled after it
+     * (`isStale`), never stored — a stored flag would be a second copy of a
+     * fact the timeline already states and would disagree with it on the first
+     * out-of-order replay.
+     */
+    evaluations?: MissionEvaluation[];
 }
 
 export interface MissionGuidance {
@@ -367,6 +418,27 @@ export function pendingGuidance(run: MissionRun): MissionGuidance[] {
     return (run.guidance ?? []).filter(g => g.appliedAt === undefined);
 }
 
+/**
+ * ‼️ M-17 — THE INPUT TO STALENESS, defined once because two definitions of
+ * "the work moved on" would be two definitions of what a current pass is, and
+ * the gate would then mean something different depending on who asked.
+ *
+ * A REVIEW is deliberately not in here: a review is the judgement of the
+ * criteria, not work on them, and letting one count would mean no evaluation
+ * could survive the round that produced it.
+ */
+export function settledCriteriaWork(run: MissionRun): { at: number; criteria?: string[] }[] {
+    const out: { at: number; criteria?: string[] }[] = [];
+    for (const r of run.rounds) {
+        for (const s of r.steps) {
+            if (s.evaluates) { continue; }
+            if (s.status !== 'done' && s.status !== 'failed') { continue; }
+            if (s.criteria?.length) { out.push({ at: r.at, criteria: s.criteria }); }
+        }
+    }
+    return out;
+}
+
 export function newMissionId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -381,6 +453,8 @@ export interface PlannerTaskReq {
     prompt: string;
     expect?: string;
     readonly?: boolean;
+    /** M-17 — the criterion ids this work serves (adaptive only) */
+    criteria?: string[];
 }
 
 /**
@@ -406,12 +480,42 @@ export interface AdaptiveReflection {
     basedOn: string[];
 }
 
+/**
+ * ‼️ M-17 — AN `evaluate` IS ONE PRIMITIVE WITH TWO WAYS OF RUNNING.
+ *
+ * With no `reviewer`, the lead judges from the results already in its hands and
+ * the verdict is recorded in the same round — no extra call, because asking a
+ * model to re-read what it just read is a round spent on nothing. With a
+ * `reviewer`, the named agent runs as an **ordinary FarmTask** under the same
+ * budget, the same waves and the same cancel as any other delegation, and its
+ * output is parsed by the same parser.
+ *
+ * Both land on the identical record, which is the point: a gate that trusted
+ * self-review and independent review differently would be two gates, and the
+ * one a run happened to use would decide what "success" meant.
+ */
 type PlannerDecisionCore =
     | { action: 'delegate'; thought: string; tasks: PlannerTaskReq[] }
-    | { action: 'finish'; thought: string; verdict: MissionResult['verdict']; summary: string }
-    | { action: 'abort'; thought: string; verdict: MissionResult['verdict']; summary: string }
+    | {
+        action: 'finish'; thought: string; verdict: MissionResult['verdict'];
+        summary: string; stopReason?: StopReason;
+    }
+    | {
+        action: 'abort'; thought: string; verdict: MissionResult['verdict'];
+        summary: string; stopReason?: StopReason;
+    }
     | { action: 'ask_user'; thought: string; question: string }
-    | { action: 'replan'; thought: string };
+    | { action: 'replan'; thought: string }
+    | {
+        action: 'evaluate'; thought: string; targets: string[];
+        /** absent = the lead judges it itself, from what it already has */
+        reviewer?: string;
+        /** present exactly when there is no reviewer */
+        findings?: CriterionFinding[];
+        advice?: EvaluationAdvice;
+        confidence?: number;
+        note?: string;
+    };
 
 export type PlannerDecision = PlannerDecisionCore & { reflection?: AdaptiveReflection };
 
@@ -498,11 +602,42 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
     // ‼️ ADAPTIVE-ONLY, checked before the shared table: a classic lead that
     // invents "replan" must still get today's "unknown action" error, because
     // a classic run's behaviour is not allowed to move by one character.
-    if (action === 'replan') {
+    if (action === 'replan' || action === 'evaluate') {
         if (!adaptive) {
             return { ok: false, error: `unknown "action": "${action}" (use delegate | finish | ask_user | abort)` };
         }
-        return done({ action: 'replan', thought });
+        if (action === 'replan') { return done({ action: 'replan', thought }); }
+        const targets = Array.isArray(o.targets)
+            ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 40)
+            : [];
+        const reviewerRaw = typeof o.reviewer === 'string' ? o.reviewer.trim() : '';
+        if (reviewerRaw) {
+            const allowed = allowedAgents(spec);
+            const reviewer = allowed.find(m => m.agentName.toLowerCase() === reviewerRaw.toLowerCase());
+            if (!reviewer) {
+                return {
+                    ok: false,
+                    error: `unknown reviewer "${reviewerRaw}" — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
+                };
+            }
+            return done({ action: 'evaluate', thought, targets, reviewer: reviewer.agentName });
+        }
+        // ‼️ No reviewer means the LEAD is the evaluator, so the verdict has to
+        // be in this very reply — "I will judge it myself" with nothing
+        // attached would cost a round and record nothing.
+        const parsed = parseEvaluation(o, spec.successCriteria ?? []);
+        if (!parsed.ok) {
+            return {
+                ok: false,
+                error: `"evaluate" without a "reviewer" means you are judging it yourself, so this reply must carry the verdict — ${parsed.error}`
+            };
+        }
+        return done({
+            action: 'evaluate', thought, targets,
+            findings: parsed.value.findings, advice: parsed.value.advice,
+            ...(parsed.value.confidence !== undefined ? { confidence: parsed.value.confidence } : {}),
+            ...(parsed.value.note ? { note: parsed.value.note } : {})
+        });
     }
     if (action === 'finish' || action === 'abort') {
         const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
@@ -512,9 +647,21 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             v === 'success' || v === 'partial' || v === 'failed'
                 ? v
                 : (action === 'finish' ? 'partial' : 'failed'); // tolerant default
+        // ‼️ M-17 — WHY IT STOPPED, and only from the closed list. A wrong one
+        // is refused by name rather than coerced: the whole value of the field
+        // is that "reached its objective" and "ran out of rope" cannot be
+        // confused later, and a silent fallback would confuse exactly those.
+        let stopReason: StopReason | undefined;
+        if (adaptive) {
+            const s = String(o.stopReason ?? o.stop_reason ?? '').trim();
+            if (s && !isStopReason(s)) {
+                return { ok: false, error: `"stopReason" must be one of: ${STOP_REASONS.join(' | ')} (got "${s}")` };
+            }
+            if (s) { stopReason = s as StopReason; }
+        }
         return done(action === 'finish'
-            ? { action: 'finish', thought, verdict, summary }
-            : { action: 'abort', thought, verdict, summary });
+            ? { action: 'finish', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) }
+            : { action: 'abort', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) });
     }
     if (action === 'ask_user') {
         const question = typeof o.question === 'string' ? o.question.trim() : '';
@@ -550,10 +697,27 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             const title = typeof t.title === 'string' ? t.title.trim().slice(0, 120) : '';
             const prompt = typeof t.prompt === 'string' ? t.prompt.trim().slice(0, MAX_PROMPT_CHARS) : '';
             if (!title || !prompt) { return { ok: false, error: 'every task needs a non-empty "title" and "prompt"' }; }
+            // ‼️ M-17 — WHICH CRITERIA THIS WORK IS FOR, and a wrong id is
+            // refused rather than dropped: a criterion nobody can point at is
+            // the one an evaluation will never be told has gone stale.
+            let criteria: string[] | undefined;
+            if (adaptive && Array.isArray(t.criteria)) {
+                const ids = new Set((spec.successCriteria ?? []).map(c => c.id));
+                const named = t.criteria.filter(x => typeof x === 'string').map(x => String(x).trim()).filter(Boolean);
+                const bad = named.find(x => !ids.has(x));
+                if (bad) {
+                    return {
+                        ok: false,
+                        error: `task "${title}" names an unknown criterion "${bad}" — the ids are: ${[...ids].join(', ') || '(none)'}`
+                    };
+                }
+                if (named.length) { criteria = [...new Set(named)]; }
+            }
             tasks.push({
                 agent, title, prompt,
                 expect: typeof t.expect === 'string' ? t.expect.trim().slice(0, 400) : undefined,
-                readonly: t.readonly === true
+                readonly: t.readonly === true,
+                ...(criteria ? { criteria } : {})
             });
         }
         return done({ action, thought, tasks });
@@ -790,7 +954,10 @@ ${spec.workdir ? `\nWorking folder (delegates run inside it): ${spec.workdir}` :
 
 ## Success criteria — this is what "done" means
 ${criteria || '- (none recorded — say so and finish)'}
-Each carries a stable id. When you delegate for one, name it in the task's "expect".
+Each carries a stable id. Name the ids a delegation is for in its "criteria", and
+judge them with "evaluate". ‼️ A delegate finishing is not a criterion being met:
+"finish" with "success" is refused until every REQUIRED criterion has a current
+pass on record.
 ${constraints ? `\n## Constraints — things this run may NOT do\n${constraints}` : ''}
 
 ## Who you may draw on
@@ -828,12 +995,22 @@ const ADAPTIVE_DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose arou
   "changeReason": "only when the strategy above differs from your last one: what made you change it",
   "basedOn": ["ids of the earlier results this decision rests on, from the \\"id\\" shown with each round result"],
   "thought": "one short sentence on your reasoning",
-  "action": "delegate" | "finish" | "ask_user" | "abort" | "replan",
-  "tasks": [ { "agent": "<pool agent name>", "title": "...", "prompt": "full self-contained instructions for that agent", "expect": "how to tell it succeeded, naming the criterion id it serves", "readonly": true|false } ],
+  "action": "delegate" | "evaluate" | "finish" | "ask_user" | "abort" | "replan",
+  "tasks": [ { "agent": "<pool agent name>", "title": "...", "prompt": "full self-contained instructions for that agent", "expect": "how to tell it succeeded", "criteria": ["<criterion ids this work is for>"], "readonly": true|false } ],
+  "targets": ["for evaluate: the result ids you are judging"],
+  "reviewer": "for evaluate: a pool agent to review independently — omit to judge it yourself",
+  "findings": [ { "criterion": "<criterion id>", "verdict": "pass" | "fail" | "unknown", "evidence": "what you actually saw", "gap": "what is missing" } ],
+  "advice": "for evaluate: finish | revise | replan | explore | ask_user | partial | failed",
   "question": "only for ask_user",
-  "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains"
+  "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains",
+  "stopReason": "for finish/abort: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
 }
 Rules:
+- ‼️ "finish" with "success" is REFUSED unless every REQUIRED criterion has a current PASS on record. A criterion is judged by an "evaluate", never by a delegation finishing — a delegate exiting cleanly says the work RAN, not that the objective is met.
+- An evaluation goes STALE when work for one of the criteria it judged settles after it. Judge again after you change something; a pass about the old version does not open the gate.
+- Use "evaluate" with no "reviewer" to judge from the results you already hold — then the verdict must be in the SAME reply ("findings" + "advice"). Name a "reviewer" from the pool when the judgement should not be your own.
+- "unknown" is a real verdict and is better than a guess. There is no score to fill in; "confidence" is optional and nothing depends on it.
+- "revise" means the same approach and the same artefact, fixed where the gap is. "replan" means the approach was wrong. They are different words because they are different events.
 - You are the PLANNER, not the worker. NEVER do the objective's work yourself — do not edit files, run builds or produce the deliverable. Your entire output is the JSON decision; all work happens through delegations. (Write-tools are disabled for you.)
 - "rationale", "currentPhase" and "strategy" are required on EVERY reply, whatever the action.
 - Use "replan" when the APPROACH changed and you need a round to say so before ordering work. It costs a round and a planner call like anything else, so do not use it to think out loud.
@@ -898,7 +1075,11 @@ export function ledgerLine(round: MissionRound): string {
     if (round.action === 'ask_user') {
         return `R${round.n} ask_user — Q: ${round.question?.slice(0, 120) ?? ''} A: ${round.answer?.slice(0, 120) ?? '(pending)'}`;
     }
-    return `R${round.n} ${round.action} — ${round.thought.slice(0, 140)}`;
+    if (round.action === 'evaluate') {
+        const who = round.steps[0]?.agentName ?? 'lead';
+        return `R${round.n} evaluate (${who}) — ${round.evaluationId ?? '?'}: ${round.thought.slice(0, 120)}`;
+    }
+    return `R${round.n} ${round.action}${round.stopReason ? ` [${round.stopReason}]` : ''} — ${round.thought.slice(0, 140)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,6 +1302,12 @@ export class MissionEngine {
     /** the action ids whose results the lead was last shown: the default fan-in
      *  when the lead does not name its own `basedOn` */
     private lastResultIds: string[] = [];
+    /** ‼️ M-17 — the success gate refuses ONCE. A second insistence is not met
+     *  with a third refusal (that would spin to the call cap and end as
+     *  `failed`, which is less true than what actually happened) — the finish
+     *  is taken and the verdict is brought down to `partial` with the unmet
+     *  criteria named. Honest stop, not a standoff. */
+    private gateRefused = false;
     /**
      * ‼️ M-15 — chosen ONCE, at construction, from the spec's own mode. The loop
      * below never asks which kind of mission it is running: everything that
@@ -1179,6 +1366,7 @@ export class MissionEngine {
         this.deps.trace?.('run.finished', {
             status,
             ...(result ? { verdict: result.verdict } : {}),
+            ...(result?.stopReason ? { reason: result.stopReason } : {}),
             ...(result?.summary || note ? { text: result?.summary ?? note } : {}),
             nodeId: 'end', actor: 'lead',
             parentRefs: this.lastDecisionId ? [this.lastDecisionId] : [],
@@ -1274,6 +1462,56 @@ export class MissionEngine {
         return changed;
     }
 
+    /** The verdicts that still speak for the work as it stands now. */
+    private liveEvaluations(): MissionEvaluation[] {
+        return currentEvaluations(this.run.evaluations ?? [], settledCriteriaWork(this.run));
+    }
+
+    /** Record one verdict — on the run, in the journal, under one id. */
+    private recordEvaluation(
+        round: MissionRound, targets: string[], evaluator: MissionEvaluation['evaluator'],
+        v: { findings: CriterionFinding[]; advice: EvaluationAdvice; confidence?: number; note?: string }
+    ): MissionEvaluation {
+        const ev: MissionEvaluation = {
+            id: 'e' + round.n + '-' + ((this.run.evaluations?.length ?? 0) + 1),
+            targets: [...targets], evaluator,
+            findings: v.findings, advice: v.advice,
+            ...(v.confidence !== undefined ? { confidence: v.confidence } : {}),
+            ...(v.note ? { note: v.note } : {}),
+            at: this.deps.now()
+        };
+        this.run.evaluations = [...(this.run.evaluations ?? []), ev];
+        round.evaluationId = ev.id;
+        // One line per criterion, because that is the grain every reader of the
+        // journal wants — and each carries the evaluation id, so the record it
+        // belongs to is never guessed at from timestamps.
+        for (const f of ev.findings) {
+            this.deps.trace?.('evaluation.recorded', {
+                actionId: ev.id, criterionId: f.criterionId,
+                met: f.verdict === 'pass', verdict: f.verdict,
+                text: f.evidence || f.gap,
+                actor: evaluator.kind === 'lead' ? 'lead' : (evaluator.agentId || evaluator.agentName),
+                inputRefs: [...targets],
+                status: ev.advice
+            });
+        }
+        return ev;
+    }
+
+    /** How a verdict reads back to the lead, in the words it must answer in. */
+    private evaluationReport(ev: MissionEvaluation, criteria: readonly { id: string; text: string; required: boolean }[]): string {
+        const byId = new Map(criteria.map(c => [c.id, c]));
+        const rows = ev.findings.map(f => {
+            const c = byId.get(f.criterionId);
+            return `- [${f.criterionId}] ${c?.text ?? ''}${c && !c.required ? ' (optional)' : ''} → **${f.verdict.toUpperCase()}**`
+                + (f.evidence ? `\n  evidence: ${f.evidence}` : '')
+                + (f.gap ? `\n  gap: ${f.gap}` : '');
+        });
+        return `## Evaluation ${ev.id} — by ${ev.evaluator.kind === 'lead' ? 'you' : (ev.evaluator.agentName ?? 'a reviewer')}\n`
+            + rows.join('\n')
+            + `\nAdvice: ${ev.advice}${ev.note ? ` — ${ev.note}` : ''}`;
+    }
+
     private stepResults(steps: MissionStep[]): StepResult[] {
         return steps.map(step => ({
             step,
@@ -1359,7 +1597,11 @@ export class MissionEngine {
             if (guard && d.action === 'delegate') {
                 if (guardNudged) {
                     this.end('failed',
-                        { verdict: 'partial', summary: 'Stopped at the budget limit; the planner kept delegating.' },
+                        {
+                            verdict: 'partial',
+                            summary: 'Stopped at the budget limit; the planner kept delegating.',
+                            stopReason: 'hard-limit'
+                        },
                         'budget exhausted');
                     return;
                 }
@@ -1395,11 +1637,119 @@ export class MissionEngine {
             }
 
             if (d.action === 'finish' || d.action === 'abort') {
+                // ‼️ M-17 — THE SUCCESS GATE. "success" is a claim about the
+                // OBJECTIVE, and the only thing entitled to make it is a
+                // current evaluation of every required criterion. A delegate
+                // exiting cleanly says the work ran.
+                let verdict = d.verdict;
+                let summary = d.summary;
+                let gate: ReturnType<typeof successGate> | undefined;
+                if (isAdaptive(spec) && d.action === 'finish' && verdict === 'success') {
+                    gate = successGate(spec.successCriteria ?? [], this.liveEvaluations());
+                    if (!gate.ok && !this.gateRefused) {
+                        this.gateRefused = true;
+                        const rows = gate.unmet
+                            .map(u => `- [${u.id}] ${u.text} → ${u.verdict}`).join('\n');
+                        roundMsg = `Not accepted: "success" needs a CURRENT pass on every required criterion, and these do not have one:\n${rows}\n`
+                            + '\nA verdict of "unjudged" means nothing has evaluated it; "unknown" means an evaluation could not tell; "fail" means it was judged and missed. An evaluation goes stale when work for its criteria settles after it.\n'
+                            + 'Either close those gaps (a targeted "revise" delegation, then "evaluate"), or finish honestly with "partial" and say what is missing.'
+                            + '\nReply with ONLY the JSON decision object.';
+                        continue;
+                    }
+                    if (!gate.ok) {
+                        // Insisted. Take the finish — the run really is over —
+                        // but record what is true rather than what was claimed.
+                        verdict = 'partial';
+                        summary = summary
+                            + `\n\n(Recorded as partial: "success" was claimed without a current pass on `
+                            + `${gate.unmet.map(u => u.id).join(', ')}.)`;
+                    }
+                }
+                round.stopReason = d.stopReason;
                 run.rounds.push(round);
                 run.ledger.push(ledgerLine(round));
-                this.end(d.action === 'finish' ? 'done' : 'failed',
-                    { verdict: d.verdict, summary: d.summary });
+                this.end(d.action === 'finish' ? 'done' : 'failed', {
+                    verdict, summary,
+                    ...(d.stopReason ? { stopReason: d.stopReason } : {}),
+                    ...(gate && !gate.ok ? { unmet: gate.unmet } : {})
+                });
                 return;
+            }
+
+            // ---- evaluate: judge the criteria, by the lead or by a reviewer ----
+            if (d.action === 'evaluate') {
+                const criteria = spec.successCriteria ?? [];
+                if (!d.reviewer) {
+                    const ev = this.recordEvaluation(round, d.targets, { kind: 'lead' }, {
+                        findings: d.findings ?? [], advice: d.advice ?? 'revise',
+                        ...(d.confidence !== undefined ? { confidence: d.confidence } : {}),
+                        ...(d.note ? { note: d.note } : {})
+                    });
+                    run.rounds.push(round);
+                    run.ledger.push(ledgerLine(round));
+                    deps.onUpdate(run);
+                    roundMsg = this.evaluationReport(ev, criteria)
+                        + '\n\nThat verdict is on the record. Act on it — or finish, if the gate is open.'
+                        + '\nReply with ONLY the JSON decision object.';
+                    continue;
+                }
+                // An independent review is an ORDINARY delegation: same budget,
+                // same waves, same cancel. Nothing about a reviewer earns it a
+                // private execution path.
+                const member = allowedAgents(spec).find(m => m.agentName === d.reviewer);
+                const material = this.stepResults(
+                    run.rounds.flatMap(r => r.steps)
+                        .filter(s => d.targets.length ? d.targets.includes(s.id) : s.status === 'done')
+                        .slice(-6))
+                    .map(r => `### ${r.step.agentName} — "${r.step.title}" (${r.step.status})\n${r.excerpt || '(no output)'}`)
+                    .join('\n\n');
+                const reviewStep: MissionStep = {
+                    id: newMissionId(), round: round.n,
+                    agentId: member?.agentId ?? '', agentName: d.reviewer,
+                    title: `review against the criteria (round ${round.n})`,
+                    prompt: buildReviewPrompt(spec.goal, criteria, material, spec.constraints ?? []),
+                    readonly: true, evaluates: true, status: 'queued'
+                };
+                round.steps = [reviewStep];
+                run.rounds.push(round);
+                deps.trace?.('action.created', {
+                    actionId: reviewStep.id, kind: 'task', agentId: reviewStep.agentId,
+                    agentName: reviewStep.agentName, title: reviewStep.title,
+                    actor: reviewStep.agentId || reviewStep.agentName,
+                    parentRefs: this.lastDecisionId ? [this.lastDecisionId] : [],
+                    inputRefs: [...d.targets]
+                });
+                run.status = 'running';
+                this.setNow(`round ${round.n}: ${d.reviewer} is reviewing`);
+                deps.onUpdate(run);
+                await deps.delegateWave(run, round.steps);
+                if (this.cancelRequested) { this.end('cancelled'); return; }
+                run.totalCostUSD += reviewStep.costUSD ?? 0;
+                run.totalTokens = (run.totalTokens ?? 0) + (reviewStep.tokens ?? 0);
+                // ‼️ A REVIEW THAT CANNOT BE READ SAYS NOTHING ABOUT THE WORK.
+                // Not `fail` — that would blame the delegate for the reviewer's
+                // timeout — and not silence, which would let the run forget it
+                // ever asked. `unknown` with the reason is the true statement,
+                // and the gate treats it exactly as it should: not a pass.
+                let parsedEval;
+                if (reviewStep.status !== 'done') {
+                    parsedEval = unreadableEvaluation(criteria, `the review ${reviewStep.status}`);
+                } else {
+                    const body = reviewStep.outputFile ? deps.readOutputBody(reviewStep.outputFile) : '';
+                    const p = parseEvaluation(body, criteria);
+                    parsedEval = p.ok ? p.value : unreadableEvaluation(criteria, p.error);
+                }
+                const ev = this.recordEvaluation(round, d.targets,
+                    { kind: 'agent', ...(member?.agentId ? { agentId: member.agentId } : {}), agentName: d.reviewer },
+                    parsedEval);
+                run.ledger.push(ledgerLine(round));
+                deps.onUpdate(run);
+                this.lastResultIds = [reviewStep.id];
+                roundMsg = this.evaluationReport(ev, criteria)
+                    + '\n\n' + remLine(remainingBudget(spec, run, deps.now()))
+                    + '\nAct on it — or finish, if the gate is open.'
+                    + '\nReply with ONLY the JSON decision object.';
+                continue;
             }
 
             if (d.action === 'ask_user') {
@@ -1469,6 +1819,7 @@ export class MissionEngine {
                     prompt: t.prompt + (t.expect ? `\n\nSuccess criteria: ${t.expect}` : ''),
                     expect: t.expect,
                     readonly: t.readonly,
+                    ...(t.criteria ? { criteria: t.criteria } : {}),
                     status: 'queued' as MissionStepStatus
                 };
             });
