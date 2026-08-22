@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.221.0 — M-18: a failed primitive tells the lead what kind of failure it was (2026-08-22)
+
+**"Failed" was the same word for four different situations.** An agent that is not in the fleet, a run this machine refused before a process existed, a person pressing Cancel, and a delegate that worked for four minutes and came back wrong all reached the lead as one status and a sentence of prose. A person reads prose fine; the lead gets one line inside a round message and has to decide from it whether to order the same thing again — so it guessed, and mostly it retried, and a delegation to an agent that does not exist failed identically for as many rounds as the ceiling allowed.
+
+A failure is now a **shape**: which **class** of thing went wrong (from a closed set), **what was attempted**, the **ids of the evidence** — the task, the child run, the archived output — and, stated once and centrally rather than at each of the nine failure sites, **what to do about it**. The lead is told whether ordering the same thing again could ever work: `same` (the cause was outside the request), `different` (change the agent, engine or approach), `fix-request` (the request itself was rejected), `stop`. **The original sentence is not replaced** — classifying is an addition, and the prose survives as the failure's `detail`.
+
+**And the two ways a task fails are different facts.** A run refused before it started spent nothing and wants another engine; a delegate that ran and returned failed wants its output read. One word for both is a lead that cannot tell them apart. A ceiling is recognised by its own block code, never by a sentence that happens to mention money.
+
+On the page, the class rides next to the status in its short form and the hover carries the long form, what was attempted, the original words, the evidence and the advice — from the host's one registry, so the reader and the lead can never be told different things about the same failure. `missions.status` hands the same shape out, plus `ran`: the dimensions each delegation actually used and which layer decided them.
+
 ## 3.220.0 — M-18: a delegation is a launch, so it resolves its dimensions like one (2026-08-22)
 
 **The same agent behaved differently depending on who asked.** Open agent `X` from Agent Farm and it runs on the model and effort you configured for it — its own default for that engine, then your fleet defaults. Hand the same agent the same work through a **mission** and none of that applied: a delegation read three fields off the team member and stopped there, so a member you left blank ran on the CLI's raw built-in default. That is the mystery the per-agent, per-engine defaults were built to end, restated one surface over. A delegate now climbs the whole ladder: **the member's row → the mission's engine and workdir → that agent's own default for the engine it lands on → `agentFarm.launchDefaults` → the CLI.** Claude's model and effort deliberately skip the per-agent layer, the same carve-out a launch makes: Claude Code reads that agent's `.claude/settings.local.json` itself, and passing the value back would be a second source of truth over a file you may have edited by hand.

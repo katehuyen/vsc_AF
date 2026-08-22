@@ -15,6 +15,7 @@ import {
     buildIntentPrompt, intentPrimitive, intentTitle, MissionPrimitive, primitiveFor,
     primitivesFor, TaskIntent, unknownActionError
 } from './missionPrimitives';
+import { describeFailure, failure, StepFailure } from './missionFailure';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -37,6 +38,13 @@ export type {
     CriterionFinding, CriterionVerdict, EvaluationAdvice, GateResult, MissionEvaluation,
     MissionEvaluator, ParsedEvaluation, StopReason
 } from './missionEvaluation';
+
+export {
+    attemptOf, classifyTaskFailure, describeFailure, failure, FAILURE_KINDS, shortFailure
+} from './missionFailure';
+export type {
+    FailedStepLike, FailureClass, FailureKind, FailureRefs, RetryAdvice, StepFailure
+} from './missionFailure';
 
 export {
     buildIntentPrompt, intentPrimitive, intentTitle, primitiveFor, primitiveMenu, primitiveNamed,
@@ -295,6 +303,15 @@ export interface MissionStep {
     tokens?: number;
     outputFile?: string;
     note?: string;
+    /**
+     * ‼️ M-18 — THE FAILURE, NORMALISED. `note` is prose written at the failure
+     * site and a person reads it fine; the LEAD gets one line inside a round
+     * message and has to decide from it whether to order the same thing again.
+     * This is the shape it can branch on — class, what was attempted, the ids of
+     * the evidence — and `core/missionFailure.ts` holds what each class means.
+     * The prose is not replaced: it survives as this object's `detail`.
+     */
+    failure?: StepFailure;
     /**
      * ‼️ M-18 — WHAT THIS DELEGATION ACTUALLY RAN WITH, AND WHO DECIDED IT.
      *
@@ -1118,8 +1135,15 @@ export function buildRoundMessage(
         const s = r.step;
         const cost = s.costUSD !== undefined ? ` · $${s.costUSD.toFixed(2)}` : '';
         const dur = r.durationMin !== undefined ? ` · ${r.durationMin}m` : '';
+        // ‼️ M-18 — A FAILURE IS A BLOCK, NOT AN ASIDE. The note stays in the
+        // heading exactly where it was, so a step that merely carries a remark
+        // reads as it always did; a step that FAILED gets the normalised shape
+        // under it, because "→ FAILED (agent not found)" is a sentence the lead
+        // can only guess at and it guessed "retry" for as many rounds as the
+        // ceiling allowed.
+        const failed = describeFailure(s.failure);
         return `### ${withIds ? `[id: ${s.id}] ` : ''}${s.agentName} — "${s.title}" → ${s.status.toUpperCase()}${cost}${dur}${s.note ? ` (${s.note})` : ''}
-${s.expect ? `Expected: ${s.expect}\n` : ''}${r.excerpt ? `Output (excerpt):\n${r.excerpt}` : '(no output)'}
+${failed ? failed + '\n' : ''}${s.expect ? `Expected: ${s.expect}\n` : ''}${r.excerpt ? `Output (excerpt):\n${r.excerpt}` : '(no output)'}
 ${s.outputFile ? `Full output file: ${s.outputFile}` : ''}`;
     });
     return `## Round results
@@ -2313,7 +2337,15 @@ export class MissionEngine {
                 if (this.cancelRequested) { this.end('cancelled'); return; }
                 if (!ok) {
                     round.rejectedReason = 'rejected by user';
-                    round.steps.forEach(s => { s.status = 'cancelled'; s.note = 'round rejected'; });
+                    round.steps.forEach(s => {
+                        s.status = 'cancelled'; s.note = 'round rejected';
+                        // ‼️ M-18 — a REJECTED round is a person saying no, and
+                        // the lead has to read it as that rather than as work
+                        // that went wrong. `stop` is the advice on this class:
+                        // re-proposing what was just refused is the loop this
+                        // classification exists to prevent.
+                        s.failure = failure('cancelled', s, 'the round was rejected at approval');
+                    });
                     run.ledger.push(ledgerLine(round));
                     deps.onUpdate(run);
                     roundMsg = 'The user REJECTED this round\'s delegations. Re-plan differently, ask the user what they want, or finish. Reply with ONLY the JSON decision object.';

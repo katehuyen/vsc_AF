@@ -148,6 +148,39 @@
         return `<span class="mchip ${cls}">${C.esc(STATUS_LABEL[status] || status)}</span>`;
     }
 
+    /**
+     * ‼️ M-18 — SHORTHAND: WHICH KIND OF FAILURE, next to the status that only
+     * ever said "failed".
+     *
+     * "failed" is the same word for an agent that is not in the fleet, a run
+     * this machine refused before it started, a person pressing cancel and a
+     * delegate that worked for four minutes and came back wrong — and the
+     * reader's next move is different for every one of them. The class rides on
+     * the row in its short form; the panel opens with the long form, what was
+     * attempted, the original sentence, the evidence and what to do about it.
+     */
+    function failChip(f) {
+        if (!f) { return ''; }
+        // ‼️ What the class MEANS comes from the host's one registry
+        // (core/missionFailure.ts) — the same rule the permissions and the
+        // efforts follow. A copy here is how the page and the lead start being
+        // told two different things about the same failure.
+        const kind = (DATA.failureKinds || {})[f.class] || {};
+        const retry = kind.retry || '';
+        const lines = [
+            f.class + (retry ? ' — retry: ' + retry : ''),
+            kind.says || '',
+            '',
+            'Attempted: ' + (f.attempted || '—'),
+            f.detail ? 'Reported: ' + f.detail : '',
+            f.refs && f.refs.outputFile ? 'Output file: ' + f.refs.outputFile : '',
+            f.refs && f.refs.taskId ? 'Task: ' + f.refs.taskId : '',
+            f.refs && f.refs.workflowRunId ? 'Workflow run: ' + f.refs.workflowRunId : '',
+            f.refs && f.refs.missionRunId ? 'Child run: ' + f.refs.missionRunId : ''
+        ].filter(x => x !== '');
+        return ` <span class="mchip bad" title="${C.esc(lines.join('\n'))}">${C.esc(f.class)}</span>`;
+    }
+
     // ---------------- new-mission form ----------------
 
     function formHtml() {
@@ -367,7 +400,7 @@
                 + '\nUnmarked values were stated on the member; (agent) is this agent\'s own default for that'
                 + ' engine, (fleet) is agentFarm.launchDefaults, (mission) is the mission-wide engine.')}"` : ''}>${C.esc(s.agentName)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
-            <td>${chip(s.status)}</td>
+            <td>${chip(s.status)}${failChip(s.failure)}</td>
             <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>
             <td class="num">${s.costUSD !== undefined ? usd(s.costUSD) : '—'}</td>
             <td>${s.outputFile ? `<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output">output</a>` : ''}</td>

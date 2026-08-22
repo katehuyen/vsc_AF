@@ -263,7 +263,7 @@ import {
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
-    normalizePool,
+    classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
@@ -3268,6 +3268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (a.outcome === 'interrupted') {
                         step.status = 'failed';
                         step.note = 'interrupted by window reload — fate unknown';
+                        step.failure = missionFailure('interrupted', step, step.note);
                     } else {
                         step.status = a.outcome;
                         if (a.costUSD !== undefined) { step.costUSD = a.costUSD; }
@@ -3526,6 +3527,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (bad.length) {
                             step.status = 'failed';
                             step.note = 'child objective refused — ' + bad[0];
+                            step.failure = missionFailure('request-refused', step, bad[0]);
                             continue;
                         }
                         const childRun = startMission(child);
@@ -3543,6 +3545,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (!wf) {
                             step.status = 'failed';
                             step.note = 'workflow no longer exists';
+                            step.failure = missionFailure('target-missing', step, step.note);
                             continue;
                         }
                         // The MISSION's project, not the window's — a wave fires
@@ -3552,6 +3555,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (!wRunId) {
                             step.status = 'failed';
                             step.note = 'the workflow has no steps';
+                            step.failure = missionFailure('target-missing', step, step.note);
                             continue;
                         }
                         step.workflowRunId = wRunId;
@@ -3564,6 +3568,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!agent) {
                         step.status = 'failed';
                         step.note = 'agent not found';
+                        step.failure = missionFailure('agent-missing', step,
+                            'no agent named "' + step.agentName + '" is in this fleet');
                         continue;
                     }
                     // ‼️ THE MISSION'S PROJECT, NOT THE WINDOW'S. A wave fires
@@ -3645,7 +3651,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // cannot both claim the same dollar.
                         if (step.missionRunId) {
                             const cr = missionStore.run(step.missionRunId);
-                            if (!cr) { step.status = 'failed'; step.note = 'child run record lost'; continue; }
+                            if (!cr) {
+                                step.status = 'failed'; step.note = 'child run record lost';
+                                step.failure = missionFailure('record-lost', step, step.note);
+                                continue;
+                            }
                             step.costUSD = cr.totalCostUSD;
                             step.tokens = cr.totalTokens;
                             if (cr.status !== 'done' && cr.status !== 'failed' && cr.status !== 'cancelled') {
@@ -3655,6 +3665,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             const settled = cr.status === 'done' ? 'done' : cr.status;
                             if (step.status !== settled) {
                                 step.status = settled;
+                                // ‼️ M-18 — a child that came back failed or was
+                                // stopped is a failure with a class, not a
+                                // sentence: the lead's next move differs by
+                                // which, and a verdict it cannot branch on is
+                                // one it will simply order again.
+                                if (settled === 'cancelled') {
+                                    step.failure = missionFailure('cancelled', step, cr.note);
+                                } else if (settled === 'failed') {
+                                    step.failure = missionFailure('delegate-failed', step,
+                                        cr.note || 'the child objective ended without a verdict');
+                                }
                                 step.resultText = cr.result
                                     ? `Child objective ${cr.result.verdict}`
                                     + (cr.result.stopReason ? ` (${cr.result.stopReason})` : '')
@@ -3685,6 +3706,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             if (step.status !== settled) {
                                 step.status = settled;
                                 step.note = st.reason;
+                                if (settled === 'failed') {
+                                    step.failure = missionFailure('delegate-failed', step,
+                                        st.reason || 'the chain stopped short and said no reason');
+                                }
                                 traceEvent(run, 'action.settled', {
                                     actionId: step.id, kind: 'workflow', refId: step.workflowRunId,
                                     outcome: settled,
@@ -3698,7 +3723,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }
                         if (!step.taskId) { continue; }
                         const t = taskManager.tasks.find(x => x.id === step.taskId);
-                        if (!t) { step.status = 'failed'; step.note = 'task record lost'; continue; }
+                        if (!t) {
+                            step.status = 'failed'; step.note = 'task record lost';
+                            step.failure = missionFailure('record-lost', step, step.note);
+                            continue;
+                        }
                         step.costUSD = t.costUSD;
                         step.tokens = t.tokens;
                         step.outputFile = t.outputFile;
@@ -3706,6 +3735,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             // settled ONCE — check() runs on every task event
                             if (step.status !== t.status) {
                                 step.status = t.status;
+                                // ‼️ M-18 — AND THE TWO WAYS A TASK FAILS ARE
+                                // DIFFERENT FACTS. A run refused before a
+                                // process existed (engine, effort, a ceiling)
+                                // spent nothing and wants another engine; a
+                                // delegate that worked and returned failed wants
+                                // its output read. One word for both is a lead
+                                // that cannot tell them apart.
+                                if (t.status === 'failed' || t.status === 'cancelled') {
+                                    step.failure = classifyTaskFailure(step, t);
+                                }
                                 traceEvent(run, 'action.settled', {
                                     actionId: step.id, kind: 'task', refId: t.id, outcome: t.status,
                                     ...(t.costUSD !== undefined ? { costUSD: t.costUSD } : {}),
@@ -3960,6 +3999,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     step.status = 'failed';
                     step.note = 'interrupted by reload';
                     if (t) { step.outputFile = t.outputFile; }
+                    step.failure = missionFailure('interrupted', step, step.note);
                 }
             }
             initialMsg = buildResumeMessage(run,
@@ -5232,7 +5272,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'every verdict ever recorded with `stale` saying whether the work has since moved '
                 + 'on, `stopReason` says why the run stopped from a closed list, and `unmet` names '
                 + 'the required criteria a `partial` did not reach. A delegate exiting cleanly is '
-                + 'NOT a criterion being met — only an evaluation is. args: id',
+                + 'NOT a criterion being met — only an evaluation is. ‼️ M-18: a step that FAILED '
+                + 'carries `failure` — `class` from a closed set ('
+                + Object.keys(FAILURE_KINDS).join(', ')
+                + '), `retry` saying whether ordering it again as written could ever work ('
+                + [...new Set(Object.values(FAILURE_KINDS).map(k => k.retry))].join('|')
+                + '), `attempted`, the original sentence as `detail` and the ids of the evidence as '
+                + '`refs`. Before this a caller saw status "failed" and nothing else, so "is this '
+                + 'worth ordering again?" had no answer on the run. `ran` says what dimensions the '
+                + 'delegation actually used and which layer decided each. args: id',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -5307,7 +5355,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     awaitingApproval: missionApprovals.has(r.id),
                     rounds: r.rounds.map(rd => ({
                         n: rd.n, action: rd.action, thought: rd.thought?.slice(0, 200),
-                        steps: rd.steps.map(s => ({ agent: s.agentName, title: s.title, status: s.status }))
+                        // ‼️ M-18 — A FAILED STEP SAYS WHY IN A SHAPE. `status:
+                        // "failed"` and nothing else is what a caller had, so
+                        // an agent watching a run could see that something broke
+                        // and never what class of thing, nor whether ordering it
+                        // again could possibly work. The prose survives as
+                        // `detail`; `class` and `retry` are what to branch on.
+                        steps: rd.steps.map(s => ({
+                            agent: s.agentName, title: s.title, status: s.status,
+                            ...(s.failure ? {
+                                failure: {
+                                    class: s.failure.class,
+                                    retry: FAILURE_KINDS[s.failure.class]?.retry ?? null,
+                                    attempted: s.failure.attempted,
+                                    detail: s.failure.detail ?? null,
+                                    ...(s.failure.refs ? { refs: s.failure.refs } : {})
+                                }
+                            } : {}),
+                            // what it RAN with and which layer decided each part
+                            ...(s.runNote ? { ran: s.runNote } : {})
+                        }))
                     }))
                 };
             }
@@ -10618,6 +10685,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // let you choose the engine, the permissions and the model for a
             // reviewer and then ran it at whatever the CLI thinks is normal.
             efforts: EFFORT_CHOICES,
+            // ‼️ M-18 — WHAT EACH FAILURE CLASS MEANS, from the one registry the
+            // LEAD is told it from. The page shows the reader the same sentence
+            // the model was given, so the two can never drift into describing
+            // the same failure differently.
+            failureKinds: FAILURE_KINDS,
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),

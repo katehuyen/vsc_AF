@@ -99,7 +99,28 @@ const RUN = {
             steps: [
                 {
                     id: 's3', round: 2, agentId: 'a1', agentName: 'developer',
-                    title: 'cancel stops only its own tree', prompt: 'p', status: 'running'
+                    title: 'cancel stops only its own tree', prompt: 'p', status: 'running',
+                    // ‼️ M-18 — what it RAN with and who decided each part. On
+                    // the Agent cell, because a row that has to say this out
+                    // loud would be four columns wider for a fact most rows do
+                    // not need.
+                    runNote: 'engine opencode · model grok-code · effort high (agent) · permissions acceptEdits'
+                },
+                {
+                    // ‼️ M-18 — a FAILED step, because "failed" was the same
+                    // word for four different situations and the row could not
+                    // tell them apart. The class rides next to the status; the
+                    // panel carries what was attempted, the original sentence,
+                    // the evidence and what to do.
+                    id: 's4', round: 2, agentId: 'a2', agentName: 'ghost',
+                    title: 'read the cancel transcript', prompt: 'p', status: 'failed',
+                    note: 'agent not found',
+                    failure: {
+                        class: 'agent-missing',
+                        attempted: 'delegation to ghost — "read the cancel transcript"',
+                        detail: 'no agent named "ghost" is in this fleet',
+                        refs: { taskId: 'tk_884' }
+                    }
                 }
             ]
         }
@@ -115,6 +136,15 @@ const data = (over) => Object.assign({
     engines: ENGINES,
     permissions: PERMISSIONS,
     efforts: EFFORTS,
+    /** The host's own FAILURE_KINDS (M-18) — the page must never carry a copy,
+     *  or the reader and the lead get told different things about one failure. */
+    failureKinds: {
+        'agent-missing': {
+            retry: 'different',
+            says: 'That agent is not in this fleet. Name one of the agents you were listed, '
+                + 'or drop the step — asking again will fail identically.'
+        }
+    },
     defaults: LIMITS,
     pending: { questions: [], approvals: [] },
     live: { agents: [], events: [] },
