@@ -11133,6 +11133,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 /** whole-planner-session total — the run-level fallback when
                  *  rounds carry no per-round planner tokens (pre-2.68 runs). */
                 plannerSessionTokens: ps ? totalTokens(ps.usage) : undefined,
+                /**
+                 * ‼️ U-65 — A SPEAKING TURN'S TWO DEEP LINKS, RESOLVED HERE.
+                 *
+                 * A message records the SESSION ID it ran in and the task that
+                 * produced it; the viewer opens a FILE and the archive is on
+                 * the task. Resolving that in the page would mean shipping the
+                 * session index to a surface that has no other use for it, and
+                 * leaving it unresolved would mean a transcript link that
+                 * silently does nothing — which is worse than no link.
+                 */
+                messages: (run.messages ?? []).map(m => {
+                    const sess = m.sessionId ? bySessionId.get(m.sessionId) : undefined;
+                    const t = m.taskId ? byTask.get(m.taskId) : undefined;
+                    return {
+                        ...m,
+                        ...(sess ? { transcript: sess.file } : {}),
+                        ...(t?.outputFile ? { outputFile: t.outputFile } : {})
+                    };
+                }),
                 rounds: run.rounds.map(round => ({
                     ...round,
                     steps: round.steps.map(step => {

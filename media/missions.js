@@ -60,7 +60,20 @@
     let castOpen = false;             // runtime roles the lead bound
     let graphOpen = false;            // the runtime graph
     let guideOpen = false;            // steer the next decision
-    let convOpen = false;             // conversation / council summary
+    let convOpen = false;             // the conversation room
+    /** ‼️ U-65 — which exchange is OPEN, by id. One at a time: a transcript is
+     *  a reading surface and two of them stacked is neither. */
+    let convThread = null;
+    /** ‼️ U-65 — the reader's filter, kept across repaints. A page that redraws
+     *  once a second and reset it every time would be unusable while live. */
+    let convOnlyOpen = false;         // only threads still awaiting an answer
+    /** ‼️ U-65 — the message the reader jumped to, so a ref click can land. */
+    let convMark = null;
+    /** ‼️ U-65 — a long exchange is drawn compact until the reader asks for it
+     *  whole. The number is the point where a transcript stops being readable
+     *  in one screen, not a memory limit. */
+    const CONV_COMPACT = 25;
+    let convAll = false;
     const guideNote = {};             // runId → what the host said about the last steer
     let expandedStep = null;          // step id opened in the accordion (one at a time)
     let tail = { file: '', text: '', size: 0, missing: false };
@@ -1251,37 +1264,189 @@
 
     /** WHO SPOKE TO WHOM — a SUMMARY only. The transcript is U-65's subject and
      *  drawing a hollow one here would be a feature that does not exist. */
+    /**
+     * ‼️ U-65 — A SPEAKER IS A NAME. The record keeps agent ids because ids are
+     * what survive a rename; a transcript drawn out of them is a wall of
+     * folder names nobody reads. `lead` is the objective's own lead.
+     */
+    function speakerName(run, id) {
+        if (!id) { return '—'; }
+        if (id === 'lead') { return spec(run).leadAgentName || 'lead'; }
+        const m = (run.messages || []).find(x => x.from === id && x.fromName);
+        if (m) { return m.fromName; }
+        const a = (DATA.agents || []).find(x => x.id === id);
+        return a ? a.name : id;
+    }
+
+    /** ‼️ U-65 — SHORTHAND: the shortest unambiguous form on the row. */
+    const INTENT_SHORT = {
+        proposal: 'prop', question: 'ask', challenge: 'chall', response: 'resp',
+        evidence: 'evid', concede: 'conc', synthesis: 'synth', vote: 'vote'
+    };
+    /** What each intent IS — the long form the AFTip opens with. */
+    const INTENT_LONG = {
+        proposal: 'Proposal — a position put for the others to work on',
+        question: 'Question — something the speaker needs answered',
+        challenge: 'Challenge — what is wrong with a named message, and why',
+        response: 'Response — an answer to a named question or challenge',
+        evidence: 'Evidence — something checkable, brought in to stand on its own',
+        concede: 'Concede — a named point the speaker had been arguing against, accepted',
+        synthesis: 'Synthesis — named messages drawn together into where the discussion has got to',
+        vote: 'Vote — a choice between the council\'s named options, with a reason'
+    };
+    /** How the speaker's lane was carried — never assumed, always the record's. */
+    const CARRY_LONG = {
+        new: 'new session — this speaker had not spoken here before',
+        resumed: 'resumed — the same session, still holding everything it said and read',
+        handoff: 'handoff — its engine cannot resume, so the exchange was handed over AS TEXT'
+    };
+
+    /** ‼️ U-65 — an exchange awaits an answer while a question or a challenge
+     *  has nothing pointing back at it. Derived, never stored. */
+    function openRefs(msgs) {
+        const answered = new Set();
+        msgs.forEach(m => {
+            if (m.state !== 'delivered') { return; }
+            if (m.intent === 'response' || m.intent === 'concede') {
+                (m.refs || []).forEach(r => answered.add(r));
+            }
+        });
+        return msgs.filter(m => m.state === 'delivered'
+            && (m.intent === 'question' || m.intent === 'challenge')
+            && !answered.has(m.id));
+    }
+
+    function messageRow(run, m, byId) {
+        const who = m.fromName || speakerName(run, m.from);
+        const toNames = (m.to || []).map(t => speakerName(run, t));
+        const short = INTENT_SHORT[m.intent] || m.intent || '?';
+        const failed = m.state === 'failed' || m.state === 'cancelled';
+        // ‼️ NO FAKE SPEAKER. A turn that never came back has no words, so it
+        // draws no speech — it draws the ORDER and the reason it produced none.
+        const body = failed ? '' : (m.excerpt || '');
+        const refChips = (m.refs || []).map(r => {
+            const src = byId[r];
+            return `<a class="cvref" data-cvjump="${C.esc(r)}"
+                title="${C.esc(src ? r + ' — ' + (src.fromName || speakerName(run, src.from)) + ' · ' + (src.intent || '') : r + ' — not in this conversation')}">${C.esc(r)}</a>`;
+        }).join(' ');
+        const links = [
+            m.transcript ? `<a data-opensession="${C.esc(m.transcript)}" title="Open the speaker's own session — everything it read and wrote for this turn">session</a>` : '',
+            m.outputFile ? `<a data-openfile="${C.esc(m.outputFile)}" title="Open the archived output this turn produced">output</a>` : ''
+        ].filter(Boolean).join(' · ');
+        const head = `${m.id} — ${who}${toNames.length ? ' → ' + toNames.join(', ') : ' → everyone'}`;
+        const tipBody = window.AFTip.lines([
+            INTENT_LONG[m.intent] || m.intent,
+            m.carried ? CARRY_LONG[m.carried] || m.carried : '',
+            m.ask ? 'the lead asked for: ' + m.ask : '',
+            '',
+            failed ? 'This turn produced NO message: ' + (m.note || 'it did not come back.') : body
+        ]);
+        const marked = convMark === m.id ? ' marked' : '';
+        return `<div class="cvmsg${failed ? ' bad' : ''}${marked}" id="cvm-${C.esc(run.id)}-${C.esc(m.id)}">
+            <div class="cvmhead">
+                ${window.AFTip.wrap(
+                    `<span class="mchip cvi ${C.esc(m.intent || '')}">${C.esc(short)}</span>`, head, tipBody)}
+                <b class="cvwho">${C.esc(who)}</b>
+                <span class="muted small">→ ${toNames.length ? C.esc(toNames.join(', ')) : 'everyone'}</span>
+                ${refChips ? `<span class="cvrefs" title="The messages this one is about — click to jump">↩ ${refChips}</span>` : ''}
+                ${m.carried ? `<span class="mchip lane ${C.esc(m.carried)}" title="${C.esc(CARRY_LONG[m.carried] || m.carried)}">${C.esc(m.carried)}</span>` : ''}
+                ${failed ? `<span class="mchip bad" title="${C.esc(m.note || 'the turn did not come back')}">${C.esc(m.state)}</span>` : ''}
+                <span class="cvts muted small">${C.esc(fmtTime(m.settledAt || m.orderedAt))}</span>
+                ${links ? `<span class="cvlinks">${links}</span>` : ''}
+            </div>
+            ${failed
+                ? `<div class="cvtext muted">No message: ${C.esc(m.note || 'the turn did not come back.')}</div>`
+                : `<div class="cvtext">${C.esc(body)}</div>`}
+        </div>`;
+    }
+
     function conversationSection(run) {
         const convs = run.conversations || [];
         const councils = run.councils || [];
         if (!convs.length && !councils.length) { return ''; }
+        // ‼️ U-65 — the council points at its conversation through
+        // `conversationId`. This read `conversation`, a field the record has
+        // never had, so on a real run the chair, the cap, the votes and the way
+        // out were all silently missing from the row.
         const byConv = {};
-        councils.forEach(k => { byConv[k.conversation] = k; });
+        councils.forEach(k => { byConv[k.conversationId] = k; });
+        const all = run.messages || [];
         const rows = convs.map(c => {
             const k = byConv[c.id];
-            const msgs = (run.messages || []).filter(m => m.conversationId === c.id);
-            const said = msgs.filter(m => m.state !== 'failed').length;
-            return `<div class="cvrow" title="${C.esc([
-                (k ? 'council ' + k.id + ' — ' + k.question : 'conversation ' + c.id + ' — ' + (c.objective || '')),
-                'participants: ' + (c.participants || []).join(', '),
-                k ? 'chair: ' + k.chair + ' · turns ' + k.turns + '/' + k.maxTurns
-                    + (k.votes ? ' · ' + k.votes + ' votes' : '') : '',
-                k && k.exit ? 'ended: ' + k.exit : c.closed ? 'closed: ' + c.closed : 'open',
-                said + ' message(s) really spoken'
-            ].filter(Boolean).join('\n'))}">
-                <span class="mchip ${k ? 'council' : 'conv'}">${k ? 'council ' + C.esc(k.id) : C.esc(c.id)}</span>
-                <span class="cvq">${C.esc((k && k.question) || c.objective || '')}</span>
-                <span class="muted small">${said} msg${k ? ` · ${k.turns}/${k.maxTurns} turns` : ''}${
-                    k && k.exit ? ` · ${C.esc(k.exit)}` : c.closed ? ' · closed' : ''}</span>
+            const msgs = all.filter(m => m.conversationId === c.id)
+                .slice().sort((a, b) => (a.orderedAt || 0) - (b.orderedAt || 0));
+            const said = msgs.filter(m => m.state === 'delivered').length;
+            const lost = msgs.filter(m => m.state === 'failed' || m.state === 'cancelled').length;
+            const open = openRefs(msgs);
+            const isOpen = convThread === c.id;
+            const byId = {};
+            msgs.forEach(m => { byId[m.id] = m; });
+            const shown = convOnlyOpen ? msgs.filter(m => open.some(o => o.id === m.id)) : msgs;
+            // ‼️ DENSITY — a big exchange opens COMPACT. 200 messages drawn in
+            // full is a page nobody can find anything in; the newest are what a
+            // reader coming back wants, and the rest are one click away.
+            const big = shown.length > CONV_COMPACT;
+            const drawn = big && !convAll ? shown.slice(-CONV_COMPACT) : shown;
+            const cast = (c.participants || []).map(p => speakerName(run, p));
+            const headTip = window.AFTip.lines([
+                (k ? 'Council ' + k.id : 'Conversation ' + c.id) + ' — ' + ((k && k.question) || c.objective || ''),
+                '',
+                'participants: ' + (cast.join(', ') || '—'),
+                k ? 'chair: ' + speakerName(run, k.chair) : '',
+                k && k.options && k.options.length ? 'options: ' + k.options.join(' | ') : '',
+                k ? 'turns: ' + msgs.filter(m => m.state !== 'cancelled').length + '/' + k.maxTurns : '',
+                said + ' spoken' + (lost ? ' · ' + lost + ' turn(s) produced nothing' : ''),
+                open.length ? open.length + ' still awaiting an answer' : 'nothing left unanswered',
+                k && k.votes && k.votes.length
+                    ? 'votes: ' + k.votes.map(v => speakerName(run, v.member)
+                        + ' → ' + (v.unclear ? 'named no option' : v.choice)).join(' · ')
+                    : '',
+                k && k.exit ? 'ended: ' + k.exit : c.closedAt ? 'closed: ' + (c.closeReason || 'closed') : 'open',
+                '',
+                'opened ' + fmtTime(c.openedAt)
+            ]);
+            const votes = k && k.votes && k.votes.length
+                ? `<span class="cvvotes">${k.votes.map(v => `<span class="mchip ${v.unclear ? 'wait' : 'ok'}"
+                    title="${C.esc(speakerName(run, v.member) + ' — ' + (v.unclear ? 'voted but named no option; the record does not pick one for them' : v.choice))}"
+                    >${C.esc(speakerName(run, v.member))}: ${C.esc(v.unclear ? '?' : v.choice)}</span>`).join(' ')}</span>`
+                : '';
+            return `<div class="cvthread${isOpen ? ' open' : ''}">
+                ${window.AFTip.wrap(`<div class="cvrow" data-cvthread="${C.esc(c.id)}">
+                    <span class="carets">${isOpen ? '▾' : '▸'}</span>
+                    <span class="mchip ${k ? 'council' : 'conv'}">${k ? C.esc(k.id) : C.esc(c.id)}</span>
+                    <span class="cvq">${C.esc((k && k.question) || c.objective || '')}</span>
+                    <span class="muted small">${cast.join(', ')}${k ? ' · chair ' + C.esc(speakerName(run, k.chair)) : ''}</span>
+                    <span class="muted small">${said} spoken${lost ? ` · ${lost} silent` : ''}${
+                        k ? ` · ${msgs.filter(m => m.state !== 'cancelled').length}/${k.maxTurns}` : ''}</span>
+                    ${open.length ? `<span class="mchip wait" title="${C.esc(open.length + ' question(s) or challenge(s) that nothing in this exchange has answered')}">${open.length} unanswered</span>` : ''}
+                    ${votes}
+                    <span class="mchip ${k && k.exit ? 'ok' : c.closedAt ? 'ok' : 'live'}">${
+                        k && k.exit ? C.esc(k.exit) : c.closedAt ? C.esc(c.closeReason || 'closed') : 'open'}</span>
+                </div>`, (k ? 'Council ' + k.id : 'Conversation ' + c.id), headTip, 'cvroww')}
+                ${isOpen ? `<div class="cvmsgs">
+                    ${drawn.length ? '' : '<div class="muted small">Nothing matches this filter.</div>'}
+                    ${big && !convAll ? `<div class="cvmore" data-cvall="1"
+                        title="${C.esc(shown.length + ' messages — the newest ' + CONV_COMPACT + ' are drawn; the rest are one click away')}"
+                        >show all ${shown.length} messages</div>` : ''}
+                    ${drawn.map(m => messageRow(run, m, byId)).join('')}
+                </div>` : ''}
             </div>`;
         }).join('');
+        const openTotal = convs.reduce((a, c) =>
+            a + openRefs(all.filter(m => m.conversationId === c.id)).length, 0);
         return `<div class="colsec">
             <div class="colhead" id="cv-toggle-${C.esc(run.id)}"
-                title="The exchanges this run really held. A message counted here was SPOKEN — a turn that was ordered and came back saying nothing is not one. The full transcript is its own surface; this line is the summary, not a folded copy of it.">
+                title="The exchanges this run really held, in full. A message is drawn only when a speaking turn came back with words — a turn that failed shows the ORDER and why it produced none, never a sentence nobody said. Chronological, with what each message is about and where it ran.">
                 <span class="carets">${convOpen ? '▾' : '▸'}</span> <b>Conversations</b>
-                <span class="muted small">${convs.length} conversation(s)${councils.length ? ` · ${councils.length} council(s)` : ''}</span>
+                <span class="muted small">${convs.length} conversation(s)${councils.length ? ` · ${councils.length} council(s)` : ''}${
+                    openTotal ? ` · ${openTotal} unanswered` : ''}</span>
             </div>
-            ${convOpen ? `<div class="cvbody">${rows}</div>` : ''}
+            ${convOpen ? `<div class="cvbody">
+                ${openTotal ? `<div class="cvfilter">
+                    <label title="Show only the questions and challenges nothing in this exchange has answered"><input type="checkbox" id="cv-open-${C.esc(run.id)}"${convOnlyOpen ? ' checked' : ''}> unanswered only</label>
+                </div>` : ''}
+                ${rows}
+            </div>` : ''}
         </div>`;
     }
 
@@ -1631,6 +1796,45 @@
                 .guideform textarea { flex:1 1 320px; max-width:520px; padding:5px 8px; }
                 .grow.pend { color:var(--vscode-editorWarning-foreground, #b58900); }
                 .unmet { margin:4px 0; display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
+                /* ---- U-65: the conversation room ---- */
+                .cvfilter { font-size:11px; margin:2px 0 6px; opacity:.85; }
+                .cvfilter label { display:inline-flex; gap:5px; align-items:center; cursor:pointer; }
+                .cvthread { border-bottom:1px dotted var(--vscode-widget-border, #2a2a2a); }
+                .cvthread:last-child { border-bottom:none; }
+                .cvroww { display:block; }
+                .cvrow { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;
+                    font-size:11px; padding:4px 0; cursor:pointer; }
+                .cvrow:hover { background:var(--vscode-list-hoverBackground); }
+                .cvrow .carets { width:12px; opacity:.7; flex:none; }
+                .cvq { font-weight:600; }
+                .cvvotes { display:inline-flex; gap:4px; flex-wrap:wrap; }
+                /* the transcript: a reading surface, so it scrolls on its own
+                   and the row above it stays put while the reader moves */
+                .cvmsgs { max-height:420px; overflow:auto; padding:2px 0 6px 20px; }
+                .cvmore { font-size:11px; padding:3px 0; cursor:pointer; opacity:.8;
+                    color:var(--vscode-textLink-foreground); }
+                .cvmore:hover { text-decoration:underline; }
+                .cvmsg { padding:4px 0 5px; border-bottom:1px dotted var(--vscode-widget-border, #242424); }
+                .cvmsg:last-child { border-bottom:none; }
+                .cvmsg.bad .cvwho { opacity:.7; }
+                .cvmsg.marked { background:var(--vscode-editor-findMatchHighlightBackground, #3a3a1a);
+                    outline:1px solid var(--vscode-focusBorder, #007fd4); border-radius:3px; }
+                .cvmhead { display:flex; gap:7px; align-items:baseline; flex-wrap:wrap; font-size:11px; }
+                .cvwho { font-size:11px; }
+                .cvts { margin-left:auto; }
+                .cvlinks { display:inline-flex; gap:6px; }
+                .cvlinks a, .cvref { cursor:pointer; color:var(--vscode-textLink-foreground); }
+                .cvlinks a:hover, .cvref:hover { text-decoration:underline; }
+                .cvrefs { font-size:10px; opacity:.85; }
+                .cvtext { font-size:11px; margin:2px 0 0 20px; white-space:pre-wrap;
+                    color:var(--vscode-descriptionForeground, #999); }
+                .mchip.cvi { background:transparent; border:1px solid currentColor; opacity:.9; }
+                .mchip.cvi.challenge, .mchip.cvi.question { color:var(--vscode-editorWarning-foreground, #b58900); }
+                .mchip.cvi.concede, .mchip.cvi.response { color:var(--vscode-testing-iconPassed, #2d7d46); }
+                .mchip.cvi.vote, .mchip.cvi.synthesis { color:var(--vscode-textLink-foreground); }
+                .mchip.lane { background:transparent; border:1px dotted var(--vscode-widget-border, #5555);
+                    opacity:.7; font-size:9px; }
+                .mchip.council { color:var(--vscode-textLink-foreground); }
                 /* ---- mission-control observation ---- */
                 .colsec { margin:8px 0; }
                 .colhead { display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;
@@ -1832,6 +2036,34 @@
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
                 vscode.postMessage({ type: 'openFile', file: a.dataset.openfile });
             }));
+        // ‼️ U-65 — one exchange open at a time: a transcript is a reading
+        // surface and two of them stacked is neither.
+        document.querySelectorAll('[data-cvthread]').forEach(row =>
+            row.addEventListener('click', ev => {
+                if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                const id = row.dataset.cvthread;
+                convThread = convThread === id ? null : id;
+                convAll = false;
+                convMark = null;
+                render();
+            }));
+        document.querySelectorAll('[data-cvall]').forEach(el =>
+            el.addEventListener('click', ev => {
+                if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                convAll = true;
+                render();
+            }));
+        // ‼️ U-65 — a ref is a LINK. "m3 answers m2" is the only thing that
+        // makes a transcript followable, and a reader scrolling for an id is a
+        // reader who stops following it.
+        document.querySelectorAll('[data-cvjump]').forEach(a =>
+            a.addEventListener('click', ev => {
+                if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                convMark = a.dataset.cvjump;
+                render();
+                const el = document.querySelector('[id$="-' + convMark + '"].cvmsg');
+                if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
+            }));
         // deep links into the session viewer (planner transcript, live-feed rows)
         document.querySelectorAll('[data-opensession]').forEach(a =>
             a.addEventListener('click', ev => {
@@ -1871,6 +2103,9 @@
             wire('ca-toggle-' + id, () => { castOpen = !castOpen; render(); });
             wire('gr-toggle-' + id, () => { graphOpen = !graphOpen; render(); });
             wire('cv-toggle-' + id, () => { convOpen = !convOpen; render(); });
+            // ‼️ U-65 — the filter is a control, so it keeps its own state
+            // across the once-a-second repaint a live run causes.
+            wire('cv-open-' + id, () => { convOnlyOpen = !convOnlyOpen; render(); });
             wire('gd-toggle-' + id, () => { guideOpen = !guideOpen; render(); });
             wire('gd-send-' + id, () => {
                 const box = document.getElementById('gd-text-' + id);

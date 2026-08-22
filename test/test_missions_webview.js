@@ -137,7 +137,10 @@ const sandbox = {
                         : sel === '[data-step]' ? { attr: 'data-step', key: 'step' }
                             : sel === '[data-opensession]' ? { attr: 'data-opensession', key: 'opensession' }
                                 : sel === '[data-round]' ? { attr: 'data-round', key: 'round' }
-                                    : null;
+                                    : sel === '[data-cvthread]' ? { attr: 'data-cvthread', key: 'cvthread' }
+                                        : sel === '[data-cvjump]' ? { attr: 'data-cvjump', key: 'cvjump' }
+                                            : sel === '[data-cvall]' ? { attr: 'data-cvall', key: 'cvall' }
+                                                : null;
             if (!spec) { return []; }
             const re = new RegExp(`${spec.attr}="([^"]*)"`, 'g');
             let m;
@@ -560,12 +563,55 @@ msgHandler({ data: { type: 'created' } });
             { id: 'g1', text: 'stop spending rounds on the catalog', at: 2000, appliedAt: 2500 },
             { id: 'g2', text: 'call an unreadable price a failure, not an unknown', at: 9800 }
         ],
-        conversations: [{ id: 'cv1', objective: 'Is $0.00 a missing price or a free turn?', participants: ['a1', 'a2'], messages: 3, open: 1, closed: null }],
-        councils: [{ id: 'k1', question: 'Is $0.00 a missing price or a free turn?', conversation: 'cv1', chair: 'a2', members: ['a1', 'a2'], turns: 3, maxTurns: 8, votes: 2, exit: null }],
+        // ‼️ U-65 — THE RECORD'S OWN SHAPE. What was here pointed a council at
+        // its conversation through `conversation` (the field is
+        // `conversationId`), gave a message the state `'said'` (the states are
+        // pending / delivered / failed / cancelled) and put counts on a
+        // conversation that never carries any. Every string test passed — and
+        // on a real run the council matched no conversation at all.
+        conversations: [
+            { id: 'cv1', objective: 'Is $0.00 a missing price or a free turn?', participants: ['a1', 'a2'], openedAt: 1000 },
+            { id: 'cv2', objective: 'Which transcript would a user open first?', participants: ['a1'], openedAt: 9000, closedAt: 9500, closeReason: 'answered in one turn' }
+        ],
+        councils: [{
+            id: 'k1', conversationId: 'cv1', question: 'Is $0.00 a missing price or a free turn?',
+            chair: 'a2', members: ['a1', 'a2'], options: ['missing price', 'free turn'],
+            maxTurns: 8, openedAt: 1000,
+            votes: [{ member: 'a1', choice: 'missing price' }, { member: 'a2', unclear: true }]
+        }],
         messages: [
-            { id: 'm1', conversationId: 'cv1', from: 'a1', state: 'said' },
-            { id: 'm2', conversationId: 'cv1', from: 'a2', state: 'said' },
-            { id: 'm3', conversationId: 'cv1', from: 'a1', state: 'failed' }
+            {
+                id: 'm1', conversationId: 'cv1', from: 'a1', fromName: 'coder', to: [], intent: 'proposal',
+                refs: [], excerpt: 'A zero on an engine that states no price is a MISSING price.',
+                carried: 'new', transcript: 'D:/s/coder.jsonl', outputFile: 'D:/out/m1.md',
+                orderedAt: 1000, settledAt: 1200, state: 'delivered'
+            },
+            {
+                id: 'm2', conversationId: 'cv1', from: 'a2', fromName: 'basit', to: ['a1'], intent: 'challenge',
+                refs: ['m1'], excerpt: 'Only for engines with no price field.',
+                carried: 'handoff', orderedAt: 1300, settledAt: 1500, state: 'delivered'
+            },
+            {
+                id: 'm3', conversationId: 'cv1', from: 'a1', fromName: 'coder', to: ['a2'], intent: 'response',
+                refs: ['m2'], excerpt: 'Agreed for those; a reporting engine is a different case.',
+                carried: 'resumed', orderedAt: 1600, settledAt: 1800, state: 'delivered'
+            },
+            {
+                id: 'm4', conversationId: 'cv1', from: 'a2', fromName: 'basit', to: [], intent: 'question',
+                refs: [], ask: 'Ask what would change the answer.',
+                orderedAt: 1900, settledAt: 2000, state: 'failed',
+                note: 'the delegate exited 1 without writing an output file'
+            },
+            {
+                id: 'm5', conversationId: 'cv1', from: 'a1', fromName: 'coder', to: ['a2'], intent: 'challenge',
+                refs: ['m3'], excerpt: 'That still leaves the row unable to say which case it is in.',
+                carried: 'resumed', orderedAt: 2100, settledAt: 2200, state: 'delivered'
+            },
+            {
+                id: 'm6', conversationId: 'cv2', from: 'a1', fromName: 'coder', to: [], intent: 'evidence',
+                refs: [], excerpt: 'The index opens the newest first.',
+                orderedAt: 9000, settledAt: 9400, state: 'delivered'
+            }
         ],
         rounds: [
             {
@@ -636,8 +682,55 @@ msgHandler({ data: { type: 'created' } });
     ok('the runtime graph draws what actually happened, with its fan-in',
         html().includes('<b>Runtime graph</b>') && html().includes('3 nodes')
         && html().includes('coder — open a session') && html().includes('⤶1'));
-    ok('the conversation summary counts only messages that were really SPOKEN',
-        html().includes('<b>Conversations</b>') && html().includes('council k1') && html().includes('2 msg'));
+    // ‼️ U-65 — THE ROOM. A summary of an exchange answers "did they talk";
+    // the question a reader actually has is what was SAID, by whom, about
+    // which message, and where it ran.
+    ok('the room counts only turns that really SPOKE',
+        html().includes('<b>Conversations</b>') && html().includes('4 spoken') && html().includes('1 silent'));
+    ok('‼️ …and the council is matched to its conversation — the field is conversationId',
+        html().includes('chair basit') && html().includes('/8'));
+    ok('…the cast and the chair are NAMES, never folder ids',
+        html().includes('coder, basit') && !html().includes('chair a2'));
+    ok('…a vote says who chose what, and never picks for somebody who did not',
+        html().includes('coder: missing price') && html().includes('basit: ?'));
+    ok('…an unanswered challenge is counted', html().includes('1 unanswered'));
+    ok('a closed conversation says WHY it closed', html().includes('answered in one turn'));
+
+    // the transcript opens on the row, one at a time
+    wired.cvthread[0]._click();
+    ok('‼️ the exchange opens into real chronological messages',
+        html().includes('A zero on an engine that states no price is a MISSING price.')
+        && html().includes('Only for engines with no price field.'));
+    ok('…each with its speaker, its intent in SHORTHAND and what it is about',
+        html().includes('>coder<') && html().includes('>chall<') && html().includes('data-cvjump="m1"'));
+    ok('…and the lane it was carried on, never assumed',
+        html().includes('>handoff<') && html().includes('>resumed<'));
+    ok('‼️ …a turn that produced NO message draws no speech — it draws the order and why',
+        html().includes('No message: the delegate exited 1 without writing an output file')
+        && !html().includes('>m4</span> <b class="cvwho">'));
+    ok('…the two deep links are on the message that has them',
+        html().includes('data-opensession="D:/s/coder.jsonl"')
+        && html().includes('data-openfile="D:/out/m1.md"'));
+    ok('…and one-to-many is ordinary here, not a mode',
+        html().includes('everyone'));
+
+    // ‼️ the filter is a control and survives the repaint a live run causes
+    getEl('cv-open-run3').listeners.click();
+    ok('‼️ "unanswered only" leaves the challenge nothing answered',
+        html().includes('That still leaves the row unable to say which case it is in.')
+        && !html().includes('Agreed for those; a reporting engine is a different case.'));
+    getEl('cv-open-run3').listeners.click();
+    ok('…and turning it off brings the whole exchange back',
+        html().includes('Agreed for those; a reporting engine is a different case.'));
+
+    // a ref is a link: "m3 answers m2" is what makes a transcript followable
+    wired.cvjump[0]._click();
+    ok('a ref marks the message it points at, so a reader can follow the thread',
+        html().includes('cvmsg marked'));
+
+    wired.cvthread[0]._click();
+    ok('…and the exchange folds again on the same row',
+        !html().includes('A zero on an engine that states no price is a MISSING price.'));
     ok('‼️ a steer says WHERE it lands, and never claims to reach work in flight',
         html().includes('Guide next decision') && html().includes('1 waiting')
         && html().includes('never the delegation running now'));

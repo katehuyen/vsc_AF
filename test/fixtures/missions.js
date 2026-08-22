@@ -246,24 +246,147 @@ const ADAPTIVE_RUN = {
         { id: 'g1', text: 'Do not spend another round on the catalog — the price is the open question.', at: Date.now() - 20 * 60000, appliedAt: Date.now() - 18 * 60000 },
         { id: 'g2', text: 'If the cost cannot be read from the CLI, say so as a failed criterion rather than as unknown.', at: Date.now() - 3 * 60000 }
     ],
+    // ‼️ U-65 — THE REAL RECORD, not a sketch of one.
+    //
+    // What was here before did not exist anywhere outside this file: a council
+    // pointing at its conversation through `conversation` (the record's field
+    // is `conversationId`), a message whose state was `'said'` (the record's
+    // states are pending / delivered / failed / cancelled), a conversation with
+    // `messages` and `open` counts it never carries and a `closed` flag that
+    // is really `closedAt` + `closeReason`. Every string test passed, because
+    // the page had been written against the sketch — so on a REAL run the
+    // council never matched its conversation at all.
+    //
+    // This is the shape MissionConversation / MissionCouncil / MissionMessage
+    // actually have, and the exchange it draws is the one U-65 has to render:
+    // an independent opening round, a challenge that names what it is about, a
+    // response, a concession, a one-to-many question, a synthesis over real
+    // refs, two votes, and a turn that failed and therefore never spoke.
     conversations: [
         {
-            id: 'c1', objective: 'Is a $0.00 reading a missing price or a free turn?',
-            participants: ['a1', 'a2'], messages: 4, open: 1, closed: null
+            id: 'c1', sourceActionId: 'd2',
+            objective: 'Is a $0.00 reading a missing price or a free turn?',
+            participants: ['a1', 'a2'],
+            openedAt: Date.now() - 34 * 60000
+        },
+        {
+            id: 'c2', sourceActionId: 'd3',
+            objective: 'Which of the two transcripts is the one a user would open first?',
+            participants: ['a1', 'a2'],
+            openedAt: Date.now() - 12 * 60000,
+            closedAt: Date.now() - 9 * 60000,
+            closeReason: 'answered in one turn'
         }
     ],
     councils: [
         {
-            id: 'k1', question: 'Is a $0.00 reading a missing price or a free turn?',
-            conversation: 'c1', chair: 'a2', members: ['a1', 'a2'],
-            turns: 4, maxTurns: 8, votes: 2, exit: null
+            id: 'k1', sourceActionId: 'd2', conversationId: 'c1',
+            question: 'Is a $0.00 reading a missing price or a free turn?',
+            chair: 'a2', members: ['a1', 'a2'],
+            options: ['missing price', 'free turn'],
+            maxTurns: 12,
+            votes: [
+                { member: 'a1', choice: 'missing price' },
+                { member: 'a2', unclear: true }
+            ],
+            verdictRefs: ['m6'],
+            openedAt: Date.now() - 34 * 60000
         }
     ],
     messages: [
-        { id: 'm1', conversationId: 'c1', from: 'a1', state: 'said' },
-        { id: 'm2', conversationId: 'c1', from: 'a2', state: 'said' },
-        { id: 'm3', conversationId: 'c1', from: 'a1', state: 'said' },
-        { id: 'm4', conversationId: 'c1', from: 'a2', state: 'failed' }
+        {
+            id: 'm1', conversationId: 'c1', sourceActionId: 'd2',
+            from: 'a1', fromName: 'developer', to: [], intent: 'proposal', refs: [],
+            ask: 'State your reading of a $0.00 line, without seeing anyone else\'s.',
+            excerpt: 'A $0.00 line on an engine that states no price is a MISSING price, not a free turn. '
+                + 'The two look identical on the row and only the engine table can tell them apart, '
+                + 'so the row has to say which it is rather than print a zero and stop.',
+            taskId: 't-m1', sessionId: 'sess-dev-1', carried: 'new',
+            transcript: 'D:/sessions/sess-dev-1.jsonl', outputFile: 'D:/out/m1.md',
+            orderedAt: Date.now() - 34 * 60000, settledAt: Date.now() - 31 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm2', conversationId: 'c1', sourceActionId: 'd2',
+            from: 'a2', fromName: 'basit', to: [], intent: 'proposal', refs: [],
+            ask: 'State your reading of a $0.00 line, without seeing anyone else\'s.',
+            excerpt: 'A zero is a zero. If the CLI printed 0.00 the turn cost nothing and the row '
+                + 'should say so; inventing a second meaning for it is the thing that would confuse a reader.',
+            taskId: 't-m2', sessionId: 'sess-basit-1', carried: 'new',
+            orderedAt: Date.now() - 34 * 60000, settledAt: Date.now() - 30 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm3', conversationId: 'c1',
+            from: 'a1', fromName: 'developer', to: ['a2'], intent: 'challenge', refs: ['m2'],
+            excerpt: 'That holds only for an engine that REPORTS a price. On the free OpenCode models '
+                + 'the field is absent and the reader is shown 0.00 for a run that had no figure at all — '
+                + 'measured on run2, where the same line meant both things on two rows.',
+            taskId: 't-m3', sessionId: 'sess-dev-1', carried: 'resumed',
+            transcript: 'D:/sessions/sess-dev-1.jsonl', outputFile: 'D:/out/m3.md',
+            orderedAt: Date.now() - 29 * 60000, settledAt: Date.now() - 27 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm4', conversationId: 'c1',
+            from: 'a2', fromName: 'basit', to: ['a1'], intent: 'response', refs: ['m3'],
+            excerpt: 'Accepted for engines with no price field. I still say a reporting engine\'s 0.00 '
+                + 'is a real zero and should not be hedged.',
+            taskId: 't-m4', sessionId: 'sess-basit-1', carried: 'handoff',
+            orderedAt: Date.now() - 26 * 60000, settledAt: Date.now() - 24 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm5', conversationId: 'c1',
+            from: 'a2', fromName: 'basit', to: ['a1'], intent: 'concede', refs: ['m3'],
+            excerpt: 'Conceded: the row cannot print 0.00 for both cases. Whether it says so with a '
+                + 'badge or a different figure is a separate question.',
+            taskId: 't-m5', sessionId: 'sess-basit-1', carried: 'resumed',
+            orderedAt: Date.now() - 23 * 60000, settledAt: Date.now() - 22 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm6', conversationId: 'c1',
+            from: 'lead', fromName: 'manager', to: [], intent: 'synthesis', refs: ['m1', 'm2', 'm5'],
+            excerpt: 'Where it stands: both now agree a bare 0.00 cannot mean two things. They still '
+                + 'disagree on whether a reporting engine\'s zero needs any mark at all.',
+            orderedAt: Date.now() - 21 * 60000, settledAt: Date.now() - 21 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm7', conversationId: 'c1',
+            from: 'a1', fromName: 'developer', to: [], intent: 'vote', refs: ['m6'],
+            excerpt: 'missing price — because that is the case a reader cannot recover from. '
+                + 'Confidence: high; it is measured on run2 rather than argued.',
+            taskId: 't-m7', sessionId: 'sess-dev-1', carried: 'resumed',
+            orderedAt: Date.now() - 20 * 60000, settledAt: Date.now() - 19 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm8', conversationId: 'c1',
+            from: 'a2', fromName: 'basit', to: [], intent: 'vote', refs: ['m6'],
+            excerpt: 'Either reading is defensible depending on the engine, so I will not pick one.',
+            taskId: 't-m8', sessionId: 'sess-basit-1', carried: 'resumed',
+            orderedAt: Date.now() - 19 * 60000, settledAt: Date.now() - 18 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm9', conversationId: 'c1',
+            from: 'a1', fromName: 'developer', to: ['a2'], intent: 'question', refs: ['m8'],
+            ask: 'Ask what would change the answer.',
+            taskId: 't-m9',
+            orderedAt: Date.now() - 17 * 60000, settledAt: Date.now() - 16 * 60000,
+            state: 'failed', note: 'the delegate exited 1 without writing an output file'
+        },
+        {
+            id: 'm11', conversationId: 'c1',
+            from: 'a1', fromName: 'developer', to: ['a2'], intent: 'challenge', refs: ['m4'],
+            excerpt: 'You are still treating "the engine reported 0.00" as a fact the row can rely on. '
+                + 'It is a fact about the RUN, not about the engine, and nothing on the row says which one it is.',
+            taskId: 't-m11', sessionId: 'sess-dev-1', carried: 'resumed',
+            transcript: 'D:/sessions/sess-dev-1.jsonl',
+            orderedAt: Date.now() - 15 * 60000, settledAt: Date.now() - 14 * 60000, state: 'delivered'
+        },
+        {
+            id: 'm10', conversationId: 'c2',
+            from: 'a2', fromName: 'basit', to: [], intent: 'evidence', refs: [],
+            excerpt: 'The index opens the newest first, so the transcript a user sees is whichever '
+                + 'ran last — not the one the mission thinks is primary.',
+            taskId: 't-m10', sessionId: 'sess-basit-2', carried: 'new',
+            orderedAt: Date.now() - 12 * 60000, settledAt: Date.now() - 10 * 60000, state: 'delivered'
+        }
     ],
     rounds: [
         {
@@ -350,6 +473,51 @@ const data = (over) => Object.assign({
     plannerTranscripts: {},
     traces: {}
 }, over || {});
+
+/**
+ * ‼️ U-65 — A REAL LONG EXCHANGE, because the compact default is a claim about
+ * a size no hand-written fixture reaches. Two hundred delivered turns in one
+ * council: what a reader gets is the newest handful and one click to the rest,
+ * and what must NOT happen is two hundred rows drawn into a run detail.
+ */
+const LONG_TALK_RUN = (() => {
+    const CAST = [['a1', 'developer'], ['a2', 'basit']];
+    const INTENTS = ['proposal', 'challenge', 'response', 'evidence', 'question', 'concede'];
+    const msgs = [];
+    for (let i = 1; i <= 200; i++) {
+        const [id, name] = CAST[i % 2];
+        msgs.push({
+            id: 'x' + i, conversationId: 'c9',
+            from: id, fromName: name, to: i % 3 === 0 ? [] : [CAST[(i + 1) % 2][0]],
+            intent: INTENTS[i % INTENTS.length],
+            refs: i > 1 ? ['x' + (i - 1)] : [],
+            excerpt: 'Turn ' + i + ' — the same argument, one notch further on: '
+                + 'whether a figure the engine never stated may be drawn as a number at all.',
+            taskId: 't-x' + i, sessionId: i % 2 ? 'sess-dev-1' : 'sess-basit-1',
+            carried: i > 2 ? 'resumed' : 'new',
+            orderedAt: Date.now() - (210 - i) * 60000,
+            settledAt: Date.now() - (209 - i) * 60000,
+            state: 'delivered'
+        });
+    }
+    return {
+        ...ADAPTIVE_RUN,
+        conversations: [{
+            id: 'c9', sourceActionId: 'd2',
+            objective: 'May a figure the engine never stated be drawn as a number at all?',
+            participants: ['a1', 'a2'],
+            openedAt: Date.now() - 210 * 60000
+        }],
+        councils: [{
+            id: 'k9', conversationId: 'c9',
+            question: 'May a figure the engine never stated be drawn as a number at all?',
+            chair: 'a2', members: ['a1', 'a2'],
+            options: ['never', 'with a mark'],
+            maxTurns: 240, openedAt: Date.now() - 210 * 60000
+        }],
+        messages: msgs
+    };
+})();
 
 /** Fire a wired handler the way a hand would, through the shim's own listeners. */
 const fire = (el, ev) => {
@@ -447,6 +615,27 @@ module.exports = {
                 // overflows, and a folded one cannot overflow
                 ['ev-toggle-run2', 'ca-toggle-run2', 'gr-toggle-run2', 'cv-toggle-run2', 'gd-toggle-run2']
                     .forEach(id => fire(el(id), 'click'));
+                // ‼️ U-65 — AND THE TRANSCRIPT ITSELF OPEN. The room's row is
+                // one line; the thing that can overflow is the exchange under
+                // it — speaker, intent, refs, lane, timestamp and two links on
+                // one head, with the words wrapping under them.
+                fire(r.query('[data-cvthread]')[0], 'click');
+            }
+        },
+        {
+            // ‼️ U-65 — A LONG EXCHANGE, which is the case the compact default
+            // exists for. 200 messages drawn whole is a page nobody can find
+            // anything in; this pictures what a reader actually gets.
+            id: 'run-conversation', label: 'A 200-message council, compact by default',
+            data: data({
+                specs: [ADAPTIVE_SPEC, SPEC],
+                runs: [LONG_TALK_RUN, RUN],
+                traces: { run2: ADAPTIVE_TRACE }
+            }),
+            act: (r) => {
+                fire(r.query('.mrow')[1], 'click');
+                fire(r.sandbox.document.getElementById('cv-toggle-run2'), 'click');
+                fire(r.query('[data-cvthread]')[0], 'click');
             }
         }
     ]

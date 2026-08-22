@@ -2,6 +2,57 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.242.0 — U-65: the conversation is a room you can read (2026-08-23)
+
+### The summary answered "did they talk"
+A run that opened a council showed one line per exchange: an id, the question,
+a message count. The question a reader actually has is what was **said**, by
+whom, about which message, and where it ran — and none of that was reachable
+from this page at all.
+
+`Conversations` is now a room. Each exchange keeps its compact row (cast, chair,
+spoken / silent counts, turns against the cap, the votes with who chose what,
+and whether it is open, closed or ended for one of the council's seven stated
+reasons) and opens into the real chronological transcript: speaker, intent in
+SHORTHAND, the messages it is **about** as clickable refs, the lane it was
+carried on, its timestamp, and deep links into the speaker's own session and
+the archived output. The full text is drawn; the AFTip on the intent chip opens
+with the long form, what the lead asked for, and how the lane was carried.
+
+‼️ **No fake speaker.** A turn that was ordered and came back with nothing draws
+no speech — it draws the order and the reason it produced none. A transcript
+that filled that gap with a sentence nobody said would be the one defect this
+surface cannot recover from.
+
+A ref is a link: clicking `m3` marks and scrolls to the message it answers,
+because "m3 answers m2" is what makes a transcript followable and a reader
+scrolling for an id is a reader who has stopped following it. An `unanswered`
+count and a filter show the questions and challenges nothing in the exchange has
+answered. An exchange over 25 messages opens **compact** — the newest are what a
+reader coming back wants and the rest are one click away.
+
+### ‼️ And the reason the old summary looked right: the fixture was invented
+The council pointed at its conversation through `conversation`; the record's
+field is `conversationId`. A message's state was `'said'`; the record's states
+are `pending` / `delivered` / `failed` / `cancelled`. A conversation carried
+`messages` and `open` counts and a `closed` flag it has never had. Every string
+test passed — and on a **real** run the council matched no conversation at all,
+so the chair, the cap, the votes and the way out were silently missing from the
+row, and `pending` turns were counted as spoken.
+
+Both the page fixture and the webview test's payload are now the shapes
+`MissionConversation` / `MissionCouncil` / `MissionMessage` really have, and the
+exchange they draw is the one the item asks for: an independent opening round,
+a challenge that names what it is about, a response, a concession, a one-to-many
+synthesis over real refs, two votes (one of them naming no option), a turn that
+failed, and a challenge nothing ever answered. A 200-message council fixture
+covers the compact default.
+
+A speaking turn's two deep links are resolved where the index is (`sessionId` →
+the transcript file, `taskId` → the archived output). Resolving them in the page
+would ship the session index to a surface with no other use for it; leaving them
+unresolved would give the reader a link that silently does nothing.
+
 ## 3.241.0 — The briefing teaches what the parser now demands (2026-08-23)
 
 X-65, X-67 and X-68 tightened what an adaptive lead may say; the briefing still
