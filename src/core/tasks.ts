@@ -3465,12 +3465,26 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
-    moveTask(task: FarmTask, dir: -1 | 1): void {
+    /**
+     * ‼️ ONE STEP — and the ONE place that decides what "up" and "down" mean.
+     *
+     * Returns where the task landed, or -1 when there was nowhere to go: it is
+     * already at that end of its agent's queue, or it is not queued at all. The
+     * tree's arrows ignore that number (a press at the top is a press that does
+     * nothing, which is what an arrow at the top should do); the bridge turns
+     * it into the sentence that says WHICH end was hit, because an agent that
+     * asked for a move and got silence cannot tell it from a move that worked.
+     *
+     * It returns something at all because `tasks.move` used to resolve the
+     * siblings and the bounds a second time, in extension.ts, to be able to say
+     * that sentence — two implementations of one gesture, kept in step by hand.
+     */
+    moveTask(task: FarmTask, dir: -1 | 1): number {
         const siblings = this.queuedSiblings(task);
         const i = siblings.indexOf(task);
         const j = i + dir;
-        if (i < 0 || j < 0 || j >= siblings.length) { return; }
-        this.moveTaskTo(task, j);
+        if (i < 0 || j < 0 || j >= siblings.length) { return -1; }
+        return this.moveTaskTo(task, j);
     }
 
     /** The queued rows this task competes with — its agent's, in board order. */

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 40,
+  "gapBudget": 38,
   "entries": [
     {
       "capability": "abTest",
@@ -5675,9 +5675,9 @@
       "ui": [
         "cmd:agentfarm.taskDown"
       ],
-      "gap": {
-        "why": "tasks.move exists, but the command calls the manager directly with an offset while the op resolves a position; they are two implementations of one act."
-      }
+      "ops": [
+        "tasks.move"
+      ]
     },
     {
       "capability": "tasksPanel.ts#afnav",
@@ -6107,9 +6107,9 @@
       "ui": [
         "cmd:agentfarm.taskUp"
       ],
-      "gap": {
-        "why": "tasks.move exists, but the command calls the manager directly with an offset while the op resolves a position; they are two implementations of one act."
-      }
+      "ops": [
+        "tasks.move"
+      ]
     },
     {
       "capability": "terminalRenderFix",

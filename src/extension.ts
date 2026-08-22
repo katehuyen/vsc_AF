@@ -4612,17 +4612,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const siblings = taskManager.tasks.filter(x =>
                     x.agentId === task.agentId && x.status === 'queued');
                 const from = siblings.indexOf(task);
-                let target: number;
+                let landed: number;
                 if (hasTo) {
                     need(Number.isFinite(Number(args.to)), '`to` is a number — 0 is next up.');
-                    target = Math.trunc(Number(args.to));
+                    landed = taskManager.moveTaskTo(task, Math.trunc(Number(args.to)));
                 } else {
                     need(dir === 'up' || dir === 'down', `dir is "up" or "down" — not "${dir}"`);
-                    target = from + (dir === 'up' ? -1 : 1);
-                    need(target >= 0 && target < siblings.length,
+                    // ‼️ ONE STEP IS THE TREE'S GESTURE AND IT ALREADY HAS A
+                    // FUNCTION. This branch used to resolve the siblings and the
+                    // bounds itself, so `taskUp`/`taskDown` and this op were two
+                    // implementations of "up" that only happened to agree.
+                    landed = taskManager.moveTask(task, dir === 'up' ? -1 : 1);
+                    need(landed >= 0,
                         dir === 'up' ? 'It is already first in its queue.' : 'It is already last in its queue.');
                 }
-                const landed = taskManager.moveTaskTo(task, target);
                 return {
                     id: task.id, agent: task.agentName, from, to: landed,
                     queued: siblings.length,

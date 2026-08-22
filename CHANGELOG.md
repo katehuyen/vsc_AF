@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.213.1 — the queue's two arrows and `tasks.move` stop being two implementations of "up" (2026-08-22)
+
+**A named parity gap, closed rather than re-explained.** The tree's ↑/↓ arrows called `moveTask(task, ±1)`; the bridge's `tasks.move` resolved the queued siblings and the bounds a second time, inline, so it could say *which* end a task had already reached. Two pieces of code deciding what "up" means, kept in step by hand — the exact shape the parity gate exists to catch, and it was carrying the gap by name.
+
+`moveTask` now RETURNS where the task landed, or `-1` when there was nowhere to go, and `tasks.move` calls it. The tree ignores that number (an arrow pressed at the top should do nothing, and does); the bridge turns it into the same sentence it always sent, because an agent that asked for a move and got silence cannot tell it from a move that worked. Behaviour is unchanged on both doors — what changed is that there is now one door frame. `parity.manifest.json` drops from 40 open gaps to 38, and `gapBudget` with it.
+
 ## 3.213.0 — U-88: "Choose only this" on a scope chip, and "only" finally means only (2026-08-22)
 
 **Right-click any of Search's nine scope chips — You · Automation · Agent · Delegator · Handler · Tools · Results · Memory · Events — and choose "Choose only this".** It lights that one and puts every other one out. The gesture is not new: Ctrl-click (⌘ on Mac) has meant this since the chips became toggles, and it was discoverable only by reading the hint printed beside them. The menu is the door somebody looking for it will actually try, and both run the identical page function — a menu item and a button that can drift apart are two features pretending to be one.
