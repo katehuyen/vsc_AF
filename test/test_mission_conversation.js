@@ -610,7 +610,143 @@ async function reloadTest() {
     ok('and the lane is free either way', !M.participantBusy(run2.messages, 'c1', 'a1'));
 }
 
-// ============================ 12. which engines can carry a lane at all
+// ================= 12. one question, several answers — the ordinary case
+//
+// One-to-many is not a mode here, it is what an empty `to` already means. What
+// it needs is that the speaker KNOWS the shape it is in: who else is in the
+// room (not inferable on a first turn — there is no exchange yet) and which of
+// them this turn is for. Without that the record's own row, "Ada → Rev, Cy", is
+// describing an address nobody was told about.
+const POOL3 = [
+    { agentId: 'a1', agentName: 'Ada' },
+    { agentId: 'a2', agentName: 'Rev' },
+    { agentId: 'a3', agentName: 'Cy' }
+];
+
+async function oneToManyTest() {
+    console.log('\n-- one-to-many: the cast is named, the addressee is named, the answers are one wave');
+    const run = newRun();
+    const replies = [
+        say({
+            participants: ['Ada', 'Rev', 'Cy'], from: 'Ada', to: ['Rev', 'Cy'],
+            intent: 'question', ask: 'which layer owns the resume flag?'
+        }),
+        say({
+            conversation: 'c1', objective: undefined, participants: undefined,
+            from: ['Rev', 'Cy'], intent: 'response', refs: ['m1'], ask: 'answer it in your own terms'
+        }),
+        FINISH
+    ];
+    const { d, waves } = deps(replies, {
+        Ada: 'Which layer owns it?', Rev: 'The engine does.', Cy: 'The task layer does.'
+    });
+    await new M.MissionEngine(spec({ pool: POOL3 }), run, [], d).execute();
+
+    const asked = run.rounds[0].steps[0];
+    ok('‼️ the speaker is told who else is in the room', /## Who is in it/.test(asked.prompt));
+    ok('…with itself marked, so it does not address itself', /- Ada \(you\)/.test(asked.prompt));
+    ok('…and the others by name', /- Rev\n- Cy/.test(asked.prompt));
+    ok('‼️ and it is told which of them this turn is for',
+        /## Who you are addressing\nRev, Cy\./.test(asked.prompt));
+    ok('…and that the rest still read it — the record is shared',
+        /The others in the conversation read this too/.test(asked.prompt));
+    eq('the address is on the record as ids', run.messages[0].to.join(','), 'a2,a3');
+    eq('and the row says who it was for',
+        M.messageLine(run.messages[0], (id) => POOL3.find(p => p.agentId === id)?.agentName ?? id)
+            .split(' · ')[0], '[m1] Ada → Rev, Cy');
+
+    eq('two agents answered', run.rounds[1].steps.length, 2);
+    eq('‼️ in ONE wave — neither saw the other before writing', waves[1].length, 2);
+    ok('and each was told so', run.rounds[1].steps.every(s => /not the only one answering/.test(s.prompt)));
+    ok('‼️ each got Ada\'s real question, not a description of it',
+        run.rounds[1].steps.every(s => s.prompt.includes('Which layer owns it?')));
+    ok('a turn addressed to everyone says so plainly',
+        /## Who you are addressing\nEveryone in the conversation\./.test(run.rounds[1].steps[0].prompt));
+    eq('three messages are on the record', run.messages.length, 3);
+    ok('all delivered', run.messages.every(m => m.state === 'delivered'));
+    eq('‼️ and the question is answered — a settling intent closes what it names',
+        M.openThreads(run.messages, 'c1').length, 0);
+}
+
+// ================= 13. a speaking turn that fails is evidence, not the end
+async function failedSpeakerTest() {
+    console.log('\n-- a failed turn frees the lane, and the lead is given the six options');
+    const run = newRun();
+    const replies = [
+        say({ participants: ['Ada', 'Rev'], from: 'Ada', intent: 'proposal', ask: 'state your position' }),
+        say({ conversation: 'c1', objective: undefined, participants: undefined, from: 'Rev', intent: 'proposal', ask: 'state yours instead' }),
+        FINISH
+    ];
+    // Ada's turn comes back clean with nothing in it — the one case that must
+    // not become an empty message (an empty `response` would close a challenge).
+    const { d, prompts } = deps(replies, { Rev: 'The engine owns it.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    eq('the turn that said nothing is failed, not delivered', run.messages[0].state, 'failed');
+    ok('…for the reason it failed for', /no text/.test(run.messages[0].note || ''));
+    ok('‼️ and it does NOT hold Ada\'s lane', !M.participantBusy(run.messages, 'c1', 'a1'));
+
+    const after = prompts[1];
+    ok('‼️ the lead is told this is a result, not the end of the objective',
+        /This is a RESULT, not the end of the objective/.test(after));
+    for (const opt of ['retry', 'revise', 'replan', 'skip', 'ask_user', 'finish with "partial"']) {
+        ok(`…and that "${opt}" is one of the choices`, after.includes(`\n- ${opt} —`));
+    }
+    ok('the failed delegation is named with its agent', /→ Ada/.test(after));
+    ok('‼️ and the conversation digest travels with it, so the replan is informed',
+        /Conversation c1/.test(after));
+
+    eq('the lead spoke again in the same conversation', run.messages.length, 2);
+    eq('…and that turn stands', run.messages[1].state, 'delivered');
+    eq('a failed turn carried nothing, so the next lane is still new', run.messages[1].carried, 'new');
+}
+
+// ================= 14. the same turn twice is a loop the work guard misses
+async function repeatedTurnTest() {
+    console.log('\n-- ordering the identical turn again, with nothing said since, is refused');
+    const run = newRun();
+    const same = { participants: ['Ada', 'Rev'], from: 'Ada', intent: 'proposal', ask: 'state your position' };
+    const replies = [
+        say(same),
+        say({ ...same, conversation: 'c1', objective: undefined, participants: undefined }),
+        say({ ...same, conversation: 'c1', objective: undefined, participants: undefined, ask: 'now say what it costs' }),
+        FINISH
+    ];
+    const { d, waves } = deps(replies, { Ada: (s) => 'Position: ' + s.id });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    ok('‼️ the repeat is refused by naming the message that already is that turn',
+        run.ledger.some(l => /message rejected — Ada already sent exactly this in "c1" \(m1\)/.test(l)));
+    ok('…and the lead is told what to do instead',
+        /Ask something else, have another participant answer it, or close the conversation/
+            .test(M.refuseMessage(
+                { conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [], ask: 'state your position' },
+                run.conversations[0], run.messages.slice(0, 1), [{ id: 'a1', name: 'Ada' }])));
+    eq('‼️ nothing was bought twice — the refused turn never reached a wave', waves.length, 2);
+    eq('two messages exist, not three', run.messages.length, 2);
+    eq('and the second is the one with a different ask', run.messages[1].ask, 'now say what it costs');
+
+    // The rule is about the RECORD, not about the string: once somebody else
+    // has spoken, the identical turn is a different turn — the speaker sees new
+    // words — and a retry after a FAILURE was never a repeat at all.
+    const conv = run.conversations[0];
+    const req = { conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [], ask: 'state your position' };
+    const known = [{ id: 'a1', name: 'Ada' }, { id: 'a2', name: 'Rev' }];
+    const withReply = [...run.messages, {
+        id: 'm9', conversationId: 'c1', from: 'a2', to: [], intent: 'challenge',
+        refs: ['m1'], orderedAt: 9, state: 'delivered', excerpt: 'no'
+    }];
+    eq('once somebody else has spoken it is allowed again',
+        M.refuseMessage(req, conv, withReply, known), '');
+    const failedOnly = [{
+        id: 'm1', conversationId: 'c1', from: 'a1', to: [], intent: 'proposal',
+        refs: [], ask: 'state your position', orderedAt: 1, state: 'failed'
+    }];
+    eq('‼️ and a retry after a failure is not a repeat — nothing was delivered',
+        M.refuseMessage(req, conv, failedOnly, known), '');
+}
+
+// ============================ 15. which engines can carry a lane at all
 {
     console.log('\n-- the lane question is answered per ENGINE, from what was measured');
     const CE = require(path.join(__dirname, '..', 'out', 'core', 'consoleEngine.js'));
@@ -647,6 +783,9 @@ async function reloadTest() {
     await noResumeTest();
     await emptyAndFailedTest();
     await refusalAndDigestTest();
+    await oneToManyTest();
+    await failedSpeakerTest();
+    await repeatedTurnTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

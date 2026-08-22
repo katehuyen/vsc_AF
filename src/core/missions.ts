@@ -2203,7 +2203,8 @@ export class MissionEngine {
             const refusal = refuseMessage(
                 {
                     conversationId: conv?.id ?? d.conversation ?? '',
-                    from, to: d.to, intent: d.intent, refs: d.refs
+                    from, to: d.to, intent: d.intent, refs: d.refs,
+                    ...(d.ask ? { ask: d.ask } : {})
                 },
                 conv, run.messages,
                 roster.map(m => ({ id: m.agentId, name: m.agentName })));
@@ -2267,7 +2268,7 @@ export class MissionEngine {
                 prompt: buildSpeakerPrompt({
                     conversation: conv!, intent: d.intent, speakerName: nameOf(from),
                     referenced, context, ...(d.ask ? { ask: d.ask } : {}),
-                    goal: spec.goal, carried, nameOf,
+                    to: d.to, goal: spec.goal, carried, nameOf,
                     independent: d.from.length > 1
                 }),
                 // ‼️ SPEAKING DOES NOT WRITE. A turn produces a message, and
@@ -2345,6 +2346,15 @@ export class MissionEngine {
             if (step.status === 'done') {
                 msg.note = 'the turn came back with no text — nothing was said';
                 step.failure = failure('delegate-failed', step, msg.note);
+                // ‼️ AND THE STEP SAYS SO TOO. A step left `done` while the
+                // message it exists to produce is `failed` is one event with two
+                // answers, and the surface that reads the step is the one that
+                // matters most: the round message is built from step status, so
+                // a lead whose speaker said nothing was shown a successful round
+                // and never offered retry · revise · replan · skip · ask_user ·
+                // partial. It would then plan its next turn on a discussion that
+                // did not happen — the exact failure M-19 exists to refuse.
+                step.status = 'failed';
             } else {
                 msg.note = step.failure?.detail || step.note || 'the speaking turn did not come back';
             }

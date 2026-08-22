@@ -349,6 +349,24 @@ export function refuseMessage(
             + 'put the message id(s) it answers in "refs". '
             + (own.length ? `This conversation has ${own.map(m => m.id).join(', ')}.` : 'Nothing has been said yet.');
     }
+    // ‼️ THE SAME TURN ORDERED AGAIN WITH NOTHING SAID IN BETWEEN — a loop the
+    // generic guard cannot see. The work-level dup key hashes agent + prompt,
+    // and a repeated speaking turn builds a DIFFERENT prompt: the second one
+    // carries a resumed lane's preamble and a record that has grown, so the
+    // strings never match and the lead can re-order the identical turn round
+    // after round, paying for each one. What makes it a loop is a fact of the
+    // record rather than of the prompt, so it is refused here, by naming the
+    // message that already is this turn.
+    const delivered = own.filter(m => m.state === 'delivered');
+    const last = delivered[delivered.length - 1];
+    if (last && last.from === req.from && last.intent === req.intent
+        && (last.ask ?? '') === (req.ask ?? '')
+        && last.refs.join(',') === req.refs.join(',')) {
+        const who = knownAgents.find(a => a.id === req.from)?.name ?? req.from;
+        return `${who} already sent exactly this in "${conv.id}" (${last.id}), and nothing has been `
+            + 'said since — ordering it again would buy the same turn twice. Ask something else, '
+            + 'have another participant answer it, or close the conversation.';
+    }
     return '';
 }
 
@@ -375,6 +393,13 @@ export function buildSpeakerPrompt(opts: {
     context?: readonly MissionMessage[];
     /** the lead's own words about what it wants from this turn */
     ask?: string;
+    /**
+     * ‼️ Who this turn is addressed to, EMPTY MEANING EVERYONE — the same field
+     * the record carries. Without it the speaker writes to the room while the
+     * transcript says "Ada → Rev", and the row is claiming an address the turn
+     * was never told about.
+     */
+    to?: readonly string[];
     goal?: string;
     carried: LaneCarry;
     /**
@@ -402,6 +427,26 @@ export function buildSpeakerPrompt(opts: {
     parts.push(`\n## What this conversation is for\n${opts.conversation.objective.trim()}`);
     if (opts.goal?.trim()) {
         parts.push(`\n## The objective it serves\n${opts.goal.trim()}`);
+    }
+    // ‼️ WHO IS IN THE ROOM, AND WHICH OF THEM THIS TURN IS FOR. Neither is
+    // inferable from the exchange on a first turn — there is no exchange yet —
+    // and both are already facts of the record: `to` is stored on the message
+    // and printed on its row. A speaker not told it was addressed to one
+    // participant writes to the room, and the row that says "Ada → Rev" is then
+    // describing an address nobody made. One-to-many is the ordinary case here,
+    // which is exactly why the narrow case has to be said out loud.
+    const cast = opts.conversation.participants;
+    if (cast.length > 1) {
+        parts.push('\n## Who is in it\n'
+            + cast.map(p => `- ${name(p)}${name(p) === opts.speakerName ? ' (you)' : ''}`).join('\n'));
+    }
+    const addressed = (opts.to ?? []).filter(t => name(t) !== opts.speakerName);
+    if (addressed.length) {
+        parts.push(`\n## Who you are addressing\n${addressed.map(name).join(', ')}. `
+            + 'The others in the conversation read this too — the record is shared — but write it to '
+            + `${addressed.length > 1 ? 'them' : addressed.map(name)[0]}.`);
+    } else if (cast.length > 1) {
+        parts.push('\n## Who you are addressing\nEveryone in the conversation.');
     }
     if (opts.carried === 'resumed') {
         parts.push('\n## Where you are\n'
