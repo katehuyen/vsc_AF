@@ -1774,20 +1774,20 @@ function adaptiveDecisionSchema(): string {
   "currentPhase": "your own short label for where this run is (e.g. \\"triage\\", \\"building\\", \\"verifying\\") — an observation, not a stage anyone enforces",
   "strategy": "your working approach, restated IN FULL every time — even if it has not changed",
   "changeReason": "only when the strategy above differs from your last one: what made you change it",
-  "basedOn": ["ids of the earlier results this decision rests on, from the \\"id\\" shown with each round result"],
+  "basedOn": ["ids of earlier results or decisions this one rests on — REAL ids only, from the \\"id\\" shown with each round result; leave the list empty rather than inventing one"],
   "thought": "one short sentence on your reasoning",
   "action": ${menu},
   "tasks": [ { "agent": "<pool agent name>", "title": "...", "prompt": "full self-contained instructions for that agent", "expect": "how to tell it succeeded", "criteria": ["<criterion ids this work is for>"], "readonly": true|false } ],
   "agent": "for review/compare/revise: the ONE pool agent that does it",
   "ask": "for review/compare/revise: what you want looked at, weighed, or fixed",
-  "targets": ["for evaluate and for review/compare/revise: the result ids you mean"],
+  "targets": ["REQUIRED for evaluate and for review/compare/revise: the result ids you mean — at least one, and each must be a result that has already SETTLED"],
   "reviewer": "for evaluate: a pool agent to review independently — omit to judge it yourself",
   "findings": [ { "criterion": "<criterion id>", "verdict": "pass" | "fail" | "unknown", "evidence": "what you actually saw", "gap": "what is missing" } ],
   "advice": "for evaluate: finish | revise | replan | explore | ask_user | partial | failed",
   "question": "only for ask_user",
 ${extraFields}
   "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains",
-  "stopReason": "for finish/abort: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
+  "stopReason": "REQUIRED on finish/abort — one of: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
 }
 
 What each action is:
@@ -1799,7 +1799,9 @@ Rules:
 - A "revise" is charged to the same criteria as the work it revises, so any pass recorded about the old version goes stale. That is the point of it.
 ${extraRules}
 - ‼️ "finish" with "success" is REFUSED unless every REQUIRED criterion has a current PASS on record. A criterion is judged by an "evaluate", never by a delegation finishing — a delegate exiting cleanly says the work RAN, not that the objective is met.
-- An evaluation goes STALE when work for one of the criteria it judged settles after it. Judge again after you change something; a pass about the old version does not open the gate.
+- ‼️ An "evaluate" must NAME what it looked at in "targets" — at least one result that has already settled. A verdict bound to nothing could never go out of date, and one that can never go out of date is a permanent pass.
+- An evaluation goes STALE when work for one of the criteria it judged settles after it, OR when something it judged is later revised. Judge again after you change something; a pass about the old version does not open the gate.
+- ‼️ Every "finish" and "abort" must carry a "stopReason" from the list above. "Reached the objective" and "ran out of rope" are different endings and the record has to be able to tell them apart.
 - Use "evaluate" with no "reviewer" to judge from the results you already hold — then the verdict must be in the SAME reply ("findings" + "advice"). Name a "reviewer" from the pool when the judgement should not be your own.
 - "unknown" is a real verdict and is better than a guess. There is no score to fill in; "confidence" is optional and nothing depends on it.
 - "revise" means the same approach and the same artefact, fixed where the gap is. "replan" means the approach was wrong. They are different words because they are different events.

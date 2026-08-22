@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.241.0 — The briefing teaches what the parser now demands (2026-08-23)
+
+X-65, X-67 and X-68 tightened what an adaptive lead may say; the briefing still
+described the loose contract. A rule the model is refused on but never told is a
+round spent on a correction that did not have to happen — and on a slower model,
+two rounds and an ended run.
+
+The decision schema now states that `targets` is REQUIRED for `evaluate` and for
+`review` / `compare` / `revise`, with at least one result that has already
+**settled**; that `stopReason` is REQUIRED on `finish` and `abort`; and that
+`basedOn` takes real ids only — an empty list rather than an invented one. The
+rules list carries the same three in the words the refusals themselves use,
+including why an evaluation bound to nothing is a permanent pass, and that a
+revise stales the verdict on what it replaced.
+
 ## 3.240.0 — A verdict names the version it judged, and dies with it (2026-08-23)
 
 ### X-67 — an evaluation bound to nothing was a permanent pass
