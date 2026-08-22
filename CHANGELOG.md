@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.246.0 - X-90: an explicit null is not silence (2026-08-23)
+
+X-60 put a validator in front of `createMission` so a request is judged before
+it is normalised. That validator asked one question — `!== undefined && !==
+null` — and used the answer for three different facts: was the key GIVEN, is
+what arrived the right SHAPE, and can the value be HONOURED.
+
+So the faults walked past it. `mode: null`, `autonomy: ""` and `pool: null`
+were read as "the caller said nothing" and went back into the lossy normaliser
+that X-60 exists to stand in front of. An unknown `leadAgentId` fell through to
+"the first of the pool", so an adaptive run was led by an agent the caller
+never named. An unknown member of a CLASSIC team was FILTERED OUT, so a team of
+five could start as a team of two — or as `Pick at least one team agent` for a
+request that named five. And a list's ITEMS had no shape at all: `pool:
+["coder"]`, the most natural thing a caller writes, read as one anonymous
+member and then, resolving to nobody, as the whole fleet.
+
+The three facts are now three tests. Presence is `hasOwnProperty`; an explicit
+`null`, a blank enum, a wrong container type, a member that is a bare string or
+a null, a constraint that is not text and a criterion that is not an object are
+each refused with what actually arrived (`null` · `blank` · `a list` · `number`)
+rather than with what it coerced to. Every identity in the request — lead, team
+member, pool member — is checked against this window's real fleet, and the
+adaptive run that names NO lead is still exactly the feature it was.
+
+`test/test_mission_adaptive.js` measures omitted vs. explicit-empty on every
+field, the unknown lead, mixed known+unknown team and pool, and
+primitive/string/null list items — on the panel's path and on `missions.start`.
+
 ## 3.245.0 - X-82: a ceiling is lifted on purpose or not at all (2026-08-23)
 
 `normalizeMissionLimits` asked `Number(v)` first and `n <= 0` second. Between
