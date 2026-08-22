@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.245.0 - X-82: a ceiling is lifted on purpose or not at all (2026-08-23)
+
+`normalizeMissionLimits` asked `Number(v)` first and `n <= 0` second. Between
+those two lines, `null`, `false`, `""`, a limit box the user had CLEARED and
+every negative figure all became the word "unlimited" — the one word that
+removes the cost, token, round, task, time and parallel ceilings of the run
+being started. A typo did not fail; it handed out an unbounded budget.
+
+Three states are now kept apart, on all six axes: an OMITTED field asks for the
+documented default · an exact `0` (or the form's `"0"`) is the one spelling of
+"no ceiling on this axis" · a positive figure is itself, floored as before.
+Anything else is refused BY FIELD NAME at the raw boundary
+(`validateMissionLimitsInput`, beside `validateMissionInput` — X-60's order:
+judge the request before normalising it), and the normaliser falls back to the
+default rather than to unlimited if it is ever reached another way.
+
+The panel's `type="number" min="0"` is a convenience, never the guard: the
+bridge reaches the same `createMission` with no HTML in front of it, so
+`missions.start` and the form now refuse the identical payloads.
+`test/test_mission_limits.js` measures all six axes against
+null/false/blank/negative/NaN-string/list/object, both paths.
+
 ## 3.244.0 - X-70: a spent ceiling stops all work, not the one word (2026-08-23)
 
 The budget guard asked `d.action === 'delegate'`. That was the whole vocabulary

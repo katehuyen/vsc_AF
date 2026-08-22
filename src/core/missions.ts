@@ -235,17 +235,32 @@ export const DEFAULT_MISSION_LIMITS: MissionLimits = {
  *
  * What survives is the FLOOR and the word `0`. A POSITIVE figure below the
  * smallest workable value is a typo rather than a request, so it is lifted to
- * that floor; `0` (or anything below it) is the one spelling of "no ceiling on
- * this axis" — the word `maxTokens` has meant since X-19, now spoken by all six.
+ * that floor; an EXACT `0` is the one spelling of "no ceiling on this axis" —
+ * the word `maxTokens` has meant since X-19, now spoken by all six.
+ *
+ * ‼️ X-82 — AND ONLY AN EXACT 0. This read `n <= 0`, with everything coerced
+ * through `Number(v)` first, so `null`, `false`, `""`, a box the user CLEARED
+ * in the form and every negative figure spelled "no ceiling" just as loudly as
+ * a typed zero: a malformed request did not fail, it removed the cost, time,
+ * round and task ceilings of the run it started. Lifting a ceiling is a
+ * decision, so it is now made only by the one value that can only be meant.
+ * Anything else that cannot be honoured falls back to the DOCUMENTED DEFAULT
+ * here, and is refused by name at the raw boundary
+ * (`validateMissionLimitsInput`) before it ever reaches this function.
  *
  * It lives here rather than in the caller because it is the RULE, and a rule
  * inside a closure cannot be held by a test (Principle 1).
  */
 export function normalizeMissionLimits(input: Record<string, unknown>): MissionLimits {
     const num = (v: unknown, d: number, min: number, integer = false): number => {
+        // Not a figure at all — a default is the safe reading of silence, and
+        // `Number()` would have turned `null`, `false`, `""` and even `[]` into
+        // a 0 that read as "no ceiling on this axis".
+        if (typeof v !== 'number' && typeof v !== 'string') { return d; }
+        if (typeof v === 'string' && !v.trim()) { return d; }
         const n = Number(v);
-        if (!Number.isFinite(n)) { return d; }
-        if (n <= 0) { return 0; }
+        if (!Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER) { return d; }
+        if (n === 0) { return 0; }
         return Math.max(min, integer ? Math.round(n) : Math.round(n * 100) / 100);
     };
     return {
@@ -259,6 +274,50 @@ export function normalizeMissionLimits(input: Record<string, unknown>): MissionL
         maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 1, true),
         maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, true)
     };
+}
+
+/** The six axes a mission is fenced on — one list, so no surface can grow a seventh alone. */
+export const MISSION_LIMIT_FIELDS = [
+    'maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'
+] as const;
+
+/**
+ * ‼️ X-82 — A CEILING IS LIFTED ON PURPOSE OR NOT AT ALL.
+ *
+ * `normalizeMissionLimits` is deliberately lossy: it takes whatever arrived and
+ * produces a usable set of limits, which is right for a spec read off disk and
+ * wrong for a request somebody just made. The same reasoning as X-60, on the
+ * one dimension where the wrong answer is UNBOUNDED SPEND: a typo'd budget, a
+ * `null` from a script, a limit box the user cleared and a negative figure all
+ * arrived as "no ceiling", and the caller was told the mission was theirs.
+ *
+ * So the raw request is judged before it is changed, and the three states are
+ * kept apart: OMITTED = the documented default · exact `0` = unlimited ·
+ * a positive figure = itself, floored. Everything else is refused BY FIELD NAME
+ * — the panel's `type="number" min="0"` is a convenience, never the only guard,
+ * because the bridge reaches the same function without any HTML in front of it.
+ */
+export function validateMissionLimitsInput(raw: Record<string, unknown>): string[] {
+    const errors: string[] = [];
+    for (const k of MISSION_LIMIT_FIELDS) {
+        const v = raw[k];
+        // An absent field is not a bad one — it asks for the default (X-60).
+        if (v === undefined) { continue; }
+        const say = (why: string) => errors.push(
+            `"${k}" ${why} — give a number, or exactly 0 to run with no ceiling on that axis`
+        );
+        if (v === null) { say('was sent as null'); continue; }
+        if (typeof v === 'boolean') { say('was sent as a true/false'); continue; }
+        if (typeof v === 'string' && !v.trim()) { say('was left blank'); continue; }
+        if (typeof v !== 'number' && typeof v !== 'string') {
+            say(`was sent as ${Array.isArray(v) ? 'a list' : 'an ' + typeof v}`); continue;
+        }
+        const n = Number(v);
+        if (!Number.isFinite(n)) { say(`is not a number ("${String(v).slice(0, 30)}")`); continue; }
+        if (n < 0) { say(`is negative (${n})`); continue; }
+        if (n > Number.MAX_SAFE_INTEGER) { say('is larger than this build can count exactly'); }
+    }
+    return errors;
 }
 
 export interface MissionSpec {

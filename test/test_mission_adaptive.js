@@ -373,5 +373,92 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
     ok('…and only the RAW check ever sees it', bad(dupe).some(e => /given the id "c1"/.test(e)));
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ‼️ X-90 (M-15/X-60) — PRESENCE, TYPE AND VALUE ARE THREE DIFFERENT FACTS.
+// The raw check answered all three with `!== undefined && !== null`, so the
+// faults below walked straight past it into the lossy normaliser — which is
+// the one thing this validator exists to stop.
+{
+    console.log('\n-- ‼️ X-90 an explicit null is not silence, and a list has items with shapes');
+
+    const FLEET = ['a1', 'a2'];
+    const bad = (raw) => M.validateMissionInput(raw, { agentIds: FLEET, engines: ['claude', 'codex'] });
+
+    // ---- omitted vs. explicitly empty: the same key, two different requests
+    eq('an OMITTED mode is silence, and silence is classic', bad({}).length, 0);
+    ok('…while an explicit mode:null is refused, not read as silence',
+        bad({ mode: null }).some(e => /"mode" was sent as null/.test(e)));
+    ok('…and a blank mode too — a cleared field is not a choice',
+        bad({ mode: '   ' }).some(e => /"mode" was sent as blank/.test(e)));
+    ok('a mode sent as a number is refused by shape',
+        bad({ mode: 3 }).some(e => /"mode" was sent as number/.test(e)));
+    eq('an OMITTED autonomy still takes the documented default', bad({ mode: 'adaptive' }).length, 0);
+    ok('…while autonomy:null and autonomy:"" are refused',
+        bad({ autonomy: null }).some(e => /"autonomy" was sent as null/.test(e))
+        && bad({ autonomy: '' }).some(e => /"autonomy" was sent as blank/.test(e)));
+    eq('an OMITTED pool really does mean the whole fleet', bad({ mode: 'adaptive' }).length, 0);
+    ok('…while pool:null and team:null are refused, not read as "not given"',
+        bad({ pool: null }).some(e => /"pool" must be a list — it was sent as null/.test(e))
+        && bad({ team: null }).some(e => /"team" must be a list — it was sent as null/.test(e)));
+
+    // ---- ‼️ the lead: an unknown one used to fall through to the first of the
+    // pool, so an adaptive run was led by an agent the caller never named
+    ok('an unknown leadAgentId is refused by name',
+        bad({ mode: 'adaptive', leadAgentId: 'ghost' }).some(e => /no agent in this fleet is "ghost" \(leadAgentId\)/.test(e)));
+    eq('…while an adaptive run that names NO lead is still the feature',
+        bad({ mode: 'adaptive', leadAgentId: '' }).length, 0);
+    eq('…and a real lead passes', bad({ leadAgentId: 'a1' }).length, 0);
+    ok('a leadAgentId sent as a list is refused by shape',
+        bad({ leadAgentId: ['a1'] }).some(e => /"leadAgentId" must be an agent id/.test(e)));
+
+    // ---- ‼️ mixed known + unknown: the unknown ones used to be FILTERED OUT,
+    // so a team of five could start as a team of two without a word
+    ok('an unknown member of a CLASSIC team is refused, not filtered away',
+        bad({ team: [{ agentId: 'a1' }, { agentId: 'ghost' }] })
+            .some(e => /no agent in this fleet is "ghost" \(in team\)/.test(e)));
+    ok('…and the same on an adaptive pool, alongside a real member',
+        bad({ mode: 'adaptive', pool: [{ agentId: 'a1' }, { agentId: 'ghost' }] })
+            .some(e => /no agent in this fleet is "ghost" \(in pool\)/.test(e)));
+    eq('a team of real agents passes', bad({ team: [{ agentId: 'a1' }, { agentId: 'a2' }] }).length, 0);
+
+    // ---- ‼️ items with no shape: `["coder"]` is what a caller naturally writes,
+    // and every normaliser downstream read it as one anonymous member
+    for (const junk of ['coder', 7, null, ['a1']]) {
+        ok(`a pool item sent as ${JSON.stringify(junk)} is refused rather than read as {}`,
+            bad({ mode: 'adaptive', pool: [junk] }).some(e => /pool\[0\] must be an object naming an agentId/.test(e)));
+        ok(`…and a team item sent as ${JSON.stringify(junk)} too`,
+            bad({ team: [junk] }).some(e => /team\[0\] must be an object naming an agentId/.test(e)));
+    }
+    ok('an object member that names no agentId is refused',
+        bad({ team: [{ role: 'reviewer' }] }).some(e => /team\[0\] names no agentId/.test(e)));
+    ok('a constraint sent as an object is refused, not stringified into "[object Object]"',
+        bad({ constraints: [{ text: 'no force push' }] }).some(e => /constraints\[0\] must be text/.test(e)));
+    ok('a criterion sent as a bare string is refused, not read as an empty one',
+        bad({ successCriteria: ['it works'] }).some(e => /successCriteria\[0\] must be an object with text/.test(e)));
+
+    // ---- ‼️ and the same refusal on both paths. `missions.start` spreads the
+    // caller's args into the identical function the panel reaches, so a shape
+    // the bridge accepts and the panel refuses would be two products.
+    const { BridgeRegistry, need } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+    const reg = new BridgeRegistry();
+    reg.register([{
+        op: 'missions.start', describe: 'Start a mission. args: goal, mode?, pool?, team?',
+        handler: (args) => {
+            const errs = M.validateMissionInput(args, { agentIds: FLEET, engines: ['claude', 'codex'] });
+            need(!errs.length, 'This mission cannot start — ' + errs.join('; ') + '.');
+            return { ok: true };
+        }
+    }]);
+    (async () => {
+        for (const [name, args, rx] of [
+            ['an explicit mode:null', { goal: 'g', mode: null }, /"mode" was sent as null/],
+            ['an unknown lead', { goal: 'g', leadAgentId: 'ghost' }, /"ghost" \(leadAgentId\)/],
+            ['a half-unknown team', { goal: 'g', team: [{ agentId: 'a1' }, { agentId: 'ghost' }] }, /"ghost" \(in team\)/],
+            ['a pool item that is a bare string', { goal: 'g', mode: 'adaptive', pool: ['a1'] }, /pool\[0\] must be an object/]
+        ]) {
+            const r = await reg.dispatch('missions.start', args);
+            ok(`the bridge refuses ${name} exactly as the panel does`, !r.ok && rx.test(r.error));
+        }
+        console.log(`\n${pass} passed, ${fail} failed`);
+        process.exit(fail ? 1 : 0);
+    })();
+}

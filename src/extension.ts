@@ -269,7 +269,7 @@ import {
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     validateMissionInput,
-    normalizeMissionLimits,
+    normalizeMissionLimits, validateMissionLimitsInput,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
@@ -4448,10 +4448,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // agents that do not exist became the WHOLE FLEET, and a dimension sent
         // as the wrong type was read as empty — each one a different, valid
         // looking mission the caller was told was theirs.
-        const rawBad = validateMissionInput(input, {
-            agentIds: agents.map(a => a.id),
-            engines: Object.keys(ENGINES)
-        });
+        const rawBad = [
+            ...validateMissionInput(input, {
+                agentIds: agents.map(a => a.id),
+                engines: Object.keys(ENGINES)
+            }),
+            // ‼️ X-82 — and the SIX CEILINGS, on the same raw request and for the
+            // same reason: `normalizeMissionLimits` read null, false, a cleared
+            // box and every negative figure as the word "unlimited", so a
+            // malformed request removed the very brakes it was fenced by.
+            ...validateMissionLimitsInput(input)
+        ];
         if (rawBad.length) { return `This mission cannot start — ${rawBad.join('; ')}.`; }
         const goal = String(input.goal ?? '').trim();
         if (!goal) { return 'Goal is required.'; }

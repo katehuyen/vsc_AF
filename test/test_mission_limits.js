@@ -29,6 +29,46 @@ const N = M.normalizeMissionLimits;
         && N({ maxCostUSD: 'lots' }).maxCostUSD === 5);
 }
 
+// ---------- ‼️ X-82: ONLY AN EXACT 0 LIFTS A CEILING ----------
+// The normaliser read `n <= 0` through `Number(v)`, so null, false, "", a limit
+// box the user CLEARED and every negative figure removed the ceiling as loudly
+// as a typed zero. A malformed request must fall back to the DEFAULT, never to
+// unbounded spend — and be refused by name before it gets this far.
+{
+    const FIELDS = ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'];
+    ok('the six axes are one list, not six per-surface lists',
+        Array.isArray(M.MISSION_LIMIT_FIELDS) && M.MISSION_LIMIT_FIELDS.join() === FIELDS.join());
+
+    for (const junk of [null, false, true, '', '   ', -1, -0.5, 'soon', NaN, {}, []]) {
+        const shown = typeof junk === 'string' ? `"${junk}"` : String(junk);
+        const got = FIELDS.map(k => N({ [k]: junk })[k]);
+        ok(`${shown} on any axis falls back to that axis's default, it does not remove the ceiling`,
+            got.every((v, i) => v === M.DEFAULT_MISSION_LIMITS[FIELDS[i]]));
+        // …and it never reaches the normaliser silently: the raw boundary names it.
+        const bad = FIELDS.map(k => M.validateMissionLimitsInput({ [k]: junk }));
+        ok(`…and the raw boundary refuses ${shown} on all six, by field name`,
+            bad.every((errs, i) => errs.length === 1 && errs[0].includes(`"${FIELDS[i]}"`)));
+    }
+    ok('an OMITTED field is not a bad one — it asks for the default',
+        M.validateMissionLimitsInput({ goal: 'g' }).length === 0);
+    ok('undefined is omitted, whether the key is there or not',
+        M.validateMissionLimitsInput({ maxCostUSD: undefined }).length === 0);
+    ok('‼️ an exact 0 is accepted on every axis — that is how "no ceiling" is spelled',
+        FIELDS.every(k => M.validateMissionLimitsInput({ [k]: 0 }).length === 0)
+        && FIELDS.every(k => N({ [k]: 0 })[k] === 0));
+    ok('…and so is the panel\'s "0", which arrives as a string from an HTML input',
+        FIELDS.every(k => M.validateMissionLimitsInput({ [k]: '0' }).length === 0)
+        && FIELDS.every(k => N({ [k]: '0' })[k] === 0));
+    ok('a positive figure passes, as a number or as the form\'s string',
+        M.validateMissionLimitsInput({ maxRounds: 40, maxCostUSD: '12.5' }).length === 0
+        && N({ maxRounds: 40, maxCostUSD: '12.5' }).maxCostUSD === 12.5);
+    ok('a figure larger than this build can count exactly is refused, not accepted blind',
+        M.validateMissionLimitsInput({ maxTokens: 1e30 }).length === 1
+        && N({ maxTokens: 1e30 }).maxTokens === 2000000);
+    ok('every fault in one request is reported at once, not one per attempt',
+        M.validateMissionLimitsInput({ maxRounds: -1, maxTasks: null, maxCostUSD: '' }).length === 3);
+}
+
 // ---------- ‼️ no upper clamp, on any axis ----------
 {
     const big = N({
@@ -50,11 +90,13 @@ const N = M.normalizeMissionLimits;
     });
     ok('0 is kept as 0 on every axis — that is how "no ceiling" is spelled',
         Object.values(free).every(v => v === 0));
-    ok('a negative figure means the same thing rather than a strange limit',
+    // ‼️ X-82 — a negative figure used to mean the same thing. It does not: it is
+    // a typo, and a typo must not be able to hand out an unlimited budget.
+    ok('a negative figure is a typo, not a request for no ceiling',
         Object.values(N({
             maxRounds: -1, maxTasks: -5, maxCostUSD: -0.5,
             maxTokens: -1, maxMinutes: -60, maxParallel: -2
-        })).every(v => v === 0));
+        })).every(v => v !== 0));
 }
 
 // ---------- the floor survives: a POSITIVE typo is still a typo ----------
@@ -220,6 +262,54 @@ function makeDeps(replies) {
         ok('…and the run names the ceiling that cut it', /time limit/.test(r.note || ''));
         ok('the step says which ceiling stopped it, on the row the reader looks at',
             r.rounds[0].steps.some(st => /stopped by the mission ceiling/.test(st.note || '')));
+    }
+
+    // ---------- ‼️ X-82: THE SAME REFUSAL ON THE BRIDGE AND IN THE PANEL ----------
+    // The form's `type="number" min="0"` is a convenience; `missions.start`
+    // reaches the identical function with no HTML in front of it, so the guard
+    // that matters is the one both go through. Shaped like the real handler.
+    {
+        const { BridgeRegistry, need } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+        const reg = new BridgeRegistry();
+        reg.register([{
+            op: 'missions.start',
+            describe: 'Start a mission. args: goal, maxCostUSD?, maxTokens?, …',
+            handler: (args) => {
+                const bad = [
+                    ...M.validateMissionInput(args, { agentIds: ['a1'], engines: ['claude'] }),
+                    ...M.validateMissionLimitsInput(args)
+                ];
+                need(!bad.length, 'This mission cannot start — ' + bad.join('; ') + '.');
+                return { limits: N(args) };
+            }
+        }]);
+        const cleared = await reg.dispatch('missions.start', { goal: 'g', maxCostUSD: '' });
+        ok('‼️ a CLEARED limit box is refused, not read as an unlimited budget',
+            !cleared.ok && /"maxCostUSD" was left blank/.test(cleared.error));
+        const nulled = await reg.dispatch('missions.start', { goal: 'g', maxTokens: null });
+        ok('…a null from a script is refused, not read as no token ceiling',
+            !nulled.ok && /"maxTokens" was sent as null/.test(nulled.error));
+        const neg = await reg.dispatch('missions.start', { goal: 'g', maxMinutes: -60 });
+        ok('…a negative figure is refused, not read as no time limit',
+            !neg.ok && /"maxMinutes" is negative/.test(neg.error));
+        const bool = await reg.dispatch('missions.start', { goal: 'g', maxRounds: false });
+        ok('…and a false, which coerced to 0 and removed the round ceiling',
+            !bool.ok && /"maxRounds" was sent as a true\/false/.test(bool.error));
+        const zero = await reg.dispatch('missions.start', { goal: 'g', maxCostUSD: 0, maxTokens: 0 });
+        ok('‼️ while an EXPLICIT 0 still lifts the ceiling — the decision survives',
+            zero.ok && zero.result.limits.maxCostUSD === 0 && zero.result.limits.maxTokens === 0);
+        const plain = await reg.dispatch('missions.start', { goal: 'g' });
+        ok('…and a start that names no ceiling at all gets the documented defaults',
+            plain.ok && plain.result.limits.maxCostUSD === 5 && plain.result.limits.maxRounds === 8);
+
+        // …and the real create path runs it in the ORDER that makes it a guard:
+        // after the normaliser it would only ever judge the normaliser's output.
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const at = ext.indexOf('const createMission = ');
+        const create = ext.slice(at, at + 12000);
+        ok('‼️ createMission judges the raw ceilings before it normalises them',
+            create.indexOf('validateMissionLimitsInput(') > 0
+            && create.indexOf('validateMissionLimitsInput(') < create.indexOf('normalizeMissionLimits('));
     }
 
     // ---------- the surfaces say it too ----------

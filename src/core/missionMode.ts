@@ -277,30 +277,79 @@ export function validateObjective(spec: {
  * all (M-15), an objective with no `pool` really does mean the whole fleet, and
  * a caller that omits `autonomy` gets the documented default. Only a field that
  * was GIVEN and cannot be honoured is refused.
+ *
+ * ‼️ X-90 — AND "GIVEN" IS THREE FACTS, NOT ONE. This asked `!== undefined &&
+ * !== null`, which answered PRESENCE, TYPE and VALUE with a single test: an
+ * explicit `mode: null`, an `autonomy: ""` and a `pool: null` were all read as
+ * "the caller said nothing" and went straight back into the lossy normaliser —
+ * the exact silence this function exists to end, one layer further in. The
+ * three are now separate: the key is there or it is not · what arrived is the
+ * right SHAPE or it is not · the value can be honoured or it cannot.
  */
 export function validateMissionInput(
     raw: Record<string, unknown>,
     known: { agentIds?: readonly string[]; engines?: readonly string[] } = {}
 ): string[] {
     const errors: string[] = [];
-    const given = (k: string) => raw[k] !== undefined && raw[k] !== null;
+    /** Presence only — an own key holding anything but `undefined` was GIVEN. */
+    const given = (k: string) =>
+        Object.prototype.hasOwnProperty.call(raw, k) && raw[k] !== undefined;
+    /** What arrived, in the words an error message needs. */
+    const shape = (v: unknown): string =>
+        v === null ? 'null'
+            : Array.isArray(v) ? 'a list'
+                : typeof v === 'string' ? (v.trim() ? 'text' : 'blank')
+                    : typeof v;
 
     if (given('mode')) {
-        const m = String(raw.mode).trim();
-        if (m && m !== 'adaptive' && m !== 'classic') {
+        const m = typeof raw.mode === 'string' ? raw.mode.trim() : '';
+        if (!m) {
+            errors.push(`"mode" was sent as ${shape(raw.mode)} — use adaptive | classic, or leave the field out for classic`);
+        } else if (m !== 'adaptive' && m !== 'classic') {
             errors.push(`unknown mode "${m}" (use adaptive | classic, or leave it out for classic)`);
         }
     }
     if (given('autonomy')) {
-        const a = String(raw.autonomy).trim();
-        if (a && a !== 'ask-when-unsure' && a !== 'decide-alone') {
+        const a = typeof raw.autonomy === 'string' ? raw.autonomy.trim() : '';
+        if (!a) {
+            errors.push(`"autonomy" was sent as ${shape(raw.autonomy)} — use ask-when-unsure | decide-alone, or leave the field out for the default`);
+        } else if (a !== 'ask-when-unsure' && a !== 'decide-alone') {
             errors.push(`unknown autonomy "${a}" (use ask-when-unsure | decide-alone)`);
         }
     }
     for (const k of ['pool', 'team', 'constraints', 'successCriteria'] as const) {
         if (given(k) && !Array.isArray(raw[k])) {
-            errors.push(`"${k}" must be a list — it was sent as ${typeof raw[k]}`);
+            errors.push(`"${k}" must be a list — it was sent as ${shape(raw[k])}`);
         }
+    }
+
+    // ‼️ X-90 — AND WHAT IS IN THE LIST HAS A SHAPE TOO. A member sent as a bare
+    // string, a number or a null read as `{}` in every normaliser downstream, so
+    // `["coder"]` — the most natural thing a caller writes — became a pool of
+    // one anonymous member and then, resolving to nobody, the whole fleet.
+    for (const k of ['pool', 'team'] as const) {
+        if (!Array.isArray(raw[k])) { continue; }
+        (raw[k] as unknown[]).forEach((item, i) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                errors.push(`${k}[${i}] must be an object naming an agentId — it was sent as ${shape(item)}`);
+            } else if (!String((item as Record<string, unknown>).agentId ?? '').trim()) {
+                errors.push(`${k}[${i}] names no agentId`);
+            }
+        });
+    }
+    if (Array.isArray(raw.constraints)) {
+        (raw.constraints as unknown[]).forEach((c, i) => {
+            if (typeof c !== 'string') {
+                errors.push(`constraints[${i}] must be text — it was sent as ${shape(c)}`);
+            }
+        });
+    }
+    if (Array.isArray(raw.successCriteria)) {
+        (raw.successCriteria as unknown[]).forEach((c, i) => {
+            if (!c || typeof c !== 'object' || Array.isArray(c)) {
+                errors.push(`successCriteria[${i}] must be an object with text — it was sent as ${shape(c)}`);
+            }
+        });
     }
 
     // ‼️ THE IDS THE CALLER CHOSE ARE THE CALLER'S. Two criteria under one id is
@@ -319,17 +368,34 @@ export function validateMissionInput(
 
     // ‼️ "NOBODY RESOLVED" IS NOT "NOBODY ASKED FOR". A pool that was given and
     // whose members are all unknown must not quietly become the entire fleet.
-    if (Array.isArray(raw.pool) && known.agentIds) {
+    //
+    // ‼️ X-90 — AND THE SAME QUESTION IS ASKED OF EVERY IDENTITY IN THE REQUEST,
+    // because each one had its own silence: an unknown `leadAgentId` fell
+    // through to "the first of the pool" on an adaptive run (so the run was led
+    // by somebody the caller never named), and an unknown member of a CLASSIC
+    // team was filtered out — a five-agent team could start as a team of two,
+    // or as `Pick at least one team agent` for a request that named five.
+    if (known.agentIds) {
         const fleet = new Set(known.agentIds);
-        const missing = raw.pool
-            .map(m => String(((m ?? {}) as Record<string, unknown>).agentId ?? '').trim())
-            .filter(id => id && !fleet.has(id));
-        if (missing.length) {
-            errors.push(`no agent in this fleet is ${missing.map(m => '"' + m + '"').join(', ')}`);
+        const lead = typeof raw.leadAgentId === 'string' ? raw.leadAgentId.trim() : '';
+        if (given('leadAgentId')) {
+            if (raw.leadAgentId !== null && typeof raw.leadAgentId !== 'string') {
+                errors.push(`"leadAgentId" must be an agent id — it was sent as ${shape(raw.leadAgentId)}`);
+            } else if (lead && !fleet.has(lead)) {
+                // An adaptive run may name NO lead — that is the feature. Naming
+                // one this fleet does not have is a different thing entirely.
+                errors.push(`no agent in this fleet is "${lead}" (leadAgentId)`);
+            }
         }
-        const named = raw.pool.filter(m => String(((m ?? {}) as Record<string, unknown>).agentId ?? '').trim());
-        if (raw.pool.length && !named.length) {
-            errors.push('the pool was given but no member names an agentId');
+        for (const k of ['pool', 'team'] as const) {
+            if (!Array.isArray(raw[k])) { continue; }
+            const missing = (raw[k] as unknown[])
+                .map(m => (m && typeof m === 'object'
+                    ? String((m as Record<string, unknown>).agentId ?? '').trim() : ''))
+                .filter(id => id && !fleet.has(id));
+            if (missing.length) {
+                errors.push(`no agent in this fleet is ${[...new Set(missing)].map(m => '"' + m + '"').join(', ')} (in ${k})`);
+            }
         }
     }
 
