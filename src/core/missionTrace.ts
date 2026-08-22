@@ -161,7 +161,7 @@ export function runIdOfTraceFile(name: string): string | undefined {
  * mission carries on snapshot-only and this is the sentence that says so.
  */
 export interface TraceBlock {
-    reason: 'future' | 'unrepaired';
+    reason: 'future' | 'unrepaired' | 'damaged';
     message: string;
 }
 
@@ -243,14 +243,25 @@ export class MissionTraceWriter {
             });
         }
         const repair = repairTraceTail(file, read);
-        const blocked = (why: string): MissionTraceWriter => new MissionTraceWriter(
-            file, readTrace(file).physicalLastSeq,
-            { reason: 'unrepaired', message: "this run's journal could not be made safe to append to — " + why },
-            repair);
+        const blocked = (why: string, reason: TraceBlock['reason'] = 'unrepaired'): MissionTraceWriter =>
+            new MissionTraceWriter(
+                file, readTrace(file).physicalLastSeq,
+                { reason, message: "this run's journal could not be made safe to append to — " + why },
+                repair);
         if (repair.error) { return blocked(repair.error); }
+        const after = repair.repaired ? readTrace(file) : read;
+        if (repair.repaired && after.truncatedTail) { return blocked('the half-written line is still there'); }
+        // ‼️ X-86 — AND DAMAGE IN THE MIDDLE CLOSES THE FILE TOO. A tail is
+        // repairable because everything before it is intact; a break further up
+        // is not, and appending past it writes new events onto a record whose
+        // middle nobody can state — making the loss permanent and burying it
+        // under history that looks continuous. Same answer as X-64 gives a
+        // future line: the bytes are left exactly as they are, the run carries
+        // on snapshot-only, and `degraded` says so.
+        if (damagedMidChain(after)) {
+            return blocked(traceDamageNote(after) + ' — the file is left as it is for recovery', 'damaged');
+        }
         if (!repair.repaired) { return new MissionTraceWriter(file, read.physicalLastSeq); }
-        const after = readTrace(file);
-        if (after.truncatedTail) { return blocked('the half-written line is still there'); }
         return new MissionTraceWriter(file, after.physicalLastSeq, undefined, repair);
     }
 
@@ -352,31 +363,50 @@ export function readTrace(file: string): TraceRead {
     const endedClean = lines.length > 0 && lines[lines.length - 1] === '';
     if (endedClean) { lines.pop(); }
 
-    const parsed: MissionTraceEvent[] = [];
+    const parsed: { ev: MissionTraceEvent; at: number }[] = [];
     const seen = new Set<number>();
     let badLines = 0, duplicates = 0, fromFuture = 0, truncatedTail = false;
     let invalidSeq = 0, physicalLastSeq = 0;
+    /**
+     * ‼️ X-86 — WHERE THE FILE PHYSICALLY BREAKS, which is not the same question
+     * as where the SEQUENCE breaks. A line that could not be read carries no seq
+     * for a hole to show up in, so a chain assembled only out of the lines that
+     * parsed reads as unbroken straight across the damage: `seq1 · garbage ·
+     * seq2` answered "two events, up to seq 2" and handed the event AFTER the
+     * damage to the projection as though nothing had happened — the exact
+     * "stop at the first break" X-63 was written to guarantee.
+     */
+    let firstBreakAt = -1;
+    /**
+     * A break can only HIDE a loss if something was already standing in the
+     * chain before it: junk sitting ahead of every readable event cannot be a
+     * lost event, because the event that follows it says it is seq 1 and
+     * nothing comes before seq 1. So the head is judged by the seq rule alone
+     * (an event after head junk that is not seq 1 is refused there anyway) and
+     * this marks only breaks that fall INSIDE the chain.
+     */
+    const broke = (i: number) => { if (firstBreakAt < 0 && parsed.length > 0) { firstBreakAt = i; } };
 
     lines.forEach((line, i) => {
         const isLast = i === lines.length - 1;
-        if (!line.trim()) { if (!isLast) { badLines++; } return; }
+        if (!line.trim()) { if (!isLast) { badLines++; broke(i); } return; }
         let ev: MissionTraceEvent | undefined;
         try { ev = JSON.parse(line) as MissionTraceEvent; } catch { ev = undefined; }
         if (!ev || typeof ev.seq !== 'number' || typeof ev.type !== 'string') {
-            if (isLast && !endedClean) { truncatedTail = true; } else { badLines++; }
+            if (isLast && !endedClean) { truncatedTail = true; } else { badLines++; broke(i); }
             return;
         }
         // ‼️ X-63 — a seq that is not a positive whole number is not a late
         // event, it is a corrupt one: it can be neither ordered nor used as an
         // idempotency key, so it is never allowed to stand in the chain.
-        if (!Number.isInteger(ev.seq) || ev.seq < 1) { invalidSeq++; return; }
+        if (!Number.isInteger(ev.seq) || ev.seq < 1) { invalidSeq++; broke(i); return; }
         // ‼️ X-64 — the high-water mark counts a line this build cannot APPLY
         // exactly the same, because a newer build has already spent that number.
         if (ev.seq > physicalLastSeq) { physicalLastSeq = ev.seq; }
         if (typeof ev.v === 'number' && ev.v > MISSION_TRACE_SCHEMA) { fromFuture++; return; }
         if (seen.has(ev.seq)) { duplicates++; return; }
         seen.add(ev.seq);
-        parsed.push(ev);
+        parsed.push({ ev, at: i });
     });
 
     // ‼️ X-63 — ORDER IS EVIDENCE, so it is checked against the file and not
@@ -386,16 +416,18 @@ export function readTrace(file: string): TraceRead {
     // counted a catch-up that could never arrive.
     let outOfOrder = 0;
     for (let i = 1; i < parsed.length; i++) {
-        if (parsed[i].seq < parsed[i - 1].seq) { outOfOrder++; }
+        if (parsed[i].ev.seq < parsed[i - 1].ev.seq) { outOfOrder++; }
     }
     let gaps = 0, want = 1;
-    for (const ev of parsed.slice().sort((a, b) => a.seq - b.seq)) {
+    for (const { ev } of parsed.slice().sort((a, b) => a.ev.seq - b.ev.seq)) {
         if (ev.seq > want) { gaps += ev.seq - want; }
         want = ev.seq + 1;
     }
     // the prefix that is still provable: physically in order, contiguous, from 1
+    // — and ‼️ X-86, physically BEFORE the first line the file lost.
     const events: MissionTraceEvent[] = [];
-    for (const ev of parsed) {
+    for (const { ev, at } of parsed) {
+        if (firstBreakAt >= 0 && at > firstBreakAt) { break; }
         if (ev.seq !== events.length + 1) { break; }
         events.push(ev);
     }
@@ -411,6 +443,26 @@ export function readTrace(file: string): TraceRead {
         events, lastSeq, physicalLastSeq, health, truncatedTail,
         badLines, duplicates, fromFuture, gaps, outOfOrder, invalidSeq, beyondPrefix
     };
+}
+
+/**
+ * ‼️ X-86 — DAMAGE IN THE MIDDLE, which is a different event from a tail a
+ * crash left behind. A half-written last line is repairable precisely because
+ * everything before it is intact; a break further up means the chain can no
+ * longer be stated in full, so nothing may be appended to it.
+ */
+export function damagedMidChain(read: TraceRead): boolean {
+    return read.badLines > 0 || read.gaps > 0 || read.outOfOrder > 0 || read.invalidSeq > 0;
+}
+
+/** That damage as one short sentence, for a surface that has to name it. */
+export function traceDamageNote(read: TraceRead): string {
+    const bits: string[] = [];
+    if (read.badLines) { bits.push(read.badLines + ' unreadable line(s)'); }
+    if (read.gaps) { bits.push(read.gaps + ' missing event(s)'); }
+    if (read.outOfOrder) { bits.push(read.outOfOrder + ' event(s) out of order'); }
+    if (read.invalidSeq) { bits.push(read.invalidSeq + ' with an impossible seq'); }
+    return 'this journal is damaged' + (bits.length ? ' (' + bits.join(', ') + ')' : '');
 }
 
 /** What `repairTraceTail` did — nothing, when there was nothing to do. */

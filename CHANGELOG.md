@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.247.0 - X-87/X-86: a record that cannot lie about itself (2026-08-23)
+
+Two doors into the same failure — a mission's history reading as whole when it
+is not — one in the snapshot, one in the journal.
+
+**X-87 · syntax is not schema.** X-62 taught the store that a missing file and
+a corrupt one are different events, but it asked only whether the BYTES parsed.
+Everything after that was a shrug: `Array.isArray(parsed.specs) ? parsed.specs
+: []`. So `{"specs":"broken","runs":"broken"}`, a bare `[]`, `{}` and a list of
+items that are not specs all opened as `health: 'ok'` with an empty list — and
+the next `save()` wrote that emptiness over the fleet's whole history. The hole
+X-62 closed on bad bytes was still wide open on bad shape.
+
+`storeSchemaFault` now checks IDENTITY and only identity: the root is an
+object, `specs`/`runs` are lists, and each item is an object that says which
+spec or run it is. Anything else takes the X-62 path — the bytes are set aside
+as evidence, the sentence names what was wrong with them, and a store that
+cannot be set aside refuses to save at all. Everything else is a field an older
+version may legitimately not have written, which is migration and not damage: a
+pre-adaptive store still opens clean, with nothing lost and nothing invented.
+
+**X-86 · the proven prefix is physical.** X-63 stops the projection at the first
+break in the SEQUENCE. But a line that could not be read carries no seq for a
+hole to show up in, so a chain assembled only out of the lines that parsed read
+as unbroken straight across the damage: `seq1 · garbage · seq2` answered "two
+events, up to seq 2" and handed the event AFTER the damage to the projection as
+though nothing had happened — the exact guarantee X-63 was written to give.
+
+The physical line position is now part of the prefix state: a break inside the
+chain cuts it there, whatever the surviving numbers look like. (Junk sitting
+ahead of every readable event is not a break — the event that follows it says
+it is seq 1, and nothing comes before seq 1.)
+
+And the file is closed to writing. A half-written TAIL is repairable precisely
+because everything before it is intact; a break further up is not, and
+appending past it buries the loss under history that looks continuous. Same
+answer X-64 gives a future line: the bytes are left byte-identical, the run
+carries on snapshot-only, and `degraded` says why.
+
 ## 3.246.0 - X-90: an explicit null is not silence (2026-08-23)
 
 X-60 put a validator in front of `createMission` so a request is judged before

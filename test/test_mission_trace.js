@@ -250,6 +250,67 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
     // seq 3 while claiming to be seq 2.
     eq('the writer never reuses a spent number', T.MissionTraceWriter.open(gap).lastSeq, 3);
 
+    // ============================================ ‼️ X-86 the prefix is PHYSICAL
+    // X-63 stops at the first break in the SEQUENCE. A line that could not be
+    // read carries no seq for a hole to show up in, so a chain assembled only
+    // out of the lines that parsed read as unbroken straight across the damage:
+    // `seq1 · garbage · seq2` answered "two events, up to seq 2" and handed the
+    // event AFTER the damage to the projection as if nothing had happened.
+    {
+        console.log('\n-- ‼️ X-86 the proven prefix comes from the physical chain');
+
+        const middles = [
+            ['garbage', 'not json at all', 'badLines'],
+            ['a blank line', '', 'badLines'],
+            ['a line with an impossible seq', line(0, 'strategy.changed'), 'invalidSeq']
+        ];
+        for (const [name, junk, counter] of middles) {
+            const p = f('r-x86-' + name.replace(/\W+/g, '-') + '.jsonl');
+            writeLines(p, [
+                line(1, 'strategy.changed', { strategy: 'first', version: 1 }),
+                junk,
+                line(2, 'action.created', { actionId: 'a2', title: 'after the damage' }),
+                ''
+            ]);
+            const r = T.readTrace(p);
+            eq(`${name} in the middle: the chain stops there`, r.events.length, 1);
+            eq(`…the last seq is the prefix, not the maximum`, r.lastSeq, 1);
+            eq(`…the physical maximum is still remembered`, r.physicalLastSeq, 2);
+            eq(`…the damage is counted by name`, r[counter], 1);
+            eq(`…the event beyond the break is counted, not applied`, r.beyondPrefix, 1);
+            eq(`…and health says damaged`, r.health, 'damaged');
+            // and the PROJECTION never sees it either — that is where a run's
+            // history is rebuilt, and one invented action is one too many
+            ok(`…the projection has no action from after the damage`,
+                T.projectTrace(r.events).actions.length === 0);
+            ok(`…and the reconciliation says the event beyond it was not applied`,
+                /after the break were not applied/.test(T.reconcileRun(r, 1).degraded || ''));
+
+            // ‼️ AND THE FILE IS CLOSED TO WRITING. A tail is repairable because
+            // everything before it is intact; a break further up is not, and
+            // appending past it buries the loss under history that looks whole.
+            const before = fs.readFileSync(p, 'utf8');
+            const w = T.MissionTraceWriter.open(p);
+            ok(`…the writer refuses to append to it`, !!w.blocked);
+            eq(`…by name`, w.blocked.reason, 'damaged');
+            ok(`…and says so on the run`, /damaged/.test(w.degraded || ''));
+            w.append('strategy.changed', { strategy: 'second', version: 2 });
+            eq(`…the bytes are left exactly as they were`, fs.readFileSync(p, 'utf8'), before);
+            eq(`…and lastSeq never claims a line the file does not have`, w.lastSeq, 2);
+        }
+
+        // …while the honest case still opens: a clean chain is appended to as
+        // it always was, and a half-written TAIL is still repaired, not blocked.
+        {
+            const p = f('r-x86-clean.jsonl');
+            writeLines(p, [line(1, 'strategy.changed'), line(2, 'action.created', { actionId: 'a' }), '']);
+            const w = T.MissionTraceWriter.open(p);
+            ok('a clean journal is still writable', !w.blocked && w.lastSeq === 2);
+            w.append('run.finished', { status: 'done' });
+            eq('…and the append lands', T.readTrace(p).events.length, 3);
+        }
+    }
+
     const back = f('r-backwards.jsonl');
     writeLines(back, [line(2, 'action.created', { actionId: 'a' }), line(1, 'strategy.changed'), '']);
     const b = T.readTrace(back);
@@ -348,6 +409,61 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
         const st2 = new M.MissionStore(p);
         st2.load();
         eq('and the store re-reads clean afterwards', st2.health, 'ok');
+    }
+
+    // ---- ‼️ X-87: VALID JSON THAT IS NOT A STORE is corrupt too
+    // X-62 asked only whether the bytes parsed. A file that parses perfectly and
+    // is nothing like a store opened as `health: 'ok'` with an empty list — and
+    // the next save wrote that emptiness over the fleet's whole history. Same
+    // failure, different door.
+    {
+        const cases = [
+            ['a root that is a list', '[]', /root is a list/],
+            ['a root that is a number', '42', /root is number/],
+            ['a store holding neither specs nor runs', '{}', /neither specs nor runs/],
+            ['specs sent as a string', '{"specs":"broken","runs":"broken"}', /"specs" is string, not a list/],
+            ['runs sent as null', '{"specs":[],"runs":null}', /"runs" is null, not a list/],
+            ['a spec that is a bare string', '{"specs":["s1"],"runs":[]}', /specs\[0\] is string, not an object/],
+            ['a spec with no id', '{"specs":[{"title":"t"}],"runs":[]}', /specs\[0\] has no id/],
+            ['a run that names no spec', '{"specs":[],"runs":[{"id":"r1"}]}', /runs\[0\] has no specId/]
+        ];
+        for (const [name, body, rx] of cases) {
+            const p = f('missions-schema-' + name.replace(/\W+/g, '-') + '.json');
+            fs.writeFileSync(p, body, 'utf8');
+            const st = new M.MissionStore(p);
+            st.load();
+            ok(`${name} is quarantined, not opened as an empty store`,
+                !!st.quarantine && st.health === 'empty' && st.specs.length === 0);
+            ok(`…and the sentence says what was wrong with it`, rx.test(st.degraded || ''));
+            ok(`…and the original bytes are the ones that were kept`,
+                !!st.quarantine && fs.readFileSync(st.quarantine, 'utf8') === body);
+        }
+
+        // ‼️ AND THE OLDER VERSION STILL OPENS WITHOUT LOSING A THING. Every
+        // mission written before M-15 has no `mode`, no objective and no trace
+        // pointer — that is migration, not damage, and the whole point of
+        // checking IDENTITY only.
+        {
+            const p = f('missions-legacy.json');
+            const legacy = {
+                specs: [{
+                    id: 's1', title: 'old one', goal: 'g', leadAgentId: 'a', leadAgentName: 'A',
+                    team: [{ agentId: 'a', agentName: 'A' }],
+                    limits: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
+                    approvalMode: 'auto', createdAt: 1
+                }],
+                runs: [{ id: 'r1', specId: 's1', status: 'done', rounds: [], ledger: [], totalCostUSD: 0.5, startedAt: 1 }]
+            };
+            fs.writeFileSync(p, JSON.stringify(legacy), 'utf8');
+            const st = new M.MissionStore(p);
+            st.load();
+            eq('a store written before adaptive missions opens clean', st.health, 'ok');
+            ok('…with nothing set aside', !st.quarantine && !st.degraded);
+            ok('…and nothing lost or invented',
+                st.specs.length === 1 && st.runs.length === 1
+                && st.specs[0].id === 's1' && !('mode' in st.specs[0])
+                && st.runs[0].totalCostUSD === 0.5);
+        }
     }
 
     // ---- a corrupt store that CANNOT be set aside is never written over

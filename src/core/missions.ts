@@ -2084,6 +2084,56 @@ export interface StorePersistence {
     error?: string;
 }
 
+/**
+ * ‼️ X-87 — WHAT MAKES A PARSED FILE A MISSION STORE.
+ *
+ * X-62 taught the store that missing and corrupt are different events, but it
+ * asked only whether the BYTES parsed. Everything after that was a shrug:
+ * `Array.isArray(parsed.specs) ? parsed.specs : []`. So a file that was perfect
+ * JSON and nothing like a store — `{"specs":"broken"}`, a bare `[]`, `{}`, a
+ * list of strings where the specs are — opened as `health: 'ok'` with an empty
+ * list, and the next save persisted that emptiness as the truth. The failure
+ * X-62 exists to prevent, reached by a different door.
+ *
+ * What is checked is IDENTITY, and only identity: the root, the two containers,
+ * and each item being an object that says which spec/run it is. Everything else
+ * is a field an older version may legitimately not have written, and defaulting
+ * one of those in is migration, not damage (`migrateSpec`). Returns the fault as
+ * a sentence, or `undefined` when the file really is a store.
+ */
+export function storeSchemaFault(parsed: unknown): string | undefined {
+    const nameOf = (v: unknown): string =>
+        v === null ? 'null' : Array.isArray(v) ? 'a list' : typeof v;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return `its root is ${nameOf(parsed)}, not an object`;
+    }
+    const o = parsed as Record<string, unknown>;
+    if (o.specs === undefined && o.runs === undefined) {
+        return 'it holds neither specs nor runs — an empty store is written as {"specs":[],"runs":[]}';
+    }
+    for (const k of ['specs', 'runs'] as const) {
+        if (o[k] === undefined) { continue; }
+        if (!Array.isArray(o[k])) { return `"${k}" is ${nameOf(o[k])}, not a list`; }
+    }
+    const idsOf = (k: 'specs' | 'runs', keys: readonly string[]): string | undefined => {
+        const list = (o[k] ?? []) as unknown[];
+        for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                return `${k}[${i}] is ${nameOf(item)}, not an object`;
+            }
+            for (const key of keys) {
+                const v = (item as Record<string, unknown>)[key];
+                if (typeof v !== 'string' || !v.trim()) {
+                    return `${k}[${i}] has no ${key}`;
+                }
+            }
+        }
+        return undefined;
+    };
+    return idsOf('specs', ['id']) ?? idsOf('runs', ['id', 'specId']);
+}
+
 export class MissionStore {
     specs: MissionSpec[] = [];
     runs: MissionRun[] = [];
@@ -2137,26 +2187,43 @@ export class MissionStore {
                 + ') — nothing will be saved over it until it can be';
             return;
         }
+        let json: unknown;
+        try { json = JSON.parse(raw); } catch (e) { this.corrupt(raw, short(e)); return; }
+        // ‼️ X-87 — SYNTAX IS NOT SCHEMA, and X-62 only ever asked the first
+        // question. `{"specs":"broken","runs":"broken"}`, `[]`, `{}` and a list
+        // of items that are not specs all parse perfectly, and every one of them
+        // used to load as `health: 'ok'` with an empty list — which the very
+        // next `save()` wrote over the real history. The hole X-62 closed on bad
+        // BYTES was still wide open on bad SHAPE.
+        const fault = storeSchemaFault(json);
+        if (fault) { this.corrupt(raw, fault); return; }
         try {
             const parsed = expandDeep(
-                JSON.parse(raw) as { specs?: MissionSpec[]; runs?: MissionRun[] },
+                json as { specs?: MissionSpec[]; runs?: MissionRun[] },
                 this.portableRoots());
-            this.specs = (Array.isArray(parsed.specs) ? parsed.specs : []).map(migrateSpec);
-            this.runs = Array.isArray(parsed.runs) ? parsed.runs : [];
+            this.specs = (parsed.specs ?? []).map(migrateSpec);
+            this.runs = parsed.runs ?? [];
             this.health = 'ok';
-        } catch (e) {
-            this.specs = []; this.runs = [];
-            const kept = this.setAside(raw);
-            if (kept) {
-                this.health = 'empty';
-                this.quarantine = kept;
-                this.loadNote = 'the mission store was unreadable (' + short(e) + ') and has been kept as '
-                    + path.basename(kept) + ' — the fleet starts from an empty list';
-            } else {
-                this.health = 'unreadable';
-                this.loadNote = 'the mission store is unreadable (' + short(e)
-                    + ') and could not be set aside — nothing will be saved over it';
-            }
+        } catch (e) { this.corrupt(raw, short(e)); }
+    }
+
+    /**
+     * ‼️ X-62/X-87 — a store that cannot be trusted is EVIDENCE. It is set aside
+     * before anything can write in its place, and if it cannot be set aside the
+     * store refuses to save at all rather than overwrite what it could not keep.
+     */
+    private corrupt(raw: string, why: string): void {
+        this.specs = []; this.runs = [];
+        const kept = this.setAside(raw);
+        if (kept) {
+            this.health = 'empty';
+            this.quarantine = kept;
+            this.loadNote = 'the mission store was unreadable (' + why + ') and has been kept as '
+                + path.basename(kept) + ' — the fleet starts from an empty list';
+        } else {
+            this.health = 'unreadable';
+            this.loadNote = 'the mission store is unreadable (' + why
+                + ') and could not be set aside — nothing will be saved over it';
         }
     }
 
