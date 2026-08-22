@@ -257,10 +257,12 @@ import {
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
-    buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionAutonomy, MissionEngine, MissionEngineDeps,
-    MissionLimits, missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec,
-    MissionStore, newMissionId, normalizeObjective, outputExcerpt, parsePlannerEnvelope,
-    PlannerResult, poolFromFleet, remainingBudget, resolveLead, validateObjective
+    buildResumeMessage, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive, MISSION_TRACE_SCHEMA,
+    MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits, missionLiveSlice, MissionMode,
+    MissionObjective, MissionRun, MissionSpec, MissionStore, MissionTraceEvent, MissionTraceType,
+    MissionTraceWriter, newMissionId, normalizeObjective, orphanTraceFiles, outputExcerpt,
+    parsePlannerEnvelope, PlannerResult, poolFromFleet, projectTrace, readTrace, Reconciliation,
+    reconcileRun, remainingBudget, resolveLead, traceFileFor, validateObjective
 } from './core/missions';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
@@ -3197,10 +3199,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const missionStore = new MissionStore(
         path.join(context.globalStorageUri.fsPath, 'missions.json'), portableRoots);
     missionStore.load();
-    // A window reload kills the in-memory loops: park those runs honestly,
-    // they resume from Needs You / the Missions panel.
+    // ‼️ X-45 — the journals live beside the snapshot, one file per run, named
+    // by run id so an orphan needs no index to be recognised.
+    const missionTraceDir = path.join(context.globalStorageUri.fsPath, 'mission-trace');
+    try { fs.mkdirSync(missionTraceDir, { recursive: true }); } catch { /* exists */ }
+    const missionTraceWriters = new Map<string, MissionTraceWriter>();
+
+    /**
+     * The writer for a run, or undefined when the run keeps no journal.
+     *
+     * ‼️ ONLY ADAPTIVE RUNS GET ONE, and a classic run never grows one by
+     * accident: `create` is called from the one place that starts a mission,
+     * and every other caller only ever CONTINUES a journal that already exists
+     * (`run.trace`). So a mission written before this item stays exactly what
+     * it was — a snapshot and nothing else.
+     */
+    const missionTrace = (run: MissionRun): MissionTraceWriter | undefined => {
+        const live = missionTraceWriters.get(run.id);
+        if (live) { return live; }
+        if (!run.trace?.file) { return undefined; }
+        const w = MissionTraceWriter.open(run.trace.file);
+        missionTraceWriters.set(run.id, w);
+        return w;
+    };
+
+    /** Append one event for a run that has a journal. Silent for the rest. */
+    const traceEvent = (run: MissionRun, type: MissionTraceType, payload: Partial<MissionTraceEvent> = {}): void => {
+        missionTrace(run)?.append(type, payload);
+    };
+
+    // ‼️ A WINDOW RELOAD IS WHERE THE JOURNAL EARNS ITS KEEP. The snapshot
+    // alone can only say "this run was running"; the trace can say WHAT it had
+    // set in motion, and the task store can say whether that work finished
+    // while we were gone. Everything recovered is kept, everything unaccounted
+    // for is marked interrupted, and nothing is ever silently restarted.
+    const missionReloadNotes = new Map<string, Reconciliation>();
     for (const r of missionStore.runs) {
-        if (r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user') {
+        const wasLive = r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user';
+        if (r.trace?.file) {
+            const rec = reconcileRun(readTrace(r.trace.file), r.trace.lastSeq,
+                (kind, refId) => {
+                    if (kind !== 'task') { return undefined; }
+                    const t = taskManager.tasks.find(x => x.id === refId);
+                    return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
+                });
+            missionReloadNotes.set(r.id, rec);
+            r.traceDegraded = rec.degraded || undefined;
+            // the snapshot catches up to what the journal already knows
+            r.trace.lastSeq += rec.snapshotBehind;
+            // a settled step whose task finished while the window was gone must
+            // not read as "running" for ever — reconcile the record, not a guess
+            for (const round of r.rounds) {
+                // ‼️ AND THE USER IS NEVER ASKED THE SAME QUESTION TWICE. An
+                // answer typed a moment before the crash reached the journal
+                // but not the snapshot; it is theirs either way.
+                const answered = rec.projection.answers['q' + round.n];
+                if (answered !== undefined && !round.answer) { round.answer = answered; }
+                for (const step of round.steps) {
+                    const a = rec.actions.find(x => x.actionId === step.id);
+                    if (!a || step.status === 'done' || step.status === 'failed' || step.status === 'cancelled') { continue; }
+                    if (a.outcome === 'interrupted') {
+                        step.status = 'failed';
+                        step.note = 'interrupted by window reload — fate unknown';
+                    } else {
+                        step.status = a.outcome;
+                        if (a.costUSD !== undefined) { step.costUSD = a.costUSD; }
+                        if (a.tokens !== undefined) { step.tokens = a.tokens; }
+                        if (a.outputFile) { step.outputFile = a.outputFile; }
+                    }
+                }
+            }
+        }
+        if (wasLive) {
             r.status = 'paused';
             r.note = 'interrupted by window reload';
         }
@@ -3208,6 +3278,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         r.now = undefined;
         r.pausePending = false;
     }
+    // Orphan journals: a run culled by MAX_STORED_RUNS, or a delete that never
+    // got to its file. Swept once at startup so the folder cannot grow for ever.
+    try {
+        const live = missionStore.runs.map(r => r.id);
+        for (const name of orphanTraceFiles(fs.readdirSync(missionTraceDir), live)) {
+            try { fs.unlinkSync(path.join(missionTraceDir, name)); } catch { /* in use */ }
+        }
+    } catch { /* folder not readable — nothing to sweep */ }
     missionStore.save();
     const missionEngines = new Map<string, MissionEngine>();
     const missionQuestions = new Map<string, { question: string; askedAt: number; resolve: (a: string | undefined) => void }>();
@@ -3215,6 +3293,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const missionEmitter = new vscode.EventEmitter<void>();
     context.subscriptions.push(missionEmitter);
     const missionChanged = () => {
+        // ‼️ THE SNAPSHOT CATCHES UP HERE AND NOWHERE ELSE. Every append has
+        // already hit the disk by the time we get here, so writing the writer's
+        // sequence into the run just before the save is what makes "the trace
+        // knows more than the snapshot" the ONLY state a crash can leave.
+        for (const [runId, w] of missionTraceWriters) {
+            const r = missionStore.run(runId);
+            if (r?.trace) { r.trace.lastSeq = w.lastSeq; }
+        }
         missionStore.save();
         missionEmitter.fire();
         needsEmitter.fire();
@@ -3229,11 +3315,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         for (const run of missionStore.runs) {
             if (run.status === 'paused' && run.note === 'interrupted by window reload') {
+                // ‼️ X-45 — WHAT IT WAS WAITING ON, not just that it stopped.
+                // A run parked mid-question is useless as "the window closed";
+                // the journal knows the question, so Needs You shows it and the
+                // user can decide whether resuming is worth it.
+                const pending = missionReloadNotes.get(run.id)?.pending;
+                const degraded = run.traceDegraded;
                 waits.push({
                     runId: run.id,
                     missionTitle: missionStore.spec(run.specId)?.title ?? run.id,
                     flavor: 'interrupted',
-                    detail: 'the window closed mid-mission — resume to continue',
+                    detail: pending
+                        ? `waiting for your ${pending.flavor} — ${pending.text.slice(0, 200)}`
+                        : degraded
+                            ? `the window closed mid-mission — ${degraded}`
+                            : 'the window closed mid-mission — resume to continue',
                     ts: run.startedAt
                 });
             }
@@ -3378,6 +3474,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (spec.workdir) { task.workDir = spec.workdir; }
                     step.taskId = task.id;
                     step.status = 'running';
+                    // ‼️ WRITTEN BEFORE THE PROCESS EXISTS. This line is the
+                    // only thing that lets a reload connect "the lead asked for
+                    // this" to "that task record over there" — if it were
+                    // written after startTask, a crash in between would leave
+                    // real work running that nothing could ever claim.
+                    traceEvent(run, 'action.started', { actionId: step.id, kind: 'task', refId: task.id });
                     taskManager.startTask(task);
                 }
                 if (!steps.some(s => s.taskId)) { resolve(); return; }
@@ -3393,7 +3495,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         step.tokens = t.tokens;
                         step.outputFile = t.outputFile;
                         if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
-                            step.status = t.status;
+                            // settled ONCE — check() runs on every task event
+                            if (step.status !== t.status) {
+                                step.status = t.status;
+                                traceEvent(run, 'action.settled', {
+                                    actionId: step.id, kind: 'task', refId: t.id, outcome: t.status,
+                                    ...(t.costUSD !== undefined ? { costUSD: t.costUSD } : {}),
+                                    ...(t.tokens !== undefined ? { tokens: t.tokens } : {}),
+                                    ...(t.outputFile ? { outputFile: t.outputFile } : {})
+                                });
+                            }
                         } else {
                             allDone = false; // queued (deferred) or running — keep waiting
                         }
@@ -3485,18 +3596,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try { return archivedOutputBody(fs.readFileSync(file, 'utf8')); } catch { return ''; }
     };
 
-    const missionDepsFor = (spec: MissionSpec): MissionEngineDeps => ({
+    const missionDepsFor = (spec: MissionSpec, run: MissionRun): MissionEngineDeps => ({
         runPlanner: runMissionPlanner(spec),
         delegateWave: missionDelegateWave(spec),
         readOutputBody: missionReadBody,
         requestApproval: missionRequestApproval(spec),
         askUser: missionAskUser(spec),
         onUpdate: () => missionChanged(),
+        trace: (type, payload) => traceEvent(run, type, payload),
         now: () => Date.now()
     });
 
+    /**
+     * Give an adaptive run its journal. Called once, where the run is born —
+     * a classic run is handed nothing and therefore writes nothing.
+     */
+    const openMissionTrace = (spec: MissionSpec, run: MissionRun): void => {
+        if (!isAdaptive(spec)) { return; }
+        const file = traceFileFor(missionTraceDir, run.id);
+        missionTraceWriters.set(run.id, MissionTraceWriter.open(file));
+        run.trace = { file, lastSeq: 0, v: MISSION_TRACE_SCHEMA };
+    };
+
     const launchMission = (spec: MissionSpec, run: MissionRun, initialMsg?: string): void => {
-        const engine = new MissionEngine(spec, run, missionTeamHints(spec), missionDepsFor(spec));
+        const engine = new MissionEngine(spec, run, missionTeamHints(spec), missionDepsFor(spec, run));
         missionEngines.set(run.id, engine);
         void engine.execute(initialMsg).catch(e => {
             run.status = 'failed';
@@ -3530,6 +3653,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
         };
         missionStore.runs.push(run);
+        openMissionTrace(spec, run);
         missionChanged();
         launchMission(spec, run);
         return run;
@@ -3539,6 +3663,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const run = missionStore.run(runId);
         const spec = run ? missionStore.spec(run.specId) : undefined;
         if (!run || !spec || run.status !== 'paused' || missionEngines.has(runId)) { return; }
+        // ‼️ X-45 — A SAFE RESUME, OR NONE. The run list opens whatever state
+        // the journal is in, but CONTINUING one whose record is rubble is a
+        // different decision: `refuse` means the run set work in motion it can
+        // no longer account for, and resuming would either pay for it twice or
+        // build on a result that never arrived. `rebrief` is the softer case —
+        // the history is gone but nothing is outstanding, so the lead starts
+        // from the objective again instead of from a session it cannot resume.
+        const recon = missionReloadNotes.get(runId);
+        if (recon?.resume === 'refuse') {
+            void vscode.window.showErrorMessage(
+                `Agent Farm: mission "${spec.title}" cannot be safely resumed — ${recon.degraded}. ` +
+                'Start it again as a new run, or delete it.');
+            return;
+        }
+        if (recon?.resume === 'rebrief') {
+            run.plannerSessionId = undefined;
+            void vscode.window.showWarningMessage(
+                `Agent Farm: mission "${spec.title}" lost its trace — the lead is being briefed from scratch (${recon.degraded}).`);
+        }
         const resumeHead = run.note === 'interrupted by window reload'
             ? undefined // default wording
             : 'The mission was paused by the user and has been resumed.';
@@ -3575,6 +3718,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? `\nYour earlier question ("${last.question}") was never answered — ask again if it still matters.`
                     : '');
         } // else: interrupted before round 1 — plain fresh start with the briefing
+        // the reload's verdict was for THIS resume; a clean one clears the
+        // warning, a rebrief leaves it standing because it is still true
+        if (!recon || recon.resume === 'ok') { run.traceDegraded = undefined; }
+        missionReloadNotes.delete(runId);
         launchMission(spec, run, initialMsg);
         missionChanged();
     };
@@ -3613,6 +3760,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
         };
         missionStore.runs.push(rerun);
+        // A rerun is a NEW run, so it gets a new journal — the old run's trace
+        // stays with the old run, because "the same spec ran twice" is two
+        // histories and merging them would make both unreadable.
+        openMissionTrace(spec, rerun);
         missionChanged();
         launchMission(spec, rerun);
         return rerun;
@@ -3626,6 +3777,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const deleteMissionRun = (run: MissionRun): { specDeleted: boolean } => {
         const spec = missionStore.spec(run.specId);
+        // The run's own history goes with it — snapshot record AND journal, so
+        // no orphan file is left behind. Task output archives are somebody
+        // else's retention and are deliberately untouched.
+        missionTraceWriters.delete(run.id);
+        if (run.trace?.file) { deleteTrace(run.trace.file); }
         missionStore.runs = missionStore.runs.filter(r => r.id !== run.id);
         const specDeleted = !!spec && !missionStore.runs.some(r => r.specId === spec.id);
         if (specDeleted && spec) {
@@ -9247,6 +9403,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     note: specDeleted
                         ? `"${title}" is gone from the list — that was its last run.`
                         : `That run is gone; "${title}" still has others.`
+                };
+            }
+        },
+        {
+            op: 'missions.trace',
+            describe: 'The append-only journal of an ADAPTIVE run — what the lead decided, what it set in '
+                + 'motion, what came back, what you were asked (X-45). ‼️ This is the AUDIT record, not the '
+                + 'engine\'s state: `missions.status` says what the run is doing now, this says how it got '
+                + 'there. A classic run has no trace and says so rather than returning an empty one. '
+                + '`health` is one of ok / missing / truncated / damaged / future and `resume` says whether '
+                + 'this run may be continued (ok), must be briefed again from its objective (rebrief) or '
+                + 'cannot be safely resumed at all (refuse) — a run with work of unknown fate is refused. '
+                + '`snapshotBehind` is how many events the snapshot never caught up to; it is normal after '
+                + 'a crash and is the gap reconciliation replays. args: id, events? (true = every raw '
+                + 'event, default is the folded projection), limit? (default 200, newest last)',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                const title = missionStore.spec(r.specId)?.title ?? runId;
+                if (!r.trace?.file) {
+                    return {
+                        id: runId, title, mode: 'classic', trace: null,
+                        note: 'This run keeps no trace — only adaptive missions journal their work.'
+                    };
+                }
+                const read = readTrace(r.trace.file);
+                const rec = reconcileRun(read, r.trace.lastSeq);
+                const p = rec.projection;
+                const limit = Math.max(1, Math.min(2000, Number(args.limit ?? 200) || 200));
+                return {
+                    id: runId, title, mode: 'adaptive',
+                    file: r.trace.file, schema: r.trace.v,
+                    health: read.health, degraded: rec.degraded || null, resume: rec.resume,
+                    lastSeq: p.lastSeq, snapshotLastSeq: r.trace.lastSeq, snapshotBehind: rec.snapshotBehind,
+                    counts: {
+                        events: read.events.length, badLines: read.badLines,
+                        duplicates: read.duplicates, fromFuture: read.fromFuture,
+                        truncatedTail: read.truncatedTail
+                    },
+                    strategy: p.strategy ?? null,
+                    evaluations: p.evaluations,
+                    messages: p.messages,
+                    pending: p.pending ?? null,
+                    finished: p.finished ?? null,
+                    actions: rec.actions.map(a => {
+                        const detail = p.actions.find(x => x.actionId === a.actionId);
+                        return {
+                            id: a.actionId, kind: a.kind, outcome: a.outcome, from: a.from,
+                            agent: detail?.agentName ?? detail?.agentId ?? null,
+                            title: detail?.title ?? null,
+                            ref: detail?.refId ?? null,
+                            costUSD: a.costUSD ?? null, tokens: a.tokens ?? null,
+                            outputFile: a.outputFile ?? null
+                        };
+                    }),
+                    ...(args.events === true || String(args.events ?? '') === 'true'
+                        ? { events: read.events.slice(-limit) }
+                        : {})
                 };
             }
         }

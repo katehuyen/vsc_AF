@@ -3,8 +3,19 @@ import {
     bindRuntimeRole, isAdaptive, MissionAutonomy, MissionMode, MissionObjective,
     MissionPoolMember, MissionRuntimeRole, missionModeOf, normalizeObjective, validateObjective
 } from './missionMode';
+import { MissionTraceEvent, MissionTraceRef, MissionTraceType } from './missionTrace';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
+
+export {
+    deleteTrace, MISSION_TRACE_SCHEMA, MissionTraceWriter, orphanTraceFiles,
+    projectTrace, readTrace, reconcileRun, runIdOfTraceFile, traceFileFor
+} from './missionTrace';
+export type {
+    ExternalLookup, ExternalRecord, HumanFlavor, MissionActionKind, MissionActionOutcome,
+    MissionTraceEvent, MissionTraceRef, MissionTraceType, PendingHuman, Reconciliation,
+    TraceAction, TraceEvaluation, TraceHealth, TraceProjection, TraceRead
+} from './missionTrace';
 
 export {
     bindRuntimeRole, DEFAULT_AUTONOMY, isAdaptive, missionModeOf, normalizeCriteria,
@@ -272,6 +283,21 @@ export interface MissionRun {
      * without either statement being wrong. Absent on every classic run.
      */
     roles?: MissionRuntimeRole[];
+    /**
+     * ‼️ X-45 — WHERE THIS RUN'S JOURNAL IS AND HOW FAR THIS SNAPSHOT SAW IT.
+     *
+     * Absent on every classic run: a recipe needs no observation record, and a
+     * mission written before this reads back with no trace and opens exactly as
+     * it always did. `lastSeq` is allowed to LAG the file — the append happens
+     * first — and that gap is precisely what reload reconciliation replays.
+     */
+    trace?: MissionTraceRef;
+    /**
+     * What the last reload could not account for, in one sentence, for the
+     * detail surface to show. Written by reconciliation, cleared when the run
+     * is resumed cleanly. Never a reason to hide the run from the list.
+     */
+    traceDegraded?: string;
 }
 
 export function newMissionId(): string {
@@ -778,10 +804,24 @@ export class MissionStore {
             const used = new Set(this.runs.map(r => r.specId));
             this.specs = this.specs.filter((s, i) => used.has(s.id) || i >= this.specs.length - MAX_STORED_SPECS);
         }
+        // ‼️ X-45 — ATOMIC. `fs.renameSync` over an existing file is atomic on
+        // both Windows and POSIX, so a crash mid-save leaves the PREVIOUS good
+        // store in place rather than a truncated one. The old direct write was
+        // survivable while a run was a handful of rounds; with strategy
+        // versions, a runtime graph and evaluations in it, losing the file
+        // means losing the fleet's whole mission history to one bad moment.
+        const body = JSON.stringify(
+            tokenizeDeep({ specs: this.specs, runs: this.runs }, this.portableRoots()), null, 2);
+        const tmp = this.file + '.tmp';
         try {
-            fs.writeFileSync(this.file, JSON.stringify(
-                tokenizeDeep({ specs: this.specs, runs: this.runs }, this.portableRoots()), null, 2), 'utf8');
-        } catch { /* best-effort */ }
+            fs.writeFileSync(tmp, body, 'utf8');
+            fs.renameSync(tmp, this.file);
+        } catch {
+            // the temp write or the rename failed — a save is never silently
+            // skipped, so fall back to the direct write and tidy the temp away
+            try { fs.writeFileSync(this.file, body, 'utf8'); } catch { /* best-effort */ }
+            try { if (fs.existsSync(tmp)) { fs.unlinkSync(tmp); } } catch { /* best-effort */ }
+        }
     }
 
     spec(id: string): MissionSpec | undefined { return this.specs.find(s => s.id === id); }
@@ -817,6 +857,20 @@ export interface MissionEngineDeps {
     askUser(run: MissionRun, question: string): Promise<string | undefined>;
     /** Persist + refresh UI after every state change. */
     onUpdate(run: MissionRun): void;
+    /**
+     * ‼️ X-45 — APPEND ONE LINE TO THE RUN'S JOURNAL, IF IT HAS ONE.
+     *
+     * Optional on purpose, and the engine never asks whether this mission is
+     * adaptive: the extension supplies a writer for the runs that keep a trace
+     * and nothing for the ones that do not, so the loop below has no second
+     * branch and a classic mission costs exactly what it always did. It also
+     * means a caller that has not been updated (a test harness, a replay tool)
+     * keeps working with no journal rather than crashing.
+     *
+     * The ORDER matters and is fixed here: trace first, `onUpdate` (which
+     * saves the snapshot) second — never the reverse.
+     */
+    trace?(type: MissionTraceType, payload?: Partial<MissionTraceEvent>): void;
     now(): number;
 }
 
@@ -872,6 +926,11 @@ export class MissionEngine {
         this.run.pausePending = false;
         if (result) { this.run.result = result; }
         if (note) { this.run.note = note; }
+        this.deps.trace?.('run.finished', {
+            status,
+            ...(result ? { verdict: result.verdict } : {}),
+            ...(result?.summary || note ? { text: result?.summary ?? note } : {})
+        });
         this.deps.onUpdate(this.run);
     }
 
@@ -971,6 +1030,10 @@ export class MissionEngine {
                 plannerTokens: pr.tokens,
                 at: deps.now()
             };
+            // The lead's reasoning for THIS round is the working strategy — a
+            // round number is the version, because a strategy that survives a
+            // round unchanged is still the strategy of that round.
+            deps.trace?.('strategy.changed', { version: round.n, strategy: d.thought });
 
             if (d.action === 'finish' || d.action === 'abort') {
                 run.rounds.push(round);
@@ -985,12 +1048,18 @@ export class MissionEngine {
                 run.rounds.push(round);
                 run.status = 'waiting-user';
                 this.setNow('waiting for your answer');
+                // ‼️ ASKED BEFORE THE AWAIT, ANSWERED AFTER IT. That is what
+                // makes a reload able to put the question back: an `asked` with
+                // no `answered` on disk IS the pending state, and it can only
+                // say so if it was written before the window could close.
+                deps.trace?.('human.asked', { askId: 'q' + round.n, flavor: 'question', text: d.question });
                 deps.onUpdate(run);
                 const waitFrom = deps.now();
                 const answer = await deps.askUser(run, d.question);
                 run.waitedMs = (run.waitedMs ?? 0) + (deps.now() - waitFrom);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
                 round.answer = answer ?? '(no answer — user skipped)';
+                deps.trace?.('human.answered', { askId: 'q' + round.n, text: round.answer });
                 run.ledger.push(ledgerLine(round));
                 deps.onUpdate(run);
                 roundMsg = `## User's answer\n${round.answer}\n\nDecide the next round. Reply with ONLY the JSON decision object.`;
@@ -1045,14 +1114,29 @@ export class MissionEngine {
                 };
             });
             run.rounds.push(round);
+            // Created, not started: the work exists as a decision now and
+            // becomes a real task only in delegateWave, which records that
+            // itself. Keeping the two apart is what lets a reload tell "the
+            // lead decided this and nothing ran" from "it ran and we lost it".
+            for (const s of round.steps) {
+                deps.trace?.('action.created', {
+                    actionId: s.id, kind: 'task', agentId: s.agentId,
+                    agentName: s.agentName, title: s.title
+                });
+            }
             deps.onUpdate(run);
 
             if (spec.approvalMode === 'each-round') {
                 run.status = 'waiting-approval';
                 this.setNow(`waiting for your approval (round ${round.n})`);
+                deps.trace?.('human.asked', {
+                    askId: 'a' + round.n, flavor: 'approval',
+                    text: `round ${round.n} — ${round.steps.length} delegation(s)`
+                });
                 deps.onUpdate(run);
                 const waitFrom = deps.now();
                 const ok = await deps.requestApproval(run, round);
+                deps.trace?.('human.answered', { askId: 'a' + round.n, text: ok ? 'approved' : 'rejected' });
                 run.waitedMs = (run.waitedMs ?? 0) + (deps.now() - waitFrom);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
                 if (!ok) {

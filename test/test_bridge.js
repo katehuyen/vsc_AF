@@ -807,6 +807,50 @@ const { opencodeStatus, syncToOpencode } =
         ok('‼️ …but says so when the last run took the mission with it', delLast.ok && delLast.result.specDeleted === true);
         const delLive = await reg.dispatch('missions.run.delete', { id: 'm2' });
         ok('…and a live run is not deleted out from under itself', !delLive.ok && /cancel it first/.test(delLive.error));
+
+        // ‼️ X-45 — THE JOURNAL IS READABLE FROM THE BRIDGE, and a classic run
+        // says it keeps none rather than returning an empty one. An agent that
+        // cannot tell "nothing happened" from "nothing was recorded" will treat
+        // a silent run as a finished one.
+        const T = require(path.join(__dirname, '..', 'out', 'core', 'missionTrace.js'));
+        const traceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-trace-'));
+        const traced = { id: 'm9', specId: 's1', status: 'done', trace: { file: T.traceFileFor(traceDir, 'm9'), lastSeq: 1, v: 1 } };
+        store.runs = [...store.runs, traced, { id: 'm10', specId: 's1', status: 'done' }];
+        const w = T.MissionTraceWriter.open(traced.trace.file);
+        w.append('strategy.changed', { version: 1, strategy: 'work it out' });
+        w.append('action.created', { actionId: 'a1', kind: 'task', title: 'do it', agentName: 'coder' });
+        w.append('action.started', { actionId: 'a1', refId: 'task-1' });
+        reg.register([{
+            op: 'missions.trace',
+            describe: 'The append-only journal of an ADAPTIVE run. `health` is ok / missing / truncated / '
+                + 'damaged / future and `resume` says ok / rebrief / refuse. args: id, events?, limit?',
+            handler: (args) => {
+                const r = store.run(argStr(args, 'id'));
+                need(r, 'Run not found — missions.list shows current ids.');
+                if (!r.trace) { return { id: r.id, mode: 'classic', trace: null, note: 'This run keeps no trace' }; }
+                const read = T.readTrace(r.trace.file);
+                const rec = T.reconcileRun(read, r.trace.lastSeq);
+                return {
+                    id: r.id, mode: 'adaptive', health: read.health, resume: rec.resume,
+                    lastSeq: rec.projection.lastSeq, snapshotBehind: rec.snapshotBehind,
+                    strategy: rec.projection.strategy ?? null,
+                    actions: rec.actions,
+                    ...(args.events === true ? { events: read.events } : {})
+                };
+            }
+        }]);
+        const tr = await reg.dispatch('missions.trace', { id: 'm9' });
+        ok('missions.trace folds the journal up', tr.ok && tr.result.strategy.text === 'work it out');
+        ok('‼️ …and reports the gap the snapshot never caught up to', tr.result.snapshotBehind === 2);
+        ok('…in-flight work is interrupted, never assumed done',
+            tr.result.actions[0].outcome === 'interrupted' && tr.result.actions[0].from === 'unknown');
+        ok('…and the raw events are opt-in, so a long run is not dumped by default',
+            !tr.result.events && (await reg.dispatch('missions.trace', { id: 'm9', events: true })).result.events.length === 3);
+        const trClassic = await reg.dispatch('missions.trace', { id: 'm10' });
+        ok('‼️ a classic run says it keeps no journal rather than looking like an empty one',
+            trClassic.ok && trClassic.result.trace === null && trClassic.result.mode === 'classic');
+        const trGone = await reg.dispatch('missions.trace', { id: 'nope' });
+        ok('…and an unknown run is refused by name', !trGone.ok && /missions\.list/.test(trGone.error));
     }
 
     // ---------- B-5: insights, suggestions, quality and eval cases ----------
@@ -2652,6 +2696,21 @@ const { opencodeStatus, syncToOpencode } =
                 && /filter\(e => !e\.reportsCost\)/.test(misBlock));
             ok('…and missions.status reports the tokens beside the dollars',
                 /tokens: r\.totalTokens \?\? 0/.test(src));
+
+            // ‼️ X-45 — the real op exists, and its describe carries the two
+            // things a caller cannot work out for itself: what `health` can say
+            // and that `resume` may REFUSE. An agent that reads "resume: refuse"
+            // without knowing it is a value will treat it as a run it may retry.
+            const trBlock = src.slice(src.indexOf("op: 'missions.trace'"));
+            ok('‼️ X-45 — the journal has a bridge op, in the same commit as the feature',
+                trBlock.startsWith("op: 'missions.trace'"));
+            ok('…whose describe names every health value',
+                ['ok', 'missing', 'truncated', 'damaged', 'future']
+                    .every(h => new RegExp('[/ ]' + h + '[ /]').test(trBlock.slice(0, 1600))));
+            ok('…and says a run can be refused a resume outright',
+                /cannot be safely resumed/.test(trBlock.slice(0, 1600).replace(/'\s*\+\s*'/g, '')));
+            ok('…and that it is the AUDIT record, not the engine state missions.status reports',
+                /AUDIT record/.test(trBlock.slice(0, 1600).replace(/'\s*\+\s*'/g, '')));
         }
 
         // The window has to cover the whole op — the hosted-session branch and

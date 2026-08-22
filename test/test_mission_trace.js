@@ -1,0 +1,469 @@
+// ‼️ X-45 (X-32) — THE JOURNAL, THE ATOMIC SNAPSHOT, AND WHAT A RELOAD IS
+// ALLOWED TO CONCLUDE.
+//
+// A mission used to keep one file, written whole, best-effort, on every state
+// change. Three failures were waiting in that single line: it grows without
+// bound, a crash truncates the only copy, and a window reload loses everything
+// the snapshot had not caught up to. This item splits the two jobs — a small
+// ATOMIC snapshot for what the engine is doing now, an append-only JOURNAL for
+// what the run did — and the tests below are about the seam between them.
+//
+// The contract being pinned, in one sentence each:
+//
+//   * append FIRST, snapshot second, so the only state a crash can produce is
+//     "the trace knows more than the snapshot" — which is replayable;
+//   * a broken LAST line is a crash mid-append and is dropped; a broken line
+//     anywhere else is real loss and SAYS so;
+//   * a repeated seq is a replay, and the first copy wins, because it is the
+//     one every earlier reader already saw;
+//   * finished work is never lost (recovered from the task record) and
+//     unfinished work is never assumed (marked interrupted, never re-run);
+//   * a resume is refused EXACTLY when the run cannot say what it already set
+//     in motion — rubble alone is survivable, rubble plus in-flight work is not;
+//   * and a classic mission notices none of this: no trace, no field, no
+//     behaviour change, byte-for-byte the same record it always was.
+'use strict';
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const Module = require('module');
+const origLoad = Module._load;
+Module._load = function (request) {
+    if (request === 'vscode') {
+        return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) } };
+    }
+    return origLoad.apply(this, arguments);
+};
+const M = require(path.join(__dirname, '..', 'out', 'core', 'missions.js'));
+const T = require(path.join(__dirname, '..', 'out', 'core', 'missionTrace.js'));
+Module._load = origLoad;
+
+let pass = 0, fail = 0;
+const ok = (msg, cond) => { if (cond) { pass++; console.log('  ok   ' + msg); } else { fail++; console.log('  FAIL ' + msg); } };
+const eq = (msg, a, b) => ok(msg + ` (${JSON.stringify(a)} === ${JSON.stringify(b)})`, a === b);
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-trace-'));
+const f = name => path.join(tmp, name);
+/** Write a journal by hand — the way a crash or an older build would leave it. */
+const writeLines = (file, lines) => fs.writeFileSync(file, lines.join('\n'), 'utf8');
+const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 1000, type, ...extra });
+
+// ============================================ 1. an old missions.json is untouched
+{
+    console.log('\n-- an old store loads, round-trips and grows no fields');
+    const file = f('missions-old.json');
+    const original = {
+        specs: [{
+            id: 's1', title: 'ship it', goal: 'ship it', leadAgentId: 'a1', leadAgentName: 'lead',
+            team: [{ agentId: 'a2', agentName: 'coder' }],
+            limits: { maxRounds: 5, maxTasks: 10, maxCostUSD: 5, maxTokens: 0, maxMinutes: 60, maxParallel: 2 },
+            approvalMode: 'auto', createdAt: 1
+        }],
+        runs: [{ id: 'r1', specId: 's1', status: 'done', rounds: [], ledger: [], totalCostUSD: 0.5, startedAt: 1 }]
+    };
+    fs.writeFileSync(file, JSON.stringify(original, null, 2), 'utf8');
+    const store = new M.MissionStore(file);
+    store.load();
+    ok('a classic run has no trace pointer', store.runs[0].trace === undefined);
+    ok('and no degraded note', store.runs[0].traceDegraded === undefined);
+    store.save();
+    const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+    ok('the record round-trips byte-for-value — nothing was defaulted in',
+        JSON.stringify(after) === JSON.stringify(original));
+    ok('missions.trace on a run with no trace is answerable from the record alone',
+        store.run('r1').trace === undefined);
+}
+
+// ============================================ 2. the save is atomic
+{
+    console.log('\n-- the snapshot is written through temp + rename');
+    const file = f('missions-atomic.json');
+    const store = new M.MissionStore(file);
+    store.specs = [];
+    store.runs = [{ id: 'r', specId: 's', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 1 }];
+    store.save();
+    ok('the store exists after a save', fs.existsSync(file));
+    ok('and no temp file is left behind', !fs.existsSync(file + '.tmp'));
+
+    // two saves in a row (the "two concurrent updates" case a single-threaded
+    // extension host can actually produce): the second must leave a COMPLETE
+    // file, never a truncation of the first
+    store.runs.push({ id: 'r2', specId: 's', status: 'done', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 2 });
+    store.save();
+    store.runs.push({ id: 'r3', specId: 's', status: 'done', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 3 });
+    store.save();
+    const back = JSON.parse(fs.readFileSync(file, 'utf8'));
+    eq('the last writer wins whole, not in half', back.runs.length, 3);
+    ok('still no temp file', !fs.existsSync(file + '.tmp'));
+
+    // a stale temp file from a crashed earlier save must not block the next one
+    fs.writeFileSync(file + '.tmp', '{ broken', 'utf8');
+    store.save();
+    ok('a leftover temp from a crash is simply overwritten',
+        JSON.parse(fs.readFileSync(file, 'utf8')).runs.length === 3);
+}
+
+// ============================================ 3. writing and reading a journal
+{
+    console.log('\n-- append-only, sequence-numbered, schema-versioned');
+    const file = f('r-write.jsonl');
+    const w = T.MissionTraceWriter.open(file);
+    eq('a fresh journal starts at seq 0', w.lastSeq, 0);
+    const e1 = w.append('strategy.changed', { version: 1, strategy: 'split the work' });
+    eq('the first event is seq 1', e1.seq, 1);
+    eq('and carries the schema version', e1.v, T.MISSION_TRACE_SCHEMA);
+    w.append('action.created', { actionId: 'st1', kind: 'task', agentName: 'coder', title: 'write it' });
+    w.append('action.started', { actionId: 'st1', refId: 'task-9' });
+    eq('the writer knows how far it got', w.lastSeq, 3);
+
+    const read = T.readTrace(file);
+    eq('every line reads back', read.events.length, 3);
+    eq('health is ok', read.health, 'ok');
+    eq('lastSeq comes from the file', read.lastSeq, 3);
+
+    // ‼️ THE SEQ COMES FROM THE FILE, NEVER FROM THE SNAPSHOT — a second writer
+    // that trusted a lagging snapshot would hand out a number already on disk
+    const w2 = T.MissionTraceWriter.open(file);
+    eq('a re-opened writer continues the file', w2.append('message.sent', { from: 'lead', to: 'coder' }).seq, 4);
+    eq('and nothing was overwritten', T.readTrace(file).events.length, 4);
+}
+
+// ============================================ 4. a corrupt LAST line is a crash
+{
+    console.log('\n-- half a line at the end is a crash mid-append, not damage');
+    const file = f('r-truncated.jsonl');
+    writeLines(file, [line(1, 'strategy.changed', { strategy: 'a' }), line(2, 'message.sent'), '{"v":1,"seq":3,"ts":3,"ty']);
+    const read = T.readTrace(file);
+    eq('the readable events survive', read.events.length, 2);
+    ok('the tail is reported as truncated', read.truncatedTail);
+    eq('health says truncated, not damaged', read.health, 'truncated');
+    eq('lastSeq is what actually landed', read.lastSeq, 2);
+
+    const rec = T.reconcileRun(read, 2);
+    eq('a truncated tail alone still resumes', rec.resume, 'ok');
+    ok('and says so honestly', rec.degraded.includes('cut off'));
+
+    // and the next writer continues from the last GOOD seq — the half line is
+    // never counted as an event that happened
+    eq('the writer resumes after the last complete event',
+        T.MissionTraceWriter.open(file).lastSeq, 2);
+}
+
+// ============================================ 5. a corrupt MIDDLE line is loss
+{
+    console.log('\n-- a broken line anywhere else is real loss and says so');
+    const file = f('r-damaged.jsonl');
+    writeLines(file, [line(1, 'strategy.changed'), 'not json at all', line(3, 'run.finished', { status: 'done' }), '']);
+    const read = T.readTrace(file);
+    eq('what could be read is returned', read.events.length, 2);
+    eq('the bad line is counted', read.badLines, 1);
+    eq('health is damaged', read.health, 'damaged');
+    ok('reading never throws — the run list has to open', true);
+
+    const clean = T.reconcileRun(read, 3);
+    eq('damage with nothing in flight can be re-briefed', clean.resume, 'rebrief');
+}
+
+// ============================================ 6. duplicate seq is a replay
+{
+    console.log('\n-- a repeated seq is idempotent: the first copy wins');
+    const file = f('r-dupe.jsonl');
+    writeLines(file, [
+        line(1, 'strategy.changed', { strategy: 'first' }),
+        line(2, 'action.created', { actionId: 'st1', kind: 'task', title: 'original' }),
+        line(2, 'action.created', { actionId: 'st1', kind: 'task', title: 'REPLAYED' }),
+        line(3, 'action.settled', { actionId: 'st1', outcome: 'done', costUSD: 1 }),
+        line(3, 'action.settled', { actionId: 'st1', outcome: 'failed', costUSD: 99 }),
+        ''
+    ]);
+    const read = T.readTrace(file);
+    eq('the duplicates are dropped', read.events.length, 3);
+    eq('and counted', read.duplicates, 2);
+    const p = T.projectTrace(read.events);
+    eq('the FIRST copy is the one that stands', p.actions[0].title, 'original');
+    eq('a replayed settle does not flip the outcome', p.actions[0].outcome, 'done');
+    eq('nor double the cost', p.actions[0].costUSD, 1);
+    eq('applying the same event twice lands on the same value',
+        JSON.stringify(T.projectTrace(read.events)), JSON.stringify(T.projectTrace(read.events.concat(read.events))));
+}
+
+// ============================================ 7. a missing trace
+{
+    console.log('\n-- a run whose journal is gone still opens');
+    const read = T.readTrace(f('never-written.jsonl'));
+    eq('health is missing', read.health, 'missing');
+    eq('with no events and no throw', read.events.length, 0);
+    const rec = T.reconcileRun(read, 0);
+    eq('nothing is claimed as interrupted', rec.interrupted, 0);
+    eq('and the safe move is to brief the lead again', rec.resume, 'rebrief');
+    ok('the detail surface gets an honest sentence', rec.degraded.includes('no trace'));
+}
+
+// ============================================ 8. the crash BETWEEN append and save
+{
+    console.log('\n-- the snapshot lagging the journal is the recoverable state');
+    const file = f('r-behind.jsonl');
+    writeLines(file, [
+        line(1, 'strategy.changed', { strategy: 'go' }),
+        line(2, 'action.created', { actionId: 'st1', kind: 'task', title: 'build' }),
+        line(3, 'action.started', { actionId: 'st1', refId: 'task-7' }),
+        line(4, 'action.settled', { actionId: 'st1', outcome: 'done', costUSD: 0.4, tokens: 1200 }),
+        ''
+    ]);
+    // the snapshot only ever got as far as seq 2
+    const rec = T.reconcileRun(T.readTrace(file), 2);
+    eq('the gap is measured', rec.snapshotBehind, 2);
+    eq('the settle is recovered from the journal itself', rec.actions[0].outcome, 'done');
+    eq('on the journal\'s word, not the task store\'s', rec.actions[0].from, 'trace');
+    eq('with its cost', rec.actions[0].costUSD, 0.4);
+    eq('nothing is interrupted', rec.interrupted, 0);
+    eq('and it resumes cleanly', rec.resume, 'ok');
+
+    // ‼️ THE REVERSE IS THE UNRECOVERABLE ONE and is treated as such: a snapshot
+    // claiming events the journal never recorded means the order was broken.
+    const backwards = T.reconcileRun(T.readTrace(file), 9);
+    ok('a snapshot ahead of its journal is flagged',
+        backwards.degraded.includes('the snapshot claims events'));
+    eq('with nothing in flight, it can still be re-briefed', backwards.resume, 'rebrief');
+}
+
+// ============================================ 9. reload during a delegation
+{
+    console.log('\n-- work in flight when the window died');
+    const file = f('r-inflight.jsonl');
+    writeLines(file, [
+        line(1, 'strategy.changed', { strategy: 'delegate' }),
+        line(2, 'action.created', { actionId: 'st1', kind: 'task', title: 'one' }),
+        line(3, 'action.started', { actionId: 'st1', refId: 'task-1' }),
+        line(4, 'action.created', { actionId: 'st2', kind: 'task', title: 'two' }),
+        line(5, 'action.started', { actionId: 'st2', refId: 'task-2' }),
+        ''
+    ]);
+    const read = T.readTrace(file);
+
+    // task-1 finished while we were gone; task-2 is nowhere to be found
+    const store = { 'task-1': { status: 'done', costUSD: 0.9, tokens: 400, outputFile: 'out-1.md' } };
+    const rec = T.reconcileRun(read, 5, (kind, id) => (kind === 'task' ? store[id] : undefined));
+    eq('the finished one is recovered', rec.recovered, 1);
+    eq('on the TASK record\'s word', rec.actions[0].from, 'task');
+    eq('with the cost it actually spent', rec.actions[0].costUSD, 0.9);
+    eq('and its output', rec.actions[0].outputFile, 'out-1.md');
+    eq('the missing one is interrupted', rec.actions[1].outcome, 'interrupted');
+    eq('nobody claims to know what happened to it', rec.actions[1].from, 'unknown');
+    eq('it is counted', rec.interrupted, 1);
+    ok('and named in the degraded sentence', rec.degraded.includes('1 action(s) interrupted'));
+    eq('a healthy journal with in-flight work still resumes — it KNOWS what it lost',
+        rec.resume, 'ok');
+
+    // a task still claiming to run with no process behind it is NOT a result
+    const stillRunning = T.reconcileRun(read, 5, () => ({ status: 'running' }));
+    eq('a "running" record is not a settle', stillRunning.interrupted, 2);
+    eq('nothing is silently restarted', stillRunning.recovered, 0);
+
+    // ‼️ AND THE REFUSAL: rubble PLUS work of unknown fate
+    writeLines(f('r-both.jsonl'), [
+        line(1, 'action.created', { actionId: 'st1', kind: 'task' }),
+        'garbage in the middle',
+        line(3, 'action.started', { actionId: 'st1', refId: 'task-x' }),
+        ''
+    ]);
+    eq('a damaged journal with in-flight work cannot be safely resumed',
+        T.reconcileRun(T.readTrace(f('r-both.jsonl')), 3).resume, 'refuse');
+}
+
+// ============================================ 10. reload during a question
+{
+    console.log('\n-- an ask that was never answered, and one that was');
+    const open = f('r-asking.jsonl');
+    writeLines(open, [
+        line(1, 'strategy.changed', { strategy: 'ask first' }),
+        line(2, 'human.asked', { askId: 'q1', flavor: 'question', text: 'which repo?' }),
+        ''
+    ]);
+    const p = T.projectTrace(T.readTrace(open).events);
+    ok('the pending ask survives the reload', !!p.pending);
+    eq('with its text', p.pending.text, 'which repo?');
+    eq('and its flavor', p.pending.flavor, 'question');
+    eq('the reconciliation hands it back for Needs You',
+        T.reconcileRun(T.readTrace(open), 2).pending.text, 'which repo?');
+
+    const answered = f('r-answered.jsonl');
+    writeLines(answered, [
+        line(1, 'human.asked', { askId: 'q1', flavor: 'question', text: 'which repo?' }),
+        line(2, 'human.answered', { askId: 'q1', text: 'the extension one' }),
+        ''
+    ]);
+    const p2 = T.projectTrace(T.readTrace(answered).events);
+    ok('an answered ask is no longer pending', p2.pending === undefined);
+    eq('‼️ and the ANSWER is kept — a snapshot that never saved it is not a reason to ask again',
+        p2.answers['q1'], 'the extension one');
+
+    const approval = f('r-approval.jsonl');
+    writeLines(approval, [
+        line(1, 'human.asked', { askId: 'a1', flavor: 'approval', text: 'round 1 — 2 delegation(s)' }),
+        ''
+    ]);
+    eq('an approval waits the same way a question does',
+        T.projectTrace(T.readTrace(approval).events).pending.flavor, 'approval');
+
+    const guided = f('r-guided.jsonl');
+    writeLines(guided, [
+        line(1, 'human.asked', { askId: 'q1', flavor: 'question', text: 'stuck' }),
+        line(2, 'human.guided', { text: 'try the other repo' }),
+        ''
+    ]);
+    ok('guidance nobody asked for closes nothing — the question is still open',
+        T.projectTrace(T.readTrace(guided).events).pending.askId === 'q1');
+
+    // two open asks: the OLDEST is the one the run is actually stuck on
+    const two = f('r-two-asks.jsonl');
+    writeLines(two, [
+        line(1, 'human.asked', { askId: 'q1', flavor: 'question', text: 'first' }),
+        line(2, 'human.asked', { askId: 'q2', flavor: 'question', text: 'second' }),
+        ''
+    ]);
+    eq('the oldest unanswered ask is the blocker',
+        T.projectTrace(T.readTrace(two).events).pending.text, 'first');
+
+    // a finished run is not waiting on anybody, whatever the asks say
+    const done = f('r-asked-then-done.jsonl');
+    writeLines(done, [
+        line(1, 'human.asked', { askId: 'q1', flavor: 'question', text: 'anything?' }),
+        line(2, 'run.finished', { status: 'cancelled' }),
+        ''
+    ]);
+    ok('a finished run has no pending ask', T.projectTrace(T.readTrace(done).events).pending === undefined);
+}
+
+// ============================================ 11. the projection
+{
+    console.log('\n-- what the journal folds up into');
+    const file = f('r-project.jsonl');
+    writeLines(file, [
+        line(1, 'strategy.changed', { version: 1, strategy: 'first plan' }),
+        line(2, 'evaluation.recorded', { criterionId: 'c1', met: false, text: 'not yet' }),
+        line(3, 'strategy.changed', { version: 2, strategy: 'revised plan' }),
+        line(4, 'evaluation.recorded', { criterionId: 'c1', met: true, text: 'now it is' }),
+        line(5, 'evaluation.recorded', { criterionId: 'c2', met: true }),
+        line(6, 'message.sent', { from: 'lead', to: 'coder' }),
+        line(7, 'message.sent', { from: 'coder', to: 'lead' }),
+        line(8, 'run.finished', { status: 'done', verdict: 'success', text: 'shipped' }),
+        ''
+    ]);
+    const p = T.projectTrace(T.readTrace(file).events);
+    eq('the CURRENT strategy is the latest one', p.strategy.text, 'revised plan');
+    eq('and it knows which revision it is', p.strategy.version, 2);
+    eq('a criterion keeps ONE verdict — the latest', p.evaluations.length, 2);
+    const c1 = p.evaluations.find(e => e.criterionId === 'c1');
+    eq('which is the newest one', c1.met, true);
+    eq('‼️ a revised verdict is not a new criterion — it is counted, not duplicated', c1.revisions, 2);
+    eq('messages are counted, not stored twice', p.messages, 2);
+    eq('the ending is projected', p.finished.verdict, 'success');
+    eq('with its summary', p.finished.text, 'shipped');
+    eq('and the sequence high-water mark', p.lastSeq, 8);
+
+    // an event about an action nobody created is ignored rather than inventing one
+    eq('a settle for an unknown action creates nothing',
+        T.projectTrace([{ v: 1, seq: 1, ts: 1, type: 'action.settled', actionId: 'ghost', outcome: 'done' }]).actions.length, 0);
+}
+
+// ============================================ 12. a line from the future
+{
+    console.log('\n-- a journal written by a newer build is not guessed at');
+    const file = f('r-future.jsonl');
+    writeLines(file, [line(1, 'strategy.changed', { strategy: 'ours' }), JSON.stringify({ v: 99, seq: 2, ts: 2, type: 'whatever' }), '']);
+    const read = T.readTrace(file);
+    eq('the future line is not applied', read.events.length, 1);
+    eq('it is counted', read.fromFuture, 1);
+    eq('and health says so', read.health, 'future');
+    ok('the reader names the version problem',
+        T.reconcileRun(read, 1).degraded.includes('newer version'));
+}
+
+// ============================================ 13. retention
+{
+    console.log('\n-- deleting a run takes its journal, and orphans are swept');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-orphan-'));
+    for (const n of ['run-a.jsonl', 'run-b.jsonl', 'run-c.jsonl']) {
+        fs.writeFileSync(path.join(dir, n), line(1, 'strategy.changed') + '\n', 'utf8');
+    }
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'not ours', 'utf8');
+    const orphans = T.orphanTraceFiles(fs.readdirSync(dir), ['run-a']);
+    eq('two runs are gone, so two journals are orphans', orphans.length, 2);
+    ok('the live run keeps its journal', !orphans.includes('run-a.jsonl'));
+    ok('‼️ a file that is not ours by name is never touched', !orphans.includes('notes.txt'));
+
+    T.deleteTrace(path.join(dir, 'run-b.jsonl'));
+    ok('a deleted run\'s journal is gone', !fs.existsSync(path.join(dir, 'run-b.jsonl')));
+    T.deleteTrace(path.join(dir, 'run-b.jsonl'));
+    ok('deleting one twice is not an error', true);
+
+    eq('the run id is read back off the file name', T.runIdOfTraceFile('run-a.jsonl'), 'run-a');
+    eq('and the name is derived from the id', path.basename(T.traceFileFor(dir, 'xyz')), 'xyz.jsonl');
+}
+
+// ============================================ 14. the path stays portable
+{
+    console.log('\n-- the trace pointer travels with the store');
+    const file = f('missions-portable.json');
+    const home = os.homedir();
+    const roots = () => [{ token: '${home}', path: home }];
+    const store = new M.MissionStore(file, roots);
+    store.specs = [];
+    store.runs = [{
+        id: 'r1', specId: 's1', status: 'done', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 1,
+        trace: { file: path.join(home, 'mission-trace', 'r1.jsonl'), lastSeq: 4, v: 1 }
+    }];
+    store.save();
+    const raw = fs.readFileSync(file, 'utf8');
+    ok('‼️ the machine path is tokenized like every other path in the store',
+        raw.includes('${home}') && !raw.includes(path.join(home, 'mission-trace')));
+    const back = new M.MissionStore(file, roots);
+    back.load();
+    eq('and expands back on load', back.runs[0].trace.file, path.join(home, 'mission-trace', 'r1.jsonl'));
+    eq('with the snapshot\'s own sequence intact', back.runs[0].trace.lastSeq, 4);
+}
+
+// ============================================ 15. the engine writes the journal
+{
+    console.log('\n-- the engine traces without asking which kind of mission it is');
+    const seen = [];
+    const spec = {
+        id: 's', title: 't', goal: 'g', leadAgentId: 'a1', leadAgentName: 'lead',
+        team: [{ agentId: 'a2', agentName: 'coder' }],
+        limits: { maxRounds: 3, maxTasks: 5, maxCostUSD: 5, maxTokens: 0, maxMinutes: 60, maxParallel: 2 },
+        approvalMode: 'auto', createdAt: 1
+    };
+    const run = { id: 'r', specId: 's', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 0 };
+    const deps = {
+        runPlanner: async () => ({
+            ok: true, costUSD: 0,
+            raw: JSON.stringify({ action: 'finish', thought: 'the plan', verdict: 'success', summary: 'done here' })
+        }),
+        delegateWave: async () => { },
+        readOutputBody: () => '',
+        requestApproval: async () => true,
+        askUser: async () => undefined,
+        onUpdate: () => { },
+        trace: (type, payload) => seen.push({ type, payload }),
+        now: () => 0
+    };
+    return new M.MissionEngine(spec, run, [], deps).execute().then(() => {
+        eq('the round\'s reasoning is recorded as the strategy', seen[0].type, 'strategy.changed');
+        eq('with its round number as the version', seen[0].payload.version, 1);
+        eq('in the lead\'s own words', seen[0].payload.strategy, 'the plan');
+        eq('and the ending is the last line', seen[seen.length - 1].type, 'run.finished');
+        eq('with the verdict', seen[seen.length - 1].payload.verdict, 'success');
+
+        // ‼️ AND WITHOUT THE DEP, NOTHING CHANGES. A caller written before this
+        // item — or a classic run, which is handed no writer — runs identically.
+        const bare = { ...deps, trace: undefined };
+        const run2 = { id: 'r2', specId: 's', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 0 };
+        return new M.MissionEngine(spec, run2, [], bare).execute().then(() => {
+            eq('a mission with no journal still finishes', run2.status, 'done');
+            ok('and grows no trace pointer', run2.trace === undefined);
+            console.log(`\n${pass} passed, ${fail} failed`);
+            process.exit(fail ? 1 : 0);
+        });
+    });
+}
