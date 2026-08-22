@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.219.2 — Bridge CLI helper (af.js): escape-free, self-provisioning gateway for agents (2026-08-22)
+
+Calling the bridge from agents or external CLI scripts previously risked shell quote mangling in PowerShell and Bash when passing complex JSON strings, multi-line reports, or markdown content. Agent Farm now ships a standalone CLI helper (`af.js`) compiled from `src/service/af.ts` with zero external dependencies. On extension startup, it is automatically staged into `<globalStorage>/bridge/af.js`. It supports discovery (`node af.js farm.ops`), inline arguments, and `@file.json` payload loading for completely escaping-free calls.
+
 ## 3.219.1 — M-18: a workflow started by a mission is that mission's project's work (2026-08-22)
 
 A chain inherited its project from **its own first task**, which for a chain nobody stamped meant the window's current project. That is right for a workflow somebody ran by hand and wrong for one a mission started: a wave fires whenever the planner decides to, possibly an hour after anybody looked at this window, and the work belongs to the project the mission is for — the same reason a mission's delegations already pass their own key rather than asking the window. `runWorkflow` now takes the project explicitly, and it lands on **step 1**, not from step 2 onwards. A chain nobody stamped is left exactly as it was.

@@ -242,7 +242,7 @@ import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } fro
 import {
     argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, DIMS_OUT_NOTE,
     INTERACTIVE_NOTE, need,
-    needOneExecutor, optStr, parseBridgeRequest
+    needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
@@ -10367,6 +10367,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ]);
 
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
+    try { stageBridgeCli(context.extensionPath, context.globalStorageUri.fsPath, extVersion); } catch { /* best effort */ }
     let bridgeBusy = false;
     const processBridge = async (): Promise<void> => {
         if (!taskRunner || bridgeBusy) { return; }

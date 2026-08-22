@@ -9,7 +9,7 @@ const os = require('os');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds } =
+const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds, stageBridgeCli, stagedBridgeCliPath } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
@@ -4421,6 +4421,86 @@ const { opencodeStatus, syncToOpencode } =
         }
         ok('‼️ projects.create takes a template — the page picker and an agent use one path',
             /projects\.create[\s\S]{0,4000}?findTemplate\(projectTemplates\(\)/.test(src));
+    }
+
+    // ---------- stageBridgeCli & af.js CLI Helper ----------
+    {
+        const tmpStorage = path.join(os.tmpdir(), `af-test-bridge-${Date.now()}`);
+        fs.mkdirSync(tmpStorage, { recursive: true });
+        const extPath = path.join(__dirname, '..');
+
+        // 1. Test staging
+        const r1 = stageBridgeCli(extPath, tmpStorage, '1.0.0');
+        ok('stageBridgeCli copies af.js into bridge/af.js',
+            r1.staged && fs.existsSync(r1.path) && r1.path === stagedBridgeCliPath(tmpStorage));
+        const r2 = stageBridgeCli(extPath, tmpStorage, '1.0.0');
+        ok('stageBridgeCli is idempotent when version matches', !r2.staged && fs.existsSync(r2.path));
+
+        // 2. Test af.js module
+        const { parseCliArgs, resolvePayload, executeBridgeRequest } =
+            require(path.join(extPath, 'out', 'service', 'af.js'));
+
+        // parseCliArgs
+        const c1 = parseCliArgs(['node', 'af.js', 'tasks.list']);
+        ok('af.js parses single op', c1.op === 'tasks.list' && !c1.rawArgs && !c1.argsFile);
+
+        const c2 = parseCliArgs(['node', 'af.js', 'notices.list', '{"handled":false}', '--raw']);
+        ok('af.js parses inline JSON and flags', c2.op === 'notices.list' && c2.rawArgs === '{"handled":false}' && c2.rawOutput);
+
+        const c3 = parseCliArgs(['node', 'af.js', 'notices.post', '@some/file.json', '--timeout', '5000']);
+        ok('af.js parses @file argument and timeout', c3.op === 'notices.post' && c3.argsFile === 'some/file.json' && c3.timeoutMs === 5000);
+
+        // resolvePayload
+        const p1 = resolvePayload(c1);
+        ok('resolvePayload defaults to empty object', typeof p1 === 'object' && Object.keys(p1).length === 0);
+
+        const p2 = resolvePayload(c2);
+        ok('resolvePayload parses inline JSON string', p2.handled === false);
+
+        const sampleArgFile = path.join(tmpStorage, 'sample-args.json');
+        fs.writeFileSync(sampleArgFile, JSON.stringify({ title: 'Test Notice', priority: 1 }), 'utf8');
+        const p3 = resolvePayload({ argsFile: sampleArgFile, timeoutMs: 1000, rawOutput: false, help: false });
+        ok('resolvePayload reads from JSON file', p3.title === 'Test Notice' && p3.priority === 1);
+
+        // 3. Test executeBridgeRequest with mock receiver
+        const bridgeDir = path.join(tmpStorage, 'bridge');
+        const testReg = new BridgeRegistry();
+        testReg.register({
+            op: 'test.greet',
+            describe: 'test op',
+            handler: (a) => ({ greeting: `Hello, ${a.name}!` })
+        });
+
+        // Background worker simulating extension.ts processBridge
+        const workerInterval = setInterval(() => {
+            if (!fs.existsSync(bridgeDir)) { return; }
+            for (const f of fs.readdirSync(bridgeDir)) {
+                if (f.endsWith('.request.json')) {
+                    const reqPath = path.join(bridgeDir, f);
+                    const resPath = path.join(bridgeDir, f.replace(/\.request\.json$/, '.response.json'));
+                    try {
+                        const parsed = parseBridgeRequest(fs.readFileSync(reqPath, 'utf8'));
+                        if ('error' in parsed) {
+                            fs.writeFileSync(resPath, JSON.stringify({ ok: false, error: parsed.error }), 'utf8');
+                        } else {
+                            testReg.dispatch(parsed.op, parsed.args).then(res => {
+                                fs.writeFileSync(resPath, JSON.stringify(res), 'utf8');
+                            });
+                        }
+                        fs.unlinkSync(reqPath);
+                    } catch { /* ignore */ }
+                }
+            }
+        }, 15);
+
+        const execRes = await executeBridgeRequest('test.greet', { name: 'World' }, bridgeDir, 5000);
+        ok('executeBridgeRequest round-trip succeeds via request/response files',
+            execRes.ok && execRes.result && execRes.result.greeting === 'Hello, World!');
+
+        clearInterval(workerInterval);
+
+        // Cleanup tmpStorage
+        try { fs.rmSync(tmpStorage, { recursive: true, force: true }); } catch { /* ignore */ }
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

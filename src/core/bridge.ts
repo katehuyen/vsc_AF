@@ -20,6 +20,8 @@
  * new feature ships its bridge access by adding one registration.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
 import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
@@ -453,3 +455,39 @@ export function argSessionIds(args: Record<string, unknown>): string[] {
     if (Array.isArray(args.sessionIds)) { for (const v of args.sessionIds) { push(v); } }
     return out;
 }
+
+/** The path to the staged af.js inside the bridge directory. */
+export function stagedBridgeCliPath(storageDir: string): string {
+    return path.join(storageDir, 'bridge', 'af.js');
+}
+
+/**
+ * Copy the compiled bridge CLI helper (out/service/af.js) into <globalStorage>/bridge/af.js
+ * so agents have a reliable, version-independent, escape-free CLI to execute bridge operations.
+ */
+export function stageBridgeCli(extensionPath: string, storageDir: string, version: string): { staged: boolean; path: string } {
+    const src = path.join(extensionPath, 'out', 'service', 'af.js');
+    const dstDir = path.join(storageDir, 'bridge');
+    const dst = path.join(dstDir, 'af.js');
+    const versionFile = path.join(dstDir, '.af_version');
+
+    if (!fs.existsSync(src)) {
+        return { staged: false, path: dst };
+    }
+
+    let currentVersion: string | undefined;
+    try { currentVersion = fs.readFileSync(versionFile, 'utf8').trim(); } catch { /* ignore */ }
+    if (currentVersion === version && fs.existsSync(dst)) {
+        return { staged: false, path: dst };
+    }
+
+    try {
+        fs.mkdirSync(dstDir, { recursive: true });
+        fs.copyFileSync(src, dst);
+        fs.writeFileSync(versionFile, version, 'utf8');
+        return { staged: true, path: dst };
+    } catch {
+        return { staged: false, path: dst };
+    }
+}
+
