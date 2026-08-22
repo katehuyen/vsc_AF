@@ -3,6 +3,7 @@
 // Usage: npm test  (compiles first — tests require out/ and read media/ files)
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 /**
@@ -50,6 +51,35 @@ for (const f of files) {
     } else {
         console.log(`ok   ${f} (${pass})`);
     }
+}
+
+/**
+ * ‼️ THE SUITE SWEEPS UP AFTER ITSELF, whatever any one file forgot.
+ *
+ * Nearly every test builds its fixtures in `os.tmpdir()/af-*`, and a file that
+ * ends on `process.exit` — or crashes — leaves the whole tree behind. Measured
+ * on this machine: 14 977 folders and 16 GB of them, on a C: drive that had
+ * reached ZERO bytes free and could no longer run the suite at all. One file
+ * remembering its teardown is one file; this is the backstop for all 212.
+ *
+ * Only OUR prefix, and only what is more than a day old, so a suite running in
+ * another window never has its fixtures pulled out from under it.
+ */
+{
+    const tmp = os.tmpdir();
+    const old = Date.now() - 24 * 60 * 60 * 1000;
+    let swept = 0;
+    for (const name of (() => { try { return fs.readdirSync(tmp); } catch { return []; } })()) {
+        if (!name.startsWith('af-')) { continue; }
+        const p = path.join(tmp, name);
+        try {
+            const st = fs.statSync(p);
+            if (!st.isDirectory() || st.mtimeMs > old) { continue; }
+            fs.rmSync(p, { recursive: true, force: true });
+            swept++;
+        } catch { /* in use, or gone already — either way not ours to force */ }
+    }
+    if (swept) { console.log(`\nswept ${swept} stale af-* fixture folder(s) out of ${tmp}`); }
 }
 
 console.log(`\n${files.length} files · ${totalPass} passed · ${totalFail} failed · ${((Date.now() - t0) / 1000).toFixed(1)}s`);

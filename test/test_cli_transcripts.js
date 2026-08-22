@@ -39,6 +39,15 @@ let pass = 0, fail = 0;
 const check = (n, c) => { if (c) { pass++; } else { fail++; console.log('FAIL  ' + n); } };
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-e3b-'));
+// ‼️ AND IT IS TAKEN AWAY AGAIN. This file writes ~55 MB of transcript fixtures
+// and ended on `process.exit`, so every single run left the whole lot in the
+// system temp folder for ever: measured at 14 977 folders and 16 GB, on a
+// machine whose C: drive had reached zero bytes free and could no longer run
+// the suite at all. `exit` fires on the explicit exit too, which is exactly the
+// case an ordinary teardown at the bottom of the file would have missed.
+process.on('exit', () => {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* locked — leave it */ }
+});
 const agentDir = 'D:\\agents\\kurgucu';
 const pricing = new PricingEngine([
     { match: 'gpt-5', input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0.125 },
