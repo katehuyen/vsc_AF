@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.237.0 — An atomic save that is not undone by its own fallback (2026-08-23)
+
+### X-62 — the snapshot keeps the guarantee it advertises
+`MissionStore.save` swapped a temp file in atomically and then, if the swap
+failed, answered by writing the body **directly over the target** — which is
+exactly the truncation the atomic swap exists to prevent, reintroduced at the
+one moment the machine is already in trouble.
+
+A failed swap now leaves the target completely alone. The state that could not
+land stays in the named temp file so a person can recover it, the failure comes
+back as a structured `StorePersistence` verdict (`temp` · `rename` · `refused`),
+and the next successful save renames the temp away by itself. A failed temp
+write is the same answer one step earlier: the target is never opened.
+
+### X-62 — missing and corrupt were read as one event, and one of them cost history
+`load` caught a missing file and an unreadable one in the same `catch` and
+started empty either way — and the very next `save` wrote that empty list over
+the fleet's entire mission history. The only symptom was a Missions page that
+looked like a fresh install.
+
+The two are now separated. A store that was never there is `empty` and nothing
+is reported. A store whose **bytes** went bad is evidence: it is set aside as
+`missions.corrupt-<ts>.json` before anything can write in its place, and the
+run list starts empty honestly. If the bytes cannot be set aside — the file is
+locked, the disk is full — the store is `unreadable` and **refuses to save at
+all** rather than overwrite what it could not preserve.
+
+### X-62 — a journal append that fails is no longer silent
+`MissionTraceWriter.append` swallows a write failure on purpose: a mission must
+not die because its audit trail could not be written. Swallowing it and saying
+nothing is a different decision, and it left surfaces drawing a live journal
+off a file that had stopped. Failures are counted, and the writer states why the
+run went snapshot-only; the run carries that sentence for Needs You to show.
+
+### `missions.store`
+‼️ An empty `missions.list` means one of two very different things — a fleet
+that has run nothing, or a store that could not be read — and no caller could
+tell them apart. The new op answers with the snapshot's own health,
+`recoveryRequired`, the degraded sentence and where an unreadable copy was set
+aside. A store that comes up damaged, or a save that fails, also says so to the
+user directly (once per distinct failure, not on every state change).
+
+Acceptance is fault-injected: a failing temp write, a failing rename, a failing
+append, a corrupt store that can be set aside and one that cannot.
+
 ## 3.236.0 — A journal you can append to, and a hole you cannot step over (2026-08-23)
 
 ### X-61 — the half-written tail is repaired before anything appends to it

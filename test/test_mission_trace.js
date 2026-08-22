@@ -317,6 +317,125 @@ const line = (seq, type, extra = {}) => JSON.stringify({ v: 1, seq, ts: seq * 10
     ok('and the sentence says to update', rec.degraded.indexOf('update Agent Farm') >= 0);
 }
 
+// ============================ 5f. X-62 the snapshot's own persistence contract
+{
+    console.log('\n-- ‼️ X-62 missing is not corrupt, and a failed swap never writes over the target');
+
+    // ---- a store that was never there is not damage
+    {
+        const st = new M.MissionStore(f('missions-none.json'));
+        st.load();
+        eq('a store that never existed comes up empty', st.health, 'empty');
+        ok('with nothing to report', !st.degraded);
+        ok('and saving it is allowed', st.save().saved);
+    }
+
+    // ---- ‼️ a store whose BYTES went bad is evidence, not an empty list
+    {
+        const p = f('missions-corrupt.json');
+        fs.writeFileSync(p, '{"specs": [ this is not json', 'utf8');
+        const st = new M.MissionStore(p);
+        st.load();
+        eq('the fleet starts from an empty list', st.runs.length, 0);
+        ok('but the bytes were set aside, not overwritten', !!st.quarantine);
+        ok('and the kept copy is the original', fs.readFileSync(st.quarantine, 'utf8').indexOf('not json') >= 0);
+        ok('the sentence names the file', st.degraded.indexOf(path.basename(st.quarantine)) >= 0);
+        ok('saving is allowed once nothing can be lost by it', st.save().saved);
+
+        // ‼️ WITHOUT THIS the very next save wrote the empty list straight over
+        // the fleet's whole mission history, and the only sign was a Missions
+        // page that looked like a fresh install.
+        const st2 = new M.MissionStore(p);
+        st2.load();
+        eq('and the store re-reads clean afterwards', st2.health, 'ok');
+    }
+
+    // ---- a corrupt store that CANNOT be set aside is never written over
+    {
+        const p = f('missions-locked.json');
+        fs.writeFileSync(p, 'not json either', 'utf8');
+        const st = new M.MissionStore(p);
+        const realRename = fs.renameSync, realWrite = fs.writeFileSync;
+        fs.renameSync = () => { throw new Error('EPERM'); };
+        fs.writeFileSync = (dest, ...rest) => {
+            if (String(dest).indexOf('.corrupt-') >= 0) { throw new Error('EPERM'); }
+            return realWrite(dest, ...rest);
+        };
+        try { st.load(); } finally { fs.renameSync = realRename; fs.writeFileSync = realWrite; }
+        eq('the store is unreadable', st.health, 'unreadable');
+        ok('recovery is required of a person', st.recoveryRequired);
+
+        const before = fs.readFileSync(p, "utf8");
+        const res = st.save();
+        ok('and the save REFUSES', !res.saved);
+        eq('by name', res.stage, 'refused');
+        eq('leaving the bytes exactly as they were', fs.readFileSync(p, 'utf8'), before);
+    }
+
+    // ---- ‼️ a failed rename leaves the last good store ALONE
+    {
+        const p = f('missions-swap.json');
+        const st = new M.MissionStore(p);
+        st.load();
+        st.specs.push({ id: 's1', title: 'first', goal: 'g', leadAgentId: 'a', leadAgentName: 'a', team: [], limits: {}, approvalMode: 'auto', createdAt: 1 });
+        ok('a first save lands', st.save().saved);
+        const good = fs.readFileSync(p, 'utf8');
+
+        st.specs.push({ id: 's2', title: 'second', goal: 'g', leadAgentId: 'a', leadAgentName: 'a', team: [], limits: {}, approvalMode: 'auto', createdAt: 2 });
+        const realRename = fs.renameSync;
+        fs.renameSync = () => { throw new Error('EPERM: the file is in use'); };
+        let res;
+        try { res = st.save(); } finally { fs.renameSync = realRename; }
+
+        ok('the save reports its failure', !res.saved);
+        eq('naming the step that failed', res.stage, 'rename');
+        // ‼️ THIS IS THE WHOLE ITEM. The old code answered a failed rename with
+        // a DIRECT write over the target — the truncation the atomic swap
+        // exists to prevent, reintroduced at the moment the machine is already
+        // in trouble.
+        eq('the last good store is untouched', fs.readFileSync(p, 'utf8'), good);
+        ok('and the state that could not land is kept in the temp file', fs.existsSync(p + '.tmp'));
+        ok('the sentence says where it is', st.degraded.indexOf('.tmp') >= 0);
+
+        ok('a later good save clears the warning and lands', st.save().saved);
+        ok('with nothing left to report', !st.degraded);
+        ok('and the second spec is really on disk', fs.readFileSync(p, 'utf8').indexOf('second') >= 0);
+    }
+
+    // ---- a failed TEMP write never touches the target either
+    {
+        const p = f('missions-temp.json');
+        const st = new M.MissionStore(p);
+        st.load();
+        st.specs.push({ id: 's1', title: 'first', goal: 'g', leadAgentId: 'a', leadAgentName: 'a', team: [], limits: {}, approvalMode: 'auto', createdAt: 1 });
+        st.save();
+        const good = fs.readFileSync(p, 'utf8');
+        const realWrite = fs.writeFileSync;
+        fs.writeFileSync = () => { throw new Error('ENOSPC'); };
+        let res;
+        try { res = st.save(); } finally { fs.writeFileSync = realWrite; }
+        eq('the temp copy is where it failed', res.stage, 'temp');
+        eq('and the target is untouched', fs.readFileSync(p, 'utf8'), good);
+    }
+
+    // ---- ‼️ a journal append that fails is not silent
+    {
+        const p = f('r-append-fail.jsonl');
+        const w = T.MissionTraceWriter.create(p);
+        w.append('decision.made', { nodeId: 'd1' });
+        eq('a good append moves the sequence', w.lastSeq, 1);
+        ok('with nothing to report', !w.degraded);
+
+        const realAppend = fs.appendFileSync;
+        fs.appendFileSync = () => { throw new Error('EACCES'); };
+        try { w.append('decision.made', { nodeId: 'd2' }); } finally { fs.appendFileSync = realAppend; }
+
+        eq('a failed append moves nothing', w.lastSeq, 1);
+        eq('it is counted', w.appendFailures, 1);
+        ok('and the run can say why its journal stopped', /snapshot-only/.test(w.degraded));
+    }
+}
+
 // ============================================ 6. duplicate seq is a replay
 {
     console.log('\n-- a repeated seq is idempotent: the first copy wins');

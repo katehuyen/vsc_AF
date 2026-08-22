@@ -3260,6 +3260,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const missionStore = new MissionStore(
         path.join(context.globalStorageUri.fsPath, 'missions.json'), portableRoots);
     missionStore.load();
+    // ‼️ X-62 — A STORE THAT CAME UP DAMAGED IS SAID OUT LOUD. The fleet's
+    // whole mission history could go bad and the only sign of it used to be an
+    // empty Missions list, which reads exactly like a fresh install.
+    if (missionStore.degraded) {
+        void vscode.window.showErrorMessage('Agent Farm: ' + missionStore.degraded);
+    }
+    /** ‼️ X-62 — and a save that FAILS is said once per distinct failure, not
+     *  on every state change: the engine saves constantly, so a repeating toast
+     *  would be noise the reader learns to dismiss. */
+    let missionSaveWarned: string | undefined;
+    const missionSaved = (p: { saved: boolean; error?: string; stage?: string }): void => {
+        if (p.saved) { missionSaveWarned = undefined; return; }
+        const said = String(p.stage) + ':' + String(p.error);
+        if (said === missionSaveWarned) { return; }
+        missionSaveWarned = said;
+        void vscode.window.showErrorMessage('Agent Farm: ' + (missionStore.degraded ?? String(p.error)));
+    };
     // ‼️ X-45 — the journals live beside the snapshot, one file per run, named
     // by run id so an orphan needs no index to be recognised.
     const missionTraceDir = path.join(context.globalStorageUri.fsPath, 'mission-trace');
@@ -3280,18 +3297,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (live) { return live; }
         if (!run.trace?.file) { return undefined; }
         const w = MissionTraceWriter.open(run.trace.file);
-        // ‼️ X-61/X-64 — A WRITER THAT REFUSES SAYS SO ON THE RUN. The mission
-        // carries on (a run never fails because of its audit trail), but it is
-        // now snapshot-only, and a surface drawing a journal that has silently
-        // stopped growing is the failure this whole item exists to prevent.
-        if (w.blocked && !run.traceDegraded) { run.traceDegraded = w.blocked.message; }
         missionTraceWriters.set(run.id, w);
         return w;
     };
 
     /** Append one event for a run that has a journal. Silent for the rest. */
     const traceEvent = (run: MissionRun, type: MissionTraceType, payload: Partial<MissionTraceEvent> = {}): void => {
-        missionTrace(run)?.append(type, payload);
+        const w = missionTrace(run);
+        if (!w) { return; }
+        w.append(type, payload);
+        // ‼️ X-61/X-62/X-64 — A JOURNAL THAT STOPPED GROWING SAYS SO ON THE RUN.
+        // The mission carries on either way (a run never fails because of its
+        // audit trail), but a surface drawing a live journal off a file that
+        // is blocked, or whose appends are failing, is the silent failure this
+        // whole item exists to prevent.
+        const degraded = w.degraded;
+        if (degraded && run.traceDegraded !== degraded) { run.traceDegraded = degraded; }
     };
 
     // ‼️ A WINDOW RELOAD IS WHERE THE JOURNAL EARNS ITS KEEP. The snapshot
@@ -3454,7 +3475,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const r = missionStore.run(runId);
             if (r?.trace) { r.trace.lastSeq = w.lastSeq; }
         }
-        missionStore.save();
+        missionSaved(missionStore.save());
         missionEmitter.fire();
         needsEmitter.fire();
     };
@@ -5441,6 +5462,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     note: `Resuming "${(w as FarmWorkflow).title}" from step ${(task.stepIndex as number) + 1}.`
                 };
             }
+        },
+        {
+            op: 'missions.store',
+            describe: 'The mission SNAPSHOT\'s own health — whether missions.json could be read, '
+                + 'whether the last save landed, and where an unreadable copy was set aside. '
+                + '‼️ An empty missions.list means one of two very different things: a fleet that has '
+                + 'run nothing, or a store that could not be read. This op is the difference. args: none',
+            handler: () => ({
+                file: missionStore.storeFile,
+                health: missionStore.health,
+                recoveryRequired: missionStore.recoveryRequired,
+                degraded: missionStore.degraded ?? null,
+                quarantine: missionStore.quarantine ?? null,
+                specs: missionStore.specs.length,
+                runs: missionStore.runs.length
+            })
         },
         {
             op: 'missions.list',

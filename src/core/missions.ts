@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import {
     bindRuntimeRole, isAdaptive, MissionAutonomy, MissionMode, MissionObjective,
     MissionPoolMember, MissionRuntimeRole, missionModeOf, normalizeObjective, validateObjective
@@ -1937,25 +1938,119 @@ export function migrateSpec(spec: MissionSpec): MissionSpec {
     return { ...spec, mode: 'adaptive', ...normalizeObjective(spec) };
 }
 
+/**
+ * ‼️ X-62 — WHAT THE STORE ITSELF IS IN, which used to be one word: nothing.
+ *
+ *   * `empty`       — there was no file, or there was one and its bytes have been
+ *                    set aside; an empty list is the honest state and saving
+ *                    over the (now moved) file loses nothing.
+ *   * `unreadable`  — the file exists, could not be read or parsed, and could
+ *                    NOT be set aside. Nothing may be written here.
+ */
+export type StoreHealth = 'ok' | 'empty' | 'unreadable';
+
+/** An error as one short sentence — never a stack trace in a surface string. */
+const short = (e: unknown): string => String((e as Error)?.message ?? e).slice(0, 160);
+
+/** What one `save` actually did. Never thrown — a mission must not die because
+ *  its snapshot could not be written, but nobody may be told it was. */
+export interface StorePersistence {
+    saved: boolean;
+    /** which step failed: the temp copy, the swap, or the refusal before both */
+    stage?: 'temp' | 'rename' | 'refused';
+    error?: string;
+}
+
 export class MissionStore {
     specs: MissionSpec[] = [];
     runs: MissionRun[] = [];
+
+    /** ‼️ X-62 — the store's own health, decided at load and kept. */
+    health: StoreHealth = 'empty';
+    /** where an unreadable store was set aside, when one was */
+    quarantine?: string;
+    private loadNote?: string;
+    private saveNote?: string;
 
     /** portableRoots: saved strings carry ${claudeDir}/${globalStorage}/${home}
      *  tokens instead of machine paths — the git-synced store travels. */
     constructor(private file: string, private portableRoots: () => PortableRoot[] = () => []) { }
 
-    load(): void {
-        try {
-            const raw = expandDeep(
-                JSON.parse(fs.readFileSync(this.file, 'utf8')) as { specs?: MissionSpec[]; runs?: MissionRun[] },
-                this.portableRoots());
-            this.specs = (Array.isArray(raw.specs) ? raw.specs : []).map(migrateSpec);
-            this.runs = Array.isArray(raw.runs) ? raw.runs : [];
-        } catch { /* first run / unreadable — start empty */ }
+    /** Where the snapshot lives, so a surface can name it to the user. */
+    get storeFile(): string { return this.file; }
+
+    /** The sentence a surface shows — empty when nothing is wrong. */
+    get degraded(): string | undefined {
+        const notes = [this.loadNote, this.saveNote].filter(Boolean) as string[];
+        return notes.length ? notes.join('; ') : undefined;
     }
 
-    save(): void {
+    /** ‼️ Nothing may be written over the file until a person deals with it. */
+    get recoveryRequired(): boolean { return this.health === 'unreadable'; }
+
+    /**
+     * ‼️ X-62 — MISSING AND CORRUPT ARE NOT THE SAME EVENT, and one `catch` read
+     * them as one. A store that had never existed and a store whose bytes had
+     * gone bad both produced an empty list in memory — and the very next
+     * `save()` wrote that empty list over the real one. The fleet's entire
+     * mission history could be lost to a single unreadable byte, silently.
+     *
+     * So the corrupt bytes are EVIDENCE and are set aside before anything can
+     * write in their place. If they cannot be set aside — the file is locked,
+     * the disk is full — the store refuses to save at all rather than
+     * overwrite what it could not preserve.
+     */
+    load(): void {
+        this.quarantine = undefined;
+        this.loadNote = undefined;
+        this.saveNote = undefined;
+        let raw: string;
+        try { raw = fs.readFileSync(this.file, 'utf8'); } catch (e) {
+            this.specs = []; this.runs = [];
+            const code = (e as NodeJS.ErrnoException)?.code;
+            if (code === 'ENOENT') { this.health = 'empty'; return; }
+            this.health = 'unreadable';
+            this.loadNote = 'the mission store could not be read (' + short(e)
+                + ') — nothing will be saved over it until it can be';
+            return;
+        }
+        try {
+            const parsed = expandDeep(
+                JSON.parse(raw) as { specs?: MissionSpec[]; runs?: MissionRun[] },
+                this.portableRoots());
+            this.specs = (Array.isArray(parsed.specs) ? parsed.specs : []).map(migrateSpec);
+            this.runs = Array.isArray(parsed.runs) ? parsed.runs : [];
+            this.health = 'ok';
+        } catch (e) {
+            this.specs = []; this.runs = [];
+            const kept = this.setAside(raw);
+            if (kept) {
+                this.health = 'empty';
+                this.quarantine = kept;
+                this.loadNote = 'the mission store was unreadable (' + short(e) + ') and has been kept as '
+                    + path.basename(kept) + ' — the fleet starts from an empty list';
+            } else {
+                this.health = 'unreadable';
+                this.loadNote = 'the mission store is unreadable (' + short(e)
+                    + ') and could not be set aside — nothing will be saved over it';
+            }
+        }
+    }
+
+    /** Move the unreadable bytes out of the way; copy them if the move fails. */
+    private setAside(raw: string): string | undefined {
+        const dest = this.file.replace(/\.json$/i, '') + '.corrupt-' + Date.now() + '.json';
+        try { fs.renameSync(this.file, dest); return dest; } catch { /* locked — copy instead */ }
+        try { fs.writeFileSync(dest, raw, 'utf8'); return dest; } catch { return undefined; }
+    }
+
+    save(): StorePersistence {
+        // ‼️ X-62 — a store whose bytes could not be read AND could not be
+        // preserved is never written over. The in-memory list is empty because
+        // the read failed, not because the fleet has no missions.
+        if (this.recoveryRequired) {
+            return { saved: false, stage: 'refused', error: this.loadNote };
+        }
         if (this.runs.length > MAX_STORED_RUNS) {
             const done = this.runs.filter(r => r.status === 'done' || r.status === 'failed' || r.status === 'cancelled');
             const overflow = this.runs.length - MAX_STORED_RUNS;
@@ -1975,15 +2070,29 @@ export class MissionStore {
         const body = JSON.stringify(
             tokenizeDeep({ specs: this.specs, runs: this.runs }, this.portableRoots()), null, 2);
         const tmp = this.file + '.tmp';
-        try {
-            fs.writeFileSync(tmp, body, 'utf8');
-            fs.renameSync(tmp, this.file);
-        } catch {
-            // the temp write or the rename failed — a save is never silently
-            // skipped, so fall back to the direct write and tidy the temp away
-            try { fs.writeFileSync(this.file, body, 'utf8'); } catch { /* best-effort */ }
+        try { fs.writeFileSync(tmp, body, 'utf8'); } catch (e) {
+            // nothing has touched the target yet, and nothing will: the last
+            // good store stays exactly as it was
             try { if (fs.existsSync(tmp)) { fs.unlinkSync(tmp); } } catch { /* best-effort */ }
+            this.saveNote = 'the mission store could not be written (' + short(e)
+                + ') — the last saved copy is still on disk';
+            return { saved: false, stage: 'temp', error: short(e) };
         }
+        try { fs.renameSync(tmp, this.file); } catch (e) {
+            // ‼️ X-62 — AND THE FALLBACK THAT UNDID THE WHOLE POINT IS GONE.
+            // This used to answer a failed rename with a DIRECT write over the
+            // target — which is the truncation the atomic swap exists to
+            // prevent, reintroduced at exactly the moment the machine is
+            // already in trouble. The target is left untouched and the new
+            // state is left in the temp file, named, so a person can recover
+            // it; the next successful save renames it away by itself.
+            this.saveNote = 'the mission store could not be updated (' + short(e)
+                + ') — the last saved copy is still on disk and the new state is in '
+                + path.basename(tmp);
+            return { saved: false, stage: 'rename', error: short(e) };
+        }
+        this.saveNote = undefined;
+        return { saved: true };
     }
 
     spec(id: string): MissionSpec | undefined { return this.specs.find(s => s.id === id); }

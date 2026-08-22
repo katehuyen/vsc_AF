@@ -852,6 +852,34 @@ const { opencodeStatus, syncToOpencode } =
         const trGone = await reg.dispatch('missions.trace', { id: 'nope' });
         ok('…and an unknown run is refused by name', !trGone.ok && /missions\.list/.test(trGone.error));
 
+        // ‼️ X-62 — AND THE SNAPSHOT'S OWN HEALTH IS ASKABLE. An empty
+        // missions.list means one of two very different things — a fleet that
+        // has run nothing, or a store that could not be read — and until this
+        // op there was no way for a caller to tell them apart.
+        const MS = require(path.join(__dirname, '..', 'out', 'core', 'missions.js'));
+        const badStore = path.join(traceDir, 'missions.json');
+        fs.writeFileSync(badStore, '{ specs: [ not json', 'utf8');
+        const ms = new MS.MissionStore(badStore);
+        ms.load();
+        reg.register([{
+            op: 'missions.store',
+            describe: "The mission SNAPSHOT's own health — whether missions.json could be read, "
+                + 'whether the last save landed, and where an unreadable copy was set aside. args: none',
+            handler: () => ({
+                file: ms.storeFile, health: ms.health,
+                recoveryRequired: ms.recoveryRequired,
+                degraded: ms.degraded ?? null, quarantine: ms.quarantine ?? null,
+                specs: ms.specs.length, runs: ms.runs.length
+            })
+        }]);
+        const storeHealth = await reg.dispatch('missions.store', {});
+        ok('missions.store answers with the store\'s own health', storeHealth.ok && storeHealth.result.runs === 0);
+        ok('‼️ …and an unreadable store is not reported as an empty one',
+            !!storeHealth.result.quarantine && /kept as/.test(storeHealth.result.degraded));
+        ok('…naming the file it set aside', fs.existsSync(storeHealth.result.quarantine));
+        ok('…and it is in the catalog',
+            (await reg.dispatch('farm.ops', {})).result.some(c => c.op === 'missions.store'));
+
         // ‼️ M-19 — THE CONVERSATION IS READABLE FROM THE BRIDGE, in full. The
         // planner is deliberately given a bounded digest between rounds; an
         // agent (or the user, through a surface) asking what was actually said

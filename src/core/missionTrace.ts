@@ -177,11 +177,31 @@ export class MissionTraceWriter {
     /** what `open` had to do to the file before it could be used */
     readonly repair?: TraceRepair;
 
+    /** ‼️ X-62 — appends this file swallowed. Counted, never silent. */
+    private failures = 0;
+
     private constructor(readonly file: string, seq: number, blocked?: TraceBlock, repair?: TraceRepair) {
         this.seq = seq;
         if (blocked) { this.blocked = blocked; }
         if (repair) { this.repair = repair; }
     }
+
+    /**
+     * ‼️ X-62 — WHY THIS RUN'S JOURNAL IS NOT GROWING, or undefined when it is.
+     *
+     * An append that failed was swallowed on purpose — a mission must not die
+     * because its audit trail could not be written — but swallowing it and
+     * saying NOTHING is a different decision, and it is the one that leaves a
+     * surface drawing a live journal off a file that stopped ten minutes ago.
+     */
+    get degraded(): string | undefined {
+        if (this.blocked) { return this.blocked.message; }
+        if (!this.failures) { return undefined; }
+        return this.failures + ' journal event(s) could not be written'
+            + ' — this run is snapshot-only from here';
+    }
+
+    get appendFailures(): number { return this.failures; }
 
     /** A writer for a run that has no journal yet. */
     static create(file: string): MissionTraceWriter {
@@ -251,7 +271,10 @@ export class MissionTraceWriter {
         try {
             fs.appendFileSync(this.file, JSON.stringify(ev) + '\n', 'utf8');
             this.seq = ev.seq;
-        } catch { /* journal unwritable — the engine carries on */ }
+        } catch {
+            // the engine carries on, but the degradation is now on the record
+            this.failures++;
+        }
         return ev;
     }
 }
