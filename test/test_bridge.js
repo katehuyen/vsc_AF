@@ -1577,6 +1577,59 @@ const { opencodeStatus, syncToOpencode } =
         try { fs.rmSync(watchDir, { recursive: true, force: true }); } catch {}
     }
 
+    // ---------- M-18: workflows.run answers, workflows.status reads the run ----------
+    {
+        const runs = {};
+        const mgr = {
+            workflows: [{ id: 'w1', title: 'Nightly build', steps: [{}, {}] }, { id: 'w2', title: 'Empty', steps: [] }],
+            runWorkflow(w) {
+                if (!w.steps.length) { return undefined; }
+                const id = 'r' + (Object.keys(runs).length + 1);
+                runs[id] = {
+                    runId: id, workflowId: w.id, title: w.title, status: 'running',
+                    steps: [{ index: 0, title: 'one', agentName: 'dev', status: 'running', taskId: 't1' }],
+                    costUSD: 0, tokens: 0
+                };
+                return id;
+            },
+            workflowRunState(id) { return runs[id]; }
+        };
+        reg.register([
+            {
+                op: 'workflows.run',
+                describe: 'Run a workflow now. Returns the RUN id. args: id or title',
+                handler: (args) => {
+                    const ref = optStr(args, 'id') || argStr(args, 'title');
+                    const w = mgr.workflows.find(x => x.id === ref || x.title === ref);
+                    need(w, 'Workflow not found — workflows.list shows current ones.');
+                    const runId = mgr.runWorkflow(w);
+                    need(runId, `"${w.title}" has no steps — there was nothing to start.`);
+                    return { started: w.title, runId };
+                }
+            },
+            {
+                op: 'workflows.status',
+                describe: 'Where one workflow run got to, and what it produced. args: runId',
+                handler: (args) => {
+                    const st = mgr.workflowRunState(argStr(args, 'runId'));
+                    need(st, 'No workflow run with that id — its tasks may have been purged, or it never started.');
+                    return st;
+                }
+            }
+        ]);
+        const started = await reg.dispatch('workflows.run', { title: 'Nightly build' });
+        ok('‼️ workflows.run hands back the RUN id, not just a title — without it the run is unfindable',
+            started.ok && typeof started.result.runId === 'string' && started.result.runId.length > 0);
+        const st = await reg.dispatch('workflows.status', { runId: started.result.runId });
+        ok('…and that id reads the run back', st.ok && st.result.status === 'running' && st.result.title === 'Nightly build');
+        const missing = await reg.dispatch('workflows.status', { runId: 'nope' });
+        ok('an id that ran nothing is refused by name, not answered with an empty shell',
+            !missing.ok && /No workflow run with that id/.test(missing.error));
+        const emptyRun = await reg.dispatch('workflows.run', { title: 'Empty' });
+        ok('a chain with no steps refuses rather than returning a run nobody can name',
+            !emptyRun.ok && /has no steps/.test(emptyRun.error));
+    }
+
     // ---------- §19.C: workflows.add/delete + templates.add/delete contract ----------
     {
         const agents = [{ id: 'a1', name: 'dev' }];

@@ -3441,6 +3441,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (run: MissionRun, steps: MissionRun['rounds'][number]['steps']): Promise<void> =>
             new Promise(resolve => {
                 for (const step of steps) {
+                    // ‼️ M-18 — A WORKFLOW STEP IS STARTED HERE, in the wave,
+                    // and not down a route of its own. Everything a delegation
+                    // gets — the approval gate, the writer serialisation, the
+                    // budget roll-up, the cancel — is a property of this path,
+                    // so a chain that ran anywhere else would quietly have none
+                    // of them. The only difference is what gets started.
+                    if (step.kind === 'workflow') {
+                        const wf = taskManager.workflows.find(x => x.id === step.workflowId);
+                        if (!wf) {
+                            step.status = 'failed';
+                            step.note = 'workflow no longer exists';
+                            continue;
+                        }
+                        const wRunId = taskManager.runWorkflow(wf);
+                        if (!wRunId) {
+                            step.status = 'failed';
+                            step.note = 'the workflow has no steps';
+                            continue;
+                        }
+                        step.workflowRunId = wRunId;
+                        step.status = 'running';
+                        traceEvent(run, 'action.started', { actionId: step.id, kind: 'workflow', refId: wRunId });
+                        continue;
+                    }
                     const agent = agents.find(a => a.id === step.agentId)
                         ?? agents.find(a => a.name === step.agentName);
                     if (!agent) {
@@ -3486,12 +3510,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     traceEvent(run, 'action.started', { actionId: step.id, kind: 'task', refId: task.id });
                     taskManager.startTask(task);
                 }
-                if (!steps.some(s => s.taskId)) { resolve(); return; }
+                if (!steps.some(s => s.taskId || s.workflowRunId)) { resolve(); return; }
                 let finished = false;
                 const check = () => {
                     if (finished) { return; }
                     let allDone = true;
                     for (const step of steps) {
+                        // ‼️ A WORKFLOW RUN IS OBSERVED BY ITS RUN ID, through
+                        // the one reader the manager exposes. The mission never
+                        // walks the chain's tasks itself — what "finished" and
+                        // "produced" mean for a chain is the workflow engine's
+                        // answer to give, and a second reading of the same rows
+                        // would be a second opinion about the same run.
+                        if (step.workflowRunId) {
+                            const st = taskManager.workflowRunState(step.workflowRunId);
+                            if (!st) { allDone = false; continue; }
+                            step.costUSD = st.costUSD;
+                            step.tokens = st.tokens;
+                            step.outputFile = st.handoff?.file;
+                            if (st.status === 'running') { allDone = false; continue; }
+                            const settled = st.status === 'done' ? 'done' : 'failed';
+                            if (step.status !== settled) {
+                                step.status = settled;
+                                step.note = st.reason;
+                                traceEvent(run, 'action.settled', {
+                                    actionId: step.id, kind: 'workflow', refId: step.workflowRunId,
+                                    outcome: settled,
+                                    ...(st.costUSD ? { costUSD: st.costUSD } : {}),
+                                    ...(st.tokens ? { tokens: st.tokens } : {}),
+                                    ...(st.handoff?.file ? { outputFile: st.handoff.file } : {}),
+                                    ...(st.reason ? { text: st.reason } : {})
+                                });
+                            }
+                            continue;
+                        }
                         if (!step.taskId) { continue; }
                         const t = taskManager.tasks.find(x => x.id === step.taskId);
                         if (!t) { step.status = 'failed'; step.note = 'task record lost'; continue; }
@@ -3649,6 +3701,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         askUser: missionAskUser(spec),
         onUpdate: () => missionChanged(),
         trace: (type, payload) => traceEvent(run, type, payload),
+        // ‼️ M-18 — read at the moment the lead is briefed, never cached: a
+        // workflow added or deleted while a long objective is running would
+        // otherwise be a list the lead is told about and cannot use.
+        workflows: () => taskManager.workflows.map(w => ({
+            id: w.id, title: w.title, steps: w.steps.length
+        })),
         now: () => Date.now()
     });
 
@@ -4791,13 +4849,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. args: id or title',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
                 need(w, 'Workflow not found — workflows.list shows current ones.');
-                taskManager.runWorkflow(w as FarmWorkflow);
-                return { started: (w as FarmWorkflow).title };
+                const runId = taskManager.runWorkflow(w as FarmWorkflow);
+                need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
+                return { started: (w as FarmWorkflow).title, runId };
+            }
+        },
+        {
+            op: 'workflows.status',
+            describe: '‼️ WHERE ONE WORKFLOW RUN GOT TO, and what it produced — the answer to "did that chain finish?" without reading its tasks one by one. Returns status (running | done | failed | stopped), why it ended early when it did, every step with its task id and output file, the FINAL HANDOFF (the run\'s actual result: the file and text the last completed step passed on) and the whole run\'s cost and tokens added up once. Derived from the tasks, so it still answers after a window reload. args: runId (from workflows.run)',
+            handler: (args) => {
+                const st = taskManager.workflowRunState(argStr(args, 'runId'));
+                need(st, 'No workflow run with that id — its tasks may have been purged, or it never started.');
+                return st;
             }
         },
         {

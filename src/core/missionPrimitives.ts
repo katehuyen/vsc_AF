@@ -27,7 +27,7 @@ export type TaskIntent = 'review' | 'compare' | 'revise';
 
 export type PrimitiveName =
     | 'delegate' | 'parallel' | TaskIntent
-    | 'evaluate' | 'replan' | 'finish' | 'ask_user' | 'abort';
+    | 'evaluate' | 'run_workflow' | 'replan' | 'finish' | 'ask_user' | 'abort';
 
 /**
  * What the engine DOES with a decision — not a category, a dispatch.
@@ -126,6 +126,15 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
     {
         name: 'evaluate', scope: 'adaptive', shape: 'work', kind: 'task',
         describe: 'judge the success criteria — yourself from what you hold, or through an independent reviewer'
+    },
+    {
+        name: 'run_workflow', scope: 'adaptive', shape: 'work', kind: 'workflow',
+        describe: 'run one of this window\'s existing workflows as a single step and take its final output as the result',
+        rules: [
+            '"run_workflow" runs a chain that ALREADY EXISTS — you cannot compose one, and you do not drive its steps. '
+            + 'To you it is one unit of work: it finishes, fails or stops short, and what comes back is what its last '
+            + 'completed step produced. Use it when the chain already encodes the work; delegate when it does not.'
+        ]
     },
     {
         name: 'replan', scope: 'adaptive', shape: 'plan', kind: 'task',

@@ -46,7 +46,9 @@ const ROUND_ICON: Record<MissionRound['action'], string> = {
     // M-17 — a round that judged the criteria rather than doing work
     evaluate: 'checklist',
     // M-18 — the typed intents: work built out of results the run already has
-    parallel: 'split-horizontal', review: 'eye', compare: 'diff', revise: 'edit'
+    parallel: 'split-horizontal', review: 'eye', compare: 'diff', revise: 'edit',
+    // M-18 — a chain that already exists, run as one step
+    run_workflow: 'run-all'
 };
 
 function themed(icon: string, color?: string): vscode.ThemeIcon {

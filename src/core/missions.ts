@@ -9,7 +9,7 @@ import {
     unreadableEvaluation
 } from './missionEvaluation';
 import {
-    MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
+    MissionActionKind, MissionTraceEvent, MissionTraceRef, MissionTraceType, normalizeStrategy
 } from './missionTrace';
 import {
     buildIntentPrompt, intentPrimitive, intentTitle, MissionPrimitive, primitiveFor,
@@ -259,6 +259,12 @@ export interface MissionStep {
     /** the result ids this work was built from — the graph's fan-in for a
      *  delegation, and the reason a revise can inherit their criteria */
     sources?: string[];
+    /** ‼️ M-18 — absent means a task. `workflow` means the extension starts a
+     *  workflow run for this step and observes it by its run id. */
+    kind?: MissionActionKind;
+    workflowId?: string;
+    /** the real record a workflow step became — filled when the run starts */
+    workflowRunId?: string;
     taskId?: string;
     status: MissionStepStatus;
     costUSD?: number;
@@ -278,7 +284,7 @@ export interface MissionStep {
  */
 export type MissionAction =
     'delegate' | 'finish' | 'ask_user' | 'abort' | 'replan' | 'evaluate'
-    | 'parallel' | TaskIntent;
+    | 'parallel' | 'run_workflow' | TaskIntent;
 
 export interface MissionRound {
     n: number;
@@ -478,6 +484,16 @@ export interface PlannerTaskReq {
     readonly?: boolean;
     /** M-17 — the criterion ids this work serves (adaptive only) */
     criteria?: string[];
+    /**
+     * ‼️ M-18 — WHAT THIS UNIT OF WORK ACTUALLY IS. Absent means a task, which
+     * is nearly everything. A `workflow` unit rides the same wave, the same
+     * approval, the same budget and the same cancel as a delegation and differs
+     * only in what the extension starts for it — which is the whole point: a
+     * mission that opened its own route to workflows would be a second
+     * workflow engine, and there is exactly one.
+     */
+    kind?: MissionActionKind;
+    workflowId?: string;
 }
 
 /**
@@ -548,6 +564,15 @@ type PlannerDecisionCore =
     }
     | { action: 'ask_user'; thought: string; question: string }
     | { action: 'replan'; thought: string }
+    /**
+     * ‼️ M-18 — A WORKFLOW IS A UNIT OF WORK, NOT A PLAN THE LEAD DRIVES. It
+     * already exists, it already encodes its own routing, and the lead neither
+     * composes it nor steps it: it names one, it gets back what the chain's
+     * last completed step produced. The existence check happens in the ENGINE,
+     * not here, for the same reason a target id does — only the run knows what
+     * this window actually has, and the lead is told the real list.
+     */
+    | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[] }
     | {
         action: 'evaluate'; thought: string; targets: string[];
         /** absent = the lead judges it itself, from what it already has */
@@ -710,6 +735,19 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         const question = typeof o.question === 'string' ? o.question.trim() : '';
         if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
         return done({ action, thought, question });
+    }
+    if (action === 'run_workflow') {
+        const workflow = String(o.workflow ?? o.workflowId ?? o.title ?? '').trim().slice(0, 200);
+        if (!workflow) {
+            return { ok: false, error: '"run_workflow" needs a "workflow" — the id or the exact title of one that exists' };
+        }
+        const crit = readCriteriaIds(o.criteria, spec, '"run_workflow"', adaptive);
+        if (!crit.ok) { return { ok: false, error: crit.error }; }
+        return done({
+            action: 'run_workflow', thought, workflow,
+            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+            ...(crit.ids ? { criteria: crit.ids } : {})
+        });
     }
     // ---- typed task intents: review | compare | revise (M-18) ----
     if (prim.intent) {
@@ -1386,6 +1424,14 @@ export interface MissionEngineDeps {
      * saves the snapshot) second — never the reverse.
      */
     trace?(type: MissionTraceType, payload?: Partial<MissionTraceEvent>): void;
+    /**
+     * ‼️ M-18 — the workflows this window actually has, for `run_workflow`.
+     * Optional: a harness that supplies none simply has a lead that is offered
+     * no chains and is told so if it names one. The engine never reads the
+     * workflow store itself — it is the extension's, and a second reader of it
+     * would be a second opinion about what exists.
+     */
+    workflows?(): { id: string; title: string; steps: number }[];
     now(): number;
 }
 
@@ -1623,6 +1669,25 @@ export class MissionEngine {
             + `\nAdvice: ${ev.advice}${ev.note ? ` — ${ev.note}` : ''}`;
     }
 
+    /**
+     * ‼️ M-18 — THE BRIEFING PLUS WHAT THIS WINDOW ACTUALLY HAS. A lead offered
+     * `run_workflow` and shown no chains would be guessing at names, which is
+     * the one way to make a primitive worse than not having it. Inserted before
+     * the answer schema rather than appended after it: text that follows a JSON
+     * block gets read as part of it.
+     */
+    private briefingText(rem: RemainingBudget): string {
+        const base = this.protocol.briefing(this.spec, this.hints, rem);
+        const list = isAdaptive(this.spec) ? (this.deps.workflows?.() ?? []) : [];
+        if (!list.length) { return base; }
+        const block = '## Workflows you may run\n'
+            + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`).join('\n')
+            + '\nThese are chains that already exist. Run one with "run_workflow" when it encodes the work you need;'
+            + ' you cannot compose a new one, and you do not drive its steps.\n\n';
+        const marker = '## How to answer';
+        return base.includes(marker) ? base.replace(marker, block + marker) : base + '\n\n' + block;
+    }
+
     private stepResults(steps: MissionStep[]): StepResult[] {
         return steps.map(step => ({
             step,
@@ -1658,7 +1723,7 @@ export class MissionEngine {
             const rem = remainingBudget(spec, run, deps.now());
             const guard = guardReason(rem);
             let prompt = run.rounds.length === 0 && !roundMsg
-                ? this.protocol.briefing(spec, this.hints, rem)
+                ? this.briefingText(rem)
                 : (roundMsg ?? 'Decide the next round. Reply with ONLY the JSON decision object.');
             if (guard) { prompt += finishOnlyNote(guard); }
             // ‼️ M-16 — THE PLANNER BOUNDARY IS HERE and nowhere else: the
@@ -1676,7 +1741,7 @@ export class MissionEngine {
             if (!pr.ok && run.plannerSessionId) {
                 // resume-fallback: fresh session re-seeded from briefing + ledger
                 run.plannerSessionId = undefined;
-                let fb = this.protocol.briefing(spec, this.hints, rem) +
+                let fb = this.briefingText(rem) +
                     (run.ledger.length ? '\n\n## History so far (you are mid-mission)\n' + run.ledger.join('\n') : '') +
                     this.guidanceHistory() +
                     '\n\nDecide the next round. Reply with ONLY the JSON decision object.';
@@ -1931,6 +1996,34 @@ export class MissionEngine {
                     readonly: prim.intent!.readonly,
                     ...(criteria.length ? { criteria } : {})
                 }];
+            } else if (d.action === 'run_workflow') {
+                // ‼️ THE CHAIN HAS TO REALLY EXIST, and if it does not the lead
+                // is shown what this window actually has rather than a refusal
+                // it cannot act on. Checked here and not in the parser for the
+                // same reason a target id is: only the run can see the list.
+                const list = deps.workflows?.() ?? [];
+                const wf = list.find(x => x.id === d.workflow)
+                    ?? list.find(x => x.title.toLowerCase() === d.workflow.toLowerCase());
+                if (!wf) {
+                    run.ledger.push(`R? run_workflow rejected — no workflow "${d.workflow}"`);
+                    roundMsg = `There is no workflow called "${d.workflow}". `
+                        + (list.length
+                            ? `This window has: ${list.map(x => `"${x.title}"`).join(', ')}.`
+                            : 'This window has none — the work has to be delegated.')
+                        + '\nChoose one that exists or delegate the work. Reply with ONLY the JSON decision object.';
+                    continue;
+                }
+                requested = [{
+                    agent: wf.title,
+                    title: d.ask ? `${wf.title} — ${d.ask.slice(0, 80)}` : `run workflow "${wf.title}"`,
+                    prompt: d.ask ?? '',
+                    // A chain writes unless every step of it reads, which is not
+                    // knowable from here — so it takes a writer's lane and is
+                    // serialised against other writers. The safe direction.
+                    readonly: false,
+                    kind: 'workflow', workflowId: wf.id,
+                    ...(d.criteria?.length ? { criteria: d.criteria } : {})
+                }];
             } else if (d.action === 'delegate' || d.action === 'parallel') {
                 requested = d.tasks;
             } else {
@@ -1981,6 +2074,8 @@ export class MissionEngine {
                     readonly: t.readonly,
                     ...(t.criteria ? { criteria: t.criteria } : {}),
                     ...(intent ? { intent, ...(sources ? { sources } : {}) } : {}),
+                    ...(t.kind && t.kind !== 'task' ? { kind: t.kind } : {}),
+                    ...(t.workflowId ? { workflowId: t.workflowId } : {}),
                     status: 'queued' as MissionStepStatus
                 };
             });
@@ -1991,7 +2086,7 @@ export class MissionEngine {
             // lead decided this and nothing ran" from "it ran and we lost it".
             for (const s of round.steps) {
                 deps.trace?.('action.created', {
-                    actionId: s.id, kind: 'task', agentId: s.agentId,
+                    actionId: s.id, kind: s.kind ?? 'task', agentId: s.agentId,
                     agentName: s.agentName, title: s.title,
                     // ‼️ M-16 — every delegation of a round hangs under the SAME
                     // decision node, which is what makes parallel work read as a

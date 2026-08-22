@@ -743,6 +743,57 @@ export interface FarmWorkflow {
     steps: WorkflowStep[];
 }
 
+/**
+ * ‼️ M-18 — A WORKFLOW RUN IS SOMETHING YOU CAN ASK ABOUT.
+ *
+ * `runWorkflow` used to return `void` and announce its ending in a toast, which
+ * is fine for a person watching the window and useless to anything else: a
+ * caller could start a chain and had no way to learn its id, whether it
+ * finished, where it stopped or what it produced. A mission that wanted to use
+ * a workflow as one step therefore could not — the only honest option left was
+ * a second workflow engine inside missions, which is the duplication this whole
+ * family refuses.
+ *
+ * So the run has a state, and it is DERIVED from the tasks (which are
+ * persisted) rather than stored beside them: a stored status is a second copy
+ * of a fact and disagrees with it on the first reload. Only the *reason* a run
+ * ended early is remembered, because that is the one thing the tasks cannot
+ * say — a chain stopped by the loop guard and one that simply ran out of steps
+ * leave the same rows behind.
+ */
+export type WorkflowRunStatus = 'running' | 'done' | 'failed' | 'stopped';
+
+export interface WorkflowRunStep {
+    index: number;
+    title: string;
+    agentName: string;
+    status: TaskStatus;
+    taskId: string;
+    outputFile?: string;
+    costUSD?: number;
+    tokens?: number;
+}
+
+export interface WorkflowRunState {
+    runId: string;
+    workflowId: string;
+    title: string;
+    status: WorkflowRunStatus;
+    startedAt?: number;
+    endedAt?: number;
+    /** why it ended other than by reaching the end — loop guard, a failed step */
+    reason?: string;
+    /** 0-based step it stopped at, when it stopped short */
+    stoppedAtStep?: number;
+    /** ‼️ the run's RESULT: what the last completed step handed on. A parent
+     *  reads a workflow through this and through nothing else. */
+    handoff?: Handoff;
+    steps: WorkflowRunStep[];
+    /** every task of this run, added up once — the parent's budget roll-up */
+    costUSD: number;
+    tokens: number;
+}
+
 export function newId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -3790,11 +3841,95 @@ export class TaskManager implements vscode.Disposable {
     private static readonly MAX_RUN_STEPS = 25;
     private runCounts = new Map<string, number>();
 
-    runWorkflow(w: FarmWorkflow): void {
-        if (!w.steps.length) { return; }
+    /**
+     * ‼️ M-18 — ONE ENTRY POINT, AND IT ANSWERS. The command palette, the
+     * right-click, the trigger, the bridge and a mission's `run_workflow` all
+     * come through here; what they get back is the run's id, which is the only
+     * thing that makes the run findable afterwards. `undefined` means nothing
+     * started — an empty chain — rather than a run nobody can name.
+     */
+    runWorkflow(w: FarmWorkflow): string | undefined {
+        if (!w.steps.length) { return undefined; }
         const runId = newId();
         this.runCounts.set(runId, 0);
+        this.workflowEnds.delete(runId);
         this.routeToStep(w, 0, {}, runId);
+        return runId;
+    }
+
+    /**
+     * Why a run ended when the tasks alone cannot say — the loop guard and a
+     * stopped chain leave rows that look exactly like a chain still waiting for
+     * its next step. In memory only, and deliberately: after a reload the
+     * derivation below is what answers, and it answers honestly rather than
+     * from a record that survived its own subject.
+     */
+    private workflowEnds = new Map<string, { status: WorkflowRunStatus; reason?: string; stepIndex?: number; at: number }>();
+
+    private endWorkflowRun(runId: string, status: WorkflowRunStatus, reason: string, stepIndex?: number): void {
+        this.workflowEnds.set(runId, {
+            status, reason, at: Date.now(),
+            ...(stepIndex !== undefined ? { stepIndex } : {})
+        });
+    }
+
+    /**
+     * The state of one workflow run, derived from its tasks. Undefined when no
+     * task of that run exists — which is the honest answer for a run id that
+     * was never started, and the same answer for one whose rows were purged.
+     */
+    workflowRunState(runId: string): WorkflowRunState | undefined {
+        const tasks = this.tasks.filter(t => t.workflowRunId === runId);
+        if (!tasks.length) { return undefined; }
+        tasks.sort((a, b) => (a.stepIndex ?? 0) - (b.stepIndex ?? 0) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
+        const w = this.workflows.find(x => x.id === tasks[0].workflowId);
+        const steps: WorkflowRunStep[] = tasks.map(t => ({
+            index: t.stepIndex ?? 0,
+            title: t.title,
+            agentName: t.agentName,
+            status: t.status,
+            taskId: t.id,
+            ...(t.outputFile ? { outputFile: t.outputFile } : {}),
+            ...(t.costUSD !== undefined ? { costUSD: t.costUSD } : {}),
+            ...(t.tokens !== undefined ? { tokens: t.tokens } : {})
+        }));
+        const live = tasks.some(t => t.status === 'queued' || t.status === 'running');
+        const end = this.workflowEnds.get(runId);
+        // ‼️ THE TASKS OUTRANK THE MEMO. Something still running means running,
+        // whatever an earlier ending said — a resumed chain re-enters an id that
+        // has already ended once, and a memo that could overrule the rows would
+        // report it finished while it was working.
+        let status: WorkflowRunStatus;
+        if (live) {
+            status = 'running';
+        } else if (end) {
+            status = end.status;
+        } else if (tasks.some(t => t.status === 'failed' || t.status === 'cancelled')) {
+            status = 'failed';
+        } else if (w && (tasks[tasks.length - 1].stepIndex ?? 0) >= w.steps.length - 1) {
+            status = 'done';
+        } else {
+            // settled, nothing failed, and the chain never reached its last
+            // step: it was cut short by something this window no longer knows
+            status = 'stopped';
+        }
+        const lastDone = [...tasks].reverse().find(t => t.status === 'done');
+        const endedAt = live ? undefined
+            : (end?.at ?? (tasks.reduce((a, t) => Math.max(a, t.endedAt ?? 0), 0) || undefined));
+        return {
+            runId,
+            workflowId: tasks[0].workflowId ?? '',
+            title: w?.title ?? tasks[0].title,
+            status,
+            ...(tasks[0].startedAt !== undefined ? { startedAt: tasks[0].startedAt } : {}),
+            ...(endedAt !== undefined ? { endedAt } : {}),
+            ...(!live && end?.reason ? { reason: end.reason } : {}),
+            ...(!live && end?.stepIndex !== undefined ? { stoppedAtStep: end.stepIndex } : {}),
+            ...(lastDone ? { handoff: this.computeHandoff(lastDone) } : {}),
+            steps,
+            costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
+        };
     }
 
     /**
@@ -3893,6 +4028,7 @@ export class TaskManager implements vscode.Disposable {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
             this.parallelGroups.delete(runId);
+            this.endWorkflowRun(runId, 'done', 'reached the end of the chain');
             this.opts.forward?.('workflow-done', `Workflow "${w.title}" completed`);
             void vscode.window.showInformationMessage(
                 `Agent Farm: workflow "${w.title}" completed ✓.`);
@@ -3902,6 +4038,8 @@ export class TaskManager implements vscode.Disposable {
         if (count >= TaskManager.MAX_RUN_STEPS) {
             this.runCounts.delete(runId);
             this.parallelGroups.delete(runId);
+            this.endWorkflowRun(runId, 'stopped',
+                `step limit reached (${TaskManager.MAX_RUN_STEPS}) — possible loop in onFail routing`, index);
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — step limit reached (possible loop in onFail routing).`);
             return;
@@ -4483,6 +4621,7 @@ export class TaskManager implements vscode.Disposable {
         if (onFail === 'stop') {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
+            this.endWorkflowRun(runId, 'failed', `step ${stepIndex + 1} ${status}`, stepIndex);
             this.opts.forward?.('workflow-failed', `Workflow "${w.title}" stopped at step ${stepIndex + 1} (${status})`);
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped at step ${stepIndex + 1} (${status}).`);

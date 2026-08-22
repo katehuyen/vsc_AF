@@ -123,9 +123,9 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
     eq('and the menu string is generated from that same list',
         M.primitiveMenu(false), 'delegate | finish | ask_user | abort');
     ok('an objective sees the whole set',
-        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'replan', 'finish', 'ask_user', 'abort']
+        ['delegate', 'parallel', 'review', 'compare', 'revise', 'evaluate', 'run_workflow', 'replan', 'finish', 'ask_user', 'abort']
             .every(n => adaptive.includes(n)));
-    ok('…and nothing else', adaptive.length === 10);
+    ok('…and nothing else', adaptive.length === 11);
     ok('every classic primitive is in the adaptive set too',
         classic.every(n => adaptive.includes(n)));
 
@@ -166,7 +166,7 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
         !c2.ok && c2.error === 'unknown "action": "replan" (use delegate | finish | ask_user | abort)');
     const a = M.parseAdaptiveDecision(JSON.stringify({ ...reflect(), action: 'summon' }), spec());
     ok('an objective gets the full menu, including the ones added since',
-        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| replan \| finish \| ask_user \| abort/.test(a.error));
+        !a.ok && /use delegate \| parallel \| review \| compare \| revise \| evaluate \| run_workflow \| replan \| finish \| ask_user \| abort/.test(a.error));
     ok('‼️ and "evaluate" is in it — the hand-written list had forgotten it',
         !a.ok && /evaluate/.test(a.error));
 
@@ -204,9 +204,19 @@ const run1 = () => ({ ...reflect(), thought: 'write', action: 'delegate', tasks:
     }), spec());
     ok('an invented criterion is refused by name here too', !badCrit.ok && /unknown criterion "c9"/.test(badCrit.error));
 
+    console.log('\n-- run_workflow names a chain; the ENGINE decides whether it exists');
+    const wf = M.parseAdaptiveDecision(JSON.stringify({ ...reflect(), action: 'run_workflow', workflow: 'Nightly build' }), spec());
+    ok('a named chain parses', wf.ok && wf.decision.workflow === 'Nightly build');
+    ok('‼️ the parser does not pretend to know what exists — only the run does', wf.ok);
+    const wfNone = M.parseAdaptiveDecision(JSON.stringify({ ...reflect(), action: 'run_workflow' }), spec());
+    ok('but a nameless one is refused', !wfNone.ok && /"run_workflow" needs a "workflow"/.test(wfNone.error));
+    const wfClassic = M.parsePlannerDecision('{"action":"run_workflow","thought":"t","workflow":"x"}', classicSpec());
+    ok('and a classic lead may not reach for it at all',
+        !wfClassic.ok && /use delegate \| finish \| ask_user \| abort/.test(wfClassic.error));
+
     console.log('\n-- the prompt the lead is shown is built from the list');
     const brief = M.protocolFor(spec()).briefing(spec(), [], { rounds: 8, tasks: 12, costUSD: 5, minutes: 120, tokens: Infinity });
-    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
+    ok('the schema offers every adaptive primitive', /"action": "delegate" \| "parallel" \| "review" \| "compare" \| "revise" \| "evaluate" \| "run_workflow" \| "replan" \| "finish" \| "ask_user" \| "abort"/.test(brief));
     ok('and explains each of them in its own words', /- "compare" — ask a pool agent to weigh/.test(brief));
     ok('‼️ including the rule that makes parallel honest', /The engine still obeys the one-writer-per-folder rule/.test(brief));
     ok('and it says the ids are named, not pasted', /Do not paste the work into "ask" — name it/.test(brief));
@@ -443,6 +453,97 @@ async function staleAfterReviseTest() {
     ok('…naming the criterion the revise touched', /\[c1\]/.test(prompts[4] || ''));
 }
 
+async function runWorkflowTest() {
+    console.log('\n-- a workflow is a unit of work, run on the ordinary wave');
+    const run = newRun();
+    let i = 0;
+    const prompts = [];
+    const started = [];
+    const planner = {
+        prompts,
+        runPlanner: async (prompt) => {
+            prompts.push(prompt);
+            i++;
+            if (i === 1) {
+                return {
+                    ok: true, raw: JSON.stringify({
+                        ...reflect(), thought: 'chain it', action: 'run_workflow',
+                        workflow: 'Nightly build', ask: 'the release branch', criteria: ['c1']
+                    })
+                };
+            }
+            return { ok: true, raw: JSON.stringify(FINISH) };
+        }
+    };
+    const { d, seen, waves } = deps(planner, {}, {
+        workflows: () => [{ id: 'w1', title: 'Nightly build', steps: 3 }],
+        delegateWave: async (_run, steps) => {
+            waves.push(steps.map(s => s.title));
+            for (const s of steps) {
+                started.push({ kind: s.kind, workflowId: s.workflowId });
+                s.status = 'done';
+                s.costUSD = 0.42;
+            }
+        }
+    });
+    // `waves` is the array the harness closes over; re-point it for this dep
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const step = run.rounds[0].steps[0];
+    eq('the round ran one unit', run.rounds[0].steps.length, 1);
+    eq('‼️ and it is a WORKFLOW unit, not a task pretending to be one', step.kind, 'workflow');
+    eq('naming the chain by id, resolved from the title the lead used', step.workflowId, 'w1');
+    eq('the criteria it serves ride along', (step.criteria || []).join(','), 'c1');
+    ok('it went down the same wave path as any delegation', started.length === 1 && started[0].kind === 'workflow');
+    const created = seen.filter(e => e.type === 'action.created');
+    eq('‼️ the graph node says what kind of thing it is', created[0].kind, 'workflow');
+    ok('and the ledger names it', /R1 run_workflow — /.test(run.ledger[0]));
+    ok('the lead was told which chains exist before it named one',
+        /## Workflows you may run/.test(prompts[0]) && /- Nightly build \(3 steps\)/.test(prompts[0]));
+    ok('…before the answer schema, not after it',
+        prompts[0].indexOf('## Workflows you may run') < prompts[0].indexOf('## How to answer'));
+}
+
+async function unknownWorkflowTest() {
+    console.log('\n-- naming a chain that does not exist is a rejection with the real list');
+    const run = newRun();
+    let i = 0;
+    const prompts = [];
+    const planner = {
+        prompts,
+        runPlanner: async (prompt) => {
+            prompts.push(prompt);
+            i++;
+            if (i === 1) {
+                return {
+                    ok: true, raw: JSON.stringify({
+                        ...reflect(), thought: 'chain', action: 'run_workflow', workflow: 'Deploy'
+                    })
+                };
+            }
+            return { ok: true, raw: JSON.stringify(FINISH) };
+        }
+    };
+    const { d, waves } = deps(planner, {}, { workflows: () => [{ id: 'w1', title: 'Nightly build', steps: 3 }] });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    eq('nothing ran', waves.length, 0);
+    ok('the lead is told the name is wrong', /There is no workflow called "Deploy"/.test(prompts[1]));
+    ok('…and what this window actually has', /This window has: "Nightly build"/.test(prompts[1]));
+    ok('the refusal is in the ledger too', run.ledger.some(l => /run_workflow rejected/.test(l)));
+}
+
+async function noWorkflowsTest() {
+    console.log('\n-- a window with no chains does not advertise any');
+    const run = newRun();
+    const prompts = [];
+    const planner = { prompts, runPlanner: async (p) => { prompts.push(p); return { ok: true, raw: JSON.stringify(FINISH) }; } };
+    const { d } = deps(planner, {}, { workflows: () => [] });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    ok('‼️ no section, rather than an empty one the lead would guess into',
+        !/## Workflows you may run/.test(prompts[0]));
+    ok('but the primitive is still in the menu — it exists, this window just has nothing to run',
+        /"run_workflow"/.test(prompts[0]));
+}
+
 async function classicUntouchedTest() {
     console.log('\n-- classic is where it was, to the character');
     const run = newRun();
@@ -481,6 +582,9 @@ async function classicUntouchedTest() {
     await parallelReadersTest();
     await unknownTargetTest();
     await staleAfterReviseTest();
+    await runWorkflowTest();
+    await unknownWorkflowTest();
+    await noWorkflowsTest();
     await classicUntouchedTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
