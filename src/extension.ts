@@ -3281,7 +3281,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // happened — would order the same turn again and pay for it twice.
         if (kind !== 'task' && kind !== 'conversation') { return undefined; }
         const t = taskManager.tasks.find(x => x.id === refId);
-        return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
+        return t ? {
+            status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile,
+            ...(t.runSessionId ? { sessionId: t.runSessionId } : {})
+        } : undefined;
     };
 
     /**
@@ -4158,6 +4161,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     step.costUSD = rec.costUSD;
                     step.tokens = rec.tokens;
                     step.outputFile = rec.outputFile;
+                    // ‼️ M-19 — and the lane it ran in, so a conversation is not
+                    // quietly demoted to a handoff by a window having closed.
+                    if (rec.sessionId) { step.runSessionId = rec.sessionId; }
                     if (step.missionRunId && !step.resultText) {
                         const cr = missionStore.run(step.missionRunId);
                         if (cr) { step.resultText = childResultText(cr); }

@@ -641,6 +641,14 @@ export interface ExternalRecord {
     costUSD?: number;
     tokens?: number;
     outputFile?: string;
+    /**
+     * ‼️ M-19 — the session the work ran in. Without it a reload silently
+     * downgrades a conversation: the participant's lane is still there on disk,
+     * but the run no longer knows its id, so the next turn opens a new session
+     * and is honestly labelled `handoff` — a real loss of continuity caused by
+     * nothing but a window closing.
+     */
+    sessionId?: string;
 }
 
 export type ExternalLookup = (kind: MissionActionKind, refId: string) => ExternalRecord | undefined;

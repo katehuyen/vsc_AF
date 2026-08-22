@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.227.0 — M-19: an independent first round, a stated closing, and a lane a reload cannot lock shut (2026-08-22)
+
+**An independent first round is one decision, not two rounds.** Asking two agents for their own position without either seeing the other cannot be done by ordering two turns in a row — by the second one the first message has been delivered and is in the record, which is the whole difference between a discussion and two people agreeing with a transcript. `from` now takes a list: every speaker in one decision is briefed from the record **as it stood before any of them answered**, they run in one wave (a speaking turn is readonly, so nothing serialises them), and each is told plainly that somebody else is writing on this at the same moment and neither will see the other. The ledger says `independent` for such a round, because "these two did not see each other" is only readable if the two are on one line. The same agent named twice in one decision is refused: that is a race over one record, not independence.
+
+**A conversation is closed by a stated reason.** `close` ends it after the turn that closed it — so the closing message is in the record rather than lost to the shutting — and a closed conversation refuses further turns by name and reason. "Nothing has been said for a while" was never a closing; three months later a reader needs the sentence.
+
+**And a turn a reload interrupted no longer holds its speaker's lane for ever.** A speaking turn is settled at the end of the round that ordered it, and a window that closes mid-round never reaches that line: the step was reconciled on the way back in, but the **message** stayed `pending` — and pending is exactly what holds a participant's lane. That agent could never have spoken in that conversation again, and the lead would have been refused every time it tried without ever being told a real reason. One catch-up pass now settles those messages from the steps that really finished, before anything else happens; work still genuinely in flight is left alone rather than given an invented outcome.
+
+**A reload also no longer demotes a conversation to a handoff.** The session a step ran in now travels through reconciliation, so a participant's lane survives the window closing — without it the run would forget an id that was still perfectly good on disk, open a new session, and honestly label the loss `handoff`.
+
 ## 3.226.0 — M-19: agents can now actually talk to each other, and a discussion that did not happen cannot be reported (2026-08-22)
 
 **The failure this closes.** A lead sends the same question to three agents, gets three independent answers, and writes "the three discussed it and converged on X". Nobody discussed anything: B never saw A's answer, and the convergence is the lead's own prose presented as the outcome of a debate. It reads exactly like the real thing, which is why it had to become structurally impossible rather than discouraged.

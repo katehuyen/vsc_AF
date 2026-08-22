@@ -156,10 +156,12 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             '"conversation": "for message: the id of a conversation you already opened (c1, c2…) — omit it to open a new one"',
             '"objective": "for message, only when opening a new conversation: what it is FOR, in one line"',
             '"participants": ["for message, only when opening: the pool agents who may speak in it"]',
-            '"from": "for message: the ONE pool agent that speaks this turn"',
+            '"from": "for message: the pool agent that speaks this turn — or a LIST of them to have '
+            + 'each speak without seeing the others\' answer"',
             '"to": ["for message: who it is addressed to — leave empty for everyone in the conversation"]',
             `"intent": "for message: ${messageIntentMenu()}"`,
-            '"refs": ["for message: the message ids this turn is about — required for challenge, response, concede, synthesis and vote"]'
+            '"refs": ["for message: the message ids this turn is about — required for challenge, response, concede, synthesis and vote"]',
+            '"close": "for message: end the conversation after this turn, and say in one line why"'
         ],
         rules: [
             '"message" is a REAL speaking turn, not a note you write. The agent you name in "from" runs as an '
@@ -169,9 +171,14 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             '‼️ You may NOT report a discussion that did not happen. Three agents answering the same question '
             + 'separately are three proposals, not a debate: a "synthesis" or a "vote" has to name the messages it '
             + 'rests on, and only a real speaking turn produces a message id to name.',
-            'One participant speaks at a time in one conversation; different participants may speak at the same '
-            + 'time, which is how an independent first round works. When the same agent speaks again, its own '
-            + 'session is continued where the engine can — you do not manage that.'
+            'One participant speaks at a time in one conversation. To have several speak WITHOUT seeing each '
+            + 'other — the independent first round — put them all in "from" in ONE decision: they are briefed '
+            + 'from the record as it stands before any of them answers. Two separate rounds cannot do this, '
+            + 'because by the second one the first message has been delivered and is in the record.',
+            'When the same agent speaks again, its own session is continued where its engine can be resumed — '
+            + 'you do not manage that, and the record says which of the two actually happened.',
+            'Close a conversation with "close" when it is finished, saying why in one line. A conversation left '
+            + 'open is one you may still speak in; one that is closed is a finished record.'
         ]
     },
     {

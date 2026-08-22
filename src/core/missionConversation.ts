@@ -377,6 +377,15 @@ export function buildSpeakerPrompt(opts: {
     ask?: string;
     goal?: string;
     carried: LaneCarry;
+    /**
+     * ‼️ Somebody else is answering the same thing at the same moment, and
+     * neither will see the other's answer before writing. The speaker is TOLD
+     * so — not as a courtesy but because it changes what a good turn is: this
+     * is the round where an independent position is wanted, and an agent that
+     * thought it was replying to a silence would hedge towards agreement with
+     * nobody.
+     */
+    independent?: boolean;
     /** how the speaker names the others — id to display name */
     nameOf?: (id: string) => string;
 }): string {
@@ -402,6 +411,12 @@ export function buildSpeakerPrompt(opts: {
         parts.push('\n## Where you are\n'
             + 'You have spoken in this conversation before, but not in this session — the exchange '
             + 'is reproduced below in full rather than continued, so read it as the record it is.');
+    }
+    if (opts.independent) {
+        parts.push('\n## You are not the only one answering this\n'
+            + 'Another participant is writing on this at the same moment and neither of you will see '
+            + 'the other before you send. That is deliberate: an independent position is what is '
+            + 'wanted here. Say what you actually think rather than what you expect will be agreed.');
     }
     if (opts.referenced.length) {
         parts.push(`\n## What you are ${opts.intent === 'response' ? 'answering' : 'addressing'}\n`

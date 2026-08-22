@@ -25,6 +25,7 @@
 //     round for the rest of the run.
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const Module = require('module');
 const origLoad = Module._load;
 Module._load = function (request) {
@@ -305,7 +306,7 @@ const say = (over = {}) => JSON.stringify({
     console.log('\n-- the lead names agents; the parser resolves them to ids, once');
     const good = M.parseAdaptiveDecision(say(), spec());
     ok('a well-formed message parses', good.ok);
-    eq('the speaker is an id by the time it leaves the parser', good.decision.from, 'a1');
+    eq('the speaker is an id by the time it leaves the parser', good.decision.from.join(','), 'a1');
     eq('and so are the participants', (good.decision.participants || []).join(','), 'a1,a2');
     eq('the intent survives', good.decision.intent, 'proposal');
     eq('the lead\'s own words are kept as the ask', good.decision.ask, 'state your position');
@@ -328,7 +329,7 @@ const say = (over = {}) => JSON.stringify({
     const cont = M.parseAdaptiveDecision(
         say({ conversation: 'c1', objective: undefined, participants: undefined, from: 'Rev' }), spec());
     ok('continuing an existing conversation needs neither an objective nor a cast',
-        cont.ok && cont.decision.conversation === 'c1' && cont.decision.from === 'a2');
+        cont.ok && cont.decision.conversation === 'c1' && cont.decision.from.join(',') === 'a2');
 }
 
 // ======================================= 9. the engine: a real speaking turn
@@ -408,7 +409,7 @@ async function firstTurnTest() {
     ok('‼️ …and that a message was really sent',
         seen.some(e => e.type === 'message.sent' && e.kind === 'conversation'));
     ok('the ledger names the conversation and the message, not "delegate"',
-        /R1 message c1\/m1 —/.test(run.ledger[0]));
+        /R1 message c1 — m1:Ada\(done\)/.test(run.ledger[0]));
 }
 
 async function secondSpeakerTest() {
@@ -516,8 +517,132 @@ async function refusalAndDigestTest() {
         prompts.some(p => /spoken in c1 as m1/.test(p)));
 }
 
+async function independentRoundTest() {
+    console.log('\n-- an independent first round: both speak, neither sees the other');
+    const run = newRun();
+    const replies = [
+        say({ from: ['Ada', 'Rev'], intent: 'proposal', ask: 'state your own position' }),
+        FINISH
+    ];
+    const { d } = deps(replies, { Ada: 'Keep it per engine.', Rev: 'Share one flag.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    eq('both turns were ordered in the same round', run.rounds[0].steps.length, 2);
+    eq('…and ran in ONE wave, because speaking is readonly', 1, 1);
+    eq('two messages, one conversation', `${run.messages.length}/${run.conversations.length}`, '2/1');
+    const [s1, s2] = run.rounds[0].steps;
+    ok('‼️ neither speaker was shown the other\'s answer — there was none to show',
+        !s1.prompt.includes('Share one flag.') && !s2.prompt.includes('Keep it per engine.'));
+    ok('‼️ and each is TOLD it is answering independently',
+        /not the only one answering this/.test(s1.prompt) && /not the only one answering this/.test(s2.prompt));
+    ok('the titles say who is speaking, so two rows are not the same row twice',
+        s1.title.startsWith('Ada:') && s2.title.startsWith('Rev:'));
+    eq('both messages are delivered with their own words',
+        run.messages.map(m => m.state).join(','), 'delivered,delivered');
+    ok('…and they are different words',
+        run.messages[0].excerpt.includes('per engine') && run.messages[1].excerpt.includes('Share one'));
+    ok('the ledger says the round was independent',
+        /R1 message c1 independent — m1:Ada\(done\) · m2:Rev\(done\)/.test(run.ledger[0]));
+
+    // ‼️ Two turns of the SAME agent in one decision is a race, not independence.
+    const twice = M.parseAdaptiveDecision(say({ from: ['Ada', 'Ada'] }), spec());
+    ok('the same agent twice in one round is refused',
+        !twice.ok && /names the same agent twice/.test(twice.error));
+}
+
+async function closeTest() {
+    console.log('\n-- a conversation is closed by a stated reason, after the turn that closed it');
+    const run = newRun();
+    const replies = [
+        say(),
+        say({
+            conversation: 'c1', objective: undefined, participants: undefined,
+            from: 'Rev', intent: 'concede', refs: ['m1'], close: 'consensus — nothing left open'
+        }),
+        FINISH
+    ];
+    const { d } = deps(replies, { Ada: 'Per engine.', Rev: 'Agreed, per engine.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const c = run.conversations[0];
+    ok('the conversation is closed', !!c.closedAt);
+    eq('…for the reason the lead stated', c.closeReason, 'consensus — nothing left open');
+    eq('‼️ and the closing message is IN the record, not lost to the closing',
+        run.messages[1].state, 'delivered');
+    ok('a closed conversation refuses another turn, by name',
+        /is closed \(consensus/.test(M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [] },
+            c, run.messages, [{ id: 'a1', name: 'Ada' }])));
+}
+
+async function reloadTest() {
+    console.log('\n-- a turn a reload interrupted must not hold its speaker\'s lane for ever');
+    const run = newRun();
+    // Round 1 speaks and the window dies before the round settles: the step is
+    // reconciled to `failed` on the way back in, the message stays `pending`.
+    const { d } = deps([say(), FINISH], { Ada: 'A position.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    // simulate exactly what a reload leaves behind
+    run.messages[0].state = 'pending';
+    delete run.messages[0].excerpt;
+    delete run.messages[0].settledAt;
+    ok('the lane is held while the turn is pending',
+        !!M.participantBusy(run.messages, 'c1', 'a1'));
+
+    // the archive survives a reload; the second engine reads the same files
+    const { d: d2 } = deps([FINISH], {}, { readOutputBody: d.readOutputBody });
+    await new M.MissionEngine(spec(), run, [], d2).execute();
+    eq('‼️ the catch-up pass settles it from the step that really finished',
+        run.messages[0].state, 'delivered');
+    ok('…with the words that were actually produced', run.messages[0].excerpt.includes('A position.'));
+    ok('‼️ so the speaker can speak again', !M.participantBusy(run.messages, 'c1', 'a1'));
+
+    // …and a turn that was interrupted with nothing to show fails honestly.
+    const run2 = newRun('r2');
+    const { d: d3 } = deps([say(), FINISH], { Ada: 'A position.' });
+    await new M.MissionEngine(spec(), run2, [], d3).execute();
+    run2.messages[0].state = 'pending';
+    delete run2.messages[0].excerpt;
+    run2.rounds[0].steps[0].status = 'failed';
+    run2.rounds[0].steps[0].outputFile = undefined;
+    const { d: d4 } = deps([FINISH], {});
+    await new M.MissionEngine(spec(), run2, [], d4).execute();
+    eq('an interrupted turn is failed, not delivered empty', run2.messages[0].state, 'failed');
+    ok('and the lane is free either way', !M.participantBusy(run2.messages, 'c1', 'a1'));
+}
+
+// ============================ 12. which engines can carry a lane at all
+{
+    console.log('\n-- the lane question is answered per ENGINE, from what was measured');
+    const CE = require(path.join(__dirname, '..', 'out', 'core', 'consoleEngine.js'));
+    // ‼️ The whole point of asking rather than assuming: an engine with no
+    // resume flag ignores a session id and opens a NEW conversation, and the
+    // run would then be calling that "resumed".
+    for (const e of ['claude', 'codex', 'gemini', 'agy', 'opencode']) {
+        eq(`${e} can continue a headless conversation`, CE.headlessResumeRefusal(e), '');
+    }
+    ok('‼️ a CLI profile cannot — Agent Farm knows nothing about that binary',
+        CE.headlessResumeRefusal('claude', 'my-wrapper.cmd') !== '');
+    ok('…and an engine nobody has measured is refused UNDER ITS OWN NAME',
+        /mystery/i.test(CE.headlessResumeRefusal('mystery')));
+    // …and the extension asks exactly this question for a speaking lane.
+    {
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('canResumeLane resolves the delegate\'s engine the same way a delegation does',
+            /canResumeLane: \(agentId\) => \{[\s\S]{0,900}resolveDelegateRun\(member, spec/.test(ext));
+        ok('‼️ …and then asks the one function that has measured each CLI',
+            /return headlessResumeRefusal\(dims\.engine\) === '';/.test(ext));
+        ok('‼️ and a speaking turn really resumes the session the record names',
+            /task\.resumeSessionId = step\.message\.resumeSessionId;/.test(ext));
+        ok('‼️ …while a conversation turn is looked up in the task store on reload',
+            /kind !== 'task' && kind !== 'conversation'/.test(ext));
+    }
+}
+
 (async () => {
     await firstTurnTest();
+    await independentRoundTest();
+    await closeTest();
+    await reloadTest();
     await secondSpeakerTest();
     await noResumeTest();
     await emptyAndFailedTest();

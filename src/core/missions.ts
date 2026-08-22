@@ -314,6 +314,11 @@ export interface MissionStep {
         carried: LaneCarry;
         /** the session this turn continues; absent on a new or re-told lane */
         resumeSessionId?: string;
+        /** ‼️ M-19 — this turn ends the conversation, with this stated reason.
+         *  Applied when the turn settles, so the record shows the last thing
+         *  said and then the closing — never a conversation shut before the
+         *  message that closed it exists. */
+        close?: string;
     };
     /**
      * ‼️ M-19 — THE SESSION THE DELEGATE ACTUALLY RAN IN, copied from the task
@@ -620,6 +625,7 @@ export interface PlannerTaskReq {
         messageId: string;
         carried: LaneCarry;
         resumeSessionId?: string;
+        close?: string;
     };
 }
 
@@ -756,12 +762,22 @@ type PlannerDecisionCore =
         conversation?: string;
         objective?: string;
         participants?: string[];
-        from: string;
+        /**
+         * ‼️ ONE SPEAKER, OR SEVERAL SPEAKING INDEPENDENTLY. Several is not a
+         * shortcut for ordering the same turn twice: turns ordered together are
+         * built before any of them has said anything, so none of them can see
+         * another's answer. That is what an independent first round IS, and it
+         * cannot be had by taking two rounds — by the second one the first
+         * message has been delivered and is in the record.
+         */
+        from: string[];
         to: string[];
         intent: MessageIntent;
         refs: string[];
         ask?: string;
         title?: string;
+        /** this turn ends the conversation, and this is the stated reason */
+        close?: string;
     }
     | {
         action: 'evaluate'; thought: string; targets: string[];
@@ -986,12 +1002,25 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
         const allowed = allowedAgents(spec);
         const byName = (raw: string) =>
             allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
-        const speaker = byName(String(o.from ?? o.speaker ?? ''));
-        if (!speaker) {
+        const asked = (Array.isArray(o.from) ? o.from : [o.from ?? o.speaker])
+            .filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim());
+        const speakers = asked.map(byName);
+        if (!asked.length || speakers.some(s => !s)) {
+            const bad = asked.filter(n => !byName(n));
             return {
                 ok: false,
-                error: '"message" needs a "from" — the ONE pool agent that speaks this turn. '
+                error: '"message" needs a "from" — the pool agent that speaks this turn, or several '
+                    + 'of them to have each speak WITHOUT seeing the others\' answer. '
+                    + (bad.length ? `Not in the pool: ${bad.map(n => `"${n}"`).join(', ')}. ` : '')
                     + `The pool is: ${allowed.map(m => m.agentName).join(', ')}`
+            };
+        }
+        const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
+        if (speakerIds.length !== speakers.length) {
+            return {
+                ok: false,
+                error: '"from" names the same agent twice. One agent speaks once per turn — '
+                    + 'ordering it twice in one round would be two turns racing over one record.'
             };
         }
         const intent = String(o.intent ?? '').trim();
@@ -1051,12 +1080,13 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             ...(conversation ? { conversation } : {}),
             ...(objective ? { objective } : {}),
             ...(participants.length ? { participants: participants.map(n => byName(n)!.agentId) } : {}),
-            from: speaker.agentId,
+            from: speakerIds,
             to: list(o.to).map(n => byName(n)!.agentId),
             intent: intent as MessageIntent,
             refs: list(o.refs).slice(0, 20),
             ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
-            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {})
+            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+            ...(typeof o.close === 'string' && o.close.trim() ? { close: o.close.trim().slice(0, 200) } : {})
         });
     }
     // ---- typed task intents: review | compare | revise (M-18) ----
@@ -1574,11 +1604,15 @@ export function ledgerLine(round: MissionRound): string {
     // tell "a3 challenged m2 in c1" from a delegation, or it will order the
     // turn again — and the second copy would be a message nobody answered.
     if (round.action === 'message') {
-        const s = round.steps[0];
-        const link = s?.message;
-        const carried = link && link.carried !== 'new' ? `,${link.carried}` : '';
-        return `R${round.n} message ${link?.conversationId ?? '?'}/${link?.messageId ?? '?'}`
-            + ` — ${s?.agentName ?? '?'}:"${s?.title ?? ''}"(${s?.status ?? '?'}${carried})`
+        const conv = round.steps[0]?.message?.conversationId ?? '?';
+        const turns = round.steps.map(s => {
+            const link = s.message;
+            const carried = link && link.carried !== 'new' ? `,${link.carried}` : '';
+            return `${link?.messageId ?? '?'}:${s.agentName}(${s.status}${carried})`;
+        }).join(' · ');
+        // ‼️ Several turns on one line means they were ordered TOGETHER, which
+        // is the only way to read "these two did not see each other".
+        return `R${round.n} message ${conv}${round.steps.length > 1 ? ' independent' : ''} — ${turns}`
             + (round.rejectedReason ? ` [${round.rejectedReason}]` : '');
     }
     if (round.action === 'ask_user') {
@@ -2141,7 +2175,7 @@ export class MissionEngine {
         run: MissionRun, spec: MissionSpec,
         d: Extract<PlannerDecision, { action: 'message' }>,
         now: number
-    ): { refusal?: string; task?: PlannerTaskReq } {
+    ): { refusal?: string; tasks?: PlannerTaskReq[] } {
         const roster = allowedAgents(spec);
         const nameOf = (id: string) =>
             roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'the lead' : id);
@@ -2161,67 +2195,80 @@ export class MissionEngine {
                 participants: [...new Set(d.participants ?? [])],
                 openedAt: now
             };
-        const refusal = refuseMessage(
-            {
-                conversationId: conv?.id ?? d.conversation ?? '',
-                from: d.from, to: d.to, intent: d.intent, refs: d.refs
-            },
-            conv, run.messages,
-            roster.map(m => ({ id: m.agentId, name: m.agentName })));
-        if (refusal) { return { refusal }; }
+        // ‼️ EVERY SPEAKER IS CHECKED BEFORE ANY OF THEM IS RECORDED. A round
+        // that ordered one turn and refused the other would leave the record
+        // saying the second was never asked for — and the lead, reading a
+        // refusal, would re-order both.
+        for (const from of d.from) {
+            const refusal = refuseMessage(
+                {
+                    conversationId: conv?.id ?? d.conversation ?? '',
+                    from, to: d.to, intent: d.intent, refs: d.refs
+                },
+                conv, run.messages,
+                roster.map(m => ({ id: m.agentId, name: m.agentName })));
+            if (refusal) { return { refusal }; }
+        }
 
         const all = conversationMessages(run.messages, conv!.id);
+        // ‼️ THE RECORD AS IT STANDS BEFORE THIS ROUND. Every speaker of this
+        // turn is built from it, so speakers ordered together cannot see each
+        // other — which is what makes an independent first round independent,
+        // and is not something two consecutive rounds could reproduce.
         const said = all.filter(m => m.state === 'delivered');
-        const mine = said.filter(m => m.from === d.from);
-        const last = mine[mine.length - 1];
-        // ‼️ THE LANE, AND THE THREE HONEST ANSWERS ABOUT IT. A first turn is
-        // `new`. A later turn is `resumed` only when there is a session to
-        // continue AND the delegate's own engine can continue one; otherwise it
-        // is a `handoff` — a fresh session that is TOLD it is reading a record
-        // rather than carrying on. Calling the third case "resumed" is the
-        // failure this distinction exists to prevent.
-        const resumeSessionId = last?.sessionId;
-        const canResume = !!resumeSessionId && (this.deps.canResumeLane?.(d.from) ?? false);
-        const carried: LaneCarry = !last ? 'new' : (canResume ? 'resumed' : 'handoff');
         const referenced = d.refs
             .map(r => said.find(m => m.id === r))
             .filter((m): m is MissionMessage => !!m);
-        // On a resumed lane the speaker is already holding everything up to its
-        // own last turn — sending it again pays for the same tokens twice.
-        const context = carried === 'resumed'
-            ? said.slice(said.findIndex(m => m.id === last!.id) + 1)
-            : said;
-
-        const messageId = newMessageId(run.messages);
-        if (!d.conversation) { run.conversations.push(conv!); }
-        run.messages.push({
-            id: messageId,
-            conversationId: conv!.id,
-            ...(this.lastDecisionId ? { sourceActionId: this.lastDecisionId } : {}),
-            from: d.from,
-            fromName: nameOf(d.from),
-            to: [...d.to],
-            intent: d.intent,
-            refs: [...d.refs],
-            ...(d.ask ? { ask: d.ask } : {}),
-            orderedAt: now,
-            state: 'pending',
-            carried
-        });
         if (!d.conversation) {
+            run.conversations.push(conv!);
             this.deps.trace?.('conversation.opened', {
                 actionId: conv!.id, text: conv!.objective,
                 to: conv!.participants.join(', ')
             });
         }
-        return {
-            task: {
-                agent: nameOf(d.from),
-                title: d.title || `${d.intent} in ${conv!.id}`,
+
+        const tasks: PlannerTaskReq[] = [];
+        for (const from of d.from) {
+            const mine = said.filter(m => m.from === from);
+            const last = mine[mine.length - 1];
+            // ‼️ THE LANE, AND THE THREE HONEST ANSWERS ABOUT IT. A first turn
+            // is `new`. A later turn is `resumed` only when there is a session
+            // to continue AND the delegate's own engine can continue one;
+            // otherwise it is a `handoff` — a fresh session that is TOLD it is
+            // reading a record rather than carrying on. Calling the third case
+            // "resumed" is the failure this distinction exists to prevent.
+            const resumeSessionId = last?.sessionId;
+            const canResume = !!resumeSessionId && (this.deps.canResumeLane?.(from) ?? false);
+            const carried: LaneCarry = !last ? 'new' : (canResume ? 'resumed' : 'handoff');
+            // On a resumed lane the speaker is already holding everything up to
+            // its own last turn — sending it again pays for the same tokens.
+            const context = carried === 'resumed'
+                ? said.slice(said.findIndex(m => m.id === last!.id) + 1)
+                : said;
+            const messageId = newMessageId(run.messages);
+            run.messages.push({
+                id: messageId,
+                conversationId: conv!.id,
+                ...(this.lastDecisionId ? { sourceActionId: this.lastDecisionId } : {}),
+                from,
+                fromName: nameOf(from),
+                to: [...d.to],
+                intent: d.intent,
+                refs: [...d.refs],
+                ...(d.ask ? { ask: d.ask } : {}),
+                orderedAt: now,
+                state: 'pending',
+                carried
+            });
+            tasks.push({
+                agent: nameOf(from),
+                title: (d.from.length > 1 ? `${nameOf(from)}: ` : '')
+                    + (d.title || `${d.intent} in ${conv!.id}`),
                 prompt: buildSpeakerPrompt({
-                    conversation: conv!, intent: d.intent, speakerName: nameOf(d.from),
+                    conversation: conv!, intent: d.intent, speakerName: nameOf(from),
                     referenced, context, ...(d.ask ? { ask: d.ask } : {}),
-                    goal: spec.goal, carried, nameOf
+                    goal: spec.goal, carried, nameOf,
+                    independent: d.from.length > 1
                 }),
                 // ‼️ SPEAKING DOES NOT WRITE. A turn produces a message, and
                 // that is why participants can speak at the same time at all —
@@ -2232,10 +2279,12 @@ export class MissionEngine {
                 kind: 'conversation',
                 message: {
                     conversationId: conv!.id, messageId, carried,
-                    ...(canResume ? { resumeSessionId: resumeSessionId! } : {})
+                    ...(canResume ? { resumeSessionId: resumeSessionId! } : {}),
+                    ...(d.close ? { close: d.close } : {})
                 }
-            }
-        };
+            });
+        }
+        return { tasks };
     }
 
     /**
@@ -2250,17 +2299,34 @@ export class MissionEngine {
      * names: an empty "response" would mark a challenge answered by a turn that
      * said nothing, and the conversation would read as resolved.
      */
-    private settleMessages(run: MissionRun, round: MissionRound, now: number): void {
-        for (const step of round.steps) {
+    private settleMessages(run: MissionRun, steps: readonly MissionStep[], now: number): void {
+        for (const step of steps) {
             const link = step.message;
             if (!link) { continue; }
             const msg = (run.messages ?? []).find(m => m.id === link.messageId);
             if (!msg || msg.state !== 'pending') { continue; }
+            // ‼️ A TURN STILL IN FLIGHT IS NOT SETTLED. The catch-up pass at
+            // resume walks every round, and the only steps it must leave alone
+            // are the ones the reconciliation could not account for yet —
+            // settling those would invent an outcome.
+            if (step.status === 'queued' || step.status === 'running') { continue; }
             msg.carried = link.carried;
             msg.settledAt = now;
             if (step.taskId) { msg.taskId = step.taskId; }
             if (step.runSessionId) { msg.sessionId = step.runSessionId; }
             if (step.outputFile) { msg.contentRef = step.outputFile; }
+            // ‼️ A CONVERSATION IS CLOSED BY A STATED REASON, and only after the
+            // message that closed it exists. "Nothing has been said for a
+            // while" is not a closing; a reader three months later needs the
+            // sentence, and `refuseMessage` needs a closed conversation to be
+            // closed for something.
+            if (link.close) {
+                const conv = (run.conversations ?? []).find(c => c.id === link.conversationId);
+                if (conv && !conv.closedAt) {
+                    conv.closedAt = now;
+                    conv.closeReason = link.close;
+                }
+            }
             const body = step.outputFile ? this.deps.readOutputBody(step.outputFile) : '';
             const text = (body || step.resultText || '').trim();
             if (step.status === 'done' && text) {
@@ -2308,6 +2374,19 @@ export class MissionEngine {
      *  interrupted run; fresh runs start with the briefing. */
     async execute(initialMsg?: string): Promise<void> {
         const { spec, run, deps } = this;
+        // ‼️ M-19 — A MESSAGE LEFT PENDING BY A RELOAD IS SETTLED FIRST.
+        //
+        // A speaking turn is settled at the end of the round that ordered it —
+        // and a window that closes mid-round never reaches that line. The step
+        // is reconciled on the way back in (X-45), but the MESSAGE it was
+        // ordered as would stay `pending` for the rest of the run, and pending
+        // is what holds a participant's lane: that agent could never speak in
+        // that conversation again, and the lead would be refused every time it
+        // tried without ever being told a real reason. One catch-up pass, over
+        // work that is already settled, before anything else happens.
+        if (run.messages?.some(m => m.state === 'pending')) {
+            this.settleMessages(run, run.rounds.flatMap(r => r.steps), deps.now());
+        }
         let roundMsg: string | undefined = initialMsg;
         let parseRetried = false;
         let guardNudged = false;
@@ -2679,7 +2758,7 @@ export class MissionEngine {
                     roundMsg = `${spoken.refusal}\nReply with ONLY the JSON decision object.`;
                     continue;
                 }
-                requested = [spoken.task!];
+                requested = spoken.tasks!;
             } else if (d.action === 'delegate' || d.action === 'parallel') {
                 requested = d.tasks;
             } else {
@@ -2823,7 +2902,7 @@ export class MissionEngine {
             // A speaking turn's step is settled by the wave; the MESSAGE it was
             // ordered as is settled here, so the digest the lead reads a few
             // lines below is already the record rather than a promise of one.
-            this.settleMessages(run, round, deps.now());
+            this.settleMessages(run, round.steps, deps.now());
             run.totalCostUSD += round.steps.reduce((a, s) => a + (s.costUSD ?? 0), 0);
             // ‼️ …and the tokens, which is the half that moves on a plan-billed
             // delegate. Without this a wave of Codex steps advanced no limit at
