@@ -264,7 +264,7 @@ import {
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
-    ExternalLookup,
+    ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
@@ -3277,6 +3277,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return t ? { status: t.status, costUSD: t.costUSD, tokens: t.tokens, outputFile: t.outputFile } : undefined;
     };
 
+    /**
+     * ‼️ M-18 — WHAT THE STORES SAY ABOUT ONE STEP, whatever kind it is.
+     *
+     * The trace-driven reconciliation looks work up by `kind` + `refId` because
+     * that is what a journal records. The RESUME path has the step itself, which
+     * carries its own ref under a different name per kind — and it used to read
+     * `taskId` and nothing else. Same three stores, same one reader, so the two
+     * paths cannot come to different conclusions about the same step.
+     */
+    const missionStepRecord = (step: MissionStep): ExternalRecord | undefined =>
+        step.missionRunId ? missionExternalLookup('mission', step.missionRunId)
+            : step.workflowRunId ? missionExternalLookup('workflow', step.workflowRunId)
+                : step.taskId ? missionExternalLookup('task', step.taskId)
+                    : undefined;
+
+    /** The words all three stores use for "this is over". `stopped` is a
+     *  chain's own word for what a task calls `cancelled`. */
+    const SETTLED_ON_RESUME = new Set(['done', 'failed', 'cancelled', 'stopped']);
+
     const missionReloadNotes = new Map<string, Reconciliation>();
     for (const r of missionStore.runs) {
         const wasLive = r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user';
@@ -4066,19 +4085,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         run.waitedMs = (run.waitedMs ?? 0) + Math.max(0, Date.now() - lastActivity);
         const last = run.rounds[run.rounds.length - 1];
         let initialMsg: string | undefined;
-        if (last && last.action === 'delegate' && last.steps.length && !last.rejectedReason) {
-            // whatever was in flight when the window died: settle from task records
+        // ‼️ M-18 — EVERY ROUND THAT PUT WORK OUT, not only a `delegate` one.
+        //
+        // This asked `last.action === 'delegate'`, which was the whole
+        // vocabulary when it was written. It is not any more: a round can be
+        // `parallel`, `review`, `compare`, `revise`, `run_workflow` or
+        // `run_mission`, and every one of those was skipped here — so the run
+        // resumed with its last round's steps frozen at "running" for ever and
+        // the lead re-briefed as though the round had never happened, which is
+        // the one way to make it order the same work twice. Having steps IS the
+        // condition; the actions that produce none (finish, replan, ask_user)
+        // are excluded by that and need no list of their own.
+        if (last && last.steps.length && !last.rejectedReason) {
+            // whatever was in flight when the window died: settle from the store
+            // that actually ran it — a chain's state is the workflow engine's
+            // answer to give and a child's is its own record.
             for (const step of last.steps) {
-                const t = step.taskId ? taskManager.tasks.find(x => x.id === step.taskId) : undefined;
-                if (t && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')) {
-                    step.status = t.status;
-                    step.costUSD = t.costUSD;
-                    step.tokens = t.tokens;
-                    step.outputFile = t.outputFile;
+                const rec = missionStepRecord(step);
+                const settled = rec && SETTLED_ON_RESUME.has(String(rec.status).toLowerCase());
+                if (rec && settled) {
+                    step.status = String(rec.status).toLowerCase() === 'stopped'
+                        ? 'cancelled' : rec.status as MissionStep['status'];
+                    step.costUSD = rec.costUSD;
+                    step.tokens = rec.tokens;
+                    step.outputFile = rec.outputFile;
+                    if (step.missionRunId && !step.resultText) {
+                        const cr = missionStore.run(step.missionRunId);
+                        if (cr) { step.resultText = childResultText(cr); }
+                    }
+                    if (step.status === 'failed' && !step.failure) {
+                        step.failure = missionFailure('delegate-failed', step, step.note);
+                    }
                 } else if (step.status === 'running' || step.status === 'queued') {
                     step.status = 'failed';
                     step.note = 'interrupted by reload';
-                    if (t) { step.outputFile = t.outputFile; }
+                    if (rec?.outputFile) { step.outputFile = rec.outputFile; }
+                    // Money already spent is finished work — see the startup
+                    // reconciliation. The fate is unknown; the figures are not.
+                    if (rec?.costUSD !== undefined) { step.costUSD = rec.costUSD; }
+                    if (rec?.tokens !== undefined) { step.tokens = rec.tokens; }
                     step.failure = missionFailure('interrupted', step, step.note);
                 }
             }

@@ -167,9 +167,27 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
     ok('the recovered branch restores the child\'s verdict',
         /if \(step\.missionRunId && !step\.resultText\) \{/.test(ext)
         && /step\.resultText = childResultText\(cr\);/.test(ext));
-    eq('‼️ and the verdict sentence has exactly ONE author, so the recovered '
-        + 'wording cannot drift from the live one',
-        (ext.match(/childResultText\(/g) || []).length, 2);
+    // ‼️ THE POINT IS ONE AUTHOR, NOT ONE CALLER. Three paths write a child's
+    // result — the live observation loop, the startup reconciliation and the
+    // resume — and every one of them must produce the identical sentence. What
+    // would be the bug is any of them composing it inline again.
+    ok('every path that reports a child calls the one composer',
+        (ext.match(/childResultText\(/g) || []).length >= 3);
+    ok('‼️ …and none of them builds the sentence by hand any more',
+        !/`Child objective \$\{/.test(ext));
+
+    console.log('\n-- the RESUME path settles every kind too, not only a delegate round');
+    ok('‼️ having steps is the condition, not the round\'s action being "delegate"',
+        /if \(last && last\.steps\.length && !last\.rejectedReason\) \{/.test(ext));
+    ok('…and the step is looked up through the one reader that knows its kind',
+        /const missionStepRecord = \(step: MissionStep\): ExternalRecord \| undefined =>/.test(ext)
+        && /const rec = missionStepRecord\(step\);/.test(ext));
+    ok('…which asks a chain, a child and a task in that order of specificity',
+        /step\.missionRunId \? missionExternalLookup\('mission'/.test(ext)
+        && /step\.workflowRunId \? missionExternalLookup\('workflow'/.test(ext)
+        && /step\.taskId \? missionExternalLookup\('task'/.test(ext));
+    ok('…and a chain\'s "stopped" is read as cancelled here too',
+        /SETTLED_ON_RESUME = new Set\(\['done', 'failed', 'cancelled', 'stopped'\]\)/.test(ext));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

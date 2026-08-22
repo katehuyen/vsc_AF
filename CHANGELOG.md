@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.224.0 — M-18: resuming a run settles every kind of round, not only a delegation (2026-08-22)
+
+**A resumed mission was freezing its last round for ever.** The resume path asked `action === 'delegate'` — the whole vocabulary when it was written, and not any more. A round that was `parallel`, `review`, `compare`, `revise`, `run_workflow` or `run_mission` was skipped entirely: its steps stayed at "running" with nothing ever settling them, and the lead was re-briefed as though the round had never happened — which is the one way to make it order the same work a second time. Having steps is now the condition; the actions that produce none are excluded by that and need no list of their own.
+
+**And a step is settled by the store that actually ran it.** Inside the loop, only the task store was consulted, so a chain or a child objective that had finished while the window was gone was written off as interrupted. Both reload paths — the one at startup and the one at resume — now go through one reader that knows which store a step belongs to, so the two cannot reach different conclusions about the same step. `stopped`, a chain's own word for what a task calls `cancelled`, is read as settled on both. A child hands back its verdict here too, from the same composer the live loop uses.
+
 ## 3.223.0 — M-18: the lead is told which project it is planning for (2026-08-22)
 
 **Every delegation a mission makes has carried the project. The lead never did** — which is the wrong way round: a delegate does one prompt's worth of work and the lead decides what the whole run is for. It planned against the goal sentence alone, with no idea what the project is, what is already open on it, or which document holds which role.
