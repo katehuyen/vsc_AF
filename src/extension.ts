@@ -4087,6 +4087,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const missionDepsFor = (spec: MissionSpec, run: MissionRun): MissionEngineDeps => ({
         runPlanner: runMissionPlanner(spec),
         delegateWave: missionDelegateWave(spec),
+        // ‼️ X-46b — the ceiling reaches the processes. Narrower than
+        // `cancelMission` on purpose: that stops the ENGINE too, and the run has
+        // an honest ending of its own to write once the wave has settled.
+        cancelWave: (run, steps) => {
+            for (const step of steps) {
+                if (step.missionRunId) { cancelMission(step.missionRunId); continue; }
+                if (step.workflowRunId) {
+                    for (const t of taskManager.tasks) {
+                        if (t.workflowRunId === step.workflowRunId
+                            && (t.status === 'running' || t.status === 'queued')) {
+                            taskManager.cancelTask(t);
+                        }
+                    }
+                    continue;
+                }
+                if (!step.taskId) { continue; }
+                const t = taskManager.tasks.find(x => x.id === step.taskId);
+                if (t && (t.status === 'running' || t.status === 'queued')) { taskManager.cancelTask(t); }
+            }
+        },
         readOutputBody: missionReadBody,
         requestApproval: missionRequestApproval(spec),
         askUser: missionAskUser(spec),

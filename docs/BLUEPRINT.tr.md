@@ -1868,6 +1868,31 @@ Kural çağıranın içinden çıkıp `src/core/missions.ts` içinde
 `normalizeMissionLimits()` oldu, çünkü bir kapanışın içindeki kuralı hiçbir test
 tutamaz. `test/test_mission_limits.js` onu tutuyor.
 
+### Geçilebilen bir tavan tavan değildir (3.233.0) {#mission-wave-guard}
+
+Yukarıdaki her sınır PLANLAYICI SINIRINDA ölçülüyordu — turun başında, önceki
+dalga oturmuşken ve uçan hiçbir şey yokken. Asılı kalmış bir dalganın hiç
+ulaşmadığı tek an da orasıdır. Gerçek bir koşuda ölçüldü (`mt4gqn99mxam3`): tek
+bir delege 45+ dakika cevap vermeden kaldı, koşu 50 dakikalık tavanını geçti,
+70. dakikada hâlâ `running` idi ve elle durdurulmak zorunda kaldı. Rakam 50
+diyordu, koşu 70 sürdü; bu bir tavan değil, tavan görüntüsüdür — M-11'in bütçe
+için söylediğinin aynısı.
+
+Bu yüzden uçan dalga da ölçülüyor; kaba bir zamanlayıcıyla (`WAVE_GUARD_MS`,
+15 sn — cevap vermeyi kesmiş iş için bir emniyet ağı, kronometre değil). Aynı
+`guardReason(remainingBudget(…))` çağrısını koşuyor, dolayısıyla maliyet ve
+token bedavaya geliyor: bir dalga hiç geri dönmeden ikisini de harcayabilir.
+
+‼️ **Yapmadığı şey çekip gitmek.** Yere bırakılmış bir promise, kimsenin asla
+sahiplenmeyeceği gerçek süreçleri çalışır hâlde bırakır; bu yüzden koruma bir
+insanın isteyeceği iptalin aynısını istiyor — dalganın görevlerini, çocuk
+hedeflerini ve zincirlerini durduran ama MOTORU durdurmayan `cancelWave` ile —
+ve sonra dalganın oturmasını yine de bekliyor. Adımlar gerçek bir sonuçla,
+defter gerçek bir maliyetle dönüyor ve oturmamış her adım *"stopped by the
+mission ceiling — …"* cümlesini taşıyor. Koşu, tavanı adıyla anan `partial`
+hükümle `hard-limit` olarak kapanıyor; bir elin yaptığını iddia edecek
+`cancelled` ile değil.
+
 ### Model kutusu motorun kendisine sorar (3.103.0) {#engine-models}
 
 Motor ekseni indi ama **yanındaki kutu inmedi**: hangi motor seçilirse seçilsin

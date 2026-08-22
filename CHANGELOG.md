@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.233.0 — A ceiling you can pass is not a ceiling (2026-08-22)
+
+### The wall clock now binds a wave that stopped answering
+Every mission limit was measured at the PLANNER boundary — the top of a round,
+where the previous wave has settled. That is the one moment a hung wave never
+reaches. Measured on a real run (`mt4gqn99mxam3`): one delegate sat 45+ minutes
+without answering, the run went past its 50-minute ceiling, was still `running`
+at minute 70, and had to be cancelled by hand. The figure said 50 and the run
+took 70 — that is not a cap, it is the appearance of one.
+
+The wave in flight is now measured on a coarse timer (15 s) against the SAME
+`guardReason(remainingBudget(…))` the planner boundary runs, so cost and tokens
+come along for free: a wave can spend both without ever returning either.
+
+‼️ **It does not walk away from the wave.** A promise dropped on the floor leaves
+real processes running that nothing will ever claim, so the guard asks for the
+same cancel a person would — a new `cancelWave` dep that stops the wave's tasks,
+child objectives and chains but NOT the engine — and then still waits for the
+wave to settle. Each unsettled step carries "stopped by the mission ceiling — …",
+and the run ends `hard-limit` with a `partial` verdict naming the ceiling rather
+than the `cancelled` that would claim a hand did it.
+
 ## 3.232.0 — A setting that vanishes is not a setting (2026-08-22)
 
 ### The one key VS Code drops, and the file that answers for it

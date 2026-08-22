@@ -174,6 +174,54 @@ function makeDeps(replies) {
     ok('…and it ends because the planner said so, not because a cap fired',
         r.result && r.result.summary === 'twelve rounds later');
 
+    // ---------- ‼️ X-46b: THE CEILING REACHES A WAVE THAT STOPPED ANSWERING ----------
+    // Measured on a real run: one delegate sat 45+ minutes without answering, the
+    // run went past its 50-minute ceiling, was still `running` at minute 70 and
+    // had to be stopped by hand. Every limit was checked at the planner boundary,
+    // which is the one moment a hung wave never reaches.
+    {
+        let cancelled = null;
+        let releaseWave = null;
+        let t = 0;
+        const deps = {
+            runPlanner: async () => ({
+                ok: true,
+                raw: JSON.stringify({
+                    action: 'delegate',
+                    tasks: [{ agent: 'coder', title: 'hangs', prompt: 'sit there and never answer' }]
+                }),
+                sessionId: 's', costUSD: 0.1
+            }),
+            // A delegate that never comes back on its own — it settles only when
+            // something actually cancels it, which is the whole of the item.
+            delegateWave: (_run, steps) => new Promise(res => {
+                releaseWave = () => {
+                    for (const st of steps) { st.status = 'cancelled'; st.costUSD = 0.2; }
+                    res();
+                };
+            }),
+            cancelWave: (_run, steps, reason) => { cancelled = { n: steps.length, reason }; releaseWave(); },
+            waveGuardMs: 5,
+            readOutputBody: () => '',
+            requestApproval: async () => true,
+            askUser: async () => 'yes',
+            onUpdate: () => { },
+            now: () => (t += 30_000)
+        };
+        const r = run();
+        const limits = N({ maxRounds: 0, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 10, maxParallel: 1 });
+        await new M.MissionEngine(spec(limits), r, [{ name: 'coder' }], deps).execute();
+        ok('a wave that stopped answering is cut by the wall clock', !!cancelled);
+        ok('…and the cancel is ASKED FOR — the promise is never dropped on the floor',
+            !!cancelled && cancelled.n === 1 && /time limit/.test(cancelled.reason || ''));
+        ok('the run ends as a hard limit, not as a cancel somebody made',
+            r.status === 'failed' && !!r.result
+            && r.result.stopReason === 'hard-limit' && r.result.verdict === 'partial');
+        ok('…and the run names the ceiling that cut it', /time limit/.test(r.note || ''));
+        ok('the step says which ceiling stopped it, on the row the reader looks at',
+            r.rounds[0].steps.some(st => /stopped by the mission ceiling/.test(st.note || '')));
+    }
+
     // ---------- the surfaces say it too ----------
     {
         const media = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
@@ -184,6 +232,10 @@ function makeDeps(replies) {
         ok('a ceiling of 0 is drawn as ∞, never as a spent budget',
             /const capN = /.test(media) && /const capUsd = /.test(media)
             && /capN\(sp\.limits\.maxRounds\)/.test(media));
+        const core = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'missions.ts'), 'utf8');
+        ok('‼️ every wave in the engine is measured while it is still flying',
+            (core.split('await deps.delegateWave(').length - 1) === 1
+            && /private async runWave\(/.test(core));
         const tree = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'missionsTree.ts'), 'utf8');
         ok('the tree row reads R3/∞ rather than R3/0', /maxRounds > 0 \? String\(spec\.limits\.maxRounds\) : '∞'/.test(tree));
     }

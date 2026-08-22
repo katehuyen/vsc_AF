@@ -2012,6 +2012,17 @@ export interface MissionEngineDeps {
      *  fills each step's taskId/status/costUSD/outputFile. */
     delegateWave(run: MissionRun, steps: MissionStep[]): Promise<void>;
     /**
+     * ‼️ X-46b — STOP THE WORK IN FLIGHT WITHOUT STOPPING THE ENGINE. A ceiling
+     * reached mid-wave has to reach the processes, and `cancel()` cannot do it:
+     * that ends the run as `cancelled`, which is a different and untrue story
+     * about why it stopped. Optional, because a harness whose wave always
+     * settles never has anything to stop.
+     */
+    cancelWave?(run: MissionRun, steps: MissionStep[], reason: string): void;
+    /** How often a wave in flight is measured against the ceilings, in ms.
+     *  Only a test has any reason to shorten it. */
+    waveGuardMs?: number;
+    /**
      * ‼️ WHAT THE DELEGATE SAID, from its archive (fail-soft '').
      *
      * The task id travels with the file because the answer is ENGINE-SHAPED: an
@@ -2100,6 +2111,11 @@ export interface MissionEngineDeps {
  */
 export const MAX_MISSION_DEPTH = 3;
 
+/** How often a wave in flight is measured against the mission's ceilings. Far
+ *  coarser than the ceilings themselves — this is a backstop for work that has
+ *  stopped answering, not a stopwatch. */
+export const WAVE_GUARD_MS = 15_000;
+
 /** Absolute ceiling on planner calls per run: rounds + parse retries + guard
  *  nudges can never spin past this, whatever the planner does. */
 function hardCallCap(spec: MissionSpec): number {
@@ -2163,6 +2179,56 @@ export class MissionEngine {
     }
 
     cancel(): void { this.cancelRequested = true; }
+
+    /**
+     * ‼️ X-46b — A CEILING YOU CAN PASS IS NOT A CEILING.
+     *
+     * Every mission limit used to be measured at the PLANNER boundary, which is
+     * the one moment a hung wave never reaches. Measured on a real run: a single
+     * delegate sat 45+ minutes without answering, the run went past its
+     * 50-minute ceiling, was still `running` at minute 70, and had to be stopped
+     * by hand. The wall clock is the ceiling that keeps moving while nothing
+     * else does — but cost and tokens ride along for free here, because a wave
+     * can spend both without ever returning either.
+     *
+     * What this does NOT do is walk away from the wave. A promise dropped on the
+     * floor leaves real processes running that nothing will ever claim, so it
+     * asks for the same cancel a person would and then still waits for the wave
+     * to settle: the steps come back with a real outcome, the ledger with a real
+     * cost, and the step says which ceiling cut it.
+     */
+    private async runWave(run: MissionRun, steps: MissionStep[]): Promise<string | null> {
+        const { spec, deps } = this;
+        let cut: string | null = null;
+        const timer = setInterval(() => {
+            if (cut) { return; }
+            const reason = guardReason(remainingBudget(spec, run, deps.now()));
+            if (!reason) { return; }
+            cut = reason;
+            for (const s of steps) {
+                // Anything the wave has not settled — running, queued, or held
+                // behind a ceiling of its own — carries the reason it stopped.
+                if (s.status !== 'done' && s.status !== 'failed' && s.status !== 'cancelled') {
+                    s.note = `stopped by the mission ceiling — ${reason}`;
+                }
+            }
+            this.setNow(`stopping the round — ${reason}`);
+            deps.onUpdate(run);
+            deps.cancelWave?.(run, steps, reason);
+        }, deps.waveGuardMs ?? WAVE_GUARD_MS);
+        try { await deps.delegateWave(run, steps); } finally { clearInterval(timer); }
+        return cut;
+    }
+
+    /** The honest ending for a ceiling reached mid-wave: `hard-limit` naming the
+     *  ceiling, never the `cancelled` that would claim a hand did it. */
+    private endAtCeiling(reason: string): void {
+        this.end('failed', {
+            verdict: 'partial',
+            summary: `Stopped in the middle of a round: ${reason}. The delegations in flight were cancelled.`,
+            stopReason: 'hard-limit'
+        }, reason);
+    }
     /** Sets the pause flag and shows it immediately (pausePending) — the run
      *  actually pauses before the NEXT planner round; the current activity
      *  finishes first. unpause() withdraws a not-yet-effective request. */
@@ -2951,8 +3017,9 @@ export class MissionEngine {
                 run.status = 'running';
                 this.setNow(`round ${round.n}: ${d.reviewer} is reviewing`);
                 deps.onUpdate(run);
-                await deps.delegateWave(run, round.steps);
+                const cutReview = await this.runWave(run, round.steps);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
+                if (cutReview) { this.endAtCeiling(cutReview); return; }
                 run.totalCostUSD += reviewStep.costUSD ?? 0;
                 run.totalTokens = (run.totalTokens ?? 0) + (reviewStep.tokens ?? 0);
                 // ‼️ A REVIEW THAT CANNOT BE READ SAYS NOTHING ABOUT THE WORK.
@@ -3261,9 +3328,10 @@ export class MissionEngine {
                 this.setNow(`round ${round.n}: running ${steps.map(s => s.agentName).join(' + ')}`
                     + (waves.length > 1 ? ` (wave ${w + 1}/${waves.length})` : ''));
                 deps.onUpdate(run);
-                await deps.delegateWave(run, steps);
+                const cut = await this.runWave(run, steps);
                 deps.onUpdate(run);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
+                if (cut) { this.endAtCeiling(cut); return; }
             }
             // ‼️ M-19 — BEFORE THE LEDGER AND BEFORE THE LEAD IS TOLD ANYTHING.
             // A speaking turn's step is settled by the wave; the MESSAGE it was
