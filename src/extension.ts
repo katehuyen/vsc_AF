@@ -4314,6 +4314,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    /**
+     * ‼️ M-19/M-20 — A PARTICIPANT IS A NAME, AND THE ID TRAVELS BESIDE IT.
+     *
+     * A cast is stored by agent id, which on this fleet is a folder path
+     * (`d:/zone/agent/ajanlar/asistan`). That is the right handle — it survives a
+     * rename, and it is what the next call has to pass back — but it is not an
+     * answer to "who spoke". Three ops handed a reader the path and nothing
+     * else: `missions.status` for a conversation's participants and a council's
+     * chair and members, and `missions.conversation` for the addressee of every
+     * message. So both go out now, id and name, from ONE resolver — a second
+     * copy of this lookup is how one op quietly starts disagreeing with another
+     * about who was in the room. `lead` is a role rather than an agent and
+     * resolves through the spec; an id nothing matches falls back to itself,
+     * because an agent that has since left the fleet is still who spoke.
+     */
+    const missionCastName = (r: MissionRun, id: string): string => (id === 'lead'
+        ? (r.specId && missionStore.spec(r.specId)?.leadAgentName) || 'the lead'
+        : agents.find(a => a.id === id)?.name ?? id);
+
     const cancelMission = (runId: string): void => {
         const run = missionStore.run(runId);
         if (!run) { return; }
@@ -5672,6 +5691,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         const dg = conversationDigest(c, r.messages ?? []);
                         return {
                             id: c.id, objective: c.objective, participants: c.participants,
+                            participantNames: c.participants.map(p => missionCastName(r, p)),
                             messages: dg.total, open: dg.open,
                             closed: c.closedAt ? (c.closeReason || 'closed') : null
                         };
@@ -5683,7 +5703,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...((r.councils ?? []).length ? {
                         councils: (r.councils ?? []).map(k => ({
                             id: k.id, question: k.question, conversation: k.conversationId,
-                            chair: k.chair, members: k.members,
+                            chair: k.chair, chairName: missionCastName(r, k.chair),
+                            members: k.members,
+                            memberNames: k.members.map(m => missionCastName(r, m)),
                             turns: councilTurns(r.messages ?? [], k.conversationId),
                             maxTurns: k.maxTurns,
                             votes: (k.votes ?? []).length,
@@ -5718,12 +5740,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : 'This run has held no conversations.');
                 return list.map(c => ({
                     id: c.id, objective: c.objective, participants: c.participants,
+                    participantNames: c.participants.map(p => missionCastName(r, p)),
                     openedAt: c.openedAt, closedAt: c.closedAt ?? null,
                     closeReason: c.closeReason ?? null,
                     open: openThreads(r.messages ?? [], c.id).map(m => m.id),
                     messages: conversationMessages(r.messages ?? [], c.id).map(m => ({
                         id: m.id, from: m.from, fromName: m.fromName ?? null,
-                        to: m.to, intent: m.intent, refs: m.refs,
+                        to: m.to, toNames: m.to.map(x => missionCastName(r, x)),
+                        intent: m.intent, refs: m.refs,
                         state: m.state, carried: m.carried ?? null,
                         text: m.excerpt ?? null, note: m.note ?? null,
                         taskId: m.taskId ?? null, sessionId: m.sessionId ?? null,
@@ -5744,7 +5768,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '‼️ `votes` is what the members SAID, never a verdict on a success criterion — a vote '
                 + 'whose choice could not be read from the voter\'s own words is `unclear` rather than '
                 + 'resolved into the likeliest option, and a TIE is reported as a tie. Only '
-                + '`missions.status` → `criteria` judges the objective. Omit `council` for every one of '
+                + '`missions.status` → `criteria` judges the objective. Every participant comes back '
+                + 'TWICE — `chair`/`members` are agent ids (the handle to pass back) and '
+                + '`chairName`/`memberNames` are who that is. Omit `council` for every one of '
                 + 'the run. args: id (run id), council? (k1, k2…)',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
@@ -5755,9 +5781,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(list.length, wanted
                     ? `No council "${wanted}" in this run.`
                     : 'This run has held no councils.');
-                const nameOf = (id: string) => (id === 'lead'
-                    ? (r.specId && missionStore.spec(r.specId)?.leadAgentName) || 'the lead'
-                    : agents.find(a => a.id === id)?.name ?? id);
+                const nameOf = (id: string) => missionCastName(r, id);
                 return list.map(k => {
                     const t = tallyVotes(k);
                     const call = chairCall(k, r.messages ?? []);

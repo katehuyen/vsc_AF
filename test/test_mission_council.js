@@ -353,11 +353,36 @@ async function closeTest() {
         /\.\.\.\(\(r\.councils \?\? \[\]\)\.length \? \{/.test(ext));
 }
 
+
+// ---------- ‼️ A PARTICIPANT IS A NAME, AND THE ID TRAVELS BESIDE IT ----------
+// A cast is stored by agent id, which on a real fleet is a folder path. That is
+// the right handle and the wrong answer to "who spoke": three ops handed a
+// reader `d:/zone/agent/ajanlar/asistan` and nothing else. Measured on a real
+// run (mt4gqn99mxam3) before it was fixed.
+function castNameTest() {
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('there is exactly ONE cast-name resolver, so two ops cannot disagree',
+        (ext.split('const missionCastName = ').length - 1) === 1
+        && (ext.split("agents.find(a => a.id === id)?.name ?? id").length - 1) === 1);
+    ok('…and the council op uses it rather than keeping its own copy',
+        /const nameOf = \(id: string\) => missionCastName\(r, id\);/.test(ext));
+    ok('a status conversation says who is in it, not only which paths',
+        /participantNames: c\.participants\.map\(p => missionCastName\(r, p\)\)/.test(ext));
+    ok('a status council names its chair and its members',
+        /chairName: missionCastName\(r, k\.chair\)/.test(ext)
+        && /memberNames: k\.members\.map\(m => missionCastName\(r, m\)\)/.test(ext));
+    ok('and a transcript names who each message was addressed TO',
+        /toNames: m\.to\.map\(x => missionCastName\(r, x\)\)/.test(ext));
+    ok('‼️ the id is still there beside the name — it is what the next call passes back',
+        /chair: k\.chair, chairName:/.test(ext) && /to: m\.to, toNames:/.test(ext));
+}
+
 (async () => {
     await openTest();
     await chairTest();
     await capTest();
     await closeTest();
+    castNameTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

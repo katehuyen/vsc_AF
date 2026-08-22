@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.234.0 — A participant is a name, and the id travels beside it (2026-08-22)
+
+### Three ops handed a reader a folder path where a person belonged
+A cast is stored by agent id, which on a real fleet is a folder path
+(`d:/zone/agent/ajanlar/asistan`). That is the right HANDLE — it survives a
+rename and it is what the next call has to pass back — but it is not an answer to
+"who spoke". Measured on a real run: `missions.status` reported a conversation's
+`participants` and a council's `chair`/`members` as bare paths, and
+`missions.conversation` named the speaker of every message and then said the
+addressee in paths.
+
+Both go out now, id **and** name, from ONE resolver — `missions.council` had the
+only copy of that lookup and now shares it, because a second copy is how one op
+quietly starts disagreeing with another about who was in the room. New fields:
+`participantNames` (status + conversation), `chairName` and `memberNames`
+(status; `missions.council` already had them), `toNames` on every message.
+`lead` is a role rather than an agent and resolves through the spec; an id
+nothing matches falls back to itself, because an agent that has since left the
+fleet is still who spoke.
+
 ## 3.233.0 — A ceiling you can pass is not a ceiling (2026-08-22)
 
 ### The wall clock now binds a wave that stopped answering
