@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.220.0 — M-18: a delegation is a launch, so it resolves its dimensions like one (2026-08-22)
+
+**The same agent behaved differently depending on who asked.** Open agent `X` from Agent Farm and it runs on the model and effort you configured for it — its own default for that engine, then your fleet defaults. Hand the same agent the same work through a **mission** and none of that applied: a delegation read three fields off the team member and stopped there, so a member you left blank ran on the CLI's raw built-in default. That is the mystery the per-agent, per-engine defaults were built to end, restated one surface over. A delegate now climbs the whole ladder: **the member's row → the mission's engine and workdir → that agent's own default for the engine it lands on → `agentFarm.launchDefaults` → the CLI.** Claude's model and effort deliberately skip the per-agent layer, the same carve-out a launch makes: Claude Code reads that agent's `.claude/settings.local.json` itself, and passing the value back would be a second source of truth over a file you may have edited by hand.
+
+**Effort is now per member** — it was the one run dimension a member could not state, so a reviewer that wanted `low` and a planner that wanted `xhigh` had to be the same. It sits on the member row next to the engine, the permissions and the model, and comes from the same one list every other launcher reads. A typo is refused when the mission is created rather than dropped; whether the *engine* has such a setting at all is answered at launch by the rule that already owns it.
+
+**An adaptive run's pool was being ignored.** The delegation looked its member up in `spec.team`, which an adaptive mission does not have — so every dimension a pool member stated was silently dropped on exactly the runs the pool exists for. And nothing could write one in the first place: the pool was built from the fleet, which keeps an id, a name and a role. A pool member now takes the same five as a team member, from the panel and from `missions.start`.
+
+**And each step says what it ran with and who decided it.** Four layers means three of them are settings written somewhere else, so "why did that delegate run on gpt-5?" had no answer on the run. The step's Agent cell now carries it, with each value labelled by the layer that supplied it.
+
 ## 3.219.2 — Bridge CLI helper (af.js): escape-free, self-provisioning gateway for agents (2026-08-22)
 
 Calling the bridge from agents or external CLI scripts previously risked shell quote mangling in PowerShell and Bash when passing complex JSON strings, multi-line reports, or markdown content. Agent Farm now ships a standalone CLI helper (`af.js`) compiled from `src/service/af.ts` with zero external dependencies. On extension startup, it is automatically staged into `<globalStorage>/bridge/af.js`. It supports discovery (`node af.js farm.ops`), inline arguments, and `@file.json` payload loading for completely escaping-free calls.

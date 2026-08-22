@@ -29,6 +29,16 @@ const PERMISSIONS = [
     { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved — no prompts at all' }
 ];
 
+/** The host's own EFFORT_CHOICES (M-18) — same rule: never a copy in the page. */
+const EFFORTS = [
+    { id: '', label: 'Default', detail: 'no --effort flag — the CLI decides' },
+    { id: 'low', label: 'low', detail: 'shortest reasoning — cheap, for mechanical work' },
+    { id: 'medium', label: 'medium', detail: 'balanced' },
+    { id: 'high', label: 'high', detail: 'more reasoning per turn' },
+    { id: 'xhigh', label: 'xhigh', detail: 'deep reasoning — slower, pricier' },
+    { id: 'max', label: 'max', detail: 'maximum reasoning — the expensive end' }
+];
+
 const ENGINES = [
     { id: 'claude', label: 'Claude Code', ready: true, next: null },
     { id: 'codex', label: 'Codex', ready: true, next: null },
@@ -104,6 +114,7 @@ const data = (over) => Object.assign({
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable', 'grok-code'],
     engines: ENGINES,
     permissions: PERMISSIONS,
+    efforts: EFFORTS,
     defaults: LIMITS,
     pending: { questions: [], approvals: [] },
     live: { agents: [], events: [] },
@@ -123,7 +134,7 @@ module.exports = {
             // ‼️ The team rows with members PICKED, because an unchecked row
             // draws every control disabled and a disabled select hides exactly
             // the width problem this picture exists to catch.
-            id: 'form', label: 'New Mission — team rows with engine + permissions',
+            id: 'form', label: 'New Mission — team rows with engine + permissions + effort',
             data: data({ newForm: true }),
             act: (r) => {
                 const el = (id) => r.sandbox.document.getElementById(id);
@@ -137,6 +148,12 @@ module.exports = {
                 el('pm-1').value = 'acceptEdits';
                 el('pm-2').value = 'plan';
                 el('md-1').value = 'grok-code';
+                // ‼️ M-18 — the FIFTH control on the row. This picture exists
+                // because each of the others arrived in a commit whose tests
+                // read the markup as strings, and a row that wraps passes all
+                // of them; a fifth is exactly when it starts to.
+                el('ef-1').value = 'high';
+                el('ef-2').value = 'low';
                 // ticking a member is what re-reads the form and redraws it —
                 // the same path a hand takes, so the picture is of real state
                 fire(el('tm-1'), 'change');

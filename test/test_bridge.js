@@ -2774,7 +2774,16 @@ const { opencodeStatus, syncToOpencode } =
             ok('…and both list ops read it back, so a caller can tell a default from a value that never arrived',
                 (src.match(/permissionMode: m\.permissionMode \?\? null/g) || []).length >= 2);
             ok('…and the delegation actually carries it onto the task',
-                /if \(member\?\.permissionMode\) \{ task\.permissionMode = member\.permissionMode; \}/.test(src));
+                /if \(dims\.permissionMode\) \{ task\.permissionMode = dims\.permissionMode; \}/.test(src));
+            // ‼️ M-18 — the op now takes the FOURTH dimension and says what
+            // happens to a field the caller leaves out, which before this was
+            // "nothing, silently".
+            ok('‼️ …and the effort, with the ladder that resolves what is left blank',
+                /effort\?, permissionMode\?\}\]/.test(misBlock)
+                && /agentFarm\.agentEngineDefaults/.test(misBlock.replace(/'\s*\+\s*'/g, ''))
+                && /agentFarm\.launchDefaults/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
+            ok('…and a POOL member takes the same five, which it never could before',
+                /findAgent\(String\(p\.agent \?\? p\.agentId \?\? ''\)\)\.id/.test(src));
             ok('‼️ …and says out loud that the PLANNER stays on Claude Code, with why',
                 /THE PLANNER ALWAYS RUNS ON CLAUDE CODE/.test(misBlock)
                 && /--disallowedTools/.test(misBlock));

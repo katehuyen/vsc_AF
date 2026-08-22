@@ -47,12 +47,13 @@ export type {
 } from './missionPrimitives';
 
 export {
-    bindRuntimeRole, DEFAULT_AUTONOMY, isAdaptive, missionModeOf, normalizeCriteria,
-    normalizeObjective, normalizePool, poolFromFleet, resolveLead, validateObjective
+    bindRuntimeRole, DEFAULT_AUTONOMY, describeDelegateRun, isAdaptive, missionModeOf,
+    normalizeCriteria, normalizeObjective, normalizePool, poolFromFleet, resolveDelegateRun,
+    resolveLead, validateObjective
 } from './missionMode';
 export type {
-    FleetAgent, MissionAutonomy, MissionMode, MissionObjective, MissionPoolMember,
-    MissionRuntimeRole, SuccessCriterion
+    DelegateOrigin, DelegateRun, DelegateRunLayers, FleetAgent, MissionAutonomy, MissionMode,
+    MissionObjective, MissionPoolMember, MissionRuntimeRole, SuccessCriterion
 } from './missionMode';
 
 /**
@@ -99,6 +100,18 @@ export interface MissionTeamMember {
      * covered by this — see MissionSpec.engine.
      */
     engine?: string;
+    /**
+     * ‼️ M-18 — HOW HARD THIS MEMBER THINKS, which was the one run dimension a
+     * member could not state. Model, engine and permission mode were all per
+     * member; effort was not, so a reviewer that wanted `low` and a planner that
+     * wanted `xhigh` had to be the same. Empty = whatever `resolveDelegateRun`
+     * resolves from the agent's own per-engine default, then the fleet's.
+     *
+     * Refused at launch on an engine that has no such setting — the task's own
+     * `headlessEffortRefusal` already owns that rule and this changes nothing
+     * about it.
+     */
+    effort?: string;
     /**
      * ‼️ WHAT THIS MEMBER'S DELEGATIONS ARE ALLOWED TO DO WITHOUT ASKING (M-14).
      * Empty = the engine's own default.
@@ -282,6 +295,17 @@ export interface MissionStep {
     tokens?: number;
     outputFile?: string;
     note?: string;
+    /**
+     * ‼️ M-18 — WHAT THIS DELEGATION ACTUALLY RAN WITH, AND WHO DECIDED IT.
+     *
+     * The dimensions a delegate runs on come from four places now
+     * (`resolveDelegateRun`), and three of them are settings written somewhere
+     * else — so "why did that step run on gpt-5?" had no answer on the run. One
+     * derived line, written when the task is created; absent when every field
+     * fell through to the CLI, because "nothing was set" is the state this was
+     * added to describe and is not worth a row.
+     */
+    runNote?: string;
 }
 
 /**
@@ -668,6 +692,7 @@ export function allowedAgents(spec: MissionSpec): MissionTeamMember[] {
             ...(m.role ? { role: m.role } : {}),
             ...(m.model ? { model: m.model } : {}),
             ...(m.engine ? { engine: m.engine } : {}),
+            ...(m.effort ? { effort: m.effort } : {}),
             ...(m.permissionMode ? { permissionMode: m.permissionMode } : {})
         }));
     }

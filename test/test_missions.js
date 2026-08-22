@@ -511,8 +511,14 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         ok('‼️ …and the PLANNER deliberately cannot, with the reason written down',
             /THE PLANNER IS NOT ON THIS AXIS, AND THAT IS A DECISION/.test(src)
             && /--disallowedTools/.test(src));
-        ok('the delegation really carries it: member, then mission, then claude',
-            /const wanted = \(member\?\.engine \|\| spec\.engine \|\| ''\)\.trim\(\);/.test(ext));
+        // ‼️ M-18 — the ladder is no longer three `||` in extension.ts: it is
+        // `resolveDelegateRun`, which continues member → mission → … and adds
+        // the two layers a LAUNCH has always had under them. The ordering is
+        // exercised against the real function in test_mission_dimensions.js;
+        // what is pinned here is that the wiring goes through it at all.
+        ok('the delegation really carries it: member, then mission, then the launch layers',
+            /const dims = resolveDelegateRun\(member, spec, \{/.test(ext)
+            && /if \(dims\.engine && dims\.engine !== 'claude'\) \{ task\.engine = dims\.engine; \}/.test(ext));
         ok('…and the run counts tokens as well as dollars, both halves',
             /run\.totalTokens = \(run\.totalTokens \?\? 0\) \+ \(pr\.tokens \?\? 0\);/.test(src)
             && /round\.steps\.reduce\(\(a, s\) => a \+ \(s\.tokens \?\? 0\), 0\)/.test(src));
@@ -550,10 +556,10 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         ok('…and `plan` is named as the thing no config can supply',
             /plan agent calls no\s*\*?\s*tool at all/.test(src.replace(/\s*\*\s*/g, ' ')));
         ok('the delegation really carries it onto the task',
-            /if \(member\?\.permissionMode\) \{ task\.permissionMode = member\.permissionMode; \}/.test(ext));
+            /if \(dims\.permissionMode\) \{ task\.permissionMode = dims\.permissionMode; \}/.test(ext));
         ok('‼️ a typo is REFUSED at creation, not dropped like an unknown engine is',
-            /const bad = validateLaunch\(\{ permissionMode: memberPerm \}\);/.test(ext)
-            && /if \(bad\.length\) \{ return `\$\{a\.name\}: \$\{bad\[0\]\}`; \}/.test(ext));
+            /validateLaunch\(\{ permissionMode: memberPerm, effort: memberEffort \}\)/.test(ext)
+            && /return `\$\{a\.name\}: \$\{bad\}`;/.test(ext));
         ok('…and empty stays empty — the engine default is still the default',
             /permissionMode: memberPerm \|\| undefined/.test(ext));
         ok('the form offers it from the ONE permission list, never a copy',

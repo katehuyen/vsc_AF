@@ -257,11 +257,13 @@ import {
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import {
-    addGuidance, buildResumeMessage, DEFAULT_AUTONOMY, DEFAULT_MISSION_LIMITS, deleteTrace, isAdaptive,
+    addGuidance, allowedAgents, buildResumeMessage, DEFAULT_AUTONOMY, DEFAULT_MISSION_LIMITS,
+    deleteTrace, describeDelegateRun, isAdaptive, resolveDelegateRun,
     normalizeCriteria,
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
+    normalizePool,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
@@ -3574,24 +3576,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agent, `[Mission] ${step.title}`, step.prompt, 'headless',
                         { projectId: spec.projectId });
                     task.missionId = run.id;
-                    const member = spec.team.find(m => m.agentId === step.agentId)
-                        ?? spec.team.find(m => m.agentName === step.agentName);
-                    if (member?.model) { task.model = member.model; }
-                    // ‼️ X-18 — the member's engine, then the mission's, then
-                    // claude. A delegation IS a task, so nothing else is needed:
-                    // the readiness check, the flag vocabulary and the sandbox
-                    // translation all already live on the task's launch path.
-                    const wanted = (member?.engine || spec.engine || '').trim();
-                    if (wanted && wanted !== 'claude') { task.engine = wanted; }
-                    // ‼️ M-14 — AND THE MEMBER'S PERMISSION MODE, which nothing
-                    // carried. A delegation is a headless run with nobody in it,
-                    // so a mode the engine would have stopped to ask about is
-                    // spent up front here or never — and `plan` for a read-only
-                    // reviewer was not reachable for a delegate at all. Empty
-                    // stays empty: the engine default is still the default, this
-                    // only stops it from being the ONLY option.
-                    if (member?.permissionMode) { task.permissionMode = member.permissionMode; }
-                    if (spec.workdir) { task.workDir = spec.workdir; }
+                    // ‼️ THE POOL COUNTS TOO. This read `spec.team` alone, which
+                    // an ADAPTIVE mission does not have — so every dimension a
+                    // pool member stated was silently dropped on exactly the
+                    // runs the pool was invented for. `allowedAgents` is the one
+                    // function that knows which list a spec keeps its cast in.
+                    const cast = allowedAgents(spec);
+                    const member = cast.find(m => m.agentId === step.agentId)
+                        ?? cast.find(m => m.agentName === step.agentName);
+                    // ‼️ M-18 — THE SAME LADDER A LAUNCH CLIMBS. X-18 gave the
+                    // delegate an engine, M-14 gave it a permission mode, and
+                    // both read the member and stopped there — so an agent whose
+                    // per-engine default the user had configured ran on it from
+                    // the Agent Farm UI and on the CLI's raw default from a
+                    // mission. `resolveDelegateRun` is that ladder, and it is
+                    // the SAME store and the same fleet defaults the launcher
+                    // reads: member → mission → this agent on this engine →
+                    // fleet → the CLI. Nothing else is needed here, because a
+                    // delegation IS a task: the readiness check, the flag
+                    // vocabulary, the effort refusal and the sandbox translation
+                    // all already live on the task's own launch path.
+                    const dims = resolveDelegateRun(member, spec, {
+                        farm: (engine) => storedDefault(
+                            cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                            agent.dir, engine as EngineId),
+                        launch: launchDefaults()
+                    });
+                    if (dims.model) { task.model = dims.model; }
+                    // `claude` is written by NOT being written — an explicit
+                    // engine on every task would make each one claim a decision
+                    // nobody made, exactly as `runExtras` avoids for the rest.
+                    if (dims.engine && dims.engine !== 'claude') { task.engine = dims.engine; }
+                    if (dims.effort) { task.effort = dims.effort; }
+                    if (dims.permissionMode) { task.permissionMode = dims.permissionMode; }
+                    if (dims.workDir) { task.workDir = dims.workDir; }
+                    // What it ended up with AND WHO SAID SO, on the step the
+                    // lead and the reader both look at. Without this the answer
+                    // to "why did that delegate run on gpt-5?" is a settings
+                    // file nobody remembers writing.
+                    const dimNote = describeDelegateRun(dims);
+                    if (dimNote) { step.runNote = dimNote; }
                     step.taskId = task.id;
                     step.status = 'running';
                     // ‼️ WRITTEN BEFORE THE PROCESS EXISTS. This line is the
@@ -4064,14 +4088,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // FACT written into the spec rather than a list re-derived on every
         // round, so a run started today still means the same thing when an agent
         // is added tomorrow.
-        const poolIn = Array.isArray(input.pool)
-            ? (input.pool as { agentId?: unknown }[])
-                .map(m => agents.find(a => a.id === String(m?.agentId ?? '')))
-                .filter((a): a is typeof agents[number] => !!a)
+        const poolRaw = Array.isArray(input.pool)
+            ? input.pool as {
+                agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
+                effort?: unknown; permissionMode?: unknown;
+            }[]
             : [];
-        const pool = mode === 'adaptive'
+        const poolIn = poolRaw
+            .map(m => agents.find(a => a.id === String(m?.agentId ?? '')))
+            .filter((a): a is typeof agents[number] => !!a);
+        let pool = mode === 'adaptive'
             ? poolFromFleet((poolIn.length ? poolIn : agents).map(a => ({ id: a.id, name: a.name })))
             : [];
+        // ‼️ M-18 — AND A POOL MEMBER MAY STATE ITS OWN RUN DIMENSIONS. The type
+        // has carried them since M-14 and `normalizePool` has always accepted
+        // them, but nothing could ever WRITE them: the pool was built out of
+        // `poolFromFleet`, which keeps an id, a name and a role. So the reviewer
+        // that must run on `plan` and the writer that must run on `high` were a
+        // classic-only idea for no reason anybody chose. Validated exactly as
+        // the team's are — the vocabulary cannot be allowed to fork per surface.
+        if (pool.length && poolRaw.length) {
+            for (const raw of poolRaw) {
+                const at = pool.findIndex(m => m.agentId === String(raw?.agentId ?? ''));
+                if (at < 0) { continue; }
+                const who = pool[at].agentName;
+                const model = String(raw.model ?? '').trim().slice(0, 60);
+                if (model && !modelIdOk(model)) { return `Model "${model}" (${who}) has illegal characters — use a plain model id/alias.`; }
+                const eng = String(raw.engine ?? '').trim().toLowerCase();
+                const perm = String(raw.permissionMode ?? '').trim();
+                const eff = String(raw.effort ?? '').trim();
+                for (const bad of validateLaunch({ permissionMode: perm, effort: eff })) {
+                    return `${who}: ${bad}`;
+                }
+                const role = String(raw.role ?? '').trim();
+                pool[at] = {
+                    ...pool[at],
+                    ...(role ? { role } : {}),
+                    ...(model ? { model } : {}),
+                    ...(eng in ENGINES ? { engine: eng } : {}),
+                    ...(eff ? { effort: eff } : {}),
+                    ...(perm ? { permissionMode: perm } : {})
+                };
+            }
+            pool = normalizePool(pool);
+        }
         let lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
         if (!lead && mode === 'adaptive') {
             // Deterministic, and shown to the caller in the spec it gets back:
@@ -4087,7 +4147,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const teamIn = Array.isArray(input.team)
             ? input.team as {
                 agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
-                permissionMode?: unknown;
+                effort?: unknown; permissionMode?: unknown;
             }[]
             : [];
         const team: MissionSpec['team'] = [];
@@ -4109,15 +4169,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // to end. Same validator every other launch surface uses, so the
                 // vocabulary can never fork.
                 const memberPerm = String(t.permissionMode ?? '').trim();
-                if (memberPerm) {
-                    const bad = validateLaunch({ permissionMode: memberPerm });
-                    if (bad.length) { return `${a.name}: ${bad[0]}`; }
+                // ‼️ M-18 — and the member's EFFORT, refused on a typo for the
+                // same reason the permission mode is: dropping it would leave
+                // the run on a default the user believes they overrode. Whether
+                // the ENGINE has such a setting at all is a separate question,
+                // and the task's own `headlessEffortRefusal` already answers it
+                // at launch — asking it twice, in two vocabularies, is how the
+                // two answers start disagreeing.
+                const memberEffort = String(t.effort ?? '').trim();
+                for (const bad of validateLaunch({ permissionMode: memberPerm, effort: memberEffort })) {
+                    return `${a.name}: ${bad}`;
                 }
                 team.push({
                     agentId: a.id, agentName: a.name,
                     role: String(t.role ?? '').trim() || undefined,
                     model: model || undefined,
                     engine: memberEngine in ENGINES ? memberEngine : undefined,
+                    effort: memberEffort || undefined,
                     permissionMode: memberPerm || undefined
                 });
             }
@@ -5085,7 +5153,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'missions.start',
             describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?, '
-                + 'permissionMode?}] — ‼️ `permissionMode` is spent UP FRONT on a delegation for the same '
+                + 'effort?, permissionMode?}] — ‼️ M-18: a member states as much or as little as it likes and '
+                + 'the REST IS RESOLVED THE WAY A LAUNCH RESOLVES IT: member → the mission\'s `engine`/`workdir` '
+                + '→ this agent\'s own default for the engine it lands on (agentFarm.agentEngineDefaults) → the '
+                + 'fleet (agentFarm.launchDefaults) → the CLI. Before this a delegate read three fields off the '
+                + 'member and nothing else, so the same agent ran on its configured model from the UI and on the '
+                + 'CLI\'s raw default from a mission. `effort` is '
+                + EFFORT_CHOICES.filter(c => c.id).map(c => c.id).join('|')
+                + ' and is refused on an engine that has no such setting, at launch, by the task\'s own rule. '
+                + '‼️ `permissionMode` is spent UP FRONT on a delegation for the same '
                 + 'reason it is on a task: a delegation is a headless run and there is nobody in it to ask. '
                 + 'Omit it and the engine default stands; what that default refuses is the engine\'s and the '
                 + 'user\'s config to decide, and a refused tool call still exits 0, so a delegate that did '
@@ -5111,8 +5187,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '‼️ mode? (classic|adaptive, default classic — M-15). An ADAPTIVE mission is given an '
                 + 'OUTCOME rather than a recipe: successCriteria ([{id?, text, required?}] — required, and '
                 + 'each id is stable for the life of the mission because evaluations refer to it), '
-                + 'constraints? ([string] — what the run may NOT do), pool? ([{agentId}] — whom the lead may '
-                + 'draw on; omit for the whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
+                + 'constraints? ([string] — what the run may NOT do), pool? ([{agent, role?, model?, engine?, '
+                + 'effort?, permissionMode?}] — whom the lead may draw on, on the SAME five dimensions a team '
+                + 'member takes; omit for the whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
                 + '`team` are OPTIONAL on an adaptive run: the lead is resolved deterministically (first of '
                 + 'the pool) and the cast is chosen at runtime, one role bound per agent. Every other arg '
                 + 'above means the same thing in both modes',
@@ -5122,12 +5199,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const leadKey = adaptive ? optStr(args, 'lead') : argStr(args, 'lead');
                 const lead = leadKey ? findAgent(leadKey) : undefined;
                 const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
-                need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "permissionMode"?: "..." }]');
+                need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "effort"?: "...", "permissionMode"?: "..." }]');
                 const team = teamIn.map(t => ({
                     agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
-                    engine: t.engine, permissionMode: t.permissionMode
+                    engine: t.engine, effort: t.effort, permissionMode: t.permissionMode
                 }));
-                const err = createMission({ ...args, ...(lead ? { leadAgentId: lead.id } : {}), team });
+                // ‼️ M-18 — A POOL MEMBER TAKES THE SAME FIVE. It always could
+                // in the type and never could through a caller, so `agentId` was
+                // the only field this op accepted and every other one was
+                // dropped without a word. `agent` is the name every other list
+                // on this bridge uses; `agentId` still works for what is written.
+                const poolIn = Array.isArray(args.pool) ? args.pool as Record<string, unknown>[] : [];
+                const pool = poolIn.map(p => ({
+                    agentId: findAgent(String(p.agent ?? p.agentId ?? '')).id, role: p.role,
+                    model: p.model, engine: p.engine, effort: p.effort,
+                    permissionMode: p.permissionMode
+                }));
+                const err = createMission({
+                    ...args, ...(lead ? { leadAgentId: lead.id } : {}), team,
+                    ...(pool.length ? { pool } : {})
+                });
                 need(!err, err ?? '');
                 const run = missionStore.runs[missionStore.runs.length - 1];
                 return { runId: run.id, title: missionStore.spec(run.specId)?.title };
@@ -10522,6 +10613,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // exist on one surface and not another — and the form can say what
             // each one means instead of asking the user to know.
             permissions: PERMISSION_CHOICES,
+            // ‼️ M-18 — AND THE EFFORT VOCABULARY, from the same one list. It
+            // was the only run dimension a member could not state, so the form
+            // let you choose the engine, the permissions and the model for a
+            // reviewer and then ran it at whatever the CLI thinks is normal.
+            efforts: EFFORT_CHOICES,
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),

@@ -67,7 +67,10 @@
         // about has no one to ask; every other unattended surface spends this up
         // front and a mission delegation was the one that did not — a read-only
         // reviewer could not be asked for even in principle.
-        team: {}, roles: {}, models: {}, engines: {}, perms: {},
+        // ‼️ …and `efforts` (M-18), the fourth. Model, engine and permissions
+        // were per member and effort was not, so a reviewer that wanted `low`
+        // and a planner that wanted `xhigh` had to be the same run.
+        team: {}, roles: {}, models: {}, engines: {}, perms: {}, efforts: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
         // engine no delegation ever states a dollar, so `maxCostUSD` — the limit
@@ -194,6 +197,25 @@
                 + ' ends "successfully", so a delegate that did nothing looks like one that worked.'
                 + ' Set plan for a reviewer that must not write.';
         };
+        // ‼️ M-18 — the effort vocabulary, from the host's one list too. Same
+        // rule as the permissions above: never a copy typed in here, or the two
+        // surfaces start offering different words for the same setting.
+        const efforts = DATA.efforts || [];
+        const effortOpts = (sel) => ['<option value="">— resolved —</option>']
+            .concat(efforts.filter(e => e.id).map(e =>
+                `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}>${C.esc(e.label)}</option>`))
+            .join('');
+        // MIRROR: too narrow to say what it is, so the tooltip opens with the
+        // value it holds RIGHT NOW and then explains the field.
+        const effortTitle = (sel) => {
+            const cur = efforts.find(e => e.id === (sel || ''));
+            return (sel || 'resolved') + (cur && cur.detail ? ' — ' + cur.detail : '')
+                + '\n\nEffort: how hard this member thinks per turn. Leave it empty and it is RESOLVED'
+                + ' the way a launch resolves it — this agent\'s own default for the engine it lands on,'
+                + ' then agentFarm.launchDefaults, then the CLI\'s own choice. Not every engine has such'
+                + ' a setting; one that does not refuses the run up front rather than passing a flag it'
+                + ' does not know.';
+        };
         const teamRows = DATA.agents.map((a, i) => `
             <div class="tmrow">
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
@@ -205,6 +227,9 @@
                 <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
                     title="${C.esc(permTitle(form.perms[a.id] || ''))}"
                     ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
+                    title="${C.esc(effortTitle(form.efforts[a.id] || ''))}"
+                    ${form.team[a.id] ? '' : 'disabled'}>${effortOpts(form.efforts[a.id] || '')}</select>
                 <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="modelopts"
                     placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy"
                     value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
@@ -242,7 +267,7 @@
                 and planner engine are separate axes on purpose.</span></div>
             <div class="frow"><label>Planner model
                 <input type="text" id="f-planner" list="modelopts" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
-                <span class="muted small">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's engine + model (else the mission engine above, and that agent's default / your model-policy rules in Farm Settings).</span></div>
+                <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's row, then the mission engine above, then that agent's own default for that engine, then your fleet defaults.</span></div>
             ${modelDatalist()}
             <div class="frow"><label>Approval
                 <select id="f-approval">
@@ -270,6 +295,7 @@
             form.models[a.id] = document.getElementById('md-' + i).value;
             form.engines[a.id] = document.getElementById('en-' + i).value;
             form.perms[a.id] = document.getElementById('pm-' + i).value;
+            form.efforts[a.id] = document.getElementById('ef-' + i).value;
         });
         ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxTokens', 'maxMinutes', 'maxParallel'].forEach(k => {
             form[k] = document.getElementById('lim-' + k).value;
@@ -290,6 +316,7 @@
                     .map(a => ({
                         agentId: a.id, role: form.roles[a.id] || '',
                         model: form.models[a.id] || '', engine: form.engines[a.id] || '',
+                        effort: form.efforts[a.id] || '',
                         permissionMode: form.perms[a.id] || ''
                     })),
                 maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
@@ -336,7 +363,9 @@
         return `<tr class="srow" data-step="${C.esc(s.id)}" ${ctx}
             title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
             <td class="stoggle">${open ? '▾' : '▸'}</td>
-            <td>${C.esc(s.agentName)}${stepLive(s)}</td>
+            <td${s.runNote ? ` title="${C.esc(s.agentName + ' ran with — ' + s.runNote
+                + '\nUnmarked values were stated on the member; (agent) is this agent\'s own default for that'
+                + ' engine, (fleet) is agentFarm.launchDefaults, (mission) is the mission-wide engine.')}"` : ''}>${C.esc(s.agentName)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
             <td>${chip(s.status)}</td>
             <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>
@@ -568,7 +597,12 @@
                 // What this member was allowed to do unattended. Absent = the
                 // engine default, and the reader has to be able to tell the two
                 // apart to explain a delegate that called no tool.
-                + (m.permissionMode ? ` {${m.permissionMode}}` : '')).join(', ')}`,
+                + (m.permissionMode ? ` {${m.permissionMode}}` : '')
+                // ‼️ M-18 — and how hard it was told to think. Blank does NOT
+                // mean "normal": it means resolved from this agent's own default
+                // and then the fleet's, which is a different fact and the one a
+                // reader comparing two members needs.
+                + (m.effort ? ` ~${m.effort}` : '')).join(', ')}`,
             // ‼️ THE ENGINE AND THE TOKEN CEILING BELONG IN THE SUMMARY (X-35).
             // A run whose delegations went to Codex and whose only real fence
             // was the token cap used to read as a $-budgeted Claude run.
@@ -707,7 +741,7 @@
             <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
                 title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
                 `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
-                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}${m.permissionMode ? ` <i class="mdl" title="delegation permissions — what this member may do without stopping to ask">${C.esc(m.permissionMode)}</i>` : ''}</span>`).join(' ')}
+                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}${m.permissionMode ? ` <i class="mdl" title="delegation permissions — what this member may do without stopping to ask">${C.esc(m.permissionMode)}</i>` : ''}${m.effort ? ` <i class="mdl" title="delegation effort — how hard this member thinks per turn; empty is not &quot;normal&quot;, it is resolved from this agent's own default then the fleet's">${C.esc(m.effort)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}

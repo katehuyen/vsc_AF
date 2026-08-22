@@ -68,6 +68,9 @@ export interface MissionPoolMember {
     role?: string;
     model?: string;
     engine?: string;
+    /** ‼️ M-18 — the fourth run dimension, which was the only one of the four a
+     *  member could not state. See `resolveDelegateRun`. */
+    effort?: string;
     permissionMode?: string;
 }
 
@@ -87,6 +90,7 @@ export interface MissionRuntimeRole {
     brief: string;
     model?: string;
     engine?: string;
+    effort?: string;
     permissionMode?: string;
     boundAt: number;
 }
@@ -166,7 +170,7 @@ export function normalizePool(raw: unknown): MissionPoolMember[] {
         if (!agentId || seen.has(agentId)) { continue; }
         seen.add(agentId);
         const m: MissionPoolMember = { agentId, agentName };
-        for (const k of ['role', 'model', 'engine', 'permissionMode'] as const) {
+        for (const k of ['role', 'model', 'engine', 'effort', 'permissionMode'] as const) {
             const v = String(o[k] ?? '').trim();
             if (v) { m[k] = v; }
         }
@@ -300,9 +304,134 @@ export function bindRuntimeRole(
         brief: String(brief ?? '').trim().slice(0, MAX_TEXT),
         ...(member.model ? { model: member.model } : {}),
         ...(member.engine ? { engine: member.engine } : {}),
+        ...(member.effort ? { effort: member.effort } : {}),
         ...(member.permissionMode ? { permissionMode: member.permissionMode } : {}),
         boundAt: at >= 0 ? out[at].boundAt : now
     };
     if (at >= 0) { out[at] = bound; } else { out.push(bound); }
     return out;
+}
+
+/**
+ * ‼️ M-18 — A DELEGATION IS A LAUNCH, SO IT RESOLVES ITS DIMENSIONS LIKE ONE.
+ *
+ * The hole this closes: open agent `X` from the Agent Farm UI and it runs on
+ * the model and effort configured FOR that agent (`agentFarm.agentEngineDefaults`,
+ * then `agentFarm.launchDefaults` — the whole point of U-29/U-33). Hand the SAME
+ * agent the same work through a mission and none of it applied: the delegation
+ * read three fields off the team member and nothing else, so a member left blank
+ * ran on the CLI's raw built-in default. The same agent behaved differently
+ * depending on who asked — which is the mystery `resolveDefault` exists to end,
+ * restated one surface over.
+ *
+ * The layers, highest first, per field:
+ *
+ *   1. the MEMBER — what this mission says about this agent
+ *   2. the MISSION — `spec.engine`, `spec.workdir` (engine and folder ONLY: a
+ *      mission-wide model would silently overrule per-agent model policy)
+ *   3. the AGENT's own per-engine default, looked up for the engine resolved in
+ *      steps 1–2 and not before — which is why `farm` is a callback and not a
+ *      value: nothing can look that store up until the engine is known
+ *   4. the FLEET (`agentFarm.launchDefaults`)
+ *   5. nothing — the CLI decides, exactly as it did before this existed
+ *
+ * ‼️ CLAUDE'S MODEL AND EFFORT SKIP LAYER 3, and that is not an oversight — it
+ * is the same carve-out `withAgentEngineDefaults` makes for a launch. Claude
+ * Code reads the agent's own `.claude/settings.local.json` itself, so passing a
+ * value derived from that file back on the command line would be a second
+ * source of truth silently overriding a file the user may have edited by hand.
+ *
+ * Pure: the caller supplies the layers, so this is testable and this file goes
+ * on knowing nothing about vscode or disk.
+ */
+export interface DelegateRunLayers {
+    /** `agentFarm.agentEngineDefaults` for THIS agent on the engine that was
+     *  resolved — a callback, because the engine is decided inside. */
+    farm?: (engine: string) => { model?: string; effort?: string } | undefined;
+    /** `agentFarm.launchDefaults` — fleet-wide, applies to every engine. */
+    launch?: { engine?: string; model?: string; effort?: string; permissionMode?: string };
+}
+
+export type DelegateOrigin = 'member' | 'mission' | 'agent' | 'fleet' | 'cli';
+
+/** The dimensions a delegation actually runs with. An unresolved field is
+ *  ABSENT, never `''` — a written empty string is a claim that somebody chose
+ *  nothing, and it is what would reach a command line. */
+export interface DelegateRun {
+    /** Always resolved; `claude` is the floor, as it has always been. */
+    engine: string;
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+    workDir?: string;
+    /** Which layer decided each field — for the day somebody asks why a
+     *  delegate ran on a model nobody typed into this mission. */
+    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode', DelegateOrigin>;
+}
+
+export function resolveDelegateRun(
+    member: { model?: string; engine?: string; effort?: string; permissionMode?: string } | undefined,
+    spec: { engine?: string; workdir?: string } | undefined,
+    layers: DelegateRunLayers = {}
+): DelegateRun {
+    const t = (v: unknown) => String(v ?? '').trim();
+    const launch = layers.launch ?? {};
+
+    // The engine first — every other field is looked up FOR it.
+    let engineOrigin: DelegateOrigin = 'cli';
+    let engine = t(member?.engine);
+    if (engine) { engineOrigin = 'member'; }
+    if (!engine) { engine = t(spec?.engine); if (engine) { engineOrigin = 'mission'; } }
+    if (!engine) { engine = t(launch.engine); if (engine) { engineOrigin = 'fleet'; } }
+    if (!engine) { engine = 'claude'; engineOrigin = 'cli'; }
+    engine = engine.toLowerCase();
+
+    const own = engine === 'claude' ? undefined : (layers.farm?.(engine) ?? undefined);
+
+    const pick = (
+        fromMember: string, fromAgent: string, fromFleet: string
+    ): { value: string; origin: DelegateOrigin } => {
+        if (fromMember) { return { value: fromMember, origin: 'member' }; }
+        if (fromAgent) { return { value: fromAgent, origin: 'agent' }; }
+        if (fromFleet) { return { value: fromFleet, origin: 'fleet' }; }
+        return { value: '', origin: 'cli' };
+    };
+
+    const model = pick(t(member?.model), t(own?.model), t(launch.model));
+    const effort = pick(t(member?.effort), t(own?.effort), t(launch.effort));
+    // ‼️ Permission mode has no per-agent, per-engine layer to fall through to:
+    // that store holds a model and an effort and nothing else. Going straight to
+    // the fleet default is the honest reading — inventing a third layer here
+    // would be a setting with nowhere to be typed.
+    const perm = pick(t(member?.permissionMode), '', t(launch.permissionMode));
+
+    const out: DelegateRun = {
+        engine,
+        origin: {
+            engine: engineOrigin, model: model.origin,
+            effort: effort.origin, permissionMode: perm.origin
+        }
+    };
+    if (model.value) { out.model = model.value; }
+    if (effort.value) { out.effort = effort.value; }
+    if (perm.value) { out.permissionMode = perm.value; }
+    const wd = t(spec?.workdir);
+    if (wd) { out.workDir = wd; }
+    return out;
+}
+
+/** One line for the trace: what the delegate is running with and who said so.
+ *  Empty when nothing was resolved at all — "the CLI decides everything" is the
+ *  state this existed to describe and is not worth a row. */
+export function describeDelegateRun(r: DelegateRun): string {
+    const parts: string[] = [];
+    const say = (label: string, value: string | undefined, from: DelegateOrigin) => {
+        if (!value || from === 'cli') { return; }
+        parts.push(label + ' ' + value + (from === 'member' ? '' : ' (' + from + ')'));
+    };
+    say('engine', r.engine !== 'claude' ? r.engine : '', r.origin.engine);
+    say('model', r.model, r.origin.model);
+    say('effort', r.effort, r.origin.effort);
+    say('permissions', r.permissionMode, r.origin.permissionMode);
+    return parts.join(' · ');
 }
