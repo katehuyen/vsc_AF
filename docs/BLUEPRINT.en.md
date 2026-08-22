@@ -1908,7 +1908,38 @@ Security: the endpoint listens only on 127.0.0.1 + requires a token; a wrong tok
 
 ### Notification Forwarding (Fleet in Your Pocket)
 
-Set `agentFarm.notifyWebhookUrl` → the events you choose (permission waiting, stalled, budget exceeded, chain finished/failed — `notifyWebhookEvents`) are POSTed as JSON to that address: `{source:"agent-farm", type, message, ts}`. When you set up a webhook→Telegram flow in n8n, "psychologist waiting for permission" drops onto your phone while you're in the kitchen. `{secret:NAME}` can be used in the URL.
+## Farm Bridge and CLI Helper (af.js) {#farm-bridge}
+
+Agent Farm provides a cross-platform file bridge (`Farm Bridge`) that allows any agent in the fleet (or external script) to interact with the VS Code extension bi-directionally.
+
+### Self-Provisioning Deployment
+
+On extension activation, `af.js` is automatically staged into the global storage directory:
+- **Windows:** `%APPDATA%\Code\User\globalStorage\muvusoft.agent-farm\bridge\af.js`
+- **macOS:** `~/Library/Application Support/Code/User/globalStorage/muvusoft.agent-farm/bridge/af.js`
+- **Linux:** `~/.config/Code/User/globalStorage/muvusoft.agent-farm/bridge/af.js`
+
+### Usage Modes for Agents & External Processes
+
+1. **Catalog Discovery (`farm.ops`):**
+   ```bash
+   node <bridgeDir>/af.js farm.ops
+   ```
+   The extension returns all available operations and argument schemas.
+
+2. **Inline Arguments:**
+   ```bash
+   node <bridgeDir>/af.js notices.list '{"handled": false}'
+   ```
+
+3. **Payload via File (`@args.json` - Recommended):**
+   Prevents shell quote-mangling for multi-line markdown or large text payloads:
+   ```bash
+   node <bridgeDir>/af.js notices.post @args.json
+   ```
+
+4. **Raw File Drop (Alternative):**
+   Write `<id>.request.json` and await `<id>.response.json`.
 
 ## Standing Duties {#nobet-gorevleri}
 

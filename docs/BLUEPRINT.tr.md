@@ -1927,6 +1927,41 @@ API'si olmayan servislerin kapısı: zincire **Browser step** ekle — adımın 
 
 Kurulum: `New Multi-Agent Workflow…` → **Browser step** → ajan + URL + hedef + izinli alan adları. `Edit Step…` ile URL/hedef/allowlist sonradan değişir; URL ve hedefte `{prev_text}`/`{prev_json.x}` çözülür.
 
+## Farm Bridge ve CLI Yardımcısı (af.js) {#farm-bridge}
+
+Agent Farm, filodaki herhangi bir ajanın (veya harici bir betiğin) VS Code eklentisiyle çift yönlü haberleşmesini sağlayan platform bağımsız bir dosya köprüsü (`Farm Bridge`) sunar.
+
+### Otomatik Kurulum (Self-Provisioning)
+
+Eklenti her başlatıldığında, `af.js` CLI yardımcısını platformun global storage dizinine otomatik olarak kopyalar / günceller:
+- **Windows:** `%APPDATA%\Code\User\globalStorage\muvusoft.agent-farm\bridge\af.js`
+- **macOS:** `~/Library/Application Support/Code/User/globalStorage/muvusoft.agent-farm/bridge/af.js`
+- **Linux:** `~/.config/Code/User/globalStorage/muvusoft.agent-farm/bridge/af.js`
+
+### Ajanlar ve Betikler İçin Kullanım Yolları
+
+`af.js` yardımıyla eklenti fonksiyonlarını çağırmak, kabuk tırnak ve kaçış (escaping) hatalarını tamamen engeller.
+
+1. **Operasyon Kataloğu Keşfi (`farm.ops`):**
+   ```bash
+   node <bridgeDir>/af.js farm.ops
+   ```
+   Eklenti o an sunduğu tüm fonksiyonları ve argüman şemalarını yanıt olarak döndürür.
+
+2. **Satır İçi Argümanlar:**
+   ```bash
+   node <bridgeDir>/af.js notices.list '{"handled": false}'
+   ```
+
+3. **Dosya İle Argüman Gönderimi (`@args.json` - Tavsiye Edilen Yöntem):**
+   Uzun metinler, çok satırlı markdown raporlar veya karmaşık görev tanımları için argümanlar bir JSON dosyasına yazılır ve `@` takısı ile iletilir:
+   ```bash
+   node <bridgeDir>/af.js notices.post @args.json
+   ```
+
+4. **Klasik Ham Dosya Bırakma (Alternatif):**
+   Gerekli hallerde istek `<bridgeDir>/<id>.request.json` olarak yazılıp `<id>.response.json` beklenerek de doğrudan kullanılabilir.
+
 ## Webhook Köprüsü
 
 Dış dünya bağlantısının evrensel kapısı (0.9.0): n8n, Make, Zapier — webhook konuşan her şey.
