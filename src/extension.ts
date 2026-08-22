@@ -263,7 +263,8 @@ import {
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
-    childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, normalizePool,
+    childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, retryAdvice,
+    normalizePool,
     chairCall, conversationDigest, conversationMessages, COUNCIL_EXITS, councilExitMenu, councilTurns,
     messageIntentMenu, openThreads, tallyVotes,
     ExternalLookup, ExternalRecord, MissionStep,
@@ -5663,7 +5664,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'carries `failure` — `class` from a closed set ('
                 + Object.keys(FAILURE_KINDS).join(', ')
                 + '), `retry` saying whether ordering it again as written could ever work ('
-                + [...new Set(Object.values(FAILURE_KINDS).map(k => k.retry))].join('|')
+                + [...new Set(Object.values(FAILURE_KINDS)
+                    .flatMap(k => [k.retry, k.writing?.retry]).filter(Boolean))].join('|')
+                + '; ‼️ X-75: an unknown fate on work that could have CHANGED something answers '
+                + '`inspect` rather than `same` — read the evidence, never re-order it blind'
                 + '), `attempted`, the original sentence as `detail` and the ids of the evidence as '
                 + '`refs`. Before this a caller saw status "failed" and nothing else, so "is this '
                 + 'worth ordering again?" had no answer on the run. `ran` says what dimensions the '
@@ -5753,7 +5757,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ...(s.failure ? {
                                 failure: {
                                     class: s.failure.class,
-                                    retry: FAILURE_KINDS[s.failure.class]?.retry ?? null,
+                                    // ‼️ X-75 — the class's advice, or the harder
+                                    // one the same class carries when the work
+                                    // could have WRITTEN.
+                                    retry: retryAdvice(s.failure).retry,
+                                    ...(s.failure.couldHaveWritten ? { couldHaveWritten: true } : {}),
                                     attempted: s.failure.attempted,
                                     detail: s.failure.detail ?? null,
                                     ...(s.failure.refs ? { refs: s.failure.refs } : {})

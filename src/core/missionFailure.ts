@@ -43,6 +43,12 @@ export type RetryAdvice =
     | 'different'
     /** the request itself was rejected — the lead must fix its own decision first */
     | 'fix-request'
+    /**
+     * ‼️ X-75 — the fate is UNKNOWN and the work could have changed something.
+     * Find out what actually happened from the evidence before deciding, and
+     * ask the user if it cannot be settled. Never order it again blind.
+     */
+    | 'inspect'
     /** a person or a ceiling stopped it — do not order it again at all */
     | 'stop';
 
@@ -61,6 +67,17 @@ export interface FailureKind {
     retry: RetryAdvice;
     /** ONE line, written for the LEAD to act on — not for a person to admire. */
     says: string;
+    /**
+     * ‼️ X-75 — WHAT THE SAME CLASS MEANS WHEN THE WORK COULD HAVE WRITTEN.
+     *
+     * Two classes state, in their own words, that the work MAY HAVE RUN and
+     * that nothing here can say — and then told the lead to order it again.
+     * For a read that is harmless. For a writer, a workflow or a child mission
+     * it is how the same commit lands twice, the same file is rewritten over
+     * somebody's edit, or a second child run starts against work already done.
+     * "Unknown" is not a licence to repeat; it is the reason to look first.
+     */
+    writing?: { retry: RetryAdvice; says: string };
 }
 
 /**
@@ -90,12 +107,27 @@ export const FAILURE_KINDS: Record<FailureClass, FailureKind> = {
     'record-lost': {
         retry: 'same',
         says: 'The work may well have run — its record is gone, so nothing here can say. '
-            + 'Nothing was concluded from it. Order it again if the result still matters.'
+            + 'Nothing was concluded from it. It read rather than wrote, so ordering it again '
+            + 'costs a turn and changes nothing else.',
+        writing: {
+            retry: 'inspect',
+            says: 'The work MAY HAVE RUN and it could have changed something — its record is '
+                + 'gone, so nothing here can say which. Do NOT order it again blind: read the '
+                + 'evidence below (the output file, the workflow or child run) and see what is '
+                + 'already done. If that cannot settle it, ask the user before repeating it.'
+        }
     },
     interrupted: {
         retry: 'same',
         says: 'A window reload cut this off mid-flight. Its fate is unknown and nothing was '
-            + 'concluded from it — check the output file if there is one before re-ordering.'
+            + 'concluded from it — it read rather than wrote, so re-ordering it is safe.',
+        writing: {
+            retry: 'inspect',
+            says: 'A window reload cut this off mid-flight and it could have changed something '
+                + 'before it went. Its fate is unknown and nothing was concluded from it. Do NOT '
+                + 'order it again blind: read the evidence below and establish what actually '
+                + 'landed. If that cannot settle it, ask the user before repeating it.'
+        }
     },
     cancelled: {
         retry: 'stop',
@@ -129,6 +161,12 @@ export interface StepFailure {
     class: FailureClass;
     /** what this action was trying to do — the step's own title and target */
     attempted: string;
+    /**
+     * ‼️ X-75 — could this action have CHANGED something? Decided where it is
+     * known (the step, at the moment it failed) and carried, because the
+     * failure outlives the step in the snapshot and the advice depends on it.
+     */
+    couldHaveWritten?: boolean;
     /** ‼️ the original sentence, kept whole. The class is our reading; this is what happened. */
     detail?: string;
     refs?: FailureRefs;
@@ -141,6 +179,8 @@ export interface FailedStepLike {
     agentName?: string;
     kind?: string;
     intent?: string;
+    /** the step said it only READS — the one thing that makes a repeat harmless */
+    readonly?: boolean;
     outputFile?: string;
     taskId?: string;
     workflowRunId?: string;
@@ -174,10 +214,42 @@ function refsOf(step: FailedStepLike): FailureRefs | undefined {
  * caller is the only thing that knows it — a site that writes "agent not found"
  * knows more than any parser reading that string back could.
  */
+/**
+ * ‼️ X-75 — COULD THIS ACTION HAVE CHANGED SOMETHING?
+ *
+ * Only a step that SAID it reads may be repeated on an unknown fate, and the
+ * default is that it writes: a delegation whose prompt nobody here parsed can
+ * do anything the agent can do. A workflow and a child mission are compound
+ * work with their own side effects and cannot be read-only whatever the step
+ * says. `review` and `compare` are the primitives that exist to READ what is
+ * already there, and the engine already marks them `readonly` — this agrees
+ * with that rather than inventing a second rule.
+ */
+export function couldHaveWritten(step: FailedStepLike): boolean {
+    const kind = trim(step.kind);
+    if (kind === 'workflow' || kind === 'mission') { return true; }
+    if (step.readonly === true) { return false; }
+    const intent = trim(step.intent);
+    return !(intent === 'review' || intent === 'compare');
+}
+
+/**
+ * What the lead should DO about this failure — the class's advice, or the
+ * harder answer the same class carries when the work could have written
+ * (X-75). One resolver, so the bridge, the prompt and any surface agree.
+ */
+export function retryAdvice(f: StepFailure | undefined): FailureKind {
+    const k = (f && FAILURE_KINDS[f.class]) || FAILURE_KINDS['delegate-failed'];
+    return f?.couldHaveWritten && k.writing ? { retry: k.writing.retry, says: k.writing.says } : k;
+}
+
 export function failure(
     kind: FailureClass, step: FailedStepLike, detail?: string
 ): StepFailure {
     const f: StepFailure = { class: kind, attempted: attemptOf(step) };
+    // Recorded on every failure, not only the two that read it today: it is a
+    // fact about the STEP, and the step is gone by the time a reader asks.
+    if (couldHaveWritten(step)) { f.couldHaveWritten = true; }
     const d = trim(detail);
     if (d) { f.detail = d; }
     const refs = refsOf(step);
@@ -223,7 +295,7 @@ export function classifyTaskFailure(
  */
 export function describeFailure(f: StepFailure | undefined): string {
     if (!f) { return ''; }
-    const k = FAILURE_KINDS[f.class] ?? FAILURE_KINDS['delegate-failed'];
+    const k = retryAdvice(f);
     const lines = [
         `Failure: ${f.class} (retry: ${k.retry})`,
         `Attempted: ${f.attempted}`

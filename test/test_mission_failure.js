@@ -46,7 +46,7 @@ const eq = (msg, got, want) => ok(msg + (got === want ? '' : ` — got ${JSON.st
     const names = Object.keys(kinds);
     ok('there are classes at all', names.length >= 8);
     ok('every class states a retry advice from the closed vocabulary',
-        names.every(n => ['same', 'different', 'fix-request', 'stop'].includes(kinds[n].retry)));
+        names.every(n => ['same', 'different', 'fix-request', 'inspect', 'stop'].includes(kinds[n].retry)));
     ok('‼️ every class carries a sentence written for the LEAD to act on',
         names.every(n => typeof kinds[n].says === 'string' && kinds[n].says.length > 40));
     // ‼️ The advice is the point: a class whose advice equals another's is a
@@ -58,6 +58,55 @@ const eq = (msg, got, want) => ok(msg + (got === want ? '' : ` — got ${JSON.st
         kinds['request-refused'].retry, 'fix-request');
     eq('a person pressing cancel means stop', kinds.cancelled.retry, 'stop');
     eq('and so does a ceiling', kinds['budget-stopped'].retry, 'stop');
+}
+
+// ====================== ‼️ X-75: UNKNOWN FATE IS NOT A LICENCE TO REPEAT
+// `record-lost` and `interrupted` say, in their own words, that the work MAY
+// HAVE RUN and that nothing here can say — and then told the lead to order it
+// again. For a read that is harmless. For a writer, a workflow or a child
+// mission it is how the same commit lands twice or a second child run starts
+// against work already done. And the engine's own `seenWork` lock then refused
+// the identical order, so a lead following the advice literally hit "already
+// delegated" and a small paraphrase slipped past the lock into the duplicate.
+{
+    console.log('\n-- ‼️ X-75 an unknown fate on work that could have WRITTEN is inspected, not repeated');
+    const kinds = M.FAILURE_KINDS;
+    const advice = (kind, step) => M.retryAdvice(M.failure(kind, step));
+
+    for (const kind of ['record-lost', 'interrupted']) {
+        eq(`${kind}: a READ may be ordered again — nothing could have changed`,
+            advice(kind, { title: 'read the price back', readonly: true }).retry, 'same');
+        eq(`${kind}: …and so may a review, which is the primitive for reading`,
+            advice(kind, { title: 'read it back', intent: 'review' }).retry, 'same');
+        eq(`${kind}: ‼️ but a WRITER is inspected, never re-ordered blind`,
+            advice(kind, { title: 'wire the resume path' }).retry, 'inspect');
+        eq(`${kind}: a WORKFLOW is compound work with its own side effects`,
+            advice(kind, { title: 'nightly chain', kind: 'workflow', readonly: true }).retry, 'inspect');
+        eq(`${kind}: …and so is a CHILD MISSION, whatever the step claims`,
+            advice(kind, { title: 'prove the engine', kind: 'mission', readonly: true }).retry, 'inspect');
+        ok(`${kind}: …and the lead is told to read the evidence and to ask the user`,
+            /evidence/i.test(advice(kind, { title: 'w' }).says)
+            && /ask the user/i.test(advice(kind, { title: 'w' }).says));
+        ok(`${kind}: …and is never told to order it again`,
+            !/order it again if/i.test(advice(kind, { title: 'w' }).says));
+    }
+
+    // the fact travels ON the failure, because the step is gone by the time a
+    // reader (the bridge, a reload) asks the question
+    ok('the failure records whether the work could have changed something',
+        M.failure('interrupted', { title: 'w' }).couldHaveWritten === true
+        && M.failure('interrupted', { title: 'r', readonly: true }).couldHaveWritten === undefined);
+    ok('…and the block the LEAD reads carries the resolved advice, not the class default',
+        /retry: inspect/.test(M.describeFailure(M.failure('interrupted', { title: 'w', taskId: 't1' })))
+        && /retry: same/.test(M.describeFailure(M.failure('interrupted', { title: 'r', readonly: true }))));
+    ok('…with the ids it would need to establish what actually landed',
+        /Evidence: .*task t1/.test(M.describeFailure(M.failure('record-lost', { title: 'w', taskId: 't1' }))));
+
+    // and a class with no second reading is unaffected by any of it
+    eq('a class that has no unknown fate keeps its one answer',
+        M.retryAdvice(M.failure('agent-missing', { title: 'w' })).retry, 'different');
+    ok('only the two unknown-fate classes carry a second reading at all',
+        Object.keys(kinds).filter(n => kinds[n].writing).join() === 'record-lost,interrupted');
 }
 
 // ============================================ 2. what was attempted, in words
@@ -197,8 +246,11 @@ const eq = (msg, got, want) => ok(msg + (got === want ? '' : ` — got ${JSON.st
     ok('‼️ and a TASK is classified through the reader that knows the two cases apart',
         /step\.failure = classifyTaskFailure\(step, t\);/.test(ext));
 
+    // ‼️ X-75 — through the ONE resolver, so the bridge cannot answer `same`
+    // while the lead's own prompt says `inspect` about the same step.
     ok('the bridge hands the shape out, retry advice included',
-        /retry: FAILURE_KINDS\[s\.failure\.class\]\?\.retry \?\? null/.test(ext));
+        /retry: retryAdvice\(s\.failure\)\.retry/.test(ext)
+        && /couldHaveWritten: true/.test(ext));
     ok('…and says so in its own describe, naming the closed set',
         /Object\.keys\(FAILURE_KINDS\)\.join\(', '\)/.test(ext));
 

@@ -50,7 +50,8 @@ export type {
 } from './missionEvaluation';
 
 export {
-    attemptOf, classifyTaskFailure, describeFailure, failure, FAILURE_KINDS, shortFailure
+    attemptOf, classifyTaskFailure, couldHaveWritten, describeFailure, failure, FAILURE_KINDS,
+    retryAdvice, shortFailure
 } from './missionFailure';
 export type {
     FailedStepLike, FailureClass, FailureKind, FailureRefs, RetryAdvice, StepFailure

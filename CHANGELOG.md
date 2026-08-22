@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.250.0 - X-75: an unknown fate is not a licence to repeat (2026-08-23)
+
+Two failure classes say, in their own words, that the work MAY HAVE RUN and
+that nothing here can say which — and then advised the lead to order it again.
+`record-lost`: "Order it again if the result still matters." `interrupted`:
+"check the output file if there is one before re-ordering."
+
+For a READ that is harmless. For a writer, a workflow or a child mission it is
+how the same commit lands twice, a file is rewritten over somebody's edit, or a
+second child run starts against work that was already done — with no record of
+the first to compare against, which is the whole reason the class exists. And
+the engine's own `seenWork` lock then refused the identical order, so a lead
+that followed the advice literally hit "already delegated" and a small
+paraphrase slipped past the lock straight into the duplicate.
+
+The advice now depends on whether the action could have CHANGED anything, not
+on the class alone. A step that said it only reads, and the `review`/`compare`
+primitives that exist to read, keep `retry: same`. Everything else — including
+any workflow or child mission, whatever the step claims — answers `inspect`: a
+new advice that tells the lead to establish from the evidence what actually
+landed, and to ask the user when that cannot settle it. The default is that
+work writes, because a delegation whose prompt nobody here parsed can do
+anything the agent can do.
+
+The fact travels on the failure (`couldHaveWritten`), since the step is gone by
+the time a reload or the bridge asks; `retryAdvice()` is the one resolver, so
+`missions.status` can never answer `same` while the lead's own prompt says
+`inspect` about the same step.
+
 ## 3.249.0 - X-81: ordered, spoken and silent are three facts (2026-08-23)
 
 U-65 fixed the counter — a conversation's summary counts only turns whose
