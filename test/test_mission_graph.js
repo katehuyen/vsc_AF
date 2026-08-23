@@ -487,9 +487,86 @@ function part4() {
             eq('and one guidance node', proj.graph.filter(n => n.kind === 'guidance').length, 1);
             eq('‼️ and a replay does not invent strategy versions either',
                 proj.strategies.length, M.projectTrace(ev).strategies.length);
-            return part5();
+            return x89(proj).then(part5);
         });
     });
+}
+
+// ============ 4b. ‼️ X-89 — the journal's guidance, put back on reload
+//
+// Two-phase delivery writes the journal FIRST and saves the snapshot second, in
+// BOTH phases, on purpose. That leaves two crash windows, and startup
+// reconciliation was reading `answers` out of the projection and nothing else.
+function x89(applied) {
+    console.log('\n-- ‼️ X-89: a steer the journal holds and the snapshot does not');
+
+    // --- RECEIPT AHEAD: the steer reached the journal, the save never happened
+    {
+        const run = { ...newRun('x89a'), guidance: [] };
+        const out = M.reconcileGuidance(run, [{ id: 'g1-a', text: 'use British spelling', at: 200 }]);
+        ok('‼️ THE LOSS: a steer only the journal knows about comes back',
+            out.restored.length === 1 && run.guidance.length === 1
+            && run.guidance[0].text === 'use British spelling');
+        ok('…as PENDING, because nothing says it was ever delivered',
+            M.pendingGuidance(run).length === 1);
+        ok('…and running it again changes nothing', (() => {
+            const again = M.reconcileGuidance(run, [{ id: 'g1-a', text: 'use British spelling', at: 200 }]);
+            return again.restored.length === 0 && run.guidance.length === 1;
+        })());
+    }
+
+    // --- APPLIED AHEAD: the lead read it, the save never happened
+    {
+        const run = {
+            ...newRun('x89b'),
+            guidance: [{ id: 'g1-b', text: 'stop after the next round', at: 200, inflightAt: 210 }]
+        };
+        const out = M.reconcileGuidance(run, [{ id: 'g1-b', text: 'stop after the next round', at: 200, appliedAt: 215 }]);
+        ok('‼️ THE DOUBLE DELIVERY: the journal proves it landed, so it is settled',
+            out.settled.length === 1 && run.guidance[0].appliedAt === 215);
+        ok('…the in-flight mark is cleared, so reopenGuidance has nothing to reopen',
+            run.guidance[0].inflightAt === undefined && M.reopenGuidance(run).length === 0);
+        ok('…and it is not pending either — it is over',
+            M.pendingGuidance(run).length === 0 && !run.guidance[0].standing);
+    }
+
+    // --- SNAPSHOT AHEAD stays the snapshot's: the journal only ADDS facts
+    {
+        const run = {
+            ...newRun('x89c'),
+            guidance: [{ id: 'g1-c', text: 'only in the snapshot', at: 200 }]
+        };
+        M.reconcileGuidance(run, []);
+        ok('a steer the snapshot has and the journal does not is untouched',
+            run.guidance.length === 1 && M.pendingGuidance(run).length === 1);
+        // …and one already applied is not un-applied by a journal that is behind
+        const done = { ...newRun('x89d'), guidance: [{ id: 'g2', text: 't', at: 1, appliedAt: 9 }] };
+        M.reconcileGuidance(done, [{ id: 'g2', text: 't', at: 1 }]);
+        ok('…and a delivery already recorded is never taken back',
+            done.guidance[0].appliedAt === 9);
+    }
+
+    // --- the real projection feeds it: no second shape of the same record
+    {
+        const run = { ...newRun('x89e'), guidance: [] };
+        M.reconcileGuidance(run, applied.guidance);
+        ok('‼️ the projection\'s own guidance is what reconciliation reads',
+            run.guidance.length === applied.guidance.length
+            && run.guidance.every(g => g.appliedAt !== undefined));
+        ok('…so a run resumed off nothing but its journal sends none of it twice',
+            M.pendingGuidance(run).length === 0);
+    }
+
+    // --- order: two restored steers come back oldest first
+    {
+        const run = { ...newRun('x89f'), guidance: [{ id: 'mid', text: 'b', at: 200 }] };
+        M.reconcileGuidance(run, [
+            { id: 'late', text: 'c', at: 300 }, { id: 'early', text: 'a', at: 100 }
+        ]);
+        ok('restored steers land in the order the user sent them',
+            run.guidance.map(g => g.id).join(',') === 'early,mid,late');
+    }
+    return Promise.resolve();
 }
 
 // ============================================ 5. one correction, then an open failure

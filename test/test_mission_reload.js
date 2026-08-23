@@ -167,6 +167,18 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
         (ext.match(/reconcileRun\([\s\S]{0,120}?missionExternalLookup\)/g) || []).length, 3);
     eq('…and no reconcile is left asking the journal alone',
         (ext.match(/reconcileRun\(/g) || []).length, 3);
+    // ‼️ X-89 — and the reload reads the projection's GUIDANCE too. It read
+    // `answers` and stopped there, so both write-ahead windows lost: a steer
+    // that only reached the journal vanished, and one the journal proved was
+    // delivered was sent again by `reopenGuidance`.
+    ok('‼️ the reload puts the journal\'s guidance back into the snapshot',
+        /reconcileGuidance\(r, rec\.projection\.guidance\)/.test(ext));
+    ok('…before the engine is ever built, so nothing is reopened first',
+        ext.indexOf('reconcileGuidance(r, rec.projection.guidance)')
+        < ext.indexOf('const missionEngines = new Map'));
+    ok('…and both outcomes are said out loud on the ledger, not fixed in silence',
+        /guidance \$\{id\} was recovered from the journal/.test(ext)
+        && /guidance \$\{id\} had already reached the lead/.test(ext));
     ok('the interrupted branch keeps the figures',
         /step\.failure = missionFailure\('interrupted', step, step\.note\);\s*\n[\s\S]{0,600}?if \(a\.costUSD !== undefined\) \{ step\.costUSD = a\.costUSD; \}/.test(ext));
     ok('the recovered branch restores the child\'s verdict',

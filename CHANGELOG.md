@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.256.0 - X-89: the journal's guidance, put back into the snapshot on reload (2026-08-23)
+
+Two-phase delivery writes the journal FIRST and saves the snapshot second, in
+both phases, on purpose: a record that exists only in memory does not survive
+the thing it was written to survive. That leaves two crash windows, and startup
+reconciliation was reading `answers` out of the projection and nothing else — so
+both of them lost.
+
+**The receipt was ahead.** The user's steer reached the journal and the window
+closed before the save. The snapshot had no guidance at all, the journal had it,
+and the run resumed as though nothing had ever been typed. The instruction was
+gone and nothing said so — the worse of the two failures.
+
+**The delivery was ahead.** The lead answered the call that carried the steer,
+the `applied` line reached the journal, and the window closed before the save.
+The snapshot still showed it in flight, so `reopenGuidance` re-sent an
+instruction the journal already proved had landed — the double delivery the
+whole mechanism exists to prevent.
+
+Reconciliation now merges the projection's guidance into the run, by id, before
+the engine reopens anything: a steer the journal alone knows about is restored
+as pending, one the journal proves was delivered is settled and its in-flight
+mark cleared. The journal may only ADD a fact here — a steer the snapshot has
+and the journal does not is the snapshot-ahead case and stays the existing
+refuse/degraded rule's. Both outcomes are said on the ledger rather than fixed
+in silence, and the whole thing is idempotent across repeated reloads.
+
 ## 3.255.0 - X-83: an allocation already granted is not an overrun (2026-08-23)
 
 X-46b made a ceiling reach a wave in flight, by asking the wave guard the same

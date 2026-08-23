@@ -754,6 +754,64 @@ export function reopenGuidance(run: MissionRun): MissionGuidance[] {
 }
 
 /**
+ * ‼️ X-89 — THE JOURNAL'S GUIDANCE, PUT BACK INTO THE SNAPSHOT ON RELOAD.
+ *
+ * Two-phase delivery writes the journal FIRST and saves the snapshot second, in
+ * both phases, on purpose: a record that exists only in memory does not survive
+ * the thing it was written to survive. That leaves two crash windows, and
+ * startup reconciliation was reading `answers` out of the projection and
+ * nothing else — so both of them lost:
+ *
+ *   * RECEIPT AHEAD. The user's steer reached the journal and the crash came
+ *     before the save. The snapshot has no guidance at all, the journal has it,
+ *     and the run resumes as though nothing was ever typed. The instruction is
+ *     gone and nothing says so — the worse of the two failures.
+ *
+ *   * APPLIED AHEAD. The lead answered the call that carried the steer, the
+ *     `applied` line reached the journal, and the crash came before the save.
+ *     The snapshot still shows it in flight, so `reopenGuidance` re-sends an
+ *     instruction the journal already proves was delivered. The double delivery
+ *     the whole mechanism exists to prevent.
+ *
+ * The journal is only ever allowed to ADD a fact here — create a steer the
+ * snapshot never learned about, or settle one it could not yet know had
+ * landed. A steer the snapshot has and the journal does not is untouched: that
+ * is the snapshot-ahead case, and it is the existing refuse/degraded rule's.
+ *
+ * Idempotent, and called before the engine reopens anything.
+ */
+export function reconcileGuidance(
+    run: MissionRun,
+    journal: readonly { id: string; text: string; at: number; appliedAt?: number }[]
+): { restored: string[]; settled: string[] } {
+    const restored: string[] = [];
+    const settled: string[] = [];
+    const byId = new Map((run.guidance ?? []).map(g => [g.id, g]));
+    for (const j of journal) {
+        const g = byId.get(j.id);
+        if (!g) {
+            const fresh: MissionGuidance = {
+                id: j.id, text: j.text, at: j.at,
+                ...(j.appliedAt !== undefined ? { appliedAt: j.appliedAt } : {})
+            };
+            run.guidance = [...(run.guidance ?? []), fresh];
+            byId.set(j.id, fresh);
+            restored.push(j.id);
+            continue;
+        }
+        if (j.appliedAt !== undefined && g.appliedAt === undefined) {
+            g.appliedAt = j.appliedAt;
+            g.inflightAt = undefined;
+            g.standing = undefined;
+            settled.push(j.id);
+        }
+    }
+    // oldest first, the order every reader of this list assumes
+    if (restored.length) { run.guidance = [...(run.guidance ?? [])].sort((a, b) => a.at - b.at); }
+    return { restored, settled };
+}
+
+/**
  * ‼️ M-17 — THE INPUT TO STALENESS, defined once because two definitions of
  * "the work moved on" would be two definitions of what a current pass is, and
  * the gate would then mean something different depending on who asked.

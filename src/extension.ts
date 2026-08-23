@@ -274,7 +274,7 @@ import {
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     validateMissionInput,
     normalizeMissionLimits, validateMissionLimitsInput,
-    poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileRun, remainingBudget,
+    poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileGuidance, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
 // `isStale` is already taken by codexctx (a context measurement going out of
@@ -3360,6 +3360,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             r.traceDegraded = rec.degraded || undefined;
             // the snapshot catches up to what the journal already knows
             r.trace.lastSeq += rec.snapshotBehind;
+            // ‼️ X-89 — INCLUDING WHAT THE USER TYPED. Two-phase delivery writes
+            // the journal first and saves second, in both phases, so a crash in
+            // either window leaves the journal holding a fact the snapshot has
+            // not learned: a steer that was never recorded, or one whose
+            // delivery was never marked. Reconciled BEFORE the engine reopens
+            // anything, or `reopenGuidance` re-sends an instruction the journal
+            // already proves landed.
+            const gRec = reconcileGuidance(r, rec.projection.guidance);
+            for (const id of gRec.restored) {
+                r.ledger.push(`(guidance ${id} was recovered from the journal — the window closed before it was saved)`);
+            }
+            for (const id of gRec.settled) {
+                r.ledger.push(`(guidance ${id} had already reached the lead — the journal says so; not sent again)`);
+            }
             // a settled step whose task finished while the window was gone must
             // not read as "running" for ever — reconcile the record, not a guess
             for (const round of r.rounds) {
