@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.266.0 - X-77: a ref points at something that was said, and an answer is the addressee's (2026-08-23)
+
+Four things about a speaking turn were checked too loosely to mean anything.
+
+**A ref only had to EXIST.** An ordered turn has an id from the moment it is
+ordered, so a pending, failed or cancelled turn's id satisfied the "this intent
+must name what it answers" rule — and then the prompt builder, which materialises
+only delivered messages, silently dropped it. The speaker was told to answer
+something it was never shown, and the record said it had been given it. A ref now
+has to name a message that was really said, and the refusal says which state the
+one it named is in.
+
+**Nothing tied the intent to the speaker's place in the exchange.** Any
+participant could settle a question or a challenge that had been put to somebody
+else, and the open-thread count would then show it answered by a turn nobody
+asked for. A `response` and a `concede` are the addressee's to give now, and
+nobody settles their own question. A question put to EVERYONE — the ordinary case
+— is still anyone's to answer, and a `synthesis` is untouched by the rule: it
+settles what it names but it is nobody's reply. Which intents are replies is
+declared in the registry, not listed at the check.
+
+**The lead could not choose how much a speaker sees.** A new lane always got the
+whole delivered history and a resumed one everything after its own last turn,
+with `refs` doing nothing but emphasis — so asking one participant about one
+thing also handed it every position already taken, which is the opposite of an
+independent opinion. `visibility` is now stated and kept: `all` · `refs-only` ·
+`since`. It is on the RECORD, because "what did this turn actually see?" is
+unanswerable afterwards otherwise, and the speaker is TOLD when the rest was held
+back so it does not read a deliberate silence as an empty room. Omitting it keeps
+exactly the behaviour that was always there.
+
+**And the repeat guard read half the turn.** It skipped `to` entirely, so the
+same question put to a different participant was refused as a duplicate; and it
+compared refs in written order, so naming the same two messages the other way
+round read as a new turn and was allowed. Both halves were wrong, in opposite
+directions.
+
+**U-65 follow-up: the room and the core now agree on what settles a thread.** The
+Missions page carried its own copy of that list and it said `response | concede`,
+while the registry has said `synthesis` and `vote` settle what they name since
+M-20. One transcript therefore read as closed in the core and the bridge and as
+unanswered in the room. The page reads the flags the registry ships.
+
 ## 3.265.0 - Shell-safe bridge arguments (2026-08-23)
 
 The bridge helper's documented inline JSON example was not actually portable:

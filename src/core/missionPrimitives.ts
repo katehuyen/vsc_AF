@@ -161,6 +161,8 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             '"to": ["for message: who it is addressed to — leave empty for everyone in the conversation"]',
             `"intent": "for message: ${messageIntentMenu()}"`,
             '"refs": ["for message: the message ids this turn is about — required for challenge, response, concede, synthesis and vote"]',
+            '"visibility": "for message: how much of the record this speaker is shown — all | refs-only | since. '
+            + 'Omit for the default: the whole record, or everything since that speaker\'s own last turn on a lane being resumed"',
             '"close": "for message: end the conversation after this turn, and say in one line why"'
         ],
         rules: [
@@ -168,6 +170,13 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
             + 'ordinary delegation, is shown the ACTUAL TEXT of the messages you put in "refs", and whatever it '
             + 'writes becomes the message. You never write somebody else\'s message and you are never asked to '
             + 'summarise one — you name ids, and the engine attaches the words.',
+            '‼️ X-77 — a "response" and a "concede" are the ADDRESSEE\'s to give: a participant a question or '
+            + 'challenge was not put to cannot settle it, and nobody settles their own. It may "challenge" or '
+            + '"propose" in its own name instead. And "refs" name messages that were really SAID — a turn you '
+            + 'ordered this round has an id but no words yet, so it cannot be answered.',
+            '"visibility": "refs-only" asks somebody about one thing without also handing it every position '
+            + 'already taken — which is what you want when you are after an independent opinion rather than a '
+            + 'reaction. What each speaker was shown is kept on its message.',
             '‼️ You may NOT report a discussion that did not happen. Three agents answering the same question '
             + 'separately are three proposals, not a debate: a "synthesis" or a "vote" has to name the messages it '
             + 'rests on, and only a real speaking turn produces a message id to name.',

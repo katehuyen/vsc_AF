@@ -83,6 +83,21 @@ export interface MessageIntentKind {
      * rounds happened" is not the same claim as "nothing is left unanswered".
      */
     settles: boolean;
+    /**
+     * ‼️ X-77 — Is this intent somebody's REPLY, as opposed to a statement
+     * that happens to settle things?
+     *
+     * A `response` and a `concede` are answers: they are the addressee's to
+     * give, and a participant the question was never put to cannot give one —
+     * without this, any bystander could settle a thread by naming it, and the
+     * open count would say it had been answered by a turn nobody asked for.
+     *
+     * A `synthesis` settles what it names and is NOT one of these: it draws
+     * the room together and is nobody's reply, so the addressee rule would be
+     * wrong for it. Declared here rather than listed at the check, so the
+     * next intent decides its own answer to this.
+     */
+    answers?: boolean;
     /** one line, shown in the planner's menu and readable by a person */
     describe: string;
     /** what the speaker is told it is doing, in the prompt this builds */
@@ -108,7 +123,7 @@ export const MESSAGE_INTENTS: Record<MessageIntent, MessageIntentKind> = {
             + 'give the reason — a challenge that does not point at a specific claim cannot be answered.'
     },
     response: {
-        needsRefs: true, awaits: false, settles: true,
+        needsRefs: true, awaits: false, settles: true, answers: true,
         describe: 'answer a named question or challenge',
         charge: 'Answer what was put to you below. Address it directly: if you accept part of it and '
             + 'reject the rest, say which is which.'
@@ -120,7 +135,7 @@ export const MESSAGE_INTENTS: Record<MessageIntent, MessageIntentKind> = {
             + 'and say what it shows. Do not argue from it; let it stand.'
     },
     concede: {
-        needsRefs: true, awaits: false, settles: true,
+        needsRefs: true, awaits: false, settles: true, answers: true,
         describe: 'accept a named point you had been arguing against',
         charge: 'Say plainly which part you now accept and why. A concession is worth recording '
             + 'exactly because it is specific — do not soften it into agreement in general.'
@@ -146,6 +161,24 @@ export const MESSAGE_INTENT_NAMES = Object.keys(MESSAGE_INTENTS) as MessageInten
  *  the parser dispatches on, so the two cannot drift apart. */
 export function messageIntentMenu(): string {
     return MESSAGE_INTENT_NAMES.join(' | ');
+}
+
+/**
+ * ‼️ X-77 (U-65) — THE FLAGS A SURFACE NEEDS, FROM THE TABLE THAT OWNS THEM.
+ *
+ * The Missions page carried its OWN copy of "which intents settle a thread"
+ * and it said `response | concede` — while this registry has said `synthesis`
+ * and `vote` settle too since M-20. The same transcript therefore read as
+ * closed in the core and the bridge and as unanswered in the room, from one
+ * record. Small enough to ship whole; there is no second copy to drift.
+ */
+export function intentFlags(): Record<MessageIntent, { awaits: boolean; settles: boolean; answers: boolean }> {
+    const out = {} as Record<MessageIntent, { awaits: boolean; settles: boolean; answers: boolean }>;
+    for (const name of MESSAGE_INTENT_NAMES) {
+        const k = MESSAGE_INTENTS[name];
+        out[name] = { awaits: k.awaits, settles: k.settles, answers: k.answers === true };
+    }
+    return out;
 }
 
 export function intentKind(intent: string): MessageIntentKind | undefined {
@@ -189,6 +222,21 @@ export interface MissionMessage {
     intent: MessageIntent;
     /** the message ids this one is about — checked against this conversation */
     refs: string[];
+    /**
+     * ‼️ X-77 — HOW MUCH OF THE RECORD THIS SPEAKER WAS SHOWN.
+     *
+     * There was no such choice: a new or handed-over lane always got the WHOLE
+     * delivered history and a resumed one always got everything after its own
+     * last turn, with `refs` doing nothing but emphasis. So a lead could not
+     * ask one participant a question without also handing it every position
+     * already taken — which is exactly what an independent opinion is not.
+     *
+     * `all` · `refs-only` (just the messages it names) · `since` (only what is
+     * new since this speaker last spoke). On the RECORD, because "what did it
+     * actually see?" is unanswerable afterwards otherwise, and a turn read
+     * three months later is read as though it had seen everything.
+     */
+    visibility?: MessageVisibility;
     /** the speaker's own words, bounded; the record does not depend on a file */
     excerpt?: string;
     /** where the full text lives — the speaking task's archived output */
@@ -283,6 +331,10 @@ export function openThreads(
         && !settled.has(m.id));
 }
 
+/** ‼️ X-77 — the three honest answers to "what was this speaker shown?". */
+export type MessageVisibility = 'all' | 'refs-only' | 'since';
+export const MESSAGE_VISIBILITY: MessageVisibility[] = ['all', 'refs-only', 'since'];
+
 export interface MessageRequest {
     conversationId: string;
     from: string;
@@ -337,17 +389,64 @@ export function refuseMessage(
             + 'Wait for that turn to come back, or have somebody else speak.';
     }
     const own = conversationMessages(messages, conv.id);
+    const said = own.filter(m => m.state === 'delivered');
     const missing = req.refs.filter(r => !own.some(m => m.id === r));
     if (missing.length) {
         return `No message of conversation "${conv.id}" carries the id ${missing.map(m => `"${m}"`).join(', ')}. `
-            + (own.length
-                ? `Its messages are: ${own.slice(-8).map(m => m.id).join(', ')}.`
+            + (said.length
+                ? `Its messages are: ${said.slice(-8).map(m => m.id).join(', ')}.`
                 : 'It has none yet — the first turn cannot refer to anything.');
+    }
+    // ‼️ X-77 — A REF POINTS AT SOMETHING THAT WAS ACTUALLY SAID.
+    //
+    // The check above asked only whether the id EXISTED in the conversation,
+    // and an ordered turn has an id from the moment it is ordered. So a
+    // pending, failed or cancelled turn's id satisfied the "needsRefs" rule —
+    // and then the prompt builder, which materialises only DELIVERED messages,
+    // silently dropped it. The speaker was told to answer something it was
+    // never shown, and the record said it had been given it.
+    const unsaid = req.refs.filter(r => !said.some(m => m.id === r));
+    if (unsaid.length) {
+        const state = (id: string) => own.find(m => m.id === id)?.state ?? 'unknown';
+        return `${unsaid.map(m => `"${m}"`).join(', ')} ${unsaid.length > 1 ? 'were' : 'was'} ordered but never `
+            + `said (${unsaid.map(m => `${m}: ${state(m)}`).join(', ')}), so there is nothing to answer. `
+            + (said.length
+                ? `What has actually been said: ${said.slice(-8).map(m => m.id).join(', ')}.`
+                : 'Nothing has been said in it yet.');
     }
     if (kind.needsRefs && !req.refs.length) {
         return `A "${req.intent}" is about something somebody said, so it has to name it: `
             + 'put the message id(s) it answers in "refs". '
-            + (own.length ? `This conversation has ${own.map(m => m.id).join(', ')}.` : 'Nothing has been said yet.');
+            + (said.length ? `This conversation has ${said.map(m => m.id).join(', ')}.` : 'Nothing has been said yet.');
+    }
+    // ‼️ X-77 — AN ANSWER IS THE ADDRESSEE'S TO GIVE.
+    //
+    // Nothing tied the intent to the speaker's place in the exchange, so any
+    // participant could settle a question or a challenge that had been put to
+    // somebody else — and `openThreads` would then show it answered, by a turn
+    // that was never asked. Empty `to` means EVERYONE, which is the ordinary
+    // case, so the rule only bites on a turn that was addressed narrowly.
+    //
+    // `answers` is declared in the registry rather than listed here: a
+    // `synthesis` also settles what it names, but it draws the room together
+    // and is nobody's reply, so the addressee rule would be wrong for it.
+    if (kind.answers) {
+        for (const r of req.refs) {
+            const target = said.find(m => m.id === r);
+            if (!target || !intentKind(target.intent)?.awaits) { continue; }
+            if (target.from === req.from) {
+                const who = knownAgents.find(a => a.id === req.from)?.name ?? req.from;
+                return `${r} is ${who}'s own ${target.intent} — answering it would settle a thread `
+                    + 'nobody else ever got to. Have the participant it was put to answer it.';
+            }
+            if (target.to.length && !target.to.includes(req.from)) {
+                const who = knownAgents.find(a => a.id === req.from)?.name ?? req.from;
+                const meant = target.to
+                    .map(t => knownAgents.find(a => a.id === t)?.name ?? t).join(', ');
+                return `${r} was put to ${meant}, not to ${who}, so ${who} cannot answer it. `
+                    + `${who} may "challenge" or "propose" in its own name, or ${meant} can respond.`;
+            }
+        }
     }
     // ‼️ THE SAME TURN ORDERED AGAIN WITH NOTHING SAID IN BETWEEN — a loop the
     // generic guard cannot see. The work-level dup key hashes agent + prompt,
@@ -357,11 +456,17 @@ export function refuseMessage(
     // after round, paying for each one. What makes it a loop is a fact of the
     // record rather than of the prompt, so it is refused here, by naming the
     // message that already is this turn.
-    const delivered = own.filter(m => m.state === 'delivered');
-    const last = delivered[delivered.length - 1];
+    // ‼️ X-77 — AND THE KEY IS THE WHOLE TURN. It skipped `to` entirely, so
+    // the same question put to a DIFFERENT participant read as the identical
+    // turn and was refused; and it compared refs in written order, so naming
+    // the same two messages the other way round read as a different turn and
+    // was allowed. Both halves of that were wrong in opposite directions.
+    const keyOf = (xs: readonly string[]) => [...xs].sort().join(',');
+    const last = said[said.length - 1];
     if (last && last.from === req.from && last.intent === req.intent
         && (last.ask ?? '') === (req.ask ?? '')
-        && last.refs.join(',') === req.refs.join(',')) {
+        && keyOf(last.to) === keyOf(req.to)
+        && keyOf(last.refs) === keyOf(req.refs)) {
         const who = knownAgents.find(a => a.id === req.from)?.name ?? req.from;
         return `${who} already sent exactly this in "${conv.id}" (${last.id}), and nothing has been `
             + 'said since — ordering it again would buy the same turn twice. Ask something else, '
@@ -419,6 +524,9 @@ export function buildSpeakerPrompt(opts: {
     mandate?: string;
     /** how the speaker names the others — id to display name */
     nameOf?: (id: string) => string;
+    /** ‼️ X-77 — how much of the record `context` is; said out loud so the
+     *  speaker does not read a deliberate silence as an empty room. */
+    visibility?: MessageVisibility;
 }): string {
     const kind = MESSAGE_INTENTS[opts.intent];
     const name = (id: string) => (opts.nameOf?.(id) ?? id);
@@ -441,6 +549,16 @@ export function buildSpeakerPrompt(opts: {
     // participant writes to the room, and the row that says "Ada → Rev" is then
     // describing an address nobody made. One-to-many is the ordinary case here,
     // which is exactly why the narrow case has to be said out loud.
+    // ‼️ X-77 — AND HOW MUCH OF THE RECORD IT IS BEING SHOWN. A speaker given
+    // only what it was asked about will otherwise write as though it had read
+    // the room and simply found it empty.
+    if (opts.visibility === 'refs-only') {
+        parts.push('\n## What you are being shown\nOnly the message(s) named below. '
+            + 'The rest of this conversation is deliberately not in front of you: answer from '
+            + 'what you are given and your own knowledge, and do not guess at what else was said.');
+    } else if (opts.visibility === 'since' && opts.carried !== 'resumed') {
+        parts.push('\n## What you are being shown\nOnly what is new since your last turn here.');
+    }
     const cast = opts.conversation.participants;
     if (cast.length > 1) {
         parts.push('\n## Who is in it\n'

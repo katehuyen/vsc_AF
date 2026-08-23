@@ -908,6 +908,136 @@ async function rejectedRoundTest() {
         run.messages[0].state, 'cancelled');
 }
 
+// ‼️ X-77 — WHAT A REF MAY POINT AT, WHOSE ANSWER IT IS, AND HOW MUCH THE
+// SPEAKER WAS SHOWN.
+function refsAndAddresseeTest() {
+    console.log('\n-- ‼️ X-77 a ref points at something that was actually said');
+    const conv = { id: 'c1', objective: 'per engine or shared?', participants: ['a1', 'a2'], openedAt: 1 };
+    const known = [{ id: 'a1', name: 'Ada' }, { id: 'a2', name: 'Rev' }];
+    const msg = (over) => ({
+        id: 'm1', conversationId: 'c1', from: 'a1', fromName: 'Ada', to: [], intent: 'question',
+        refs: [], state: 'delivered', excerpt: 'x', orderedAt: 1, settledAt: 2, ...over
+    });
+    const ref = (state) => [msg({ id: 'm1', state })];
+    const asking = (over) => ({ conversationId: 'c1', from: 'a2', to: [], intent: 'response', refs: ['m1'], ...over });
+
+    ok('a ref to a DELIVERED message passes',
+        M.refuseMessage(asking(), conv, ref('delivered'), known) === '');
+    for (const state of ['pending', 'failed', 'cancelled']) {
+        const why = M.refuseMessage(asking(), conv, ref(state), known);
+        ok(`‼️ a ref to a ${state} turn is refused — it was ordered, never said`,
+            /never said/.test(why) && why.includes(state));
+    }
+    ok('an id that is not in the conversation at all is still refused as missing',
+        /No message of conversation/.test(
+            M.refuseMessage(asking({ refs: ['m9'] }), conv, ref('delivered'), known)));
+
+    console.log('\n-- ‼️ X-77 an answer is the addressee\'s to give');
+    const putToAda = [msg({ id: 'm1', from: 'a2', fromName: 'Rev', to: ['a1'], intent: 'question' })];
+    ok('the participant it was put to may answer it',
+        M.refuseMessage(asking({ from: 'a1' }), conv, putToAda, known) === '');
+    const bystander = M.refuseMessage(
+        { conversationId: 'c1', from: 'a2', to: [], intent: 'response', refs: ['m1'] },
+        conv, putToAda, known);
+    ok('‼️ its own asker cannot answer it — that would settle a thread nobody got to',
+        /own question/.test(bystander));
+    const known3 = [...known, { id: 'a3', name: 'Cem' }];
+    const conv3 = { ...conv, participants: ['a1', 'a2', 'a3'] };
+    const outsider = M.refuseMessage(
+        { conversationId: 'c1', from: 'a3', to: [], intent: 'response', refs: ['m1'] },
+        conv3, putToAda, known3);
+    ok('‼️ a participant it was NOT put to cannot settle it',
+        /was put to Ada, not to Cem/.test(outsider));
+    ok('…and it is told what it CAN do instead', /challenge|propose/.test(outsider));
+    const toEveryone = [msg({ id: 'm1', from: 'a2', fromName: 'Rev', to: [], intent: 'question' })];
+    ok('‼️ a question put to EVERYONE may be answered by anyone in the room',
+        M.refuseMessage(
+            { conversationId: 'c1', from: 'a3', to: [], intent: 'response', refs: ['m1'] },
+            conv3, toEveryone, known3) === '');
+    ok('‼️ a SYNTHESIS is nobody\'s reply, so the addressee rule does not touch it',
+        M.refuseMessage(
+            { conversationId: 'c1', from: 'a3', to: [], intent: 'synthesis', refs: ['m1'] },
+            conv3, putToAda, known3) === '');
+
+    console.log('\n-- ‼️ X-77 the repeat guard reads the whole turn');
+    const said2 = [
+        msg({ id: 'm1', from: 'a1', to: ['a2'], intent: 'question', ask: 'why?' })
+    ];
+    ok('the identical turn to the same addressee is still refused',
+        /already sent exactly this/.test(M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: ['a2'], intent: 'question', refs: [], ask: 'why?' },
+            conv3, said2, known3)));
+    ok('‼️ …but the same question put to somebody ELSE is a different turn',
+        M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: ['a3'], intent: 'question', refs: [], ask: 'why?' },
+            conv3, said2, known3) === '');
+    const two = [
+        msg({ id: 'm1', from: 'a2', fromName: 'Rev', to: [], intent: 'proposal' }),
+        msg({ id: 'm2', from: 'a3', fromName: 'Cem', to: [], intent: 'proposal' }),
+        msg({ id: 'm3', from: 'a1', to: [], intent: 'synthesis', refs: ['m1', 'm2'] })
+    ];
+    ok('‼️ …and naming the same two messages the other way round is the SAME turn',
+        /already sent exactly this/.test(M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: [], intent: 'synthesis', refs: ['m2', 'm1'] },
+            conv3, two, known3)));
+
+    console.log('\n-- ‼️ X-77 (U-65) the room and the core agree on what settles a thread');
+    const flags = M.intentFlags();
+    ok('the flags come from the registry, whole',
+        flags.question.awaits && flags.challenge.awaits && !flags.proposal.awaits);
+    ok('‼️ synthesis and vote settle what they name — which the page used to deny',
+        flags.synthesis.settles && flags.vote.settles);
+    ok('…and response and concede are the two that are somebody\'s reply',
+        flags.response.answers && flags.concede.answers
+        && !flags.synthesis.answers && !flags.vote.answers);
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+    ok('‼️ the page reads those flags instead of listing intents by hand',
+        /flags\[m\.intent\] && flags\[m\.intent\]\.settles/.test(page)
+        && /flags\[m\.intent\] && flags\[m\.intent\]\.awaits/.test(page));
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('…and the host really ships them', /intentFlags: intentFlags\(\)/.test(ext));
+    // a synthesis really does close the thread it names, on both sides
+    const settled = M.openThreads([
+        msg({ id: 'm1', from: 'a1', to: [], intent: 'question' }),
+        msg({ id: 'm2', from: 'a2', to: [], intent: 'synthesis', refs: ['m1'] })
+    ], 'c1');
+    eq('‼️ core: a synthesis closes the question it names', settled.length, 0);
+}
+
+async function visibilityTest() {
+    console.log('\n-- ‼️ X-77 how much of the record a speaker is shown is a stated choice');
+    const bad = M.parseAdaptiveDecision(say({ visibility: 'some' }), spec());
+    ok('a word that is not one of the three is refused by name',
+        !bad.ok && /"visibility" must be one of: all \| refs-only \| since/.test(bad.error));
+    const good = M.parseAdaptiveDecision(say({ visibility: 'refs-only' }), spec());
+    ok('…and a real one survives the parse', good.ok && good.decision.visibility === 'refs-only');
+    ok('omitting it leaves the field absent, so the default still decides',
+        M.parseAdaptiveDecision(say(), spec()).decision.visibility === undefined);
+
+    // Ada speaks, then Rev is asked about ONE thing and shown only that
+    const run = newRun();
+    const replies = [
+        say(),
+        say({
+            conversation: 'c1', objective: undefined, participants: undefined,
+            from: 'Rev', intent: 'challenge', refs: ['m1'], visibility: 'refs-only'
+        }),
+        FINISH
+    ];
+    const { d, waves } = deps(replies, { Ada: 'Per engine. The vocabulary differs.', Rev: 'It duplicates.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const turn = run.rounds[1].steps[0];
+    ok('‼️ the speaker is still given the text of what it was asked about',
+        turn.prompt.includes('Per engine. The vocabulary differs.'));
+    ok('‼️ …and is TOLD the rest was deliberately kept back',
+        /deliberately not in front of you/.test(turn.prompt));
+    eq('what it was shown is on the record, not left to be guessed at later',
+        run.messages[1].visibility, 'refs-only');
+    eq('a turn that stated nothing records the default it really got',
+        run.messages[0].visibility, 'all');
+    ok('the wave itself is unchanged — this is about the prompt, not the plumbing', waves.length === 2);
+}
+
 (async () => {
     await firstTurnTest();
     await independentRoundTest();
@@ -920,6 +1050,8 @@ async function rejectedRoundTest() {
     await oneToManyTest();
     await failedSpeakerTest();
     await repeatedTurnTest();
+    refsAndAddresseeTest();
+    await visibilityTest();
     await orphanTurnTest();
     await emptyCloseTest();
     await rejectedRoundTest();

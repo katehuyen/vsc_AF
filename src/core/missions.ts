@@ -18,9 +18,9 @@ import {
 } from './missionPrimitives';
 import { describeFailure, failure, StepFailure } from './missionFailure';
 import {
-    buildSpeakerPrompt, conversationDigest, conversationMessages, intentKind, LaneCarry,
-    MessageIntent, messageIntentMenu, MissionConversation, MissionMessage, newConversationId,
-    newMessageId, refuseMessage
+    buildSpeakerPrompt, conversationDigest, conversationMessages, intentFlags, intentKind, LaneCarry,
+    MessageIntent, messageIntentMenu, MESSAGE_VISIBILITY, MessageVisibility, MissionConversation,
+    MissionMessage, newConversationId, newMessageId, refuseMessage
 } from './missionConversation';
 import {
     councilBrief, councilDigest, councilExit, councilOf, MissionCouncil, newCouncilId,
@@ -66,13 +66,13 @@ export type {
 } from './missionPrimitives';
 
 export {
-    buildSpeakerPrompt, conversationDigest, conversationMessages, intentKind, MESSAGE_INTENT_NAMES,
-    MESSAGE_INTENTS, messageIntentMenu, messageLine, newConversationId, newMessageId, openThreads,
-    participantBusy, refuseMessage
+    buildSpeakerPrompt, conversationDigest, intentFlags, conversationMessages, intentKind, MESSAGE_INTENT_NAMES,
+    MESSAGE_INTENTS, messageIntentMenu, MESSAGE_VISIBILITY, messageLine, newConversationId,
+    newMessageId, openThreads, participantBusy, refuseMessage
 } from './missionConversation';
 export type {
     ConversationDigest, LaneCarry, MessageIntent, MessageIntentKind, MessageRequest, MessageState,
-    MissionConversation, MissionMessage
+    MessageVisibility, MissionConversation, MissionMessage
 } from './missionConversation';
 
 export {
@@ -1157,6 +1157,10 @@ type PlannerDecisionCore =
         to: string[];
         intent: MessageIntent;
         refs: string[];
+        /** ‼️ X-77 — how much of the record this speaker is shown. Absent keeps
+         *  the behaviour that was always there: everything, or (on a resumed
+         *  lane) everything since its own last turn. */
+        visibility?: MessageVisibility;
         ask?: string;
         title?: string;
         /** this turn ends the conversation, and this is the stated reason */
@@ -1465,6 +1469,20 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
                     + `(${allowed.map(m => m.agentName).join(', ')}). Leave "to" empty to address everyone.`
             };
         }
+        // ‼️ X-77 — HOW MUCH OF THE RECORD THIS SPEAKER SEES, stated or left to
+        // the default. A wrong word is refused by name rather than falling back:
+        // a lead that meant "only what I asked about" and silently got the whole
+        // transcript has been given the opposite of what it asked for.
+        const visRaw = String(o.visibility ?? '').trim();
+        if (visRaw && !(MESSAGE_VISIBILITY as string[]).includes(visRaw)) {
+            return {
+                ok: false,
+                error: `"visibility" must be one of: ${MESSAGE_VISIBILITY.join(' | ')} (got "${visRaw}"). `
+                    + 'Leave it out for the default: the whole record, or — on a lane that is being '
+                    + 'resumed — everything since that speaker\'s own last turn.'
+            };
+        }
+        const vis = visRaw ? visRaw as MessageVisibility : undefined;
         const conversation = String(o.conversation ?? o.conversationId ?? '').trim();
         const participants = list(o.participants);
         const unknownIn = participants.filter(n => !byName(n));
@@ -1507,6 +1525,7 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
             to: list(o.to).map(n => byName(n)!.agentId),
             intent: intent as MessageIntent,
             refs: list(o.refs).slice(0, 20),
+            ...(vis ? { visibility: vis } : {}),
             ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
             ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
             ...(typeof o.close === 'string' && o.close.trim() ? { close: o.close.trim().slice(0, 200) } : {})
@@ -3336,11 +3355,21 @@ export class MissionEngine {
             const resumeSessionId = last?.sessionId;
             const canResume = !!resumeSessionId && (this.deps.canResumeLane?.(from) ?? false);
             const carried: LaneCarry = !last ? 'new' : (canResume ? 'resumed' : 'handoff');
+            // ‼️ X-77 — WHAT THIS SPEAKER IS SHOWN, from a stated policy.
+            //
             // On a resumed lane the speaker is already holding everything up to
-            // its own last turn — sending it again pays for the same tokens.
-            const context = carried === 'resumed'
-                ? said.slice(said.findIndex(m => m.id === last!.id) + 1)
+            // its own last turn — sending it again pays for the same tokens, so
+            // that is the default there. Everywhere else the default is the
+            // whole record, which is what it always was. `refs-only` is the one
+            // the lead could not have before: ask somebody about one thing
+            // without also handing it every position already taken.
+            const visibility: MessageVisibility =
+                d.visibility ?? (carried === 'resumed' ? 'since' : 'all');
+            const sinceMine = last
+                ? said.slice(said.findIndex(m => m.id === last.id) + 1)
                 : said;
+            const context = visibility === 'refs-only' ? []
+                : (visibility === 'since' ? sinceMine : said);
             const messageId = newMessageId(run.messages);
             run.messages.push({
                 id: messageId,
@@ -3351,6 +3380,9 @@ export class MissionEngine {
                 to: [...d.to],
                 intent: d.intent,
                 refs: [...d.refs],
+                // ‼️ X-77 — on the record, because "what did it actually see?" is
+                // unanswerable afterwards otherwise.
+                visibility,
                 ...(d.ask ? { ask: d.ask } : {}),
                 orderedAt: now,
                 state: 'pending',
@@ -3363,7 +3395,7 @@ export class MissionEngine {
                 prompt: buildSpeakerPrompt({
                     conversation: conv!, intent: d.intent, speakerName: nameOf(from),
                     referenced, context, ...(d.ask ? { ask: d.ask } : {}),
-                    to: d.to, goal: spec.goal, carried, nameOf,
+                    to: d.to, goal: spec.goal, carried, nameOf, visibility,
                     independent: d.from.length > 1,
                     // ‼️ M-20 — a council speaker is told it is in one, what the
                     // council is deciding and who chairs it. A vote turn is also

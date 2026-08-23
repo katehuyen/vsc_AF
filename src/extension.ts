@@ -269,6 +269,7 @@ import {
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, retryAdvice,
     normalizePool,
     chairCall, conversationDigest, conversationMessages, COUNCIL_EXITS, councilExitMenu, councilTurns,
+    intentFlags,
     messageIntentMenu, openThreads, tallyVotes,
     ExternalLookup, ExternalRecord, MissionStep,
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
@@ -11319,6 +11320,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             specs: missionStore.specs,
             runs: missionRunsForPanel(),
             agents: agents.map(a => ({ id: a.id, name: a.name })),
+            // ‼️ X-77 (U-65) — WHICH INTENTS AWAIT AN ANSWER AND WHICH SETTLE
+            // ONE, from the registry that owns them. The page carried its own
+            // copy and it was two intents out of date: `synthesis` and `vote`
+            // settle what they name, so the same transcript read as closed in
+            // the core and as unanswered in the room.
+            intentFlags: intentFlags(),
             // the user's model-name knowledge base feeds the model inputs
             modelAliases: cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
             // ‼️ THE ENGINES, SO THE FORM CAN OFFER THEM (X-35). `MissionSpec`

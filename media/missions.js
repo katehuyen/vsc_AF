@@ -1354,18 +1354,34 @@
         handoff: 'handoff — its engine cannot resume, so the exchange was handed over AS TEXT'
     };
 
-    /** ‼️ U-65 — an exchange awaits an answer while a question or a challenge
-     *  has nothing pointing back at it. Derived, never stored. */
+    /**
+     * ‼️ U-65 — an exchange awaits an answer while a question or a challenge
+     * has nothing pointing back at it. Derived, never stored.
+     *
+     * ‼️ X-77 — AND WHICH INTENTS THOSE ARE COMES FROM THE CORE REGISTRY. This
+     * listed `response | concede` by hand, and the registry has said `synthesis`
+     * and `vote` settle what they name since M-20 — so a council that reached a
+     * synthesis read as closed in the core and the bridge and as unanswered
+     * here, off one record. The fallback is the old pair, for a payload written
+     * by a host older than this.
+     */
+    const INTENT_FLAGS = () => (DATA.intentFlags || {
+        question: { awaits: true, settles: false },
+        challenge: { awaits: true, settles: false },
+        response: { awaits: false, settles: true },
+        concede: { awaits: false, settles: true }
+    });
     function openRefs(msgs) {
+        const flags = INTENT_FLAGS();
         const answered = new Set();
         msgs.forEach(m => {
             if (m.state !== 'delivered') { return; }
-            if (m.intent === 'response' || m.intent === 'concede') {
+            if (flags[m.intent] && flags[m.intent].settles) {
                 (m.refs || []).forEach(r => answered.add(r));
             }
         });
         return msgs.filter(m => m.state === 'delivered'
-            && (m.intent === 'question' || m.intent === 'challenge')
+            && !!(flags[m.intent] && flags[m.intent].awaits)
             && !answered.has(m.id));
     }
 
