@@ -4630,8 +4630,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const poolIn = poolRaw
             .map(m => agents.find(a => a.id === String(m?.agentId ?? '')))
             .filter((a): a is typeof agents[number] => !!a);
+        // ‼️ U-102 — AND WHICH OF THE TWO EMPTY-POOL ANSWERS THIS IS, said out
+        // loud when the caller knows. `fleet` means the whole fleet whatever the
+        // rows carry (they are overrides, not a cast list); `selected` means
+        // exactly these, and nobody ticked is a REFUSAL rather than a silent
+        // expansion to every agent on the machine. The field omitted is the old
+        // contract untouched, which is what every stored spec and every bridge
+        // caller written before this depends on.
+        const poolScope = String(input.poolScope ?? '').trim().toLowerCase();
+        if (mode === 'adaptive' && poolScope === 'selected' && !poolIn.length) {
+            return 'Pick at least one agent for the pool — with "selected" nobody ticked is nobody, not the whole fleet.';
+        }
+        const poolSource = poolScope === 'fleet' ? agents : (poolIn.length ? poolIn : agents);
         let pool = mode === 'adaptive'
-            ? poolFromFleet((poolIn.length ? poolIn : agents).map(a => ({ id: a.id, name: a.name })))
+            ? poolFromFleet(poolSource.map(a => ({ id: a.id, name: a.name })))
             : [];
         // ‼️ M-18 — AND A POOL MEMBER MAY STATE ITS OWN RUN DIMENSIONS. The type
         // has carried them since M-14 and `normalizePool` has always accepted
@@ -5735,7 +5747,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'each id is stable for the life of the mission because evaluations refer to it), '
                 + 'constraints? ([string] — what the run may NOT do), pool? ([{agent, role?, model?, engine?, '
                 + 'effort?, permissionMode?}] — whom the lead may draw on, on the SAME five dimensions a team '
-                + 'member takes; omit for the whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
+                + 'member takes; omit for the whole fleet), '
+                + '‼️ poolScope? (fleet|selected — U-102: WHICH of the two readings of an empty pool you mean. '
+                + '`fleet` is the whole fleet and the rows are overrides on it, not a cast list; `selected` is '
+                + 'exactly the agents named, and naming none is REFUSED rather than quietly expanded to every '
+                + 'agent on the machine. Omit it and the old contract stands unchanged: an empty pool = the '
+                + 'whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
                 + '`team` are OPTIONAL on an adaptive run: the lead is resolved deterministically (first of '
                 + 'the pool) and the cast is chosen at runtime, one role bound per agent. Every other arg '
                 + 'above means the same thing in both modes',

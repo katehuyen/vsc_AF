@@ -152,7 +152,25 @@
         // mode must not throw away what was typed in the other one.
         constraints: [''],
         criteria: [{ text: '', required: true }],
-        autonomy: 'ask-when-unsure'
+        autonomy: 'ask-when-unsure',
+        /**
+         * ‼️ U-102 — WHOM THE LEAD MAY DRAW ON, ANSWERED RATHER THAN INFERRED.
+         *
+         * Every box empty used to post `pool: []`, which the host read as the
+         * whole fleet — while the very same screen could just as truthfully be
+         * read as "nobody is picked". Two opposite answers, one picture. The
+         * scope is now the answer: `fleet` (the default, and what the old
+         * behaviour meant) or `selected`, where zero ticks is a refusal and
+         * never a silent expansion to every agent on the machine.
+         */
+        poolScope: 'fleet',
+        /**
+         * …and the ticks themselves are kept APART from the classic team.
+         * They looked like one control but they are two questions — a classic
+         * mission's cast list and an objective's pool — and sharing one map
+         * meant switching mode silently rewrote the other one's answer.
+         */
+        poolSel: {}
     };
     // Adaptive basic view = outcome + constraints + criteria. Everything the
     // user is NOT being asked to decide (lead, pool, workdir, limits, engines,
@@ -177,6 +195,27 @@
     });
     /** Which engine a member row really lands on: its own, else the mission's. */
     const effEngine = (agentId) => form.engines[agentId] || form.engine || 'claude';
+    /**
+     * ‼️ U-102 — WHO IS IN, per mode and per scope. Whole-fleet scope means
+     * every agent is in whatever the ticks remember, so the ticks are not
+     * consulted there — they are kept for the moment the user switches back.
+     */
+    const included = (agentId) => form.mode === 'adaptive'
+        ? (form.poolScope === 'fleet' ? true : !!form.poolSel[agentId])
+        : !!form.team[agentId];
+    const includedAgents = () => (DATA.agents || []).filter(a => included(a.id));
+    /** The page-side mirror of core `resolveLead` — the first of the pool, else
+     *  the first of the fleet. Same input, same lead, every time, so what the
+     *  form shows before Start is what the run will record. */
+    const autoLead = () => includedAgents()[0] || (DATA.agents || [])[0] || null;
+    /** One member row as the host reads it — the same shape for team and pool,
+     *  because the two lists differ in WHO is on them, never in what a row says. */
+    const memberPayload = (list) => list.map(a => ({
+        agentId: a.id, role: form.roles[a.id] || '',
+        model: form.models[a.id] || '', engine: form.engines[a.id] || '',
+        effort: form.efforts[a.id] || '',
+        permissionMode: form.perms[a.id] || ''
+    }));
     /**
      * ‼️ U-97 — MODEL IS A SELECT HERE, NOT FREE TEXT OVER A DATALIST.
      *
@@ -340,7 +379,15 @@
     // ---------------- new-mission form ----------------
 
     function formHtml() {
-        const agentOpts = ['<option value="">— pick the lead —</option>']
+        // ‼️ U-102 — AN AUTOMATIC LEAD IS NAMED BEFORE THE RUN, NOT AFTER IT.
+        // "— pick the lead —" on an adaptive form was the one field that told
+        // the user nothing: leaving it is legal there, and the agent it lands on
+        // is decided by a rule (`resolveLead`) the page can run itself. So it
+        // says which agent that is, and it re-says it when the pool changes.
+        const auto = form.mode === 'adaptive' ? autoLead() : null;
+        const agentOpts = [`<option value="">${C.esc(form.mode === 'adaptive'
+            ? (auto ? 'Automatic → ' + auto.name : 'Automatic — no agent in the fleet')
+            : '— pick the lead —')}</option>`]
             .concat(DATA.agents.map(a =>
                 `<option value="${C.esc(a.id)}"${form.leadAgentId === a.id ? ' selected' : ''}>${C.esc(a.name)}</option>`))
             .join('');
@@ -424,14 +471,27 @@
             // Agent/role → Engine → Model → Effort → Permissions. Model depends
             // on the engine and effort depends on the model, so a control never
             // stands to the LEFT of the thing that decides what it may offer.
+            // ‼️ U-102 — in whole-fleet scope the tick is not a question: every
+            // agent is in, so the box says so and is not offering a choice that
+            // would be ignored. Its overrides stay live — a whole-fleet pool is
+            // still a pool whose rows you may profile.
+            const inRow = included(a.id);
+            const fleetScope = form.mode === 'adaptive' && form.poolScope === 'fleet';
+            const isLead = form.mode === 'adaptive' && form.leadAgentId === a.id;
             return `
             <div class="tmrow">
-                <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
+                <label title="${C.esc(fleetScope
+                    ? 'In, because the pool is the WHOLE FLEET. Switch the pool to "Selected agents" to choose.'
+                    : (form.mode === 'adaptive'
+                        ? 'Tick to put this agent in the pool the lead may draw on.'
+                        : 'Tick to put this agent on the team.'))}"><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${inRow ? ' checked' : ''}${fleetScope ? ' disabled' : ''}> ${C.esc(a.name)}${isLead
+                        ? ` <span class="muted small" title="This agent also LEADS. The planner runs it as an orchestrator with the profile in the Orchestrator block; the settings on this row are for its WORKER delegations only.">· lead</span>`
+                        : ''}</label>
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
-                    value="${C.esc(form.roles[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
+                    value="${C.esc(form.roles[a.id] || '')}" ${inRow ? '' : 'disabled'}>
                 <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
                     title="Engine: which CLI this member's delegations run on — empty = the mission's engine below (now ${C.esc(engLabel)}). Changing it re-reads that engine's models and efforts into the two boxes on this row."
-                    ${form.team[a.id] ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
+                    ${inRow ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
                 <select id="md-${i}" class="mdl" data-model="${C.esc(a.id)}"
                     title="${C.esc((form.models[a.id] || 'agent default')
                         + (modelKnown(eng, form.models[a.id] || '') ? ''
@@ -440,12 +500,12 @@
                         + '\n\nModel for this member\'s delegations. Empty = the agent\'s own default / model policy.'
                         + ' The list is ' + engLabel + '\'s own catalog as this window last read it; change the engine'
                         + ' beside it and a model that catalog does not carry is dropped rather than launched.')}"
-                    ${form.team[a.id] ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
+                    ${inRow ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
                 <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
                     title="${C.esc(noEffort
                         ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
                         : effortTitle(form.efforts[a.id] || '', eRows))}"
-                    ${form.team[a.id] && !noEffort ? '' : 'disabled'}>${noEffort
+                    ${inRow && !noEffort ? '' : 'disabled'}>${noEffort
                         // SHORTHAND: the box is narrow and the engine's name does
                         // not fit in it. The short form goes on the control, the
                         // long one is already in the tooltip above.
@@ -453,7 +513,7 @@
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
                 <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
                     title="${C.esc(permTitle(form.perms[a.id] || ''))}"
-                    ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                    ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
             </div>`;
         }).join('');
         // ‼️ NO FIELD HERE HAS A MAXIMUM, AND EVERY ONE OF THEM TAKES 0.
@@ -518,11 +578,22 @@
         // draws this block plainly, exactly as it always has.
         const commonBlock = `
             <div class="frow"><label>${adaptive ? 'Lead agent' : 'Lead agent <span class="req">required</span>'} <select id="f-lead">${agentOpts}</select></label>
-                <span class="muted small">${adaptive
-                    ? 'Optional here — leave it and the first of the pool leads, which is what the run records. Its CLAUDE.md is the orchestration identity.'
-                    : 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'}</span></div>
+                <span class="muted small">${!adaptive
+                    ? 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'
+                    : (!form.leadAgentId
+                        ? 'Optional here — left alone it is the first of the pool, named in the box above, and that is what the run records. Its CLAUDE.md is the orchestration identity.'
+                        : (included(form.leadAgentId)
+                            ? 'Also in the pool — so it plans AND may be delegated to. The Orchestrator profile runs its planning calls; the settings on its pool row are for its worker delegations only.'
+                            : '<b>Planner only</b> — it is not in the pool, so it decides and delegates but does no delegated work itself. That is a valid objective; tick it below to let it work too.'))}</span></div>
             <div class="frow"><span class="flabel">${adaptive
-                ? 'Pool <span class="muted small">— whom the lead may draw on; empty = the whole fleet</span>'
+                ? `Pool <span class="muted small">— whom the lead may draw on</span>
+                    <span class="scopeseg" title="${C.esc('Whole fleet: every agent this window knows, written into the run as a fact when it starts.\n\nSelected agents: exactly the ones ticked. Ticking nobody is refused — it is not a quiet way of saying everybody.')}">
+                        <button type="button" class="segbtn${form.poolScope !== 'selected' ? ' on' : ''}" id="f-scope-fleet">Whole fleet</button
+                        ><button type="button" class="segbtn${form.poolScope === 'selected' ? ' on' : ''}" id="f-scope-sel">Selected agents</button>
+                    </span>
+                    <span class="muted small">${form.poolScope === 'selected'
+                        ? `${includedAgents().length} of ${DATA.agents.length} ticked`
+                        : `all ${DATA.agents.length} in`}</span>`
                 : 'Team <span class="req">at least one</span>'}</span>${teamRows}</div>
             <div class="frow"><label>Workdir <input type="text" id="f-workdir" placeholder="(optional) target repo/folder — delegations run inside it" value="${C.esc(form.workdir)}"></label>
                 <button class="secondary small" id="f-browse">Browse…</button>
@@ -601,7 +672,15 @@
         DATA.agents.forEach((a, i) => {
             const cb = document.getElementById('tm-' + i);
             if (!cb) { return; }
-            form.team[a.id] = !!cb.checked;
+            // ‼️ U-102 — the tick belongs to the mode that is showing. Classic's
+            // cast list and an objective's pool are two answers, and one map for
+            // both meant switching mode rewrote the other one silently. In
+            // whole-fleet scope the box is not a question, so it is not read.
+            if (form.mode === 'adaptive') {
+                if (form.poolScope !== 'fleet') { form.poolSel[a.id] = !!cb.checked; }
+            } else {
+                form.team[a.id] = !!cb.checked;
+            }
             form.roles[a.id] = val('rl-' + i, form.roles[a.id]);
             form.models[a.id] = val('md-' + i, form.models[a.id]);
             form.engines[a.id] = val('en-' + i, form.engines[a.id]);
@@ -640,13 +719,7 @@
             title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
             workdir: form.workdir, plannerModel: form.plannerModel,
             engine: form.engine,
-            team: DATA.agents.filter(a => form.team[a.id])
-                .map(a => ({
-                    agentId: a.id, role: form.roles[a.id] || '',
-                    model: form.models[a.id] || '', engine: form.engines[a.id] || '',
-                    effort: form.efforts[a.id] || '',
-                    permissionMode: form.perms[a.id] || ''
-                })),
+            team: memberPayload(DATA.agents.filter(a => form.team[a.id])),
             maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
             maxTokens: form.maxTokens,
             maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
@@ -659,10 +732,23 @@
             input.successCriteria = form.criteria
                 .map((c, i) => ({ id: 'c' + (i + 1), text: String(c.text || '').trim(), required: !!c.required }))
                 .filter(c => c.text);
-            // The pool IS the team rows — one cast list, ticked once. Empty is a
-            // real answer here (the whole fleet), which is why `team` still
-            // rides along untouched and the host picks the one its mode means.
-            input.pool = input.team;
+            /**
+             * ‼️ U-102 — THE POOL IS SENT WITH THE ANSWER IT MEANT. `poolScope`
+             * says which of the two readings of an empty list this is, so the
+             * host never has to guess: `fleet` carries every agent (the rows are
+             * overrides on a whole-fleet pool, not a cast list) and `selected`
+             * carries exactly the ticked ones, where none is refused on both
+             * sides rather than expanded to the fleet. `team` is kept identical
+             * to `pool` — one list, as it has always been recorded.
+             */
+            input.poolScope = form.poolScope === 'selected' ? 'selected' : 'fleet';
+            if (form.poolScope === 'selected' && !includedAgents().length) {
+                formErr = 'Nobody is in the pool. Tick at least one agent, or switch the pool back to Whole fleet.';
+                render();
+                return;
+            }
+            input.pool = memberPayload(includedAgents());
+            input.team = input.pool;
         }
         vscode.postMessage({ type: 'create', input });
     }
@@ -1941,6 +2027,13 @@
                     background:transparent; color:var(--vscode-foreground); }
                 .segbtn + .segbtn { border-left:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
                 .segbtn.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+                /* U-102 — the pool scope sits on the Pool heading line rather
+                   than on a row of its own: it is a property of that list, and a
+                   heading is where a list says what it contains. */
+                .scopeseg { display:inline-flex; margin:0 8px 0 4px; border-radius:6px; overflow:hidden;
+                    vertical-align:middle;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                .scopeseg .segbtn { font-size:11px; padding:2px 10px; }
                 .listrow { display:flex; gap:8px; align-items:center; margin:3px 0; }
                 .listrow .grow { flex:1; max-width:560px; margin-top:0; }
                 .critid { font-size:10px; flex:0 0 22px; opacity:.7; font-family:var(--vscode-editor-font-family, monospace); }
@@ -2098,6 +2191,12 @@
             const setMode = (m) => { readForm(); form.mode = m; formErr = ''; render(); };
             wire('f-mode-classic', () => setMode('classic'));
             wire('f-mode-adaptive', () => setMode('adaptive'));
+            // ‼️ U-102 — switching scope reads first too, and the ticks are kept:
+            // going to the whole fleet does not throw away the selection the
+            // user may come back to.
+            const setScope = (s) => { readForm(); form.poolScope = s; formErr = ''; render(); };
+            wire('f-scope-fleet', () => setScope('fleet'));
+            wire('f-scope-sel', () => setScope('selected'));
             wire('f-adv', () => { readForm(); advOpen = !advOpen; render(); });
             wire('cn-add', () => { readForm(); form.constraints.push(''); render(); });
             wire('cr-add', () => { readForm(); form.criteria.push({ text: '', required: true }); render(); });

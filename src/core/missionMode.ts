@@ -309,6 +309,21 @@ export function validateMissionInput(
             errors.push(`unknown mode "${m}" (use adaptive | classic, or leave it out for classic)`);
         }
     }
+    // ‼️ U-102 — "NOBODY TICKED" AND "EVERYBODY" ARE NOT THE SAME ANSWER, so the
+    // caller may now say which one it meant. Omitting the field keeps the old
+    // contract exactly (empty pool = the whole fleet), which is what every
+    // stored spec, template and bridge caller written before this relies on;
+    // sending it wrong is refused rather than read as the default, because the
+    // whole point of the field is that guessing here spends somebody's money on
+    // a fleet they did not choose.
+    if (given('poolScope')) {
+        const s = typeof raw.poolScope === 'string' ? raw.poolScope.trim() : '';
+        if (!s) {
+            errors.push(`"poolScope" was sent as ${shape(raw.poolScope)} — use fleet | selected, or leave the field out`);
+        } else if (s !== 'fleet' && s !== 'selected') {
+            errors.push(`unknown poolScope "${s}" (use fleet | selected, or leave it out)`);
+        }
+    }
     if (given('autonomy')) {
         const a = typeof raw.autonomy === 'string' ? raw.autonomy.trim() : '';
         if (!a) {

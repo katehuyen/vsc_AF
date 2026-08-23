@@ -464,10 +464,73 @@ ok('…the constraints, blank lines dropped',
     adaptiveCreate && adaptiveCreate.input.constraints.length === 2
     && adaptiveCreate.input.constraints[0] === 'Do not touch anything outside src/engines.');
 ok('…the autonomy the user chose', adaptiveCreate && adaptiveCreate.input.autonomy === 'decide-alone');
-ok('…and a POOL, which is the same ticked rows the team block collects',
-    adaptiveCreate && Array.isArray(adaptiveCreate.input.pool)
+// ‼️ U-102 — AND THE POOL SAYS WHICH ANSWER IT IS. The default is the whole
+// fleet, said out loud with `poolScope`, so the host never has to read an empty
+// list as "everybody" and hope that is what the screen meant.
+ok('…and a POOL that is the whole fleet, named as such rather than left empty',
+    adaptiveCreate && adaptiveCreate.input.poolScope === 'fleet'
+    && Array.isArray(adaptiveCreate.input.pool)
+    && adaptiveCreate.input.pool.length === DATA.agents.length
     && adaptiveCreate.input.pool.length === adaptiveCreate.input.team.length
-    && adaptiveCreate.input.pool[0].agentId === 'a1');
+    && adaptiveCreate.input.pool[0].agentId === 'a0');
+
+// ---------- U-102: which of the two empty-pool answers this is ----------
+// Every box empty posted `pool: []` and the host read it as the whole fleet —
+// while the identical picture could as truthfully be read as "nobody is picked".
+// The scope is the answer now, and the auto-lead is named before the run.
+ok('the pool heading offers the scope as a choice rather than implying it',
+    html().includes('id="f-scope-fleet"') && html().includes('id="f-scope-sel"'));
+ok('‼️ …and in whole-fleet scope every tick is IN, not a choice being offered',
+    (html().match(/id="tm-\d" data-team="[^"]*" checked disabled/g) || []).length === DATA.agents.length);
+ok('…the lead box NAMES the agent an automatic lead would land on',
+    html().includes('Automatic → lead'));
+getEl('f-scope-sel').listeners.click();
+ok('switching to Selected agents shows an honest zero instead of a silent fleet',
+    html().includes('0 of 3 ticked'));
+// The boxes the classic half ticked are still ticked in the shim's DOM (a
+// checkbox's markup does not change when `form` stops counting it), so the
+// selection is cleared through them the way a user would.
+DATA.agents.forEach((a, i) => { getEl('tm-' + i).checked = false; });
+posted = [];
+getEl('f-start').listeners.click();
+ok('‼️ …and Start REFUSES an empty selection rather than expanding it to everybody',
+    !posted.some(p => p.type === 'create') && html().includes('Nobody is in the pool'));
+getEl('tm-2').checked = true;
+getEl('tm-2').listeners.change();
+ok('ticking one agent makes the pool that one — and the auto-lead follows it',
+    html().includes('1 of 3 ticked') && html().includes('Automatic → reviewer'));
+posted = [];
+getEl('f-start').listeners.click();
+{
+    const sel = posted.find(p => p.type === 'create');
+    ok('…and the payload says selected, carrying exactly that agent',
+        sel && sel.input.poolScope === 'selected' && sel.input.pool.length === 1
+        && sel.input.pool[0].agentId === 'a2'
+        && sel.input.team.length === 1);
+}
+// ‼️ …AND THE TWO LISTS DO NOT SHARE ONE ANSWER. Count Classic's ticks, go and
+// change the pool, come back: Classic's cast list is where it was left. Before
+// this both wrote `form.team`, so choosing a pool silently re-cast the mission.
+getEl('f-mode-classic').listeners.click();
+const classicTicks = (html().match(/id="tm-\d" data-team="[^"]*" checked/g) || []).length;
+getEl('f-mode-adaptive').listeners.click();
+getEl('f-mode-classic').listeners.click();
+ok('‼️ an objective\'s pool ticks never rewrite the classic team',
+    classicTicks > 0
+    && (html().match(/id="tm-\d" data-team="[^"]*" checked/g) || []).length === classicTicks);
+getEl('f-mode-adaptive').listeners.click();
+// An explicit lead that is NOT in the pool is a valid objective, and the form
+// says what that means rather than looking like a mistake.
+getEl('f-lead').value = 'a0';
+getEl('f-scope-sel').listeners.click();
+ok('an explicit lead outside the pool is drawn as planner only',
+    html().includes('Planner only'));
+getEl('f-lead').value = 'a2';
+getEl('f-scope-sel').listeners.click();
+ok('…and one inside it says the row is about its WORKER delegations',
+    html().includes('worker delegations only'));
+getEl('f-lead').value = '';
+getEl('f-scope-fleet').listeners.click();
 
 // ‼️ BACKWARDS COMPATIBILITY IS THE POINT: a classic Start posts the message it
 // always posted. Not `mode: 'classic'` on every payload — the absent key IS the
@@ -482,7 +545,8 @@ ok('‼️ a classic Start posts NO mode and NO objective keys — the payload i
     && classicCreate.input.successCriteria === undefined
     && classicCreate.input.constraints === undefined
     && classicCreate.input.autonomy === undefined
-    && classicCreate.input.pool === undefined);
+    && classicCreate.input.pool === undefined
+    && classicCreate.input.poolScope === undefined);
 ok('…and everything typed in the objective survived the trip back too',
     html().includes('The OpenCode engine is production-ready on this machine.'));
 msgHandler({ data: { type: 'created' } });

@@ -383,6 +383,19 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
     // key at all (M-15) — refusing that would break every caller ever written.
     eq('an absent mode is not a fault', bad({}).length, 0);
 
+    // ---- ‼️ U-102 — "nobody ticked" and "everybody" were the same request
+    ok('an unknown poolScope is refused rather than read as the default',
+        bad({ mode: 'adaptive', poolScope: 'all' }).some(e => /unknown poolScope "all"/.test(e)));
+    ok('…and one sent as the wrong type says so',
+        bad({ mode: 'adaptive', poolScope: 3 }).some(e => /"poolScope" was sent as number/.test(e)));
+    eq('the two real scopes pass',
+        bad({ mode: 'adaptive', poolScope: 'fleet' }).length
+        + bad({ mode: 'adaptive', poolScope: 'selected', pool: [{ agentId: 'a1' }] }).length, 0);
+    // ‼️ AND OMITTING IT IS THE OLD CONTRACT, UNTOUCHED. Every stored spec,
+    // template and bridge caller written before U-102 sends no such key, and an
+    // empty pool there still means the whole fleet.
+    eq('an absent poolScope is not a fault', bad({ mode: 'adaptive', pool: [] }).length, 0);
+
     // ---- an unknown autonomy used to become the default
     ok('an unknown autonomy is refused',
         bad({ autonomy: 'yolo' }).some(e => /unknown autonomy "yolo"/.test(e)));

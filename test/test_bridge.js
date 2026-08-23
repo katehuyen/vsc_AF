@@ -2857,8 +2857,10 @@ const { opencodeStatus, syncToOpencode } =
             // anything looked for them. The raw check must run FIRST or there
             // is nothing left to catch.
             {
+                // The window only has to reach past the pool/lead block that the
+                // order is being asserted about; it grows as that block does.
                 const create = src.slice(src.indexOf('const createMission = '),
-                    src.indexOf('const createMission = ') + 12000);
+                    src.indexOf('const createMission = ') + 14000);
                 const rawAt = create.indexOf('validateMissionInput(');
                 const normAt = create.indexOf('normalizeObjective(');
                 const goalAt = create.indexOf("String(input.goal");
@@ -2868,6 +2870,17 @@ const { opencodeStatus, syncToOpencode } =
                 ok('…against this window\'s real fleet and engines',
                     /agentIds: agents\.map\(a => a\.id\)/.test(create)
                     && /engines: Object\.keys\(ENGINES\)/.test(create));
+
+                // ‼️ U-102 — AND AN EMPTY POOL IS TWO DIFFERENT ANSWERS. `fleet`
+                // takes the whole fleet whatever the rows carry; `selected` with
+                // nobody ticked is refused rather than silently expanded to
+                // every agent on the machine; the field omitted is the old
+                // contract, which every caller written before this relies on.
+                ok('‼️ createMission refuses "selected" with nobody in it',
+                    /poolScope === 'selected' && !poolIn\.length/.test(create)
+                    && /nobody ticked is nobody, not the whole fleet/.test(create));
+                ok('…takes the whole fleet when the scope says fleet, rows or no rows',
+                    /poolScope === 'fleet' \? agents : \(poolIn\.length \? poolIn : agents\)/.test(create));
 
                 // and the same faults, through a handler shaped like the real one
                 const MM = require(path.join(__dirname, "..", "out", "core", "missions.js"));
