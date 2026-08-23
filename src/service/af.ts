@@ -7,12 +7,12 @@
  * shell quote-escaping errors.
  *
  * Usage:
- *   node af.js <op> [args-json | @args-file.json | -] [--timeout <ms>] [--bridge-dir <dir>]
+ *   node af.js <op> [key=value ... | args-json | @args-file.json | -] [--timeout <ms>] [--bridge-dir <dir>]
  *
  * Examples:
  *   node af.js farm.ops
  *   node af.js tasks.list
- *   node af.js notices.list '{"handled": false}'
+ *   node af.js notices.list handled=false
  *   node af.js notices.post @notice.json
  *   node af.js tasks.add @task.json
  *   node af.js farm.ops --out catalog.json
@@ -35,6 +35,7 @@ import * as path from 'path';
 export interface CliOptions {
     op?: string;
     rawArgs?: string;
+    keyValueArgs?: string[];
     argsFile?: string;
     fromStdin?: boolean;
     timeoutMs: number;
@@ -111,13 +112,16 @@ export function parseCliArgs(argv: string[]): CliOptions {
         opts.op = positional[0];
     }
     if (positional.length > 1) {
-        const val = positional[1];
-        if (val.startsWith('@')) {
-            opts.argsFile = val.slice(1);
-        } else if (val.endsWith('.json') && fs.existsSync(val)) {
-            opts.argsFile = val;
+        const values = positional.slice(1);
+        const keyValuePattern = /^[A-Za-z_][A-Za-z0-9_.-]*=/;
+        if (values.every(value => keyValuePattern.test(value))) {
+            opts.keyValueArgs = values;
+        } else if (values.length === 1 && values[0].startsWith('@')) {
+            opts.argsFile = values[0].slice(1);
+        } else if (values.length === 1 && values[0].endsWith('.json') && fs.existsSync(values[0])) {
+            opts.argsFile = values[0];
         } else {
-            opts.rawArgs = val;
+            opts.rawArgs = values.join(' ');
         }
     }
 
@@ -149,6 +153,30 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
         return parsed as Record<string, unknown>;
     }
 
+    if (opts.keyValueArgs) {
+        const payload: Record<string, unknown> = {};
+        for (const arg of opts.keyValueArgs) {
+            const separator = arg.indexOf('=');
+            const key = arg.slice(0, separator);
+            const rawValue = arg.slice(separator + 1);
+            if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                throw new Error(`Duplicate inline argument: ${key}`);
+            }
+            if (rawValue === 'true') {
+                payload[key] = true;
+            } else if (rawValue === 'false') {
+                payload[key] = false;
+            } else if (rawValue === 'null') {
+                payload[key] = null;
+            } else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(rawValue)) {
+                payload[key] = Number(rawValue);
+            } else {
+                payload[key] = rawValue;
+            }
+        }
+        return payload;
+    }
+
     if (opts.rawArgs) {
         const content = opts.rawArgs.replace(/^\uFEFF/, '').trim();
         if (!content) { return {}; }
@@ -166,11 +194,12 @@ export function printHelp(): void {
     console.log(`Agent Farm Bridge CLI Helper (af.js)
 
 Usage:
-  node af.js <op> [args-json | @file.json | -] [options]
+  node af.js <op> [key=value ... | args-json | @file.json | -] [options]
 
 Arguments:
   <op>                  Bridge operation name (e.g. farm.ops, tasks.list, notices.post)
-  [args]                JSON string, @file.json path, or - for stdin
+  [args]                Shell-safe key=value pairs, JSON string, @file.json path,
+                        or - for stdin. Use @file.json for nested or long payloads.
 
 Options:
   -t, --timeout <ms>    Timeout in milliseconds (default: 20000)
@@ -184,7 +213,7 @@ Options:
 Examples:
   node af.js farm.ops
   node af.js tasks.list
-  node af.js notices.list '{"handled": false}'
+  node af.js notices.list handled=false limit=5
   node af.js notices.post @report.json
   cat payload.json | node af.js tasks.add -
   node af.js farm.ops --out docs/farm_ops_catalog.json

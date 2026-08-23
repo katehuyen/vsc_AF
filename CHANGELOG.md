@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.265.0 - Shell-safe bridge arguments (2026-08-23)
+
+The bridge helper's documented inline JSON example was not actually portable:
+PowerShell can strip its inner quotes before Node receives it, turning valid JSON
+into an invalid object-like string. Simple calls now accept repeated `key=value`
+arguments and coerce booleans, numbers, and `null`, with no shell-specific escaping.
+Complex or multi-line payloads continue to use the existing `@file.json` path.
+
 ## 3.264.0 - X-76: a turn that never happened does not hold a lane (2026-08-23)
 
 A speaking turn's message was written onto the run BEFORE the planning-loop

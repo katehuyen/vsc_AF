@@ -2053,12 +2053,14 @@ Eklenti her başlatıldığında, `af.js` CLI yardımcısını platformun global
    ```
    Eklenti o an sunduğu tüm fonksiyonları ve argüman şemalarını yanıt olarak döndürür.
 
-2. **Satır İçi Argümanlar:**
+2. **Kabuktan Bağımsız Basit Argümanlar:**
    ```bash
-   node <bridgeDir>/af.js notices.list '{"handled": false}'
+   node <bridgeDir>/af.js notices.list handled=false limit=5
    ```
+   `anahtar=değer` çiftleri PowerShell, cmd ve Bash'te tırnak kaçışına ihtiyaç duymaz.
+   Boolean, sayı ve `null` değerleri kendi türlerine çevrilir; metinler metin olarak kalır.
 
-3. **Dosya İle Argüman Gönderimi (`@args.json` - Tavsiye Edilen Yöntem):**
+3. **Dosya İle Argüman Gönderimi (`@args.json` - Karmaşık İçerik İçin Tavsiye Edilen Yöntem):**
    Uzun metinler, çok satırlı markdown raporlar veya karmaşık görev tanımları için argümanlar bir JSON dosyasına yazılır ve `@` takısı ile iletilir:
    ```bash
    node <bridgeDir>/af.js notices.post @args.json

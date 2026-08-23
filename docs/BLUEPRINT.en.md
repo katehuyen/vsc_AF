@@ -2030,12 +2030,14 @@ On extension activation, `af.js` is automatically staged into the global storage
    ```
    The extension returns all available operations and argument schemas.
 
-2. **Inline Arguments:**
+2. **Shell-Safe Simple Arguments:**
    ```bash
-   node <bridgeDir>/af.js notices.list '{"handled": false}'
+   node <bridgeDir>/af.js notices.list handled=false limit=5
    ```
+   `key=value` pairs need no quote escaping in PowerShell, cmd, or Bash. Boolean,
+   numeric, and `null` values are coerced; other values remain strings.
 
-3. **Payload via File (`@args.json` - Recommended):**
+3. **Payload via File (`@args.json` - Recommended for Complex Content):**
    Prevents shell quote-mangling for multi-line markdown or large text payloads:
    ```bash
    node <bridgeDir>/af.js notices.post @args.json

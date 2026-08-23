@@ -4603,12 +4603,36 @@ const { opencodeStatus, syncToOpencode } =
         const c3 = parseCliArgs(['node', 'af.js', 'notices.post', '@some/file.json', '--timeout', '5000']);
         ok('af.js parses @file argument and timeout', c3.op === 'notices.post' && c3.argsFile === 'some/file.json' && c3.timeoutMs === 5000);
 
+        const cKeyValue = parseCliArgs([
+            'node', 'af.js', 'notices.list',
+            'agent=developer', 'handled=false', 'limit=5', 'query=two words'
+        ]);
+        ok('af.js parses shell-safe key=value arguments',
+            cKeyValue.op === 'notices.list'
+            && cKeyValue.keyValueArgs.length === 4
+            && !cKeyValue.rawArgs);
+
         // resolvePayload
         const p1 = resolvePayload(c1);
         ok('resolvePayload defaults to empty object', typeof p1 === 'object' && Object.keys(p1).length === 0);
 
         const p2 = resolvePayload(c2);
         ok('resolvePayload parses inline JSON string', p2.handled === false);
+
+        const pKeyValue = resolvePayload(cKeyValue);
+        ok('resolvePayload coerces shell-safe scalar values',
+            pKeyValue.agent === 'developer'
+            && pKeyValue.handled === false
+            && pKeyValue.limit === 5
+            && pKeyValue.query === 'two words');
+
+        let duplicateKeyRejected = false;
+        try {
+            resolvePayload(parseCliArgs(['node', 'af.js', 'notices.list', 'agent=a', 'agent=b']));
+        } catch {
+            duplicateKeyRejected = true;
+        }
+        ok('resolvePayload rejects duplicate key=value arguments', duplicateKeyRejected);
 
         const sampleArgFile = path.join(tmpStorage, 'sample-args.json');
         fs.writeFileSync(sampleArgFile, JSON.stringify({ title: 'Test Notice', priority: 1 }), 'utf8');
