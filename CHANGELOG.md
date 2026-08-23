@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.269.0 - Adaptive Mission user guide (2026-08-23)
+
+The Adaptive Mission documentation now has two deliberately different books.
+The existing architecture guide remains the source-verified reference for an
+implementer and has moved to the `docs` root. Its new companion is a 26-chapter,
+end-user teaching guide: it introduces every technical label only after its
+plain-language meaning, then follows the user's journey from choosing the right
+work type and filling the composer through watching a live run, intervening,
+reading evidence, recovering from interruption and judging the final result.
+
+The guide does not trade accuracy for simplicity. Its 14,000-plus words include
+all fourteen leader actions as individual lessons, 135 callouts, six complete
+mission examples, decision matrices, FAQs, a screen-language glossary and an
+optional advanced appendix. It also marks today's contradictory composer
+behaviour separately from the U-99 target interface, so a planned fix is never
+mistaken for something the installed build already does.
+
 ## 3.268.0 - X-78/X-74: a council round is weighed whole, and a run is named before it is started (2026-08-23)
 
 **A council's cap counted rounds, not turns.** Every speaker of one decision was
