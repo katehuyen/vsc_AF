@@ -457,7 +457,10 @@ function makeDeps(replies) {
         // …and the real create path runs it in the ORDER that makes it a guard:
         // after the normaliser it would only ever judge the normaliser's output.
         const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const at = ext.indexOf('const createMission = ');
+        // ‼️ U-103 — the order is a property of the SHARED resolution, which is
+        // what both `createMission` and `previewMission` now run. Reading the
+        // four-line wrapper instead would find nothing and pass by default.
+        const at = ext.indexOf('const resolveMissionInput = ');
         const create = ext.slice(at, at + 12000);
         ok('‼️ createMission judges the raw ceilings before it normalises them',
             create.indexOf('validateMissionLimitsInput(') > 0

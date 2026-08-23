@@ -147,7 +147,7 @@ import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import {
     ENGINE_ENUM, ENGINE_ENUM_SPACED, ENGINES, engineChangeNote, engineModeNote, engineNote,
     engineOf, enginePermissionSetting, engineQuotesPrice, enginesWithoutEffort, engineTakesEffort,
-    headlessResumeRefusal, noTranscriptNote, runArgs
+    headlessEffortRefusal, headlessResumeRefusal, noTranscriptNote, runArgs
 } from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
@@ -264,7 +264,8 @@ import {
     deleteTrace, describeDelegateRun, isAdaptive, resolveDelegateRun,
     normalizeCriteria,
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
-    missionLiveSlice, MissionMode, MissionObjective, MissionRun, MissionSpec, MissionStore,
+    missionLiveSlice, MissionMode, MissionObjective, MissionPreview, MissionPreviewMember,
+    MissionRun, MissionSpec, MissionStore,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, retryAdvice,
     normalizePool,
@@ -4584,7 +4585,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { specDeleted };
     };
 
-    const createMission = (input: Record<string, unknown>): string | undefined => {
+    /** A draft that survived every check, in the shape `startMission` takes —
+     *  plus the two facts only the resolution knows (U-103). */
+    type MissionResolved = {
+        spec: Omit<MissionSpec, 'id' | 'createdAt'>;
+        /** Whether the caller named the lead or `resolveLead` picked it. */
+        leadOrigin: 'requested' | 'auto';
+        poolScope?: 'fleet' | 'selected';
+    };
+    /**
+     * ‼️ U-103 — ONE RESOLUTION, TWO CALLERS.
+     *
+     * Everything between the raw validation and `startMission` — the ceilings,
+     * the pool scope, the deterministic lead, the per-member vocabulary checks,
+     * the engine readiness, the project, the objective gate — is what turns a
+     * request into a mission. `previewMission` must answer with the SAME
+     * mission the Start button would create, and the only way to guarantee that
+     * is for both to run this and nothing else. A second copy would agree on
+     * the day it was written and drift on the first field either side gains.
+     *
+     * A string back is a refusal, worded exactly as the caller will see it; an
+     * object back is a mission that would start. Nothing here writes to a
+     * store, so calling it to look costs nothing and changes nothing.
+     */
+    const resolveMissionInput = (input: Record<string, unknown>): string | MissionResolved => {
         // ‼️ X-60 (M-15) — WHAT WAS SENT IS JUDGED BEFORE IT IS CHANGED.
         //
         // Everything below this line normalises: it takes whatever arrived and
@@ -4678,6 +4702,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             pool = normalizePool(pool);
         }
         let lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
+        // ‼️ U-103 — WHOSE DECISION THE LEAD IS, carried out of here rather than
+        // re-derived by whoever draws it. A form that shows a name has to say
+        // whether a person typed it or the run worked it out (`Automatic → …`).
+        const leadOrigin: 'requested' | 'auto' = lead ? 'requested' : 'auto';
         if (!lead && mode === 'adaptive') {
             // Deterministic, and shown to the caller in the spec it gets back:
             // the first of the pool. The engine never starts nameless.
@@ -4790,25 +4818,155 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (bad.length) { return `This objective cannot start — ${bad.join('; ')}.`; }
         }
-        startMission({
-            id: newMissionId(),
-            title: String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60),
-            goal,
-            leadAgentId: lead.id,
-            leadAgentName: lead.name,
-            team,
-            ...(mode === 'adaptive' ? { mode, ...objective } : {}),
-            workdir: workdir || undefined,
-            plannerModel: plannerModel || undefined,
-            projectId,
-            // The mission-wide engine for DELEGATIONS; a member may override it.
-            // The planner stays on Claude Code by design — see MissionSpec.engine.
-            engine: missionEngine in ENGINES && missionEngine !== 'claude' ? missionEngine : undefined,
-            limits,
-            approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round',
-            createdAt: Date.now()
-        });
+        return {
+            spec: {
+                title: String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60),
+                goal,
+                leadAgentId: lead.id,
+                leadAgentName: lead.name,
+                team,
+                ...(mode === 'adaptive' ? { mode, ...objective } : {}),
+                workdir: workdir || undefined,
+                plannerModel: plannerModel || undefined,
+                projectId,
+                // The mission-wide engine for DELEGATIONS; a member may override
+                // it. The planner stays on Claude Code by design — see
+                // MissionSpec.engine.
+                engine: missionEngine in ENGINES && missionEngine !== 'claude' ? missionEngine : undefined,
+                limits,
+                approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round'
+            },
+            leadOrigin,
+            ...(poolScope === 'fleet' || poolScope === 'selected' ? { poolScope } : {})
+        };
+    };
+
+    const createMission = (input: Record<string, unknown>): string | undefined => {
+        const resolved = resolveMissionInput(input);
+        if (typeof resolved === 'string') { return resolved; }
+        startMission({ id: newMissionId(), ...resolved.spec, createdAt: Date.now() });
         return undefined;
+    };
+
+    /**
+     * ‼️ U-103 — THE DRAFT, RESOLVED, WITHOUT STARTING IT.
+     *
+     * Same input `create` takes, same resolution, no store write. What comes
+     * back is what each participant would ACTUALLY launch with and which rung
+     * of the ladder decided each field, so the form stops guessing and the
+     * bridge, the page and the run all read one answer.
+     *
+     * ‼️ THE PLANNER IS NOT A WORKER AND IS NOT DESCRIBED AS ONE. It is a
+     * headless Claude Code call, hard-wired (`missionPlannerCallOnce`): the
+     * engine cannot be chosen, the only dimension the mission states is
+     * `plannerModel`, no effort and no permission mode reach that command line
+     * — the write tools are cut off by name instead — and it runs in the LEAD
+     * AGENT'S folder, not in the mission workdir. Every one of those is a fact
+     * a reader gets wrong by analogy with a worker row, so the preview says
+     * them rather than filling the same five boxes twice.
+     */
+    const previewMission = (input: Record<string, unknown>): MissionPreview => {
+        const mode: MissionMode = String(input.mode ?? '') === 'adaptive' ? 'adaptive' : 'classic';
+        const goal = String(input.goal ?? '').trim();
+        const title = String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60);
+        const resolved = resolveMissionInput(input);
+        if (typeof resolved === 'string') {
+            return { ok: false, error: resolved, mode, title, goal, workers: [], problems: [resolved] };
+        }
+        const spec = resolved.spec;
+        const engines = engineMatrix();
+        const launch = launchDefaults();
+        const agentDefaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+        /** One cast row through the SAME ladder the wave climbs. */
+        const memberView = (
+            member: {
+                agentId: string; agentName: string; role?: string; model?: string;
+                engine?: string; effort?: string; permissionMode?: string;
+            }
+        ): MissionPreviewMember => {
+            const agent = agents.find(a => a.id === member.agentId);
+            const dims = resolveDelegateRun(member, spec, {
+                farm: (engine) => agent
+                    ? storedDefault(agentDefaults, agent.dir, engine as EngineId)
+                    : undefined,
+                launch
+            });
+            // Everything that would refuse this row, together — a form that
+            // reports one fault per press makes the user find them serially.
+            const problems = [
+                engineRefusal(engines, dims.engine),
+                headlessEffortRefusal(dims.engine, dims.effort) || undefined
+            ].filter((p): p is string => !!p)
+                .map(p => `${member.agentName}: ${p}`);
+            return {
+                agentId: member.agentId, agentName: member.agentName,
+                ...(member.role ? { role: member.role } : {}),
+                kind: 'worker',
+                requested: {
+                    ...(member.engine ? { engine: member.engine } : {}),
+                    ...(member.model ? { model: member.model } : {}),
+                    ...(member.effort ? { effort: member.effort } : {}),
+                    ...(member.permissionMode ? { permissionMode: member.permissionMode } : {})
+                },
+                effective: {
+                    engine: dims.engine,
+                    ...(dims.model ? { model: dims.model } : {}),
+                    ...(dims.effort ? { effort: dims.effort } : {}),
+                    ...(dims.permissionMode ? { permissionMode: dims.permissionMode } : {}),
+                    ...(dims.workDir ? { workDir: dims.workDir } : {})
+                },
+                origin: dims.origin,
+                note: describeDelegateRun(dims),
+                problems
+            };
+        };
+        // The cast is whichever list this mode keeps it in — the one function
+        // that knows, so a pool is never read as an empty team.
+        const cast = mode === 'adaptive' ? (spec.pool ?? []) : spec.team;
+        const workers = cast.map(m => memberView({
+            agentId: m.agentId, agentName: m.agentName, role: m.role,
+            model: m.model, engine: m.engine, effort: m.effort,
+            permissionMode: m.permissionMode
+        }));
+        const leadAgent = agents.find(a => a.id === spec.leadAgentId);
+        const plannerModel = spec.plannerModel;
+        const planner: MissionPreviewMember = {
+            agentId: spec.leadAgentId, agentName: spec.leadAgentName,
+            kind: 'planner',
+            requested: { engine: 'claude', ...(plannerModel ? { model: plannerModel } : {}) },
+            effective: {
+                engine: 'claude',
+                ...(plannerModel ? { model: plannerModel } : {}),
+                ...(leadAgent ? { workDir: leadAgent.dir } : {})
+            },
+            origin: {
+                engine: 'cli',
+                model: plannerModel ? 'mission' : 'cli',
+                // Not passed on the planner command line at all — saying
+                // "fleet" here would be a claim about a flag that is not there.
+                effort: 'cli', permissionMode: 'cli'
+            },
+            note: plannerModel ? `model ${plannerModel} (mission)` : '',
+            problems: engineRefusal(engines, 'claude')
+                ? [`${spec.leadAgentName}: ${engineRefusal(engines, 'claude')}`] : []
+        };
+        const problems = [...new Set([...planner.problems, ...workers.flatMap(w => w.problems)])];
+        const project = spec.projectId ? projectStore.get(spec.projectId) : undefined;
+        return {
+            ok: !problems.length,
+            mode, title, goal,
+            lead: {
+                agentId: spec.leadAgentId, agentName: spec.leadAgentName,
+                origin: resolved.leadOrigin
+            },
+            planner, workers,
+            ...(resolved.poolScope ? { poolScope: resolved.poolScope } : {}),
+            ...(spec.workdir ? { workdir: spec.workdir } : {}),
+            ...(project ? { project: { id: project.id, name: project.name } } : {}),
+            approvalMode: spec.approvalMode,
+            limits: spec.limits,
+            problems
+        };
     };
 
     // Step statuses move on task events while a wave runs — mirror those into
@@ -4871,6 +5029,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...dims
         } as WorkflowStep;
     };
+    /**
+     * ‼️ U-103 — THE ARGUMENTS A MISSION OP TAKES, TRANSLATED ONCE.
+     *
+     * `missions.start` and `missions.preview` must be the same request read two
+     * ways, so the name→id resolution for the lead, the team and the pool lives
+     * here rather than in each handler. A caller that previews and then starts
+     * would otherwise be able to get two different missions out of one payload
+     * the day either copy gained a field.
+     */
+    const bridgeMissionInput = (args: Record<string, unknown>): Record<string, unknown> => {
+        const adaptive = String(args.mode ?? '') === 'adaptive';
+        // An adaptive run is allowed to name neither: that is the point.
+        const leadKey = adaptive ? optStr(args, 'lead') : argStr(args, 'lead');
+        const lead = leadKey ? findAgent(leadKey) : undefined;
+        const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
+        need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "effort"?: "...", "permissionMode"?: "..." }]');
+        const team = teamIn.map(t => ({
+            agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
+            engine: t.engine, effort: t.effort, permissionMode: t.permissionMode
+        }));
+        // ‼️ M-18 — A POOL MEMBER TAKES THE SAME FIVE. It always could in the
+        // type and never could through a caller, so `agentId` was the only
+        // field this op accepted and every other one was dropped without a
+        // word. `agent` is the name every other list on this bridge uses;
+        // `agentId` still works for what is written.
+        const poolIn = Array.isArray(args.pool) ? args.pool as Record<string, unknown>[] : [];
+        const pool = poolIn.map(p => ({
+            agentId: findAgent(String(p.agent ?? p.agentId ?? '')).id, role: p.role,
+            model: p.model, engine: p.engine, effort: p.effort,
+            permissionMode: p.permissionMode
+        }));
+        return {
+            ...args, ...(lead ? { leadAgentId: lead.id } : {}), team,
+            ...(pool.length ? { pool } : {})
+        };
+    };
+
     /** A workflow by id or title, and one of its steps by 1-based place. */
     const bridgeWorkflow = (ref: string): FarmWorkflow => {
         const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
@@ -5757,35 +5952,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the pool) and the cast is chosen at runtime, one role bound per agent. Every other arg '
                 + 'above means the same thing in both modes',
             handler: (args) => {
-                const adaptive = String(args.mode ?? '') === 'adaptive';
-                // An adaptive run is allowed to name neither: that is the point.
-                const leadKey = adaptive ? optStr(args, 'lead') : argStr(args, 'lead');
-                const lead = leadKey ? findAgent(leadKey) : undefined;
-                const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
-                need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "effort"?: "...", "permissionMode"?: "..." }]');
-                const team = teamIn.map(t => ({
-                    agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
-                    engine: t.engine, effort: t.effort, permissionMode: t.permissionMode
-                }));
-                // ‼️ M-18 — A POOL MEMBER TAKES THE SAME FIVE. It always could
-                // in the type and never could through a caller, so `agentId` was
-                // the only field this op accepted and every other one was
-                // dropped without a word. `agent` is the name every other list
-                // on this bridge uses; `agentId` still works for what is written.
-                const poolIn = Array.isArray(args.pool) ? args.pool as Record<string, unknown>[] : [];
-                const pool = poolIn.map(p => ({
-                    agentId: findAgent(String(p.agent ?? p.agentId ?? '')).id, role: p.role,
-                    model: p.model, engine: p.engine, effort: p.effort,
-                    permissionMode: p.permissionMode
-                }));
-                const err = createMission({
-                    ...args, ...(lead ? { leadAgentId: lead.id } : {}), team,
-                    ...(pool.length ? { pool } : {})
-                });
+                const err = createMission(bridgeMissionInput(args));
                 need(!err, err ?? '');
                 const run = missionStore.runs[missionStore.runs.length - 1];
                 return { runId: run.id, title: missionStore.spec(run.specId)?.title };
             }
+        },
+        {
+            op: 'missions.preview',
+            describe: '‼️ U-103 — WHAT `missions.start` WOULD ACTUALLY LAUNCH, WITHOUT LAUNCHING IT. '
+                + 'Takes the EXACT arguments missions.start takes and starts nothing: same validation, '
+                + 'same pool/lead normalisation, same engine readiness, same resolver — so what this '
+                + 'answers is what that mission will be, not a second opinion about it. Answers '
+                + '`ok`, `error` (the sentence start would have refused with, worded identically), '
+                + '`mode`, `title`, `goal`, `lead` (with `origin`: requested = you named it, auto = '
+                + 'resolveLead picked the first of the pool), `poolScope`, `workdir`, `project`, '
+                + '`approvalMode`, `limits`, and the cast. ‼️ EACH CAST ROW CARRIES `requested` vs '
+                + '`effective` {engine, model, effort, permissionMode, workDir} AND `origin` per field '
+                + '— member | mission | agent | fleet | cli — which is the answer to "why did that '
+                + 'delegate run on a model nobody typed into this mission?". A field that NOBODY '
+                + 'resolved is ABSENT rather than guessed: absent = the CLI chooses. `problems` is '
+                + 'EVERY refusal at once (an engine this machine cannot run, an effort the engine has '
+                + 'no flag for), per row and deduplicated at the top, so a caller fixes them in one '
+                + 'pass instead of one per attempt. ‼️ THE PLANNER IS NOT A WORKER: it is a headless '
+                + 'Claude Code call whose engine cannot be chosen, which takes no effort and no '
+                + 'permission mode at all (write tools are cut off by name instead), and which runs in '
+                + 'the LEAD AGENT\'s folder rather than the mission workdir — the preview states that '
+                + 'rather than implying five boxes it does not have',
+            handler: (args) => previewMission(bridgeMissionInput(args))
         },
         {
             op: 'missions.status',
@@ -11502,6 +11696,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 .filter(([, v]) => !!v))
         }),
         create: createMission,
+        preview: previewMission,
         control: (action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string) => {
             if (action === 'pause') {
                 const engine = missionEngines.get(runId);

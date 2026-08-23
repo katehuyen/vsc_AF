@@ -2859,8 +2859,12 @@ const { opencodeStatus, syncToOpencode } =
             {
                 // The window only has to reach past the pool/lead block that the
                 // order is being asserted about; it grows as that block does.
-                const create = src.slice(src.indexOf('const createMission = '),
-                    src.indexOf('const createMission = ') + 14000);
+                // ‼️ U-103 — the block being asserted about is the SHARED
+                // resolution, not the four-line `createMission` wrapper that now
+                // calls it. Pointing at the wrapper would pass this test by
+                // finding nothing to complain about.
+                const create = src.slice(src.indexOf('const resolveMissionInput = '),
+                    src.indexOf('const resolveMissionInput = ') + 14000);
                 const rawAt = create.indexOf('validateMissionInput(');
                 const normAt = create.indexOf('normalizeObjective(');
                 const goalAt = create.indexOf("String(input.goal");
@@ -2916,7 +2920,7 @@ const { opencodeStatus, syncToOpencode } =
                     fine.ok && fine.result.mode === 'classic');
             }
 
-            const misBlock = src.slice(src.indexOf("op: 'missions.start'"), src.indexOf("op: 'missions.status'"));
+            const misBlock = src.slice(src.indexOf("op: 'missions.start'"), src.indexOf("op: 'missions.preview'"));
             ok('missions.start takes an engine for its DELEGATIONS', /engine\? \(which engine the DELEGATIONS/.test(misBlock));
             ok('…per team member as well', /\{agent, role\?, model\?, engine\?, /.test(misBlock));
             // ‼️ M-14 — the member's PERMISSION mode is on that same line, and the
@@ -2955,6 +2959,60 @@ const { opencodeStatus, syncToOpencode } =
                 && /filter\(e => !e\.reportsCost\)/.test(misBlock));
             ok('…and missions.status reports the tokens beside the dollars',
                 /tokens: r\.totalTokens \?\? 0/.test(src));
+
+            // ‼️ U-103 — ONE RESOLVER. The Missions form worked the effective
+            // engine out for itself (`member || mission || 'claude'`) while the
+            // run climbed a five-rung ladder, so the two disagreed the moment a
+            // fleet default existed. What is asserted here is not that a preview
+            // exists but that it CANNOT drift from the start: same argument
+            // translation, same resolution, one code path.
+            {
+                const prevBlock = src.slice(src.indexOf("op: 'missions.preview'"),
+                    src.indexOf("op: 'missions.status'"));
+                ok('‼️ missions.preview answers what a start would launch, and starts nothing',
+                    /WITHOUT LAUNCHING IT/.test(prevBlock) && /starts nothing/.test(prevBlock));
+                ok('…and takes the EXACT arguments missions.start takes, through one translator',
+                    /previewMission\(bridgeMissionInput\(args\)\)/.test(src)
+                    && /createMission\(bridgeMissionInput\(args\)\)/.test(src));
+                ok('‼️ …and start and preview run ONE resolution rather than two copies of it',
+                    (src.match(/resolveMissionInput\(input\)/g) || []).length >= 2
+                    && /const createMission = [^]{0,200}resolveMissionInput\(input\)/.test(src)
+                    && /const previewMission = [^]{0,400}resolveMissionInput\(input\)/.test(src));
+                ok('…and the refusal a preview reports is the sentence a start would have used',
+                    /return \{ ok: false, error: resolved, mode, title, goal, workers: \[\], problems: \[resolved\] \}/.test(src));
+                ok('‼️ …resolved by the SAME ladder a delegation climbs, with the same two stores',
+                    /const dims = resolveDelegateRun\(member, spec, \{/.test(src)
+                    && /const previewMission = [^]{0,3000}storedDefault\(agentDefaults, agent\.dir, engine as EngineId\)/.test(src));
+                ok('…and every refusal at once — an engine this machine cannot run AND an effort it has no flag for',
+                    /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort\)/.test(src)
+                    && /EVERY refusal at once/.test(prevBlock));
+                ok('‼️ …and the PLANNER is not described as a worker: no engine choice, no effort, no permission mode, the LEAD\'s folder',
+                    /THE PLANNER IS NOT A WORKER/.test(prevBlock)
+                    && /LEAD AGENT.{0,3}s folder rather than the mission workdir/.test(prevBlock.replace(/'\s*\+\s*'/g, ''))
+                    && /effort: 'cli', permissionMode: 'cli'/.test(src));
+
+                // …and the ladder itself, run for real: these are the two rungs
+                // the page had no way to see, which is why its guess was wrong.
+                const MM2 = require(path.join(__dirname, '..', 'out', 'core', 'missions.js'));
+                const fleet = MM2.resolveDelegateRun(undefined, {}, {
+                    launch: { engine: 'gemini', model: 'gemini-2.5-pro' }
+                });
+                ok('‼️ …a fleet default decides the engine, which `member || mission || claude` never saw',
+                    fleet.engine === 'gemini' && fleet.origin.engine === 'fleet'
+                    && fleet.model === 'gemini-2.5-pro' && fleet.origin.model === 'fleet');
+                const own = MM2.resolveDelegateRun({ engine: 'codex' }, { engine: 'gemini' }, {
+                    farm: (e) => (e === 'codex' ? { model: 'gpt-5', effort: 'high' } : undefined),
+                    launch: { model: 'sonnet' }
+                });
+                ok('…the member outranks the mission, and the agent\'s own per-engine default outranks the fleet',
+                    own.engine === 'codex' && own.origin.engine === 'member'
+                    && own.model === 'gpt-5' && own.origin.model === 'agent'
+                    && own.effort === 'high' && own.origin.effort === 'agent');
+                const bare = MM2.resolveDelegateRun(undefined, {}, {});
+                ok('‼️ …and a field NOBODY set stays absent rather than being filled in with something plausible',
+                    bare.engine === 'claude' && bare.model === undefined
+                    && bare.origin.model === 'cli' && bare.origin.effort === 'cli');
+            }
 
             // ‼️ X-45 — the real op exists, and its describe carries the two
             // things a caller cannot work out for itself: what `health` can say

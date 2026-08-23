@@ -2386,6 +2386,15 @@
       ]
     },
     {
+      "capability": "missionsPanel.ts#preview",
+      "ui": [
+        "page:missionsPanel.ts#preview"
+      ],
+      "ops": [
+        "missions.preview"
+      ]
+    },
+    {
       "capability": "missionsPanel.ts#delete",
       "ui": [
         "page:missionsPanel.ts#delete"

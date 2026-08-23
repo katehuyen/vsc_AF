@@ -193,8 +193,85 @@
     const launchView = () => ({
         engines: DATA.engines || [], engineModels: DATA.engineModels || {}, efforts: DATA.efforts || []
     });
-    /** Which engine a member row really lands on: its own, else the mission's. */
-    const effEngine = (agentId) => form.engines[agentId] || form.engine || 'claude';
+    /**
+     * ‼️ U-103 — THE HOST'S ANSWER ABOUT THIS DRAFT, AND THE PAGE HOLDS NO
+     * SECOND ONE.
+     *
+     * This box used to work the effective engine out itself — `the row's own,
+     * else the mission's, else claude` — and that is three of the five rungs
+     * the launch actually climbs (`resolveDelegateRun`): the agent's own
+     * per-engine default and `agentFarm.launchDefaults` were simply not in the
+     * page's world. So a fleet default of Gemini drew a Claude model catalogue
+     * on a row that was going to launch on Gemini, and the effort box offered
+     * words that engine has no flag for.
+     *
+     * `PREVIEW` is what the host resolves for the draft as it stands. `seq`
+     * exists because the form is debounced and fires faster than the answers
+     * come back: an older answer painted over a newer one would be the same
+     * lie in a new costume, so anything but the latest is dropped.
+     */
+    let PREVIEW = null;
+    let previewSeq = 0;
+    let previewTimer = 0;
+    /** The resolved row for one agent, or null until the first answer lands. */
+    const previewOf = (agentId) =>
+        ((PREVIEW && PREVIEW.workers) || []).find(w => w.agentId === agentId) || null;
+    /**
+     * Which engine a member row really lands on. The host's answer when there
+     * is one; until then the row's OWN words — rungs 1 and 2, which are these
+     * very boxes and therefore the page's to read — and `claude`, which is the
+     * ladder's documented floor rather than a guess about the middle of it.
+     */
+    const effEngine = (agentId) => {
+        // ‼️ RUNG 1 IS THIS BOX, AND IT WINS WITHOUT A ROUND TRIP. An engine
+        // typed onto the row outranks every layer below it, so waiting 220ms
+        // for the host to confirm what the user just picked would leave the
+        // model list a fifth of a second behind the hand that changed it — and
+        // the host cannot disagree, because that box IS the top of its ladder.
+        if (form.engines[agentId]) { return form.engines[agentId]; }
+        const p = previewOf(agentId);
+        return (p && p.effective && p.effective.engine)
+            || form.engine || 'claude';
+    };
+    /** Where a resolved field came from, in words a reader owes nothing to. */
+    const ORIGIN_WORDS = {
+        member: 'this row',
+        mission: 'the mission',
+        agent: 'this agent\'s own default for that engine',
+        fleet: 'agentFarm.launchDefaults (fleet-wide)',
+        cli: 'nobody — the CLI chooses'
+    };
+    /**
+     * MIRROR — the value this control HOLDS RIGHT NOW on the first line, then
+     * the precedence chain and which rung won, then what the field is. The
+     * control itself is ~150px and can say none of it.
+     *
+     * A field nothing resolved says `CLI chooses` and is not filled in with
+     * something plausible; that guess is the defect this whole item removes.
+     */
+    const mirror = (p, field, body) => {
+        if (!p) { return body; }
+        const eff = (p.effective || {})[field];
+        const req = (p.requested || {})[field];
+        const from = (p.origin || {})[field] || 'cli';
+        const head = (eff || 'CLI chooses') + (from === 'member' ? '' : ' — from ' + (ORIGIN_WORDS[from] || from));
+        const chain = 'this row → the mission → this agent\'s default → fleet defaults → the CLI'
+            + (from === 'cli' ? '\nNothing on that chain set it, so the CLI decides.' : '\nWon by: ' + (ORIGIN_WORDS[from] || from));
+        return head + '\n\nRequested here: ' + (req || '— nothing —') + '\n' + chain + '\n\n' + body;
+    };
+    /**
+     * Ask the host what this draft would launch with. Debounced, because it is
+     * called from `render` — every keystroke repaints, and one resolution per
+     * keystroke would be a message storm for an answer nobody has read yet.
+     */
+    const schedulePreview = () => {
+        if (!formOpen) { return; }
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => {
+            previewSeq += 1;
+            vscode.postMessage({ type: 'preview', seq: previewSeq, input: draftInput() });
+        }, 220);
+    };
     /**
      * ‼️ U-102 — WHO IS IN, per mode and per scope. Whole-fleet scope means
      * every agent is in whatever the ticks remember, so the ticks are not
@@ -459,12 +536,14 @@
                 + ' does not know.';
         };
         const teamRows = DATA.agents.map((a, i) => {
-            // ‼️ U-64 — the row's OWN engine decides what its model box suggests
-            // and whether its effort box has anything to offer. Resolved here,
-            // not read off the select, so a member that says nothing inherits
-            // the mission's engine the same way the launch will.
+            // ‼️ U-103 — the row's boxes are drawn against the engine the HOST
+            // resolved for it, not one the page worked out. The model catalogue
+            // comes from that engine and the effort list from that engine and
+            // the model on it, so a row can no longer offer four Claude aliases
+            // to a delegation the fleet default is sending to Gemini.
+            const pv = previewOf(a.id);
             const eng = effEngine(a.id);
-            const eRows = effortRowsFor(eng, form.models[a.id] || '');
+            const eRows = effortRowsFor(eng, (pv && pv.effective && pv.effective.model) || form.models[a.id] || '');
             const noEffort = !eRows.length;
             const engLabel = (engines.find(e => e.id === eng) || {}).label || eng;
             // ‼️ U-97 — THE ROW READS IN THE ORDER IT RESOLVES:
@@ -490,21 +569,24 @@
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
                     value="${C.esc(form.roles[a.id] || '')}" ${inRow ? '' : 'disabled'}>
                 <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
-                    title="Engine: which CLI this member's delegations run on — empty = the mission's engine below (now ${C.esc(engLabel)}). Changing it re-reads that engine's models and efforts into the two boxes on this row."
+                    title="${C.esc(mirror(pv, 'engine',
+                        'Engine: which CLI this member\'s delegations run on. Empty is not "claude" — it falls'
+                        + ' through the mission\'s engine, this agent\'s own default and the fleet\'s, in that order.'
+                        + ' Changing it re-reads that engine\'s models and efforts into the two boxes on this row.'))}"
                     ${inRow ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
                 <select id="md-${i}" class="mdl" data-model="${C.esc(a.id)}"
-                    title="${C.esc((form.models[a.id] || 'agent default')
-                        + (modelKnown(eng, form.models[a.id] || '') ? ''
-                            : ' — ⚠ ' + engLabel + ' does not publish this model. It was kept because it was already'
-                              + ' set; picking anything else here loses it, and the launch may be refused.')
-                        + '\n\nModel for this member\'s delegations. Empty = the agent\'s own default / model policy.'
-                        + ' The list is ' + engLabel + '\'s own catalog as this window last read it; change the engine'
-                        + ' beside it and a model that catalog does not carry is dropped rather than launched.')}"
+                    title="${C.esc(mirror(pv, 'model',
+                        (modelKnown(eng, form.models[a.id] || '') ? ''
+                            : '⚠ ' + engLabel + ' does not publish this model. It was kept because it was already'
+                              + ' set; picking anything else here loses it, and the launch may be refused.\n\n')
+                        + 'Model for this member\'s delegations. The list is ' + engLabel + '\'s own catalog as this'
+                        + ' window last read it; change the engine beside it and a model that catalog does not carry'
+                        + ' is dropped rather than launched.'))}"
                     ${inRow ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
                 <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
                     title="${C.esc(noEffort
                         ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
-                        : effortTitle(form.efforts[a.id] || '', eRows))}"
+                        : mirror(pv, 'effort', effortTitle(form.efforts[a.id] || '', eRows)))}"
                     ${inRow && !noEffort ? '' : 'disabled'}>${noEffort
                         // SHORTHAND: the box is narrow and the engine's name does
                         // not fit in it. The short form goes on the control, the
@@ -512,7 +594,7 @@
                         ? '<option value="">— no effort —</option>'
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
                 <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
-                    title="${C.esc(permTitle(form.perms[a.id] || ''))}"
+                    title="${C.esc(mirror(pv, 'permissionMode', permTitle(form.perms[a.id] || '')))}"
                     ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
             </div>`;
         }).join('');
@@ -646,11 +728,40 @@
                 ${advOpen ? `<div class="advbody">${commonBlock}</div>` : ''}
             </div>` : commonBlock}
             ${formErr ? `<div class="ferr">⚠ ${C.esc(formErr)}</div>` : ''}
+            ${draftProblems()}
             <div class="frow">
                 <button id="f-start">${adaptive ? 'Start objective' : 'Start mission'}</button>
                 <button class="secondary" id="f-cancel">Cancel</button>
             </div>
         </div>`;
+    }
+
+    /**
+     * ‼️ U-103 — EVERY REFUSAL THIS DRAFT WOULD MEET, TOGETHER, BEFORE START.
+     *
+     * An engine this machine cannot run and an effort the engine has no flag
+     * for used to surface one at a time, on press, after the mission had
+     * already been rejected once — so a form with three faults cost three
+     * presses and three readings of a sentence about the first of them.
+     *
+     * ‼️ A DRAFT NOBODY HAS FINISHED IS NOT AN ERROR. An empty goal, no team
+     * yet, an untouched form: those are refusals the host will state, and
+     * shouting them at somebody who has typed two characters would train the
+     * reader to ignore the box. Only the resolved faults — the ones a person
+     * cannot see by looking at their own form — are shown here; everything
+     * else waits for the press it belongs to.
+     */
+    function draftProblems() {
+        // A draft that did not even resolve carries the host's validation
+        // sentence instead of row faults — that is the half this box does not
+        // own, and it is stated on the press it belongs to.
+        if (!PREVIEW || PREVIEW.error) { return ''; }
+        const list = PREVIEW.problems || [];
+        if (!list.length) { return ''; }
+        return `<div class="ferr" title="Resolved from the draft as it stands: this is what the launch would refuse, not a guess. Every fault at once, so they are fixed in one pass.">`
+            + `<b>⚠ This draft would be refused:</b><ul class="fplist">`
+            + list.map(p => `<li>${C.esc(p)}</li>`).join('')
+            + `</ul></div>`;
     }
 
     function readForm() {
@@ -705,16 +816,23 @@
         }
     }
 
-    function submitForm() {
-        readForm();
-        formErr = '';
-        /**
-         * ‼️ U-64 — A CLASSIC START POSTS THE MESSAGE IT ALWAYS POSTED. The
-         * adaptive keys are ADDED, never a `mode: 'classic'` written into every
-         * message: the host reads anything that is not the exact string
-         * 'adaptive' as classic, and a payload that grows keys nobody reads is
-         * how a "backwards compatible" change stops being one.
-         */
+    /**
+     * ‼️ U-103 — THE DRAFT, IN ONE SHAPE, FOR BOTH THINGS DONE WITH IT.
+     *
+     * Start posts this and the preview asks about this. If the two were built
+     * separately the form would eventually be showing a resolution of a
+     * mission slightly different from the one the button starts — which is the
+     * whole class of bug the host-side resolver exists to close, reintroduced
+     * one layer up. It reads `form` and nothing else, so it never renders and
+     * never refuses; the refusals belong to the host.
+     *
+     * ‼️ U-64 — A CLASSIC START POSTS THE MESSAGE IT ALWAYS POSTED. The
+     * adaptive keys are ADDED, never a `mode: 'classic'` written into every
+     * message: the host reads anything that is not the exact string 'adaptive'
+     * as classic, and a payload that grows keys nobody reads is how a
+     * "backwards compatible" change stops being one.
+     */
+    function draftInput() {
         const input = {
             title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
             workdir: form.workdir, plannerModel: form.plannerModel,
@@ -742,15 +860,21 @@
              * to `pool` — one list, as it has always been recorded.
              */
             input.poolScope = form.poolScope === 'selected' ? 'selected' : 'fleet';
-            if (form.poolScope === 'selected' && !includedAgents().length) {
-                formErr = 'Nobody is in the pool. Tick at least one agent, or switch the pool back to Whole fleet.';
-                render();
-                return;
-            }
             input.pool = memberPayload(includedAgents());
             input.team = input.pool;
         }
-        vscode.postMessage({ type: 'create', input });
+        return input;
+    }
+
+    function submitForm() {
+        readForm();
+        formErr = '';
+        if (form.mode === 'adaptive' && form.poolScope === 'selected' && !includedAgents().length) {
+            formErr = 'Nobody is in the pool. Tick at least one agent, or switch the pool back to Whole fleet.';
+            render();
+            return;
+        }
+        vscode.postMessage({ type: 'create', input: draftInput() });
     }
 
     // ---------------- run detail ----------------
@@ -1924,6 +2048,12 @@
             rd.scroll = cvWas.scrollTop;
             rd.atEnd = cvWas.scrollTop + (cvWas.clientHeight || 0) >= (cvWas.scrollHeight || 0) - 8;
         }
+        // ‼️ U-103 — every repaint re-asks what this draft would launch with,
+        // debounced. Hooked HERE rather than onto each of the twenty controls
+        // that change the draft: a handler added later would silently not have
+        // it, and a resolution the form has stopped asking for is a form back
+        // to guessing.
+        schedulePreview();
         // after Start: the freshly created run (newest row) opens itself once
         if (openNewest && DATA.runs.length) {
             openNewest = false;
@@ -2052,6 +2182,9 @@
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }
                 .ferr { color:var(--vscode-errorForeground); font-size:12px; margin:8px 0; }
+                /* U-103 — every refusal at once, so the list is a list. */
+                .fplist { margin:4px 0 0; padding-left:18px; }
+                .fplist li { margin:2px 0; }
                 #f-browse { margin-top:4px; }
                 /* ---- U-64: which kind of mission, and the objective fields ---- */
                 .modeseg { display:inline-flex; margin:2px 0 10px; border-radius:6px; overflow:hidden;
@@ -2721,6 +2854,16 @@
             render();
             const el = document.querySelector('[data-run="' + m.id + '"]');
             if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
+        } else if (m.type === 'preview') {
+            // ‼️ U-103 — LATEST ONLY, AND ONLY WHEN IT SAYS SOMETHING NEW.
+            // Dropping a stale answer stops an older resolution painting over a
+            // newer one; repainting only on a CHANGE stops the loop, because
+            // `render` is what asked for this in the first place.
+            if (m.seq !== previewSeq) { return; }
+            const next = JSON.stringify(m.preview || null);
+            if (next === JSON.stringify(PREVIEW)) { return; }
+            PREVIEW = m.preview || null;
+            if (formOpen) { readForm(); render(); }
         } else if (m.type === 'formError') {
             readForm();
             formErr = m.error;

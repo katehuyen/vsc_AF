@@ -9,6 +9,13 @@ export interface MissionsDeps {
     data(): Record<string, unknown>;
     /** Validate + start a new mission; error string when the form is bad. */
     create(input: Record<string, unknown>): string | undefined;
+    /**
+     * ‼️ U-103 — RESOLVE THE DRAFT WITHOUT STARTING IT. The page keeps no
+     * resolver of its own: the effective engine/model/effort/permissions and
+     * the origin of each come from the same ladder the run climbs, so the form
+     * cannot show one answer while the launch produces another.
+     */
+    preview(input: Record<string, unknown>): unknown;
     control(action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string): void;
     /** Run the same spec again / drop a finished run from the history. Both
      *  confirm; both are the sidebar tree's commands, called with a node built
@@ -81,6 +88,18 @@ export class MissionsPanel {
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         switch (msg.type) {
+            case 'preview': {
+                // ‼️ ANSWERED WITH THE TOKEN THE PAGE SENT. A debounced form
+                // fires these faster than they come back, and a stale answer
+                // painted over a newer one is precisely the race this feature
+                // exists to end — so the page drops anything but the latest.
+                void this.panel.webview.postMessage({
+                    type: 'preview',
+                    seq: typeof msg.seq === 'number' ? msg.seq : 0,
+                    preview: this.deps.preview(msg.input as Record<string, unknown>)
+                });
+                break;
+            }
             case 'create': {
                 const error = this.deps.create(msg.input as Record<string, unknown>);
                 if (error) {

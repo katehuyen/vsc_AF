@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## Unreleased
+
+**U-103 — the mission form stopped guessing what it would launch.** It worked
+the effective engine out for itself — the row's own, else the mission's, else
+`claude` — while a delegation climbs a five-rung ladder (`resolveDelegateRun`):
+member → mission → that agent's own default for that engine → `agentFarm.launchDefaults`
+→ the CLI. Two of those rungs were not in the page's world at all, so a fleet
+default sending the work to Gemini still drew a Claude model catalogue and
+offered efforts that engine has no flag for. There is one resolver now and it
+lives where the stores are: `resolveMissionInput` is the whole path from raw
+validation to a startable mission, `createMission` starts what it returns and
+`previewMission` describes it without starting anything — the same ceilings, the
+same pool scope, the same deterministic lead, so a preview and a start cannot
+answer differently. Each cast row comes back with `requested` beside `effective`
+`{engine, model, effort, permissionMode, workDir}` and the ORIGIN of every field,
+which is the answer to "why did that delegate run on a model nobody typed into
+this mission?". A field nobody resolved stays absent and is drawn as `CLI
+chooses` rather than filled in with something plausible. The form asks for this
+on a debounce and drops any answer but the latest; every narrow control MIRRORs
+it — the value it holds, where it came from and the chain that produced it, in
+the tooltip the box is too small to carry. An engine this machine cannot run and
+an effort the engine has no such flag for are now listed TOGETHER above Start
+instead of one per press. `missions.preview` takes the exact arguments
+`missions.start` takes, through one translator, so the page, the host and the
+bridge give one answer. The planner is not described as a worker: it is a
+headless Claude Code call whose engine cannot be chosen, which takes no effort
+and no permission mode at all, and which runs in the LEAD AGENT's folder rather
+than the mission workdir — the preview says so instead of implying five boxes it
+does not have.
+
 ## 3.271.0 - X-32 phase A: the mission composer says what it will actually do (2026-08-23)
 
 **U-97 — the worker row now reads in the order it resolves.** It was laid out

@@ -168,7 +168,21 @@ const sandbox = {
             return list;
         }
     },
-    setTimeout: () => 0, clearTimeout: () => { }, console, Date
+    // ‼️ U-103 — TIMERS ARE REMEMBERED, NOT RUN. The page debounces its
+    // preview request, so a shim that swallows the callback makes that path
+    // untestable and a shim that fires it immediately would turn every other
+    // deferred thing on this page (the output tail poll) into a synchronous
+    // one nobody wrote. They are queued; the test fires them when it means to.
+    timers: [],
+    setTimeout: (fn) => { sandbox.timers.push(fn); return sandbox.timers.length; },
+    clearTimeout: (h) => { if (h) { sandbox.timers[h - 1] = null; } },
+    console, Date
+};
+/** Run every timer the page has queued, newest wiring included. */
+const flushTimers = () => {
+    const due = sandbox.timers.slice();
+    sandbox.timers.length = 0;
+    due.forEach(fn => { if (fn) { fn(); } });
 };
 sandbox.globalThis = sandbox;
 // the shared multi-pick filter control has its own shim (lib_afms_dom.js)
@@ -531,6 +545,79 @@ ok('…and one inside it says the row is about its WORKER delegations',
     html().includes('worker delegations only'));
 getEl('f-lead').value = '';
 getEl('f-scope-fleet').listeners.click();
+
+// ---------- U-103: one resolver, and it belongs to the host ----------
+// The page used to answer "which engine does this row really land on?" itself:
+// the row's own, else the mission's, else claude. That is three of the five
+// rungs the launch climbs — the agent's own per-engine default and
+// `agentFarm.launchDefaults` were not in the page's world at all. So a fleet
+// default sent a delegation to OpenCode while the row went on offering Claude
+// aliases and five efforts OpenCode has no flag for.
+posted = [];
+flushTimers();
+const askedPreview = posted.find(p => p.type === 'preview');
+ok('‼️ the form asks the HOST what this draft would launch with',
+    !!askedPreview && askedPreview.seq > 0 && !!askedPreview.input);
+ok('…about the same draft Start would post, not a second shape of it',
+    askedPreview && askedPreview.input.poolScope === 'fleet'
+    && Array.isArray(askedPreview.input.pool)
+    && askedPreview.input.pool.length === DATA.agents.length
+    && askedPreview.input.team.length === askedPreview.input.pool.length);
+const answerPreview = (seq, workers, problems) => msgHandler({
+    data: {
+        type: 'preview', seq,
+        preview: {
+            ok: !(problems || []).length, mode: 'adaptive', title: '', goal: 'g',
+            lead: { agentId: 'a0', agentName: 'lead', origin: 'auto' },
+            planner: {
+                agentId: 'a0', agentName: 'lead', kind: 'planner',
+                requested: { engine: 'claude' }, effective: { engine: 'claude', workDir: 'D:/agents/lead' },
+                origin: { engine: 'cli', model: 'cli', effort: 'cli', permissionMode: 'cli' },
+                note: '', problems: []
+            },
+            workers, problems: problems || []
+        }
+    }
+});
+const fleetWorker = {
+    agentId: 'a1', agentName: 'coder', kind: 'worker',
+    requested: {}, effective: { engine: 'opencode' },
+    origin: { engine: 'fleet', model: 'cli', effort: 'cli', permissionMode: 'cli' },
+    note: 'engine opencode (fleet)', problems: []
+};
+answerPreview(askedPreview.seq, [fleetWorker], []);
+ok('‼️ …and a FLEET default the page could never see now decides that row\'s catalogue',
+    html().includes('opencode/grok-code'));
+ok('…including its effort box, which goes dead because that engine has no such flag',
+    html().includes('— no effort —'));
+// MIRROR: the box is ~150px and can say none of this, so the value it holds and
+// the chain that produced it are the first thing the tooltip says.
+ok('‼️ …and the control MIRRORS where the value came from, chain and all',
+    html().includes('from agentFarm.launchDefaults (fleet-wide)')
+    && html().includes('this row → the mission → this agent'));
+ok('…while a field NOBODY resolved says so instead of showing a plausible default',
+    html().includes('CLI chooses'));
+// A debounced form fires faster than the answers come back. An older answer
+// painted over a newer one would be the same lie in a new costume.
+answerPreview(askedPreview.seq - 1, [{
+    ...fleetWorker, effective: { engine: 'claude' },
+    origin: { engine: 'cli', model: 'cli', effort: 'cli', permissionMode: 'cli' }
+}], []);
+ok('‼️ …and an answer about an OLDER draft is dropped rather than painted over the newer one',
+    html().includes('opencode/grok-code'));
+answerPreview(askedPreview.seq, [fleetWorker], [
+    'coder: OpenCode cannot run on this machine — npm i -g opencode-ai',
+    'reviewer: this run asks for effort "high" and OpenCode has no reasoning-effort flag at all'
+]);
+ok('…and every refusal this draft would meet is shown TOGETHER, before Start is pressed',
+    html().includes('This draft would be refused')
+    && html().includes('cannot run on this machine')
+    && html().includes('no reasoning-effort flag'));
+// Back to the state every test below this was written against: no answer yet,
+// which is a real state — it is what the form shows for the first 220ms.
+msgHandler({ data: { type: 'preview', seq: askedPreview.seq, preview: null } });
+ok('…and with no answer in hand the row falls back to its own words, not to a stale one',
+    !html().includes('opencode/grok-code') && !html().includes('This draft would be refused'));
 
 // ‼️ BACKWARDS COMPATIBILITY IS THE POINT: a classic Start posts the message it
 // always posted. Not `mode: 'classic'` on every payload — the absent key IS the

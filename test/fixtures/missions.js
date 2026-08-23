@@ -613,6 +613,61 @@ module.exports = {
             }
         },
         {
+            // ‼️ U-103 — THE HOST'S RESOLUTION, DRAWN. Two things this picture
+            // is the only proof of: the refusal list a draft collects BEFORE
+            // Start (an engine this machine cannot run, an effort that engine
+            // has no flag for — together, not one per press), and that a row
+            // whose engine came from a FLEET default draws that engine's
+            // catalogue rather than Claude's. Both are strings every test
+            // passes on; neither is a layout anybody has looked at.
+            id: 'form-preview', label: 'New Mission — the draft resolved by the host, refusals and all',
+            data: data({ newForm: true }),
+            act: (r) => {
+                const el = (id) => r.sandbox.document.getElementById(id);
+                const worker = (id, name, eff, origin, note, problems) => ({
+                    agentId: id, agentName: name, kind: 'worker',
+                    requested: {}, effective: eff, origin, note, problems
+                });
+                r.send({
+                    // seq 0 is the token a host PUSH carries; the debounced
+                    // ask that normally raises the number needs a real timer.
+                    type: 'preview', seq: 0,
+                    preview: {
+                        ok: false, mode: 'classic', title: '', goal: SPEC.goal,
+                        lead: { agentId: 'a0', agentName: 'manager', origin: 'requested' },
+                        planner: worker('a0', 'manager', { engine: 'claude', workDir: 'D:/agents/manager' },
+                            { engine: 'cli', model: 'cli', effort: 'cli', permissionMode: 'cli' }, '', []),
+                        workers: [
+                            worker('a1', 'developer', { engine: 'opencode' },
+                                { engine: 'fleet', model: 'cli', effort: 'cli', permissionMode: 'cli' },
+                                'engine opencode (fleet)', []),
+                            worker('a2', 'basit', { engine: 'claude', model: 'haiku', effort: 'high', permissionMode: 'plan' },
+                                { engine: 'cli', model: 'agent', effort: 'member', permissionMode: 'member' },
+                                'model haiku (agent) · effort high · permissions plan', [])
+                        ],
+                        problems: [
+                            'developer: OpenCode cannot run on this machine — install it with npm i -g opencode-ai',
+                            'basit: this run asks for effort "high" and OpenCode has no reasoning-effort flag at all — clear the effort, or run it on an engine that has one'
+                        ]
+                    }
+                });
+                // The typing comes AFTER the answer: a host message re-reads the
+                // form, and this shim's textarea does not carry its own value
+                // back out of the markup — so filling the boxes first would
+                // photograph a form that had been emptied by the shim rather
+                // than by the page.
+                el('f-goal').value = SPEC.goal;
+                el('f-lead').value = 'a0';
+                el('tm-1').checked = true;
+                el('tm-2').checked = true;
+                el('rl-1').value = 'implements';
+                el('rl-2').value = 'reviewer';
+                el('pm-2').value = 'plan';
+                el('ef-2').value = 'high';
+                fire(el('tm-1'), 'change');
+            }
+        },
+        {
             id: 'run', label: 'A running mission, open on its detail',
             data: data({}),
             act: (r) => fire(r.query('.mrow')[0], 'click')

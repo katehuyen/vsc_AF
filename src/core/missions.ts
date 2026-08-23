@@ -26,6 +26,7 @@ import {
     chairCall, COUNCIL_EXITS, councilBrief, councilDigest, councilExit, councilOf, MissionCouncil,
     newCouncilId, normalizeOptions, readVoteChoice, refuseCouncilTurn
 } from './missionCouncil';
+import type { DelegateOrigin } from './missionMode';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -381,6 +382,73 @@ export interface MissionSpec {
     successCriteria?: MissionObjective['successCriteria'];
     pool?: MissionPoolMember[];
     autonomy?: MissionAutonomy;
+}
+
+/**
+ * ‼️ U-103 — WHAT THIS DRAFT WOULD ACTUALLY LAUNCH WITH, ANSWERED BY THE HOST.
+ *
+ * The Missions form used to work the effective engine out for itself —
+ * `member || mission || 'claude'` — while the run climbs a five-rung ladder
+ * (`resolveDelegateRun`) with a carve-out for Claude's own model and effort.
+ * The two answers disagreed the moment a fleet default existed: the form drew
+ * a Claude model catalogue for a row that was going to launch on Gemini. A
+ * second resolver is not a bug to fix once; it is a bug that comes back on
+ * every field either side gains. So there is ONE resolver, it lives where the
+ * stores are, and the page reads its output.
+ *
+ * A field nobody resolved stays ABSENT here and is drawn as "CLI chooses" —
+ * never filled in with a plausible-looking guess, which is the whole failure
+ * this replaces.
+ */
+export interface MissionPreviewMember {
+    agentId: string;
+    agentName: string;
+    role?: string;
+    /** Which half of the run this is. The planner is not a worker: it is fixed
+     *  to Claude Code by design and its dimensions come from the mission. */
+    kind: 'planner' | 'worker';
+    /** Exactly what the DRAFT says about this member and nothing else — the
+     *  boxes as typed, so a surface can mark an explicit override apart from
+     *  something inherited. An empty field is empty, not defaulted. */
+    requested: { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    /** What the ladder resolves to. A missing field = the CLI decides. */
+    effective: {
+        engine: string; model?: string; effort?: string;
+        permissionMode?: string; workDir?: string;
+    };
+    /** Which rung decided each field — the answer to "why did it run on that?". */
+    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode', DelegateOrigin>;
+    /** `describeDelegateRun` — the one line a narrow surface can carry. */
+    note: string;
+    /** Everything that would refuse THIS row at launch: an engine this machine
+     *  cannot run, an effort the engine has no flag for. Reported together
+     *  rather than one per attempt. */
+    problems: string[];
+}
+
+export interface MissionPreview {
+    /** False when the draft cannot start. `error` then carries the SAME
+     *  sentence `create` would have returned — one validator, one wording. */
+    ok: boolean;
+    error?: string;
+    mode: MissionMode;
+    title: string;
+    goal: string;
+    /** `auto` = nobody named a lead and `resolveLead` picked; the form shows
+     *  `Automatic → <agent>` rather than an empty box. */
+    lead?: { agentId: string; agentName: string; origin: 'requested' | 'auto' };
+    /** Absent when the draft is refused before a cast exists. */
+    planner?: MissionPreviewMember;
+    workers: MissionPreviewMember[];
+    /** U-102 — which reading of the pool this draft means; classic drafts omit it. */
+    poolScope?: 'fleet' | 'selected';
+    workdir?: string;
+    project?: { id: string; name: string };
+    approvalMode?: 'each-round' | 'auto';
+    limits?: MissionLimits;
+    /** Draft-wide refusals — every row's problems, deduplicated, plus anything
+     *  that is nobody's row in particular. Empty on a draft that would start. */
+    problems: string[];
 }
 
 export type MissionStepStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
