@@ -1,62 +1,9 @@
-v11.68 - u-104: istenen, çözülen ve gerçekten uygulanan artık aynı yüzeyde yan yana
+v11.69 - 3.273.0: X-32 B fazı paketlendi, doğrulandı, kuruldu
 
-Three different facts were being confused with each other, and the run detail
-could show at most one of them at a time.
+X-95 and U-104 shipped together — the two halves of "a mission is legible after
+it has run": its sessions are its own and gatherable, and every delegation says
+what it was asked to run with, what that resolved into, and what the engine
+actually served.
 
-REQUESTED is what somebody chose — a member row, the mission, an agent's own
-default, the fleet's. Visible in the composer and nowhere afterwards.
-
-EFFECTIVE is what the ladder resolved that into and WHICH LAYER decided each
-part. `runNote` said this in one line and is lossy by construction: it drops
-every dimension whose origin is `cli`, drops `claude` because it is the default,
-and never carried the workdir at all. So the commonest delegation of all — one
-that took every default — was recorded as NOTHING, and the row that most needed
-to say "nobody decided this" was the one that said least.
-
-APPLIED is what the engine reports it actually served. It was on no surface and
-in no op, so a model override that had been refused read exactly like one that
-had been honoured.
-
-WHAT IS KEPT. `step.ran` is the resolver's own answer, written beside `runNote`
-at the spawn — every dimension with its origin, `cli` included. `runNote` is
-untouched: a caller reading it is unaffected, and steps recorded before this say
-so rather than drawing five empty rows.
-
-WHAT IS READ BACK. `appliedDimensions()` takes the models the transcript records
-and the permission mode the CLI wrote. ‼️ Silence is a VALUE: a field the
-transcript does not state comes back null and every surface prints "not
-reported" rather than echoing the request, because that echo is exactly how a
-mismatch hides. Effort is reported by no engine today and says so.
-
-THE SURFACE. One renderer, one vocabulary, five dimensions in a fixed order,
-used by every participant on the page. The ROW carries a mark (SHORTHAND) — ⚙
-some layer decided something, ≠ the engine came back with something else,
-nothing at all when everything fell to the CLI — and the panel carries the table
-(AFTip, opening with the current effective line: MIRROR).
-
-‼️ AN ALIAS IS NOT A SUBSTITUTION. Every CLI takes a short name and writes the
-full id into its transcript — `opus` served by `claude-opus-5`, `grok-code` by
-`grok-code-fast-1`. Compared as strings that is a disagreement on almost every
-row, and a warning that fires on almost every row is one nobody reads. Caught in
-the render: the first picture had ≠ on the orchestrator and on every worker.
-
-THE HEADER, IN TWO SUBJECTS. One muted line used to hold the lead, the planner's
-model, the whole team, the workdir and the approval mode — and its member chips
-repeated the DECLARED values while the rows below showed the RESOLVED ones, so
-the same subject was drawn twice, differently. Now: Orchestrator (lead, its
-profile, its transcript) and Workers (each member, with what was declared on its
-row, what the ladder resolved, and what the engine applied). ONE SUBJECT — the
-Workers panel names the ROUND a reading came from, never the step's own title,
-which belongs to the row.
-
-‼️ And the orchestrator's non-choices are said as non-choices. Its engine is
-Claude Code always, it has no permission mode at all (its write and spawn tools
-are cut off by name), and it runs in the LEAD AGENT'S folder rather than the
-mission workdir. Printing "nobody set it — the CLI decided" for those would be a
-lie about a control that does not exist, so they carry a sixth origin word,
-`fixed`, which is the only one that is not a layer — and which earns no ⚙,
-because a glyph every run wears says nothing.
-
-BRIDGE. missions.status keeps `ran` exactly as it was and adds `dimensions` (the
-same answer whole) and `applied`, per step and for the planner. The index is
-walked once per call, not once per step.
+212 files · 13.834 checks · 0 failures. Parity 16/16, gapBudget unchanged (38).
+verify_vsix 13/13. Installed: extensions.json reads muvusoft.agent-farm 3.273.0.

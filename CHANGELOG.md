@@ -2,6 +2,57 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.273.0 - X-32 phase B complete: a mission's sessions are its own, and a run says what it really ran with (2026-08-24)
+
+**X-95 — a mission's sessions are stamped, separated, and one click away.** A
+mission opens a session for its planner and one for every delegation it hands
+out. All of them landed in the one Sessions table, undivided, and on a farm that
+runs missions they are the majority of it: the log of your own conversations
+became unreadable and the other sessions could no longer be followed. Worse,
+they did not even look alike — a delegation carried a launcher record and read as
+🤖 automation, while the PLANNER has no task and runs in the lead agent's own
+folder, so the orchestrator's own conversation was filed as 🧑 one of yours. Now
+every session a mission opens carries the run's id: the planner's own lane, every
+delegation, every conversation turn, and the stamp outlives the task rows that
+retention removes. A mission row wears its own glyph — 🎯, never 🧑 and never 🤖
+— and its hover names WHICH mission rather than saying "automation" and stopping.
+They are left OUT of the Sessions page by default, with a permanent 🎯 chip
+beside the origin switch that says so and counts what it is hiding; one click
+lists them all (and widens the origin scope with it, or the chip would promise
+rows the scope then threw away), and the filter panel picks particular missions
+by name. A run's detail header has a `🎯 Sessions` button that opens the page on
+THAT mission and nothing else. On the bridge: `sessions.page { mission }` and a
+`sessions` block on `missions.status` — every lane the run opened, with its role,
+its transcript and its own figures.
+
+**U-104 — what was asked for, what was resolved, and what actually ran, side by
+side.** Three different facts were being confused. What somebody CHOSE was
+visible in the composer and nowhere afterwards. What the ladder RESOLVED was one
+lossy line that dropped every dimension the CLI decided and the default engine —
+so the commonest delegation of all, the one that took every default, was recorded
+as nothing at all. And what the engine APPLIED was on no surface anywhere, so a
+model override that had been refused looked exactly like one that had been
+honoured. Every delegation now keeps the resolver's whole answer, every dimension
+with the layer that decided it; what the CLI's own transcript says it served is
+read back beside it; and a field the transcript does not state says "not
+reported" rather than echoing the request, because that echo is how a mismatch
+hides. The row carries a short mark — ⚙ some layer decided something, ≠ the
+engine came back with something else, nothing when it all fell to the CLI — and
+the panel behind it carries the table. An alias is not a substitution: `opus`
+served by `claude-opus-5` is the CLI expanding a short name, not a disagreement.
+The run header is now two summaries instead of one crowded line — Orchestrator
+(the lead, its profile, its transcript) and Workers (each member: declared,
+resolved, applied) — and the orchestrator's non-choices are said as non-choices:
+its engine is Claude Code always, it has no permission mode at all, and it runs
+in the lead agent's folder rather than the mission workdir.
+
+**Found while building it.** The page-DOM test shim only dropped its element
+cache on a whole-page repaint, so a component that owns one container re-wired
+the same cached elements on every render and stacked a listener each time — a
+control whose markup happened not to change then fired twice per click and looked
+dead. Two visual fixtures had been shipping screenshots of a filter panel that
+was never open, with every assertion about them passing.
+
 ## 3.272.0 - X-32 phase A complete: the composer says what it will do, and the rows are the answer (2026-08-23)
 
 **U-101 — the member rows are the single source of truth, and the bulk profile
