@@ -534,6 +534,23 @@ export interface MissionRound {
     evaluationId?: string;
     /** ‼️ M-17 — why the run stopped, from a closed list (finish/abort only). */
     stopReason?: StopReason;
+    /**
+     * ‼️ X-72 — THIS ROUND'S SPENDING HAS REACHED THE RUN'S TOTALS.
+     *
+     * The rollup used to be a line in the middle of the round loop, which
+     * meant it was reached only on the way the loop normally goes: a ceiling
+     * cut or a cancel returned ABOVE it, and the money a wave had really
+     * spent — steps that settled, delegates that ran, ledger line and all —
+     * simply never landed. The run then read as cheaper than it was, its
+     * remaining budget as larger, and a parent rolling up a child got a
+     * total missing the last round of it.
+     *
+     * It is a persisted MARK rather than a live flag because the other half
+     * of the same failure is a window that closed between the wave settling
+     * and the rollup: what recovers those costs after a reload needs to know
+     * which rounds were already counted, or it books them twice.
+     */
+    booked?: boolean;
     /** Set when the user rejected this round's delegations. */
     rejectedReason?: string;
     plannerCostUSD: number;
@@ -835,11 +852,126 @@ export function settledCriteriaWork(run: MissionRun): SettledWork[] {
             out.push({
                 id: s.id, at: r.at,
                 ...(s.criteria?.length ? { criteria: s.criteria } : {}),
-                ...(s.sources?.length ? { sources: s.sources } : {})
+                ...(s.sources?.length ? { sources: s.sources } : {}),
+                // ‼️ X-92 — whether this step could have changed anything at
+                // all. Only a step that actually carries the mark reports it,
+                // so a run recorded before the field existed stays on the
+                // two-witness rule instead of staling everything at once.
+                ...(typeof s.readonly === 'boolean' ? { writes: !s.readonly } : {})
             });
         }
     }
     return out;
+}
+
+/**
+ * ‼️ X-91 — A CANCEL IS AN ENDING, AND EVERY ENDING IS A RESULT.
+ *
+ * A hand on the stop button used to leave a run with `status:cancelled`
+ * and nothing else: no verdict, no `stopReason`, no summary, and — on an
+ * adaptive run — no record of which criteria were still open at the moment
+ * it was stopped. The reader got a run that ended for no stated reason,
+ * from the same surface that explains every other ending in full. Worse,
+ * there were TWO of these: the engine's own mid-round check and the host's
+ * path for a paused or unowned run, and they left different records.
+ *
+ * This is the one shape both of them use. `unmet` is read here rather than
+ * left to the caller, because a cancelled adaptive run is exactly the case
+ * where "what was still open" is the whole of what the reader wants.
+ */
+/**
+ * ‼️ X-91 — WHICH TERMINALS CONTRADICT THEMSELVES. Returns the refusal, or
+ * `undefined` when the three parts of the ending agree.
+ *
+ * `user-stop` is the one reason that is the engine's alone: it is a fact about
+ * a person, and a lead that could pick it could dress a run it simply gave up
+ * on as one that was stopped from outside. `hard-limit` IS the lead's to give —
+ * the guard nudges it with the ceiling by name and asks it to end — but a run
+ * that ran out of rope did not also reach its objective.
+ */
+/**
+ * ‼️ X-72 — THE COSTS A CLOSED WINDOW LEFT UNCOUNTED.
+ *
+ * Reconciliation restores what each step really spent from the journal and
+ * the task store, but `remainingBudget` reads the RUN totals, and nothing
+ * recomputed those. So a window that closed between a wave settling and its
+ * rollup came back with a run whose steps were expensive and whose budget was
+ * untouched — and the resume then started fresh work on money that was
+ * already gone.
+ *
+ * Run AFTER reconciliation, so the step figures are the recovered ones. The
+ * mark on each round is what makes it idempotent: a second reload counts
+ * nothing again, and a round the engine booked normally is left alone. No
+ * ledger line is written here — the ledger is what the run SAID at the time,
+ * and a line invented on the way back would be testimony nobody gave.
+ *
+ * Returns the number of rounds it had to book, which is a real event: the
+ * reader is told the budget moved while nothing was running.
+ */
+export function bookSettledRounds(run: MissionRun): number {
+    let booked = 0;
+    for (const round of run.rounds) {
+        if (round.booked) { continue; }
+        const settled = round.steps.filter(
+            s => s.status === 'done' || s.status === 'failed' || s.status === 'cancelled');
+        if (!settled.length) { continue; }
+        // A round still holding live steps is one the engine will book itself
+        // when the wave comes back; only a round that is entirely over is ours.
+        if (settled.length !== round.steps.length) { continue; }
+        round.booked = true;
+        run.totalCostUSD += settled.reduce((a, s) => a + (s.costUSD ?? 0), 0);
+        run.totalTokens = (run.totalTokens ?? 0)
+            + settled.reduce((a, s) => a + (s.tokens ?? 0), 0);
+        booked++;
+    }
+    return booked;
+}
+
+export function terminalClash(
+    action: 'finish' | 'abort', verdict: MissionResult['verdict'], reason: StopReason
+): string | undefined {
+    if (reason === 'user-stop') {
+        return '"user-stop" is not yours to give — it is what the engine records when a person presses stop. '
+            + `Say why YOU are stopping: ${STOP_REASONS.filter(r => r !== 'user-stop').join(' | ')}.`;
+    }
+    if (reason === 'hard-limit' && verdict === 'success') {
+        return '"hard-limit" and "success" cannot both be true — a run cut short by a ceiling did not reach its objective. Say "criteria-satisfied" if it did, or keep the ceiling and a "partial"/"failed" verdict.';
+    }
+    if (action === 'abort' && verdict === 'success') {
+        return '"abort" and "success" cannot both be true — an aborted run did not reach its objective. Use "finish" if it did, or a "partial"/"failed" verdict if it did not.';
+    }
+    if (reason === 'criteria-satisfied' && verdict !== 'success') {
+        return `"criteria-satisfied" says the objective was met, so the verdict cannot be "${verdict}". Either finish with "success", or give the reason it really stopped.`;
+    }
+    return undefined;
+}
+
+export function cancelledResult(
+    spec: MissionSpec | undefined, run: MissionRun, note?: string
+): MissionResult {
+    const done = run.rounds.some(r => r.steps.some(s => s.status === 'done'));
+    const where = run.rounds.length
+        ? ` after ${run.rounds.length} round${run.rounds.length === 1 ? '' : 's'}`
+        : ' before its first round';
+    let summary = `Cancelled by the user${where}.`
+        + (note ? ` ${note}` : '')
+        + (done
+            ? ' What had already settled is kept; nothing further was started.'
+            : ' Nothing had settled yet.');
+    const unmet = isAdaptive(spec)
+        ? successGate(spec?.successCriteria ?? [],
+            currentEvaluations(run.evaluations ?? [], settledCriteriaWork(run))).unmet
+        : [];
+    if (unmet.length) {
+        summary += '\n\nStill open: '
+            + unmet.map(u => `[${u.id}] ${u.text} (${u.verdict})`).join('; ') + '.';
+    }
+    return {
+        verdict: done ? 'partial' : 'failed',
+        summary,
+        stopReason: 'user-stop',
+        ...(unmet.length ? { unmet } : {})
+    };
 }
 
 export function newMissionId(): string {
@@ -1185,6 +1317,7 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
     }
     if (action === 'finish' || action === 'abort') {
         const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
+        // (the compatibility check itself is `terminalClash`, below)
         if (!summary) { return { ok: false, error: `"${action}" needs a non-empty "summary"` }; }
         const v = String(o.verdict ?? '');
         const verdict: MissionResult['verdict'] =
@@ -1213,6 +1346,16 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
                 return { ok: false, error: `"stopReason" must be one of: ${STOP_REASONS.join(' | ')} (got "${s}")` };
             }
             stopReason = s as StopReason;
+            // ‼️ X-91 — AND THE THREE PARTS OF A TERMINAL MUST AGREE.
+            // Action, verdict and reason were each validated alone, so the
+            // same ending could give two opposite answers to "how did this
+            // go?": an `abort` that claims success, a success that says it
+            // ran out of rope, a failure that says it satisfied its
+            // criteria. And two of the reasons are the ENGINE's to give —
+            // a lead cannot decide that a person stopped the run, or that
+            // a ceiling it cannot see was reached.
+            const clash = terminalClash(action, verdict, stopReason);
+            if (clash) { return { ok: false, error: clash }; }
         }
         return done(action === 'finish'
             ? { action: 'finish', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) }
@@ -1956,7 +2099,7 @@ function adaptiveDecisionSchema(): string {
   "question": "only for ask_user",
 ${extraFields}
   "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains",
-  "stopReason": "REQUIRED on finish/abort — one of: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit | user-stop"
+  "stopReason": "REQUIRED on finish/abort — one of: criteria-satisfied | sufficient-evidence | no-new-information | execution-over-discussion | hard-limit"
 }
 
 What each action is:
@@ -1971,6 +2114,7 @@ ${extraRules}
 - ‼️ An "evaluate" must NAME what it looked at in "targets" — at least one result that has already settled. A verdict bound to nothing could never go out of date, and one that can never go out of date is a permanent pass.
 - An evaluation goes STALE when work for one of the criteria it judged settles after it, OR when something it judged is later revised. Judge again after you change something; a pass about the old version does not open the gate.
 - ‼️ Every "finish" and "abort" must carry a "stopReason" from the list above. "Reached the objective" and "ran out of rope" are different endings and the record has to be able to tell them apart.
+- ‼️ X-91 — the three parts of an ending must AGREE: "criteria-satisfied" only goes with "success", "hard-limit" never does, and an "abort" is never a "success". "user-stop" is the ENGINE's to record — a person pressing stop — and is refused from you.
 - Use "evaluate" with no "reviewer" to judge from the results you already hold — then the verdict must be in the SAME reply ("findings" + "advice"). Name a "reviewer" from the pool when the judgement should not be your own.
 - "unknown" is a real verdict and is better than a guess. There is no score to fill in; "confidence" is optional and nothing depends on it.
 - "revise" means the same approach and the same artefact, fixed where the gap is. "replan" means the approach was wrong. They are different words because they are different events.
@@ -1981,6 +2125,7 @@ ${extraRules}
 - Delegate ONLY to the pool agents listed above, by exact name.
 - Each task prompt must be self-contained: the delegate sees nothing but that prompt (plus its own instructions). Include paths, context and acceptance criteria.
 - Mark a task "readonly": true when it does not modify the working folder. Writers must be "readonly": false.
+- ‼️ X-92 — and the mark has a second job: a WRITER that names no "criteria" could have changed anything, so every pass on record goes stale and has to be judged again. Name the criteria a writer is for and only those go stale; mark reading work "readonly": true and none do.
 - Never delegate the same prompt to the same agent twice.
 - A delegation that FAILS is evidence, not a verdict on the objective. Retry, revise, replan, skip it, ask the user, or finish honestly as "partial" — decide, and say which in "rationale".
 - Mind the remaining budget; prefer finishing with a partial result over burning it.`;
@@ -2636,6 +2781,36 @@ export class MissionEngine {
         }, deps.waveGuardMs ?? WAVE_GUARD_MS);
         try { await deps.delegateWave(run, steps); } finally { clearInterval(timer); }
         return cut;
+    }
+
+    /**
+     * ‼️ X-91 — THE USER'S STOP, THROUGH THE SAME DOOR AS EVERY OTHER ENDING.
+     * `end('cancelled')` wrote a status and walked away: no verdict, no
+     * `user-stop`, no summary, no open criteria — from the five places in the
+     * round loop where a cancel is noticed. `finish` is the door, so a
+     * cancelled adaptive run now says what was still open at the moment the
+     * hand came down, exactly as a `partial` does.
+     */
+    private endAtCancel(): void {
+        this.finish('cancelled', cancelledResult(this.spec, this.run));
+    }
+
+    /**
+     * ‼️ X-72 — MONEY ALREADY SPENT IS FINISHED WORK. Called on every way out
+     * of a round, including the two that used to return above it, and safe to
+     * call twice: the mark on the round is what makes it once.
+     */
+    private bookRound(round: MissionRound, opts?: { ledger?: boolean }): void {
+        if (round.booked) { return; }
+        round.booked = true;
+        this.run.totalCostUSD += round.steps.reduce((a, s) => a + (s.costUSD ?? 0), 0);
+        // ‼️ …and the tokens, which is the half that moves on a plan-billed
+        // delegate. Without this a wave of Codex steps advanced no limit at
+        // all: no dollars (there are none), and rounds/tasks are too coarse
+        // to be a budget.
+        this.run.totalTokens = (this.run.totalTokens ?? 0)
+            + round.steps.reduce((a, s) => a + (s.tokens ?? 0), 0);
+        if (opts?.ledger !== false) { this.run.ledger.push(ledgerLine(round)); }
     }
 
     /** The honest ending for a ceiling reached mid-wave: `hard-limit` naming the
@@ -3432,7 +3607,7 @@ export class MissionEngine {
             run.rounds.flatMap(r => r.steps.map(s => dupKey(s.agentName, s.prompt))));
 
         while (true) {
-            if (this.cancelRequested) { this.end('cancelled'); return; }
+            if (this.cancelRequested) { this.endAtCancel(); return; }
             if (this.pauseRequested) {
                 run.status = 'paused';
                 run.pausePending = false;
@@ -3739,10 +3914,10 @@ export class MissionEngine {
                 this.setNow(`round ${round.n}: ${d.reviewer} is reviewing`);
                 deps.onUpdate(run);
                 const cutReview = await this.runWave(run, round.steps);
-                if (this.cancelRequested) { this.end('cancelled'); return; }
-                if (cutReview) { this.endAtCeiling(cutReview); return; }
-                run.totalCostUSD += reviewStep.costUSD ?? 0;
-                run.totalTokens = (run.totalTokens ?? 0) + (reviewStep.tokens ?? 0);
+                // ‼️ X-72 — the review really ran and really cost something,
+                // whichever way this round is about to end.
+                if (this.cancelRequested) { this.bookRound(round); this.endAtCancel(); return; }
+                if (cutReview) { this.bookRound(round); this.endAtCeiling(cutReview); return; }
                 // ‼️ A REVIEW THAT CANNOT BE READ SAYS NOTHING ABOUT THE WORK.
                 // Not `fail` — that would blame the delegate for the reviewer's
                 // timeout — and not silence, which would let the run forget it
@@ -3759,7 +3934,8 @@ export class MissionEngine {
                 const ev = this.recordEvaluation(round, d.targets,
                     { kind: 'agent', ...(member?.agentId ? { agentId: member.agentId } : {}), agentName: d.reviewer },
                     parsedEval);
-                run.ledger.push(ledgerLine(round));
+                // after the verdict is on the round, so the ledger line carries it
+                this.bookRound(round);
                 deps.onUpdate(run);
                 this.lastResultIds = [reviewStep.id];
                 roundMsg = this.evaluationReport(ev, criteria)
@@ -3783,7 +3959,7 @@ export class MissionEngine {
                 const waitFrom = deps.now();
                 const answer = await deps.askUser(run, d.question);
                 run.waitedMs = (run.waitedMs ?? 0) + (deps.now() - waitFrom);
-                if (this.cancelRequested) { this.end('cancelled'); return; }
+                if (this.cancelRequested) { this.endAtCancel(); return; }
                 round.answer = answer ?? '(no answer — user skipped)';
                 deps.trace?.('human.answered', { askId: 'q' + round.n, text: round.answer });
                 run.ledger.push(ledgerLine(round));
@@ -4011,7 +4187,7 @@ export class MissionEngine {
                 const ok = await deps.requestApproval(run, round);
                 deps.trace?.('human.answered', { askId: 'a' + round.n, text: ok ? 'approved' : 'rejected' });
                 run.waitedMs = (run.waitedMs ?? 0) + (deps.now() - waitFrom);
-                if (this.cancelRequested) { this.end('cancelled'); return; }
+                if (this.cancelRequested) { this.endAtCancel(); return; }
                 if (!ok) {
                     round.rejectedReason = 'rejected by user';
                     round.steps.forEach(s => {
@@ -4056,22 +4232,19 @@ export class MissionEngine {
                 // of it reaches `run.totalCostUSD` until every wave is done.
                 const cut = await this.runWave(run, steps, round.steps);
                 deps.onUpdate(run);
-                if (this.cancelRequested) { this.end('cancelled'); return; }
-                if (cut) { this.endAtCeiling(cut); return; }
+                // ‼️ X-72 — BEFORE EITHER EXIT. A cut wave is not an unspent
+                // one: its steps settled, its delegates ran, and the ledger
+                // line for the round is the only place that says what the
+                // round did. Both of these used to return above the rollup.
+                if (this.cancelRequested) { this.bookRound(round); this.endAtCancel(); return; }
+                if (cut) { this.bookRound(round); this.endAtCeiling(cut); return; }
             }
             // ‼️ M-19 — BEFORE THE LEDGER AND BEFORE THE LEAD IS TOLD ANYTHING.
             // A speaking turn's step is settled by the wave; the MESSAGE it was
             // ordered as is settled here, so the digest the lead reads a few
             // lines below is already the record rather than a promise of one.
             this.settleMessages(run, round.steps, deps.now());
-            run.totalCostUSD += round.steps.reduce((a, s) => a + (s.costUSD ?? 0), 0);
-            // ‼️ …and the tokens, which is the half that moves on a plan-billed
-            // delegate. Without this a wave of Codex steps advanced no limit at
-            // all: no dollars (there are none), and rounds/tasks are too coarse
-            // to be a budget.
-            run.totalTokens = (run.totalTokens ?? 0)
-                + round.steps.reduce((a, s) => a + (s.tokens ?? 0), 0);
-            run.ledger.push(ledgerLine(round));
+            this.bookRound(round);
             deps.onUpdate(run);
             // What the lead is about to be shown IS the fan-in of its next
             // decision — recorded here so the graph does not have to guess it

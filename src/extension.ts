@@ -274,6 +274,7 @@ import {
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     validateMissionInput,
     normalizeMissionLimits, validateMissionLimitsInput,
+    bookSettledRounds, cancelledResult,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileGuidance, reconcileRun, remainingBudget,
     resolveLead, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
@@ -3425,6 +3426,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             }
         }
+        // ‼️ X-72 — AND THE MONEY THE CLOSED WINDOW NEVER COUNTED. The step
+        // figures above are the recovered ones, so this is the moment the run
+        // totals can catch up with them — and the mark on each round means a
+        // second reload counts nothing twice.
+        const booked = bookSettledRounds(r);
+        if (booked) {
+            r.ledger.push(`(the spending of ${booked} round${booked === 1 ? '' : 's'} was recovered from the record — `
+                + 'the window closed before it reached this run\'s totals)');
+        }
         if (wasLive) {
             r.status = 'paused';
             r.note = 'interrupted by window reload';
@@ -4394,10 +4404,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 taskManager.cancelTask(t);
             }
         }
+        // ‼️ X-91 — A RUN NOBODY IS DRIVING STILL ENDS PROPERLY. A paused or
+        // unowned run had no engine to route the cancel through, so this
+        // wrote a bare status and left the reader a run that ended for no
+        // stated reason — while the identical cancel one second earlier, with
+        // the engine alive, produced a verdict, a `user-stop` and the list of
+        // criteria still open. Same ending, same record.
         if (!missionEngines.has(runId) &&
             run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled') {
             run.status = 'cancelled';
             run.endedAt = Date.now();
+            run.now = undefined;
+            run.pausePending = false;
+            run.result = cancelledResult(
+                missionStore.specs.find(s => s.id === run.specId), run,
+                'The run was not being driven by this window when it was stopped.');
+            traceEvent(run, 'run.finished', {
+                status: 'cancelled', verdict: run.result.verdict,
+                reason: run.result.stopReason, text: run.result.summary,
+                nodeId: 'end', actor: 'lead'
+            });
         }
         missionChanged();
     };
@@ -5457,12 +5483,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
                 need(w, 'Workflow not found — workflows.list shows current ones.');
-                const runId = taskManager.runWorkflow(w as FarmWorkflow);
+                // X-73: the run's project is settled at the start and every step
+                // of it — webhook and approval rows included — is filed there.
+                const proj = optStr(args, 'project');
+                const runId = taskManager.runWorkflow(w as FarmWorkflow,
+                    proj ? { projectId: proj === 'none' ? undefined : proj } : undefined);
                 need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
                 return { started: (w as FarmWorkflow).title, runId };
             }

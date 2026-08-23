@@ -107,6 +107,17 @@ export interface SettledWork {
     criteria?: readonly string[];
     /** the earlier results it was built from — a revise names what it revises */
     sources?: readonly string[];
+    /**
+     * ‼️ X-92 — COULD THIS WORK HAVE CHANGED THE ARTEFACT AT ALL?
+     *
+     * The lead marks every delegation reads-only or not (it already has to,
+     * for the parallel-write rule), and that mark is the only thing in the
+     * run that speaks about the artefact rather than about labels. A step
+     * that changed nothing cannot have invalidated a judgement; one that
+     * writes and said nothing about what it was for might have invalidated
+     * anything. Absent on a record written before this, and read as such.
+     */
+    writes?: boolean;
 }
 
 /**
@@ -127,9 +138,26 @@ export interface SettledWork {
  * verdict's own targets among its sources is that target's successor, label or
  * no label.
  *
- * What still does NOT stale a verdict is unrelated work — neither aimed at a
- * criterion it judged nor descended from anything it looked at. Expiring on
- * that would cost a review round every time anything happened anywhere.
+ * ‼️ X-92 — AND THE THIRD WITNESS IS THE ONE THAT DOES NOT NEED A LABEL.
+ *
+ * Both of the above are things the LEAD chose to write down, so an ordinary
+ * delegation that carried neither — which is legal, and common — could
+ * rewrite the very file a pass was recorded about and the pass stayed
+ * CURRENT. The success gate then opened on a judgement of a version that no
+ * longer existed, which is the exact failure the gate exists to prevent, and
+ * the case the tests had never covered: they only ever measured a `revise`,
+ * which always names its sources.
+ *
+ * So work that COULD have changed the artefact and DECLARED NOTHING about
+ * what it was for stales the verdict. Not because it is known to have
+ * touched it, but because nothing in the run can say it did not — and
+ * between a review round spent for nothing and a success gate opened on a
+ * dead pass, only one of the two is recoverable.
+ *
+ * What still does NOT stale a verdict is unrelated work: work that changed
+ * nothing (`readonly`), and work that SAID which criteria it was for when
+ * none of them are the ones this verdict judged. Declaring reach is how a
+ * writer stays out of the way — the mark is on the record either way.
  *
  * Derived, never stored — a stored flag is a second copy of a fact the
  * timeline already states, and the two would disagree the first time a journal
@@ -144,7 +172,13 @@ export function isStale(ev: MissionEvaluation, settled: readonly SettledWork[]):
     return settled.some(s => {
         if (s.at <= ev.at) { return false; }
         if ((s.criteria ?? []).some(c => judged.has(c))) { return true; }
-        return (s.sources ?? []).some(src => looked.has(src));
+        if ((s.sources ?? []).some(src => looked.has(src))) { return true; }
+        // ‼️ X-92 — a writer that declared no reach at all. `writes` is
+        // absent on records written before this item, and those keep the
+        // old two-witness behaviour rather than being staled in bulk on
+        // the day the extension updates.
+        return s.writes === true
+            && !(s.criteria ?? []).length && !(s.sources ?? []).length;
     });
 }
 

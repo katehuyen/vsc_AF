@@ -1010,6 +1010,11 @@ interface StoreShape {
      *  on the pump's beat. Persisted because the failure it repairs is the disk
      *  refusing writes, and a restart is often what clears it. */
     archiveRepair?: { id: string; month: string }[];
+    /** ‼️ X-73 — WHOSE WORK A CHAIN IS, kept where the chain can outlive the
+     *  window that started it. `null` is a real answer ("no project"), told
+     *  apart from the run that was never asked; a run absent from here predates
+     *  the record and still derives from its own first task. */
+    workflowRunProjects?: Record<string, string | null>;
 }
 
 export interface TaskManagerOptions {
@@ -1348,6 +1353,13 @@ export class TaskManager implements vscode.Disposable {
                     .filter(x => typeof x?.id === 'string' && typeof x?.month === 'string')
                     .map(x => ({ id: x.id as string, month: x.month as string }))
                 : [];
+            // ‼️ X-73 — the run's project binding comes back with it. Held in
+            // memory alone it died on reload, and every step made after the
+            // reload fell back to whatever the window happened to be showing.
+            this.workflowProjects = new Map(Object.entries(
+                (json.workflowRunProjects && typeof json.workflowRunProjects === 'object'
+                    ? json.workflowRunProjects : {}) as Record<string, string | null>)
+                .filter(([, v]) => v === null || typeof v === 'string'));
             // ‼️ M-8 — a task that predates the event log gets one built from
             // its own fields (see `migrateTaskEvents`). Before the follower
             // return, because a follower window DRAWS these rows and would
@@ -1917,7 +1929,9 @@ export class TaskManager implements vscode.Disposable {
             triggers: this.triggers,
             automation: this.automation,
             automationLog: this.automationLog,
-            ...(this.archiveRepair.length ? { archiveRepair: this.archiveRepair } : {})
+            ...(this.archiveRepair.length ? { archiveRepair: this.archiveRepair } : {}),
+            ...(this.workflowProjects.size
+                ? { workflowRunProjects: Object.fromEntries(this.workflowProjects) } : {})
         }, this.proots()), null, 2);
         const tmp = `${this.storageFile}.tmp`;
         try {
@@ -3896,24 +3910,31 @@ export class TaskManager implements vscode.Disposable {
      * thing that makes the run findable afterwards. `undefined` means nothing
      * started — an empty chain — rather than a run nobody can name.
      */
-    runWorkflow(w: FarmWorkflow, opts?: { projectId?: string }): string | undefined {
+    runWorkflow(w: FarmWorkflow, opts?: { projectId?: string | null }): string | undefined {
         if (!w.steps.length) { return undefined; }
         const runId = newId();
         this.runCounts.set(runId, 0);
         this.workflowEnds.delete(runId);
-        // ‼️ M-18 — WHOSE WORK THIS CHAIN IS, stated by the caller rather than
-        // inferred from the window. A chain started by a mission is work for
-        // the MISSION's project, and a run that fires an hour after anybody
-        // looked at this window has no current project to borrow — the same
-        // reason a mission's delegations pass their own key.
-        if (opts?.projectId) { this.workflowProjects.set(runId, opts.projectId); }
+        // ‼️ M-18/X-73 — WHOSE WORK THIS CHAIN IS, DECIDED ONCE, HERE. A chain
+        // started by a mission is work for the MISSION's project; a trigger
+        // firing an hour after anybody looked at this window passes the key
+        // empty and means NO project. Only a caller that says nothing at all
+        // inherits the window — and even that is resolved now, at the start,
+        // not whenever each step happens to be made: a run is one piece of
+        // work, so the row made an hour later belongs where the first one did.
+        this.workflowProjects.set(runId,
+            (opts && 'projectId' in opts)
+                ? (opts.projectId ?? null)
+                : (this.opts.activeProjectId?.() ?? null));
         this.routeToStep(w, 0, {}, runId);
         return runId;
     }
 
-    /** Set only for a run whose caller named a project; every other run keeps
-     *  inheriting from its own first task, exactly as it did. */
-    private workflowProjects = new Map<string, string>();
+    /** ‼️ X-73 — THREE STATES, NOT TWO: a project id · `null` for an explicit
+     *  "no project" · absent for a run that predates this record and still
+     *  derives from its own first task. Persisted as `workflowRunProjects`, so
+     *  the binding outlives the window that made it. */
+    private workflowProjects = new Map<string, string | null>();
 
     /**
      * Why a run ended when the tasks alone cannot say — the loop guard and a
@@ -4159,10 +4180,40 @@ export class TaskManager implements vscode.Disposable {
      * started under, whatever that was, including none.
      */
     private runProject(runId: string): { projectId?: string } {
-        const declared = this.workflowProjects.get(runId);
-        if (declared) { return { projectId: declared }; }
+        if (this.workflowProjects.has(runId)) {
+            // The key is PRESENT either way: `projectId: undefined` is how a
+            // caller tells `addTask` "no project", and dropping the key would
+            // hand the row straight back to the active window.
+            return { projectId: this.workflowProjects.get(runId) ?? undefined };
+        }
         const first = this.tasks.find(t => t.workflowRunId === runId);
         return first ? { projectId: first.projectId } : {};
+    }
+
+    /**
+     * ‼️ X-73 — A STEP THAT IS NOT AN AGENT IS STILL A STEP. Webhook, media,
+     * approval, select and a blocked browser call each mint their FarmTask by
+     * hand, and every one of those literals forgot the run's project — so a
+     * chain with one webhook in it filed half its rows under the project and
+     * half under Unassigned. One factory, so the next kind of step cannot
+     * forget it either.
+     */
+    private stepTask(
+        w: FarmWorkflow, index: number, runId: string, agentName: string,
+        rest: Partial<FarmTask> & Pick<FarmTask, 'prompt' | 'status'>
+    ): FarmTask {
+        const step = w.steps[index];
+        const task: FarmTask = {
+            id: newId(), agentId: '', agentName,
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            mode: 'headless', createdAt: Date.now(), startedAt: Date.now(),
+            workflowId: w.id, workflowRunId: runId, stepIndex: index,
+            ...this.runProject(runId),
+            ...rest
+        };
+        if (!task.projectId) { delete task.projectId; }
+        this.tasks.push(task);
+        return task;
     }
 
     /** B3: a chain step that is an HTTP call; the response becomes the next handoff. */
@@ -4174,21 +4225,10 @@ export class TaskManager implements vscode.Disposable {
         const method = (hook.method ?? 'POST').toUpperCase();
         const body = hook.body ? resolve(hook.body) : undefined;
 
-        const task: FarmTask = {
-            id: newId(),
-            agentId: '',
-            agentName: 'webhook',
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+        const task = this.stepTask(w, index, runId, 'webhook', {
             prompt: `${method} ${hook.url}`,
-            mode: 'headless',
-            status: 'running',
-            createdAt: Date.now(),
-            startedAt: Date.now(),
-            workflowId: w.id,
-            workflowRunId: runId,
-            stepIndex: index
-        };
-        this.tasks.push(task);
+            status: 'running'
+        });
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -4247,22 +4287,14 @@ export class TaskManager implements vscode.Disposable {
         const media = step.media!;
         const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
 
-        const task: FarmTask = {
-            id: newId(),
-            agentId: '',
-            agentName: 'media',
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}` + (retry ? ` (retry ${retry.attempt})` : ''),
+        const task = this.stepTask(w, index, runId, 'media', {
             prompt: `${media.model}`,
-            mode: 'headless',
             status: 'running',
-            createdAt: Date.now(),
-            startedAt: Date.now(),
             attempt: retry?.attempt,
-            workflowId: w.id,
-            workflowRunId: runId,
-            stepIndex: index
-        };
-        this.tasks.push(task);
+            ...(retry
+                ? { title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title} (retry ${retry.attempt})` }
+                : {})
+        });
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -4462,14 +4494,10 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(
                 `Agent Farm: browser step "${step.title}" blocked — ${why}`);
             // Synthetic failed task so onFail routing still applies.
-            const task: FarmTask = {
-                id: newId(), agentId: step.agentId, agentName: step.agentName,
-                title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
-                prompt: `browser: ${url}`, mode: 'headless', status: 'failed',
-                createdAt: Date.now(), startedAt: Date.now(), endedAt: Date.now(),
-                workflowId: w.id, workflowRunId: runId, stepIndex: index
-            };
-            this.tasks.push(task);
+            const task = this.stepTask(w, index, runId, step.agentName, {
+                agentId: step.agentId,
+                prompt: `browser: ${url}`, status: 'failed', endedAt: Date.now()
+            });
             this.save();
             this.advanceWorkflow(task, 'failed');
         };
@@ -4510,14 +4538,9 @@ export class TaskManager implements vscode.Disposable {
     private async runApprovalStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
         const step = w.steps[index];
         const message = this.substitute(step.approval!.message ?? '', handoff);
-        const task: FarmTask = {
-            id: newId(), agentId: '', agentName: 'approval',
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
-            prompt: message || '(waiting for approval)', mode: 'headless', status: 'running',
-            createdAt: Date.now(), startedAt: Date.now(),
-            workflowId: w.id, workflowRunId: runId, stepIndex: index
-        };
-        this.tasks.push(task);
+        const task = this.stepTask(w, index, runId, 'approval', {
+            prompt: message || '(waiting for approval)', status: 'running'
+        });
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -4566,15 +4589,10 @@ export class TaskManager implements vscode.Disposable {
         const metas = readMediaMetas(this.outputsDir).filter(m => runTaskIds.has(m.taskId));
         const candidates = mediaCandidates(metas);
 
-        const task: FarmTask = {
-            id: newId(), agentId: '', agentName: 'select',
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+        const task = this.stepTask(w, index, runId, 'select', {
             prompt: message || `(choose ${candidates.length} candidate asset(s))`,
-            mode: 'headless', status: 'running',
-            createdAt: Date.now(), startedAt: Date.now(),
-            workflowId: w.id, workflowRunId: runId, stepIndex: index
-        };
-        this.tasks.push(task);
+            status: 'running'
+        });
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;

@@ -2,6 +2,90 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.261.0 - X-72: money already spent is finished work, on every way out (2026-08-23)
+
+The rollup that adds a round's spending to the run was a line in the MIDDLE of
+the round loop, and two exits returned above it: the ceiling cut and the user's
+cancel. So a wave that really ran, really settled and really cost something
+closed a run that claimed it had spent only the planner's share — no reload
+needed, the round simply returned over the line that counts it. The ledger line
+for that round went with it, which is the only place the record says what the
+round did.
+
+Every way out of a round now books it first, through one method, and the round
+carries a persisted mark saying it was booked — so calling it twice counts once.
+
+**And the other half of the same failure: a window that closed between the wave
+settling and the rollup.** Reconciliation restores what each step spent, but the
+remaining budget reads the RUN totals and nothing recomputed those — the run came
+back with expensive steps and an untouched budget, and the resume then started
+fresh work on money that was already gone. Startup now books any round that is
+entirely settled and was never counted, once, and says so in the ledger. A round
+still holding live work is left to the engine that owns it.
+
+## 3.260.0 - X-92: an undeclared writer takes the verdict with it (2026-08-23)
+
+An evaluation went stale on two witnesses, and both of them were things the LEAD
+chose to write down: a criteria label, or a lineage of sources. An ordinary
+delegation may carry neither — that is legal and common — so work that rewrote
+the very artefact a pass was recorded about left the pass CURRENT, and the
+success gate opened on a judgement of a version that no longer existed. The test
+suite had never caught it because it only ever measured a `revise`, which always
+names its sources.
+
+There is now a third witness, and it needs no label: whether the work could have
+changed anything at all. The lead already marks every delegation reads-only or
+not, for the parallel-write rule. A writer that declared NO reach stales the
+verdict — not because it is known to have touched the artefact, but because
+nothing in the run can say it did not, and between a review round spent for
+nothing and a gate opened on a dead pass only one is recoverable.
+
+Declaring reach is how a writer stays out of the way: work that names its
+criteria stales only those, reading work stales nothing, and a record written
+before the mark existed keeps the old two-witness rule rather than being staled
+in bulk the day the extension updates.
+
+## 3.259.0 - X-91: a cancel is an ending, and every ending is a result (2026-08-23)
+
+Pressing stop left a run with `cancelled` and nothing else — no verdict, no
+reason, no summary, and on an adaptive run no record of which criteria were
+still open at the moment the hand came down. The reader got a run that ended for
+no stated reason, from the same surface that explains every other ending in
+full. There were two of these, and they disagreed: the engine's own mid-round
+checks, and the host's path for a paused or unowned run.
+
+Both go through the same door now. A cancelled run says it was a user stop, says
+what had settled and what had not, and — when it had criteria — lists the ones
+still open, exactly as an honest `partial` does.
+
+**And the three parts of an ending must agree.** Action, verdict and reason were
+each validated alone, so one terminal could give two opposite answers to "how did
+this go?": an `abort` that claimed success, a ceiling that also reached its
+objective, a failure that said its criteria were satisfied. Those are refused at
+the parse boundary now, by name. `user-stop` is refused from the lead outright —
+it is a fact about a person, and a lead that could pick it could dress a run it
+gave up on as one that was stopped from outside.
+
+## 3.258.0 - X-73: a chain's project is one binding, in three states (2026-08-23)
+
+Which project a workflow run's work belongs to was a truthy in-memory map, and it
+failed in three directions at once. An explicit "no project" was indistinguishable
+from a caller who said nothing, so an automated chain quietly borrowed whatever
+project the window happened to be showing. The memo died with the window, so
+every step made after a reload fell back to the window again. And the four kinds
+of step that mint their own task row — webhook, media, approval, select, plus a
+blocked browser call — never asked for the binding at all, so one approval in the
+middle of a chain filed itself under Unassigned while the agent steps around it
+were the project's work.
+
+The binding is decided once, when the run starts, and persisted: a project id, an
+explicit `none`, or — only for a caller that says nothing — the window, resolved
+then rather than whenever each step happens to be made. A run is one piece of
+work, so the row made an hour later belongs where the first one did. Every step
+kind goes through one factory, so the next one cannot forget. A trigger firing on
+its own schedule now says `none` and means it, and `workflows.run` takes a
+`project` argument.
+
 ## 3.257.0 - X-93: a reader's place belongs to one exchange of one run (2026-08-23)
 
 `convThread` held a bare conversation id, and every run starts at `c1`. With two

@@ -141,7 +141,11 @@ export class TriggerManager implements vscode.Disposable {
             }
             void vscode.window.showInformationMessage(
                 `Agent Farm: trigger "${trigger.title}" fired (${reason}) → workflow "${w.title}".`);
-            this.tasks.runWorkflow(w);
+            // ‼️ X-73 — NOBODY WAS LOOKING WHEN THIS FIRED. A trigger goes off
+            // on its own schedule, so the project the window happens to be
+            // showing is not the chain's project: the key is passed EMPTY,
+            // which is how a caller says "no project" rather than "inherit".
+            this.tasks.runWorkflow(w, { projectId: undefined });
             return;
         }
         const action = trigger.action;

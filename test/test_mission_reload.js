@@ -207,5 +207,47 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
         /SETTLED_ON_RESUME = new Set\(\['done', 'failed', 'cancelled', 'stopped'\]\)/.test(ext));
 }
 
+// ‼️ X-72 — THE MONEY A CLOSED WINDOW NEVER COUNTED.
+//
+// Reconciliation restores what each step really spent, but `remainingBudget`
+// reads the RUN totals and nothing recomputed those. A window closing between
+// a wave settling and its rollup therefore came back with expensive steps and
+// an untouched budget — and the resume started fresh work on money that was
+// already gone.
+{
+    console.log('\n-- ‼️ X-72 the run totals catch up with the steps that settled');
+    const step = (id, over = {}) => ({
+        id, round: 1, agentId: 'a1', agentName: 'Ada', title: id, prompt: 'p',
+        status: 'done', costUSD: 0.25, tokens: 1000, ...over
+    });
+    const runWith = (rounds) => ({
+        id: 'r', specId: 'm', status: 'paused', rounds, ledger: [],
+        totalCostUSD: 0, totalTokens: 0, startedAt: 0
+    });
+    const r1 = runWith([{ n: 1, action: 'delegate', thought: 't', steps: [step('s1'), step('s2')], plannerCostUSD: 0, at: 5 }]);
+    eq('a round that settled but was never booked is recovered', M.bookSettledRounds(r1), 1);
+    ok('…with what its steps really cost', Math.abs(r1.totalCostUSD - 0.5) < 1e-9);
+    eq('…and the tokens, which is the only currency on a plan-billed engine', r1.totalTokens, 2000);
+    eq('‼️ a second reload counts nothing again', M.bookSettledRounds(r1), 0);
+    ok('…and the total has not moved', Math.abs(r1.totalCostUSD - 0.5) < 1e-9);
+    eq('no ledger line is invented — the ledger is what the run SAID at the time', r1.ledger.length, 0);
+
+    const r2 = runWith([{ n: 1, action: 'delegate', thought: 't', booked: true, steps: [step('s1')], plannerCostUSD: 0, at: 5 }]);
+    eq('‼️ a round the engine already booked is left alone', M.bookSettledRounds(r2), 0);
+    eq('…so the total stays where the engine put it', r2.totalCostUSD, 0);
+
+    const r3 = runWith([{
+        n: 1, action: 'delegate', thought: 't', plannerCostUSD: 0, at: 5,
+        steps: [step('s1'), step('s2', { status: 'running', costUSD: undefined })]
+    }]);
+    eq('‼️ a round still holding live work is the engine\'s to book, not ours',
+        M.bookSettledRounds(r3), 0);
+    ok('…so nothing is charged for a wave that has not come back', r3.totalCostUSD === 0);
+
+    const r4 = runWith([{ n: 1, action: 'delegate', thought: 't', plannerCostUSD: 0, at: 5, steps: [step('s1', { status: 'cancelled' })] }]);
+    eq('a cancelled step still spent what it spent', M.bookSettledRounds(r4), 1);
+    ok('…and it is on the run', Math.abs(r4.totalCostUSD - 0.25) < 1e-9);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

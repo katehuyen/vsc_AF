@@ -262,6 +262,19 @@ function makeDeps(replies) {
         ok('…and the run names the ceiling that cut it', /time limit/.test(r.note || ''));
         ok('the step says which ceiling stopped it, on the row the reader looks at',
             r.rounds[0].steps.some(st => /stopped by the mission ceiling/.test(st.note || '')));
+        // ‼️ X-72 — AND THE CUT WAVE IS NOT A FREE ONE. The exit to the
+        // ceiling sat ABOVE the rollup, so the delegate really ran, really
+        // settled, really cost 0.20 — and the run closed claiming it had
+        // spent only the planner's 0.10. Nothing needed to reload for the
+        // money to disappear; the round simply returned over the line that
+        // counts it.
+        ok('‼️ X-72 the cut wave\'s spending reaches the run\'s total',
+            Math.abs(r.totalCostUSD - 0.3) < 1e-9);
+        ok('…and the round left a ledger line saying what it did',
+            r.ledger.length >= 1 && /R1/.test(r.ledger.join('\n')));
+        ok('…booked exactly once — the round carries the mark that says so',
+            r.rounds[0].booked === true
+            && M.bookSettledRounds(r) === 0 && Math.abs(r.totalCostUSD - 0.3) < 1e-9);
     }
 
     // ---------- ‼️ X-83: THE IN-FLIGHT CEILING IS A DIFFERENT QUESTION ----------

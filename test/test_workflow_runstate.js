@@ -154,6 +154,62 @@ mgr.runWorkflow(w6);
 ok('a chain nobody stamped is left exactly as it was',
     queued(mgr, w6.id, 0).projectId === undefined);
 
+// ---- 5b. X-73: three states, every kind of step, and a reload ----
+//
+// The binding was a truthy in-memory map: an EXPLICIT "no project" was
+// indistinguishable from a caller who said nothing, the memo died with the
+// window, and the four step kinds that mint their own task row (webhook,
+// media, approval, select) never asked for it at all — so one approval in
+// the middle of a chain filed itself under Unassigned while the agent steps
+// around it were the project's work.
+console.log('\n-- ‼️ X-73 the run\'s project is one binding, in three states');
+let windowProject = 'prj_window';
+const wfile = path.join(tmp, 'w73.json');
+const mkMgr = () => new TaskManager(wfile, agents, () => false, () => '',
+    { quotaCheck: () => 'hold', activeProjectId: () => windowProject });
+const mgrW = mkMgr();
+
+// (a) said nothing = the window, resolved AT THE START and pinned
+const w73a = mgrW.addWorkflow('W73a', [step('one'), step('two')]);
+const r73a = mgrW.runWorkflow(w73a);
+eq('a chain started by a person takes the window\'s project',
+    queued(mgrW, w73a.id, 0).projectId, 'prj_window');
+completeWith(mgrW, queued(mgrW, w73a.id, 0), 'A');
+windowProject = 'prj_somewhere_else';
+eq('‼️ and the step made after the window moved on belongs to the same run',
+    queued(mgrW, w73a.id, 1).projectId, 'prj_window');
+
+// (b) the key passed empty = a real "no project", not "inherit"
+const w73b = mgrW.addWorkflow('W73b', [step('one')]);
+mgrW.runWorkflow(w73b, { projectId: undefined });
+ok('‼️ an explicit no-project run does not borrow the window',
+    queued(mgrW, w73b.id, 0).projectId === undefined);
+
+// (c) every kind of step, not only the agent ones
+const w73c = mgrW.addWorkflow('W73c', [
+    step('gate', { agentId: '', agentName: '', approval: { message: 'ok?' } }),
+    step('after')
+]);
+const r73c = mgrW.runWorkflow(w73c, { projectId: 'prj_x' });
+const gate = mgrW.tasks.find(t => t.workflowRunId === r73c && t.stepIndex === 0);
+eq('‼️ an approval row is the run\'s work too — it used to file as Unassigned',
+    gate && gate.projectId, 'prj_x');
+
+// (d) the binding outlives the window that made it
+mgrW.persist();
+const mgrR = mkMgr();
+const w73aR = mgrR.workflows.find(x => x.title === 'W73a');
+completeWith(mgrR, mgrR.tasks.find(t => t.workflowRunId === r73a && t.stepIndex === 1), 'B');
+const w73d = mgrR.addWorkflow('W73d', [step('one'), step('two')]);
+const r73d = mgrR.runWorkflow(w73d, { projectId: 'prj_keep' });
+mgrR.persist();
+const mgrR2 = mkMgr();
+completeWith(mgrR2, mgrR2.tasks.find(t => t.workflowRunId === r73d && t.stepIndex === 0), 'A');
+eq('‼️ after a reload the next step still belongs to the run\'s project',
+    mgrR2.tasks.find(t => t.workflowRunId === r73d && t.stepIndex === 1).projectId, 'prj_keep');
+ok('and the reloaded manager can still name the run',
+    !!mgrR2.workflowRunState(r73d) && !!w73aR);
+
 // ---- 6. the tasks outrank the memo ----
 console.log('\n-- a resumed chain is running again, whatever an earlier ending said');
 const w3 = mgr.addWorkflow('W3', [step('one'), step('two')]);

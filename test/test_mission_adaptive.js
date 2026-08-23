@@ -255,6 +255,74 @@ const REM = { rounds: 5, tasks: 9, costUSD: 4, tokens: Infinity, minutes: 90 };
         !M.parsePlannerDecision(JSON.stringify({ action: 'improvise' }), adaptiveSpec()).ok);
 }
 
+// ============ 7b. X-91 — a terminal that contradicts itself, and a cancel
+//
+// Action, verdict and reason were each checked alone, so one ending could
+// give two opposite answers to "how did this go?". And a cancel was not an
+// ending at all: `status: cancelled` and nothing else — no verdict, no
+// reason, no list of what was still open — from the same surface that
+// explains every other terminal in full.
+{
+    console.log('\n-- ‼️ X-91 the three parts of an ending must agree');
+    // The adaptive parse is the one that has a stopReason to contradict.
+    const term = (o) => M.parseAdaptiveDecision(
+        JSON.stringify({ thought: 't', summary: 's', currentPhase: 'p', strategy: 'st', ...o }), adaptiveSpec());
+    const bad = (name, o, rx) => {
+        const r = term(o);
+        ok(name, !r.ok && rx.test(r.error));
+    };
+    bad('‼️ an "abort" cannot claim success',
+        { action: 'abort', verdict: 'success', stopReason: 'sufficient-evidence' },
+        /cannot both be true/);
+    bad('‼️ "criteria-satisfied" cannot sit on a partial',
+        { action: 'finish', verdict: 'partial', stopReason: 'criteria-satisfied' },
+        /says the objective was met/);
+    bad('…nor on a failure',
+        { action: 'abort', verdict: 'failed', stopReason: 'criteria-satisfied' },
+        /says the objective was met/);
+    bad('‼️ the lead may not decide a PERSON stopped the run',
+        { action: 'abort', verdict: 'failed', stopReason: 'user-stop' },
+        /not yours to give/);
+    bad('‼️ a ceiling and a success cannot both be true',
+        { action: 'finish', verdict: 'success', stopReason: 'hard-limit' },
+        /cannot both be true/);
+    ok('the refusal offers the reasons that ARE the lead\'s to give',
+        /criteria-satisfied \| sufficient-evidence/.test(
+            term({ action: 'abort', verdict: 'failed', stopReason: 'user-stop' }).error));
+    ok('‼️ but the ceiling IS the lead\'s to give — the guard nudges it with that word',
+        term({ action: 'finish', verdict: 'partial', stopReason: 'hard-limit' }).ok);
+    ok('an honest partial still passes',
+        term({ action: 'finish', verdict: 'partial', stopReason: 'no-new-information' }).ok);
+    ok('…and so does an honest success',
+        term({ action: 'finish', verdict: 'success', stopReason: 'criteria-satisfied' }).ok);
+    ok('a CLASSIC run is untouched — it has no stopReason to contradict',
+        M.parsePlannerDecision(JSON.stringify(
+            { thought: 't', action: 'abort', verdict: 'success', summary: 's' }), classicSpec()).ok);
+
+    console.log('\n-- ‼️ X-91 a cancel is an ending like any other');
+    const runOf = (over = {}) => ({
+        id: 'r1', specId: 'm2', status: 'running', rounds: [], ledger: [],
+        totalCostUSD: 0, startedAt: 1, ...over
+    });
+    const bare = M.cancelledResult(adaptiveSpec(), runOf());
+    eq('a run stopped before it did anything is a failure, not a partial', bare.verdict, 'failed');
+    eq('‼️ and it says WHY it stopped', bare.stopReason, 'user-stop');
+    ok('…in words as well', /Cancelled by the user/.test(bare.summary));
+    const worked = M.cancelledResult(adaptiveSpec(), runOf({
+        rounds: [{ n: 1, action: 'delegate', thought: 't', steps: [
+            { id: 's1', kind: 'task', agentId: 'a1', agentName: 'Ada', title: 'x', ask: 'x', status: 'done' }
+        ], plannerCostUSD: 0, at: 5 }]
+    }));
+    eq('a run that settled real work is a partial', worked.verdict, 'partial');
+    ok('‼️ and it carries the criteria that were still open when the hand came down',
+        Array.isArray(worked.unmet) && worked.unmet.some(u => u.id === 'c1'));
+    ok('…which the summary repeats, so a reader who sees only prose still learns it',
+        /Still open: \[c1\]/.test(worked.summary));
+    const classicCancel = M.cancelledResult(classicSpec(), runOf());
+    eq('a classic run cancels the same way', classicCancel.stopReason, 'user-stop');
+    ok('…without inventing criteria it never had', classicCancel.unmet === undefined);
+}
+
 // ================================== 8. the role is a binding, not a folder
 {
     console.log('\n-- runtime roles');

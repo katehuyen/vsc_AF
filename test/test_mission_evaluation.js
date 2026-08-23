@@ -172,6 +172,29 @@ const FINISH_OK = { ...reflect(), thought: 'done', action: 'finish', verdict: 's
     ok('…nor does a successor that settled BEFORE the verdict',
         !M.isStale(ev, [{ id: 's2', at: 50, sources: ['s1'] }]));
 
+    // ‼️ X-92 — the witness that needs no label. Both of the rules above are
+    // things the LEAD chose to write down, so an ordinary delegation that wrote
+    // neither could rewrite the artefact and leave the pass standing. The old
+    // test suite never caught it because it only ever measured a `revise`,
+    // which always names its sources.
+    ok('‼️ a WRITER that declared nothing takes the verdict with it',
+        M.isStale(ev, [{ id: 's5', at: 200, writes: true }]));
+    ok('…and it does not matter that it named no criteria and no sources',
+        M.isStale(ev, [{ id: 's5', at: 200, writes: true, criteria: [], sources: [] }]));
+    ok('‼️ work that changed nothing never stales anything, whatever else it says',
+        !M.isStale(ev, [{ id: 's6', at: 200, writes: false }]));
+    ok('‼️ a writer that DECLARED its reach and it lies elsewhere leaves it standing',
+        !M.isStale(ev, [{ id: 's7', at: 200, writes: true, criteria: ['c2'] }]));
+    ok('…while a writer that declared THIS criterion stales it, as it always did',
+        M.isStale(ev, [{ id: 's8', at: 200, writes: true, criteria: ['c1'] }]));
+    ok('‼️ a record written before the mark existed keeps the old two-witness rule',
+        !M.isStale(ev, [{ id: 's9', at: 200 }]));
+    ok('…and a writer BEFORE the verdict is what the verdict looked at',
+        !M.isStale(ev, [{ id: 's10', at: 50, writes: true }]));
+    ok('‼️ and the gate really closes: a pass with an undeclared writer after it',
+        !M.successGate(CRITERIA,
+            M.currentEvaluations([ev], [{ id: 's5', at: 200, writes: true }])).ok);
+
     console.log('\n-- the parser has one definition of a verdict, whoever wrote it');
     const p1 = M.parseEvaluation('{"findings":[{"criterion":"c1","verdict":"pass","evidence":"saw it"}],"advice":"finish"}', CRITERIA);
     ok('a clean reply parses', p1.ok && p1.value.findings[0].evidence === 'saw it');
