@@ -230,8 +230,7 @@
         // the host cannot disagree, because that box IS the top of its ladder.
         if (form.engines[agentId]) { return form.engines[agentId]; }
         const p = previewOf(agentId);
-        return (p && p.effective && p.effective.engine)
-            || form.engine || 'claude';
+        return (p && p.effective && p.effective.engine) || 'claude';
     };
     /** Where a resolved field came from, in words a reader owes nothing to. */
     const ORIGIN_WORDS = {
@@ -281,6 +280,36 @@
         ? (form.poolScope === 'fleet' ? true : !!form.poolSel[agentId])
         : !!form.team[agentId];
     const includedAgents = () => (DATA.agents || []).filter(a => included(a.id));
+    /**
+     * ‼️ U-101 — THE BULK PROFILE IS AN ACTION, NOT A SECOND DEFAULT.
+     *
+     * The composer used to carry a `Delegation engine` box that read as a bulk
+     * switch over the member rows and was not one: it wrote a mission-level
+     * FALLBACK, left every existing row override alone, and had no model,
+     * effort or permission counterpart. So a user who set it and then looked at
+     * the rows saw the rows disagreeing with it, and the same preference could
+     * be recorded in two places at once.
+     *
+     * This tool changes the ROWS. What it writes is what the payload carries and
+     * what the reader can see; there is no invisible layer left behind.
+     *
+     * ‼️ THREE ANSWERS PER DIMENSION, and the third is why this is not a set of
+     * four selects. `keep` leaves the dimension alone — so applying an ENGINE to
+     * six rows cannot wipe the models on them, which is the accident a naive
+     * bulk apply makes every time. `clear` removes the override and lets the row
+     * inherit again. Anything else is an explicit value.
+     */
+    let profileOpen = false;
+    const profile = { engine: 'keep', model: 'keep', effort: 'keep', permissionMode: 'keep' };
+    /**
+     * Rows whose explicit model/effort no longer fits the engine they are on,
+     * held for the user to decide about. ‼️ NOT dropped silently: U-97 narrowed
+     * on the spot, which meant a value somebody typed disappeared while they
+     * were looking at something else. It is announced once, cleared on request,
+     * and the row says afterwards what went and why.
+     */
+    let narrowAsk = [];
+    const narrowNote = {};
     /** The page-side mirror of core `resolveLead` — the first of the pool, else
      *  the first of the fleet. Same input, same lead, every time, so what the
      *  form shows before Start is what the run will record. */
@@ -327,27 +356,78 @@
             .join('');
     };
     /**
-     * ‼️ U-97 — THE ROW IS MADE COHERENT BEFORE IT IS DRAWN AGAIN. Same rule
+     * ‼️ U-97 — WHAT WOULD NO LONGER FIT, WORKED OUT BUT NOT YET DONE. Same rule
      * the host applies at launch (`core/models.ts` narrowLaunch): a model the
-     * new engine does not publish is dropped, and an effort the resulting model
-     * does not offer falls back to that model's default or to nothing. Without
-     * it a row switched onto an engine with `takesEffort:false` kept its old
-     * word and the launch carried a hidden `--effort` that engine refuses.
+     * new engine does not publish does not fit, and an effort the resulting
+     * model does not offer falls back to that model's default or to nothing.
+     * Without it a row switched onto an engine with `takesEffort:false` keeps
+     * its old word and the launch carries a hidden `--effort` that engine
+     * refuses.
      *
      * An engine that publishes NO catalog is not allowed to call a model wrong
      * — it has no opinion to hold — so only the effort is checked there.
+     *
+     * ‼️ U-101 — AND THE ANSWER IS RETURNED RATHER THAN APPLIED. This used to
+     * write straight into `form`, which meant a value somebody had typed
+     * vanished while they were looking at a different control. The caller now
+     * decides: `narrowAsk` collects the rows, the user is told once, and the
+     * clearing happens on a press.
      */
-    const narrowRow = (agentId) => {
+    const narrowPlan = (agentId) => {
         const eng = effEngine(agentId);
+        const model = form.models[agentId] || '';
+        const effort = form.efforts[agentId] || '';
         const cat = (window.AFEngine.models(launchView(), eng) || []).filter(m => m.id);
         if (cat.length) {
-            const fixed = window.AFEngine.narrow(launchView(), eng, form.models[agentId] || '', form.efforts[agentId] || '');
-            form.models[agentId] = fixed.model;
-            form.efforts[agentId] = fixed.effort;
-            return;
+            const fixed = window.AFEngine.narrow(launchView(), eng, model, effort);
+            return {
+                agentId, engine: eng,
+                model: fixed.model, effort: fixed.effort,
+                lostModel: model && fixed.model !== model ? model : '',
+                lostEffort: effort && fixed.effort !== effort ? effort : ''
+            };
         }
-        const rows = window.AFEngine.efforts(launchView(), eng, form.models[agentId] || '') || [];
-        if (!rows.some(e => e.id === (form.efforts[agentId] || ''))) { form.efforts[agentId] = ''; }
+        const rows = window.AFEngine.efforts(launchView(), eng, model) || [];
+        const keeps = rows.some(e => e.id === effort);
+        return {
+            agentId, engine: eng, model, effort: keeps ? effort : '',
+            lostModel: '', lostEffort: keeps ? '' : effort
+        };
+    };
+    /** Write one plan onto the row, and leave the reason where the row is. */
+    const applyNarrow = (plan) => {
+        const engLabel = ((DATA.engines || []).find(e => e.id === plan.engine) || {}).label || plan.engine;
+        const lost = [
+            plan.lostModel ? `model ${plan.lostModel}` : '',
+            plan.lostEffort ? `effort ${plan.lostEffort}` : ''
+        ].filter(Boolean);
+        form.models[plan.agentId] = plan.model;
+        form.efforts[plan.agentId] = plan.effort;
+        if (lost.length) { narrowNote[plan.agentId] = `${lost.join(' and ')} cleared — ${engLabel} does not offer it`; }
+    };
+    /** Every row whose explicit words no longer fit its engine — collected for
+     *  the user to decide about, never applied behind their back. */
+    const askNarrow = () => {
+        narrowAsk = (DATA.agents || [])
+            .filter(a => included(a.id))
+            .map(a => narrowPlan(a.id))
+            .filter(p => p.lostModel || p.lostEffort);
+    };
+    /**
+     * Read the bulk profile's four boxes back out of the DOM.
+     *
+     * ‼️ AN EMPTY READ IS NOT AN ANSWER. Every real choice in these boxes is a
+     * non-empty word — `keep`, `clear`, or a value — so nothing legitimate reads
+     * back as ''. Taking '' at face value would write an empty string onto the
+     * rows, which is what `clear` means and already has its own option: a box
+     * that is not on screen, or one a repaint has not filled yet, would silently
+     * wipe a dimension the user had left alone.
+     */
+    const readProfile = () => {
+        ['engine', 'model', 'effort', 'permissionMode'].forEach(key => {
+            const el = document.getElementById('pf-' + key);
+            if (el && el.value) { profile[key] = el.value; }
+        });
     };
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
@@ -540,6 +620,16 @@
                 + ' a setting; one that does not refuses the run up front rather than passing a flag it'
                 + ' does not know.';
         };
+        /**
+         * ‼️ U-101 — EVERY CELL SAYS WHETHER IT IS AN OVERRIDE OR AN INHERIT.
+         *
+         * With the mission-wide engine box gone, the rows ARE the answer — so a
+         * reader has to be able to tell, without opening four tooltips, which of
+         * these values somebody chose here and which are falling through. A word
+         * would not fit in a 150px select; a left edge does, and the AFTip
+         * already carries the sentence.
+         */
+        const ovr = (v) => (v ? ' ovr' : '');
         const teamRows = DATA.agents.map((a, i) => {
             // ‼️ U-103 — the row's boxes are drawn against the engine the HOST
             // resolved for it, not one the page worked out. The model catalogue
@@ -573,13 +663,13 @@
                         : ''}</label>
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
                     value="${C.esc(form.roles[a.id] || '')}" ${inRow ? '' : 'disabled'}>
-                <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
+                <select id="en-${i}" class="mdl${ovr(form.engines[a.id])}" data-engine="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'engine',
                         'Engine: which CLI this member\'s delegations run on. Empty is not "claude" — it falls'
-                        + ' through the mission\'s engine, this agent\'s own default and the fleet\'s, in that order.'
+                        + ' through this agent\'s own default for the engine it lands on and then the fleet\'s.'
                         + ' Changing it re-reads that engine\'s models and efforts into the two boxes on this row.'))}"
-                    ${inRow ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
-                <select id="md-${i}" class="mdl" data-model="${C.esc(a.id)}"
+                    ${inRow ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— inherit —')}</select>
+                <select id="md-${i}" class="mdl${ovr(form.models[a.id])}" data-model="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'model',
                         (modelKnown(eng, form.models[a.id] || '') ? ''
                             : '⚠ ' + engLabel + ' does not publish this model. It was kept because it was already'
@@ -588,7 +678,7 @@
                         + ' window last read it; change the engine beside it and a model that catalog does not carry'
                         + ' is dropped rather than launched.'))}"
                     ${inRow ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
-                <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
+                <select id="ef-${i}" class="mdl${ovr(form.efforts[a.id])}" data-effort="${C.esc(a.id)}"
                     title="${C.esc(noEffort
                         ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
                         : mirror(pv, 'effort', effortTitle(form.efforts[a.id] || '', eRows)))}"
@@ -598,9 +688,10 @@
                         // long one is already in the tooltip above.
                         ? '<option value="">— no effort —</option>'
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
-                <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
+                <select id="pm-${i}" class="mdl${ovr(form.perms[a.id])}" data-perm="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'permissionMode', permTitle(form.perms[a.id] || '')))}"
                     ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                ${narrowNote[a.id] ? `<span class="narrownote" title="This row's own words were cleared because the engine it is on does not offer them — said here rather than left as a value that quietly vanished.">${C.esc(narrowNote[a.id])}</span>` : ''}
             </div>`;
         }).join('');
         // ‼️ NO FIELD HERE HAS A MAXIMUM, AND EVERY ONE OF THEM TAKES 0.
@@ -708,8 +799,8 @@
                     'Claude Code — fixed, not a choice.\n\nThe mission\'s control flow parses this CLI\'s JSON'
                     + ' envelope: the decision object, the cost of the call and the session id that carries the'
                     + ' lead from round to round. No other engine emits it, so a picker here would be a control'
-                    + ' that cannot do what it looks like it does.\n\nThe DELEGATION engine below is a separate'
-                    + ' axis and can be anything.')}">Planner engine
+                    + ' that cannot do what it looks like it does.\n\nA DELEGATION is a separate axis and can'
+                    + ' be on any engine — each member row says which.')}">Planner engine
                     <span class="fixedval">Claude Code <span class="muted small">· fixed</span></span></label>
                 <label>Model override
                     <select id="f-planner" title="${C.esc(plannerMirror('model',
@@ -746,6 +837,68 @@
                 + ' softer answer to a question already settled in the command line.')}"
                 >‼️ No permission picker: the planner\'s write and spawn tools are cut off by name
                 (<code>--disallowedTools</code>), and it is capped at 15 turns per decision — hover for the whole fence.</span></div>`;
+        /**
+         * ‼️ U-101 — THE BULK PROFILE, AND WHY IT IS A FOLD RATHER THAN A ROW.
+         *
+         * Four more permanent selects above a table of rows carrying the same
+         * four is how the old `Delegation engine` box came to read as a bulk
+         * switch: a control that lives beside the rows looks like it governs
+         * them. This one is a BUTTON that opens a tool, is applied, and folds
+         * away — the rows keep the answer, and there is nothing left on screen
+         * pretending to hold a value.
+         */
+        const profDim = (key, label, opts, hint) => `
+            <label title="${C.esc(hint)}">${label}
+                <select id="pf-${key}">
+                    <option value="keep"${profile[key] === 'keep' ? ' selected' : ''}>don't change</option>
+                    <option value="clear"${profile[key] === 'clear' ? ' selected' : ''}>inherit — clear the override</option>
+                    ${opts}
+                </select></label>`;
+        const profOpts = (key, rows) => rows.filter(r => r.id).map(r =>
+            `<option value="${C.esc(r.id)}"${profile[key] === r.id ? ' selected' : ''}>${C.esc(r.label || r.id)}</option>`).join('');
+        // The profile's own model/effort lists follow the engine the profile is
+        // SETTING, not any one row's — otherwise the tool would offer a value it
+        // is about to make invalid on every row it touches.
+        const profEngine = (profile.engine !== 'keep' && profile.engine !== 'clear') ? profile.engine : 'claude';
+        const profileTool = `
+            <button type="button" class="secondary small profbtn" id="f-profile"
+                title="${C.esc('Apply one profile to every INCLUDED row at once — engine, model, effort and permissions together.'
+                    + '\n\nIt changes the rows in front of you. It does not record a second, invisible preference'
+                    + ' underneath them, which is what the old mission-wide Delegation engine box did.'
+                    + '\n\nEach dimension has three answers: leave it alone, clear the override so the row inherits'
+                    + ' again, or set a value. That is why applying an ENGINE cannot wipe the models beside it.')}"
+                >${profileOpen ? '▾' : '▸'} Apply profile to included workers</button>
+            ${profileOpen ? `<div class="profbody">
+                ${profDim('engine', 'Engine', profOpts('engine', DATA.engines || []),
+                    'Which CLI these delegations run on. Cleared, the row falls through to that agent\'s own default and then your fleet default.')}
+                ${profDim('model', 'Model', profOpts('model', modelListOf(profEngine)),
+                    'The model for these delegations — from ' + C.esc(profEngine) + '\'s catalog, because that is the engine this profile is setting.')}
+                ${profDim('effort', 'Effort', profOpts('effort', effortRowsFor(profEngine, profile.model !== 'keep' && profile.model !== 'clear' ? profile.model : '')),
+                    'How hard these members think per turn. An engine with no effort flag offers nothing here.')}
+                ${profDim('permissionMode', 'Permissions', profOpts('permissionMode', DATA.permissions || []),
+                    'What these members may do unattended. A delegation is headless — there is nobody to ask.')}
+                <button type="button" class="small" id="f-profile-apply"
+                    title="Writes the chosen dimensions onto every included row. Dimensions left on &quot;don't change&quot; are not touched.">Apply to ${includedAgents().length} included</button>
+            </div>` : ''}`;
+        /**
+         * ‼️ U-101 — A VALUE IS NOT TAKEN AWAY WITHOUT SAYING SO. Changing an
+         * engine used to narrow the row on the spot: a model somebody had typed
+         * disappeared while they were looking at a different control, and the
+         * row afterwards gave no hint that it ever held one. The rows are named,
+         * the reason is named, and the clearing waits for a press.
+         */
+        const narrowStrip = narrowAsk.length ? `<div class="narrowask"
+            title="These rows carry an explicit model or effort the engine they are now on does not offer. Left as they are, the launch refuses them by name — the draft's own refusal list above Start says so too.">
+            <b>⚠ ${narrowAsk.length} row${narrowAsk.length > 1 ? 's' : ''} no longer fit${narrowAsk.length > 1 ? '' : 's'} their engine:</b>
+            <ul class="fplist">${narrowAsk.map(p => {
+                const who = ((DATA.agents || []).find(a => a.id === p.agentId) || {}).name || p.agentId;
+                const bits = [p.lostModel ? `model <b>${C.esc(p.lostModel)}</b>` : '',
+                    p.lostEffort ? `effort <b>${C.esc(p.lostEffort)}</b>` : ''].filter(Boolean);
+                return `<li>${C.esc(who)} — ${bits.join(' and ')} on ${C.esc(p.engine)}</li>`;
+            }).join('')}</ul>
+            <button type="button" class="small" id="f-narrow-clear">Clear them</button>
+            <button type="button" class="secondary small" id="f-narrow-keep">Keep as they are</button>
+        </div>` : '';
         const commonBlock = `
             ${orchestratorBlock}
             <div class="frow"><span class="flabel">${adaptive
@@ -757,7 +910,7 @@
                     <span class="muted small">${form.poolScope === 'selected'
                         ? `${includedAgents().length} of ${DATA.agents.length} ticked`
                         : `all ${DATA.agents.length} in`}</span>`
-                : 'Team <span class="req">at least one</span>'}</span>${teamRows}</div>
+                : 'Team <span class="req">at least one</span>'}${profileTool}</span>${narrowStrip}${teamRows}</div>
             <div class="frow"><label>Workdir <input type="text" id="f-workdir" placeholder="(optional) target repo/folder — delegations run inside it" value="${C.esc(form.workdir)}"></label>
                 <button class="secondary small" id="f-browse">Browse…</button>
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
@@ -772,13 +925,7 @@
                 <b>0 on any field = unlimited</b>, and a mission with no ceilings stops only when the lead
                 finishes it, you cancel it, or the fleet budget bites.</span>
             </div>
-            <div class="frow"><label>Delegation engine
-                <select id="f-engine">${engineOpts(form.engine, 'Claude Code (default)')}</select></label>
-                <span class="muted small">Which CLI the team's delegations run on; a member can override it on its own row.
-                ‼️ The PLANNER always runs on Claude Code — its control flow parses that CLI's JSON envelope and spends
-                <code>--disallowedTools</code> and <code>--max-turns</code>, which the others do not have. Delegation engine
-                and planner engine are separate axes on purpose.</span>
-                <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's row, then the mission engine here, then that agent's own default for that engine, then your fleet defaults.</span></div>
+            <div class="frow"><span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's own row, then that agent's own default for the engine it lands on, then your fleet defaults, then the CLI.</span></div>
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
@@ -856,7 +1003,6 @@
         form.workdir = val('f-workdir', form.workdir);
         form.plannerModel = val('f-planner', form.plannerModel);
         form.plannerEffort = val('f-planner-effort', form.plannerEffort);
-        form.engine = val('f-engine', form.engine);
         DATA.agents.forEach((a, i) => {
             const cb = document.getElementById('tm-' + i);
             if (!cb) { return; }
@@ -914,7 +1060,23 @@
             title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
             workdir: form.workdir, plannerModel: form.plannerModel,
             plannerEffort: form.plannerEffort,
-            engine: form.engine,
+            /**
+             * ‼️ U-101 — NO `engine` HERE. The composer used to carry a
+             * `Delegation engine` box that looked like a bulk switch over the
+             * rows and was not one: it wrote a mission-level FALLBACK, never
+             * touched an existing row override, and had no model, effort or
+             * permission counterpart — so the form disagreed with itself, and
+             * the same preference could be stated in two places at once.
+             *
+             * The rows are the single source of truth now. `Apply profile`
+             * writes what the user chose ONTO them, in plain sight, instead of
+             * recording a second precedence layer nobody can see.
+             *
+             * `MissionSpec.engine` stays for the bridge, for every spec already
+             * on disk and for child-mission inheritance, and the resolver goes
+             * on reading it — this is the UI declining to WRITE a second copy,
+             * not the contract losing a field.
+             */
             team: memberPayload(DATA.agents.filter(a => form.team[a.id])),
             maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
             maxTokens: form.maxTokens,
@@ -2251,6 +2413,20 @@
                 /* A value that cannot be chosen is drawn as a value, not as a
                    select nobody may use — the shape says "read this", and the
                    AFTip says why it is fixed. */
+                /* ‼️ U-101 — an explicit override wears a left edge; an inherited
+                   cell does not. The word would not fit in the box, and the
+                   AFTip already carries the sentence. */
+                .tmrow select.ovr { border-left:3px solid var(--vscode-textLink-foreground); }
+                .profbtn { margin-left:8px; }
+                .profbody { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;
+                    margin:6px 0 8px; padding:8px; border-radius:4px;
+                    background:color-mix(in srgb, var(--vscode-foreground) 6%, transparent); }
+                .profbody > label { flex:1 1 130px; min-width:110px; font-size:12px; }
+                .narrowask { margin:6px 0 8px; padding:8px; border-radius:4px;
+                    font-size:12px; color:var(--vscode-editorWarning-foreground, #b58900);
+                    border:1px solid currentColor; }
+                .narrownote { font-size:11px; opacity:.8; flex-basis:100%;
+                    color:var(--vscode-editorWarning-foreground, #b58900); }
                 .fixedval { display:block; margin-top:3px; padding:5px 8px;
                     border:1px dashed color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
                     border-radius:3px; opacity:.85; white-space:nowrap; }
@@ -2476,33 +2652,69 @@
             // ticking a team agent enables its role field
             DATA.agents.forEach((a, i) => {
                 const cb = document.getElementById('tm-' + i);
-                if (cb) { cb.addEventListener('change', () => { readForm(); render(); }); }
+                // ‼️ U-101 — untick a row and the strip must stop naming it. The
+                // list is about INCLUDED rows, so the thing that decides who is
+                // included has to refresh it or the warning outlives its subject.
+                if (cb) { cb.addEventListener('change', () => { readForm(); askNarrow(); render(); }); }
                 // ‼️ U-64 — a member's engine decides what its model box suggests
                 // and whether its effort box has anything in it, so changing it
                 // redraws the row. Same for the mission-wide engine below: every
                 // member that states none inherits it.
-                // ‼️ U-97 — and the row is NARROWED before it is drawn again,
-                // so an incompatible model/effort left over from the previous
-                // engine is dropped here rather than passed to a CLI that
-                // refuses it.
+                // ‼️ U-101 — and what no longer fits is ASKED ABOUT rather than
+                // taken away. U-97 narrowed on the spot, which meant a model
+                // somebody had typed disappeared while their eyes were on a
+                // different control and the row afterwards gave no sign it had
+                // ever held one.
                 const en = document.getElementById('en-' + i);
-                if (en) { en.addEventListener('change', () => { readForm(); narrowRow(a.id); render(); }); }
+                if (en) { en.addEventListener('change', () => { readForm(); askNarrow(); render(); }); }
                 // The model decides which efforts exist (`AFEngine.efforts`
                 // answers per engine AND per model), so it redraws the row too.
                 const md = document.getElementById('md-' + i);
-                if (md) { md.addEventListener('change', () => { readForm(); narrowRow(a.id); render(); }); }
+                if (md) { md.addEventListener('change', () => { readForm(); askNarrow(); render(); }); }
             });
-            const missionEng = document.getElementById('f-engine');
-            // ‼️ U-97 — the mission engine is the fallback for every member that
-            // states none, so changing it narrows exactly those rows. A member
-            // with its own engine is not touched.
-            if (missionEng) {
-                missionEng.addEventListener('change', () => {
-                    readForm();
-                    DATA.agents.forEach(a => { if (!form.engines[a.id]) { narrowRow(a.id); } });
-                    render();
+            // ‼️ U-101 — THE BULK PROFILE. It writes onto the rows and leaves
+            // nothing behind it; the dimensions left on "don't change" are not
+            // touched, which is what stops an engine apply from wiping models.
+            wire('f-profile', () => { readForm(); profileOpen = !profileOpen; render(); });
+            wire('f-profile-apply', () => {
+                readForm();
+                readProfile();
+                includedAgents().forEach(a => {
+                    const set = (key, map) => {
+                        if (profile[key] === 'keep') { return; }
+                        map[a.id] = profile[key] === 'clear' ? '' : profile[key];
+                    };
+                    set('engine', form.engines);
+                    set('model', form.models);
+                    set('effort', form.efforts);
+                    set('permissionMode', form.perms);
+                    delete narrowNote[a.id];
                 });
-            }
+                profileOpen = false;
+                askNarrow();
+                render();
+            });
+            ['engine', 'model', 'effort', 'permissionMode'].forEach(key => {
+                const el = document.getElementById('pf-' + key);
+                // The engine and the model change what the boxes below them may
+                // offer, so choosing one redraws the tool — the same rule a
+                // member row follows, for the same reason.
+                if (el) { el.addEventListener('change', () => { readForm(); readProfile(); render(); }); }
+            });
+            wire('f-narrow-clear', () => {
+                readForm();
+                narrowAsk.forEach(applyNarrow);
+                narrowAsk = [];
+                render();
+            });
+            wire('f-narrow-keep', () => {
+                readForm();
+                // Kept deliberately: the row already marks an off-catalogue value
+                // with ⚠, and the draft's refusal list says what the launch will
+                // do about it. Nothing here is hidden by saying yes to it.
+                narrowAsk = [];
+                render();
+            });
         }
 
         document.querySelectorAll('.mrow').forEach(row =>

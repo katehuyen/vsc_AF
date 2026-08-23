@@ -4,6 +4,29 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**U-101 — the member rows are the single source of truth, and the bulk profile
+is an ACTION rather than a second hidden default.** The composer carried a
+`Delegation engine` box that read as a bulk switch over the rows and was not
+one: it wrote a mission-level FALLBACK, never touched an existing row override,
+and had no model, effort or permission counterpart — so a user who set it and
+then looked at the rows saw the rows disagreeing with it, and the same preference
+could be recorded in two places at once. That box is gone from the form, and the
+payload the UI posts no longer carries `engine` at all. In its place, in the
+Team/Pool heading, `Apply profile to included workers` offers engine, model,
+effort and permissions TOGETHER and writes what you choose onto the rows in
+plain sight. Each dimension has three answers — `don't change`, `inherit — clear
+the override`, or a value — which is why applying an engine can no longer wipe
+the models beside it. Every cell now says whether it is an explicit override or
+an inherit, with a left edge the AFTip explains. And a value is no longer taken
+away without saying so: moving a row onto an engine that publishes neither its
+model nor its effort used to narrow it on the spot, so something somebody had
+typed vanished while their eyes were on a different control. The rows are named
+once, in a strip that offers `Clear them` or `Keep as they are`, and a cleared
+row afterwards says what went and why. `MissionSpec.engine` is untouched: the
+bridge, every spec already on disk and child-mission inheritance still use it and
+the resolver still reads it — this is the UI declining to write a second copy,
+not the contract losing a field.
+
 **U-100 — the orchestrator is one subject, so it is one block.** `Lead agent`
 sat at the top of the New Mission form and `Planner model` eight rows below it,
 with the team, the workdir, six ceilings and the delegation engine in between —

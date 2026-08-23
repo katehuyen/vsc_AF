@@ -1,39 +1,39 @@
-v11.64 - u-100: orkestratör tek bir konudur, artık tek bir blokta duruyor
+v11.65 - u-101: satırlar tek kaynak, toplu profil ise gizli bir varsayılan değil bir eylem
 
-"Lead agent" sat at the top of the New Mission form and "Planner model" eight
-rows below it, with the team, the workdir, six ceilings and the delegation
-engine in between — two halves of one answer separated by everything that is
-not it. One Orchestrator block now: lead, planner engine, a mission-only model
-override and a NEW effort override, on one line.
+The composer carried a "Delegation engine" box that read as a bulk switch over
+the member rows and was not one: it wrote a mission-level FALLBACK, never
+touched an existing row override, and had no model / effort / permission
+counterpart. A user who set it and then looked at the rows saw the rows
+disagreeing with it, and the same preference could be recorded in two places at
+once. The box is gone, and the payload the UI posts no longer carries "engine".
 
-The planner engine is drawn as a FIXED value, not offered as a picker. The
-mission's control flow parses Claude Code's JSON envelope — the decision
-object, the cost, the session id that carries the lead from round to round — so
-a picker there would be a control that cannot do what it looks like it does.
+In its place, in the Team/Pool heading: "Apply profile to included workers" —
+engine, model, effort and permissions TOGETHER, written onto the rows in plain
+sight. Three answers per dimension: don't change · inherit (clear the override)
+· a value. That third one is the whole point: applying an ENGINE can no longer
+wipe the models beside it, which is the accident a naive bulk apply makes every
+time.
 
-"plannerEffort" is new on MissionSpec, on missions.start, on child-mission
-inheritance and on missions.status. Validated by the same vocabulary a member's
-effort is (refused on a typo, never dropped) and carried onto the planner
-command line as a real --effort with the same bare-word guard the model has.
-Absent — which is every spec ever written — no --effort reaches that call at
-all and today's behaviour is unchanged.
+Every cell says whether it is an explicit override or an inherit — a left edge,
+because the word does not fit in a 150px select and the AFTip already carries
+the sentence.
 
-An empty override box no longer says "default". It says what the run would
-really use and who decided, and "CLI chooses" when nobody did — U-103's
-resolution, read one control over. On a member row an empty effort really IS
-resolved; on the planner nothing resolves it, so the two boxes no longer borrow
-each other's promise.
+‼️ And a value is no longer taken away without saying so. Moving a row onto an
+engine that publishes neither its model nor its effort used to narrow it on the
+spot: something somebody had typed vanished while their eyes were on a different
+control, and the row afterwards gave no sign it had ever held one. The rows are
+named ONCE in a strip offering "Clear them" or "Keep as they are", and a cleared
+row afterwards says what went and why.
 
-Still no permission picker for the planner, and now the form says why: write
-and spawn tools cut off by name (--disallowedTools), the read tools kept, 15
-turns and 10 minutes per decision. The whole fence is in one AFTip instead of a
-worker picker copied onto a participant that has no such flag.
+Found while wiring it: readProfile took an empty read at face value and would
+have written '' onto a dimension the user had left alone — which is what "clear"
+means and already has its own option. An empty read is now not an answer.
 
-missions.status answers "planner" (agent, engine, model, effort, session) for
-the first time: every dimension of every DELEGATE has been readable since M-18
-while the participant that decides the whole run was invisible.
+MissionSpec.engine is untouched: the bridge, every spec already on disk and
+child-mission inheritance still use it and the resolver still reads it. This is
+the UI declining to WRITE a second copy, not the contract losing a field.
 
-212 files · 13766 checks · 0 failed. Parity 16/16, gapBudget unchanged (38).
-Looked at: dist/render/missions.png, fixtures "form-preview" and "form-adaptive".
+212 files · 13770 checks · 0 failed. Parity 16/16, gapBudget unchanged (38).
+Looked at: dist/render/missions.png, fixture "form-profile".
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

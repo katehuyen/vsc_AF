@@ -364,7 +364,7 @@ ok('‼️ U-100 — and so does the planner EFFORT, on the same payload',
         at('Orchestrator') >= 0 && at('id="f-lead"') > at('Orchestrator')
         && at('id="f-planner"') > at('id="f-lead"')
         && at('id="f-planner-effort"') > at('id="f-planner"')
-        && at('id="f-planner-effort"') < at('id="f-engine"'));
+        && at('id="f-planner-effort"') < at('id="tm-0"'));
     ok('‼️ …and the planner ENGINE is drawn as a fixed value, not offered as a picker that cannot work',
         h.includes('Planner engine') && h.includes('class="fixedval"')
         && !h.includes('id="f-planner-engine"'));
@@ -482,8 +482,9 @@ getEl('cq-1').checked = false;
 getEl('cn-add').listeners.click();
 getEl('cn-1').value = 'No new dependency without saying why.';
 getEl('f-adv').listeners.click();
-ok('Advanced opens and gives the pool, the limits and the engines back',
-    html().includes('id="f-lead"') && html().includes('id="lim-maxCostUSD"') && html().includes('id="f-engine"'));
+ok('Advanced opens and gives the orchestrator, the pool and the limits back',
+    html().includes('id="f-lead"') && html().includes('id="lim-maxCostUSD"')
+    && html().includes('id="f-profile"'));
 ok('…and the team block is a POOL here, because naming a cast is the decision not being asked',
     html().includes('>Pool <'));
 getEl('f-autonomy').value = 'decide-alone';
@@ -705,6 +706,8 @@ const rowBox = (which, i) => {
 };
 const mdBox = (i) => rowBox('md', i);
 const efBox = (i) => rowBox('ef', i);
+const pmBox = (i) => rowBox('pm', i);
+const enBox = (i) => rowBox('en', i);
 ok('a member moved to another engine gets THAT engine\'s catalog in its model box',
     mdBox(1).includes('opencode/grok-code') && !mdBox(1).includes('>opus<'));
 ok('‼️ …and an engine with no effort setting draws the box DEAD rather than offering five refusals',
@@ -735,23 +738,44 @@ ok('a pair the engine really has survives the redraw untouched',
     mdBox(1).includes('value="opus" selected') && efBox(1).includes('value="high" selected'));
 getEl('en-1').value = 'opencode';
 getEl('en-1').listeners.change();
-// The row is drawn FROM `form`, so an empty box here is the proof that
-// narrowing wrote the drop back rather than only hiding it: a value still held
-// would come back as a `selected` option or as the "not in this catalog" one.
-ok('‼️ moving that row to an engine with neither drops both rather than launching them',
-    !mdBox(1).includes('>opus<') && !mdBox(1).includes('not in this catalog')
-    && efBox(1).includes('— no effort —') && !efBox(1).includes(' selected'));
-getEl('en-1').value = 'opencode';
-getEl('en-1').listeners.change();
+// ‼️ U-101 — AND IT IS ASKED ABOUT RATHER THAN TAKEN AWAY. U-97 narrowed on the
+// spot, so a model somebody had typed vanished while their eyes were on a
+// different control and the row afterwards gave no sign it had ever held one.
+ok('‼️ moving that row to an engine with neither NAMES what no longer fits instead of dropping it',
+    html().includes('no longer fit') && html().includes('>opus<')
+    && html().includes('id="f-narrow-clear"'));
+ok('…and the values are still on the row until somebody says so',
+    mdBox(1).includes('value="opus"'));
+getEl('f-narrow-clear').listeners.click();
+ok('‼️ …then Clear them drops both AND leaves the reason where the row is',
+    !mdBox(1).includes('>opus<') && efBox(1).includes('— no effort —')
+    && html().includes('cleared —') && html().includes('OpenCode does not offer it'));
+// ‼️ U-101 — THE BULK PROFILE IS AN ACTION ON THE ROWS, NOT A SECOND DEFAULT.
+// The old mission-wide `Delegation engine` box read as a bulk switch and was
+// not one: it wrote an invisible fallback, never touched a row, and had no
+// model / effort / permission counterpart.
+ok('the composer no longer carries an ownerless mission-wide engine field',
+    !html().includes('id="f-engine"'));
 getEl('en-1').value = '';
-getEl('f-engine').value = 'opencode';
-getEl('f-engine').listeners.change();
-ok('‼️ the mission-wide engine reaches every member that states none of its own',
-    mdBox(1).includes('opencode/grok-code'));
-getEl('f-engine').value = '';
-getEl('f-engine').listeners.change();
-ok('…and back: a member on Claude is offered Claude\'s models and its efforts again',
-    mdBox(1).includes('>opus<') && mdBox(1).includes('>haiku<') && html().includes('>high<'));
+getEl('en-1').listeners.change();
+getEl('md-1').value = 'opus';
+getEl('md-1').listeners.change();
+getEl('f-profile').listeners.click();
+ok('the profile tool opens with all four dimensions and a "don\'t change" answer on each',
+    html().includes('id="pf-engine"') && html().includes('id="pf-model"')
+    && html().includes('id="pf-effort"') && html().includes('id="pf-permissionMode"')
+    && (html().match(/>don't change</g) || []).length === 4);
+getEl('pf-permissionMode').value = 'plan';
+getEl('pf-permissionMode').listeners.change();
+getEl('f-profile-apply').listeners.click();
+ok('‼️ applying ONE dimension leaves the others alone — an engine apply cannot wipe the models beside it',
+    pmBox(1).includes('value="plan" selected') && mdBox(1).includes('value="opus" selected'));
+getEl('f-profile').listeners.click();
+getEl('pf-engine').value = 'clear';
+getEl('pf-engine').listeners.change();
+getEl('f-profile-apply').listeners.click();
+ok('…and "inherit — clear the override" really removes one rather than writing another value',
+    enBox(1).includes('value="" selected') || !enBox(1).includes(' selected'));
 msgHandler({ data: { type: 'created' } });
 
 // ---------- U-64: the list says which kind of run each row is ----------

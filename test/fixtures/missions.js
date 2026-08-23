@@ -668,6 +668,35 @@ module.exports = {
             }
         },
         {
+            // ‼️ U-101 — THE ROWS ARE THE ANSWER, so the two surfaces that make
+            // them one are the ones nobody has looked at: the bulk profile OPEN
+            // (four dimensions, each with its own "don't change") and the strip
+            // that names what an engine change would take away instead of taking
+            // it. Both are layout, and both are new.
+            id: 'form-profile', label: 'New Mission — the bulk profile open, and a row that no longer fits',
+            data: data({ newForm: true }),
+            act: (r) => {
+                const el = (id) => r.sandbox.document.getElementById(id);
+                // ‼️ The profile is opened FIRST and the boxes are filled after,
+                // so the LAST event is the one that reads them. This shim hands
+                // out a fresh element per repaint, so anything assigned before a
+                // later fire is a value nothing ever read.
+                fire(el('f-profile'), 'click');
+                // A row put on an engine that publishes neither of its words —
+                // the case the strip exists for.
+                el('tm-1').checked = true;
+                el('tm-2').checked = true;
+                el('rl-1').value = 'implements';
+                el('rl-2').value = 'reviewer';
+                el('f-goal').value = SPEC.goal;
+                el('f-lead').value = 'a0';
+                el('md-1').value = 'opus';
+                el('ef-1').value = 'high';
+                el('en-1').value = 'opencode';
+                fire(el('en-1'), 'change');
+            }
+        },
+        {
             id: 'run', label: 'A running mission, open on its detail',
             data: data({}),
             act: (r) => fire(r.query('.mrow')[0], 'click')
