@@ -2,7 +2,7 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## Unreleased
+## 3.272.0 - X-32 phase A complete: the composer says what it will do, and the rows are the answer (2026-08-23)
 
 **U-101 — the member rows are the single source of truth, and the bulk profile
 is an ACTION rather than a second hidden default.** The composer carried a

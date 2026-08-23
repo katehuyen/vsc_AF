@@ -1,39 +1,16 @@
-v11.65 - u-101: satırlar tek kaynak, toplu profil ise gizli bir varsayılan değil bir eylem
+v11.66 - 3.272.0: X-32 A fazı paketlendi, doğrulandı, kuruldu
 
-The composer carried a "Delegation engine" box that read as a bulk switch over
-the member rows and was not one: it wrote a mission-level FALLBACK, never
-touched an existing row override, and had no model / effort / permission
-counterpart. A user who set it and then looked at the rows saw the rows
-disagreeing with it, and the same preference could be recorded in two places at
-once. The box is gone, and the payload the UI posts no longer carries "engine".
+X-32 phase A is complete: the mission composer now says what it will actually
+do, and the member rows are the answer rather than one of two places the same
+preference could live.
 
-In its place, in the Team/Pool heading: "Apply profile to included workers" —
-engine, model, effort and permissions TOGETHER, written onto the rows in plain
-sight. Three answers per dimension: don't change · inherit (clear the override)
-· a value. That third one is the whole point: applying an ENGINE can no longer
-wipe the models beside it, which is the accident a naive bulk apply makes every
-time.
-
-Every cell says whether it is an explicit override or an inherit — a left edge,
-because the word does not fit in a 150px select and the AFTip already carries
-the sentence.
-
-‼️ And a value is no longer taken away without saying so. Moving a row onto an
-engine that publishes neither its model nor its effort used to narrow it on the
-spot: something somebody had typed vanished while their eyes were on a different
-control, and the row afterwards gave no sign it had ever held one. The rows are
-named ONCE in a strip offering "Clear them" or "Keep as they are", and a cleared
-row afterwards says what went and why.
-
-Found while wiring it: readProfile took an empty read at face value and would
-have written '' onto a dimension the user had left alone — which is what "clear"
-means and already has its own option. An empty read is now not an answer.
-
-MissionSpec.engine is untouched: the bridge, every spec already on disk and
-child-mission inheritance still use it and the resolver still reads it. This is
-the UI declining to WRITE a second copy, not the contract losing a field.
+  U-97  the worker row reads in the order it resolves        (3.271.0)
+  U-102 an empty pool is two answers, and it says which      (3.271.0)
+  U-103 one resolver, and it is the host's                   this build
+  U-100 the orchestrator is one subject, so it is one block  this build
+  U-101 the rows are the single source of truth              this build
 
 212 files · 13770 checks · 0 failed. Parity 16/16, gapBudget unchanged (38).
-Looked at: dist/render/missions.png, fixture "form-profile".
+VSIX verify 13/13; extensions.json = muvusoft.agent-farm 3.272.0.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
