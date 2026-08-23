@@ -17,6 +17,7 @@ import { emptyUsage, totalTokens } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
 import { full as afFull } from '../core/aftime';
+import { afConfig } from '../core/settingsDoor';
 
 /** Findings whose evidence is the agent's own cost view, not a guide section. */
 const COST_CATEGORIES = new Set(['cost-anomaly', 'trend', 'budget', 'error-rate']);
@@ -92,7 +93,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             } else {
                 parts.push(active ? 'ACTIVE' : (latest ? relTime(latest.mtime) : 'no sessions'));
             }
-            const costUnit = vscode.workspace.getConfiguration('agentFarm').get<string>('agentRowCostUnit', 'tokens');
+            const costUnit = afConfig().get<string>('agentRowCostUnit', 'tokens');
             if (costUnit === 'cost') {
                 if (todayCost > 0) { parts.push(fmtUSD(todayCost) + ' today'); }
             } else if (todayTokens > 0) {

@@ -10,6 +10,7 @@ import { fmtDuration, fmtStepPair } from '../core/util';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarkMessage } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { full as afFull } from '../core/aftime';
+import { afConfig } from '../core/settingsDoor';
 
 /**
  * Turns page: the whole farm unrolled to one row per user turn — the Sessions
@@ -121,7 +122,7 @@ export function buildTurnsMarkdown(
     for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
-    const sc = vscode.workspace.getConfiguration('agentFarm');
+    const sc = afConfig();
     const speakerCfg = normalizeSpeakerConfig({
         template: sc.get('speakerLabelTemplate'),
         casing: sc.get('speakerLabelCase'),

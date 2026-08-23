@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { normTopics, turnFor } from '../core/wiki';
+import { afConfig } from '../core/settingsDoor';
 
 /**
  * The global nav's 🔔 Notices button shows the current unread count in
@@ -342,7 +343,7 @@ export function htmlShell(
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.
-    const cfg = vscode.workspace.getConfiguration('agentFarm');
+    const cfg = afConfig();
     const afui = {
         speaker: {
             template: cfg.get<string>('speakerLabelTemplate', '{ai}'),

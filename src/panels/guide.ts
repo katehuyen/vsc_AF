@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { getNonce } from './base';
 import { slugify as slugifyText } from '../core/util';
+import { afConfig } from '../core/settingsDoor';
 
 export type GuideLang = 'en' | 'tr';
 
@@ -38,7 +39,7 @@ const HTML_LANG: Record<GuideLang, string> = { en: 'en', tr: 'tr' };
 
 /** The user's chosen help language (setting). Defaults to English. */
 export function configuredGuideLang(): GuideLang {
-    const v = vscode.workspace.getConfiguration('agentFarm').get<string>('guideLanguage', 'en');
+    const v = afConfig().get<string>('guideLanguage', 'en');
     return v === 'tr' ? 'tr' : 'en';
 }
 

@@ -10,6 +10,7 @@ import { ProjectCostRow as ProjectRollup } from '../core/projects';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
+import { afConfig } from '../core/settingsDoor';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -127,7 +128,7 @@ export function sessionRowPool(
      * on which the hover prints the token count and no fraction rather than a
      * confident figure with the wrong ceiling underneath it.
      */
-    const forced = vscode.workspace.getConfiguration('agentFarm').get<number>('contextWindowTokens', 0);
+    const forced = afConfig().get<number>('contextWindowTokens', 0);
     const windowOf = (s: SessionInfo): number => {
         if (forced > 0) { return forced; }
         if (s.ctxWindow && s.ctxWindow > 0) { return s.ctxWindow; }

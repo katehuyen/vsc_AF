@@ -76,6 +76,7 @@
             <div class="setdesc">${C.esc(it.description || '')}</div>
             <div class="setctl">${controlHtml(it)}</div>
             ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
+            ${!err && it.refusal ? `<div class="seterr">⚠ An entry for this key in your settings file is being ignored — ${C.esc(it.refusal)}</div>` : ''}
         </div>`;
     }
 

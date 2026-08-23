@@ -559,11 +559,135 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     ok('‼️ the budget door reads through the fallback, not the registry alone',
         /cfgValue<boolean>\('agentFarm\.budgetsUnlimited', false\)/.test(ext));
     ok('…and every value the settings page draws comes through the same door',
-        /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw\)/.test(ext));
+        /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw, cfgRefusal\)/.test(ext));
     ok('a refusal names the file and the line to paste instead of stopping there',
         /not a registered configuration/i.test(ext) && /vscodeUserSettingsFile\(\)/.test(ext));
     ok('…and 0 in a budgets figure is documented as the second way to lift a cap',
         /A figure of 0 means NO CAP/.test(props['agentFarm.budgets'].description));
+}
+
+// ---------- ‼️ X-84: the fallback read is not a second settings engine ----------
+{
+    const pkg = require(path.join(__dirname, '..', 'package.json'));
+    const props = pkg.contributes.configuration.properties;
+
+    // --- which file: the profile is already in the path the host handed us ---
+    const G = SO.userFolderFromGlobalStorage;
+    ok('default profile → the User folder above globalStorage',
+        G('C:\\Users\\x\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm')
+        === 'C:\\Users\\x\\AppData\\Roaming\\Code\\User');
+    ok('‼️ a NAMED profile resolves to its own folder, not the default one',
+        G('C:\\Users\\x\\AppData\\Roaming\\Code\\User\\profiles\\-1a2b3c\\globalStorage\\muvusoft.agent-farm')
+        === 'C:\\Users\\x\\AppData\\Roaming\\Code\\User\\profiles\\-1a2b3c');
+    ok('Insiders is a different user-data root and is followed there',
+        G('C:\\Users\\x\\AppData\\Roaming\\Code - Insiders\\User\\globalStorage\\muvusoft.agent-farm')
+        === 'C:\\Users\\x\\AppData\\Roaming\\Code - Insiders\\User');
+    ok('a portable install keeps its own data folder',
+        G('D:/apps/VSCode/data/user-data/User/globalStorage/muvusoft.agent-farm')
+        === 'D:/apps/VSCode/data/user-data/User');
+    ok('posix separators survive as posix',
+        G('/home/x/.config/Code/User/globalStorage/ext') === '/home/x/.config/Code/User');
+    ok('a shape we do not recognise falls back rather than inventing a path',
+        G('') === undefined && G('/tmp/whatever') === undefined);
+
+    // --- which scope: folder over workspace over user, the way VS Code does ---
+    const files = {
+        '/ws/.vscode/settings.json': '{ "agentFarm.livePort": 1 }',
+        '/ws/team.code-workspace': '{ "settings": { "agentFarm.livePort": 2, "agentFarm.claudeDir": "/w" } }',
+        '/user/settings.json': '{ "agentFarm.livePort": 3, "agentFarm.claudeDir": "/u", "agentFarm.guideLanguage": "tr" }'
+    };
+    const read = f => files[f] || '';
+    const chain = [
+        { file: '/ws/.vscode/settings.json' },
+        { file: '/ws/team.code-workspace', nested: 'settings' },
+        { file: '/user/settings.json' }
+    ];
+    ok('the folder value wins over the workspace and the user file',
+        SO.readSettingScoped(chain, read, 'agentFarm.livePort').value === 1);
+    ok('‼️ a .code-workspace carries its settings under one key and is read there',
+        SO.readSettingScoped(chain, read, 'agentFarm.claudeDir').value === '/w');
+    ok('…and the user file still answers what no closer scope set',
+        SO.readSettingScoped(chain, read, 'agentFarm.guideLanguage').value === 'tr');
+    ok('a key nobody set is not found — not defaulted here',
+        SO.readSettingScoped(chain, read, 'agentFarm.nothing').found === false);
+    ok('a missing or unreadable file is skipped, not fatal',
+        SO.readSettingScoped([{ file: '/gone' }, { file: '/user/settings.json' }], read,
+            'agentFarm.livePort').value === 3);
+    ok('the scope that answered is named, so a refusal can say where',
+        SO.readSettingScoped(chain, read, 'agentFarm.claudeDir').file === '/ws/team.code-workspace');
+
+    // --- which shape: the manifest's, or it is refused ---
+    const boolSpec = props['agentFarm.budgetsUnlimited'];
+    ok('‼️ THE BUG: a quoted "false" is NOT a boolean and does not lift every cap',
+        SO.schemaCheck(boolSpec, 'false').ok === false);
+    ok('…nor does a quoted "true" sneak in the other way',
+        SO.schemaCheck(boolSpec, 'true').ok === false);
+    ok('a real boolean passes, both ways round',
+        SO.schemaCheck(boolSpec, true).value === true && SO.schemaCheck(boolSpec, false).value === false);
+    ok('a number typed as a string is refused rather than cast',
+        SO.schemaCheck({ type: 'number' }, '8080').ok === false
+        && SO.schemaCheck({ type: 'number' }, 8080).value === 8080);
+    ok('an object where an array was declared is refused, and vice versa',
+        SO.schemaCheck({ type: 'array' }, { a: 1 }).ok === false
+        && SO.schemaCheck({ type: 'object' }, [1]).ok === false
+        && SO.schemaCheck({ type: 'array' }, [1]).ok === true
+        && SO.schemaCheck({ type: 'object' }, { a: 1 }).ok === true);
+    ok('an enum only accepts what it lists',
+        SO.schemaCheck({ type: 'string', enum: ['en', 'tr'] }, 'de').ok === false
+        && SO.schemaCheck({ type: 'string', enum: ['en', 'tr'] }, 'tr').value === 'tr');
+    ok('null in the file is not a value — it is an absence',
+        SO.schemaCheck({ type: 'string' }, null).ok === false);
+    ok('an integer satisfies a number, and NaN satisfies nothing',
+        SO.schemaCheck({ type: 'number' }, 3).ok === true
+        && SO.schemaCheck({ type: 'number' }, NaN).ok === false);
+    ok('a key the manifest does not declare has no contract to break',
+        SO.schemaCheck(undefined, 'anything').value === 'anything');
+    ok('a refusal says what was expected, so the page can print it',
+        /expected boolean, got string/.test(SO.schemaCheck(boolSpec, 'false').reason));
+
+    // --- every real setting in the manifest survives its own default ---
+    let selfRefused = [];
+    for (const [k, p] of Object.entries(props)) {
+        if (p.default === undefined || p.default === null) { continue; }
+        if (!SO.schemaCheck(p, p.default).ok) { selfRefused.push(k); }
+    }
+    ok('‼️ no manifest default is refused by the check that guards it: ' + selfRefused.join(', '),
+        selfRefused.length === 0);
+
+    // --- the refusal is not held in private ---
+    const model = SO.buildSettingsModel(
+        { 'agentFarm.budgetsUnlimited': props['agentFarm.budgetsUnlimited'] },
+        () => undefined,
+        k => (k === 'agentFarm.budgetsUnlimited' ? 'settings.json: expected boolean, got string' : undefined));
+    ok('a refused value reaches the page as a refusal on that row',
+        /expected boolean/.test(model[0].items[0].refusal || ''));
+    ok('…and a key with nothing to refuse carries no note',
+        SO.buildSettingsModel({ 'agentFarm.budgetsUnlimited': props['agentFarm.budgetsUnlimited'] },
+            () => true)[0].items[0].refusal === undefined);
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    ok('the page actually draws it', /it\.refusal/.test(page));
+
+    // --- and every reader is behind the door, not beside it ---
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ cfg() IS the door — the ~200 readers cannot see a different value than the page',
+        /const cfg = afConfig;/.test(ext));
+    const strays = [];
+    for (const f of ['src/extension.ts', 'src/panels/base.ts', 'src/panels/consolePanel.ts',
+        'src/panels/dashboard.ts', 'src/panels/guide.ts', 'src/panels/turnsPanel.ts', 'src/views/trees.ts']) {
+        // a call broken across lines is one call — join it back before judging
+        const t = fs.readFileSync(path.join(__dirname, '..', f), 'utf8')
+            .replace(/getConfiguration\((['"])agentFarm\1\)\s*\n\s*/g, "getConfiguration('agentFarm')");
+        for (const line of t.split('\n')) {
+            // writes must stay with the real configuration; only READS are the bug
+            if (/getConfiguration\(['"]agentFarm['"]\)/.test(line) && !/getConfiguration\(['"]agentFarm['"]\)\s*\.update\(/.test(line)) {
+                strays.push(f + ': ' + line.trim().slice(0, 60));
+            }
+        }
+    }
+    ok('‼️ no reader goes round the door: ' + strays.join(' | '), strays.length === 0);
+    ok('the door is installed before the first setting is read',
+        ext.indexOf('installSettingsDoor(context)') > 0
+        && ext.indexOf('installSettingsDoor(context)') < ext.indexOf('let agents: AgentInfo[]'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

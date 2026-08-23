@@ -21,6 +21,7 @@ import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
+import { afConfig } from '../core/settingsDoor';
 
 /**
  * The composer's chip list, back as attachments.
@@ -588,7 +589,7 @@ export class ConsolePanel {
             // on a particular machine must be something the user can END, not
             // something they have to live with until a fix ships. 📎 and paste
             // are unaffected — they are the routes that never listen for a drag.
-            dropZone: vscode.workspace.getConfiguration('agentFarm').get<boolean>('consoleDropZone', true),
+            dropZone: afConfig().get<boolean>('consoleDropZone', true),
             // The ceiling has ONE definition (ATTACH_LIMITS) and the composer is
             // told it rather than repeating the number — a limit typed twice is
             // a limit that drifts, and the half that drifts is always the one

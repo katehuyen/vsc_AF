@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.252.0 - X-84: a setting the page shows applied and the engine ignores (2026-08-23)
+
+VS Code can hand back `undefined` for a key its own manifest declares, so this
+build reads the settings file back when it does. That fallback had grown into a
+second settings engine with its own opinions, and it disagreed with the registry
+in three ways at once.
+
+**Which file.** The path was assembled from `process.platform` and hardcoded to
+`Code/User/settings.json` — the DEFAULT profile of a normal install. A user on a
+named profile, on Insiders, on a portable copy or in a remote window was having
+a file read that VS Code does not write. It is now derived from
+`context.globalStorageUri`, which the host hands us already inside the right
+folder (`…/User/globalStorage/…` on the default profile,
+`…/User/profiles/<id>/globalStorage/…` on a named one), so all four cases
+resolve without a guess. The old platform path remains as the last resort.
+
+**Which scope.** The fallback only ever read the user file, so a workspace
+override of a dropped key was invisible. It now walks the same precedence VS
+Code does — workspace folder `.vscode/settings.json`, then the
+`.code-workspace` (whose settings live one level down, and are flat again
+inside it), then the user file — and the scope that answered is named.
+
+**Which shape.** The value was cast, not checked: a hand-typed `"false"` — five
+characters, quotes included — is truthy, and `budgetsUnlimited` reading it as
+"on" lifts every ceiling in the fleet. A value found in a file is now held to
+the type the manifest declares and REFUSED if it does not fit, exactly as VS
+Code refuses it. And the refusal is not private: the row on the Settings page
+says the entry is being ignored and why, because a refusal nobody can see is a
+second opinion held in secret.
+
+**And every reader is behind the door.** The fallback was visible to the
+Settings page and the bridge while ~200 feature readers went straight to
+`getConfiguration('agentFarm')` — the page could show a value applied that the
+engine never saw. `cfg()` is now the door itself (`core/settingsDoor.ts`), and
+the direct reads in the panels and trees go through it too. Writes stay with the
+real configuration, which is the only thing that can perform them. A test walks
+those files and fails the build on a reader that goes round it.
+
 ## 3.251.0 - X-79: a substring is not a vote, and a member is not two people (2026-08-23)
 
 `readVoteChoice` looked for the longest option that appeared ANYWHERE in the

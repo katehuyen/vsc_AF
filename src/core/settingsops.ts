@@ -64,9 +64,7 @@ export function stripJsonc(text: string): string {
 /** One key out of a JSONC settings file: flat `a.b` first, then the nested
  *  spelling VS Code also accepts. `found` distinguishes "set to false" from
  *  "not there", which is the whole point of reading the file at all. */
-export function readFlatSetting(text: string, key: string): { found: boolean; value?: unknown } {
-    let obj: unknown;
-    try { obj = JSON.parse(stripJsonc(text)); } catch { return { found: false }; }
+export function lookupSetting(obj: unknown, key: string): { found: boolean; value?: unknown } {
     if (!obj || typeof obj !== 'object') { return { found: false }; }
     const flat = obj as Record<string, unknown>;
     if (Object.prototype.hasOwnProperty.call(flat, key)) { return { found: true, value: flat[key] }; }
@@ -77,6 +75,12 @@ export function readFlatSetting(text: string, key: string): { found: boolean; va
         cur = (cur as Record<string, unknown>)[part];
     }
     return { found: true, value: cur };
+}
+
+export function readFlatSetting(text: string, key: string): { found: boolean; value?: unknown } {
+    let obj: unknown;
+    try { obj = JSON.parse(stripJsonc(text)); } catch { return { found: false }; }
+    return lookupSetting(obj, key);
 }
 
 export interface SettingSpec {
@@ -111,6 +115,10 @@ export interface SettingSpec {
 export interface SettingItem extends SettingSpec {
     value: unknown;                   // effective value right now
     modified: boolean;                // differs from default
+    /** ‼️ X-84 — set when a value WAS found in a settings file and refused for
+     *  not being the shape the manifest declares. The page says so on the row:
+     *  a refusal nobody can see is a second opinion held in private. */
+    refusal?: string;
 }
 
 export interface SettingsCategory {
@@ -225,7 +233,8 @@ export function buildSettingsModel(
         type?: unknown; enum?: unknown; default?: unknown;
         description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>,
-    valueOf: (key: string) => unknown
+    valueOf: (key: string) => unknown,
+    refusalOf?: (key: string) => string | undefined
 ): SettingsCategory[] {
     const byCat = new Map<string, SettingItem[]>();
     for (const [key, p] of Object.entries(properties)) {
@@ -242,7 +251,8 @@ export function buildSettingsModel(
             ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
             ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
             value,
-            modified: !sameValue(value, p.default)
+            modified: !sameValue(value, p.default),
+            ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {})
         };
         (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(item);
     }
@@ -358,4 +368,108 @@ export function parseImportedProfiles(text: string): SettingsProfile[] {
         });
     }
     return out;
+}
+
+/**
+ * ‼️ X-84 — THE FALLBACK READ IS NOT A SECOND SETTINGS ENGINE.
+ *
+ * `readFlatSetting` exists because VS Code can hand back `undefined` for a key
+ * its own manifest declares. Reading the file back is the only honest answer
+ * left — but a read that guesses WHICH file, and trusts whatever shape it finds
+ * there, is a second settings engine with its own opinions, and the two
+ * disagree the first time the user is on a named profile or typed `"false"`
+ * with the quotes on. So the fallback owes the registry three things:
+ *
+ *  1. the SAME FILES the running window actually writes — a named profile,
+ *     Insiders, portable and remote user-data all move `settings.json`, and the
+ *     path is derived from a location the host handed us, never assembled from
+ *     a platform guess;
+ *  2. the SAME PRECEDENCE — folder over workspace over user;
+ *  3. the SAME SCHEMA — a value whose type the manifest does not declare is
+ *     REFUSED, not cast. `"false"` is a five-character string, and a brake that
+ *     reads it as "on" lifts every ceiling in the fleet.
+ *
+ * Everything here is pure: paths arrive as strings, file text arrives through a
+ * reader. What touches the disk stays in `extension.ts`.
+ */
+
+/** One place a settings value can legally live. */
+export interface SettingsScope {
+    file: string;
+    /** A `.code-workspace` keeps its settings under one key. */
+    nested?: string;
+}
+
+/**
+ * The running window's `User` folder, recovered from a path the host already
+ * gave us inside it. `context.globalStorageUri` is
+ * `<user-data>/User/globalStorage/<ext>` on the default profile and
+ * `<user-data>/User/profiles/<id>/globalStorage/<ext>` on a named one — so the
+ * profile, the Insiders build, the portable folder and the remote user-data
+ * root are all already in that string and none of them has to be guessed.
+ */
+export function userFolderFromGlobalStorage(globalStorage: string): string | undefined {
+    if (!globalStorage) { return undefined; }
+    const sep = globalStorage.indexOf('\\') >= 0 ? '\\' : '/';
+    const parts = globalStorage.split(/[\\/]/);
+    while (parts.length && parts[parts.length - 1] === '') { parts.pop(); }
+    const i = parts.lastIndexOf('globalStorage');
+    if (i < 1) { return undefined; }
+    return parts.slice(0, i).join(sep);
+}
+
+/** First scope carrying the key wins — the order of `chain` IS the precedence,
+ *  so the caller builds it folder → workspace → user, the way VS Code does. */
+export function readSettingScoped(
+    chain: SettingsScope[],
+    readText: (file: string) => string,
+    key: string
+): { found: boolean; value?: unknown; file?: string } {
+    for (const scope of chain) {
+        const text = readText(scope.file);
+        if (!text) { continue; }
+        let root: unknown;
+        try { root = JSON.parse(stripJsonc(text)); } catch { continue; }
+        // A `.code-workspace` holds the settings object one level down, and the
+        // keys INSIDE it are flat again — descending first is not the same as
+        // asking for `settings.agentFarm.x`, which is a spelling nobody writes.
+        if (scope.nested) {
+            const inner = lookupSetting(root, scope.nested);
+            if (!inner.found) { continue; }
+            root = inner.value;
+        }
+        const hit = lookupSetting(root, key);
+        if (hit.found) { return { found: true, value: hit.value, file: scope.file }; }
+    }
+    return { found: false };
+}
+
+/**
+ * A value read outside the registry is trusted only if it is the shape the
+ * manifest declares. No coercion: VS Code itself falls back to the default when
+ * a settings.json entry is the wrong type, and quietly disagreeing with it is
+ * the exact split this door exists to close.
+ */
+export function schemaCheck(
+    spec: { type?: string | string[]; enum?: unknown[] } | undefined,
+    raw: unknown
+): { ok: true; value: unknown } | { ok: false; reason: string } {
+    if (raw === null || raw === undefined) { return { ok: false, reason: 'null' }; }
+    // Nothing declared for this key — no contract to break.
+    if (!spec || spec.type === undefined) { return { ok: true, value: raw }; }
+    const types = Array.isArray(spec.type) ? spec.type : [spec.type];
+    const actual = Array.isArray(raw) ? 'array'
+        : typeof raw === 'object' ? 'object'
+            : typeof raw === 'number' ? (Number.isInteger(raw) ? 'integer' : 'number')
+                : typeof raw;
+    const fits = types.some(t => t === actual
+        || (t === 'number' && (actual === 'integer' || actual === 'number')));
+    if (!fits) { return { ok: false, reason: 'expected ' + types.join('|') + ', got ' + actual }; }
+    if ((actual === 'number' || actual === 'integer') && !isFinite(raw as number)) {
+        return { ok: false, reason: 'not finite' };
+    }
+    if (spec.enum && spec.enum.length && !spec.enum.includes(raw)) {
+        return { ok: false, reason: 'not one of: ' + spec.enum.map(String).join(', ') };
+    }
+    return { ok: true, value: raw };
 }

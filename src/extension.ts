@@ -93,8 +93,11 @@ import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
 } from './core/claudesettings';
 import {
-    buildSettingsModel, profileApplyPlan, readFlatSetting, SettingsCategory, SettingsProfile
+    buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile
 } from './core/settingsops';
+import {
+    afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, vscodeUserSettingsFile
+} from './core/settingsDoor';
 import { registerSettingsOps } from './core/settingsBridge';
 import { matchTaskSession } from './core/taskcost';
 import {
@@ -349,9 +352,13 @@ import {
     AgentNode, AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
 } from './views/trees';
 
-function cfg() {
-    return vscode.workspace.getConfiguration('agentFarm');
-}
+/**
+ * ‼️ X-84 — `agentFarm.*`, THROUGH THE SAME DOOR AS THE SETTINGS PAGE.
+ * A setting the user can SEE applied and the engine silently ignores is worse
+ * than one that is plainly missing, so `cfg()` is no longer the registry — it
+ * is `core/settingsDoor.ts`, section-scoped, and that file carries the reasons.
+ */
+const cfg = afConfig;
 
 /**
  * ‼️ X-54 — THE DAILY BUDGETS, THROUGH ONE DOOR.
@@ -364,52 +371,6 @@ function cfg() {
  * and the figures the user typed stay in settings untouched, waiting for the
  * switch to come back off.
  */
-/** VS Code's own user settings.json — the file its Settings editor writes. */
-function vscodeUserSettingsFile(): string {
-    if (process.platform === 'win32') {
-        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
-            'Code', 'User', 'settings.json');
-    }
-    if (process.platform === 'darwin') {
-        return path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'settings.json');
-    }
-    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
-        'Code', 'User', 'settings.json');
-}
-
-/** Re-read only when the file itself moved — `settingsCategories()` asks for
- *  124 keys in a row and every one of them would otherwise hit the disk. */
-const userSettingsCache = { mtime: -1, text: '' };
-function userSettingsText(): string {
-    try {
-        const f = vscodeUserSettingsFile();
-        const st = fs.statSync(f);
-        if (st.mtimeMs !== userSettingsCache.mtime) {
-            userSettingsCache.mtime = st.mtimeMs;
-            userSettingsCache.text = fs.readFileSync(f, 'utf8');
-        }
-        return userSettingsCache.text;
-    } catch { return ''; }
-}
-
-/**
- * ONE DOOR for reading an Agent Farm setting: the configuration registry, and
- * the user's own settings.json when the registry hands back nothing for a key
- * this build declares. The reasons — and the one key it was measured on — are
- * in `stripJsonc`'s comment in `core/settingsops.ts`.
- */
-function cfgValueRaw(key: string): unknown {
-    const v = vscode.workspace.getConfiguration().get(key);
-    if (v !== undefined) { return v; }
-    const hit = readFlatSetting(userSettingsText(), key);
-    return hit.found ? hit.value : undefined;
-}
-
-function cfgValue<T>(key: string, fallback: T): T {
-    const v = cfgValueRaw(key);
-    return v === undefined ? fallback : v as T;
-}
-
 function budgetsNow(): Record<string, number> {
     // ‼️ Through `cfgValue`, not `cfg().get`: this is the key VS Code drops, and
     // a suspend switch that silently reads `false` is the failure it was written
@@ -471,7 +432,7 @@ const MISSED_POLICY_PICKS: { label: string; description: string; missed: MissedP
  * Returns '' for "leave it to the policy/agent default", undefined if cancelled.
  */
 async function pickAutomationModel(current?: string): Promise<string | undefined> {
-    const aliases = vscode.workspace.getConfiguration('agentFarm')
+    const aliases = cfg()
         .get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']);
     const picks: { label: string; description?: string; model: string }[] = [
         {
@@ -581,6 +542,10 @@ async function pickPrecondition(
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    // ‼️ X-84 — FIRST, before anything reads a setting: teach the door which
+    // files this window actually writes and which shapes the manifest declares.
+    // Both are cheap and both are wrong by default, so neither can wait.
+    installSettingsDoor(context);
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
     // Pricing history: a timestamped log of rule sets so past costs stay frozen
@@ -10713,7 +10678,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // vault's report convention) so the UI can open it. reportPath links a
     // file the agent already wrote itself.
     const reportDir = (): string => {
-        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('reportDir');
+        const cfg = afConfig().get<string>('reportDir');
         return (cfg && cfg.trim())
             || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT');
     };
@@ -10808,7 +10773,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // fallback is forced to "cevap" (not the report word "rapor") so a title-less
     // answer still reads as an answer.
     const cevapDir = (): string => {
-        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('answerDir');
+        const cfg = afConfig().get<string>('answerDir');
         return (cfg && cfg.trim())
             || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
     };
@@ -10935,7 +10900,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // whatever the user configured in agentFarm.queue.targets (empty by default —
     // no product names are hardcoded; targets are free text anyway).
     const queueTargets = (): string[] => {
-        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string[]>('queue.targets') || [];
+        const cfg = afConfig().get<string[]>('queue.targets') || [];
         return [...new Set([...cfg, ...agents.map(a => a.name)])];
     };
     const showQueuePanel = (focusItem?: string): void => QueuePanel.show({
@@ -14315,7 +14280,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return conf?.properties ?? {};
     };
     const settingsCategories = (): SettingsCategory[] => buildSettingsModel(
-        settingsSchema(), cfgValueRaw);
+        settingsSchema(), cfgValueRaw, cfgRefusal);
     const readClaudeSettings = (): { json: Record<string, unknown>; parseError?: string } => {
         const file = userSettingsPath(claudeDir());
         if (!fs.existsSync(file)) { return { json: {} }; }
