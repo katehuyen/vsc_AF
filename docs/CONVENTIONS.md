@@ -294,6 +294,40 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
 
 ---
 
+## Adding a mission primitive (X-69)
+
+**A primitive is a row in two places, and both are checked.** `PRIMITIVES` in
+`src/core/missionPrimitives.ts` declares what EXISTS — name, scope, shape, kind,
+the words the lead is shown. It holds no behaviour on purpose: it is data, the
+prompt is built from it and surfaces reading a recorded run import it, so an
+engine import would make a cycle out of a list. `PRIMITIVE_HANDLERS` in
+`src/core/missions.ts` is what each declared name is DONE with.
+
+- **`parse` is required on every row.** It takes a `ParseCtx` and returns a
+  `ParseResult` — the same contract for all of them, so there is no chain to
+  fall off the end of. Two primitives may share one parse (`finish`/`abort`,
+  `delegate`/`parallel`) when the reply they read is genuinely the same.
+- **`prepare` is required on every `work` row** — `PrepareCtx` in, tasks or a
+  refusal out. A handler reaches the engine only through `lend` (the engine's
+  own work, passed by name): if a new primitive needs something else, add it
+  there in the open rather than reaching for `this`.
+- **`ownRound: true` is the one alternative to `prepare`,** and `evaluate` is
+  the only row that carries it: it orders work but the verdict IS its round, so
+  it runs its own wave. A new row does not get this without a reason of the
+  same size.
+- **Narrow the decision with a guard, never a cast:**
+  `if (d.action !== 'x') { return wrongHandler(d); }`. The table is written by
+  hand and the mistake it invites is wiring a row to its neighbour's function.
+- **The gate is `primitiveHandlerParity()`**, asserted in
+  `test/test_mission_primitives.js`: a declared name with no parse, a `work`
+  name with neither `prepare` nor `ownRound`, a non-work name that carries
+  either, or a handler for a name nobody declared — each one fails the build.
+  The type system catches the same thing earlier (the table is total over
+  `PrimitiveName`); the test also catches a row appended at runtime, which is
+  the shape of "somebody added a primitive and forgot the rest".
+
+---
+
 ## Looking at it
 
 **A selected control must remain selected after the pointer leaves it.** Hover

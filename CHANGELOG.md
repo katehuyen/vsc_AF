@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.270.0 - X-69: a primitive is a contract, not a line in a menu (2026-08-23)
+
+**What a mission's lead can do was a list that promised more than it kept.** The
+registry built the planner's menu and the "unknown action" error, and that was
+all it did: the parse of each primitive was an arm of one growing
+`if (action === …)` chain, and the work it orders was an arm of another, in a
+different function. Nothing tied the three together. So a name added to the list
+was advertised to the lead and accepted by the lookup — and then, with the parse
+arm forgotten, fell off the end of the chain and came back "unknown action" for
+an action the lead had just been offered; or, with the executor arm forgotten,
+parsed cleanly and ran nothing at all. Both were invisible until a real run
+reached them, which for a rarely-picked primitive is a long time and somebody
+else's money. It had already happened twice, to `message` and `council`.
+
+**Both halves are on the row now.** Every primitive names its `parse`, and every
+primitive that orders work names the `prepare` that builds it; the round loop
+dispatches through the same table the menu is generated from, and there is no
+action chain left to forget an arm in. A row without a parse does not compile.
+
+**A handler reaches the engine only through what it is lent.** Work preparation
+genuinely needs the run — only it knows what an id produced, how deep the run
+sits, or which chains this window has — so the engine passes those in by name
+instead of the handler reaching for it. A primitive's blast radius is that list,
+and a new one that needs more has to say so in the open. Each handler narrows
+the decision with a guard rather than a cast, so a row wired to its neighbour's
+function refuses the round and says which action was misrouted, instead of
+running the wrong preparation on it.
+
+**The exception is declared rather than remembered.** `evaluate` orders work but
+hands no tasks back: the verdict IS its round, so it runs its own wave and reads
+the evaluation out of what came back. Its row says `ownRound`, and the gate
+reads that instead of a name somebody has to keep in mind.
+
+**And the gate is measured from both sides.** `primitiveHandlerParity()` fails
+the build on a declared name with no parse, a work name with no way to build
+work, a non-work name carrying work preparation, or a handler for a name nobody
+declared — including for a row appended at runtime, which is the exact shape of
+"somebody added a primitive and forgot the rest". Nothing about how a mission
+behaves changes in this release: every one of the 13,700 checks that passed
+before passes on the same words.
+
 ## 3.269.0 - Adaptive Mission user guide (2026-08-23)
 
 The Adaptive Mission documentation now has two deliberately different books.

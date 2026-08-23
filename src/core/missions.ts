@@ -14,7 +14,7 @@ import {
 } from './missionTrace';
 import {
     buildIntentPrompt, intentPrimitive, intentTitle, MissionPrimitive, primitiveFor,
-    primitivesFor, TaskIntent, unknownActionError
+    PrimitiveName, PRIMITIVES, primitivesFor, TaskIntent, unknownActionError
 } from './missionPrimitives';
 import { describeFailure, failure, StepFailure } from './missionFailure';
 import {
@@ -1255,6 +1255,32 @@ function readReflection(o: Record<string, unknown>, thought: string): AdaptiveRe
     };
 }
 
+/**
+ * ‼️ X-69 — WHAT A PRIMITIVE'S PARSE IS HANDED, and it is the whole of it.
+ *
+ * Every parse below used to be an arm of one `if (action === …)` chain, which
+ * meant a primitive's contract was a position in a function rather than a thing
+ * you could point at: a name could be declared in the registry, offered to the
+ * lead in the menu, accepted by `primitiveFor` — and still fall off the end of
+ * the chain into "unknown action", because the arm was never written. The arms
+ * are named functions now and the registry holds the name of each, so the
+ * missing one is a compile error rather than a run that dies at the moment the
+ * lead first tries it.
+ */
+interface ParseCtx {
+    /** the planner's reply, already known to be a JSON object */
+    o: Record<string, unknown>;
+    spec: MissionSpec;
+    adaptive: boolean;
+    thought: string;
+    /** the action exactly as it was written — the string the row was found by */
+    action: string;
+    /** the registry row this parse belongs to */
+    prim: MissionPrimitive;
+    /** attaches the adaptive reflection and hands back the parsed decision */
+    done: (d: PlannerDecisionCore) => ParseResult;
+}
+
 function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): ParseResult {
     const j = extractJson(raw ?? '');
     if (!j || typeof j !== 'object' || Array.isArray(j)) {
@@ -1285,438 +1311,815 @@ function parseDecision(raw: string, spec: MissionSpec, adaptive: boolean): Parse
     // message, and a primitive can never be advertised without being parseable.
     const prim = primitiveFor(action, adaptive);
     if (!prim) { return { ok: false, error: unknownActionError(action, adaptive) }; }
-    if (action === 'replan' || action === 'evaluate') {
-        if (action === 'replan') { return done({ action: 'replan', thought }); }
-        const targets = Array.isArray(o.targets)
-            ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 40)
-            : [];
-        const reviewerRaw = typeof o.reviewer === 'string' ? o.reviewer.trim() : '';
-        if (reviewerRaw) {
-            const allowed = allowedAgents(spec);
-            const reviewer = allowed.find(m => m.agentName.toLowerCase() === reviewerRaw.toLowerCase());
-            if (!reviewer) {
-                return {
-                    ok: false,
-                    error: `unknown reviewer "${reviewerRaw}" — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
-                };
-            }
-            return done({ action: 'evaluate', thought, targets, reviewer: reviewer.agentName });
-        }
-        // ‼️ No reviewer means the LEAD is the evaluator, so the verdict has to
-        // be in this very reply — "I will judge it myself" with nothing
-        // attached would cost a round and record nothing.
-        const parsed = parseEvaluation(o, spec.successCriteria ?? []);
-        if (!parsed.ok) {
+    // ‼️ X-69 — ONE DISPATCH, THROUGH THE REGISTRY THAT DECLARED THE ACTION.
+    // The lookup above answered "is this an action, and may this lead use it";
+    // this answers "what parses it", out of the same table the menu is built
+    // from. There is no chain to fall off the end of any more — a row without a
+    // parse cannot be written (the table is total over `PrimitiveName`), and the
+    // runtime check below is what a FAKE row pushed in by a test falls into.
+    const handler = PRIMITIVE_HANDLERS[prim.name];
+    if (!handler?.parse) { return { ok: false, error: unknownActionError(action, adaptive) }; }
+    return handler.parse({ o, spec, adaptive, thought, action, prim, done });
+}
+
+/** `replan` — the approach itself changed; nothing is ordered by it. */
+function parseReplan(c: ParseCtx): ParseResult {
+    return c.done({ action: 'replan', thought: c.thought });
+}
+
+/** `evaluate` — judge the criteria, from what the lead holds or through a reviewer. */
+function parseEvaluate(c: ParseCtx): ParseResult {
+    const { o, spec, done, thought, action } = c;
+    const targets = Array.isArray(o.targets)
+        ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 40)
+        : [];
+    const reviewerRaw = typeof o.reviewer === 'string' ? o.reviewer.trim() : '';
+    if (reviewerRaw) {
+        const allowed = allowedAgents(spec);
+        const reviewer = allowed.find(m => m.agentName.toLowerCase() === reviewerRaw.toLowerCase());
+        if (!reviewer) {
             return {
                 ok: false,
-                error: `"evaluate" without a "reviewer" means you are judging it yourself, so this reply must carry the verdict — ${parsed.error}`
+                error: `unknown reviewer "${reviewerRaw}" — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
             };
         }
-        return done({
-            action: 'evaluate', thought, targets,
-            findings: parsed.value.findings, advice: parsed.value.advice,
-            ...(parsed.value.confidence !== undefined ? { confidence: parsed.value.confidence } : {}),
-            ...(parsed.value.note ? { note: parsed.value.note } : {})
-        });
+        return done({ action: 'evaluate', thought, targets, reviewer: reviewer.agentName });
     }
-    if (action === 'finish' || action === 'abort') {
-        const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
-        // (the compatibility check itself is `terminalClash`, below)
-        if (!summary) { return { ok: false, error: `"${action}" needs a non-empty "summary"` }; }
-        const v = String(o.verdict ?? '');
-        const verdict: MissionResult['verdict'] =
-            v === 'success' || v === 'partial' || v === 'failed'
-                ? v
-                : (action === 'finish' ? 'partial' : 'failed'); // tolerant default
-        // ‼️ M-17 — WHY IT STOPPED, and only from the closed list. A wrong one
-        // is refused by name rather than coerced: the whole value of the field
-        // is that "reached its objective" and "ran out of rope" cannot be
-        // confused later, and a silent fallback would confuse exactly those.
-        let stopReason: StopReason | undefined;
-        if (adaptive) {
-            const s = String(o.stopReason ?? o.stop_reason ?? '').trim();
-            // ‼️ X-68 — AND IT IS REQUIRED, not merely validated when offered.
-            // Optional meant most endings carried no reason at all, so the one
-            // question the field exists to answer — did this run reach its
-            // objective or run out of rope? — was answerable for some
-            // terminals and not for others, from the same UI.
-            if (!s) {
-                return {
-                    ok: false,
-                    error: `"${action}" must say WHY it is stopping — add "stopReason", one of: ${STOP_REASONS.join(' | ')}`
-                };
-            }
-            if (!isStopReason(s)) {
-                return { ok: false, error: `"stopReason" must be one of: ${STOP_REASONS.join(' | ')} (got "${s}")` };
-            }
-            stopReason = s as StopReason;
-            // ‼️ X-91 — AND THE THREE PARTS OF A TERMINAL MUST AGREE.
-            // Action, verdict and reason were each validated alone, so the
-            // same ending could give two opposite answers to "how did this
-            // go?": an `abort` that claims success, a success that says it
-            // ran out of rope, a failure that says it satisfied its
-            // criteria. And two of the reasons are the ENGINE's to give —
-            // a lead cannot decide that a person stopped the run, or that
-            // a ceiling it cannot see was reached.
-            const clash = terminalClash(action, verdict, stopReason);
-            if (clash) { return { ok: false, error: clash }; }
-        }
-        return done(action === 'finish'
-            ? { action: 'finish', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) }
-            : { action: 'abort', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) });
+    // ‼️ No reviewer means the LEAD is the evaluator, so the verdict has to
+    // be in this very reply — "I will judge it myself" with nothing
+    // attached would cost a round and record nothing.
+    const parsed = parseEvaluation(o, spec.successCriteria ?? []);
+    if (!parsed.ok) {
+        return {
+            ok: false,
+            error: `"evaluate" without a "reviewer" means you are judging it yourself, so this reply must carry the verdict — ${parsed.error}`
+        };
     }
-    if (action === 'ask_user') {
-        const question = typeof o.question === 'string' ? o.question.trim() : '';
-        if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
-        return done({ action, thought, question });
-    }
-    if (action === 'run_mission') {
-        const goal = String(o.goal ?? '').trim().slice(0, 2000);
-        if (!goal) {
-            return { ok: false, error: '"run_mission" needs a "goal" — the outcome the child run must reach, not a recipe' };
-        }
-        const sc = Array.isArray(o.successCriteria) ? o.successCriteria : [];
-        const successCriteria = sc
-            .map(x => {
-                const r = (x && typeof x === 'object' ? x : { text: x }) as Record<string, unknown>;
-                return { text: String(r.text ?? '').trim().slice(0, 500), required: r.required !== false };
-            })
-            .filter(c => c.text)
-            .slice(0, 20);
-        // ‼️ A CHILD OBJECTIVE WITH NOTHING TO MEET IS A DELEGATION WEARING A
-        // COSTUME. The whole reason to spend a run on it is that it comes back
-        // with a verdict, and a verdict needs something to be about.
-        if (!successCriteria.length) {
+    return done({
+        action: 'evaluate', thought, targets,
+        findings: parsed.value.findings, advice: parsed.value.advice,
+        ...(parsed.value.confidence !== undefined ? { confidence: parsed.value.confidence } : {}),
+        ...(parsed.value.note ? { note: parsed.value.note } : {})
+    });
+}
+
+/** `finish` and `abort` — the two terminal decisions, one parse: they differ in
+ *  the word and in nothing else the reply has to carry. */
+function parseEnding(c: ParseCtx): ParseResult {
+    const { o, adaptive, done, thought, action } = c;
+    const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
+    // (the compatibility check itself is `terminalClash`, below)
+    if (!summary) { return { ok: false, error: `"${action}" needs a non-empty "summary"` }; }
+    const v = String(o.verdict ?? '');
+    const verdict: MissionResult['verdict'] =
+        v === 'success' || v === 'partial' || v === 'failed'
+            ? v
+            : (action === 'finish' ? 'partial' : 'failed'); // tolerant default
+    // ‼️ M-17 — WHY IT STOPPED, and only from the closed list. A wrong one
+    // is refused by name rather than coerced: the whole value of the field
+    // is that "reached its objective" and "ran out of rope" cannot be
+    // confused later, and a silent fallback would confuse exactly those.
+    let stopReason: StopReason | undefined;
+    if (adaptive) {
+        const s = String(o.stopReason ?? o.stop_reason ?? '').trim();
+        // ‼️ X-68 — AND IT IS REQUIRED, not merely validated when offered.
+        // Optional meant most endings carried no reason at all, so the one
+        // question the field exists to answer — did this run reach its
+        // objective or run out of rope? — was answerable for some
+        // terminals and not for others, from the same UI.
+        if (!s) {
             return {
                 ok: false,
-                error: '"run_mission" needs at least one entry in "successCriteria" — a child objective '
-                    + 'returns a VERDICT, and without a criterion there is nothing for it to be a verdict about. '
-                    + 'If the work has no criteria of its own, delegate it instead.'
+                error: `"${action}" must say WHY it is stopping — add "stopReason", one of: ${STOP_REASONS.join(' | ')}`
             };
         }
-        if (!successCriteria.some(c => c.required)) {
-            return { ok: false, error: '"run_mission": every criterion you gave the child is optional — then nothing decides whether it succeeded' };
+        if (!isStopReason(s)) {
+            return { ok: false, error: `"stopReason" must be one of: ${STOP_REASONS.join(' | ')} (got "${s}")` };
         }
-        const crit = readCriteriaIds(o.criteria, spec, '"run_mission"', adaptive);
-        if (!crit.ok) { return { ok: false, error: crit.error }; }
-        return done({
-            action: 'run_mission', thought, goal, successCriteria,
-            ...(Array.isArray(o.constraints)
-                ? {
-                    constraints: o.constraints.filter(x => typeof x === 'string' && x.trim())
-                        .map(x => String(x).trim().slice(0, 500)).slice(0, 20)
-                }
-                : {}),
-            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
-            ...(crit.ids ? { criteria: crit.ids } : {})
-        });
+        stopReason = s as StopReason;
+        // ‼️ X-91 — AND THE THREE PARTS OF A TERMINAL MUST AGREE.
+        // Action, verdict and reason were each validated alone, so the
+        // same ending could give two opposite answers to "how did this
+        // go?": an `abort` that claims success, a success that says it
+        // ran out of rope, a failure that says it satisfied its
+        // criteria. And two of the reasons are the ENGINE's to give —
+        // a lead cannot decide that a person stopped the run, or that
+        // a ceiling it cannot see was reached.
+        const clash = terminalClash(action as 'finish' | 'abort', verdict, stopReason);
+        if (clash) { return { ok: false, error: clash }; }
     }
-    if (action === 'run_workflow') {
-        const workflow = String(o.workflow ?? o.workflowId ?? o.title ?? '').trim().slice(0, 200);
-        if (!workflow) {
-            return { ok: false, error: '"run_workflow" needs a "workflow" — the id or the exact title of one that exists' };
-        }
-        const crit = readCriteriaIds(o.criteria, spec, '"run_workflow"', adaptive);
-        if (!crit.ok) { return { ok: false, error: crit.error }; }
-        return done({
-            action: 'run_workflow', thought, workflow,
-            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
-            ...(crit.ids ? { criteria: crit.ids } : {})
-        });
+    return done(action === 'finish'
+        ? { action: 'finish', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) }
+        : { action: 'abort', thought, verdict, summary, ...(stopReason ? { stopReason } : {}) });
+}
+
+/** `ask_user` — one question for the human. */
+function parseAskUser(c: ParseCtx): ParseResult {
+    const { o, done, thought } = c;
+    const question = typeof o.question === 'string' ? o.question.trim() : '';
+    if (!question) { return { ok: false, error: '"ask_user" needs a non-empty "question"' }; }
+    return done({ action: 'ask_user', thought, question });
+}
+
+/** `run_mission` — a whole sub-objective for a child run. */
+function parseRunMission(c: ParseCtx): ParseResult {
+    const { o, spec, adaptive, done, thought, action } = c;
+    const goal = String(o.goal ?? '').trim().slice(0, 2000);
+    if (!goal) {
+        return { ok: false, error: '"run_mission" needs a "goal" — the outcome the child run must reach, not a recipe' };
     }
+    const sc = Array.isArray(o.successCriteria) ? o.successCriteria : [];
+    const successCriteria = sc
+        .map(x => {
+            const r = (x && typeof x === 'object' ? x : { text: x }) as Record<string, unknown>;
+            return { text: String(r.text ?? '').trim().slice(0, 500), required: r.required !== false };
+        })
+        .filter(c => c.text)
+        .slice(0, 20);
+    // ‼️ A CHILD OBJECTIVE WITH NOTHING TO MEET IS A DELEGATION WEARING A
+    // COSTUME. The whole reason to spend a run on it is that it comes back
+    // with a verdict, and a verdict needs something to be about.
+    if (!successCriteria.length) {
+        return {
+            ok: false,
+            error: '"run_mission" needs at least one entry in "successCriteria" — a child objective '
+                + 'returns a VERDICT, and without a criterion there is nothing for it to be a verdict about. '
+                + 'If the work has no criteria of its own, delegate it instead.'
+        };
+    }
+    if (!successCriteria.some(c => c.required)) {
+        return { ok: false, error: '"run_mission": every criterion you gave the child is optional — then nothing decides whether it succeeded' };
+    }
+    const crit = readCriteriaIds(o.criteria, spec, '"run_mission"', adaptive);
+    if (!crit.ok) { return { ok: false, error: crit.error }; }
+    return done({
+        action: 'run_mission', thought, goal, successCriteria,
+        ...(Array.isArray(o.constraints)
+            ? {
+                constraints: o.constraints.filter(x => typeof x === 'string' && x.trim())
+                    .map(x => String(x).trim().slice(0, 500)).slice(0, 20)
+            }
+            : {}),
+        ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+        ...(crit.ids ? { criteria: crit.ids } : {})
+    });
+}
+
+/** `run_workflow` — one of this window's existing chains, as a single step. */
+function parseRunWorkflow(c: ParseCtx): ParseResult {
+    const { o, spec, adaptive, done, thought, action } = c;
+    const workflow = String(o.workflow ?? o.workflowId ?? o.title ?? '').trim().slice(0, 200);
+    if (!workflow) {
+        return { ok: false, error: '"run_workflow" needs a "workflow" — the id or the exact title of one that exists' };
+    }
+    const crit = readCriteriaIds(o.criteria, spec, '"run_workflow"', adaptive);
+    if (!crit.ok) { return { ok: false, error: crit.error }; }
+    return done({
+        action: 'run_workflow', thought, workflow,
+        ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+        ...(crit.ids ? { criteria: crit.ids } : {})
+    });
+}
+
     // ---- one speaking turn in a conversation (M-19) ----
-    if (action === 'message') {
-        const allowed = allowedAgents(spec);
-        const byName = (raw: string) =>
-            allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
-        const asked = (Array.isArray(o.from) ? o.from : [o.from ?? o.speaker])
-            .filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim());
-        const speakers = asked.map(byName);
-        if (!asked.length || speakers.some(s => !s)) {
-            const bad = asked.filter(n => !byName(n));
-            return {
-                ok: false,
-                error: '"message" needs a "from" — the pool agent that speaks this turn, or several '
-                    + 'of them to have each speak WITHOUT seeing the others\' answer. '
-                    + (bad.length ? `Not in the pool: ${bad.map(n => `"${n}"`).join(', ')}. ` : '')
-                    + `The pool is: ${allowed.map(m => m.agentName).join(', ')}`
-            };
-        }
-        const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
-        if (speakerIds.length !== speakers.length) {
-            return {
-                ok: false,
-                error: '"from" names the same agent twice. One agent speaks once per turn — '
-                    + 'ordering it twice in one round would be two turns racing over one record.'
-            };
-        }
-        const intent = String(o.intent ?? '').trim();
-        if (!intentKind(intent)) {
-            return { ok: false, error: `"message" needs an "intent" — one of: ${messageIntentMenu()}` };
-        }
-        const list = (v: unknown) => (Array.isArray(v)
-            ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
-            : []);
-        // ‼️ NAMES IN, IDS OUT. The lead speaks in agent NAMES because that is
-        // what its briefing lists; every id below is resolved here, once, so
-        // nothing downstream has to guess which of the two a string is.
-        const unknownTo = list(o.to).filter(n => !byName(n));
-        if (unknownTo.length) {
-            return {
-                ok: false,
-                error: `"message" is addressed to ${unknownTo.map(n => `"${n}"`).join(', ')}, `
-                    + `who ${unknownTo.length > 1 ? 'are' : 'is'} not in the pool `
-                    + `(${allowed.map(m => m.agentName).join(', ')}). Leave "to" empty to address everyone.`
-            };
-        }
-        // ‼️ X-77 — HOW MUCH OF THE RECORD THIS SPEAKER SEES, stated or left to
-        // the default. A wrong word is refused by name rather than falling back:
-        // a lead that meant "only what I asked about" and silently got the whole
-        // transcript has been given the opposite of what it asked for.
-        const visRaw = String(o.visibility ?? '').trim();
-        if (visRaw && !(MESSAGE_VISIBILITY as string[]).includes(visRaw)) {
-            return {
-                ok: false,
-                error: `"visibility" must be one of: ${MESSAGE_VISIBILITY.join(' | ')} (got "${visRaw}"). `
-                    + 'Leave it out for the default: the whole record, or — on a lane that is being '
-                    + 'resumed — everything since that speaker\'s own last turn.'
-            };
-        }
-        const vis = visRaw ? visRaw as MessageVisibility : undefined;
-        const conversation = String(o.conversation ?? o.conversationId ?? '').trim();
-        const participants = list(o.participants);
-        const unknownIn = participants.filter(n => !byName(n));
-        if (unknownIn.length) {
-            return {
-                ok: false,
-                error: `"participants" names ${unknownIn.map(n => `"${n}"`).join(', ')}, `
-                    + `who ${unknownIn.length > 1 ? 'are' : 'is'} not in the pool `
-                    + `(${allowed.map(m => m.agentName).join(', ')}).`
-            };
-        }
-        const objective = String(o.objective ?? '').trim().slice(0, 500);
-        // ‼️ A CONVERSATION OPENS WITH A PURPOSE AND A CAST, OR IT DOES NOT
-        // OPEN. Both are what every later turn is checked against — a speaker
-        // outside the cast is refused, and the purpose is what each participant
-        // is told it is there for. Defaulting either would mean inventing the
-        // one fact the lead is supposed to be deciding.
-        if (!conversation) {
-            if (!objective) {
-                return {
-                    ok: false,
-                    error: '"message" with no "conversation" opens a new one, which needs an "objective" — '
-                        + 'one line saying what the conversation is for. Name an existing conversation id to continue one.'
-                };
-            }
-            if (participants.length < 2) {
-                return {
-                    ok: false,
-                    error: 'opening a conversation needs at least two "participants" from the pool — '
-                        + 'one agent talking to nobody is a delegation, and "delegate" is the primitive for that.'
-                };
-            }
-        }
-        return done({
-            action: 'message', thought,
-            ...(conversation ? { conversation } : {}),
-            ...(objective ? { objective } : {}),
-            ...(participants.length ? { participants: participants.map(n => byName(n)!.agentId) } : {}),
-            from: speakerIds,
-            to: list(o.to).map(n => byName(n)!.agentId),
-            intent: intent as MessageIntent,
-            refs: list(o.refs).slice(0, 20),
-            ...(vis ? { visibility: vis } : {}),
-            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
-            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
-            ...(typeof o.close === 'string' && o.close.trim() ? { close: o.close.trim().slice(0, 200) } : {})
-        });
+/** `message` (M-19) — one real speaking turn in a conversation. */
+function parseMessage(c: ParseCtx): ParseResult {
+    const { o, spec, done, thought, action } = c;
+    const allowed = allowedAgents(spec);
+    const byName = (raw: string) =>
+        allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
+    const asked = (Array.isArray(o.from) ? o.from : [o.from ?? o.speaker])
+        .filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim());
+    const speakers = asked.map(byName);
+    if (!asked.length || speakers.some(s => !s)) {
+        const bad = asked.filter(n => !byName(n));
+        return {
+            ok: false,
+            error: '"message" needs a "from" — the pool agent that speaks this turn, or several '
+                + 'of them to have each speak WITHOUT seeing the others\' answer. '
+                + (bad.length ? `Not in the pool: ${bad.map(n => `"${n}"`).join(', ')}. ` : '')
+                + `The pool is: ${allowed.map(m => m.agentName).join(', ')}`
+        };
     }
+    const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
+    if (speakerIds.length !== speakers.length) {
+        return {
+            ok: false,
+            error: '"from" names the same agent twice. One agent speaks once per turn — '
+                + 'ordering it twice in one round would be two turns racing over one record.'
+        };
+    }
+    const intent = String(o.intent ?? '').trim();
+    if (!intentKind(intent)) {
+        return { ok: false, error: `"message" needs an "intent" — one of: ${messageIntentMenu()}` };
+    }
+    const list = (v: unknown) => (Array.isArray(v)
+        ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
+        : []);
+    // ‼️ NAMES IN, IDS OUT. The lead speaks in agent NAMES because that is
+    // what its briefing lists; every id below is resolved here, once, so
+    // nothing downstream has to guess which of the two a string is.
+    const unknownTo = list(o.to).filter(n => !byName(n));
+    if (unknownTo.length) {
+        return {
+            ok: false,
+            error: `"message" is addressed to ${unknownTo.map(n => `"${n}"`).join(', ')}, `
+                + `who ${unknownTo.length > 1 ? 'are' : 'is'} not in the pool `
+                + `(${allowed.map(m => m.agentName).join(', ')}). Leave "to" empty to address everyone.`
+        };
+    }
+    // ‼️ X-77 — HOW MUCH OF THE RECORD THIS SPEAKER SEES, stated or left to
+    // the default. A wrong word is refused by name rather than falling back:
+    // a lead that meant "only what I asked about" and silently got the whole
+    // transcript has been given the opposite of what it asked for.
+    const visRaw = String(o.visibility ?? '').trim();
+    if (visRaw && !(MESSAGE_VISIBILITY as string[]).includes(visRaw)) {
+        return {
+            ok: false,
+            error: `"visibility" must be one of: ${MESSAGE_VISIBILITY.join(' | ')} (got "${visRaw}"). `
+                + 'Leave it out for the default: the whole record, or — on a lane that is being '
+                + 'resumed — everything since that speaker\'s own last turn.'
+        };
+    }
+    const vis = visRaw ? visRaw as MessageVisibility : undefined;
+    const conversation = String(o.conversation ?? o.conversationId ?? '').trim();
+    const participants = list(o.participants);
+    const unknownIn = participants.filter(n => !byName(n));
+    if (unknownIn.length) {
+        return {
+            ok: false,
+            error: `"participants" names ${unknownIn.map(n => `"${n}"`).join(', ')}, `
+                + `who ${unknownIn.length > 1 ? 'are' : 'is'} not in the pool `
+                + `(${allowed.map(m => m.agentName).join(', ')}).`
+        };
+    }
+    const objective = String(o.objective ?? '').trim().slice(0, 500);
+    // ‼️ A CONVERSATION OPENS WITH A PURPOSE AND A CAST, OR IT DOES NOT
+    // OPEN. Both are what every later turn is checked against — a speaker
+    // outside the cast is refused, and the purpose is what each participant
+    // is told it is there for. Defaulting either would mean inventing the
+    // one fact the lead is supposed to be deciding.
+    if (!conversation) {
+        if (!objective) {
+            return {
+                ok: false,
+                error: '"message" with no "conversation" opens a new one, which needs an "objective" — '
+                    + 'one line saying what the conversation is for. Name an existing conversation id to continue one.'
+            };
+        }
+        if (participants.length < 2) {
+            return {
+                ok: false,
+                error: 'opening a conversation needs at least two "participants" from the pool — '
+                    + 'one agent talking to nobody is a delegation, and "delegate" is the primitive for that.'
+            };
+        }
+    }
+    return done({
+        action: 'message', thought,
+        ...(conversation ? { conversation } : {}),
+        ...(objective ? { objective } : {}),
+        ...(participants.length ? { participants: participants.map(n => byName(n)!.agentId) } : {}),
+        from: speakerIds,
+        to: list(o.to).map(n => byName(n)!.agentId),
+        intent: intent as MessageIntent,
+        refs: list(o.refs).slice(0, 20),
+        ...(vis ? { visibility: vis } : {}),
+        ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+        ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+        ...(typeof o.close === 'string' && o.close.trim() ? { close: o.close.trim().slice(0, 200) } : {})
+    });
+}
+
     // ---- open a chaired debate on one question (M-20) ----
-    if (action === 'council') {
-        const allowed = allowedAgents(spec);
-        const byName = (raw: string) =>
-            allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
-        const list = (v: unknown) => (Array.isArray(v)
-            ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
-            : []);
-        const question = String(o.question ?? '').trim().slice(0, 500);
-        if (!question) {
-            return {
-                ok: false,
-                error: '"council" needs a "question" — the ONE thing it settles, in a line. A council with no '
-                    + 'question is a conversation, and "message" is the primitive for that.'
-            };
-        }
-        const memberNames = list(o.members);
-        const unknownMembers = memberNames.filter(n => !byName(n));
-        if (unknownMembers.length) {
-            return {
-                ok: false,
-                error: `"members" names ${unknownMembers.map(n => `"${n}"`).join(', ')}, `
-                    + `who ${unknownMembers.length > 1 ? 'are' : 'is'} not in the pool `
-                    + `(${allowed.map(m => m.agentName).join(', ')}).`
-            };
-        }
-        const members = [...new Set(memberNames.map(n => byName(n)!.agentId))];
-        if (members.length < 2) {
-            return {
-                ok: false,
-                error: 'a council needs at least two "members" from the pool — one agent debating nobody is '
-                    + 'a delegation, and "delegate" is the primitive for that.'
-            };
-        }
-        // ‼️ THE CHAIR DEFAULTS TO YOU, and saying so is not a formality: naming
-        // somebody else binds every later turn to what that agent actually
-        // wrote, and a lead that fell into a chair by accident would find its
-        // own turns refused for not citing a message nobody has sent.
-        const chairRaw = String(o.chair ?? '').trim();
-        const chair = !chairRaw || chairRaw.toLowerCase() === 'lead' || chairRaw === spec.leadAgentName
-            ? 'lead' : byName(chairRaw)?.agentId;
-        if (!chair) {
-            return {
-                ok: false,
-                error: `"chair" is "${chairRaw}", who is not in the pool `
-                    + `(${allowed.map(m => m.agentName).join(', ')}). Omit "chair" to chair it yourself.`
-            };
-        }
-        if (chair !== 'lead' && !members.includes(chair)) {
-            return {
-                ok: false,
-                error: 'the chair has to be one of the "members" — it speaks in the council, and a chair '
-                    + 'outside the cast could never be answered.'
-            };
-        }
-        const asked = list(o.from);
-        const speakers = asked.map(byName);
-        if (!asked.length || speakers.some(s => !s)) {
-            return {
-                ok: false,
-                error: '"council" needs a "from" — who speaks its opening turn, or several of them to have '
-                    + `each open without seeing the others. The members are: ${memberNames.join(', ')}`
-            };
-        }
-        const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
-        if (speakerIds.length !== speakers.length) {
-            return { ok: false, error: '"from" names the same agent twice — one agent speaks once per turn.' };
-        }
-        const outside = speakerIds.filter(id => !members.includes(id));
-        if (outside.length) {
-            return {
-                ok: false,
-                error: `"from" names ${outside.map(id => `"${allowed.find(m => m.agentId === id)?.agentName ?? id}"`).join(', ')}, `
-                    + 'who did not get put in "members". A council\'s cast is fixed when it opens.'
-            };
-        }
-        // A chaired council opens with the CHAIR, because everything after the
-        // opening has to cite what the chair said, and there would be nothing.
-        if (chair !== 'lead' && !speakerIds.includes(chair)) {
-            return {
-                ok: false,
-                error: 'a chaired council opens with its chair speaking — every later turn has to name the '
-                    + 'chair\'s message in "refs", and there is none yet. Put the chair in "from".'
-            };
-        }
-        const intent = String(o.intent ?? 'proposal').trim();
-        if (!intentKind(intent)) {
-            return { ok: false, error: `"council" opens with an "intent" — one of: ${messageIntentMenu()}` };
-        }
-        const wanted = Number(o.maxTurns);
-        const maxTurns = Number.isFinite(wanted) && wanted > 0
-            ? Math.min(40, Math.max(2, Math.floor(wanted))) : 8;
-        // ‼️ X-79 — the options are a SET: trimmed, blanks dropped, unique by
-        // casefold. "Fragments" and "fragments" are one answer written twice,
-        // and letting both through splits the council's own vote between two
-        // spellings of it.
-        const options = normalizeOptions(list(o.options).map(s => s.slice(0, 80))).slice(0, 6);
-        return done({
-            action: 'council', thought, question, members, chair,
-            from: speakerIds, intent: intent as MessageIntent, maxTurns,
-            ...(options.length ? { options } : {}),
-            ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
-            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {})
-        });
+/** `council` (M-20) — a chaired debate on one question. */
+function parseCouncil(c: ParseCtx): ParseResult {
+    const { o, spec, done, thought, action } = c;
+    const allowed = allowedAgents(spec);
+    const byName = (raw: string) =>
+        allowed.find(m => m.agentName.toLowerCase() === String(raw).trim().toLowerCase());
+    const list = (v: unknown) => (Array.isArray(v)
+        ? v.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim())
+        : []);
+    const question = String(o.question ?? '').trim().slice(0, 500);
+    if (!question) {
+        return {
+            ok: false,
+            error: '"council" needs a "question" — the ONE thing it settles, in a line. A council with no '
+                + 'question is a conversation, and "message" is the primitive for that.'
+        };
     }
+    const memberNames = list(o.members);
+    const unknownMembers = memberNames.filter(n => !byName(n));
+    if (unknownMembers.length) {
+        return {
+            ok: false,
+            error: `"members" names ${unknownMembers.map(n => `"${n}"`).join(', ')}, `
+                + `who ${unknownMembers.length > 1 ? 'are' : 'is'} not in the pool `
+                + `(${allowed.map(m => m.agentName).join(', ')}).`
+        };
+    }
+    const members = [...new Set(memberNames.map(n => byName(n)!.agentId))];
+    if (members.length < 2) {
+        return {
+            ok: false,
+            error: 'a council needs at least two "members" from the pool — one agent debating nobody is '
+                + 'a delegation, and "delegate" is the primitive for that.'
+        };
+    }
+    // ‼️ THE CHAIR DEFAULTS TO YOU, and saying so is not a formality: naming
+    // somebody else binds every later turn to what that agent actually
+    // wrote, and a lead that fell into a chair by accident would find its
+    // own turns refused for not citing a message nobody has sent.
+    const chairRaw = String(o.chair ?? '').trim();
+    const chair = !chairRaw || chairRaw.toLowerCase() === 'lead' || chairRaw === spec.leadAgentName
+        ? 'lead' : byName(chairRaw)?.agentId;
+    if (!chair) {
+        return {
+            ok: false,
+            error: `"chair" is "${chairRaw}", who is not in the pool `
+                + `(${allowed.map(m => m.agentName).join(', ')}). Omit "chair" to chair it yourself.`
+        };
+    }
+    if (chair !== 'lead' && !members.includes(chair)) {
+        return {
+            ok: false,
+            error: 'the chair has to be one of the "members" — it speaks in the council, and a chair '
+                + 'outside the cast could never be answered.'
+        };
+    }
+    const asked = list(o.from);
+    const speakers = asked.map(byName);
+    if (!asked.length || speakers.some(s => !s)) {
+        return {
+            ok: false,
+            error: '"council" needs a "from" — who speaks its opening turn, or several of them to have '
+                + `each open without seeing the others. The members are: ${memberNames.join(', ')}`
+        };
+    }
+    const speakerIds = [...new Set(speakers.map(s => s!.agentId))];
+    if (speakerIds.length !== speakers.length) {
+        return { ok: false, error: '"from" names the same agent twice — one agent speaks once per turn.' };
+    }
+    const outside = speakerIds.filter(id => !members.includes(id));
+    if (outside.length) {
+        return {
+            ok: false,
+            error: `"from" names ${outside.map(id => `"${allowed.find(m => m.agentId === id)?.agentName ?? id}"`).join(', ')}, `
+                + 'who did not get put in "members". A council\'s cast is fixed when it opens.'
+        };
+    }
+    // A chaired council opens with the CHAIR, because everything after the
+    // opening has to cite what the chair said, and there would be nothing.
+    if (chair !== 'lead' && !speakerIds.includes(chair)) {
+        return {
+            ok: false,
+            error: 'a chaired council opens with its chair speaking — every later turn has to name the '
+                + 'chair\'s message in "refs", and there is none yet. Put the chair in "from".'
+        };
+    }
+    const intent = String(o.intent ?? 'proposal').trim();
+    if (!intentKind(intent)) {
+        return { ok: false, error: `"council" opens with an "intent" — one of: ${messageIntentMenu()}` };
+    }
+    const wanted = Number(o.maxTurns);
+    const maxTurns = Number.isFinite(wanted) && wanted > 0
+        ? Math.min(40, Math.max(2, Math.floor(wanted))) : 8;
+    // ‼️ X-79 — the options are a SET: trimmed, blanks dropped, unique by
+    // casefold. "Fragments" and "fragments" are one answer written twice,
+    // and letting both through splits the council's own vote between two
+    // spellings of it.
+    const options = normalizeOptions(list(o.options).map(s => s.slice(0, 80))).slice(0, 6);
+    return done({
+        action: 'council', thought, question, members, chair,
+        from: speakerIds, intent: intent as MessageIntent, maxTurns,
+        ...(options.length ? { options } : {}),
+        ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
+        ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {})
+    });
+}
+
     // ---- typed task intents: review | compare | revise (M-18) ----
-    if (prim.intent) {
-        const allowed = allowedAgents(spec);
-        const agentRaw = String(o.agent ?? '').trim();
-        const agent = allowed.find(m => m.agentName.toLowerCase() === agentRaw.toLowerCase());
+/** `review` · `compare` · `revise` — the typed task intents, one parse driven by
+ *  the registry row's own `intent` block, which is what makes them one contract. */
+function parseTypedIntent(c: ParseCtx): ParseResult {
+    const { o, spec, adaptive, done, thought, action, prim } = c;
+    // ‼️ X-69 — THE ROW IS THE CONTRACT, so the row is asked. Three primitives
+    // share this parse and what makes each of them itself — how many results it
+    // needs, whether the task it builds writes — is the `intent` block on its
+    // own registry row. A row wired here without one is the miswiring this
+    // table exists to make impossible, and it says so rather than reading
+    // `undefined` as zero targets.
+    const intent = prim.intent;
+    if (!intent) { return { ok: false, error: unknownActionError(action, adaptive) }; }
+    const allowed = allowedAgents(spec);
+    const agentRaw = String(o.agent ?? '').trim();
+    const agent = allowed.find(m => m.agentName.toLowerCase() === agentRaw.toLowerCase());
+    if (!agent) {
+        return {
+            ok: false,
+            error: `"${action}" needs an "agent" from the pool — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
+        };
+    }
+    const targets = Array.isArray(o.targets)
+        ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 20)
+        : [];
+    if (targets.length < intent.minTargets) {
+        return {
+            ok: false,
+            error: `"${action}" needs at least ${intent.minTargets} result id(s) in "targets" `
+                + '— it works on results this run already produced, so name them by the "id" shown with each round result'
+        };
+    }
+    const ask = typeof o.ask === 'string' ? o.ask.trim().slice(0, MAX_PROMPT_CHARS) : '';
+    if (action === 'revise' && !ask) {
+        return { ok: false, error: '"revise" needs an "ask": say exactly what gap the revision must close' };
+    }
+    const crit = readCriteriaIds(o.criteria, spec, `"${action}"`, adaptive);
+    if (!crit.ok) { return { ok: false, error: crit.error }; }
+    return done({
+        action: action as TaskIntent, thought, agent: agent.agentName, targets, ask,
+        ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
+        ...(crit.ids ? { criteria: crit.ids } : {})
+    });
+}
+
+/** `delegate` and `parallel` — the same parse; `parallel` adds a claim about
+ *  independence, not a field. */
+function parseDelegation(c: ParseCtx): ParseResult {
+    const { o, spec, adaptive, done, thought, action } = c;
+    if (!Array.isArray(o.tasks) || !o.tasks.length) {
+        return { ok: false, error: `"${action}" needs a non-empty "tasks" array` };
+    }
+    if (o.tasks.length > MAX_TASKS_PER_ROUND) {
+        return { ok: false, error: `too many tasks in one round (max ${MAX_TASKS_PER_ROUND})` };
+    }
+    // ‼️ M-15 — WHOM THE LEAD IS ALLOWED TO NAME, which is the one thing the
+    // two modes disagree about here. A classic lead has a TEAM and may name
+    // nobody else; an adaptive lead has a POOL and picks from it at runtime.
+    // The rest of this parse — the actions, the caps, the self-containment
+    // rule — is the same contract for both, which is why it is not forked.
+    const allowed = allowedAgents(spec);
+    const names = new Map(allowed.map(m => [m.agentName.toLowerCase(), m.agentName]));
+    const tasks: PlannerTaskReq[] = [];
+    for (const t of o.tasks as Record<string, unknown>[]) {
+        const agentRaw = String(t?.agent ?? '').trim();
+        const agent = names.get(agentRaw.toLowerCase());
         if (!agent) {
             return {
                 ok: false,
-                error: `"${action}" needs an "agent" from the pool — the pool is: ${allowed.map(m => m.agentName).join(', ')}`
+                error: `unknown agent "${agentRaw}" — `
+                    + `${isAdaptive(spec) ? 'the pool is' : 'the team is'}: `
+                    + allowed.map(m => m.agentName).join(', ')
             };
         }
-        const targets = Array.isArray(o.targets)
-            ? o.targets.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim()).slice(0, 20)
-            : [];
-        if (targets.length < prim.intent.minTargets) {
-            return {
-                ok: false,
-                error: `"${action}" needs at least ${prim.intent.minTargets} result id(s) in "targets" `
-                    + '— it works on results this run already produced, so name them by the "id" shown with each round result'
-            };
-        }
-        const ask = typeof o.ask === 'string' ? o.ask.trim().slice(0, MAX_PROMPT_CHARS) : '';
-        if (action === 'revise' && !ask) {
-            return { ok: false, error: '"revise" needs an "ask": say exactly what gap the revision must close' };
-        }
-        const crit = readCriteriaIds(o.criteria, spec, `"${action}"`, adaptive);
+        const title = typeof t.title === 'string' ? t.title.trim().slice(0, 120) : '';
+        const prompt = typeof t.prompt === 'string' ? t.prompt.trim().slice(0, MAX_PROMPT_CHARS) : '';
+        if (!title || !prompt) { return { ok: false, error: 'every task needs a non-empty "title" and "prompt"' }; }
+        // ‼️ M-17 — WHICH CRITERIA THIS WORK IS FOR, and a wrong id is
+        // refused rather than dropped: a criterion nobody can point at is
+        // the one an evaluation will never be told has gone stale.
+        const crit = readCriteriaIds(t.criteria, spec, `task "${title}"`, adaptive);
         if (!crit.ok) { return { ok: false, error: crit.error }; }
-        return done({
-            action: action as TaskIntent, thought, agent: agent.agentName, targets, ask,
-            ...(typeof o.title === 'string' && o.title.trim() ? { title: o.title.trim().slice(0, 120) } : {}),
-            ...(crit.ids ? { criteria: crit.ids } : {})
+        const criteria = crit.ids;
+        tasks.push({
+            agent, title, prompt,
+            expect: typeof t.expect === 'string' ? t.expect.trim().slice(0, 400) : undefined,
+            readonly: t.readonly === true,
+            ...(criteria ? { criteria } : {})
         });
     }
-    if (action === 'delegate' || action === 'parallel') {
-        if (!Array.isArray(o.tasks) || !o.tasks.length) {
-            return { ok: false, error: `"${action}" needs a non-empty "tasks" array` };
-        }
-        if (o.tasks.length > MAX_TASKS_PER_ROUND) {
-            return { ok: false, error: `too many tasks in one round (max ${MAX_TASKS_PER_ROUND})` };
-        }
-        // ‼️ M-15 — WHOM THE LEAD IS ALLOWED TO NAME, which is the one thing the
-        // two modes disagree about here. A classic lead has a TEAM and may name
-        // nobody else; an adaptive lead has a POOL and picks from it at runtime.
-        // The rest of this parse — the actions, the caps, the self-containment
-        // rule — is the same contract for both, which is why it is not forked.
-        const allowed = allowedAgents(spec);
-        const names = new Map(allowed.map(m => [m.agentName.toLowerCase(), m.agentName]));
-        const tasks: PlannerTaskReq[] = [];
-        for (const t of o.tasks as Record<string, unknown>[]) {
-            const agentRaw = String(t?.agent ?? '').trim();
-            const agent = names.get(agentRaw.toLowerCase());
-            if (!agent) {
-                return {
-                    ok: false,
-                    error: `unknown agent "${agentRaw}" — `
-                        + `${isAdaptive(spec) ? 'the pool is' : 'the team is'}: `
-                        + allowed.map(m => m.agentName).join(', ')
-                };
-            }
-            const title = typeof t.title === 'string' ? t.title.trim().slice(0, 120) : '';
-            const prompt = typeof t.prompt === 'string' ? t.prompt.trim().slice(0, MAX_PROMPT_CHARS) : '';
-            if (!title || !prompt) { return { ok: false, error: 'every task needs a non-empty "title" and "prompt"' }; }
-            // ‼️ M-17 — WHICH CRITERIA THIS WORK IS FOR, and a wrong id is
-            // refused rather than dropped: a criterion nobody can point at is
-            // the one an evaluation will never be told has gone stale.
-            const crit = readCriteriaIds(t.criteria, spec, `task "${title}"`, adaptive);
-            if (!crit.ok) { return { ok: false, error: crit.error }; }
-            const criteria = crit.ids;
-            tasks.push({
-                agent, title, prompt,
-                expect: typeof t.expect === 'string' ? t.expect.trim().slice(0, 400) : undefined,
-                readonly: t.readonly === true,
-                ...(criteria ? { criteria } : {})
-            });
-        }
-        return done(action === 'parallel'
-            ? { action: 'parallel', thought, tasks }
-            : { action: 'delegate', thought, tasks });
-    }
-    return { ok: false, error: unknownActionError(action, adaptive) };
+    return done(action === 'parallel'
+        ? { action: 'parallel', thought, tasks }
+        : { action: 'delegate', thought, tasks });
 }
+
+/**
+ * ‼️ X-69 — WHAT A WORK PRIMITIVE'S PREPARE IS HANDED, AND WHAT IT MAY REACH.
+ *
+ * Work preparation is the second half of a primitive's contract and it cannot
+ * live in the parse: only the RUN knows what an id produced, how deep it sits,
+ * or which chains this window has. It used to live in a chain of `else if`
+ * arms inside the round loop, accumulating into a `let requested` — so the
+ * thing a primitive DOES was a position in a 120-line block rather than
+ * something the row could name.
+ *
+ * `lend` is the point of the boundary: a handler gets the engine's own work by
+ * name instead of a `this`, so a primitive's reach into the run is this list
+ * and nothing else. Anything a new primitive needs has to be added here, in
+ * the open, rather than taken quietly.
+ */
+export interface PrepareCtx {
+    run: MissionRun;
+    spec: MissionSpec;
+    /** the decision as parsed — each handler narrows it by its own action */
+    d: PlannerDecision;
+    deps: MissionEngineDeps;
+    now: number;
+    /** the settled result ids the lead may name, worded as the refusal prints them */
+    knownResults: string[];
+    lend: PrepareLoan;
+}
+
+/** ‼️ X-69 — the engine's own work, lent to a handler by name. */
+export interface PrepareLoan {
+    stepResults(steps: MissionStep[]): StepResult[];
+    refusalFor(field: string, bad: string[], valid: string[]): string;
+    prepareMessage(
+        run: MissionRun, spec: MissionSpec,
+        d: Extract<PlannerDecision, { action: 'message' }>, now: number
+    ): { refusal?: string; tasks?: PlannerTaskReq[]; conversationId?: string };
+    prepareCouncil(
+        run: MissionRun, spec: MissionSpec,
+        d: Extract<PlannerDecision, { action: 'council' }>, now: number
+    ): { refusal?: string; tasks?: PlannerTaskReq[] };
+}
+
+/**
+ * What a prepare answers with: the work to run, or a refusal in the two pieces
+ * the loop needs — the line the ledger keeps and the message the lead is sent.
+ * Nothing else: a handler does not push to the ledger, end a round or write the
+ * run, because a primitive that could do those is a second engine.
+ */
+export type PrepareResult =
+    | { tasks: PlannerTaskReq[]; intent?: TaskIntent; sources?: string[] }
+    | { refusal: string; ledger: string };
+
+/**
+ * ‼️ X-69 — THE ROW POINTS AT THE WRONG HANDLER, said out loud.
+ *
+ * Every handler below narrows the decision itself, with a guard rather than a
+ * cast: the table is written by hand and the one mistake it invites is wiring a
+ * row to its neighbour's function. A cast would run the wrong preparation on a
+ * decision shaped for another primitive; this refuses the round and names the
+ * action, which is a bug report rather than a corrupted run.
+ */
+function wrongHandler(d: PlannerDecision): PrepareResult {
+    return {
+        ledger: `R? ${d.action} rejected — it reached the wrong handler`,
+        refusal: `Refused: "${d.action}" was dispatched to a handler for another primitive, `
+            + 'which is a fault in this build rather than in your decision. '
+            + 'Choose different work, or finish.'
+            + '\nReply with ONLY the JSON decision object.'
+    };
+}
+
+/**
+ * `review` · `compare` · `revise` — ONE ordinary task, built by the engine out
+ * of results the run already holds. Here rather than in the parse because only
+ * the RUN knows what an id produced; and when it knows nothing about one, the
+ * lead is told so rather than a delegate being sent to work on an empty quote.
+ */
+function prepareTypedIntent(c: PrepareCtx): PrepareResult {
+    const { run, spec, d, lend, knownResults } = c;
+    if (d.action !== 'review' && d.action !== 'compare' && d.action !== 'revise') { return wrongHandler(d); }
+    const prim = intentPrimitive(d.action) as MissionPrimitive;
+    // ‼️ X-65 — AND THE TARGET MUST HAVE SETTLED, not merely exist.
+    // This asked only whether a step with that id was anywhere in
+    // the run, so a queued or still-running step could be reviewed,
+    // compared or revised — reading an output that had not been
+    // written yet and recording a verdict on it.
+    const all = run.rounds.flatMap(r => r.steps);
+    const known = d.targets
+        .map(id => all.find(st => st.id === id && (st.status === 'done' || st.status === 'failed')))
+        .filter((st): st is MissionStep => !!st);
+    const missing = d.targets.filter(id => !known.some(st => st.id === id));
+    if (missing.length) {
+        return {
+            ledger: `R? ${d.action} rejected — no settled result with id ${missing.join(', ')}`,
+            refusal: lend.refusalFor('targets', missing, knownResults)
+        };
+    }
+    const material = lend.stepResults(known)
+        .map(r => `### [${r.step.id}] ${r.step.agentName} — "${r.step.title}" (${r.step.status})\n`
+            + (r.excerpt || '(this step produced no output)'))
+        .join('\n\n');
+    // ‼️ A REVISE INHERITS THE CRITERIA OF WHAT IT REVISES. Without
+    // it, correcting an artefact would leave the old pass looking
+    // current — the staleness rule can only fire on criteria the
+    // work says it serves, and re-fixing a file plainly serves the
+    // same ones the first attempt did.
+    const inherited = [...new Set(known.flatMap(s => s.criteria ?? []))];
+    const criteria = d.criteria?.length ? d.criteria : inherited;
+    return {
+        intent: d.action,
+        sources: [...d.targets],
+        tasks: [{
+            agent: d.agent,
+            title: d.title || intentTitle(d.action, d.targets),
+            prompt: buildIntentPrompt(prim, d.ask, material, spec.goal),
+            readonly: prim.intent!.readonly,
+            ...(criteria.length ? { criteria } : {})
+        }]
+    };
+}
+
+/**
+ * `run_mission` — a child objective. The two checks that keep nesting from
+ * being a fork bomb are here because only the run knows where it sits: how deep
+ * it already is, and which objectives are above it.
+ */
+function prepareRunMission(c: PrepareCtx): PrepareResult {
+    const { run, d, deps } = c;
+    if (d.action !== 'run_mission') { return wrongHandler(d); }
+    // ‼️ THE TWO THINGS THAT KEEP NESTING FROM BEING A FORK BOMB,
+    // checked HERE because only the run knows where it sits: how
+    // deep it already is, and what objectives are above it. An
+    // objective that is already its own ancestor is the cycle —
+    // it would restate the same goal for ever, each level convinced
+    // it had delegated the problem.
+    const depth = (run.depth ?? 0) + 1;
+    if (depth > MAX_MISSION_DEPTH) {
+        return {
+            ledger: `R? run_mission rejected — depth cap (${MAX_MISSION_DEPTH})`,
+            refusal: `Refused: this run is already ${run.depth ?? 0} level(s) deep and the cap is `
+                + `${MAX_MISSION_DEPTH}. Do this work with delegations instead of another child objective.`
+                + '\nReply with ONLY the JSON decision object.'
+        };
+    }
+    const above = (deps.ancestry?.() ?? []).map(a => normalizeStrategy(a.goal));
+    if (above.includes(normalizeStrategy(d.goal))) {
+        return {
+            ledger: 'R? run_mission rejected — that objective is already an ancestor of this run',
+            refusal: 'Refused: an objective with that goal is already running above this one. '
+                + 'Starting it again would be this run asking itself for the same thing. '
+                + 'Break the work down differently, or do it with delegations.'
+                + '\nReply with ONLY the JSON decision object.'
+        };
+    }
+    return { tasks: [{
+        agent: d.title || 'child objective',
+        title: d.title || `sub-objective: ${d.goal.slice(0, 80)}`,
+        prompt: d.goal,
+        readonly: false,
+        kind: 'mission',
+        child: {
+            goal: d.goal,
+            successCriteria: d.successCriteria ?? [],
+            ...(d.constraints?.length ? { constraints: d.constraints } : {}),
+            ...(d.title ? { title: d.title } : {}),
+            depth
+        },
+        ...(d.criteria?.length ? { criteria: d.criteria } : {})
+    }] };
+}
+
+/** `run_workflow` — the chain has to really exist, and only the run can see
+ *  the list, so the lead is shown what this window actually has. */
+function prepareRunWorkflow(c: PrepareCtx): PrepareResult {
+    const { d, deps } = c;
+    if (d.action !== 'run_workflow') { return wrongHandler(d); }
+    // ‼️ THE CHAIN HAS TO REALLY EXIST, and if it does not the lead
+    // is shown what this window actually has rather than a refusal
+    // it cannot act on. Checked here and not in the parser for the
+    // same reason a target id is: only the run can see the list.
+    const list = deps.workflows?.() ?? [];
+    const wf = list.find(x => x.id === d.workflow)
+        ?? list.find(x => x.title.toLowerCase() === d.workflow.toLowerCase());
+    if (!wf) {
+        return {
+            ledger: `R? run_workflow rejected — no workflow "${d.workflow}"`,
+            refusal: `There is no workflow called "${d.workflow}". `
+                + (list.length
+                    ? `This window has: ${list.map(x => `"${x.title}"`).join(', ')}.`
+                    : 'This window has none — the work has to be delegated.')
+                + '\nChoose one that exists or delegate the work. Reply with ONLY the JSON decision object.'
+        };
+    }
+    return { tasks: [{
+        agent: wf.title,
+        title: d.ask ? `${wf.title} — ${d.ask.slice(0, 80)}` : `run workflow "${wf.title}"`,
+        prompt: d.ask ?? '',
+        // A chain writes unless every step of it reads, which is not
+        // knowable from here — so it takes a writer's lane and is
+        // serialised against other writers. The safe direction.
+        readonly: false,
+        kind: 'workflow', workflowId: wf.id,
+        ...(d.criteria?.length ? { criteria: d.criteria } : {})
+    }] };
+}
+
+/** `message` · `council` (M-19/M-20) — the speaking turns. The record work is
+ *  the engine's: this hands the decision to it and passes on what it refused. */
+function prepareSpeaking(c: PrepareCtx): PrepareResult {
+    const { run, spec, d, now, lend } = c;
+    if (d.action !== 'message' && d.action !== 'council') { return wrongHandler(d); }
+    const spoken = d.action === 'council'
+        ? lend.prepareCouncil(run, spec, d, now)
+        : lend.prepareMessage(run, spec, d, now);
+    if (spoken.refusal) {
+        return {
+            ledger: `R? ${d.action} rejected — ${spoken.refusal.split('\n')[0]}`,
+            refusal: `${spoken.refusal}\nReply with ONLY the JSON decision object.`
+        };
+    }
+    return { tasks: spoken.tasks! };
+}
+
+/** `delegate` · `parallel` — the tasks are the lead's own; nothing is built. */
+function prepareDelegation(c: PrepareCtx): PrepareResult {
+    const { d } = c;
+    if (d.action !== 'delegate' && d.action !== 'parallel') { return wrongHandler(d); }
+    return { tasks: d.tasks };
+}
+
+/**
+ * ‼️ X-69 — THE HANDLER TABLE: one row per primitive, and the row is the whole
+ * of what the engine knows how to do with it.
+ *
+ * The registry in `missionPrimitives.ts` declares what EXISTS — the name, the
+ * scope, the shape, the words the lead is shown. It deliberately holds no
+ * behaviour: it is data, it is read by the prompt builder and by surfaces that
+ * draw a recorded run, and importing the engine into it would make a cycle out
+ * of a list. This is the other half: what each declared name is actually DONE
+ * with, in the one module that can do it.
+ *
+ * Two things make it a contract rather than a second list to keep in step:
+ *
+ *   1. it is total over `PrimitiveName`, so a name added to the registry
+ *      without a row here does not compile;
+ *   2. `primitiveHandlerParity()` reads both sides at runtime and says which
+ *      names are unhandled — which is what a test can fail on, including for a
+ *      row that was pushed in without the type system ever seeing it.
+ */
+export interface PrimitiveHandler {
+    parse: (c: ParseCtx) => ParseResult;
+    /**
+     * ‼️ REQUIRED ON A `work` ROW, ABSENT ON EVERY OTHER — and that is checked
+     * rather than remembered (`primitiveHandlerParity`). A `plan`, `human` or
+     * `terminal` primitive does not build work: it changes what the run IS
+     * doing, in the loop, and a "prepare" for it would be a second place where
+     * a run can end.
+     */
+    prepare?: (c: PrepareCtx) => PrepareResult;
+    /**
+     * ‼️ THE ONE `work` PRIMITIVE THAT BUILDS NO WORK THROUGH `prepare`, named
+     * here rather than left as a hole in the rule.
+     *
+     * `evaluate` orders work — a reviewer's delegation is a real one, which is
+     * why the budget guard treats it as work (X-70) — but it does not hand
+     * tasks back to the round loop: it runs its own wave, reads the verdict out
+     * of what came back and records the evaluation, because the verdict IS the
+     * round. Squeezing that into `prepare` would mean the loop had to know what
+     * to do with a task that answers the success gate, which is the one thing
+     * M-17 keeps in one place. So the exception is declared, and the parity
+     * check reads THIS rather than a name somebody has to remember.
+     */
+    ownRound?: true;
+}
+
+export const PRIMITIVE_HANDLERS: Record<PrimitiveName, PrimitiveHandler> = {
+    delegate: { parse: parseDelegation, prepare: prepareDelegation },
+    parallel: { parse: parseDelegation, prepare: prepareDelegation },
+    review: { parse: parseTypedIntent, prepare: prepareTypedIntent },
+    compare: { parse: parseTypedIntent, prepare: prepareTypedIntent },
+    revise: { parse: parseTypedIntent, prepare: prepareTypedIntent },
+    evaluate: { parse: parseEvaluate, ownRound: true },
+    run_workflow: { parse: parseRunWorkflow, prepare: prepareRunWorkflow },
+    run_mission: { parse: parseRunMission, prepare: prepareRunMission },
+    message: { parse: parseMessage, prepare: prepareSpeaking },
+    council: { parse: parseCouncil, prepare: prepareSpeaking },
+    replan: { parse: parseReplan },
+    finish: { parse: parseEnding },
+    ask_user: { parse: parseAskUser },
+    abort: { parse: parseEnding }
+};
+
+/**
+ * ‼️ X-69 — THE GATE, READ AT RUNTIME FROM BOTH SIDES.
+ *
+ * The compile-time totality above covers the case the type system can see. It
+ * cannot see a row appended to `PRIMITIVES` by something that was not compiled
+ * against it — which is exactly what the test does, because that is the failure
+ * being prevented: a primitive that exists, is offered to the lead, and has
+ * nothing behind it.
+ */
+export function primitiveHandlerParity(): {
+    /** declared in the registry with no parse behind it */
+    unparsed: string[];
+    /** declared as `work` with neither a `prepare` nor a stated `ownRound` */
+    unprepared: string[];
+    /** carries work preparation while claiming not to be work */
+    miscast: string[];
+    /** a handler row for a name the registry does not declare */
+    orphaned: string[];
+} {
+    const rows = new Map(PRIMITIVES.map(p => [String(p.name), p]));
+    const table = PRIMITIVE_HANDLERS as Record<string, PrimitiveHandler | undefined>;
+    const unparsed: string[] = [], unprepared: string[] = [], miscast: string[] = [];
+    for (const [name, p] of rows) {
+        const h = table[name];
+        if (typeof h?.parse !== 'function') { unparsed.push(name); }
+        const buildsWork = typeof h?.prepare === 'function' || h?.ownRound === true;
+        if (p.shape === 'work' && !buildsWork) { unprepared.push(name); }
+        if (p.shape !== 'work' && buildsWork) { miscast.push(name); }
+    }
+    return {
+        unparsed, unprepared, miscast,
+        orphaned: Object.keys(PRIMITIVE_HANDLERS).filter(n => !rows.has(n))
+    };
+}
+
 
 /**
  * ‼️ M-17 — THE CRITERION IDS A PIECE OF WORK SERVES, read the same way
@@ -4120,129 +4523,38 @@ export class MissionEngine {
             // than in the parser because only the RUN knows what an id
             // produced; and if it knows nothing about one, the lead is told so
             // rather than a delegate being sent to work on an empty quotation.
-            let requested: PlannerTaskReq[];
-            let intent: TaskIntent | undefined;
-            let sources: string[] | undefined;
-            if (d.action === 'review' || d.action === 'compare' || d.action === 'revise') {
-                const prim = intentPrimitive(d.action) as MissionPrimitive;
-                // ‼️ X-65 — AND THE TARGET MUST HAVE SETTLED, not merely exist.
-                // This asked only whether a step with that id was anywhere in
-                // the run, so a queued or still-running step could be reviewed,
-                // compared or revised — reading an output that had not been
-                // written yet and recording a verdict on it.
-                const all = run.rounds.flatMap(r => r.steps);
-                const known = d.targets
-                    .map(id => all.find(st => st.id === id && (st.status === 'done' || st.status === 'failed')))
-                    .filter((st): st is MissionStep => !!st);
-                const missing = d.targets.filter(id => !known.some(st => st.id === id));
-                if (missing.length) {
-                    run.ledger.push(`R? ${d.action} rejected — no settled result with id ${missing.join(', ')}`);
-                    roundMsg = this.refusalFor('targets', missing, refs.results);
-                    continue;
-                }
-                intent = d.action;
-                sources = [...d.targets];
-                const material = this.stepResults(known)
-                    .map(r => `### [${r.step.id}] ${r.step.agentName} — "${r.step.title}" (${r.step.status})\n`
-                        + (r.excerpt || '(this step produced no output)'))
-                    .join('\n\n');
-                // ‼️ A REVISE INHERITS THE CRITERIA OF WHAT IT REVISES. Without
-                // it, correcting an artefact would leave the old pass looking
-                // current — the staleness rule can only fire on criteria the
-                // work says it serves, and re-fixing a file plainly serves the
-                // same ones the first attempt did.
-                const inherited = [...new Set(known.flatMap(s => s.criteria ?? []))];
-                const criteria = d.criteria?.length ? d.criteria : inherited;
-                requested = [{
-                    agent: d.agent,
-                    title: d.title || intentTitle(d.action, d.targets),
-                    prompt: buildIntentPrompt(prim, d.ask, material, spec.goal),
-                    readonly: prim.intent!.readonly,
-                    ...(criteria.length ? { criteria } : {})
-                }];
-            } else if (d.action === 'run_mission') {
-                // ‼️ THE TWO THINGS THAT KEEP NESTING FROM BEING A FORK BOMB,
-                // checked HERE because only the run knows where it sits: how
-                // deep it already is, and what objectives are above it. An
-                // objective that is already its own ancestor is the cycle —
-                // it would restate the same goal for ever, each level convinced
-                // it had delegated the problem.
-                const depth = (run.depth ?? 0) + 1;
-                if (depth > MAX_MISSION_DEPTH) {
-                    run.ledger.push(`R? run_mission rejected — depth cap (${MAX_MISSION_DEPTH})`);
-                    roundMsg = `Refused: this run is already ${run.depth ?? 0} level(s) deep and the cap is `
-                        + `${MAX_MISSION_DEPTH}. Do this work with delegations instead of another child objective.`
-                        + '\nReply with ONLY the JSON decision object.';
-                    continue;
-                }
-                const above = (deps.ancestry?.() ?? []).map(a => normalizeStrategy(a.goal));
-                if (above.includes(normalizeStrategy(d.goal))) {
-                    run.ledger.push('R? run_mission rejected — that objective is already an ancestor of this run');
-                    roundMsg = 'Refused: an objective with that goal is already running above this one. '
-                        + 'Starting it again would be this run asking itself for the same thing. '
-                        + 'Break the work down differently, or do it with delegations.'
-                        + '\nReply with ONLY the JSON decision object.';
-                    continue;
-                }
-                requested = [{
-                    agent: d.title || 'child objective',
-                    title: d.title || `sub-objective: ${d.goal.slice(0, 80)}`,
-                    prompt: d.goal,
-                    readonly: false,
-                    kind: 'mission',
-                    child: {
-                        goal: d.goal,
-                        successCriteria: d.successCriteria ?? [],
-                        ...(d.constraints?.length ? { constraints: d.constraints } : {}),
-                        ...(d.title ? { title: d.title } : {}),
-                        depth
-                    },
-                    ...(d.criteria?.length ? { criteria: d.criteria } : {})
-                }];
-            } else if (d.action === 'run_workflow') {
-                // ‼️ THE CHAIN HAS TO REALLY EXIST, and if it does not the lead
-                // is shown what this window actually has rather than a refusal
-                // it cannot act on. Checked here and not in the parser for the
-                // same reason a target id is: only the run can see the list.
-                const list = deps.workflows?.() ?? [];
-                const wf = list.find(x => x.id === d.workflow)
-                    ?? list.find(x => x.title.toLowerCase() === d.workflow.toLowerCase());
-                if (!wf) {
-                    run.ledger.push(`R? run_workflow rejected — no workflow "${d.workflow}"`);
-                    roundMsg = `There is no workflow called "${d.workflow}". `
-                        + (list.length
-                            ? `This window has: ${list.map(x => `"${x.title}"`).join(', ')}.`
-                            : 'This window has none — the work has to be delegated.')
-                        + '\nChoose one that exists or delegate the work. Reply with ONLY the JSON decision object.';
-                    continue;
-                }
-                requested = [{
-                    agent: wf.title,
-                    title: d.ask ? `${wf.title} — ${d.ask.slice(0, 80)}` : `run workflow "${wf.title}"`,
-                    prompt: d.ask ?? '',
-                    // A chain writes unless every step of it reads, which is not
-                    // knowable from here — so it takes a writer's lane and is
-                    // serialised against other writers. The safe direction.
-                    readonly: false,
-                    kind: 'workflow', workflowId: wf.id,
-                    ...(d.criteria?.length ? { criteria: d.criteria } : {})
-                }];
-            } else if (d.action === 'message' || d.action === 'council') {
-                const spoken = d.action === 'council'
-                    ? this.prepareCouncil(run, spec, d, deps.now())
-                    : this.prepareMessage(run, spec, d, deps.now());
-                if (spoken.refusal) {
-                    run.ledger.push(`R? ${d.action} rejected — ${spoken.refusal.split('\n')[0]}`);
-                    roundMsg = `${spoken.refusal}\nReply with ONLY the JSON decision object.`;
-                    continue;
-                }
-                requested = spoken.tasks!;
-            } else if (d.action === 'delegate' || d.action === 'parallel') {
-                requested = d.tasks;
-            } else {
-                // unreachable: every other shape returned or continued above
-                requested = [];
+            // ‼️ X-69 — AND ONE DISPATCH FOR THE WORK, out of the same row.
+            //
+            // This was a chain of `else if (d.action === …)` arms with the
+            // outcome accumulated into a `let` — which is why a primitive could
+            // be declared, offered, parsed, and then quietly do nothing: the arm
+            // that builds its work is somewhere else entirely from the row that
+            // says it exists. The row carries both now, so "what does this
+            // primitive DO" is one lookup and an unwritten `prepare` is a
+            // compile error on a `work` row rather than an empty round.
+            const prepare = PRIMITIVE_HANDLERS[d.action].prepare;
+            const prepared: PrepareResult = prepare
+                ? prepare({
+                    run, spec, d, deps, now: deps.now(), knownResults: refs.results,
+                    lend: {
+                        stepResults: steps => this.stepResults(steps),
+                        refusalFor: (field, bad, valid) => this.refusalFor(field, bad, valid),
+                        prepareMessage: (r, s, dd, n) => this.prepareMessage(r, s, dd, n),
+                        prepareCouncil: (r, s, dd, n) => this.prepareCouncil(r, s, dd, n)
+                    }
+                })
+                // A row whose shape is not `work` never reaches this line — every
+                // one of them returned or continued above. If one ever did, it
+                // orders nothing, which is what the unreachable arm did before.
+                : { tasks: [] };
+            if ('refusal' in prepared) {
+                run.ledger.push(prepared.ledger);
+                roundMsg = prepared.refusal;
+                continue;
             }
+            const requested = prepared.tasks;
+            const intent = prepared.intent;
+            const sources = prepared.sources;
             let tasks = requested.filter(t => {
                 const key = dupKey(t.agent, t.prompt);
                 if (seenWork.has(key)) {

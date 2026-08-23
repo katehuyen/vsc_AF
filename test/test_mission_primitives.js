@@ -693,6 +693,122 @@ async function classicUntouchedTest() {
     ok('no intent is invented for a plain delegation', run.rounds[0].steps[0].intent === undefined);
 }
 
+// ============ ‼️ X-69 — THE ROW IS THE CONTRACT, NOT A SHOP WINDOW ============
+//
+// Everything above measures what the list SAYS. This measures that both halves
+// of what it promises are really behind it. The list built the menu and the
+// unknown-action error and did nothing else: the parse was an arm of one
+// growing `if (action === …)` chain and the execution an arm of another, in a
+// different function. Nothing tied the three together, so a name added to the
+// list was advertised to the lead and accepted by `primitiveFor` — and then,
+// with the parse arm forgotten, fell off the end of the chain and came back
+// "unknown action" for an action the lead had just been offered; or, with the
+// executor arm forgotten, parsed cleanly and ran nothing. Both were invisible
+// until a real run reached them, which for a rarely-picked primitive is a long
+// time and somebody else's money.
+{
+    console.log('\n-- ‼️ X-69 every declared primitive has a parse, and every work one builds work');
+    const p = M.primitiveHandlerParity();
+    eq('nothing declared is left unparsed', p.unparsed.join(','), '');
+    eq('‼️ nothing that orders work is left with no way to build it', p.unprepared.join(','), '');
+    eq('…and nothing that is not work carries work preparation', p.miscast.join(','), '');
+    eq('no handler row exists for a name the registry never declared', p.orphaned.join(','), '');
+
+    const rows = M.PRIMITIVES.map(x => x.name);
+    eq('the table covers the registry exactly',
+        Object.keys(M.PRIMITIVE_HANDLERS).sort().join(','), [...rows].sort().join(','));
+    ok('every row has a parse function',
+        rows.every(n => typeof M.PRIMITIVE_HANDLERS[n].parse === 'function'));
+
+    // ‼️ THE ONE STATED EXCEPTION. `evaluate` orders work — a reviewer's
+    // delegation is a real one — but the verdict IS its round, so it runs its
+    // own and hands no tasks back. Declared on the row rather than remembered.
+    const work = M.PRIMITIVES.filter(x => x.shape === 'work').map(x => x.name);
+    eq('exactly one work primitive runs a round of its own',
+        work.filter(n => M.PRIMITIVE_HANDLERS[n].ownRound === true).join(','), 'evaluate');
+    ok('…and every other work primitive prepares tasks',
+        work.filter(n => n !== 'evaluate').every(n => typeof M.PRIMITIVE_HANDLERS[n].prepare === 'function'));
+    ok('a plan, human or terminal primitive prepares nothing',
+        M.PRIMITIVES.filter(x => x.shape !== 'work')
+            .every(x => !M.PRIMITIVE_HANDLERS[x.name].prepare && !M.PRIMITIVE_HANDLERS[x.name].ownRound));
+}
+
+{
+    console.log('\n-- ‼️ X-69 an action the lead was offered is never met with "unknown action"');
+    for (const p of M.PRIMITIVES) {
+        const raw = JSON.stringify({ ...reflect(), thought: 't', action: p.name });
+        const r = M.parseAdaptiveDecision(raw, spec());
+        // Most are refused for missing fields, which is the point: the refusal
+        // is ABOUT the primitive, so its own parse was really reached.
+        ok(`"${p.name}" reaches its own parse`, !(!r.ok && /unknown "action"/.test(r.error)));
+    }
+    const nope = M.parseAdaptiveDecision(
+        JSON.stringify({ ...reflect(), thought: 't', action: 'teleport' }), spec());
+    ok('…while an action nobody declared is still refused by name',
+        !nope.ok && /unknown "action": "teleport"/.test(nope.error));
+}
+
+{
+    console.log('\n-- ‼️ X-69 a primitive declared with no handler behind it fails the gate');
+    const fake = {
+        name: 'summon', scope: 'adaptive', shape: 'work', kind: 'task',
+        describe: 'a primitive somebody added to the list and nothing else'
+    };
+    M.PRIMITIVES.push(fake);
+    try {
+        const p = M.primitiveHandlerParity();
+        ok('‼️ it is reported as unparsed', p.unparsed.includes('summon'));
+        ok('‼️ …and as ordering work it has no way to build', p.unprepared.includes('summon'));
+        eq('…and it is the only complaint, so the report points at the real one',
+            p.unparsed.join(','), 'summon');
+        const r = M.parseAdaptiveDecision(JSON.stringify({
+            ...reflect(), thought: 't', action: 'summon'
+        }), spec());
+        ok('the run survives it — the lead is refused rather than the engine throwing',
+            !r.ok && /unknown "action": "summon"/.test(r.error));
+        M.PRIMITIVES[M.PRIMITIVES.length - 1] = { ...fake, shape: 'plan' };
+        const q = M.primitiveHandlerParity();
+        ok('a plan-shaped row with no parse is unparsed and not "unprepared"',
+            q.unparsed.includes('summon') && !q.unprepared.includes('summon'));
+    } finally {
+        M.PRIMITIVES.pop();
+    }
+    const back = M.primitiveHandlerParity();
+    eq('and the gate is clean again once the fake row is gone',
+        [back.unparsed.length, back.unprepared.length, back.miscast.length, back.orphaned.length].join(','),
+        '0,0,0,0');
+}
+
+{
+    console.log('\n-- ‼️ X-69 a handler handed the wrong decision refuses; it never guesses');
+    const d = { action: 'delegate', thought: 't', tasks: [{ agent: 'Ada', title: 'x', prompt: 'y' }] };
+    const out = M.PRIMITIVE_HANDLERS.run_mission.prepare({
+        run: newRun(), spec: spec(), d, deps: {}, now: 1, knownResults: [], lend: {}
+    });
+    ok('it comes back as a refusal', !!out.refusal);
+    ok('…that names the action, so the miswiring is readable', /"delegate"/.test(out.refusal));
+    ok('…and says it is a fault in the build rather than in the decision',
+        /fault in this build/.test(out.refusal));
+    ok('…with a ledger line of its own', /reached the wrong handler/.test(out.ledger));
+    ok('nothing was built', !out.tasks);
+}
+
+{
+    console.log('\n-- ‼️ X-69 the round loop dispatches through the row, not through a chain');
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'missions.ts'), 'utf8');
+    ok('the work chain is gone', !/} else if \(d\.action === /.test(src));
+    ok('the parse dispatches through the table',
+        /const handler = PRIMITIVE_HANDLERS\[prim\.name\];/.test(src)
+        && /return handler\.parse\(\{ o, spec, adaptive, thought, action, prim, done \}\);/.test(src));
+    ok('the work dispatches through the same table',
+        /const prepare = PRIMITIVE_HANDLERS\[d\.action\]\.prepare;/.test(src));
+    ok('‼️ a handler reaches the engine only through what it is lent, never through `this`',
+        /lend: \{/.test(src) && !/function prepare[A-Za-z]+\(c: PrepareCtx\)[\s\S]{0,2400}?this\./.test(src));
+    ok('and each handler narrows the decision with a guard rather than a cast',
+        (src.match(/return wrongHandler\(d\);/g) || []).length === 5);
+}
+
 (async () => {
     await reviseTest();
     await reviewAndCompareTest();
