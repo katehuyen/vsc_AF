@@ -158,11 +158,11 @@
     // user is NOT being asked to decide (lead, pool, workdir, limits, engines,
     // approval) lives under this fold — open once and it stays open.
     let advOpen = false;
-    // suggestions for the model inputs — the user's agentFarm.modelAliases
-    // knowledge base (add a name once, every picker knows it); free text still allowed
+    // The vocabulary for an engine that publishes no catalog of its own — the
+    // user's agentFarm.modelAliases knowledge base (add a name once, every
+    // picker knows it).
     const modelSuggestions = () =>
         (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
-    const modelDatalist = () => `<datalist id="modelopts">${modelSuggestions().map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>`;
 
     /**
      * ‼️ U-64 — THE LAUNCH SHAPE, so this form asks `afEngine.js` what an
@@ -177,20 +177,62 @@
     });
     /** Which engine a member row really lands on: its own, else the mission's. */
     const effEngine = (agentId) => form.engines[agentId] || form.engine || 'claude';
-    /** The datalist id carrying that engine's live models — '' when it has none
-     *  and the alias list is still the honest suggestion. */
-    const modelListFor = (engine) => {
+    /**
+     * ‼️ U-97 — MODEL IS A SELECT HERE, NOT FREE TEXT OVER A DATALIST.
+     *
+     * The row used to carry `<input list="…">` against a `<datalist>`. Chromium
+     * anchors that popup on the flex PARENT rather than the box, so the second
+     * press drew the list at the far left of the row, and a repaint while it
+     * was open collapsed it to a single line. Every other launch surface in
+     * this extension — Tasks, Console, Queue — reads the same `AFEngine`
+     * catalog through a plain `<select>`; this form now does too.
+     *
+     * An engine that publishes no catalog falls back to the alias vocabulary
+     * rather than to nothing, and a value the catalog does not carry is KEPT as
+     * its own option: narrowing drops such a value deliberately when the engine
+     * changes, but a repaint must never lose it silently.
+     */
+    const modelListOf = (engine) => {
         const rows = (window.AFEngine.models(launchView(), engine) || []).filter(m => m.id);
-        return rows.length ? 'mo-' + engine : 'modelopts';
+        return rows.length
+            ? rows.map(m => ({ id: m.id, label: (m.label && m.label !== m.id) ? m.label : m.id }))
+            : modelSuggestions().map(m => ({ id: m, label: m }));
     };
-    /** One datalist per engine that publishes a catalog, drawn once per render.
-     *  A free-typed model is still allowed — this is suggestion, not a fence. */
-    const engineDatalists = () => (DATA.engines || []).map(e => {
-        const rows = (window.AFEngine.models(launchView(), e.id) || []).filter(m => m.id);
-        if (!rows.length) { return ''; }
-        return `<datalist id="mo-${C.esc(e.id)}">${rows.map(m =>
-            `<option value="${C.esc(m.id)}">${C.esc(m.label && m.label !== m.id ? m.label : '')}</option>`).join('')}</datalist>`;
-    }).join('');
+    /** Whether a value this row holds is one that engine really publishes. */
+    const modelKnown = (engine, sel) => !sel || modelListOf(engine).some(m => m.id === sel);
+    const modelOptsFor = (engine, sel, emptyLabel) => {
+        const list = modelListOf(engine);
+        // SHORTHAND: the box is ~150px, so the off-catalog value gets a mark it
+        // can carry and the sentence goes in the tooltip above it.
+        if (sel && !list.some(m => m.id === sel)) { list.unshift({ id: sel, label: '⚠ ' + sel }); }
+        return [`<option value="">${C.esc(emptyLabel || '— agent default —')}</option>`]
+            .concat(list.map(m =>
+                `<option value="${C.esc(m.id)}"${sel === m.id ? ' selected' : ''}>${C.esc(m.label)}</option>`))
+            .join('');
+    };
+    /**
+     * ‼️ U-97 — THE ROW IS MADE COHERENT BEFORE IT IS DRAWN AGAIN. Same rule
+     * the host applies at launch (`core/models.ts` narrowLaunch): a model the
+     * new engine does not publish is dropped, and an effort the resulting model
+     * does not offer falls back to that model's default or to nothing. Without
+     * it a row switched onto an engine with `takesEffort:false` kept its old
+     * word and the launch carried a hidden `--effort` that engine refuses.
+     *
+     * An engine that publishes NO catalog is not allowed to call a model wrong
+     * — it has no opinion to hold — so only the effort is checked there.
+     */
+    const narrowRow = (agentId) => {
+        const eng = effEngine(agentId);
+        const cat = (window.AFEngine.models(launchView(), eng) || []).filter(m => m.id);
+        if (cat.length) {
+            const fixed = window.AFEngine.narrow(launchView(), eng, form.models[agentId] || '', form.efforts[agentId] || '');
+            form.models[agentId] = fixed.model;
+            form.efforts[agentId] = fixed.effort;
+            return;
+        }
+        const rows = window.AFEngine.efforts(launchView(), eng, form.models[agentId] || '') || [];
+        if (!rows.some(e => e.id === (form.efforts[agentId] || ''))) { form.efforts[agentId] = ''; }
+    };
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
@@ -378,6 +420,10 @@
             const eRows = effortRowsFor(eng, form.models[a.id] || '');
             const noEffort = !eRows.length;
             const engLabel = (engines.find(e => e.id === eng) || {}).label || eng;
+            // ‼️ U-97 — THE ROW READS IN THE ORDER IT RESOLVES:
+            // Agent/role → Engine → Model → Effort → Permissions. Model depends
+            // on the engine and effort depends on the model, so a control never
+            // stands to the LEFT of the thing that decides what it may offer.
             return `
             <div class="tmrow">
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
@@ -386,22 +432,28 @@
                 <select id="en-${i}" class="mdl" data-engine="${C.esc(a.id)}"
                     title="Engine: which CLI this member's delegations run on — empty = the mission's engine below (now ${C.esc(engLabel)}). Changing it re-reads that engine's models and efforts into the two boxes on this row."
                     ${form.team[a.id] ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— mission engine —')}</select>
-                <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
-                    title="${C.esc(permTitle(form.perms[a.id] || ''))}"
-                    ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                <select id="md-${i}" class="mdl" data-model="${C.esc(a.id)}"
+                    title="${C.esc((form.models[a.id] || 'agent default')
+                        + (modelKnown(eng, form.models[a.id] || '') ? ''
+                            : ' — ⚠ ' + engLabel + ' does not publish this model. It was kept because it was already'
+                              + ' set; picking anything else here loses it, and the launch may be refused.')
+                        + '\n\nModel for this member\'s delegations. Empty = the agent\'s own default / model policy.'
+                        + ' The list is ' + engLabel + '\'s own catalog as this window last read it; change the engine'
+                        + ' beside it and a model that catalog does not carry is dropped rather than launched.')}"
+                    ${form.team[a.id] ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
                 <select id="ef-${i}" class="mdl" data-effort="${C.esc(a.id)}"
                     title="${C.esc(noEffort
                         ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
                         : effortTitle(form.efforts[a.id] || '', eRows))}"
                     ${form.team[a.id] && !noEffort ? '' : 'disabled'}>${noEffort
-                        // SHORTHAND: the box is 152px and the engine's name does
+                        // SHORTHAND: the box is narrow and the engine's name does
                         // not fit in it. The short form goes on the control, the
                         // long one is already in the tooltip above.
                         ? '<option value="">— no effort —</option>'
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
-                <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="${C.esc(modelListFor(eng))}"
-                    placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy. The suggestions are ${C.esc(engLabel)}'s own catalog as this window last read it; free text is still allowed."
-                    value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
+                <select id="pm-${i}" class="mdl" data-perm="${C.esc(a.id)}"
+                    title="${C.esc(permTitle(form.perms[a.id] || ''))}"
+                    ${form.team[a.id] ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
             </div>`;
         }).join('');
         // ‼️ NO FIELD HERE HAS A MAXIMUM, AND EVERY ONE OF THEM TAKES 0.
@@ -493,9 +545,11 @@
                 <code>--disallowedTools</code> and <code>--max-turns</code>, which the others do not have. Delegation engine
                 and planner engine are separate axes on purpose.</span></div>
             <div class="frow"><label>Planner model
-                <input type="text" id="f-planner" list="${C.esc(modelListFor('claude'))}" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
+                <select id="f-planner" title="${C.esc((form.plannerModel || 'the lead\'s own default')
+                    + '\n\nModel for the LEAD\'s planning calls only; delegates keep their own.'
+                    + ' The planner always runs on Claude Code, so this list is Claude\'s catalog.')}"
+                    >${modelOptsFor('claude', form.plannerModel, '— the lead\'s own default —')}</select></label>
                 <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's row, then the mission engine above, then that agent's own default for that engine, then your fleet defaults.</span></div>
-            ${modelDatalist()}${engineDatalists()}
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
@@ -1861,12 +1915,20 @@
                 .frow input[type=text], .frow textarea, .frow select { width:100%; max-width:640px; margin-top:3px; padding:5px 8px; }
                 .flabel { font-size:12px; display:block; margin-bottom:4px; }
                 .req { font-size:10px; color:var(--vscode-descriptionForeground); }
-                .tmrow { display:flex; gap:10px; align-items:center; margin:3px 0; }
-                .tmrow label { flex:0 0 180px; }
-                .tmrow input[type=text] { flex:1; max-width:340px; }
-                /* Two pickers on the row now (engine + permissions): fixed and
-                   equal, so the free-text fields keep the space they had. */
-                .tmrow select { flex:0 0 152px; margin-top:0; }
+                /* ‼️ U-97 — FOUR PICKERS ON THE ROW NOW (engine · model · effort
+                   · permissions) and a fixed 152px each overflowed the panel the
+                   moment it was docked narrow: the boxes were cut, not wrapped.
+                   They shrink together down to a floor that still shows a word,
+                   and the row wraps rather than clipping. */
+                .tmrow { display:flex; gap:8px; align-items:center; margin:0; padding:3px 0; flex-wrap:wrap; }
+                /* Wrapping is what keeps the controls whole in a docked panel,
+                   but a row that has wrapped ends up sitting directly above the
+                   NEXT member's checkbox and reads as if it belonged to it. One
+                   hairline says where a member starts, at no width cost. */
+                .tmrow + .tmrow { border-top:1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent); }
+                .tmrow label { flex:0 1 180px; min-width:130px; }
+                .tmrow input[type=text] { flex:2 1 170px; min-width:110px; max-width:340px; }
+                .tmrow select { flex:1 1 132px; min-width:96px; max-width:168px; margin-top:0; }
                 .limrow { display:flex; gap:14px; flex-wrap:wrap; }
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }
@@ -2059,11 +2121,28 @@
                 // and whether its effort box has anything in it, so changing it
                 // redraws the row. Same for the mission-wide engine below: every
                 // member that states none inherits it.
+                // ‼️ U-97 — and the row is NARROWED before it is drawn again,
+                // so an incompatible model/effort left over from the previous
+                // engine is dropped here rather than passed to a CLI that
+                // refuses it.
                 const en = document.getElementById('en-' + i);
-                if (en) { en.addEventListener('change', () => { readForm(); render(); }); }
+                if (en) { en.addEventListener('change', () => { readForm(); narrowRow(a.id); render(); }); }
+                // The model decides which efforts exist (`AFEngine.efforts`
+                // answers per engine AND per model), so it redraws the row too.
+                const md = document.getElementById('md-' + i);
+                if (md) { md.addEventListener('change', () => { readForm(); narrowRow(a.id); render(); }); }
             });
             const missionEng = document.getElementById('f-engine');
-            if (missionEng) { missionEng.addEventListener('change', () => { readForm(); render(); }); }
+            // ‼️ U-97 — the mission engine is the fallback for every member that
+            // states none, so changing it narrows exactly those rows. A member
+            // with its own engine is not touched.
+            if (missionEng) {
+                missionEng.addEventListener('change', () => {
+                    readForm();
+                    DATA.agents.forEach(a => { if (!form.engines[a.id]) { narrowRow(a.id); } });
+                    render();
+                });
+            }
         }
 
         document.querySelectorAll('.mrow').forEach(row =>

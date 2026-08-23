@@ -356,8 +356,14 @@ ok('openForm message reopens the form (New Mission command)', html().includes('i
 // list; `modelopts` (the alias knowledge base) is still drawn as the fallback
 // for an engine that has published no catalog to this window yet.
 ok('team rows carry a model field with the landing engine\'s suggestions',
-    html().includes('id="md-1"') && html().includes('list="mo-claude"')
-    && html().includes('id="mo-claude"') && html().includes('id="modelopts"'));
+    html().includes('<select id="md-1"') && html().includes('>opus<') && html().includes('>haiku<'));
+// ‼️ U-97 — AND NOT ONE <datalist> IS LEFT ON THE PAGE. The free-text box over
+// a datalist is what put the popup on the far left of the row on the second
+// press and collapsed it to one line on a repaint; a leftover tag would mean
+// some picker still uses it.
+ok('‼️ …and the form ships no <datalist> at all any more', !html().includes('<datalist'));
+ok('the planner model is a select on Claude\'s catalog, not a free-text box',
+    html().includes('<select id="f-planner"') && !html().includes('id="f-planner" list='));
 getEl('f-goal').value = 'Ship the docs site';
 getEl('f-lead').value = 'a0';
 getEl('tm-1').checked = true;
@@ -490,22 +496,62 @@ msgHandler({ data: { type: 'openForm' } });
 getEl('tm-1').checked = true;
 getEl('en-1').value = 'opencode';
 getEl('en-1').listeners.change();
+// ‼️ U-97 — the model box is a real <select> now, so "which catalog is it on"
+// is read off that one element rather than off a shared <datalist> id.
+const rowBox = (which, i) => {
+    const h = html();
+    const at = h.indexOf('<select id="' + which + '-' + i + '"');
+    return at < 0 ? '' : h.slice(at, h.indexOf('</select>', at));
+};
+const mdBox = (i) => rowBox('md', i);
+const efBox = (i) => rowBox('ef', i);
 ok('a member moved to another engine gets THAT engine\'s catalog in its model box',
-    html().includes('id="md-1"') && html().includes('list="mo-opencode"')
-    && html().includes('opencode/grok-code'));
+    mdBox(1).includes('opencode/grok-code') && !mdBox(1).includes('>opus<'));
 ok('‼️ …and an engine with no effort setting draws the box DEAD rather than offering five refusals',
     html().includes('— no effort —'));
 ok('…saying which engine decided that, in the tooltip the box is too narrow to carry',
     html().includes('OpenCode has no effort setting'));
+// ‼️ U-97 — THE ROW READS IN THE ORDER IT RESOLVES. Model depends on the engine
+// and effort depends on the model, so neither may stand to the LEFT of what
+// decides it. Permissions close the row: they depend on nothing above them.
+{
+    const h = html();
+    const at = (id) => h.indexOf('id="' + id + '-1"');
+    ok('‼️ the row is laid out Agent/role → Engine → Model → Effort → Permissions',
+        at('tm') < at('rl') && at('rl') < at('en') && at('en') < at('md')
+        && at('md') < at('ef') && at('ef') < at('pm'));
+}
+// ‼️ U-97 — AND A STALE PAIR IS DROPPED, NOT CARRIED. A row set to opus/high on
+// Claude and then moved to OpenCode used to keep both words and hand them to a
+// CLI that has neither — the effort silently, because the dead box still read
+// back whatever `form` remembered. `AFEngine.narrow` runs on the change now.
+msgHandler({ data: { type: 'openForm' } });
+getEl('tm-1').checked = true;
+getEl('en-1').value = '';
+getEl('md-1').value = 'opus';
+getEl('ef-1').value = 'high';
+getEl('en-1').listeners.change();
+ok('a pair the engine really has survives the redraw untouched',
+    mdBox(1).includes('value="opus" selected') && efBox(1).includes('value="high" selected'));
+getEl('en-1').value = 'opencode';
+getEl('en-1').listeners.change();
+// The row is drawn FROM `form`, so an empty box here is the proof that
+// narrowing wrote the drop back rather than only hiding it: a value still held
+// would come back as a `selected` option or as the "not in this catalog" one.
+ok('‼️ moving that row to an engine with neither drops both rather than launching them',
+    !mdBox(1).includes('>opus<') && !mdBox(1).includes('not in this catalog')
+    && efBox(1).includes('— no effort —') && !efBox(1).includes(' selected'));
+getEl('en-1').value = 'opencode';
+getEl('en-1').listeners.change();
 getEl('en-1').value = '';
 getEl('f-engine').value = 'opencode';
 getEl('f-engine').listeners.change();
 ok('‼️ the mission-wide engine reaches every member that states none of its own',
-    html().includes('list="mo-opencode"'));
+    mdBox(1).includes('opencode/grok-code'));
 getEl('f-engine').value = '';
 getEl('f-engine').listeners.change();
 ok('…and back: a member on Claude is offered Claude\'s models and its efforts again',
-    html().includes('list="mo-claude"') && html().includes('>high<'));
+    mdBox(1).includes('>opus<') && mdBox(1).includes('>haiku<') && html().includes('>high<'));
 msgHandler({ data: { type: 'created' } });
 
 // ---------- U-64: the list says which kind of run each row is ----------
