@@ -527,6 +527,12 @@ export function buildSpeakerPrompt(opts: {
     /** ‼️ X-77 — how much of the record `context` is; said out loud so the
      *  speaker does not read a deliberate silence as an empty room. */
     visibility?: MessageVisibility;
+    /**
+     * ‼️ X-78 — this turn is the one that ENDS the conversation, and the stated
+     * reason it ends on. The close was a fact of the order and of the record and
+     * reached everybody except the one agent whose message has to make it true.
+     */
+    closing?: { reason: string; meaning?: string };
 }): string {
     const kind = MESSAGE_INTENTS[opts.intent];
     const name = (id: string) => (opts.nameOf?.(id) ?? id);
@@ -588,6 +594,25 @@ export function buildSpeakerPrompt(opts: {
             + 'wanted here. Say what you actually think rather than what you expect will be agreed.');
     }
     if (opts.mandate?.trim()) { parts.push(opts.mandate.trim().startsWith('\n') ? opts.mandate : `\n${opts.mandate}`); }
+    // ‼️ X-78 — THE LAST TURN IS TOLD IT IS THE LAST TURN.
+    //
+    // The lead ordered an ending, the record was written to expect one and the
+    // reader was going to be shown one — and the speaker, the only party that
+    // could actually produce it, was told nothing: it wrote an ordinary turn,
+    // which was then filed as the message the conversation ended on. Since X-76
+    // the close lands only with a delivered message, so what this turn says IS
+    // the ending; a speaker that does not know that writes "so, next we should…"
+    // as the final line of the record.
+    if (opts.closing?.reason) {
+        parts.push('\n## This is the last turn in this conversation\n'
+            + `It closes here, on the stated reason "${opts.closing.reason}"`
+            + (opts.closing.meaning ? ` — ${opts.closing.meaning}` : '') + '. '
+            + 'Nothing is said after you. Write the message that ENDS it: say where it actually got '
+            + 'to and what rests on what, in your own words — do not announce that it is closing, and '
+            + 'do not leave a next step hanging for a turn that will not come. If what you find as you '
+            + 'write is that the reason does not hold, say so plainly and why: this turn is the record '
+            + 'of the ending either way, so your reading of it is what the reader will have.');
+    }
     if (opts.referenced.length) {
         parts.push(`\n## What you are ${opts.intent === 'response' ? 'answering' : 'addressing'}\n`
             + opts.referenced.map(block).join('\n\n'));

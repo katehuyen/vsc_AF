@@ -3387,9 +3387,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 for (const step of round.steps) {
                     const a = rec.actions.find(x => x.actionId === step.id);
                     if (!a || step.status === 'done' || step.status === 'failed' || step.status === 'cancelled') { continue; }
+                    // ‼️ X-74 — THE REF IS RESTORED BEFORE ANYTHING IS DECIDED
+                    // ABOUT THE STEP. The journal records which run an action
+                    // started at the moment it starts it, and the snapshot
+                    // learns it one line later — so the crash that lands in
+                    // between leaves a step whose work is running under a name
+                    // the snapshot never got. Everything below (the child's
+                    // verdict, the chain's reason, and the whole question of
+                    // whether this action owns anything at all) reads that
+                    // field, so it is put back first. It is a recovery, not an
+                    // overwrite: a snapshot that already knows its ref keeps it.
+                    if (a.refId) {
+                        if (a.kind === 'mission') { step.missionRunId ??= a.refId; }
+                        else if (a.kind === 'workflow') { step.workflowRunId ??= a.refId; }
+                        else { step.taskId ??= a.refId; }
+                    }
                     if (a.outcome === 'interrupted') {
+                        // ‼️ X-74 — AND "FATE UNKNOWN" IS NOT ALWAYS THE HONEST
+                        // ANSWER. A chain or a child whose subsystem has no
+                        // record of the id at all never started: the id was
+                        // allocated and written down, and the window closed
+                        // before the first task existed. Saying "unknown" there
+                        // is a lead told to fear duplicating work that was never
+                        // done — and the difference is free to know, because the
+                        // same lookup that failed to find it is the proof.
+                        const never = !!a.refId && (a.kind === 'mission' || a.kind === 'workflow')
+                            && !missionExternalLookup(a.kind, a.refId);
                         step.status = 'failed';
-                        step.note = 'interrupted by window reload — fate unknown';
+                        step.note = never
+                            ? 'the window closed before this '
+                            + (a.kind === 'mission' ? 'child objective' : 'chain')
+                            + ' started — nothing ran and nothing was spent'
+                            : 'interrupted by window reload — fate unknown';
                         step.failure = missionFailure('interrupted', step, step.note);
                         // ‼️ …AND WHAT IT HAD ALREADY SPENT. A child objective or
                         // a chain caught mid-flight has a ledger of its own; the
@@ -3711,14 +3740,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             step.failure = missionFailure('request-refused', step, bad[0]);
                             continue;
                         }
-                        const childRun = startMission(child);
-                        childRun.parentRunId = run.id;
-                        childRun.rootRunId = run.rootRunId ?? run.id;
-                        childRun.sourceActionId = step.id;
-                        childRun.depth = step.child.depth;
+                        // ‼️ X-74 — NAMED, BONDED AND ON THE DISK BEFORE IT RUNS.
+                        // The child used to be launched first and bonded after,
+                        // so its planner was already spending while its parent,
+                        // its root and the action that ordered it lived only in
+                        // this window's memory. Now the id is allocated, both
+                        // sides of the bond are written, the journal is told —
+                        // and only then does anything start. A crash anywhere in
+                        // that order leaves either nothing at all, or a child
+                        // exactly one action owns.
+                        const childRun = prepareMission(child, {
+                            parentRunId: run.id,
+                            rootRunId: run.rootRunId ?? run.id,
+                            sourceActionId: step.id,
+                            depth: step.child.depth
+                        });
                         step.missionRunId = childRun.id;
                         step.status = 'running';
                         traceEvent(run, 'action.started', { actionId: step.id, kind: 'mission', refId: childRun.id });
+                        missionChanged();
+                        launchMission(child, childRun);
                         continue;
                     }
                     if (step.kind === 'workflow') {
@@ -3732,7 +3773,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // The MISSION's project, not the window's — a wave fires
                         // whenever the planner decides to, and the chain it
                         // starts is work for the same project the mission is.
-                        const wRunId = taskManager.runWorkflow(wf, { projectId: spec.projectId });
+                        // ‼️ X-74 — and the chain's id is allocated before its
+                        // first task exists, for the same reason as a child
+                        // objective's: the ref reaches the parent's snapshot
+                        // and its journal BEFORE any work is running, so a
+                        // window that closes mid-start leaves a chain that
+                        // either never began or is owned by exactly one action.
+                        // Starting it is idempotent, so the order can be
+                        // replayed from wherever it broke.
+                        const wRunId = taskManager.prepareWorkflowRun(wf, { projectId: spec.projectId });
                         if (!wRunId) {
                             step.status = 'failed';
                             step.note = 'the workflow has no steps';
@@ -3742,6 +3791,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         step.workflowRunId = wRunId;
                         step.status = 'running';
                         traceEvent(run, 'action.started', { actionId: step.id, kind: 'workflow', refId: wRunId });
+                        missionChanged();
+                        taskManager.startWorkflowRun(wRunId, wf);
                         continue;
                     }
                     const agent = agents.find(a => a.id === step.agentId)
@@ -4205,6 +4256,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const launchMission = (spec: MissionSpec, run: MissionRun, initialMsg?: string): void => {
+        // ‼️ X-74 — ONE ENGINE PER RUN ID. `prepareMission` and `launchMission`
+        // are two calls with a save in between precisely so the sequence can be
+        // replayed after a crash; a replay that started a second engine on a
+        // run already running would have two planners writing one record.
+        if (missionEngines.has(run.id)) { return; }
         const engine = new MissionEngine(spec, run, missionTeamHints(spec), missionDepsFor(spec, run));
         missionEngines.set(run.id, engine);
         void engine.execute(initialMsg).catch(e => {
@@ -4232,14 +4288,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
     };
 
-    const startMission = (spec: MissionSpec): MissionRun => {
+    /**
+     * ‼️ X-74 — A CHILD OBJECTIVE IS NAMED AND BONDED BEFORE IT RUNS.
+     *
+     * The bond — who its parent is, which action of that parent ordered it, how
+     * deep it sits — used to be written onto the run AFTER `startMission` had
+     * already launched the planner and saved the store. Every field of it was
+     * therefore a fact held only in memory while real work was in flight: a
+     * window closing in that gap left a child objective spending money with no
+     * parent, and a parent whose step pointed at nothing.
+     *
+     * So the run and its bond are built together and the caller decides when
+     * they hit the disk — which for a delegation is the same `missionChanged()`
+     * that persists the parent's own step ref, in ONE save. Both sides of the
+     * bond are written at once or neither is.
+     */
+    const prepareMission = (
+        spec: MissionSpec,
+        bond?: { parentRunId: string; rootRunId: string; sourceActionId: string; depth: number }
+    ): MissionRun => {
         missionStore.specs.push(spec);
         const run: MissionRun = {
             id: newMissionId(), specId: spec.id, status: 'running',
-            rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
+            rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now(),
+            ...(bond ?? {})
         };
         missionStore.runs.push(run);
         openMissionTrace(spec, run);
+        return run;
+    };
+
+    const startMission = (spec: MissionSpec): MissionRun => {
+        const run = prepareMission(spec);
         missionChanged();
         launchMission(spec, run);
         return run;

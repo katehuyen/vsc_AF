@@ -3942,6 +3942,29 @@ export class TaskManager implements vscode.Disposable {
      * started — an empty chain — rather than a run nobody can name.
      */
     runWorkflow(w: FarmWorkflow, opts?: { projectId?: string | null }): string | undefined {
+        const runId = this.prepareWorkflowRun(w, opts);
+        if (!runId) { return undefined; }
+        this.startWorkflowRun(runId, w);
+        return runId;
+    }
+
+    /**
+     * ‼️ X-74 — A RUN IS NAMED BEFORE IT IS STARTED, so a caller can write the
+     * bond down first.
+     *
+     * A mission step that starts a chain has to record WHICH chain it started,
+     * and it could not: `runWorkflow` started the first task and returned the
+     * id in one breath, so the ref reached the parent's snapshot strictly after
+     * real work was already running. A window closing in between left a chain
+     * doing work no action owned — the parent read "interrupted, fate unknown"
+     * while the chain finished perfectly and charged for it.
+     *
+     * Two calls, so the caller owns the moment in between: this one allocates
+     * the id and the run's record and starts NOTHING; `startWorkflowRun` starts
+     * it, and does so once. Anything that has no bond to persist keeps calling
+     * `runWorkflow` and cannot tell the difference.
+     */
+    prepareWorkflowRun(w: FarmWorkflow, opts?: { projectId?: string | null }): string | undefined {
         if (!w.steps.length) { return undefined; }
         const runId = newId();
         this.runCounts.set(runId, 0);
@@ -3958,8 +3981,21 @@ export class TaskManager implements vscode.Disposable {
                 ? (opts.projectId ?? null)
                 : (this.opts.activeProjectId?.() ?? null)
         });
-        this.routeToStep(w, 0, {}, runId);
         return runId;
+    }
+
+    /**
+     * ‼️ X-74 — AND STARTING IT IS IDEMPOTENT, because the caller in between may
+     * have crashed and come back. A run that already made a row is already
+     * started; a run that already ended is not restarted by asking again. So
+     * "allocate → persist the bond → start with the same id" can be replayed
+     * from any point in it and buys the chain exactly once.
+     */
+    startWorkflowRun(runId: string, w: FarmWorkflow): void {
+        if (!this.runRecords.has(runId)) { return; }
+        if (this.runRecords.get(runId)?.ended) { return; }
+        if (this.tasks.some(t => t.workflowRunId === runId)) { return; }
+        this.routeToStep(w, 0, {}, runId);
     }
 
     /** ‼️ X-71/X-73 — one record per run, persisted. A run absent from here

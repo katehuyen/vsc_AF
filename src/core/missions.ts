@@ -23,8 +23,8 @@ import {
     MissionMessage, newConversationId, newMessageId, refuseMessage
 } from './missionConversation';
 import {
-    councilBrief, councilDigest, councilExit, councilOf, MissionCouncil, newCouncilId,
-    normalizeOptions, readVoteChoice, refuseCouncilTurn
+    chairCall, COUNCIL_EXITS, councilBrief, councilDigest, councilExit, councilOf, MissionCouncil,
+    newCouncilId, normalizeOptions, readVoteChoice, refuseCouncilTurn
 } from './missionCouncil';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
@@ -3315,14 +3315,20 @@ export class MissionEngine {
         // membership, the chair's call and the closed set of ways out. Two
         // questions, kept apart, because a council is optional and every rule
         // below would be wrong for an ordinary conversation.
+        // ‼️ X-78 — THE ROUND IS ASKED ABOUT ONCE, WHOLE. Asking per speaker
+        // measured every one of them against the same before-the-round counts,
+        // so a wide round could walk over a cap that had one turn left and
+        // could carry one `close` on three separate turns.
         const council = conv ? councilOf(run.councils, conv.id) : undefined;
         if (council) {
-            for (const from of d.from) {
-                const refusal = refuseCouncilTurn(
-                    council, { from, refs: d.refs, ...(d.close !== undefined ? { close: d.close } : {}) },
-                    run.messages, roster.map(m => ({ id: m.agentId, name: m.agentName })));
-                if (refusal) { return { refusal }; }
-            }
+            const refusal = refuseCouncilTurn(
+                council,
+                {
+                    from: d.from, refs: d.refs, intent: d.intent,
+                    ...(d.close !== undefined ? { close: d.close } : {})
+                },
+                run.messages, roster.map(m => ({ id: m.agentId, name: m.agentName })));
+            if (refusal) { return { refusal }; }
         }
 
         const all = conversationMessages(run.messages, conv!.id);
@@ -3341,6 +3347,16 @@ export class MissionEngine {
                 to: conv!.participants.join(', ')
             });
         }
+
+        // ‼️ X-78 — the two things the SPEAKER was the last to hear about: the
+        // chair's own call, named as the instruction that governs this turn, and
+        // the fact that this turn is the one the conversation ends on.
+        const chairSaid = council && council.chair !== 'lead'
+            ? chairCall(council, run.messages) : undefined;
+        const exitName = d.close !== undefined ? councilExit(d.close) : undefined;
+        const closing = d.close
+            ? { reason: d.close, ...(exitName ? { meaning: COUNCIL_EXITS[exitName] } : {}) }
+            : undefined;
 
         const tasks: PlannerTaskReq[] = [];
         for (const from of d.from) {
@@ -3404,9 +3420,11 @@ export class MissionEngine {
                     // resolved into the likeliest one.
                     ...(council ? {
                         mandate: councilBrief(council, {
-                            nameOf, voting: d.intent === 'vote'
+                            nameOf, voting: d.intent === 'vote',
+                            ...(chairSaid && from !== council.chair ? { call: chairSaid } : {})
                         })
-                    } : {})
+                    } : {}),
+                    ...(closing ? { closing } : {})
                 }),
                 // ‼️ SPEAKING DOES NOT WRITE. A turn produces a message, and
                 // that is why participants can speak at the same time at all —

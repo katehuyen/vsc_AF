@@ -362,6 +362,180 @@ async function closeTest() {
     eq('the synthesis rests on real message ids', (k.verdictRefs || []).join(','), 'm3,m4');
 }
 
+// ‼️ X-78 — AND THE TWO THINGS THE SPEAKER WAS THE LAST TO HEAR ABOUT. The
+// close and the chair's mandate were facts of the order, of the record and of
+// every surface that reads them — and the one agent whose message has to make
+// them true was told neither.
+async function speakerToldTest() {
+    console.log('\n-- ‼️ X-78 the turn that ENDS a council is told that it does');
+    const run = newRun();
+    const replies = [
+        open({ from: ['Ada', 'Rev'] }),
+        say({ from: 'Ada', intent: 'synthesis', refs: ['m1', 'm2'], ask: 'sum up', close: 'consensus' }),
+        FINISH
+    ];
+    const { d } = deps(replies, { Ada: 'One file.', Rev: 'Fragments.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    const opening = run.rounds[0].steps[0].prompt;
+    const closer = run.rounds[1].steps[0].prompt;
+    ok('the closing speaker is told this is the last turn',
+        /## This is the last turn in this conversation/.test(closer));
+    ok('…on the stated reason, and in the council\'s own words for it',
+        closer.includes('"consensus"') && closer.includes(M.COUNCIL_EXITS.consensus));
+    ok('…that nothing is said after it, so it does not leave a next step hanging',
+        /Nothing is said after you/.test(closer));
+    ok('‼️ …and that it may say the reason does not hold — the record is the ending either way',
+        /the reason does not hold/.test(closer));
+    ok('an ordinary turn is told none of that', !/last turn in this conversation/.test(opening));
+    ok('and the council really closed on it', !!run.councils[0].closedAt);
+}
+
+async function chairMandateTest() {
+    console.log('\n-- ‼️ X-78 the chair\'s call is the instruction; the lead\'s ask is how it was ordered');
+    const run = newRun();
+    const replies = [
+        open({ chair: 'Rev', from: ['Rev'], intent: 'question', ask: 'who wants to open?' }),
+        // the lead's ask pulls the other way from what the chair actually asked
+        say({ from: 'Ada', intent: 'response', refs: ['m1'], ask: 'ignore the question and price it instead' }),
+        FINISH
+    ];
+    const { d } = deps(replies, { Rev: 'Ada — which shape, and why?', Ada: 'One file.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    const called = run.rounds[1].steps[0].prompt;
+    ok('the speaker is told which message called it into this turn',
+        /called into this turn by the chair: message \[m1\]/.test(called));
+    ok('…that the chair\'s words are the instruction',
+        /That is your instruction for this turn/.test(called));
+    ok('‼️ …and which of the two governs when they differ',
+        /where the two differ, the chair chairs/.test(called));
+    ok('the lead\'s ask is still there, as what it is',
+        called.includes('ignore the question and price it instead'));
+    const chairsOwn = run.rounds[0].steps[0].prompt;
+    ok('the chair itself is not told it was called by anybody',
+        !/called into this turn by the chair/.test(chairsOwn));
+}
+
+async function failedCloserTest() {
+    console.log('\n-- ‼️ X-78 a closing turn that said nothing closed nothing');
+    const run = newRun();
+    const replies = [
+        open({ from: ['Ada', 'Rev'] }),
+        say({ from: 'Ada', intent: 'synthesis', refs: ['m1', 'm2'], ask: 'sum up', close: 'consensus' }),
+        FINISH
+    ];
+    const { d } = deps(replies, {
+        Ada: (s) => (s.title.includes('synthesis') ? '' : 'One file.'),
+        Rev: 'Fragments.'
+    });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+
+    const k = run.councils[0];
+    ok('the council is still open — the verdict message does not exist', !k.closedAt);
+    ok('…and carries no exit it never reached', !k.exit);
+    ok('the conversation is open too', !run.conversations[0].closedAt);
+    const closer = run.messages[2];
+    eq('the closing turn is on the record as failed', closer.state, 'failed');
+    ok('…and says the closing did not happen, which is what the lead has to act on',
+        /still open/.test(closer.note || ''));
+}
+
+// ====== ‼️ X-78 the round is weighed WHOLE, the chair's call is addressed,
+// ====== and an exit is a claim about the record
+{
+    console.log('\n-- ‼️ X-78 a cap counts turns, and a round is ordered whole or not at all');
+    const AGENTS = POOL.map(p => ({ id: p.agentId, name: p.agentName }));
+    const kc = (over = {}) => ({
+        id: 'k1', conversationId: 'c1', question: 'q', chair: 'lead',
+        members: ['a1', 'a2', 'a3'], maxTurns: 4, openedAt: 1, ...over
+    });
+    const msg = (id, over = {}) => ({
+        id, conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [],
+        state: 'delivered', orderedAt: 1, excerpt: 'x', ...over
+    });
+    const refuse = (req, messages, council = kc()) =>
+        M.refuseCouncilTurn(council, req, messages, AGENTS);
+
+    const two = [msg('m1'), msg('m2', { from: 'a2' })];
+    const three = [...two, msg('m3', { from: 'a3' })];
+    const four = [...three, msg('m4')];
+
+    eq('a round that fits inside the cap is allowed',
+        refuse({ from: ['a1', 'a2'], refs: [] }, two), '');
+    ok('‼️ a two-speaker round with ONE turn left is refused whole, not half-run',
+        /has 1 of its 4 turns left and this round orders 2/.test(refuse({ from: ['a1', 'a2'], refs: [] }, three)));
+    ok('…and the refusal says what WOULD fit rather than only that this does not',
+        /order 1, or make the next turn the one that closes it/.test(refuse({ from: ['a1', 'a2'], refs: [] }, three)));
+    eq('…while the same round one turn earlier is fine',
+        refuse({ from: ['a1', 'a2'], refs: [] }, two), '');
+    ok('past the cap a turn that does not close is refused, and the cap is named in figures',
+        /has used all 4 of its turns/.test(refuse({ from: ['a1'], refs: [] }, four)));
+    eq('…and ONE closing turn is allowed past it, or the council could never end',
+        refuse({ from: ['a1'], refs: ['m1'], intent: 'synthesis', close: 'hard limit' }, four), '');
+    ok('‼️ …but two closers past the cap are not: an ending is one turn by one speaker',
+        /ends in ONE turn by ONE speaker/.test(
+            refuse({ from: ['a1', 'a2'], refs: ['m1'], intent: 'synthesis', close: 'hard limit' }, four)));
+    ok('…and the reason is stated — the second would be said into a closed council',
+        /had already closed/.test(
+            refuse({ from: ['a1', 'a2'], refs: ['m1'], intent: 'synthesis', close: 'hard limit' }, four)));
+    ok('‼️ a multi-speaker close UNDER the cap is refused the same way — the cap is not the reason',
+        /ends in ONE turn by ONE speaker/.test(
+            refuse({ from: ['a1', 'a2'], refs: ['m1'], intent: 'synthesis', close: 'hard limit' }, two)));
+    ok('a speaker outside the cast is still refused first, whatever the round orders',
+        /is not a member of council/.test(refuse({ from: ['a1', 'lead', 'a9'], refs: [] }, two)));
+
+    console.log('\n-- ‼️ X-78 the chair CALLED somebody, and that is on the record too');
+    const chaired = kc({ chair: 'a2' });
+    const narrow = [msg('m1', { from: 'a2', to: ['a1'], intent: 'question', excerpt: 'Ada, why?' })];
+    const room = [msg('m1', { from: 'a2', to: [], intent: 'question', excerpt: 'anyone?' })];
+    eq('the speaker the chair called may answer it',
+        refuse({ from: ['a1'], refs: ['m1'], intent: 'response' }, narrow, chaired), '');
+    ok('‼️ the one it did NOT call is refused even though it cites the call',
+        /put "m1" to Ada, not to Cy/.test(
+            refuse({ from: ['a3'], refs: ['m1'], intent: 'proposal' }, narrow, chaired)));
+    ok('…and the lead is told who may answer it instead of guessing',
+        /Order Ada to answer it, or have the chair call Cy first/.test(
+            refuse({ from: ['a3'], refs: ['m1'], intent: 'proposal' }, narrow, chaired)));
+    eq('a call to the ROOM may be answered by any member — the ordinary case',
+        refuse({ from: ['a3'], refs: ['m1'], intent: 'proposal' }, room, chaired), '');
+    ok('a turn that cites nothing the chair said is refused before any of that',
+        /has to answer what the chair asked for/.test(
+            refuse({ from: ['a1'], refs: [], intent: 'proposal' }, narrow, chaired)));
+    eq('and the chair itself needs no call from anybody',
+        refuse({ from: ['a2'], refs: [], intent: 'proposal' }, narrow, chaired), '');
+
+    console.log('\n-- ‼️ X-78 an exit is a claim about the record, so the record is read');
+    const objection = [msg('m1'),
+        msg('m2', { from: 'a2', to: ['a1'], intent: 'challenge', refs: ['m1'], excerpt: 'no' })];
+    ok('‼️ "consensus" over an unanswered challenge is refused, and the challenge is named',
+        /m2 \(Rev's challenge\) is still unanswered/.test(
+            refuse({ from: ['a1'], refs: ['m1'], intent: 'synthesis', close: 'consensus' }, objection)));
+    ok('…and the honest exits are offered rather than left to be invented',
+        /close on "no new information" or "sufficient evidence", which claim less/.test(
+            refuse({ from: ['a1'], refs: ['m1'], intent: 'synthesis', close: 'consensus' }, objection)));
+    eq('…but a closing turn that SETTLES the objection by naming it may claim consensus',
+        refuse({ from: ['a1'], refs: ['m2'], intent: 'response', close: 'consensus' }, objection), '');
+    ok('‼️ …and naming it with an intent that settles nothing does not buy the claim',
+        /still unanswered/.test(
+            refuse({ from: ['a1'], refs: ['m2'], intent: 'proposal', close: 'consensus' }, objection)));
+    ok('‼️ "decision clear" that names nothing it rests on is refused',
+        /has to name what it rests on/.test(
+            refuse({ from: ['a1'], refs: [], intent: 'proposal', close: 'decision clear' }, two)));
+    eq('…and stands when the verdict points at real turns',
+        refuse({ from: ['a1'], refs: ['m1', 'm2'], intent: 'synthesis', close: 'decision clear' }, two), '');
+    eq('…or when the council already carries a delivered synthesis it rests on',
+        refuse({ from: ['a1'], refs: [], intent: 'proposal', close: 'decision clear' },
+            two, kc({ verdictRefs: ['m1', 'm2'] })), '');
+    eq('"hard limit" claims nothing about the question, so it needs neither refs nor a quiet room',
+        refuse({ from: ['a1'], refs: [], intent: 'proposal', close: 'hard limit' }, objection), '');
+    eq('…and "chair abort" is the same: it reports what happened to the council',
+        refuse({ from: ['a1'], refs: [], intent: 'proposal', close: 'chair abort' }, objection), '');
+    ok('a made-up reason is still refused before any of this is read',
+        /not a sentence of your own/.test(
+            refuse({ from: ['a1'], refs: [], intent: 'proposal', close: 'we were done' }, objection)));
+}
+
 // ============================ 5. a council never decides the objective
 {
     console.log('\n-- the mandate says out loud what a council is not for');
@@ -461,6 +635,9 @@ function castNameTest() {
     await chairTest();
     await capTest();
     await closeTest();
+    await speakerToldTest();
+    await chairMandateTest();
+    await failedCloserTest();
     castNameTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

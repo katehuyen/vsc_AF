@@ -207,6 +207,80 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
         /SETTLED_ON_RESUME = new Set\(\['done', 'failed', 'cancelled', 'stopped'\]\)/.test(ext));
 }
 
+// ‼️ X-74 — THE BOND IS WRITTEN DOWN BEFORE THE WORK IS STARTED.
+//
+// A workflow step and a child objective were STARTED first and recorded second:
+// `runWorkflow` / `startMission` were called, they made real work run, and only
+// afterwards did the parent's step learn which run it owned, the child learn who
+// its parent was, and the journal learn that anything had begun. Every one of
+// those facts therefore lived in one window's memory while money was being
+// spent. A crash in that gap left a chain or a child working for nobody — and
+// the reload could not repair it, because the one place that knew which run
+// belonged to which action was the journal, and the journal's ref was thrown
+// away by the reconciliation that read it.
+{
+    console.log('\n-- ‼️ X-74 the reload can say WHICH run an action owns');
+    const settled = f('r-settled.jsonl');
+    writeLines(settled, [
+        line(1, 'action.created', { actionId: 'b1', kind: 'mission', title: 'child' }),
+        line(2, 'action.started', { actionId: 'b1', kind: 'mission', refId: 'run-kid' }),
+        line(3, 'action.settled', { actionId: 'b1', kind: 'mission', outcome: 'done', refId: 'run-kid' }),
+        ''
+    ]);
+    const done = T.reconcileRun(T.readTrace(settled), 3);
+    eq('‼️ an action the journal saw settle names the run it settled',
+        byId(done, 'b1').refId, 'run-kid');
+
+    const rec = T.reconcileRun(read, 7, (kind) =>
+        (kind === 'task' ? { status: 'done', costUSD: 0.5, tokens: 100 } : undefined));
+    eq('one recovered from its own store names it too', byId(rec, 'a1').refId, 'task-1');
+    eq('‼️ and so does one whose fate is unknown — that is the case it exists for',
+        byId(rec, 'a3').refId, 'run-child');
+    eq('…the chain as well', byId(rec, 'a2').refId, 'wr-1');
+    const created = f('r-created.jsonl');
+    writeLines(created, [
+        line(1, 'action.created', { actionId: 'c1', kind: 'workflow', title: 'a chain nobody started' }),
+        ''
+    ]);
+    const none = T.reconcileRun(T.readTrace(created), 1);
+    ok('an action that never started points at nothing rather than at a guess',
+        !!byId(none, 'c1') && byId(none, 'c1').refId === undefined);
+
+    console.log('\n-- ‼️ X-74 the host allocates, bonds, saves, and only then starts');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const rising = (hay, keys) => {
+        const at = keys.map(k => hay.indexOf(k));
+        return at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
+    };
+    const kid = ext.slice(ext.indexOf('const childRun = prepareMission(child'), ext.indexOf('if (step.kind === \'workflow\')'));
+    ok('a child objective is prepared, bonded, traced and SAVED before it is launched',
+        rising(kid, ['prepareMission(child', 'parentRunId: run.id', 'sourceActionId: step.id',
+            'step.missionRunId = childRun.id', 'traceEvent(run, \'action.started\'',
+            'missionChanged();', 'launchMission(child, childRun);']));
+    const chain = ext.slice(ext.indexOf('const wRunId = taskManager.prepareWorkflowRun'));
+    ok('a chain is named, bonded, traced and saved before its first task exists',
+        rising(chain.slice(0, 900), ['prepareWorkflowRun(wf', 'step.workflowRunId = wRunId',
+            'traceEvent(run, \'action.started\'', 'missionChanged();',
+            'taskManager.startWorkflowRun(wRunId, wf);']));
+    ok('‼️ nothing calls the one-breath starters on the delegation path any more',
+        !/const childRun = startMission\(/.test(ext) && !/taskManager\.runWorkflow\(wf/.test(ext));
+    ok('and a run cannot be launched twice under the same id',
+        /if \(missionEngines\.has\(run\.id\)\) \{ return; \}/.test(ext));
+
+    console.log('\n-- ‼️ X-74 …and the reload puts the ref back before it judges the step');
+    ok('the journal\'s ref is restored onto a step that never got it',
+        /step\.missionRunId \?\?= a\.refId;/.test(ext)
+        && /step\.workflowRunId \?\?= a\.refId;/.test(ext)
+        && /step\.taskId \?\?= a\.refId;/.test(ext));
+    ok('…before anything reads those fields to decide what happened',
+        ext.indexOf('step.missionRunId ??= a.refId;')
+        < ext.indexOf('if (a.outcome === \'interrupted\') {'));
+    ok('‼️ …and a subsystem that has no record of the id at all says nothing ran, '
+        + 'rather than frightening the lead with "fate unknown"',
+        /nothing ran and nothing was spent/.test(ext)
+        && /const never = !!a\.refId && \(a\.kind === 'mission' \|\| a\.kind === 'workflow'\)/.test(ext));
+}
+
 // ‼️ X-72 — THE MONEY A CLOSED WINDOW NEVER COUNTED.
 //
 // Reconciliation restores what each step really spent, but `remainingBudget`

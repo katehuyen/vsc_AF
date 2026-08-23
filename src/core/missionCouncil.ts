@@ -29,7 +29,7 @@
  */
 
 import {
-    conversationMessages, MissionConversation, MissionMessage, openThreads
+    conversationMessages, intentKind, MissionConversation, MissionMessage, openThreads
 } from './missionConversation';
 
 /**
@@ -153,7 +153,14 @@ export function chairCall(
  */
 export function refuseCouncilTurn(
     council: MissionCouncil,
-    req: { from: string; refs: readonly string[]; close?: string },
+    req: {
+        /** ‼️ X-78 — THE WHOLE ROUND, never one speaker at a time. */
+        from: readonly string[];
+        refs: readonly string[];
+        close?: string;
+        /** what the ordered turn is, so an exit can be read against what it will settle */
+        intent?: string;
+    },
     messages: readonly MissionMessage[],
     knownAgents: readonly { id: string; name: string }[]
 ): string {
@@ -163,20 +170,50 @@ export function refuseCouncilTurn(
         return `Council "${council.id}" is closed (${council.exit ?? 'no reason recorded'}). `
             + 'Open another one if the question is still live.';
     }
-    if (req.from !== 'lead' && !council.members.includes(req.from)) {
-        return `"${name(req.from)}" is not a member of council "${council.id}" `
-            + `(${council.members.map(name).join(', ')}). A council's members are fixed when it opens.`;
+    for (const from of req.from) {
+        if (from !== 'lead' && !council.members.includes(from)) {
+            return `"${name(from)}" is not a member of council "${council.id}" `
+                + `(${council.members.map(name).join(', ')}). A council's members are fixed when it opens.`;
+        }
+    }
+    if (req.close !== undefined && !councilExit(req.close)) {
+        return `A council closes for one of these stated reasons, not a sentence of your own: `
+            + `${councilExitMenu()}. "${req.close}" is none of them.`;
     }
     // ‼️ THE CAP STOPS THE DEBATE, NOT THE ENDING. A closing turn is a turn, so
     // a cap that counted it would lock the council open for ever: every exit
     // refused for being one turn too many, including the exit that exists for
     // exactly this. One turn is allowed past the cap and only if it CLOSES.
+    //
+    // ‼️ X-78 — AND THE ROUND IS WEIGHED WHOLE. This was asked once per speaker
+    // against the spent count as it stood BEFORE the round, so three speakers
+    // ordered together each read "one turn left" and all three were allowed:
+    // the cap was a ceiling on rounds, not on turns, and a wide round walked
+    // over it by as many turns as it had speakers. A round is ordered whole or
+    // not at all — the same reason every speaker is refusal-checked before any
+    // of them is recorded — so it is the round's SIZE that is measured here.
     const spent = councilTurns(messages, council.conversationId);
-    if (spent >= council.maxTurns && req.close === undefined) {
-        return `Council "${council.id}" has used all ${council.maxTurns} of its turns. `
+    const remaining = council.maxTurns - spent;
+    // ‼️ …AND AN ENDING IS ONE TURN BY ONE SPEAKER. `close` is a property of the
+    // decision, so a three-speaker round carried it on all three: three closing
+    // turns past the cap, of which the record can honour exactly one (the first
+    // delivered) while the other two are bought and spent on a council that is
+    // already closed. The grace the cap gives is a turn, not a round.
+    if (req.close !== undefined && req.from.length > 1) {
+        return `A council ends in ONE turn by ONE speaker, and this round orders ${req.from.length} `
+            + `(${req.from.map(name).join(', ')}) all carrying "close". Order the closing turn on its own — `
+            + 'the others would be paid for and said into a council that had already closed.';
+    }
+    if (req.close === undefined && req.from.length > remaining) {
+        return remaining <= 0
+            ? `Council "${council.id}" has used all ${council.maxTurns} of its turns. `
             + 'The next turn has to close it: send one with "close" set to "hard limit", or state its '
             + 'answer from what was said and close it with "decision clear". A closing turn is allowed '
-            + `past the cap. The exits are: ${councilExitMenu()}.`;
+            + `past the cap. The exits are: ${councilExitMenu()}.`
+            : `Council "${council.id}" has ${remaining} of its ${council.maxTurns} turns left and this round `
+            + `orders ${req.from.length} (${req.from.map(name).join(', ')}). A round is ordered whole or not `
+            + `at all, so it cannot be part-funded: order ${remaining}, or make the next turn the one that `
+            + `closes it. The exits are: ${councilExitMenu()}.`;
     }
     // ‼️ A CHAIR THAT IS NOT THE LEAD REALLY CHAIRS. The lead still orders every
     // turn — it is the only thing running — so "the chair chose the next
@@ -191,22 +228,83 @@ export function refuseCouncilTurn(
     // member stating a position before any of them has seen another — would
     // otherwise be refused for not answering a chair that had not spoken, which
     // is the one moment in a debate when nobody could have.
-    if (council.chair !== 'lead' && req.from !== council.chair && said.length) {
+    if (council.chair !== 'lead' && said.length) {
         const call = chairCall(council, messages);
-        if (!call) {
-            return `Council "${council.id}" is chaired by ${name(council.chair)}, and it has not spoken yet. `
-                + 'The chair opens the turn it wants — order a turn from the chair first, or open an '
-                + 'unchaired council if you mean to direct this yourself.';
-        }
-        if (!req.refs.includes(call.id)) {
-            return `Council "${council.id}" is chaired by ${name(council.chair)}, so a turn by somebody else `
-                + `has to answer what the chair asked for: put "${call.id}" in "refs". `
-                + 'That is how the speaker is shown what the chair actually wrote rather than your account of it.';
+        for (const from of req.from) {
+            if (from === council.chair) { continue; }
+            if (!call) {
+                return `Council "${council.id}" is chaired by ${name(council.chair)}, and it has not spoken yet. `
+                    + 'The chair opens the turn it wants — order a turn from the chair first, or open an '
+                    + 'unchaired council if you mean to direct this yourself.';
+            }
+            if (!req.refs.includes(call.id)) {
+                return `Council "${council.id}" is chaired by ${name(council.chair)}, so a turn by somebody else `
+                    + `has to answer what the chair asked for: put "${call.id}" in "refs". `
+                    + 'That is how the speaker is shown what the chair actually wrote rather than your account of it.';
+            }
+            // ‼️ X-78 — AND THE CHAIR'S CALL IS ADDRESSED. Citing it was the
+            // whole test, so the lead could put any member up to answer a call
+            // the chair had put to somebody else and the record would read as
+            // though the chair had chosen the speaker. Who the chair called is
+            // already a fact of the record — `to` on its own message — so it is
+            // read rather than assumed. Empty `to` means the chair asked the
+            // room, which is the ordinary case; the rule only bites on a call
+            // that named people.
+            if (call.to.length && !call.to.includes(from)) {
+                return `${name(call.from)} put "${call.id}" to ${call.to.map(name).join(', ')}, `
+                    + `not to ${name(from)}, so ${name(from)} cannot be the turn that answers the chair's call. `
+                    + `Order ${call.to.map(name).join(' or ')} to answer it, or have the chair call `
+                    + `${name(from)} first.`;
+            }
         }
     }
-    if (req.close !== undefined && !councilExit(req.close)) {
-        return `A council closes for one of these stated reasons, not a sentence of your own: `
-            + `${councilExitMenu()}. "${req.close}" is none of them.`;
+    return refuseCouncilExit(council, req, messages, name);
+}
+
+/**
+ * ‼️ X-78 — AN EXIT IS A CLAIM ABOUT THE RECORD, SO THE RECORD IS READ.
+ *
+ * The seven ways out do not say the same thing. `hard limit` and `chair abort`
+ * report what happened to the council and claim nothing about the question;
+ * `consensus` and `decision clear` claim the question was SETTLED, and a run
+ * that reads them afterwards — a lead planning its next action, a person
+ * reading the transcript — takes them at their word. Nothing checked them: a
+ * lead could label a debate `consensus` over a challenge nobody had answered,
+ * or `decision clear` on a turn that named nothing it rested on, and the
+ * council's own record would contradict its stated ending.
+ *
+ * What is checkable is checked, and only that. Whether the participants really
+ * agree is not a property of the record; whether anything is still unanswered,
+ * and whether the closing turn points at what it rests on, are.
+ */
+function refuseCouncilExit(
+    council: MissionCouncil,
+    req: { from: readonly string[]; refs: readonly string[]; close?: string; intent?: string },
+    messages: readonly MissionMessage[],
+    name: (id: string) => string
+): string {
+    const exit = req.close === undefined ? undefined : councilExit(req.close);
+    if (!exit) { return ''; }
+    // What this closing turn will itself settle when it lands: a settling intent
+    // closes the threads it names, so an objection the closer is answering is
+    // not an objection left open.
+    const settles = req.intent ? intentKind(req.intent)?.settles === true : false;
+    const open = openThreads(messages, council.conversationId)
+        .filter(m => !(settles && req.refs.includes(m.id)));
+    if (exit === 'consensus' && open.length) {
+        return `"consensus" says the participants agree and the agreement is in the record, but `
+            + `${open.map(m => `${m.id} (${name(m.from)}'s ${m.intent})`).join(', ')} `
+            + `${open.length > 1 ? 'are' : 'is'} still unanswered. Answer `
+            + `${open.length > 1 ? 'them' : 'it'} first, have this turn settle `
+            + `${open.length > 1 ? 'them' : 'it'} by naming ${open.length > 1 ? 'them' : 'it'} in "refs", `
+            + 'or close on "no new information" or "sufficient evidence", which claim less.';
+    }
+    if ((exit === 'consensus' || exit === 'decision clear')
+        && !req.refs.length && !(council.verdictRefs ?? []).length) {
+        return `"${exit}" says the question was settled by what was SAID, so the turn that closes on it `
+            + 'has to name what it rests on: put the message ids in "refs". A verdict that points at '
+            + 'nothing cannot be checked by the reader it is written for — if there is nothing to point '
+            + 'at, the honest exits are "no new information", "sufficient evidence" or "hard limit".';
     }
     return '';
 }
@@ -347,7 +445,11 @@ export function tallyVotes(council: MissionCouncil): CouncilTally {
  */
 export function councilBrief(
     council: MissionCouncil,
-    opts: { nameOf?: (id: string) => string; voting?: boolean } = {}
+    opts: {
+        nameOf?: (id: string) => string; voting?: boolean;
+        /** ‼️ X-78 — the chair's own message this turn was called by, when somebody else chairs. */
+        call?: MissionMessage;
+    } = {}
 ): string {
     const name = (id: string) =>
         (id === 'lead' ? 'the lead' : (opts.nameOf?.(id) ?? id));
@@ -357,6 +459,22 @@ export function councilBrief(
         `It is chaired by ${name(council.chair)}. A council decides its own question and nothing else — `
         + 'it does not judge whether the mission succeeded.'
     ];
+    // ‼️ X-78 — AND THE CHAIR'S INSTRUCTION IS NAMED AS THE ONE THAT GOVERNS.
+    //
+    // The turn was already made to cite the chair's message, so its words were
+    // in front of the speaker — as one more block in the record, indistinguish-
+    // able from any other, under a heading saying what the LEAD wanted. Whether
+    // the two agree is not something the engine can decide (that is a reading of
+    // two pieces of prose), so the one thing it can do it does: say which of
+    // them chairs this council. A speaker told that reads a conflict as a
+    // conflict instead of quietly obeying the last thing it was told.
+    if (opts.call) {
+        parts.push(`\nYou were called into this turn by the chair: message [${opts.call.id}], `
+            + `${name(opts.call.from)}'s own words, is below. That is your instruction for this turn. `
+            + 'The lead\'s "what the lead wants from this turn" is how the turn was ordered, not what '
+            + 'the council asked of you — where the two differ, the chair chairs, so answer the chair '
+            + 'and say plainly that you are doing so.');
+    }
     if (opts.voting && council.options?.length) {
         parts.push('\nThis turn is a VOTE. Name ONE of these, in these words, and then say in a sentence or '
             + 'two why, and how sure you are:\n'

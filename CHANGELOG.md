@@ -2,6 +2,58 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.268.0 - X-78/X-74: a council round is weighed whole, and a run is named before it is started (2026-08-23)
+
+**A council's cap counted rounds, not turns.** Every speaker of one decision was
+checked against the same before-the-round count, so a round that ordered three
+speakers with one turn left read "one turn left" three times and all three ran.
+The same held for the one exception that lets a council end: `close` is a
+property of the decision, so a three-speaker round carried it on all three
+turns — three closings past the cap, of which the record can honour exactly one
+while the other two are paid for and said into a council that has already
+closed. The round is now weighed whole, once, and an ending is one turn by one
+speaker. A round that does not fit is refused with what would fit.
+
+**The chair's call was cited, not addressed.** A turn by anybody other than the
+chair had to name the chair's last message in `refs` — and that was the whole
+test, so the lead could put any member up to answer a call the chair had put to
+somebody else, and the transcript read as though the chair had chosen the
+speaker. Who the chair called is already on the record; it is read now.
+
+**An exit claimed things nobody checked.** `consensus` and `decision clear` say
+the question was SETTLED, and a lead reading the record afterwards takes them at
+their word. A council could be closed on `consensus` over a challenge nobody had
+answered, or on `decision clear` by a turn that named nothing it rested on. Both
+are refused, with the honest exits offered by name. Whether the participants
+really agree is not a property of the record and is not guessed at; whether
+anything is still unanswered is, and so is whether the closing turn points at
+what it rests on.
+
+**And the speaker was the last to know.** The close reached the order, the
+record and every surface that reads them, and not the one agent whose message
+has to make it true — so a turn was written as an ordinary one and then filed as
+the message the conversation ended on. The closing turn is now told that it is
+the last, on which stated reason, and in the council's own words for it. The
+same for the chair's mandate: the speaker is told which message called it and
+that where the chair's instruction and the lead's ask differ, the chair chairs.
+
+**X-74 — a chain and a child objective were started before they were written
+down.** `runWorkflow` and `startMission` started real work and returned the id
+in one breath, so the parent's step ref, the child's parent bond and the
+journal's "this began" all reached the disk strictly after money was being
+spent. A window closing in that gap left a chain or a child working for nobody:
+the parent read "interrupted — fate unknown" while the child finished perfectly
+and charged for it. The order is now allocate → bond → journal → save → start,
+the start is idempotent so the sequence can be replayed from wherever it broke,
+and one run can never carry two engines.
+
+**The reload could not repair it either**, because the one place that knew which
+run belonged to which action was the journal — and the reconciliation that read
+it dropped the ref. It is carried now and put back onto the step before anything
+is decided about it. A subsystem that has no record of the id at all says
+plainly that nothing ran, instead of frightening the lead with a fate it could
+have known.
+
 ## 3.267.0 - Adaptive Mission architecture and operation guide (2026-08-23)
 
 A new 37-section, source-verified handbook documents the Adaptive Mission

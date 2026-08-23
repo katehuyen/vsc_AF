@@ -277,5 +277,42 @@ revived.workflowId = w3.id; revived.workflowRunId = r3; revived.stepIndex = 1; r
 eq('‼️ a queued task on the same run id means running, memo or not',
     mgr.workflowRunState(r3).status, 'running');
 
+// ---- 7. ‼️ X-74 the run is named before it is started ----
+//
+// A caller that has to write down WHICH chain it started — a mission step is
+// the one that does — could not: the id came back from the same call that had
+// already made the first task, so the bond reached the disk strictly after real
+// work was running. A window closing in that gap left a chain working for
+// nobody. Two calls with the caller's own save in between fix it, and the start
+// is idempotent because the caller in between may have crashed and come back.
+console.log('\n-- ‼️ X-74 a run is named before it is started, and starting it is idempotent');
+const w9 = mgr.addWorkflow('W9', [step('one'), step('two')]);
+const mine = (r) => mgr.tasks.filter(t => t.workflowRunId === r).length;
+const r9 = mgr.prepareWorkflowRun(w9);
+ok('preparing a run answers with the id the caller will write down',
+    typeof r9 === 'string' && r9.length > 0);
+eq('‼️ …and NOTHING has been started under it', mine(r9), 0);
+const prepared = mgr.workflowRunState(r9);
+ok('the run is already something the reload can ask about', !!prepared && prepared.title === 'W9');
+eq('…with no steps to its name yet', prepared.steps.length, 0);
+eq('an empty chain still cannot be prepared — nothing to allocate an id for',
+    mgr.prepareWorkflowRun(mgr.addWorkflow('W9empty', [])), undefined);
+
+mgr.startWorkflowRun(r9, w9);
+eq('starting it makes its first step, exactly one', mine(r9), 1);
+mgr.startWorkflowRun(r9, w9);
+eq('‼️ starting it AGAIN buys nothing — the allocate/save/start order can be replayed',
+    mine(r9), 1);
+completeWith(mgr, queued(mgr, w9.id, 0), 'ONE');
+mgr.startWorkflowRun(r9, w9);
+eq('…nor does a replay part-way through the chain restart it from the top',
+    mgr.workflowRunState(r9).steps.filter(x => x.index === 0).length, 1);
+
+const before2 = mine(r2);
+mgr.startWorkflowRun(r2, w2);
+eq('a run that already ended is not restarted by asking again', mine(r2), before2);
+mgr.startWorkflowRun('never-prepared', w9);
+ok('an id nobody prepared starts nothing at all', mine('never-prepared') === 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

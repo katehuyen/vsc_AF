@@ -970,6 +970,15 @@ export interface ReconciledAction {
     /** what we now believe, and on whose word */
     outcome: MissionActionOutcome | 'interrupted';
     from: 'trace' | 'task' | 'unknown';
+    /**
+     * ‼️ X-74 — THE REAL RECORD THIS ACTION OWNS: a task id, a chain's run id, a
+     * child objective's run id. The journal has always carried it — it is how
+     * the lookup above found the work at all — and it was then dropped on the
+     * floor, so a snapshot that crashed between starting a child and writing
+     * the ref down could never learn it. The reload knew which run belonged to
+     * which action and had no way to say so.
+     */
+    refId?: string;
     costUSD?: number;
     tokens?: number;
     outputFile?: string;
@@ -1038,6 +1047,7 @@ export function reconcileRun(
         if (a.outcome) {
             actions.push({
                 actionId: a.actionId, kind: a.kind, outcome: a.outcome, from: 'trace',
+                ...(a.refId ? { refId: a.refId } : {}),
                 ...(a.costUSD !== undefined ? { costUSD: a.costUSD } : {}),
                 ...(a.tokens !== undefined ? { tokens: a.tokens } : {}),
                 ...(a.outputFile ? { outputFile: a.outputFile } : {})
@@ -1050,6 +1060,7 @@ export function reconcileRun(
             recovered++;
             actions.push({
                 actionId: a.actionId, kind: a.kind, outcome: settled, from: 'task',
+                ...(a.refId ? { refId: a.refId } : {}),
                 ...(rec.costUSD !== undefined ? { costUSD: rec.costUSD } : {}),
                 ...(rec.tokens !== undefined ? { tokens: rec.tokens } : {}),
                 ...(rec.outputFile ? { outputFile: rec.outputFile } : {})
@@ -1065,6 +1076,7 @@ export function reconcileRun(
             // honestly unknown; the figures are what they are.
             actions.push({
                 actionId: a.actionId, kind: a.kind, outcome: 'interrupted', from: 'unknown',
+                ...(a.refId ? { refId: a.refId } : {}),
                 ...(rec?.costUSD !== undefined ? { costUSD: rec.costUSD } : {}),
                 ...(rec?.tokens !== undefined ? { tokens: rec.tokens } : {})
             });
