@@ -2404,6 +2404,15 @@
       }
     },
     {
+      "capability": "missionsPanel.ts#missionSessions",
+      "ui": [
+        "page:missionsPanel.ts#missionSessions"
+      ],
+      "ops": [
+        "sessions.page"
+      ]
+    },
+    {
       "capability": "missionsPanel.ts#openAgent",
       "ui": [
         "page:missionsPanel.ts#openAgent"

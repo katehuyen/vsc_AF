@@ -1,16 +1,62 @@
-v11.66 - 3.272.0: X-32 A fazı paketlendi, doğrulandı, kuruldu
+v11.67 - x-95: bir misyonun oturumları artık damgalı, ayrı ve tek tıkla toplanabiliyor
 
-X-32 phase A is complete: the mission composer now says what it will actually
-do, and the member rows are the answer rather than one of two places the same
-preference could live.
+A mission opens a session for its planner and one for every delegation it hands
+out. All of them landed in the one Sessions table, undivided, and on a farm that
+runs missions they are the majority of it: the log of a person's own dialogs
+became unreadable, and the other sessions could no longer be followed.
 
-  U-97  the worker row reads in the order it resolves        (3.271.0)
-  U-102 an empty pool is two answers, and it says which      (3.271.0)
-  U-103 one resolver, and it is the host's                   this build
-  U-100 the orchestrator is one subject, so it is one block  this build
-  U-101 the rows are the single source of truth              this build
+Worse, they did not even look alike. A delegation carried "launchedBy" and read
+as 🤖 automation; the PLANNER has no task, no costSessionFile and runs in the
+lead agent's own folder, so sessionOrigin fell through to "agentId" and filed the
+orchestrator's own conversation as 🧑 a person's. That is the "some of them look
+like I opened them" in the item: one mission, two glyphs, neither of them saying
+which mission.
 
-212 files · 13770 checks · 0 failed. Parity 16/16, gapBudget unchanged (38).
-VSIX verify 13/13; extensions.json = muvusoft.agent-farm 3.272.0.
+THE STAMP. SessionLauncher gains missionId + missionTitle, and publishLaunchers
+now walks the mission store as well as the task ledger: the planner's own lane,
+every step's runSessionId, every conversation message. A session the task walk
+already named keeps its label (a delegation's own title says more than the
+mission's) and is only enriched. runSessionId is the durable half — it is written
+the moment a delegation binds and OUTLIVES the task row retention removes, so a
+month-old mission keeps its stamp after its tasks are gone. Republished on
+missionEmitter too, or the planner's lane would have waited for some unrelated
+task to move.
 
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+THE THIRD GLYPH. sessionMission() is the only reader, so the table, the viewer
+and the bridge cannot drift. A mission row wears 🎯 — never 🧑, never 🤖, and no
+moon on it — and its hover opens with WHICH mission rather than "Automation".
+`origin` is untouched: "who started it" still has exactly two answers, and this
+is a different question about the same run.
+
+OUT BY DEFAULT, AND SAYING SO. filters.missions is the same three-state shape as
+agents/engines (null = no filter, so a mission started a minute ago is not
+excluded by yesterday's list of ids) with the opposite default: []. It is an
+exclusion, not a scope — rows that are nobody's mission are untouched by it.
+Because it hides rows on a fresh panel it gets a permanent 🎯 chip beside the
+origin switch, counting what it is leaving out; the Filters chip is not inflated,
+for the same reason the origin scope never inflated it.
+
+‼️ Letting them in WIDENS THE ORIGIN SCOPE with it. Every mission session is
+`auto` and the table opens on 🧑 User, so the chip admitted rows the scope beside
+it threw straight back out: "list them all" changed nothing on screen. Caught in
+the render, not in a string test.
+
+THE BUTTON. A run's detail header gets "🎯 Sessions" → the Sessions page scoped
+to that run and nothing else (missions: [id] AND missionsOnly), with the panel
+opened so the reader can see what is narrowing the list, and the mission named in
+the page's own subtitle. It opens the page that already IS the right surface for
+a list of sessions rather than growing a second table in the mission detail.
+
+BRIDGE. sessions.page takes `mission` (refused on an unknown run id rather than
+opening an empty page); missions.status hands back `sessions` — every lane the
+run opened, each with its role, its transcript file and its own figures, gathered
+off the same stamp the page filters on. parity: one new entry, gapBudget 38.
+
+Found while wiring it: test/lib_page_dom.js only dropped its element cache on an
+#app write, so a component that owns one container (the sessions table owns
+#sessblock) re-wired the SAME cached element objects on every repaint and stacked
+a listener each time. A control whose markup happened not to change between two
+renders then fired twice per click and appeared dead — two fixtures had been
+shipping screenshots of a filter panel that was never open, with every assertion
+about them passing. A region rewrite now drops its own children, as a browser
+does, and the sessions "filters open" pictures show a panel for the first time.

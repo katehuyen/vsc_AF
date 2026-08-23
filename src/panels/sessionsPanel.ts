@@ -42,6 +42,19 @@ export interface SessionsPageScope {
     /** Pre-set the table's text filter (a project name, an agent, a phrase). */
     project?: string;
     agentName?: string;
+    /**
+     * ‼️ X-95 — OPEN ON ONE MISSION'S SESSIONS AND NOTHING ELSE.
+     *
+     * Not the same gesture as `project`, which NARROWS a list the reader is
+     * already looking at. A mission's sessions are kept OUT of this page by
+     * default, so opening scoped to one is the only way most of them are ever
+     * seen — and "the sessions of this mission" has to mean exactly that: no
+     * dialogs of your own left mixed in, or the button is a filter somebody
+     * still has to finish by hand.
+     */
+    missionId?: string;
+    /** That mission's title, for the page's own subtitle — the rows carry it too. */
+    missionTitle?: string;
 }
 
 function buildData(
@@ -67,7 +80,10 @@ function buildData(
             sessions: sessions.length,
             active: sessions.filter(s => deps.index.isSessionActive(s, now)).length
         },
-        scope: { project: scope?.project ?? '', agentName: scope?.agentName ?? '' },
+        scope: {
+            project: scope?.project ?? '', agentName: scope?.agentName ?? '',
+            missionId: scope?.missionId ?? '', missionTitle: scope?.missionTitle ?? ''
+        },
         sessions: sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name)),

@@ -60,6 +60,31 @@ const data = () => ({
             // S-41 — `mode` is what the host now sends for such a run, and it
             // is what makes the row Auto without the moon.
             launchedBy: { kind: 'task', label: 'ZEN sürüm notu', mode: 'interactive' }
+        }),
+        // ‼️ X-95 — the third kind of row. Two missions, so the picker has
+        // something to choose BETWEEN and the 🎯 chip has a count to draw; both
+        // are hidden by default, which is exactly why they are in the fixture —
+        // the only way to look at them is the chip that admits they are gone.
+        row(8, {
+            engine: '', models: ['claude-opus-5'], origin: 'auto', headless: true,
+            title: 'Oturum 8 — misyon planlayıcısının kendi hattı',
+            entrypoint: 'sdk-cli',
+            launchedBy: { kind: 'mission', label: 'Görüntüleyiciyi bitir — planner' },
+            mission: { id: 'run-a', title: 'Görüntüleyiciyi bitir' }
+        }),
+        row(9, {
+            engine: 'codex', models: ['gpt-5.6-sol'], origin: 'auto', headless: true,
+            title: 'Oturum 9 — misyonun bir delegasyonu',
+            entrypoint: 'sdk-cli',
+            launchedBy: { kind: 'mission', label: 'Testleri yaz' },
+            mission: { id: 'run-a', title: 'Görüntüleyiciyi bitir' }
+        }),
+        row(10, {
+            engine: '', models: ['claude-haiku-4-5'], origin: 'auto', headless: true,
+            title: 'Oturum 10 — başka bir misyonun delegasyonu',
+            entrypoint: 'sdk-cli',
+            launchedBy: { kind: 'mission', label: 'Belgeleri güncelle' },
+            mission: { id: 'run-b', title: 'Belgeleri yeniden yaz' }
         })
     ],
     sessionTableN: 200
@@ -81,6 +106,26 @@ const variants = () => [
         id: 'origins', label: 'Sessions — every origin, filters open (🧑 · 🤖 · 🤖🌙)',
         data: data(),
         act: (r) => { r.query('.af-oswitch')[0].click(); r.query('.af-filter')[0].click(); }
+    },
+    // ‼️ X-95 — the mission rows and the row of controls that governs them. They
+    // are invisible in every variant above, by design: this is the only one that
+    // shows what the 🎯 chip is hiding, the glyph it is hiding it behind, and
+    // the picker that lets one mission through at a time.
+    {
+        id: 'missions', label: 'Sessions — mission sessions listed (🎯), filters open',
+        data: data(),
+        act: (r) => { r.query('.af-mswitch')[0].click(); r.query('.af-filter')[0].click(); }
+    },
+    // …and what a mission's own Sessions button opens: this run and nothing
+    // else, with both halves of the mission axis set for the reader to see.
+    {
+        id: 'mission-scope', label: 'Sessions — opened from one mission',
+        data: Object.assign(data(), {
+            scope: {
+                project: '', agentName: '',
+                missionId: 'run-a', missionTitle: 'Görüntüleyiciyi bitir'
+            }
+        })
     }
 ];
 

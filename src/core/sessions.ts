@@ -104,6 +104,27 @@ export interface SessionTurn {
     models: string[];
 }
 
+/**
+ * ‼️ X-95 — WHICH OF AGENT FARM'S OWN MECHANISMS STARTED A SESSION, and — when
+ * that mechanism was a mission — WHICH MISSION.
+ *
+ * `kind`/`label`/`mode` are the launcher itself. The two mission fields are the
+ * STAMP: a mission opens and closes many sessions (its planner's own headless
+ * lane and one per delegation), and until they carried the run's id there was no
+ * way to gather them, to keep them out of the log of a person's own dialogs, or
+ * to tell one mission's sessions from another's. They are set together and only
+ * on `kind === 'mission'` — see `sessionMission`, which is the only reader.
+ */
+export interface SessionLauncher {
+    kind: string;
+    label: string;
+    mode?: string;
+    /** The mission RUN this session belongs to (`kind === 'mission'` only). */
+    missionId?: string;
+    /** That run's spec title, so a surface can name the mission without the store. */
+    missionTitle?: string;
+}
+
 export interface SessionInfo {
     file: string;
     sessionId: string;
@@ -237,7 +258,7 @@ export interface SessionInfo {
      * `kind` is the mechanism ('task' · 'schedule' · 'trigger' · 'mission');
      * `label` is what a person calls it — the schedule's name, the task's title.
      */
-    launchedBy?: { kind: string; label: string; mode?: string };
+    launchedBy?: SessionLauncher;
     /**
      * ‼️ S-32 — THE SCAN COULD NOT READ THIS TRANSCRIPT IN FULL.
      *
@@ -363,6 +384,26 @@ export function sessionOrigin(s: OriginFacts | SessionInfo): SessionOrigin {
 }
 
 /**
+ * ‼️ X-95 — IS THIS SESSION A MISSION'S, AND WHOSE.
+ *
+ * The third fact about a run, beside "who started it" and "was there a screen".
+ * A mission opens a session for its planner and one for every delegation it
+ * hands out, so on a farm that runs missions they are the majority of the log —
+ * and until they were stamped they sat in the same table as a person's own
+ * dialogs with nothing to sort them by. Read off the launcher, which is the
+ * recorded fact; never guessed from a title or a folder.
+ *
+ * Returns undefined for every session that is not a mission's, so `if` on it.
+ */
+export function sessionMission(
+    s: Pick<SessionInfo, 'launchedBy'>
+): { id: string; title: string } | undefined {
+    const l = s.launchedBy;
+    if (!l || l.kind !== 'mission' || !l.missionId) { return undefined; }
+    return { id: l.missionId, title: l.missionTitle || l.label || l.missionId };
+}
+
+/**
  * ‼️ S-41 — THE FOUR FACTS THE TWO RULES ARE MADE OF, AND WHY THEY ARE REQUIRED.
  *
  * `Pick<SessionInfo, …>` made every one of them optional, so `sessionOrigin({
@@ -380,7 +421,7 @@ export function sessionOrigin(s: OriginFacts | SessionInfo): SessionOrigin {
 export interface OriginFacts {
     entrypoint: string | undefined;
     consoleHosted: boolean | undefined;
-    launchedBy: { kind: string; label: string; mode?: string } | undefined;
+    launchedBy: SessionLauncher | undefined;
     agentId: string | undefined;
 }
 
@@ -908,7 +949,7 @@ export class SessionIndex implements vscode.Disposable {
     /** Session ids the Console hosted — see setConsoleSessions. */
     private consoleIds = new Set<string>();
     /** Session id → the farm mechanism that started it — see setLaunchers. */
-    private launchers = new Map<string, { kind: string; label: string; mode?: string }>();
+    private launchers = new Map<string, SessionLauncher>();
     /** ‼️ S-31 — the runs Agent Farm started, written at the spawn. */
     private bindings: LaunchBinding[] = [];
     /** Files the scope filter dropped, as little of them as a binding needs to
@@ -1229,12 +1270,18 @@ export class SessionIndex implements vscode.Disposable {
      * so `sessionOrigin` reads it before anything else, and the origin tooltip
      * can name the schedule instead of saying "automation" and stopping.
      */
-    setLaunchers(map: Record<string, { kind: string; label: string; mode?: string }>): void {
+    setLaunchers(map: Record<string, SessionLauncher>): void {
         const next = new Map(Object.entries(map ?? {}).filter(([id, v]) => !!id && !!v));
         const same = next.size === this.launchers.size
             && [...next].every(([id, v]) => {
                 const had = this.launchers.get(id);
-                return had && had.kind === v.kind && had.label === v.label && had.mode === v.mode;
+                // ‼️ X-95 — the mission stamp is part of "the same launcher".
+                // Left out, a run that only learned its mission id (the planner
+                // session is stamped a beat after the task's) compared equal and
+                // the index never re-marked: the stamp arrived and no surface
+                // was told.
+                return had && had.kind === v.kind && had.label === v.label && had.mode === v.mode
+                    && had.missionId === v.missionId && had.missionTitle === v.missionTitle;
             });
         if (same) { return; }
         this.launchers = next;

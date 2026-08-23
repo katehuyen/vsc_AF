@@ -3042,6 +3042,45 @@ const { opencodeStatus, syncToOpencode } =
                     && /WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON/.test(src));
             }
 
+            // ‼️ X-95 — A MISSION'S SESSIONS, AS A SET AND AS A PAGE.
+            //
+            // A mission is many conversations — the planner's own lane and one
+            // per delegation — and they were readable only one at a time, off
+            // `planner.sessionId` or a step's record. "Show me what this mission
+            // has been saying" is the question both a person and an agent ask,
+            // and neither had an answer. Both routes are here because they must
+            // not be able to disagree: the read gathers on the same stamp the
+            // page filters on.
+            {
+                const stBlock = src.slice(src.indexOf("op: 'missions.status'"),
+                    src.indexOf("op: 'missions.conversation'"));
+                ok('‼️ X-95 — missions.status hands back every session the run opened',
+                    /sessions: index\.allWithExternal\(\)/.test(stBlock)
+                    && /sessionMission\(s\)\?\.id === r\.id/.test(stBlock));
+                ok('…each saying which lane it is, so the planner is not lost among the delegates',
+                    /role: s\.sessionId === r\.plannerSessionId \? 'planner' : 'delegate'/.test(stBlock));
+                ok('…and the describe points at the op that puts the same set on screen',
+                    /sessions\.page \{ mission/.test(stBlock.replace(/'\s*\+\s*'/g, '')));
+
+                const pgBlock = src.slice(src.indexOf("op: 'sessions.page'"),
+                    src.indexOf("op: 'sessions.interrupt'"));
+                ok('‼️ sessions.page takes a mission run id and opens the page on it',
+                    /mission\? \(run id\)/.test(pgBlock.replace(/'\s*\+\s*'/g, ''))
+                    && /missionId \? \{ missionId \} : \{\}/.test(pgBlock));
+                ok('…and says out loud that this scope ADDS rows rather than narrowing, and why',
+                    /excluded from this page by default/.test(pgBlock.replace(/'\s*\+\s*'/g, '')));
+                ok('‼️ …and refuses a run id that does not exist, rather than opening an empty page',
+                    /need\(!!missionStore\.run\(missionId\), `no mission run/.test(pgBlock));
+
+                // ‼️ The stamp itself: without it every one of the above is a
+                // filter over a field nothing writes.
+                ok('‼️ …and the launcher map really carries the mission id, for the planner too',
+                    /stamp\(run\.plannerSessionId, `\$\{title\} — planner`\)/.test(src)
+                    && /missionId: t\.missionId, missionTitle: missionTitleOf\(t\.missionId\)/.test(src));
+                ok('…and is republished when a MISSION moves, not only when a task does',
+                    /missionEmitter\.event\(\(\) => publishLaunchers\(\)\)/.test(src));
+            }
+
             // ‼️ X-45 — the real op exists, and its describe carries the two
             // things a caller cannot work out for itself: what `health` can say
             // and that `resume` may REFUSE. An agent that reads "resume: refuse"

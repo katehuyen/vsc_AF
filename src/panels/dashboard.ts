@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
-import { SessionIndex, SessionInfo, sessionOrigin, sessionHeadless } from '../core/sessions';
+import { SessionIndex, SessionInfo, sessionMission, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { PricingEngine, contextWindowFor, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
@@ -180,6 +180,12 @@ export function sessionRowPool(
         // terminal. Decided host-side by core/sessions.ts, never re-derived in
         // the page, so every table and the viewer say the same thing.
         headless: sessionHeadless(s),
+        // ‼️ X-95 — and the THIRD fact about a run: a mission opened it. Null on
+        // every session that is not a mission's. The table draws its own glyph
+        // for these (never 🧑/🤖, which they would be indistinguishable under)
+        // and leaves them out by default: on a farm that runs missions they are
+        // the majority of the log, and the log is first of all a person's own.
+        mission: sessionMission(s) ?? null,
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],
@@ -267,8 +273,14 @@ export function sessionRowPool(
     // The shelf is not a top-N: a pinned session is on the table because the
     // user put it there, whatever it costs or how long ago it ran.
     rows.filter(r => r.pinned).forEach(r => pool.add(r));
-    for (const origin of ['user', 'auto'] as const) {
-        const lane = rows.filter(r => r.origin === origin);
+    // ‼️ X-95 — THREE LANES, NOT TWO. A mission's sessions are `auto`, so they
+    // used to compete with the schedules and triggers for the same top-N — and
+    // one busy mission could take the whole automation lane, leaving the pool
+    // with nothing to show the moment somebody turned the mission filter OFF.
+    // A lane of their own means both scopes stay honest at every N.
+    const laneOf = (r: Row): string => (r.mission ? 'mission' : r.origin);
+    for (const lane0 of ['user', 'auto', 'mission']) {
+        const lane = rows.filter(r => laneOf(r) === lane0);
         for (const key of keys) {
             lane.slice().sort((a, b) => key(b) - key(a)).slice(0, n)
                 .forEach(r => pool.add(r));

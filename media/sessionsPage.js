@@ -27,10 +27,14 @@
         stateKey: 'sessionsPage'
     });
 
-    /** ‼️ The opening scope is applied ONCE. The host repaints this page on its
-     *  own beat (every index update), and re-applying the filter on each push
-     *  would quietly undo whatever the reader had narrowed it to since. */
-    let scopeApplied = false;
+    /** ‼️ The opening scope is applied ONCE — per scope. The host repaints this
+     *  page on its own beat (every index update), and re-applying the filter on
+     *  each push would quietly undo whatever the reader had narrowed it to
+     *  since. It is keyed rather than a plain flag because the page is a
+     *  singleton (X-95): pressing Sessions on a SECOND mission reveals the panel
+     *  that is already open, and a boolean would have left it showing the first
+     *  mission's rows under the second one's title. */
+    let scopeApplied = '';
 
     window.addEventListener('message', ev => {
         if (table.onMessage(ev)) { return; }
@@ -48,7 +52,13 @@
             title: 'Sessions',
             sub: `${t.sessions} session${t.sessions === 1 ? '' : 's'} on this machine`
                 + (t.active ? ` · ${t.active} running now` : '')
-                + (DATA.scope && DATA.scope.agentName ? ` · scoped to ${C.esc(DATA.scope.agentName)}` : ''),
+                + (DATA.scope && DATA.scope.agentName ? ` · scoped to ${C.esc(DATA.scope.agentName)}` : '')
+                // ‼️ X-95 — when the page was opened FROM a mission it says so
+                // in its own header. The filter chips say what is set; only the
+                // title can say what this list is supposed to BE, and a reader
+                // arriving from a button needs to recognise where they landed.
+                + (DATA.scope && DATA.scope.missionId
+                    ? ` · 🎯 ${C.esc(DATA.scope.missionTitle || DATA.scope.missionId)}` : ''),
             searchTitle: 'Search inside every transcript',
             guide: 'dashboard'
         })}
@@ -61,11 +71,14 @@
         window.AFHeader.wire(vscode);
         table.setRows(DATA.sessions || [], DATA.sessionTableN);
         // The scope the page was opened with is a FILTER, not a different table:
-        // it lands in the component's own project filter so the ✕ that clears it
-        // is the same ✕ that clears every other filter.
-        if (!scopeApplied && DATA.scope && DATA.scope.project) {
-            scopeApplied = true;
-            table.setProjectFilter(DATA.scope.project);
+        // it lands in the component's own project / mission filters so the ✕
+        // that clears it is the same ✕ that clears every other filter.
+        const sc = DATA.scope || {};
+        const key = (sc.missionId ? 'm:' + sc.missionId : '') + (sc.project ? 'p:' + sc.project : '');
+        if (key && key !== scopeApplied) {
+            scopeApplied = key;
+            if (sc.missionId) { table.setMissionFilter(sc.missionId); }
+            if (sc.project) { table.setProjectFilter(sc.project); }
         }
     }
 

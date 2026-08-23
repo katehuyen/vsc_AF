@@ -2126,6 +2126,18 @@
                 <h2 style="margin:0">${C.esc(sp.title)}</h2>
                 ${chip(run.status)}
                 <span style="flex:1"></span>
+                <!-- ‼️ X-95 — THIS MISSION'S CONVERSATIONS, AS A LIST. A mission
+                     opens a session for its planner and one for every delegation
+                     it hands out; the run detail below shows them one step at a
+                     time, and nothing anywhere put them side by side. The
+                     Sessions page already IS that surface — sortable, foldable,
+                     with the whole right-click action set — so this opens it
+                     scoped to this run rather than growing a second table here.
+                     Mission sessions are hidden from that page by default, which
+                     is exactly why the button exists: it is the route to rows
+                     nobody would otherwise find. -->
+                <button class="secondary" id="d-sessions-${C.esc(run.id)}"
+                    title="Open the Sessions page showing ONLY this mission's sessions — its planner's own lane and every delegation it opened. They are kept out of the general log by default.">🎯 Sessions</button>
                 ${pauseBtn}
                 ${canResume ? `<button id="d-resume-${C.esc(run.id)}">Resume</button>` : ''}
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
@@ -2917,6 +2929,7 @@
             wire('d-unpause-' + id, () => vscode.postMessage({ type: 'control', action: 'unpause', runId: id }));
             wire('d-resume-' + id, () => vscode.postMessage({ type: 'control', action: 'resume', runId: id }));
             wire('d-cancel-' + id, () => vscode.postMessage({ type: 'control', action: 'cancel', runId: id }));
+            wire('d-sessions-' + id, () => vscode.postMessage({ type: 'missionSessions', runId: id }));
             wire('d-approve-' + id, () => vscode.postMessage({ type: 'approve', runId: id }));
             wire('d-reject-' + id, () => vscode.postMessage({ type: 'reject', runId: id }));
             wire('d-send-' + id, () => {

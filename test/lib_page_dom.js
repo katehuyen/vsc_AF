@@ -57,6 +57,9 @@ function runPage(scriptFile, DATA, extraWindow) {
      */
     let active = null;
 
+    /** What counts as an element in this markup — named ONCE, because `query`
+     *  builds the cache from it and an innerHTML write invalidates it by it. */
+    const TAG_RE = /<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2)\b[^>]*>/g;
     function mkEl(tag, dataset, attrs, raw) {
         return {
             tagName: tag.toUpperCase(), dataset, raw,
@@ -81,14 +84,39 @@ function runPage(scriptFile, DATA, extraWindow) {
              * Writing `#app` IS the repaint: everything before it is gone and
              * the page is about to wire the new markup. A slot write (`#out`, a
              * status line) replaces one region and must leave the rest alone.
+             *
+             * ‼️ …AND THE REPAINT DROPS THE FOCUS, exactly as a browser does.
+             * Writing #app detaches every element handed out so far, and a
+             * detached node cannot hold the caret — the browser hands focus back
+             * to the body. Without this the shim let a page that had LOST focus
+             * keep answering `activeElement.id === 'q'` off the dead node, which
+             * is the precise failure a focus test exists to catch.
+             *
+             * ‼️ …AND A REGION REWRITE DESTROYS ITS OWN CHILDREN, TOO (X-95).
+             *
+             * The rule above is right about `#app` and was silently wrong about
+             * everything else: a component that owns one container (the Sessions
+             * table owns `#sessblock`) rewrites it and RE-WIRES it on every
+             * keystroke, and the cache handed the new wiring the SAME element
+             * object as the old — so each repaint stacked another listener on it.
+             * A control whose markup happened not to change between two renders
+             * then fired its handler twice per click and appeared dead: pressing
+             * Filters opened and shut the panel in one gesture. Two fixtures had
+             * been shipping screenshots of a panel that was never open, and every
+             * assertion about them read as passing.
+             *
+             * A browser destroys the old children on an innerHTML write, so the
+             * cache does too — but only the entries that came from THIS
+             * element's previous markup. A page that writes `#app`, wires it,
+             * and then fills a slot must not orphan what it just wired, which is
+             * the failure the `#app`-only rule was protecting against.
              */
-            // ‼️ …AND THE REPAINT DROPS THE FOCUS, exactly as a browser does.
-            // Writing #app detaches every element handed out so far, and a
-            // detached node cannot hold the caret — the browser hands focus back
-            // to the body. Without this the shim let a page that had LOST focus
-            // keep answering `activeElement.id === 'q'` off the dead node, which
-            // is the precise failure a focus test exists to catch.
-            set innerHTML(v) { this._html = v; if (this.id === 'app') { elCache.clear(); active = null; } },
+            set innerHTML(v) {
+                const gone = this._html;
+                this._html = v;
+                if (this.id === 'app') { elCache.clear(); active = null; return; }
+                for (const raw of gone.match(TAG_RE) || []) { elCache.delete(raw); }
+            },
             // A real element knows its own id, and a page that asks the focused
             // element what it is gets nothing back without this.
             id: attrs.id || '',

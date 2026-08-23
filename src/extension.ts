@@ -128,7 +128,7 @@ import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import {
-    provenanceFields, SessionIndex, SessionInfo, sessionOrigin, sessionHeadless
+    provenanceFields, SessionIndex, SessionInfo, SessionLauncher, sessionMission, sessionOrigin, sessionHeadless
 } from './core/sessions';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
@@ -6051,7 +6051,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '), `attempted`, the original sentence as `detail` and the ids of the evidence as '
                 + '`refs`. Before this a caller saw status "failed" and nothing else, so "is this '
                 + 'worth ordering again?" had no answer on the run. `ran` says what dimensions the '
-                + 'delegation actually used and which layer decided each. args: id',
+                + 'delegation actually used and which layer decided each. '
+                + '‼️ X-95: `sessions` is EVERY session this run opened — the planner\'s own lane and one per delegation — each with its `role`, '
+                + 'its transcript `file` and its own turns/cost, gathered off the mission stamp the Sessions table filters on. '
+                + 'Use `sessions.page { mission: <id> }` to put the same set in front of the user. args: id',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -6074,6 +6077,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         effort: sp?.plannerEffort ?? null,
                         sessionId: r.plannerSessionId ?? null
                     },
+                    /**
+                     * ‼️ X-95 — EVERY SESSION THIS RUN OPENED, gathered.
+                     *
+                     * A mission is many conversations: the planner's own lane
+                     * and one per delegation. They were readable one at a time
+                     * (`planner.sessionId`, a step's `ran`) and never AS A SET,
+                     * which is the question both a person and an agent actually
+                     * ask — "show me what this mission has been saying". Read
+                     * off the same stamp the Sessions table's 🎯 filter uses, so
+                     * the bridge and the page can never disagree about which
+                     * sessions belong to a mission.
+                     *
+                     * `role` says which lane a session is: the orchestrator's
+                     * own or a delegation's. Rows the index has never seen (a
+                     * transcript not written yet, an engine that keeps none) are
+                     * simply absent rather than faked as empty sessions.
+                     */
+                    sessions: index.allWithExternal()
+                        .filter(s => sessionMission(s)?.id === r.id)
+                        .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
+                        .map(s => ({
+                            id: s.sessionId,
+                            role: s.sessionId === r.plannerSessionId ? 'planner' : 'delegate',
+                            file: s.file || null,
+                            agent: s.agentName ?? null,
+                            engine: s.source ?? 'claude',
+                            title: s.title,
+                            firstTs: s.firstTs, lastTs: s.lastTs,
+                            turns: s.userTurns,
+                            costUSD: Math.round(s.cost * 100) / 100,
+                            tokens: totalTokens(s.usage)
+                        })),
                     // ‼️ M-17 — WHY IT STOPPED AND WHAT IT DID NOT REACH. A
                     // `partial` that does not say which required criteria are
                     // open is a success with a hedge on it, and "did this reach
@@ -7335,16 +7370,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'mean the fleet-wide list plus a filter to find. `project` narrows by the project column '
                 + '(and widens the origin scope, so automation runs are not silently left out); '
                 + '`agent` limits the pool the page is built from in the first place. '
-                + 'args: project? (name), agent? (agent name)',
+                + '‼️ X-95 — `mission` (a mission RUN id, as missions.list gives it) opens the page on THAT MISSION\'S sessions and nothing else: '
+                + 'its planner\'s own lane and every delegation it opened, with no dialogs of yours left mixed in. '
+                + 'This is the only scope that ADDS rows rather than narrowing: mission sessions are excluded from this page by default, '
+                + 'because a mission opens one session per delegation and would otherwise bury the log of your own conversations. '
+                + 'args: project? (name), agent? (agent name), mission? (run id)',
             handler: (args) => {
                 const project = optStr(args, 'project') ?? '';
                 const agentName = optStr(args, 'agent') ?? '';
+                const missionId = optStr(args, 'mission') ?? '';
                 if (agentName) {
                     need(agents.some(a => a.name === agentName), `no agent called "${agentName}"`);
                 }
-                void vscode.commands.executeCommand('agentfarm.openSessions',
-                    { ...(project ? { project } : {}), ...(agentName ? { agentName } : {}) });
-                return { opened: 'sessions', project: project || null, agent: agentName || null };
+                if (missionId) {
+                    need(!!missionStore.run(missionId), `no mission run "${missionId}"`);
+                }
+                void vscode.commands.executeCommand('agentfarm.openSessions', {
+                    ...(project ? { project } : {}), ...(agentName ? { agentName } : {}),
+                    ...(missionId ? { missionId } : {})
+                });
+                return {
+                    opened: 'sessions', project: project || null, agent: agentName || null,
+                    mission: missionId || null
+                };
             }
         },
         {
@@ -15117,8 +15165,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * limit-retries read as 🤖 Auto), and the origin hover can NAME the
      * schedule instead of saying "automation" and stopping.
      */
+    /** A mission run's human name — the spec's title, its id when the spec is
+     *  gone. Never blank: it is what the stamp is READ as on a session row. */
+    const missionTitleOf = (runId: string): string => {
+        const run = missionStore.run(runId);
+        const spec = run ? missionStore.spec(run.specId) : undefined;
+        return (spec?.title || '').trim() || runId;
+    };
     const publishLaunchers = (): void => {
-        const map: Record<string, { kind: string; label: string; mode?: string }> = {};
+        const map: Record<string, SessionLauncher> = {};
         // ‼️ AND THE ARCHIVE, BECAUSE THE LIVE LIST FORGETS (S-37). A finished
         // task is moved to `task-history/YYYY-MM.jsonl` and leaves
         // `taskManager.tasks`, so a run's launcher used to survive only as long
@@ -15165,7 +15220,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? taskManager.triggers.find(x => x.id === t.fromTrigger) : undefined;
             const flow = t.workflowId
                 ? taskManager.workflows.find(w => w.id === t.workflowId) : undefined;
-            const entry = t.missionId ? { kind: 'mission', label: t.title, mode: t.mode }
+            // ‼️ X-95 — A MISSION'S DELEGATION CARRIES THE MISSION'S ID, not
+            // only the word "mission". The task already knew which run ordered
+            // it and threw that away one line before the index could use it,
+            // which is why every mission session landed in the same undivided
+            // pool as a person's own dialogs.
+            const missionMark = t.missionId
+                ? { missionId: t.missionId, missionTitle: missionTitleOf(t.missionId) }
+                : undefined;
+            const entry: SessionLauncher = t.missionId
+                ? { kind: 'mission', label: t.title, mode: t.mode, ...missionMark }
                 : sched ? { kind: 'schedule', label: sched.title, mode: t.mode }
                     : trig ? { kind: 'trigger', label: trig.title, mode: t.mode }
                         : flow ? { kind: 'workflow', label: flow.title, mode: t.mode }
@@ -15174,10 +15238,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     : { kind: 'task', label: t.title, mode: t.mode };
             for (const id of ids) { map[id] = entry; }
         }
+        /**
+         * ‼️ X-95 — AND THE HALF OF A MISSION THE TASK LEDGER CANNOT SEE.
+         *
+         * A mission's sessions are not only its delegations. The PLANNER runs in
+         * a headless lane of its own — no task, no `costSessionFile` — in the
+         * lead agent's folder, so `sessionOrigin` read `agentId` and filed the
+         * orchestrator's own conversation as 🧑 a person's. That is the "some of
+         * them look like I opened them" the user reported, and it is a fact
+         * about the run record, not a guess: the run STATES its planner session.
+         *
+         * The steps are walked for the same reason `runSessionId` exists — it is
+         * written the moment a delegation binds and OUTLIVES the task row that
+         * retention eventually removes, so a month-old mission keeps its stamp
+         * after its tasks are gone.
+         *
+         * A session the task walk already named keeps its label (the delegation's
+         * own title says more than the mission's) and is only ENRICHED with the
+         * stamp; anything unnamed is claimed by the mission outright.
+         */
+        for (const run of missionStore.runs) {
+            const title = missionTitleOf(run.id);
+            const stamp = (id: string | undefined, label: string): void => {
+                if (!id) { return; }
+                const had = map[id];
+                if (had) {
+                    if (!had.missionId) {
+                        map[id] = { ...had, missionId: run.id, missionTitle: title };
+                    }
+                    return;
+                }
+                map[id] = { kind: 'mission', label, missionId: run.id, missionTitle: title };
+            };
+            stamp(run.plannerSessionId, `${title} — planner`);
+            for (const round of run.rounds) {
+                for (const step of round.steps) { stamp(step.runSessionId, title); }
+            }
+            for (const m of run.messages ?? []) { stamp(m.sessionId, title); }
+        }
         index.setLaunchers(map);
     };
     publishLaunchers();
     context.subscriptions.push(taskManager.onDidChange(() => publishLaunchers()));
+    // ‼️ X-95 — a mission that binds a session changes this map without any task
+    // event: the planner's lane is the run's own record. Without this the stamp
+    // arrived only when some unrelated task next moved.
+    context.subscriptions.push(missionEmitter.event(() => publishLaunchers()));
 
     /**
      * Where you were when the last window went away.
@@ -21865,7 +21971,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // tooltip, an agent's page — can open it already narrowed, rather than
         // dropping you in the fleet-wide list to find the filter yourself.
         vscode.commands.registerCommand('agentfarm.openSessions',
-            (arg?: { project?: string; agentName?: string }) => {
+            (arg?: { project?: string; agentName?: string; missionId?: string }) => {
+                // ‼️ X-95 — the mission scope names itself here rather than at
+                // every call site: a run id is what a caller has, and the title
+                // is what the page has to print. One lookup, one truth.
+                const missionId = typeof arg?.missionId === 'string' && arg.missionId ? arg.missionId : '';
                 SessionsPanel.show({
                     extensionUri: context.extensionUri,
                     getAgents: () => agents,
@@ -21876,7 +21986,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     projectStyle: (name: string) => projectStyleOf(name)
                 }, {
                     ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
-                    ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {})
+                    ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),
+                    ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {})
                 });
             }),
 

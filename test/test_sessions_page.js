@@ -71,8 +71,41 @@ const data = (extra) => Object.assign({
     // whatever the reader had narrowed it to in between.
     const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionsPage.js'), 'utf8');
     ok('‼️ the opening scope is applied once, not on every host push',
-        /let scopeApplied = false/.test(page)
-        && /if \(!scopeApplied && DATA\.scope && DATA\.scope\.project\)/.test(page));
+        /let scopeApplied = ''/.test(page)
+        && /if \(key && key !== scopeApplied\)/.test(page));
+    // ‼️ X-95 — …and "once" is PER SCOPE, not once per page. The page is a
+    // singleton: pressing Sessions on a second mission reveals the panel that is
+    // already open, and a boolean guard would have left the first mission's rows
+    // sitting under the second one's title.
+    ok('‼️ X-95 — a different scope on an already-open page is applied, not swallowed',
+        /scopeApplied = key/.test(page) && /'m:' \+ sc\.missionId/.test(page));
+}
+
+// ---------- X-95: opening on ONE mission's sessions ----------
+// The route from a mission's own page. Mission sessions are excluded from this
+// page by default, so this scope is the only way most of them are ever seen —
+// and it has to mean exactly "this mission's", with no dialogs left mixed in.
+{
+    const mission = { id: 'run-7', title: 'Ship the viewer' };
+    const scoped = runPage('sessionsPage.js', data({
+        scope: { project: '', agentName: '', missionId: 'run-7', missionTitle: 'Ship the viewer' },
+        sessions: [row(1), row(2, { origin: 'auto', mission })]
+    }));
+    ok('X-95 — the page names the mission it was opened from',
+        /🎯 Ship the viewer/.test(scoped.html()));
+    ok('…and lists that mission\'s session', /session 2/.test(scoped.html()));
+    ok('…and nothing that is not the mission\'s', !/session 1/.test(scoped.html()));
+    ok('…with the filter panel open, so the reader can see what is doing it',
+        /class="af-fpanel"/.test(scoped.html()));
+
+    // The default, on the same rows: the mission session is simply not there.
+    const plain = runPage('sessionsPage.js', data({
+        sessions: [row(1), row(2, { origin: 'auto', mission })]
+    }));
+    ok('X-95 — with no scope a mission\'s sessions are left out by default',
+        /session 1/.test(plain.html()) && !/session 2/.test(plain.html()));
+    ok('…and the 🎯 chip says so without the panel being opened',
+        /af-mswitch/.test(plain.html()) && /Mission sessions: hidden/.test(plain.html()));
 }
 
 // ---------- the host contract ----------

@@ -71,6 +71,38 @@ const facts = (o = {}) => ({
         S.sessionOrigin(facts({ consoleHosted: true, launchedBy: { kind: 'schedule', label: '9am' } })), 'auto');
 }
 
+// ====================== 1b. X-95 — the THIRD axis: whose mission, if anyone's
+// A mission opens its planner's lane and one session per delegation, so on a
+// farm that runs missions they are most of the log. The stamp is what lets them
+// be gathered, filtered and told apart — and it is read off the recorded
+// launcher, never guessed from a folder or a title.
+{
+    console.log('\n-- whose mission');
+    const mis = (o) => S.sessionMission({ launchedBy: o });
+    ok('a mission delegation carries the run it belongs to',
+        mis({ kind: 'mission', label: 'write the tests', missionId: 'run-7', missionTitle: 'Ship it' })
+            ?.id === 'run-7');
+    eq('…and names it, so a row can print the mission without the store',
+        mis({ kind: 'mission', label: 'write the tests', missionId: 'run-7', missionTitle: 'Ship it' }).title,
+        'Ship it');
+    eq('a nameless stamp falls back to the launcher label, never to blank',
+        mis({ kind: 'mission', label: 'write the tests', missionId: 'run-7' }).title, 'write the tests');
+    ok('a schedule is not a mission however it is labelled',
+        mis({ kind: 'schedule', label: 'mission control', missionId: 'run-7' }) === undefined);
+    ok('‼️ a mission launcher with no id is NOT a stamp — half a fact would put a '
+        + 'row in a filter nothing can ever select',
+        mis({ kind: 'mission', label: 'write the tests' }) === undefined);
+    ok('a session nobody launched has no mission', S.sessionMission({}) === undefined);
+    // ‼️ The three axes are independent by construction. A mission's session is
+    // automation AND headless AND a mission's; reading one must not move another.
+    const m = facts({
+        launchedBy: { kind: 'mission', label: 'step 3', missionId: 'run-7', missionTitle: 'Ship it' },
+        agentId: 'dev'
+    });
+    eq('a mission session is still 🤖 automation on the origin axis', S.sessionOrigin(m), 'auto');
+    eq('…and still headless on the execution axis', S.sessionHeadless(m), true);
+}
+
 // ========================================== 2. the execution axis, on its own
 {
     console.log('\n-- where it ran');

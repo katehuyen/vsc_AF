@@ -606,6 +606,108 @@ const mkRow = (i, extra) => Object.assign({
         containers.orig.querySelectorAll('[data-fold]').length === 1);
 }
 
+// ---------- part: X-95 — a mission's sessions are their own kind of row ------
+//
+// A mission opens a session for its planner and one for every delegation it
+// hands out, so on a farm that runs missions they bury the log of a person's own
+// conversations — and every one of them is `auto`, so the 🤖 glyph could not
+// tell the twelfth delegation of one mission from a nightly schedule. What is
+// pinned here: the third glyph, the default exclusion, the always-visible chip
+// that admits to it, the per-mission picker, and the two-part scope the button
+// on a mission's own page sets.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'mis',
+        columns: ['origin', 'agent', 'title', 'when', 'cost'], stateKey: 'mis'
+    });
+    const A = { id: 'run-a', title: 'Ship the viewer' };
+    const B = { id: 'run-b', title: 'Rewrite the docs' };
+    t.setRows([
+        mkRow(1, { origin: 'user' }),
+        mkRow(2, { origin: 'auto', headless: true }),
+        mkRow(3, { origin: 'auto', headless: true, mission: A }),
+        mkRow(4, { origin: 'auto', headless: true, mission: A }),
+        mkRow(5, { origin: 'auto', headless: true, mission: B })
+    ], 10);
+    const html = () => containers.mis.innerHTML;
+    const ms = containers.mis.ms;
+    const q = sel => containers.mis.querySelector(sel);
+    const shownRows = () => containers.mis.querySelectorAll('[data-fold]').length;
+
+    ok('‼️ mission sessions are OUT of the table by default',
+        shownRows() === 1 && html().includes('title1') && !html().includes('title3'));
+    ok('the 🎯 chip is on screen saying so, without the panel being opened',
+        html().includes('af-mswitch') && html().includes('Mission sessions: hidden'));
+    ok('…and it counts what it is leaving out, against the whole pool',
+        html().includes('3 of the 5 sessions here were opened by a mission'));
+    ok('the Filters chip is NOT inflated by it — it has its own permanent chip',
+        !html().includes('Filters ('));
+
+    // ‼️ Every mission session is `auto`, and this table opens scoped to 🧑
+    // User — so letting them in without widening the scope showed the reader
+    // exactly nothing while lighting the chip that promised otherwise.
+    click(q('.af-mswitch'));
+    ok('‼️ one click from the DEFAULT scope really lists them — the origin scope widens with it',
+        shownRows() === 5 && html().includes('title3')
+        && state.afSess.mis.filters.origin === '');
+    ok('‼️ a mission row wears its own glyph — never 🧑 and never 🤖',
+        html().includes('🎯</td>') && !/🎯<span class="hgl">/.test(html()));
+    ok('…and the moon is not drawn on it: a mission lane is nobody\'s terminal either way',
+        (html().match(/class="hgl"/g) || []).length === 1);
+    ok('the hover names WHICH mission, which is the answer the glyph is read for',
+        html().includes('Mission — Ship the viewer') && html().includes('run-a'));
+    ok('the choice is persisted under the page key', state.afSess.mis.filters.missions === null);
+
+    click(q('.af-mswitch'));
+    ok('clicking again hides them, and the reverse of "all" is none — not "no filter"',
+        shownRows() === 2 && Array.isArray(state.afSess.mis.filters.missions)
+        && state.afSess.mis.filters.missions.length === 0);
+
+    // ---- the panel: which missions, and whether anything else may be listed
+    click(q('.af-filter'));
+    ok('the picker lists the missions this pool actually holds, newest first',
+        ms.options('sess-missions-mis').join() === 'run-a,run-b');
+    ok('…by TITLE, because that is what a person reads',
+        ms.label('sess-missions-mis') === 'Missions: none');
+    ms.only('sess-missions-mis', ['run-a']);
+    ok('‼️ picking one mission lists its sessions and no other mission\'s',
+        html().includes('title3') && html().includes('title4') && !html().includes('title5'));
+    ok('…and leaves the rows that are nobody\'s mission alone — it is an exclusion, not a scope',
+        html().includes('title1') && html().includes('title2'));
+    ok('the chip counts the picked missions rather than pretending to be a switch',
+        html().includes('af-mswitch on') && /🎯 1<\/button>/.test(html()));
+
+    click(q('.af-fmisonly'));
+    ok('‼️ "Only missions" drops everything that is not a mission\'s',
+        html().includes('title3') && !html().includes('title1') && !html().includes('title2'));
+    ok('…and the chip says both halves at once',
+        html().includes('nothing else is listed'));
+
+    // ‼️ The two halves must never be able to empty the table between them.
+    click(q('.af-mswitch'));
+    ok('hiding the missions while "only missions" is on withdraws it rather than showing nothing',
+        state.afSess.mis.filters.missionsOnly === false && shownRows() === 2);
+
+    click(q('.af-fclear'));
+    ok('Clear restores the default: missions out, everything else in',
+        shownRows() === 1 && state.afSess.mis.filters.missionsOnly === false);
+
+    // ---- the deep link a mission's own page uses
+    t.setMissionFilter('run-b');
+    ok('‼️ setMissionFilter means THIS mission and nothing else',
+        shownRows() === 1 && html().includes('title5'));
+    ok('…with the origin scope widened, because a mission\'s runs are automation',
+        state.afSess.mis.filters.origin === '');
+    ok('…and the panel opened, so the reader can see what is narrowing the list',
+        html().includes('af-fpanel'));
+
+    // A table with no mission session in it says nothing about missions at all.
+    t.setRows([mkRow(1, { origin: 'user' })], 10);
+    ok('no mission sessions in the pool → no chip, no picker, no row of controls',
+        !html().includes('af-mswitch') && !ms.has('sess-missions-mis'));
+}
+
 // ---------- part: S-35 — headless is the second half of "who started it" ----
 //
 // 🤖 covered two different things: a `claude -p` with no terminal and nobody

@@ -167,6 +167,16 @@ export class MissionsPanel {
                 });
                 break;
             }
+            // ‼️ X-95 — this run's whole set of sessions, on the page that is
+            // already the right surface for a list of sessions. The scope is a
+            // run id and nothing else: the command resolves the title, so this
+            // page never has to agree with that one about what a mission is
+            // called.
+            case 'missionSessions':
+                if (typeof msg.runId === 'string' && msg.runId) {
+                    void vscode.commands.executeCommand('agentfarm.openSessions', { missionId: msg.runId });
+                }
+                break;
             case 'openSession':
                 // deep-link into the session viewer (planner transcript / live feed rows)
                 if (typeof msg.file === 'string' && msg.file) {
