@@ -2986,10 +2986,11 @@ const { opencodeStatus, syncToOpencode } =
                 ok('…and every refusal at once — an engine this machine cannot run AND an effort it has no flag for',
                     /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort\)/.test(src)
                     && /EVERY refusal at once/.test(prevBlock));
-                ok('‼️ …and the PLANNER is not described as a worker: no engine choice, no effort, no permission mode, the LEAD\'s folder',
+                ok('‼️ …and the PLANNER is not described as a worker: no engine choice, no permission mode, the LEAD\'s folder',
                     /THE PLANNER IS NOT A WORKER/.test(prevBlock)
                     && /LEAD AGENT.{0,3}s folder rather than the mission workdir/.test(prevBlock.replace(/'\s*\+\s*'/g, ''))
-                    && /effort: 'cli', permissionMode: 'cli'/.test(src));
+                    && /takes no permission mode at all/.test(prevBlock.replace(/'\s*\+\s*'/g, ''))
+                    && /permissionMode: 'cli'/.test(src));
 
                 // …and the ladder itself, run for real: these are the two rungs
                 // the page had no way to see, which is why its guess was wrong.
@@ -3012,6 +3013,33 @@ const { opencodeStatus, syncToOpencode } =
                 ok('‼️ …and a field NOBODY set stays absent rather than being filled in with something plausible',
                     bare.engine === 'claude' && bare.model === undefined
                     && bare.origin.model === 'cli' && bare.origin.effort === 'cli');
+            }
+
+            // ‼️ U-100 — THE ORCHESTRATOR'S OWN PROFILE. The mission could say
+            // which model plans and had no way to say how hard it thinks, so a
+            // lead meant to reason through a hard fork ran at whatever the CLI
+            // calls normal while a delegate on the same machine could be put on
+            // xhigh from a picker. One axis settable, the other not, for no
+            // reason anybody chose.
+            {
+                ok('‼️ missions.start takes the planner\'s EFFORT, not only its model',
+                    /plannerEffort\? \(U-100/.test(misBlock)
+                    && /HOW HARD THE ORCHESTRATOR THINKS/.test(misBlock));
+                ok('…and says that leaving it out is exactly today\'s behaviour, not a new default',
+                    /no\s*.\s*\+\s*.\s*--effort reaches that command line at all/.test(misBlock)
+                    || /--effort reaches that command line at all/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
+                ok('‼️ …and it reaches the real planner command line, guarded like the model is',
+                    /const effort = spec\.plannerEffort && \/\^\[\\w-\]\+\$\/\.test\(spec\.plannerEffort\)/.test(src)
+                    && /--effort \$\{spec\.plannerEffort\}/.test(src)
+                    && /`claude \$\{extra \? extra \+ ' ' : ''\}\$\{model\}\$\{effort\}\$\{ctx\}`/.test(src));
+                ok('…refused on a typo rather than dropped, by the validator a member\'s effort uses',
+                    /validateLaunch\(\{ effort: plannerEffort \}\)/.test(src)
+                    && /return `Planner: \$\{bad\}`/.test(src));
+                ok('‼️ …inherited by a CHILD mission, so a sub-objective is not quietly demoted mid-run',
+                    /\.\.\.\(parent\.plannerEffort \? \{ plannerEffort: parent\.plannerEffort \} : \{\}\)/.test(src));
+                ok('…and readable back off the run, which the planner\'s dimensions never were',
+                    /planner: \{[^]{0,240}effort: sp\?\.plannerEffort \?\? null/.test(src)
+                    && /WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON/.test(src));
             }
 
             // ‼️ X-45 — the real op exists, and its describe carries the two

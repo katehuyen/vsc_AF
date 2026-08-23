@@ -341,6 +341,9 @@ getEl('tm-1').checked = true;           // coder
 getEl('rl-1').value = 'builder';
 getEl('lim-maxCostUSD').value = '3';
 getEl('f-planner').value = 'opus';
+// ‼️ U-100 — the OTHER half of the planner's profile. The mission could say
+// which model plans and had no way to say how hard it thinks.
+getEl('f-planner-effort').value = 'high';
 getEl('f-approval').value = 'each-round';
 getEl('f-start').listeners.click();
 const created = posted.find(p => p.type === 'create');
@@ -348,6 +351,26 @@ ok('Start posts the assembled form', created && created.input.goal === 'Ship the
     && created.input.leadAgentId === 'a0' && created.input.maxCostUSD === '3'
     && created.input.team.length === 1 && created.input.team[0].agentId === 'a1' && created.input.team[0].role === 'builder');
 ok('planner-model override rides along', created && created.input.plannerModel === 'opus');
+ok('‼️ U-100 — and so does the planner EFFORT, on the same payload',
+    created && created.input.plannerEffort === 'high');
+// ‼️ U-100 — LEAD AND PLANNER ARE ONE SUBJECT, SO THEY ARE ONE BLOCK. They used
+// to sit eight rows apart with the team, the workdir, six ceilings and the
+// delegation engine between them — two halves of one answer, separated by
+// everything that is not it.
+{
+    const h = html();
+    const at = (s) => h.indexOf(s);
+    ok('the orchestrator block gathers lead, planner engine, model and effort on one line',
+        at('Orchestrator') >= 0 && at('id="f-lead"') > at('Orchestrator')
+        && at('id="f-planner"') > at('id="f-lead"')
+        && at('id="f-planner-effort"') > at('id="f-planner"')
+        && at('id="f-planner-effort"') < at('id="f-engine"'));
+    ok('‼️ …and the planner ENGINE is drawn as a fixed value, not offered as a picker that cannot work',
+        h.includes('Planner engine') && h.includes('class="fixedval"')
+        && !h.includes('id="f-planner-engine"'));
+    ok('…with the fence stated instead of a permission picker copied off a worker row',
+        h.includes('No permission picker') && h.includes('disallowedTools'));
+}
 
 msgHandler({ data: { type: 'formError', error: 'Goal is required.' } });
 ok('host validation error renders inline and keeps the form open',
@@ -613,6 +636,32 @@ ok('…and every refusal this draft would meet is shown TOGETHER, before Start i
     html().includes('This draft would be refused')
     && html().includes('cannot run on this machine')
     && html().includes('no reasoning-effort flag'));
+// ‼️ U-100 — AND THE EMPTY BOX DOES NOT SAY "DEFAULT". An orchestrator field
+// nobody set is not a value; the host says what the run would really use and who
+// decided, and `CLI chooses` when nobody did. Guessing a plausible-looking model
+// into that box is the same defect one control over.
+answerPreview(askedPreview.seq, [fleetWorker], []);
+ok('‼️ the planner\'s empty model box says CLI chooses rather than implying a default',
+    html().includes('— CLI chooses —'));
+msgHandler({
+    data: {
+        type: 'preview', seq: askedPreview.seq,
+        preview: {
+            ok: true, mode: 'adaptive', title: '', goal: 'g', workers: [], problems: [],
+            lead: { agentId: 'a0', agentName: 'lead', origin: 'auto' },
+            planner: {
+                agentId: 'a0', agentName: 'lead', kind: 'planner',
+                requested: { engine: 'claude', model: 'opus', effort: 'xhigh' },
+                effective: { engine: 'claude', model: 'opus', effort: 'xhigh', workDir: 'D:/agents/lead' },
+                origin: { engine: 'cli', model: 'mission', effort: 'mission', permissionMode: 'cli' },
+                note: 'model opus (mission) · effort xhigh (mission)', problems: []
+            }
+        }
+    }
+});
+ok('…and once the host resolves one, the box carries it with WHO decided',
+    html().includes('— opus —') && html().includes('from the mission'));
+
 // Back to the state every test below this was written against: no answer yet,
 // which is a real state — it is what the form shows for the first 220ms.
 msgHandler({ data: { type: 'preview', seq: askedPreview.seq, preview: null } });

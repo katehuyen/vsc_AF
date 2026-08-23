@@ -113,7 +113,7 @@
     let tailTimer = null;
     // form model survives re-renders
     const form = {
-        title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '',
+        title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '', plannerEffort: '',
         // ‼️ `engine` AND `engines` — the mission-wide default and each member's
         // override (X-35). The core has taken both since X-18 and this form
         // offered neither, so every mission delegated on Claude no matter what
@@ -520,7 +520,12 @@
         // words its launch will refuse. The full list is still the fallback for
         // an engine whose catalog has not been fetched yet.
         const effortRowsFor = (engine, model) => window.AFEngine.efforts(launchView(), engine, model) || [];
-        const effortOpts = (sel, rows) => ['<option value="">— resolved —</option>']
+        // ‼️ U-100 — THE EMPTY OPTION IS NOT ONE WORD EVERYWHERE. On a member row
+        // an empty effort really IS resolved — agent default, then fleet, then
+        // the CLI. On the PLANNER nothing resolves it: no `--effort` reaches that
+        // command line, so the box has to say the CLI chooses rather than borrow
+        // a promise that belongs to a different ladder.
+        const effortOpts = (sel, rows, emptyLabel) => [`<option value="">${C.esc(emptyLabel || '— resolved —')}</option>`]
             .concat((rows || efforts).filter(e => e.id).map(e =>
                 `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}>${C.esc(e.label)}</option>`))
             .join('');
@@ -658,15 +663,91 @@
                 <span class="muted small">Only about JUDGEMENT calls. The hard limits and the approval gate below still apply either way.</span></div>`;
         // Everything the adaptive user is not being asked to decide. Classic
         // draws this block plainly, exactly as it always has.
+        /**
+         * ‼️ U-100 — THE ORCHESTRATOR IS ONE SUBJECT, SO IT IS ONE BLOCK.
+         *
+         * `Lead agent` sat at the top of the form and `Planner model` eight rows
+         * below it, with the team, the workdir, six ceilings and the delegation
+         * engine in between — two halves of one answer, separated by everything
+         * that is not it. A reader picking a lead had no way to see that the
+         * model beneath the fold was the model THAT agent would plan on.
+         *
+         * ‼️ AND THE ENGINE IS SHOWN AS FIXED RATHER THAN OFFERED. The planner
+         * is `claude -p --output-format json` and the mission's control flow
+         * parses that envelope — the decision JSON, the cost, the session id
+         * that carries the lead from round to round. A picker here would be a
+         * control that cannot do what it appears to do, which is worse than no
+         * control: it is a promise the run breaks silently.
+         */
+        const plannerPv = (PREVIEW && PREVIEW.planner) || null;
+        // MIRROR on an empty box: it does not say "default", it says what the
+        // run would REALLY use and who decided — and `CLI chooses` when nobody
+        // did, which is the honest end of the chain rather than a guess.
+        const plannerValue = (field, empty) => {
+            const eff = plannerPv && plannerPv.effective && plannerPv.effective[field];
+            if (eff) { return eff; }
+            return empty;
+        };
+        const plannerMirror = (field, body) => plannerPv
+            ? mirror(plannerPv, field, body)
+            : body;
+        const orchestratorBlock = `
+            <div class="frow orcrow"><span class="flabel">Orchestrator
+                <span class="muted small">— who plans, and what it plans with</span></span></div>
+            <div class="frow orcbody">
+                <label>Lead agent${adaptive ? '' : ' <span class="req">required</span>'}
+                    <select id="f-lead" title="${C.esc(
+                        (plannerPv ? plannerPv.agentName + '\n\n' : '')
+                        + 'The agent whose CLAUDE.md, folder and instructions the PLANNER runs as. It is an'
+                        + ' identity, not a session: at every decision boundary the mission opens a separate'
+                        + ' headless Claude Code call in that agent\'s folder, and every later round resumes'
+                        + ' the SAME planner session so the lead keeps its own context.'
+                        + '\n\nIt does not do the delegated work. Each delegation is a normal Task session of'
+                        + ' its own, with its own agent, engine and transcript.')}">${agentOpts}</select></label>
+                <label class="fixedfield" title="${C.esc(
+                    'Claude Code — fixed, not a choice.\n\nThe mission\'s control flow parses this CLI\'s JSON'
+                    + ' envelope: the decision object, the cost of the call and the session id that carries the'
+                    + ' lead from round to round. No other engine emits it, so a picker here would be a control'
+                    + ' that cannot do what it looks like it does.\n\nThe DELEGATION engine below is a separate'
+                    + ' axis and can be anything.')}">Planner engine
+                    <span class="fixedval">Claude Code <span class="muted small">· fixed</span></span></label>
+                <label>Model override
+                    <select id="f-planner" title="${C.esc(plannerMirror('model',
+                        'Model for the LEAD\'s planning calls only; a delegate keeps its own. The planner always'
+                        + ' runs on Claude Code, so this list is Claude\'s catalog.'
+                        + '\n\nLeft empty this is not "the default" — it is whatever that agent\'s own Claude'
+                        + ' settings resolve to, and if nothing does, the CLI\'s own choice.'))}"
+                        >${modelOptsFor('claude', form.plannerModel, '— ' + plannerValue('model', 'CLI chooses') + ' —')}</select></label>
+                <label>Effort override
+                    <select id="f-planner-effort" title="${C.esc(plannerMirror('effort',
+                        'How hard the orchestrator thinks per planning turn. Mission-wide and planner-only: a'
+                        + ' delegate\'s effort is its own row\'s.'
+                        + '\n\nLeft empty, no --effort reaches that command line at all and the CLI decides —'
+                        + ' which is what every mission written before this does.'))}"
+                        >${effortOpts(form.plannerEffort, effortRowsFor('claude', form.plannerModel || ''),
+                            '— ' + plannerValue('effort', 'CLI chooses') + ' —')}</select></label>
+            </div>
+            <div class="frow"><span class="muted small">${!adaptive
+                ? 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'
+                : (!form.leadAgentId
+                    ? 'Optional here — left alone it is the first of the pool, named in the box above, and that is what the run records. Its CLAUDE.md is the orchestration identity.'
+                    : (included(form.leadAgentId)
+                        ? 'Also in the pool — so it plans AND may be delegated to. This block runs its planning calls; the settings on its pool row are for its worker delegations only.'
+                        : '<b>Planner only</b> — it is not in the pool, so it decides and delegates but does no delegated work itself. That is a valid objective; tick it below to let it work too.'))}</span></div>
+            <div class="frow"><span class="muted small" title="${C.esc(
+                'The planner is a DECISION call, not a work session, and it is fenced mechanically rather than'
+                + ' by asking:\n\nCUT OFF BY NAME — Bash, PowerShell, Edit, MultiEdit, Write, NotebookEdit, Task,'
+                + ' Agent. It cannot write a file, run a command or spawn a sub-agent even if it decides to.'
+                + '\n\nWHAT IT KEEPS — the read tools: Read, Grep, Glob, WebSearch/WebFetch and the MCP servers'
+                + ' that agent has. It looks, and then it delegates.'
+                + '\n\nHARD CAP — 15 turns per call and a 10-minute timeout, so a lead that wanders into doing'
+                + ' the work itself is stopped rather than billed.'
+                + '\n\nThat is why there is no permission picker here: a permission mode would be a second,'
+                + ' softer answer to a question already settled in the command line.')}"
+                >‼️ No permission picker: the planner\'s write and spawn tools are cut off by name
+                (<code>--disallowedTools</code>), and it is capped at 15 turns per decision — hover for the whole fence.</span></div>`;
         const commonBlock = `
-            <div class="frow"><label>${adaptive ? 'Lead agent' : 'Lead agent <span class="req">required</span>'} <select id="f-lead">${agentOpts}</select></label>
-                <span class="muted small">${!adaptive
-                    ? 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'
-                    : (!form.leadAgentId
-                        ? 'Optional here — left alone it is the first of the pool, named in the box above, and that is what the run records. Its CLAUDE.md is the orchestration identity.'
-                        : (included(form.leadAgentId)
-                            ? 'Also in the pool — so it plans AND may be delegated to. The Orchestrator profile runs its planning calls; the settings on its pool row are for its worker delegations only.'
-                            : '<b>Planner only</b> — it is not in the pool, so it decides and delegates but does no delegated work itself. That is a valid objective; tick it below to let it work too.'))}</span></div>
+            ${orchestratorBlock}
             <div class="frow"><span class="flabel">${adaptive
                 ? `Pool <span class="muted small">— whom the lead may draw on</span>
                     <span class="scopeseg" title="${C.esc('Whole fleet: every agent this window knows, written into the run as a fact when it starts.\n\nSelected agents: exactly the ones ticked. Ticking nobody is refused — it is not a quiet way of saying everybody.')}">
@@ -696,13 +777,8 @@
                 <span class="muted small">Which CLI the team's delegations run on; a member can override it on its own row.
                 ‼️ The PLANNER always runs on Claude Code — its control flow parses that CLI's JSON envelope and spends
                 <code>--disallowedTools</code> and <code>--max-turns</code>, which the others do not have. Delegation engine
-                and planner engine are separate axes on purpose.</span></div>
-            <div class="frow"><label>Planner model
-                <select id="f-planner" title="${C.esc((form.plannerModel || 'the lead\'s own default')
-                    + '\n\nModel for the LEAD\'s planning calls only; delegates keep their own.'
-                    + ' The planner always runs on Claude Code, so this list is Claude\'s catalog.')}"
-                    >${modelOptsFor('claude', form.plannerModel, '— the lead\'s own default —')}</select></label>
-                <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = Claude Code with this model (else the lead's own default) · each delegation = the member's row, then the mission engine above, then that agent's own default for that engine, then your fleet defaults.</span></div>
+                and planner engine are separate axes on purpose.</span>
+                <span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · the mission's engine and workdir · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's row, then the mission engine here, then that agent's own default for that engine, then your fleet defaults.</span></div>
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
@@ -779,6 +855,7 @@
         form.leadAgentId = val('f-lead', form.leadAgentId);
         form.workdir = val('f-workdir', form.workdir);
         form.plannerModel = val('f-planner', form.plannerModel);
+        form.plannerEffort = val('f-planner-effort', form.plannerEffort);
         form.engine = val('f-engine', form.engine);
         DATA.agents.forEach((a, i) => {
             const cb = document.getElementById('tm-' + i);
@@ -836,6 +913,7 @@
         const input = {
             title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
             workdir: form.workdir, plannerModel: form.plannerModel,
+            plannerEffort: form.plannerEffort,
             engine: form.engine,
             team: memberPayload(DATA.agents.filter(a => form.team[a.id])),
             maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
@@ -1181,7 +1259,7 @@
                 ? `mode: Adaptive Objective — outcome given, strategy built at runtime`
                 : `mode: Classic Mission — lead + team + rounds, as given`,
             `goal: ${sp.goal}`,
-            `lead: ${sp.leadAgentName}${sp.plannerModel ? ` (planner: ${sp.plannerModel})` : ''}`,
+            `lead: ${sp.leadAgentName}${sp.plannerModel || sp.plannerEffort ? ` (planner:${sp.plannerModel ? ` ${sp.plannerModel}` : ''}${sp.plannerEffort ? ` ~${sp.plannerEffort}` : ''})` : ''}`,
             `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '')
                 + ((m.engine || sp.engine) ? ` <${m.engine || sp.engine}>` : '')
                 + (m.model ? ` [${m.model}]` : '')
@@ -1891,7 +1969,7 @@
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
             <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
-                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''}${
+                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''}${sp.plannerEffort ? ` <span class="mchip mdl" title="planner effort — how hard the orchestrator thinks per decision. Empty is not &quot;normal&quot;: no --effort reaches that call at all and the CLI decides.">~${C.esc(sp.plannerEffort)}</span>` : ''}${
                 /* ‼️ U-64 — an ADAPTIVE run has no team here and drew an empty
                    "team ·" that read as a missing fact. Its cast is bound at
                    runtime and has its own section; the header says where. */
@@ -2163,6 +2241,19 @@
                 .frow label { display:block; font-size:12px; }
                 .frow input[type=text], .frow textarea, .frow select { width:100%; max-width:640px; margin-top:3px; padding:5px 8px; }
                 .flabel { font-size:12px; display:block; margin-bottom:4px; }
+                /* ‼️ U-100 — the orchestrator's four fields on ONE line, because
+                   they are one answer. They wrap together on a docked panel
+                   rather than clipping, the same rule the member row follows. */
+                .orcrow { margin-bottom:2px; }
+                .orcbody { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:0; }
+                .orcbody > label { flex:1 1 150px; min-width:120px; margin:0; }
+                .orcbody > label select { min-width:0; }
+                /* A value that cannot be chosen is drawn as a value, not as a
+                   select nobody may use — the shape says "read this", and the
+                   AFTip says why it is fixed. */
+                .fixedval { display:block; margin-top:3px; padding:5px 8px;
+                    border:1px dashed color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
+                    border-radius:3px; opacity:.85; white-space:nowrap; }
                 .req { font-size:10px; color:var(--vscode-descriptionForeground); }
                 /* ‼️ U-97 — FOUR PICKERS ON THE ROW NOW (engine · model · effort
                    · permissions) and a fixed 152px each overflowed the panel the

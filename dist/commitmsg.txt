@@ -1,0 +1,39 @@
+v11.64 - u-100: orkestratör tek bir konudur, artık tek bir blokta duruyor
+
+"Lead agent" sat at the top of the New Mission form and "Planner model" eight
+rows below it, with the team, the workdir, six ceilings and the delegation
+engine in between — two halves of one answer separated by everything that is
+not it. One Orchestrator block now: lead, planner engine, a mission-only model
+override and a NEW effort override, on one line.
+
+The planner engine is drawn as a FIXED value, not offered as a picker. The
+mission's control flow parses Claude Code's JSON envelope — the decision
+object, the cost, the session id that carries the lead from round to round — so
+a picker there would be a control that cannot do what it looks like it does.
+
+"plannerEffort" is new on MissionSpec, on missions.start, on child-mission
+inheritance and on missions.status. Validated by the same vocabulary a member's
+effort is (refused on a typo, never dropped) and carried onto the planner
+command line as a real --effort with the same bare-word guard the model has.
+Absent — which is every spec ever written — no --effort reaches that call at
+all and today's behaviour is unchanged.
+
+An empty override box no longer says "default". It says what the run would
+really use and who decided, and "CLI chooses" when nobody did — U-103's
+resolution, read one control over. On a member row an empty effort really IS
+resolved; on the planner nothing resolves it, so the two boxes no longer borrow
+each other's promise.
+
+Still no permission picker for the planner, and now the form says why: write
+and spawn tools cut off by name (--disallowedTools), the read tools kept, 15
+turns and 10 minutes per decision. The whole fence is in one AFTip instead of a
+worker picker copied onto a participant that has no such flag.
+
+missions.status answers "planner" (agent, engine, model, effort, session) for
+the first time: every dimension of every DELEGATE has been readable since M-18
+while the participant that decides the whole run was invisible.
+
+212 files · 13766 checks · 0 failed. Parity 16/16, gapBudget unchanged (38).
+Looked at: dist/render/missions.png, fixtures "form-preview" and "form-adaptive".
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

@@ -4,6 +4,30 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**U-100 — the orchestrator is one subject, so it is one block.** `Lead agent`
+sat at the top of the New Mission form and `Planner model` eight rows below it,
+with the team, the workdir, six ceilings and the delegation engine in between —
+two halves of one answer separated by everything that is not it. They are now a
+single Orchestrator block: the lead, the planner engine, a mission-only model
+override and a new effort override on one line. The planner engine is drawn as a
+FIXED value rather than offered as a picker, because the mission's control flow
+parses Claude Code's JSON envelope — the decision object, the cost, the session
+id that carries the lead from round to round — and a picker there would be a
+control that cannot do what it looks like it does. `plannerEffort` is new on
+`MissionSpec`, on `missions.start`, on child-mission inheritance and on
+`missions.status`, validated by the same vocabulary a member's effort is and
+carried onto the planner command line as a real `--effort` with the same
+bare-word guard the model has; absent — which is every spec ever written — no
+`--effort` reaches that call at all and today's behaviour is unchanged. An empty
+override box no longer says "default": it says what the run would really use and
+who decided, and `CLI chooses` when nobody did. There is still no permission
+picker for the planner, and now the form says why: its write and spawn tools are
+cut off by name (`--disallowedTools`), it keeps the read tools, and it is capped
+at 15 turns and 10 minutes per decision — the whole fence is in one AFTip.
+`missions.status` answers `planner` (agent, engine, model, effort, session) for
+the first time: every dimension of every DELEGATE has been readable since M-18
+while the participant that decides the whole run was invisible.
+
 **U-103 — the mission form stopped guessing what it would launch.** It worked
 the effective engine out for itself — the row's own, else the mission's, else
 `claude` — while a delegation climbs a five-rung ladder (`resolveDelegateRun`):

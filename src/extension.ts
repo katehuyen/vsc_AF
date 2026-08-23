@@ -3553,6 +3553,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // form value can never smuggle shell syntax into the command line
                 const model = spec.plannerModel && modelIdOk(spec.plannerModel)
                     ? `--model ${spec.plannerModel} ` : '';
+                // ‼️ U-100 — AND THE EFFORT, ON EVERY CALL OF THE RUN. Same bare-word
+                // guard the model has and the same guard a task's `--effort` has
+                // (`launchArgs`): these strings live on disk and can be written by the
+                // bridge, so anything that is not one plain word is dropped to the
+                // CLI's own default rather than smuggled into a shell. Absent on every
+                // spec written before this, which is what keeps their behaviour
+                // exactly as it was.
+                const effort = spec.plannerEffort && /^[\w-]+$/.test(spec.plannerEffort)
+                    ? `--effort ${spec.plannerEffort} ` : '';
                 // ‼️ M-18 — THE LEAD IS TOLD WHICH PROJECT IT IS PLANNING FOR.
                 //
                 // Every delegation this mission makes has carried the project
@@ -3574,7 +3583,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId);
                 const ctx = ctxFile && !ctxFile.includes('"')
                     ? `--append-system-prompt-file "${ctxFile}" ` : '';
-                const command = `claude ${extra ? extra + ' ' : ''}${model}${ctx}` +
+                const command = `claude ${extra ? extra + ' ' : ''}${model}${effort}${ctx}` +
                     `--disallowedTools "${MISSION_PLANNER_DISALLOWED_TOOLS}" ` +
                     `--max-turns ${MISSION_PLANNER_MAX_TURNS} ` +
                     `${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
@@ -3686,6 +3695,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(parent.workdir ? { workdir: parent.workdir } : {}),
             ...(parent.engine ? { engine: parent.engine } : {}),
             ...(parent.plannerModel ? { plannerModel: parent.plannerModel } : {}),
+            // ‼️ U-100 — the child's planner thinks as hard as its parent's. The
+            // model was inherited from the day child missions existed; leaving
+            // the effort behind would drop a sub-objective back to the CLI's
+            // default halfway through a run somebody had deliberately put on
+            // `xhigh`, which is the kind of quiet demotion nobody would find.
+            ...(parent.plannerEffort ? { plannerEffort: parent.plannerEffort } : {}),
             ...(parent.projectId ? { projectId: parent.projectId } : {}),
             approvalMode: parent.approvalMode,
             limits: {
@@ -4768,6 +4783,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!team.length && mode === 'classic') { return 'Pick at least one team agent.'; }
         const plannerModel = String(input.plannerModel ?? '').trim().slice(0, 60);
         if (plannerModel && !modelOk(plannerModel)) { return `Planner model "${plannerModel}" has illegal characters — use a plain model id/alias.`; }
+        // ‼️ U-100 — THE PLANNER'S EFFORT, JUDGED BY THE SAME VALIDATOR A
+        // MEMBER'S IS. A typo is REFUSED rather than dropped: dropping it would
+        // leave the orchestrator thinking at the CLI's default while the form
+        // that asked for `xhigh` goes on saying it got it. The planner is always
+        // Claude Code, which does take `--effort`, so there is no "this engine
+        // has no such flag" case to answer here.
+        const plannerEffort = String(input.plannerEffort ?? '').trim();
+        for (const bad of validateLaunch({ effort: plannerEffort })) { return `Planner: ${bad}`; }
         // The mission-wide engine for its DELEGATIONS. Refused here, before the
         // mission exists, if this machine cannot run it: a mission that plans
         // three rounds and then fails every delegation has spent planner turns
@@ -4828,6 +4851,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(mode === 'adaptive' ? { mode, ...objective } : {}),
                 workdir: workdir || undefined,
                 plannerModel: plannerModel || undefined,
+                plannerEffort: plannerEffort || undefined,
                 projectId,
                 // The mission-wide engine for DELEGATIONS; a member may override
                 // it. The planner stays on Claude Code by design — see
@@ -4930,23 +4954,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }));
         const leadAgent = agents.find(a => a.id === spec.leadAgentId);
         const plannerModel = spec.plannerModel;
+        const plannerEffort = spec.plannerEffort;
         const planner: MissionPreviewMember = {
             agentId: spec.leadAgentId, agentName: spec.leadAgentName,
             kind: 'planner',
-            requested: { engine: 'claude', ...(plannerModel ? { model: plannerModel } : {}) },
+            requested: {
+                engine: 'claude',
+                ...(plannerModel ? { model: plannerModel } : {}),
+                ...(plannerEffort ? { effort: plannerEffort } : {})
+            },
             effective: {
                 engine: 'claude',
                 ...(plannerModel ? { model: plannerModel } : {}),
+                ...(plannerEffort ? { effort: plannerEffort } : {}),
                 ...(leadAgent ? { workDir: leadAgent.dir } : {})
             },
             origin: {
                 engine: 'cli',
                 model: plannerModel ? 'mission' : 'cli',
-                // Not passed on the planner command line at all — saying
-                // "fleet" here would be a claim about a flag that is not there.
-                effort: 'cli', permissionMode: 'cli'
+                effort: plannerEffort ? 'mission' : 'cli',
+                // ‼️ No permission mode reaches the planner command line at all —
+                // the write and spawn tools are cut off by NAME instead
+                // (`MISSION_PLANNER_DISALLOWED_TOOLS`). Answering "fleet" here
+                // would be a claim about a flag that is not on that line.
+                permissionMode: 'cli'
             },
-            note: plannerModel ? `model ${plannerModel} (mission)` : '',
+            note: describeDelegateRun({
+                engine: 'claude',
+                ...(plannerModel ? { model: plannerModel } : {}),
+                ...(plannerEffort ? { effort: plannerEffort } : {}),
+                origin: {
+                    engine: 'cli', model: plannerModel ? 'mission' : 'cli',
+                    effort: plannerEffort ? 'mission' : 'cli', permissionMode: 'cli'
+                }
+            }),
             problems: engineRefusal(engines, 'claude')
                 ? [`${spec.leadAgentName}: ${engineRefusal(engines, 'claude')}`] : []
         };
@@ -5916,6 +5957,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'nothing looks like one that succeeded. Set `plan` for a reviewer that must not write. '
                 + PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join('|')
                 + '), title?, workdir?, plannerModel?, '
+                + '‼️ plannerEffort? (U-100 — HOW HARD THE ORCHESTRATOR THINKS, the other half of '
+                + 'plannerModel. The planner is always Claude Code, which does take --effort, so this '
+                + 'is a real flag on every planning call of the run and NOT a delegation setting: a '
+                + 'delegate\'s effort is its own row\'s. A typo is refused rather than dropped, because '
+                + 'a dropped one leaves the run on a default you believe you overrode. Omit it and no '
+                + '--effort reaches that command line at all — exactly what every mission written '
+                + 'before this does. A CHILD mission inherits it from its parent, as it does the model), '
                 + 'engine? (which engine the DELEGATIONS run on — '
                 + Object.values(ENGINES).map(e => e.id).join(', ')
                 + ', default claude; a team member '
@@ -5975,10 +6023,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'EVERY refusal at once (an engine this machine cannot run, an effort the engine has '
                 + 'no flag for), per row and deduplicated at the top, so a caller fixes them in one '
                 + 'pass instead of one per attempt. ‼️ THE PLANNER IS NOT A WORKER: it is a headless '
-                + 'Claude Code call whose engine cannot be chosen, which takes no effort and no '
-                + 'permission mode at all (write tools are cut off by name instead), and which runs in '
-                + 'the LEAD AGENT\'s folder rather than the mission workdir — the preview states that '
-                + 'rather than implying five boxes it does not have',
+                + 'Claude Code call whose engine cannot be chosen, whose model and effort come from the '
+                + 'MISSION (plannerModel / plannerEffort — never from a row, never from a fleet default), '
+                + 'which takes no permission mode at all because its write and spawn tools are cut off by '
+                + 'name instead, and which runs in the LEAD AGENT\'s folder rather than the mission '
+                + 'workdir — the preview states that rather than implying five boxes it does not have',
             handler: (args) => previewMission(bridgeMissionInput(args))
         },
         {
@@ -6011,6 +6060,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
+                    // ‼️ U-100 — WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON.
+                    // Every dimension of every DELEGATE has been readable here
+                    // since M-18 while the participant that decides the whole
+                    // run was invisible: "which model planned this, and how hard
+                    // was it thinking?" had no answer on the run at all. `null`
+                    // is the honest word for a field the mission never set — the
+                    // CLI chose, and saying so is not the same as a value.
+                    planner: {
+                        agent: sp?.leadAgentName ?? null,
+                        engine: 'claude',
+                        model: sp?.plannerModel ?? null,
+                        effort: sp?.plannerEffort ?? null,
+                        sessionId: r.plannerSessionId ?? null
+                    },
                     // ‼️ M-17 — WHY IT STOPPED AND WHAT IT DID NOT REACH. A
                     // `partial` that does not say which required criteria are
                     // open is a success with a hedge on it, and "did this reach

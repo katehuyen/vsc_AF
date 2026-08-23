@@ -336,6 +336,21 @@ export interface MissionSpec {
      *  policies) — smart model plans, cheap models execute. */
     plannerModel?: string;
     /**
+     * ‼️ U-100 — AND THE OTHER HALF OF THAT SAME DECISION.
+     *
+     * The mission could say which MODEL plans and had no way to say how hard it
+     * thinks, so an orchestrator meant to reason its way through a hard fork ran
+     * at whatever the CLI calls normal while a delegate on the same machine
+     * could be put on `xhigh` from a picker. One axis of the planner's profile
+     * was settable and the other was not, for no reason anybody chose.
+     *
+     * ABSENT MEANS TODAY'S BEHAVIOUR, on every spec ever written: no `--effort`
+     * reaches the planner command line and the CLI decides, exactly as it did
+     * before this field existed. It is validated against the same vocabulary a
+     * member's effort is — the words cannot be allowed to fork per surface.
+     */
+    plannerEffort?: string;
+    /**
      * The engine every delegation runs on unless the member overrides it (X-18).
      * Empty = `claude`.
      *
