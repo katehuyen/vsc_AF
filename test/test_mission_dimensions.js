@@ -222,9 +222,15 @@ const R = M.resolveDelegateRun;
     ok('…the form reads it back and sends it',
         /form\.efforts\[a\.id\] = val\('ef-' \+ i, form\.efforts\[a\.id\]\);/.test(media)
         && /effort: form\.efforts\[a\.id\] \|\| ''/.test(media));
-    ok('…and the run detail reads the chosen effort back',
-        /m\.effort \? ` ~\$\{m\.effort\}` : ''/.test(media)
-        && /delegation effort/.test(media));
+    // ‼️ U-104 — the run detail still reads it back, but no longer as a chip
+    // repeating what was DECLARED. The member's provenance panel carries the
+    // declared value AND what the ladder resolved it into, because the two are
+    // different facts and the header used to show only the first while the rows
+    // below it showed only the second.
+    ok('…and the run detail reads the chosen effort back, declared and resolved',
+        /Declared on this member/.test(media)
+        && /m\.effort \|\| ''/.test(media)
+        && /\{ k: 'effort', label: 'Effort' \}/.test(media));
 
     ok('creation refuses a typo instead of dropping it, the same way the '
         + 'permission mode is refused',

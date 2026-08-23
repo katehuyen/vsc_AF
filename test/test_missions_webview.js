@@ -38,8 +38,21 @@ const RUN = {
         {
             n: 1, thought: 'split the work', action: 'delegate', plannerCostUSD: 0.11, plannerTokens: 5000, at: 1000,
             steps: [
-                { id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, tokens: 12000, outputFile: 'D:/out/s1.md', runSessionId: 'ses_a1', transcript: 'D:/s/step-a1.jsonl' },
-                { id: 's2', round: 1, agentId: 'a2', agentName: 'reviewer', title: 'review', prompt: 'p', readonly: true, status: 'failed', note: 'agent said no' }
+                {
+                    id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, tokens: 12000, outputFile: 'D:/out/s1.md', runSessionId: 'ses_a1', transcript: 'D:/s/step-a1.jsonl',
+                    // ‼️ U-104 — asked for opus, served by haiku. The one case a
+                    // reader must not have to hover to notice.
+                    ran: {
+                        engine: 'claude', model: 'opus', effort: 'high', permissionMode: 'plan',
+                        origin: { engine: 'cli', model: 'member', effort: 'fleet', permissionMode: 'member', workDir: 'cli' }
+                    },
+                    applied: { models: ['claude-haiku-4-5'], permissionMode: 'plan', effort: null }
+                },
+                {
+                    id: 's2', round: 1, agentId: 'a2', agentName: 'reviewer', title: 'review', prompt: 'p', readonly: true, status: 'failed', note: 'agent said no',
+                    // …and the commonest case: nothing decided anywhere.
+                    ran: { engine: 'claude', origin: { engine: 'cli', model: 'cli', effort: 'cli', permissionMode: 'cli', workDir: 'cli' } }
+                }
             ]
         },
         { n: 2, thought: '', action: 'ask_user', question: 'which branch?', answer: 'main', steps: [], plannerCostUSD: 0.05, at: 2000 }
@@ -209,8 +222,45 @@ ok('team chips carry roles', html().includes('coder — implements'));
 // ‼️ M-14 — and the permissions the member delegated WITH, on the same footing
 // as its engine and model. A chip only where it was set: no chip is the engine
 // default, and that is a different fact, not a missing one.
+// ‼️ U-104 — the chip no longer repeats the declaration in its own words. The
+// member's provenance panel says what was declared on its row, what the ladder
+// resolved that into and what the engine applied — one subject, one surface.
 ok('team chips carry the delegation permissions when one was set',
-    html().includes('title="delegation permissions — what this member may do without stopping to ask">acceptEdits'));
+    /Declared on this member.{0,8}s row: acceptEdits/.test(html()));
+
+// ---------- U-104: requested → resolved → applied, on one surface ----------
+//
+// Three different things were being confused. The composer showed what was
+// CHOSEN and nothing after it; `runNote` showed what the ladder RESOLVED, in one
+// lossy line that dropped every dimension the CLI decided — so the commonest
+// delegation of all, the one that took every default, said nothing at all; and
+// what the engine APPLIED was on no surface anywhere, so a model override that
+// was refused looked exactly like one that was honoured.
+{
+    ok('U-104 — the run detail has two labelled summaries, not one identity line',
+        html().includes('>Orchestrator<') && html().includes('>Workers<'));
+    ok('…the orchestrator states its own profile, engine included',
+        /manager|lead/.test(html()) && html().includes('Engine: claude'));
+    ok('‼️ …and says the planner\'s engine is not a choice anybody made',
+        html().includes('not a choice — this is how the planner runs'));
+    ok('‼️ …its permission mode is not "the CLI chose" either — there is no such flag',
+        html().includes('none — its write and spawn tools are cut off by name'));
+    ok('‼️ …and its workdir is the LEAD agent\'s folder, never the mission workdir',
+        /Workdir: the lead agent.{0,8}s own folder/.test(html()));
+
+    ok('‼️ a step whose engine came back different wears the mismatch mark',
+        html().includes('pmark bad'));
+    ok('…and the panel puts the two side by side rather than hiding one',
+        /Model: opus\s+\(set on this member.{0,8}s own row\)\s+·\s+applied: claude-haiku-4-5/.test(html()));
+    ok('‼️ …while a value the engine HONOURED is not drawn as a disagreement',
+        !/Permissions: plan[^<]*applied: plan/.test(html()));
+    ok('‼️ a dimension nobody set says so instead of going blank',
+        html().includes('— CLI chooses —'));
+    ok('…and effort, which no engine reports, says "not reported" rather than echoing the request',
+        html().includes('not reported'));
+    ok('‼️ a delegation that took every default wears NO mark — a glyph on every row says nothing',
+        /<span class="pname">reviewer<\/span>/.test(html()));
+}
 
 // ---------- click routing ----------
 posted = [];
@@ -1294,7 +1344,11 @@ ok('live activity renders per-agent status chips (lead + team)',
 ok('live feed lists mission agents only, newest first',
     html().includes('parser.ts') && html().includes('brief-payload-600') && !html().includes('outsider')
     && html().indexOf('parser.ts') < html().indexOf('brief-payload-600'));
-ok('planner transcript link renders when the session is indexed', html().includes('planner transcript'));
+// U-104 — the link sits in the Orchestrator row now and is worded "transcript":
+// the row already says whose it is, so repeating "planner" on it was the label
+// being written twice.
+ok('planner transcript link renders when the session is indexed',
+    /Orchestrator/.test(html()) && /data-opensession="[^"]*"[^>]*>transcript</.test(html()));
 ok('budget line carries tasks and minutes', html().includes('2/12 tasks') && html().includes('/120 min'));
 posted = [];
 wired.opensession[0]._click();

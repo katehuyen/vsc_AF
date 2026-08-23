@@ -3081,6 +3081,36 @@ const { opencodeStatus, syncToOpencode } =
                     /missionEmitter\.event\(\(\) => publishLaunchers\(\)\)/.test(src));
             }
 
+            // ‼️ U-104 — REQUESTED, RESOLVED AND APPLIED ARE THREE FACTS.
+            //
+            // `ran` is one line for a narrow place and is lossy by construction:
+            // it drops every dimension the CLI chose and the default engine, so
+            // the commonest delegation of all — one that took every default —
+            // was recorded as nothing at all. And what the ENGINE says it served
+            // was on no surface and in no op: a model override that was refused
+            // read exactly like one that was honoured.
+            {
+                const stBlock = src.slice(src.indexOf("op: 'missions.status'"),
+                    src.indexOf("op: 'missions.conversation'"));
+                ok('‼️ U-104 — the lossy line is UNTOUCHED, so no caller reading it breaks',
+                    /\.\.\.\(s\.runNote \? \{ ran: s\.runNote \} : \{\}\)/.test(stBlock));
+                ok('‼️ …and the same answer whole rides beside it, `cli` origins included',
+                    /dimensions: \{/.test(stBlock)
+                    && /origin: s\.ran\.origin/.test(stBlock)
+                    && /workDir: s\.ran\.workDir \?\? null/.test(stBlock));
+                ok('‼️ …with what the ENGINE says it actually served, per step',
+                    /applied: appliedDimensions\(bySid\.get\(s\.runSessionId\)\)/.test(stBlock));
+                ok('…and for the orchestrator, which had no applied profile anywhere',
+                    /applied: r\.plannerSessionId/.test(stBlock));
+                ok('‼️ silence is a VALUE — a field the transcript does not state is null, never the request echoed back',
+                    /effort: null/.test(src)
+                    && /SILENCE IS A VALUE HERE/.test(src));
+                ok('‼️ …and the index is walked ONCE per call, not once per step',
+                    /const bySid = new Map\(index\.allWithExternal\(\)\.map\(x => \[x\.sessionId, x\]\)\);/.test(stBlock));
+                ok('‼️ the resolver\'s answer is KEPT at the spawn, or none of the above has a source',
+                    /step\.ran = dims;/.test(src));
+            }
+
             // ‼️ X-45 — the real op exists, and its describe carries the two
             // things a caller cannot work out for itself: what `health` can say
             // and that `resume` may REFUSE. An agent that reads "resume: refuse"

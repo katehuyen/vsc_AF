@@ -564,9 +564,14 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
             /permissionMode: memberPerm \|\| undefined/.test(ext));
         ok('the form offers it from the ONE permission list, never a copy',
             /permissions: PERMISSION_CHOICES/.test(ext) && /DATA\.permissions \|\| \[\]/.test(media));
-        ok('…and the run detail reads the chosen mode back',
-            /m\.permissionMode \? ` \{\$\{m\.permissionMode\}\}` : ''/.test(media)
-            && /delegation permissions/.test(media));
+        // ‼️ U-104 — read back in the member's provenance panel now: what was
+        // declared on the row, what the ladder resolved, and what the engine
+        // says it actually applied. A chip that repeated the declaration was
+        // the one thing that could NOT show a mode being overridden.
+        ok('…and the run detail reads the chosen mode back, declared and resolved',
+            /Declared on this member/.test(media)
+            && /m\.permissionMode \|\| ''/.test(media)
+            && /\{ k: 'permissionMode', label: 'Permissions' \}/.test(media));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

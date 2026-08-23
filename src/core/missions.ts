@@ -26,7 +26,7 @@ import {
     chairCall, COUNCIL_EXITS, councilBrief, councilDigest, councilExit, councilOf, MissionCouncil,
     newCouncilId, normalizeOptions, readVoteChoice, refuseCouncilTurn
 } from './missionCouncil';
-import type { DelegateOrigin } from './missionMode';
+import type { DelegateOrigin, DelegateRun } from './missionMode';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -583,6 +583,22 @@ export interface MissionStep {
      * added to describe and is not worth a row.
      */
     runNote?: string;
+    /**
+     * ‼️ U-104 — THE SAME FACT, AS A FACT rather than as a sentence.
+     *
+     * `runNote` is one line for a narrow place, and it is LOSSY by design: it
+     * drops every dimension whose origin is `cli`, drops `claude` because it is
+     * the default, and never carried the workdir at all. So a reader asking
+     * "which engine, which model, whose decision?" of a finished run got a
+     * partial answer with no sign that anything was missing — and a blank cell
+     * on the commonest case of all, a delegation that took every default.
+     *
+     * This is the resolver's own output, kept: every dimension with the layer
+     * that decided it (`member|mission|agent|fleet|cli`). Absent on steps
+     * recorded before it existed — the surfaces fall back to `runNote`, and say
+     * which they are showing rather than drawing an empty row.
+     */
+    ran?: DelegateRun;
 }
 
 /**

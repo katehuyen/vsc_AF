@@ -1159,6 +1159,174 @@
      * A step with no session yet (queued, or a delegation that never launched)
      * says so rather than drawing a link that would do nothing.
      */
+    /**
+     * ‼️ U-104 — PROVENANCE, WORDED ONCE FOR EVERY PARTICIPANT ON THIS PAGE.
+     *
+     * Three different things were being confused with each other, and the run
+     * detail could only ever show one of them at a time:
+     *
+     *   REQUESTED — what somebody chose (a member row, the mission, an agent's
+     *     own default, the fleet's). Visible in the composer and nowhere after.
+     *   EFFECTIVE — what the ladder resolved that into, and WHICH LAYER decided
+     *     each part. `runNote` said this in one lossy line: it dropped every
+     *     dimension the CLI chose and the default engine, so the commonest
+     *     delegation of all — one that took every default — showed nothing.
+     *   APPLIED — what the engine says it actually served. A model override can
+     *     be refused or substituted mid-session, and nothing on this page could
+     *     have shown the difference.
+     *
+     * So: one renderer, one vocabulary, five dimensions in a fixed order. The
+     * ROW gets a short mark (SHORTHAND) and the panel gets the table (AFTip).
+     * ‼️ An unset dimension says `— CLI chooses —` rather than going blank: a
+     * blank is read as "not applicable", and "nobody decided this" is a fact.
+     * ‼️ An applied value the transcript does not state says `not reported`,
+     * never the request echoed back — that echo is how a mismatch hides.
+     */
+    const ORIGIN_LONG = {
+        member: 'set on this member\'s own row',
+        mission: 'set mission-wide',
+        agent: 'this agent\'s own default for that engine (agentFarm.agentEngineDefaults)',
+        fleet: 'the fleet default (agentFarm.launchDefaults)',
+        cli: 'nobody set it — the CLI decided',
+        // ‼️ The sixth word, and the only one that is not a LAYER. Some of the
+        // orchestrator's dimensions are not decisions at all — its engine is
+        // Claude Code always, and it has no permission mode to set — and
+        // printing "nobody set it, the CLI decided" for those would be a lie
+        // about a control that does not exist.
+        fixed: 'not a choice — this is how the planner runs'
+    };
+    /** The dimensions, in the order every provenance surface prints them. */
+    const DIMS = [
+        { k: 'engine', label: 'Engine' },
+        { k: 'model', label: 'Model' },
+        { k: 'effort', label: 'Effort' },
+        { k: 'permissionMode', label: 'Permissions' },
+        { k: 'workDir', label: 'Workdir' }
+    ];
+    const NOT_SET = '— CLI chooses —';
+    const NOT_REPORTED = 'not reported';
+
+    /** What the engine says it served, for one dimension — or the honest
+     *  silence. `applied` absent altogether means the session is not indexed. */
+    function appliedValue(applied, key) {
+        if (!applied) { return ''; }
+        if (key === 'model') { return (applied.models || []).join(', ') || NOT_REPORTED; }
+        if (key === 'permissionMode') { return applied.permissionMode || NOT_REPORTED; }
+        if (key === 'effort') { return applied.effort || NOT_REPORTED; }
+        return '';
+    }
+
+    /**
+     * ‼️ THE ONE COMPARISON THIS WHOLE ITEM EXISTS FOR. A dimension is a
+     * MISMATCH only when both sides said something and they differ — a silent
+     * transcript is not a disagreement, and treating it as one would put a
+     * warning on every step of every engine that reports nothing.
+     */
+    function dimMismatch(dims, applied, key) {
+        const want = String((dims && dims[key]) || '').trim();
+        const got = appliedValue(applied, key);
+        if (!want || !got || got === NOT_REPORTED) { return false; }
+        // A session can be served by several models; the request is honoured if
+        // it is among them, not only if it was the only one.
+        //
+        // ‼️ AND AN ALIAS IS NOT A SUBSTITUTION. Every CLI here takes a SHORT
+        // name and writes the full id into its transcript — `opus` is served by
+        // `claude-opus-5`, `grok-code` by `grok-code-fast-1`. Compared as
+        // strings, that is a disagreement on almost every row, and a warning
+        // that fires on almost every row is one nobody reads. Either side
+        // containing the other is the honest reading of "this is what I asked
+        // for"; what stays a mismatch is a genuinely different model.
+        if (key === 'model') { return !(applied.models || []).some(m => sameModel(m, want)); }
+        return got !== want;
+    }
+    function sameModel(a, b) {
+        const x = String(a || '').toLowerCase();
+        const y = String(b || '').toLowerCase();
+        return !!x && !!y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
+    }
+
+    /** The rows of the provenance panel: requested/effective, who decided, and
+     *  what came back — one line per dimension, always all five. */
+    function provLines(dims, applied) {
+        if (!dims) { return []; }
+        return DIMS.map(d => {
+            const value = String(dims[d.k] || '').trim();
+            const from = originOfDim(dims, d.k);
+            const got = appliedValue(applied, d.k);
+            // ‼️ "applied" is printed when it ADDS something: a value that came
+            // back, or a silence about a value somebody asked for. Pairing
+            // "nobody set this" with "the engine did not say" is two absences
+            // on one line and reads as a fault where there is none.
+            const said = got && got !== value && (value || got !== NOT_REPORTED)
+                ? `  ·  applied: ${got}` : '';
+            return `${d.label}: ${value || NOT_SET}`
+                + (value || from === 'fixed' ? `  (${ORIGIN_LONG[from] || from})` : '')
+                + said;
+        });
+    }
+
+    /**
+     * The mark the ROW carries. Nothing when the run took every default (there
+     * is no decision to point at); ⚙ when some layer decided something; ≠ when
+     * the engine came back with something other than what was asked for, which
+     * is the one case a reader must not have to hover to notice.
+     */
+    function provMark(dims, applied) {
+        if (!dims) { return ''; }
+        const off = DIMS.some(d => dimMismatch(dims, applied, d.k));
+        if (off) { return '<span class="pmark bad">≠</span>'; }
+        // `fixed` is not a decision anybody made — see ORIGIN_LONG — so it does
+        // not earn the ⚙ either; otherwise the orchestrator would wear one on
+        // every run in existence and the glyph would stop meaning anything.
+        const chosen = DIMS.some(d => dims[d.k] && !['cli', 'fixed'].includes(originOfDim(dims, d.k)));
+        return chosen ? '<span class="pmark">⚙</span>' : '';
+    }
+
+    /**
+     * The whole surface: the trigger with its mark, and the panel behind it.
+     * MIRROR — the panel opens with the CURRENT effective line, because the row
+     * shows a glyph and a glyph cannot say `codex · gpt-5 · high`.
+     */
+    function provWrap(trigger, who, dims, applied, tail) {
+        if (!dims) {
+            return window.AFTip.wrap(trigger, who,
+                window.AFTip.lines([
+                    'No routing was recorded for this delegation.',
+                    'It ran before Agent Farm kept the resolver\'s answer, so what it used is only in its own transcript.',
+                    tail || ''
+                ]));
+        }
+        const short = describeEffective(dims) || 'every dimension left to the CLI';
+        return window.AFTip.wrap(trigger, `${who} — ${short}`,
+            window.AFTip.lines([
+                'Requested → resolved, and who decided each part:',
+                ...provLines(dims, applied),
+                '',
+                applied === null || applied === undefined
+                    ? 'The engine reported nothing back: its session is not in the index (yet, or at all).'
+                    : 'applied: what the CLI\'s own transcript says it ran with. Effort is reported by no engine today, so it is always "not reported".',
+                tail || ''
+            ]));
+    }
+
+    /** The effective set as one short line — the panel's first line and the
+     *  Orchestrator/Workers summaries' own text. */
+    function describeEffective(dims) {
+        if (!dims) { return ''; }
+        // The workdir is a path and never fits a chip; a `fixed` dimension is
+        // not a choice and its sentence belongs in the panel, not on the row.
+        // The engine is the exception — it is one word and it is the first
+        // thing a reader wants off this chip.
+        return DIMS.filter(d => dims[d.k] && d.k !== 'workDir'
+            && (d.k === 'engine' || originOfDim(dims, d.k) !== 'fixed'))
+            .map(d => String(dims[d.k])).join(' · ');
+    }
+    /** Which layer decided one dimension. The workdir has no per-dimension
+     *  origin on a delegate's record — it comes from the mission or nowhere. */
+    function originOfDim(dims, key) {
+        return (dims && dims.origin && dims.origin[key]) || (key === 'workDir' ? 'mission' : 'cli');
+    }
+
     function stepLinks(s) {
         const links = [];
         if (s.transcript) {
@@ -1175,6 +1343,24 @@
             : 'No session was recorded for this step and no output file was kept.')}">—</span>`;
     }
 
+    /**
+     * ‼️ U-104 — the agent cell of a delegation row IS the provenance surface.
+     *
+     * It used to carry a thin native `title` built from `runNote`, which meant
+     * the answer to "which engine, which model, whose decision, and did the CLI
+     * honour it?" was a lossy sentence on a tooltip that a repaint takes away
+     * mid-read. The name still reads as the name; the mark beside it says
+     * whether anything was decided (⚙) or came back different (≠), and the
+     * panel behind it carries the table. Steps recorded before `ran` existed
+     * fall back to the old line rather than showing an empty panel.
+     */
+    function stepProv(s) {
+        const name = C.esc(s.agentName);
+        const mark = provMark(s.ran, s.applied);
+        return provWrap(`<span class="pname">${name}${mark}</span>`, s.agentName, s.ran, s.applied,
+            !s.ran && s.runNote ? '\nRecorded at the time as: ' + s.runNote : '');
+    }
+
     function stepRow(s, run) {
         const open = expandedStep === s.id;
         const ctx = window.AFCtx.row('afMissionStep', {
@@ -1186,9 +1372,7 @@
         return `<tr class="srow" data-step="${C.esc(s.id)}" ${ctx}
             title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
             <td class="stoggle">${open ? '▾' : '▸'}</td>
-            <td${s.runNote ? ` title="${C.esc(s.agentName + ' ran with — ' + s.runNote
-                + '\nUnmarked values were stated on the member; (agent) is this agent\'s own default for that'
-                + ' engine, (fleet) is agentFarm.launchDefaults, (mission) is the mission-wide engine.')}"` : ''}>${C.esc(s.agentName)}${stepLive(s)}</td>
+            <td>${stepProv(s)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
             <td>${chip(s.status)}${failChip(s.failure)}</td>
             <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>
@@ -2097,6 +2281,31 @@
         </div>`;
     }
 
+    /**
+     * ‼️ U-104 — WHAT EACH WORKER HAS ACTUALLY RUN WITH IN THIS RUN.
+     *
+     * The Workers summary must not re-resolve the ladder live: the settings it
+     * would read are today's, and a run from last week did not use today's. The
+     * honest source is the run's own record — the LAST delegation each
+     * participant took, which is what "the final spec" means for a run that is
+     * still going and for one that has finished.
+     *
+     * A member that has not been given anything yet has no answer here, and the
+     * summary says "not yet delegated" rather than inventing one.
+     */
+    function workerRuns(run) {
+        const by = {};
+        (run.rounds || []).forEach(rd => (rd.steps || []).forEach(s => {
+            if (!s.agentName || !s.ran) { return; }
+            // ‼️ ONE SUBJECT — the ROUND, not the step's title. The title belongs
+            // to the row below and repeating it here would put one fact on two
+            // surfaces; the round number is what a reader needs to find the
+            // delegation this reading was taken from.
+            by[s.agentName] = { dims: s.ran, applied: s.applied, round: rd.n };
+        }));
+        return by;
+    }
+
     function detailHtml(run) {
         const sp = spec(run);
         const pctRaw = sp.limits.maxCostUSD > 0 ? (run.totalCostUSD / sp.limits.maxCostUSD) * 100 : 0;
@@ -2119,6 +2328,32 @@
                 <span class="muted small">— <span data-since="${run.now.since}">${elapsed(run.now.since)}</span></span></div>`
             : '';
         const pt = (DATA.plannerTranscripts || {})[run.id];
+        /**
+         * ‼️ U-104 — the ORCHESTRATOR read as one of the five-dimension shapes
+         * every other participant on this page is read as, so one renderer
+         * serves both. Two of the five are not choices at all and say so with
+         * an origin rather than by going missing: the engine is FIXED (the
+         * planner always runs on Claude Code) and the permission mode does not
+         * exist on that command line — its tools are cut off by name instead.
+         * The workdir is the LEAD AGENT'S folder, deliberately not the mission
+         * workdir, which is where the delegations run.
+         */
+        const plannerDims = {
+            engine: 'claude',
+            model: sp.plannerModel || '',
+            effort: sp.plannerEffort || '',
+            permissionMode: 'none — its write and spawn tools are cut off by name',
+            workDir: 'the lead agent\'s own folder',
+            origin: {
+                engine: 'fixed',
+                model: sp.plannerModel ? 'mission' : 'cli',
+                effort: sp.plannerEffort ? 'mission' : 'cli',
+                permissionMode: 'fixed',
+                workDir: 'fixed'
+            }
+        };
+        /** What each worker has actually run with in THIS run — see workerRuns. */
+        const ran = workerRuns(run);
         const tasksUsed = run.rounds.reduce((a, r) => a + r.steps.length, 0);
         const wallMin = Math.max(0, Math.round(((run.endedAt || Date.now()) - run.startedAt - (run.waitedMs || 0)) / 60000));
         return `<div class="mdetail">
@@ -2142,19 +2377,46 @@
                 ${canResume ? `<button id="d-resume-${C.esc(run.id)}">Resume</button>` : ''}
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
-            <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
-                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''}${sp.plannerEffort ? ` <span class="mchip mdl" title="planner effort — how hard the orchestrator thinks per decision. Empty is not &quot;normal&quot;: no --effort reaches that call at all and the CLI decides.">~${C.esc(sp.plannerEffort)}</span>` : ''}${
-                /* ‼️ U-64 — an ADAPTIVE run has no team here and drew an empty
-                   "team ·" that read as a missing fact. Its cast is bound at
-                   runtime and has its own section; the header says where. */
-                !sp.team.length
+            <!-- ‼️ U-104 — TWO SUBJECTS, TWO SUMMARIES. One muted line used to
+                 hold the lead, the planner's model, the whole team, the workdir
+                 and the approval mode. It answered "who is in this" and could
+                 not answer "what did each of them actually run with", which is
+                 the question a finished run is read for — and the member chips
+                 repeated the DECLARED values while the rows below showed the
+                 RESOLVED ones, so the same subject was drawn twice, differently.
+                 ONE SUBJECT: the orchestrator is one, the workers are another,
+                 and each carries its own provenance panel. -->
+            <div class="provrow">
+                <span class="plabel" title="Who plans the rounds, and what it plans with. The planner is not a worker: it always runs on Claude Code, in the LEAD AGENT'S own folder, with no permission mode at all.">Orchestrator</span>
+                <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
+                    title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>
+                ${provWrap(`<span class="mchip prov">${C.esc(describeEffective(plannerDims) || 'CLI chooses')}${provMark(plannerDims, run.plannerApplied)}</span>`,
+                    sp.leadAgentName + ' — planner', plannerDims, run.plannerApplied,
+                    '\nThe planner ALWAYS runs on Claude Code and in the LEAD AGENT\'S own folder — not the mission workdir, which is where the delegations run. It takes no permission mode at all: its write and spawn tools are cut off by name instead.')}
+                ${pt ? `<a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">transcript</a>`
+                    : `<span class="muted small" title="The planner's own session has not been indexed — there is nothing to open yet.">no transcript yet</span>`}
+            </div>
+            <div class="provrow">
+                <span class="plabel" title="Who the work is handed to, and what each of them ended up running with. A member's panel shows what was declared on its row, what the ladder resolved that into, and what the engine says it actually served.">Workers</span>
+                ${!sp.team.length
                     ? (isAdaptive(sp)
-                        ? ` · <span class="muted small" title="An adaptive lead is handed a pool and binds a cast as it goes — the Cast section below is where that record is.">cast bound at runtime</span>`
-                        : '')
-                    : ` · team ` + sp.team.map(m =>
-                `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
-                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${(m.engine || sp.engine) && (m.engine || sp.engine) !== 'claude' ? ` <i class="mdl" title="delegation engine">${C.esc(m.engine || sp.engine)}</i>` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}${m.permissionMode ? ` <i class="mdl" title="delegation permissions — what this member may do without stopping to ask">${C.esc(m.permissionMode)}</i>` : ''}${m.effort ? ` <i class="mdl" title="delegation effort — how hard this member thinks per turn; empty is not &quot;normal&quot;, it is resolved from this agent's own default then the fleet's">${C.esc(m.effort)}</i>` : ''}</span>`).join(' ')}
-                ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
+                        ? `<span class="muted small" title="An adaptive lead is handed a pool and binds a cast as it goes — the Cast section below is where that record is.">cast bound at runtime</span>`
+                        : `<span class="muted small">nobody on the team</span>`)
+                    : sp.team.map(m => {
+                        const w = ran[m.agentName];
+                        const declared = [m.engine || sp.engine || '', m.model || '', m.effort || '', m.permissionMode || '']
+                            .filter(Boolean).join(' · ');
+                        return provWrap(
+                            `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}>${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${w ? provMark(w.dims, w.applied) : ''}</span>`,
+                            m.agentName + (m.role ? ' — ' + m.role : ''),
+                            w ? w.dims : null, w ? w.applied : undefined,
+                            (declared ? '\nDeclared on this member\'s row: ' + declared
+                                : '\nNothing is declared on this member\'s row — every dimension falls through the ladder.')
+                            + (w ? '\nRead off its last delegation, in round ' + w.round + '.'
+                                : '\nIt has not been delegated to yet, so nothing has been resolved for it.'));
+                    }).join(' ')}
+                <span class="muted small">${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}</span>
+            </div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
             ${isAdaptive(sp) && run.traceDegraded ? `<div class="nowstrip paused" title="What the last reload could not account for. The run is still shown in full — a journal with a gap is a reason to say so, never a reason to hide the work.">
@@ -2334,6 +2596,24 @@
                     color:var(--vscode-textLink-foreground); letter-spacing:.4px; padding:0 5px; }
                 .mchip.mdl, .mchip.team i.mdl { font-style:normal; opacity:.75; font-size:9px;
                     border:1px solid var(--vscode-widget-border, #5555); border-radius:6px; padding:0 4px; margin-left:3px; }
+                /* ‼️ U-104 — the provenance strip. Two labelled rows in place of
+                   the one muted identity line: the label is the SUBJECT and sits
+                   at a fixed width so the eye reads down it rather than hunting
+                   along a sentence. */
+                .provrow { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+                    font-size:12px; margin:3px 0; color:var(--vscode-descriptionForeground); }
+                .provrow .plabel { min-width:86px; font-size:10px; letter-spacing:.4px;
+                    text-transform:uppercase; opacity:.7; cursor:default; }
+                .provrow b { color:var(--vscode-foreground); }
+                .mchip.prov { background:transparent; border:1px solid var(--vscode-widget-border, #5555);
+                    opacity:.9; }
+                /* The row's own SHORTHAND: ⚙ some layer decided something, ≠ the
+                   engine came back with something other than what was asked for.
+                   Nothing at all when every dimension fell through to the CLI —
+                   a mark on every row is a mark that says nothing. */
+                .pmark { margin-left:4px; font-size:9px; opacity:.75; cursor:default; }
+                .pmark.bad { color:var(--vscode-errorForeground, #d13438); opacity:1; font-weight:600; }
+                .pname { white-space:nowrap; }
                 .nowstrip { display:flex; align-items:center; gap:7px; margin:8px 0; padding:7px 10px;
                     border-radius:5px; font-size:12px;
                     border:1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 40%, transparent);

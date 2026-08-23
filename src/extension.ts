@@ -3870,6 +3870,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // file nobody remembers writing.
                     const dimNote = describeDelegateRun(dims);
                     if (dimNote) { step.runNote = dimNote; }
+                    // ‼️ U-104 — …AND THE SAME THING UNSUMMARISED. The line
+                    // above is lossy on purpose (it drops every `cli` origin and
+                    // the default engine), which is why the commonest delegation
+                    // of all — one that took every default — left NO record of
+                    // what it ran with. The resolver's own answer is kept beside
+                    // it, so a provenance surface can say "nobody set this, the
+                    // CLI chose" instead of showing a blank.
+                    step.ran = dims;
                     // ‼️ M-19 — THE SPEAKER PICKS ITS OWN LANE BACK UP. When the
                     // same participant speaks again, this is the whole of the
                     // mechanism: the session its last turn ran in becomes this
@@ -6060,6 +6068,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(run, 'Run not found — missions.list shows current ids.');
                 const r = run as MissionRun;
                 const sp = missionStore.spec(r.specId);
+                // ‼️ U-104 — the transcripts of this run's own lanes, so a step
+                // can say what the engine ACTUALLY served it with beside what it
+                // was asked for. Built once: a run with forty steps must not
+                // walk the whole index forty times.
+                const bySid = new Map(index.allWithExternal().map(x => [x.sessionId, x]));
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
@@ -6075,7 +6088,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         engine: 'claude',
                         model: sp?.plannerModel ?? null,
                         effort: sp?.plannerEffort ?? null,
-                        sessionId: r.plannerSessionId ?? null
+                        sessionId: r.plannerSessionId ?? null,
+                        // ‼️ U-104 — the orchestrator is a participant, so the
+                        // same requested/applied split applies to it. Null while
+                        // its session is unindexed; never the spec repeated.
+                        applied: r.plannerSessionId
+                            ? appliedDimensions(bySid.get(r.plannerSessionId)) : null
                     },
                     /**
                      * ‼️ X-95 — EVERY SESSION THIS RUN OPENED, gathered.
@@ -6198,6 +6216,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             } : {}),
                             // what it RAN with and which layer decided each part
                             ...(s.runNote ? { ran: s.runNote } : {}),
+                            /**
+                             * ‼️ U-104 — `ran` above is ONE LINE for a narrow
+                             * place and is lossy by construction: it says
+                             * nothing about a dimension the CLI chose, nothing
+                             * about the default engine, and nothing about the
+                             * workdir. It stays exactly as it was — a caller
+                             * reading it is unaffected — and this is the same
+                             * answer whole: every dimension with the layer that
+                             * decided it, `cli` included, so "nobody set this"
+                             * is a value rather than an absence.
+                             */
+                            ...(s.ran ? {
+                                dimensions: {
+                                    engine: s.ran.engine,
+                                    model: s.ran.model ?? null,
+                                    effort: s.ran.effort ?? null,
+                                    permissionMode: s.ran.permissionMode ?? null,
+                                    workDir: s.ran.workDir ?? null,
+                                    origin: s.ran.origin
+                                }
+                            } : {}),
+                            /**
+                             * ‼️ U-104 — AND WHAT THE ENGINE SAYS IT ACTUALLY
+                             * DID, which is not the same question. A model
+                             * override can be refused, silently substituted, or
+                             * changed mid-session; the request is a decision and
+                             * this is the evidence. `null` fields mean the
+                             * transcript did not say — never the request echoed
+                             * back, which is how a mismatch stays invisible.
+                             * Absent when the session has not been indexed.
+                             */
+                            ...(s.runSessionId && bySid.has(s.runSessionId)
+                                ? { applied: appliedDimensions(bySid.get(s.runSessionId)) } : {}),
                             // ‼️ A CEILING IS NOT PROGRESS. A delegation a
                             // budget or a concurrency limit is holding sits at
                             // "running" on every surface while nothing runs, and
@@ -11622,6 +11673,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  page shows the settled numbers without rewriting the store. Steps and
      *  runs recorded before tokens existed are backfilled from the session
      *  index (the delegate's matched transcript / the planner's own session). */
+    /**
+     * ‼️ U-104 — WHAT THE CLI ITSELF SAYS IT RAN WITH, as opposed to what was
+     * asked for.
+     *
+     * The mission decides a model, an effort and a permission mode and hands
+     * them to a command line; whether the engine HONOURED them is a different
+     * fact, and the only witness to it is the transcript. Two of the three are
+     * in the index already — the models that actually served the session and the
+     * permission mode the CLI recorded — and the third, effort, is reported by
+     * no engine at all today.
+     *
+     * ‼️ SILENCE IS A VALUE HERE. A field the transcript does not mention comes
+     * back `null`, and every surface prints "not reported" for it rather than
+     * echoing the request back as if it had been confirmed. Showing a requested
+     * value in a column headed "applied" is how a mismatch stays invisible.
+     */
+    const appliedDimensions = (
+        sess: SessionInfo | undefined
+    ): { models: string[]; permissionMode: string | null; effort: null } | null => {
+        if (!sess) { return null; }
+        return {
+            models: sess.models ?? [],
+            permissionMode: sess.permissionMode || null,
+            // No engine states the effort it ran at anywhere in its transcript.
+            // The field exists so the surfaces have one shape to draw and one
+            // word for "nobody said", and so the day an engine starts reporting
+            // it there is a place for it to land.
+            effort: null
+        };
+    };
+
     const missionRunsForPanel = () => {
         const byTask = new Map(taskManager.tasks.map(t => [t.id, t]));
         const sessions = index.all();
@@ -11634,6 +11716,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 /** whole-planner-session total — the run-level fallback when
                  *  rounds carry no per-round planner tokens (pre-2.68 runs). */
                 plannerSessionTokens: ps ? totalTokens(ps.usage) : undefined,
+                /**
+                 * ‼️ U-104 — THE ORCHESTRATOR IS A PARTICIPANT AND HAS A
+                 * PROFILE TOO. Its model and effort were readable off the spec
+                 * as things REQUESTED; what the planner's own session actually
+                 * ran on was never on this page. Null when the index has not
+                 * seen that session — a run whose planner has not written a
+                 * transcript yet says "not reported", never today's spec.
+                 */
+                plannerApplied: appliedDimensions(ps),
                 /**
                  * ‼️ U-65 — A SPEAKING TURN'S TWO DEEP LINKS, RESOLVED HERE.
                  *
@@ -11679,13 +11770,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                          */
                         const byIdSess = step.runSessionId ? bySessionId.get(step.runSessionId) : undefined;
                         const transcript = byIdSess?.file ?? sess?.file;
-                        if (!t) { return transcript ? { ...step, transcript } : step; }
+                        // ‼️ U-104 — the same session that carries the link
+                        // carries the EVIDENCE: which model actually served this
+                        // delegation and under which permission mode. Resolved
+                        // here for the same reason the link is — the page has no
+                        // index, and half-resolving would leave a provenance row
+                        // quietly showing the request twice.
+                        const applied = appliedDimensions(byIdSess ?? sess);
+                        if (!t) {
+                            return transcript || applied
+                                ? { ...step, ...(transcript ? { transcript } : {}), ...(applied ? { applied } : {}) }
+                                : step;
+                        }
                         return {
                             ...step,
                             costUSD: step.costUSD ?? t.costUSD,
                             tokens: step.tokens ?? t.tokens ?? (sess ? totalTokens(sess.usage) : undefined),
                             outputFile: step.outputFile ?? t.outputFile,
-                            ...(transcript ? { transcript } : {})
+                            ...(transcript ? { transcript } : {}),
+                            ...(applied ? { applied } : {})
                         };
                     })
                 }))

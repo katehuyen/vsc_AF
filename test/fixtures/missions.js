@@ -116,6 +116,10 @@ const SPEC = {
 
 const RUN = {
     id: 'run1', specId: 'spec1', status: 'running', plannerSessionId: 'S1',
+    // ‼️ U-104 — what the PLANNER'S own session says it ran on. The spec asks
+    // for opus; the transcript is the only witness that it got it, and the
+    // orchestrator's applied profile had never been on this page at all.
+    plannerApplied: { models: ['claude-opus-5'], permissionMode: null, effort: null },
     startedAt: Date.now() - 41 * 60000,
     totalCostUSD: 1.42, totalTokens: 486000, ledger: [],
     rounds: [
@@ -132,12 +136,44 @@ const RUN = {
                     // session it ran in (resolved to a file by the host) and the
                     // output it wrote. The row draws the pair; s3 below has
                     // neither, which is the other case worth picturing.
-                    runSessionId: 'ses_9f31c0a4', transcript: 'D:/sessions/sess-dev-1.jsonl'
+                    runSessionId: 'ses_9f31c0a4', transcript: 'D:/sessions/sess-dev-1.jsonl',
+                    // ‼️ U-104 — THE MISMATCH, which is the one case a reader must
+                    // not have to hover to notice: grok-code was asked for and
+                    // the session was served by a different model entirely, and
+                    // the permission mode came back narrower than requested. The
+                    // row wears ≠ and the panel puts the two side by side.
+                    //
+                    // ‼️ An ALIAS would NOT be a mismatch — `grok-code` served by
+                    // `grok-code-fast-1` is the CLI expanding a short name, and
+                    // flagging that would put ≠ on nearly every row. See
+                    // sameModel().
+                    ran: {
+                        engine: 'opencode', model: 'grok-code', effort: 'high',
+                        permissionMode: 'acceptEdits', workDir: 'D:/zone/dev/git/miropharm/vsc_AgentFarm',
+                        origin: {
+                            engine: 'member', model: 'member', effort: 'agent',
+                            permissionMode: 'fleet', workDir: 'mission'
+                        }
+                    },
+                    applied: { models: ['claude-haiku-4-5'], permissionMode: 'plan', effort: null }
                 },
                 {
                     id: 's2', round: 1, agentId: 'a2', agentName: 'basit',
                     title: 'read the transcript back', prompt: 'p', readonly: true,
-                    status: 'done', costUSD: 0, tokens: 88000
+                    status: 'done', costUSD: 0, tokens: 88000,
+                    // ‼️ U-104 — THE COMMONEST DELEGATION OF ALL: every dimension
+                    // left to the CLI. `runNote` drew NOTHING for this, so the
+                    // row that most needed to say "nobody decided this" was the
+                    // one that said least. No mark, and the panel says it in
+                    // words on all five lines.
+                    ran: {
+                        engine: 'claude',
+                        origin: {
+                            engine: 'cli', model: 'cli', effort: 'cli',
+                            permissionMode: 'cli', workDir: 'cli'
+                        }
+                    },
+                    applied: { models: ['claude-haiku-4-5'], permissionMode: null, effort: null }
                 }
             ]
         },
@@ -153,6 +189,9 @@ const RUN = {
                     // the Agent cell, because a row that has to say this out
                     // loud would be four columns wider for a fact most rows do
                     // not need.
+                    // ‼️ U-104 — a step recorded BEFORE the resolver's answer was
+                    // kept. It has the old lossy line and nothing else, and the
+                    // panel has to say so rather than drawing five empty rows.
                     runNote: 'engine opencode · model grok-code · effort high (agent) · permissions acceptEdits'
                 },
                 {
