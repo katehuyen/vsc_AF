@@ -61,33 +61,52 @@
     let graphOpen = false;            // the runtime graph
     let guideOpen = false;            // steer the next decision
     let convOpen = false;             // the conversation room
-    /** ‼️ U-65 — which exchange is OPEN, by id. One at a time: a transcript is
-     *  a reading surface and two of them stacked is neither. */
-    let convThread = null;
-    /** ‼️ U-65 — the reader's filter, kept across repaints. A page that redraws
-     *  once a second and reset it every time would be unusable while live. */
-    let convOnlyOpen = false;         // only threads still awaiting an answer
-    /** ‼️ U-65 — the message the reader jumped to, so a ref click can land. */
-    let convMark = null;
+    /**
+     * ‼️ U-65 / X-93 — WHICH EXCHANGE IS OPEN, AND IN WHICH RUN.
+     *
+     * One at a time: a transcript is a reading surface and two of them stacked
+     * is neither. But a conversation id is only unique WITHIN its run — every
+     * run starts at `c1` — so holding the bare id meant that with two run rows
+     * open, one click on `c1` opened both of them, drew two elements carrying
+     * the same DOM id, and `getElementById` then managed the scroll and unseen
+     * count of whichever came first. The key is the pair, everywhere.
+     */
+    let convThread = null;            // `${runId} ${conversationId}` or null
+    const cvKey = (runId, convId) => runId + ' ' + convId;
+    /** A DOM id that cannot collide, built from the same key that decided the
+     *  element exists at all. */
+    const cvDomId = (prefix, key) => prefix + '-' + String(key).replace(/[^A-Za-z0-9_-]/g, '_');
     /** ‼️ U-65 — a long exchange is drawn compact until the reader asks for it
      *  whole. The number is the point where a transcript stops being readable
      *  in one screen, not a memory limit. */
     const CONV_COMPACT = 25;
-    let convAll = false;
     /**
-     * ‼️ U-65 — THE READING POSITION IS STATE, and this page repaints ONCE A
-     * SECOND while a mission runs. A transcript that jumped back to its first
-     * line every second would not be a redraw, it would be an interruption —
-     * the same one AFTip had to solve for its panel.
+     * ‼️ U-65 / X-93 — THE READING POSITION IS STATE, and this page repaints
+     * ONCE A SECOND while a mission runs. A transcript that jumped back to its
+     * first line every second would not be a redraw, it would be an
+     * interruption — the same one AFTip had to solve for its panel.
      *
-     * `convAtEnd` is the difference between the two readers this surface has:
-     * one FOLLOWING a live exchange, who wants each new turn as it lands, and
-     * one READING an earlier part of it, whose place must not be taken away.
-     * A new turn moves the first one down and shows the second one a count.
+     * `atEnd` is the difference between the two readers this surface has: one
+     * FOLLOWING a live exchange, who wants each new turn as it lands, and one
+     * READING an earlier part of it, whose place must not be taken away. A new
+     * turn moves the first one down and shows the second one a count.
+     *
+     * ‼️ AND IT IS PER EXCHANGE. All of it was global, so opening a second
+     * conversation handed it the first one's scroll offset, its unseen count,
+     * its "show all" and the message it had jumped to — a reader's place in one
+     * transcript silently applied to another. Keyed by run+conversation, so
+     * coming back to an exchange comes back to where you were in it.
      */
-    let convScroll = 0;
-    let convAtEnd = true;
-    let convSeen = 0;
+    const convRead = {};              // cvKey → { scroll, atEnd, seen, all, mark }
+    const cvRead = (key) => (convRead[key] ??= { scroll: 0, atEnd: true, seen: 0, all: false, mark: null });
+    /**
+     * ‼️ U-65 / X-93 — the reader's filter, kept across repaints. A page that
+     * redraws once a second and reset it every time would be unusable while
+     * live. Per RUN, because that is the scope of the checkbox that sets it —
+     * one global flag meant ticking it on one run hid rows on another.
+     */
+    const convFilter = {};            // runId → only threads still awaiting an answer
+    const cvOnlyOpen = (runId) => !!convFilter[runId];
     const guideNote = {};             // runId → what the host said about the last steer
     let expandedStep = null;          // step id opened in the accordion (one at a time)
     let tail = { file: '', text: '', size: 0, missing: false };
@@ -1369,9 +1388,13 @@
         const spoken = m.state === 'delivered';
         const waiting = !spoken && !failed;
         const body = spoken ? (m.excerpt || '') : '';
+        // ‼️ X-93 — a ref carries WHERE it lands, not just what it names. The
+        // handler has to be able to open the right thread and expand whatever
+        // is hiding the target, and it cannot work that out from an id alone.
         const refChips = (m.refs || []).map(r => {
             const src = byId[r];
             return `<a class="cvref" data-cvjump="${C.esc(r)}"
+                data-cvrun="${C.esc(run.id)}" data-cvconv="${C.esc(m.conversationId || '')}"
                 title="${C.esc(src ? r + ' — ' + (src.fromName || speakerName(run, src.from)) + ' · ' + (src.intent || '') : r + ' — not in this conversation')}">${C.esc(r)}</a>`;
         }).join(' ');
         const links = [
@@ -1388,7 +1411,7 @@
                 : waiting ? 'This turn is ORDERED and has not come back — nothing has been said yet.'
                     : body
         ]);
-        const marked = convMark === m.id ? ' marked' : '';
+        const marked = cvRead(cvKey(run.id, m.conversationId || '')).mark === m.id ? ' marked' : '';
         return `<div class="cvmsg${failed ? ' bad' : ''}${waiting ? ' pend' : ''}${marked}" id="cvm-${C.esc(run.id)}-${C.esc(m.id)}">
             <div class="cvmhead">
                 ${window.AFTip.wrap(
@@ -1434,20 +1457,22 @@
             // below it started telling a reader two different things.
             const inflight = msgs.length - said - lost;
             const open = openRefs(msgs);
-            const isOpen = convThread === c.id;
+            const key = cvKey(run.id, c.id);
+            const rd = cvRead(key);
+            const isOpen = convThread === key;
             // ‼️ U-65 — what arrived while the reader was somewhere else. Only
             // ever shown to a reader who is NOT following the bottom: telling
             // someone who can already see the new turn that it is new is noise.
-            const unseen = isOpen && !convAtEnd ? Math.max(0, msgs.length - convSeen) : 0;
-            if (isOpen && convAtEnd) { convSeen = msgs.length; }
+            const unseen = isOpen && !rd.atEnd ? Math.max(0, msgs.length - rd.seen) : 0;
+            if (isOpen && rd.atEnd) { rd.seen = msgs.length; }
             const byId = {};
             msgs.forEach(m => { byId[m.id] = m; });
-            const shown = convOnlyOpen ? msgs.filter(m => open.some(o => o.id === m.id)) : msgs;
+            const shown = cvOnlyOpen(run.id) ? msgs.filter(m => open.some(o => o.id === m.id)) : msgs;
             // ‼️ DENSITY — a big exchange opens COMPACT. 200 messages drawn in
             // full is a page nobody can find anything in; the newest are what a
             // reader coming back wants, and the rest are one click away.
             const big = shown.length > CONV_COMPACT;
-            const drawn = big && !convAll ? shown.slice(-CONV_COMPACT) : shown;
+            const drawn = big && !rd.all ? shown.slice(-CONV_COMPACT) : shown;
             const cast = (c.participants || []).map(p => speakerName(run, p));
             const headTip = window.AFTip.lines([
                 (k ? 'Council ' + k.id : 'Conversation ' + c.id) + ' — ' + ((k && k.question) || c.objective || ''),
@@ -1473,7 +1498,7 @@
                     >${C.esc(speakerName(run, v.member))}: ${C.esc(v.unclear ? '?' : v.choice)}</span>`).join(' ')}</span>`
                 : '';
             return `<div class="cvthread${isOpen ? ' open' : ''}">
-                ${window.AFTip.wrap(`<div class="cvrow" data-cvthread="${C.esc(c.id)}">
+                ${window.AFTip.wrap(`<div class="cvrow" data-cvthread="${C.esc(c.id)}" data-cvrun="${C.esc(run.id)}">
                     <span class="carets">${isOpen ? '▾' : '▸'}</span>
                     <span class="mchip ${k ? 'council' : 'conv'}">${k ? C.esc(k.id) : C.esc(c.id)}</span>
                     <span class="cvq">${C.esc((k && k.question) || c.objective || '')}</span>
@@ -1486,12 +1511,12 @@
                     <span class="mchip ${k && k.exit ? 'ok' : c.closedAt ? 'ok' : 'live'}">${
                         k && k.exit ? C.esc(k.exit) : c.closedAt ? C.esc(c.closeReason || 'closed') : 'open'}</span>
                 </div>`, (k ? 'Council ' + k.id : 'Conversation ' + c.id), headTip, 'cvroww')}
-                ${isOpen ? `<div class="cvmsgs" id="cv-scroll">
+                ${isOpen ? `<div class="cvmsgs" id="${cvDomId('cv-scroll', key)}">
                     ${unseen ? `<div class="cvnew" data-cvend="1"
                         title="${C.esc(unseen + ' turn(s) arrived while you were reading further up — your place was kept')}"
                         >${unseen} new below ↓</div>` : ''}
                     ${drawn.length ? '' : '<div class="muted small">Nothing matches this filter.</div>'}
-                    ${big && !convAll ? `<div class="cvmore" data-cvall="1"
+                    ${big && !rd.all ? `<div class="cvmore" data-cvall="1"
                         title="${C.esc(shown.length + ' messages — the newest ' + CONV_COMPACT + ' are drawn; the rest are one click away')}"
                         >show all ${shown.length} messages</div>` : ''}
                     ${drawn.map(m => messageRow(run, m, byId)).join('')}
@@ -1509,7 +1534,7 @@
             </div>
             ${convOpen ? `<div class="cvbody">
                 ${openTotal ? `<div class="cvfilter">
-                    <label title="Show only the questions and challenges nothing in this exchange has answered"><input type="checkbox" id="cv-open-${C.esc(run.id)}"${convOnlyOpen ? ' checked' : ''}> unanswered only</label>
+                    <label title="Show only the questions and challenges nothing in this exchange has answered"><input type="checkbox" id="cv-open-${C.esc(run.id)}"${cvOnlyOpen(run.id) ? ' checked' : ''}> unanswered only</label>
                 </div>` : ''}
                 ${rows}
             </div>` : ''}
@@ -1698,10 +1723,14 @@
         // ‼️ U-65 — read the transcript's place BEFORE the markup that holds it
         // is thrown away. Nothing else on this page can be scrolled away from
         // and still be the thing you were doing.
-        const cvWas = document.getElementById('cv-scroll');
+        // ‼️ X-93 — read it out of the box that belongs to the OPEN exchange.
+        // The id used to be the same on every one of them, so with two run rows
+        // open on their own `c1` this managed whichever happened to be first.
+        const cvWas = convThread && document.getElementById(cvDomId('cv-scroll', convThread));
         if (cvWas && typeof cvWas.scrollTop === 'number') {
-            convScroll = cvWas.scrollTop;
-            convAtEnd = cvWas.scrollTop + (cvWas.clientHeight || 0) >= (cvWas.scrollHeight || 0) - 8;
+            const rd = cvRead(convThread);
+            rd.scroll = cvWas.scrollTop;
+            rd.atEnd = cvWas.scrollTop + (cvWas.clientHeight || 0) >= (cvWas.scrollHeight || 0) - 8;
         }
         // after Start: the freshly created run (newest row) opens itself once
         if (openNewest && DATA.runs.length) {
@@ -1961,9 +1990,10 @@
         // ‼️ U-65 — and put it back. A reader who was following the exchange
         // rides down with the new turn; a reader who had gone back up keeps
         // exactly the line they were on and is told, in a count, what arrived.
-        const cvNow = document.getElementById('cv-scroll');
+        const cvNow = convThread && document.getElementById(cvDomId('cv-scroll', convThread));
         if (cvNow && typeof cvNow.scrollTop === 'number') {
-            cvNow.scrollTop = convAtEnd ? (cvNow.scrollHeight || 0) : convScroll;
+            const rd = cvRead(convThread);
+            cvNow.scrollTop = rd.atEnd ? (cvNow.scrollHeight || 0) : rd.scroll;
         }
         window.AFHeader.wire(vscode);
         const wire = (id, fn) => {
@@ -2131,38 +2161,66 @@
         document.querySelectorAll('[data-cvthread]').forEach(row =>
             row.addEventListener('click', ev => {
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
-                const id = row.dataset.cvthread;
-                convThread = convThread === id ? null : id;
-                convAll = false;
-                convMark = null;
+                const key = cvKey(row.dataset.cvrun, row.dataset.cvthread);
+                // ‼️ X-93 — folding an exchange keeps its place; only the
+                // one-shot marks are cleared, and only for the one clicked.
+                const rd = cvRead(key);
+                rd.all = false;
+                rd.mark = null;
+                convThread = convThread === key ? null : key;
                 render();
             }));
         document.querySelectorAll('[data-cvend]').forEach(el =>
             el.addEventListener('click', ev => {
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                if (!convThread) { return; }
                 // Pressing the count is the reader CHOOSING to go there, so the
                 // box is moved for real: the next capture then agrees with the
                 // intent instead of reading the place they just left.
-                const box = document.getElementById("cv-scroll");
+                const box = document.getElementById(cvDomId('cv-scroll', convThread));
                 if (box && typeof box.scrollTop === "number") { box.scrollTop = box.scrollHeight || 0; }
-                convAtEnd = true;
+                cvRead(convThread).atEnd = true;
                 render();
             }));
         document.querySelectorAll('[data-cvall]').forEach(el =>
             el.addEventListener('click', ev => {
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
-                convAll = true;
+                if (!convThread) { return; }
+                cvRead(convThread).all = true;
                 render();
             }));
         // ‼️ U-65 — a ref is a LINK. "m3 answers m2" is the only thing that
         // makes a transcript followable, and a reader scrolling for an id is a
         // reader who stops following it.
+        // ‼️ X-93 — AND IT LANDS ON A TARGET THAT WAS NOT ON SCREEN. The mark
+        // was set and the page redrawn, and that was all: a target older than
+        // the compact window, or hidden behind "unanswered only", or in another
+        // exchange, was still not drawn — so the link visibly went nowhere and
+        // the reader was left to work out why. Whatever is hiding it is opened
+        // first, deterministically, and only then is the jump made.
         document.querySelectorAll('[data-cvjump]').forEach(a =>
             a.addEventListener('click', ev => {
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
-                convMark = a.dataset.cvjump;
+                const target = a.dataset.cvjump;
+                const runId = a.dataset.cvrun;
+                const run = (DATA.runs || []).find(r => r.id === runId);
+                const msgs = (run && run.messages) || [];
+                const dest = msgs.find(m => m.id === target);
+                // A ref that names nothing in this run cannot be followed; say
+                // so by doing nothing rather than by redrawing to no effect.
+                if (!dest) { return; }
+                const key = cvKey(runId, dest.conversationId || a.dataset.cvconv || '');
+                const rd = cvRead(key);
+                convThread = key;                       // the target's OWN thread
+                rd.mark = target;
+                rd.all = true;                          // past the compact window
+                rd.atEnd = false;                       // do not ride back to the bottom
+                // …and out from under a filter that would hide it. Only when it
+                // really would: a reader who set the filter keeps it otherwise.
+                const open = openRefs(msgs.filter(m => m.conversationId === dest.conversationId));
+                if (cvOnlyOpen(runId) && !open.some(o => o.id === target)) { convFilter[runId] = false; }
                 render();
-                const el = document.querySelector('[id$="-' + convMark + '"].cvmsg');
+                const el = document.getElementById('cvm-' + runId + '-' + target);
                 if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
             }));
         // deep links into the session viewer (planner transcript, live-feed rows)
@@ -2206,7 +2264,7 @@
             wire('cv-toggle-' + id, () => { convOpen = !convOpen; render(); });
             // ‼️ U-65 — the filter is a control, so it keeps its own state
             // across the once-a-second repaint a live run causes.
-            wire('cv-open-' + id, () => { convOnlyOpen = !convOnlyOpen; render(); });
+            wire('cv-open-' + id, () => { convFilter[id] = !convFilter[id]; render(); });
             wire('gd-toggle-' + id, () => { guideOpen = !guideOpen; render(); });
             wire('gd-send-' + id, () => {
                 const box = document.getElementById('gd-text-' + id);

@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.257.0 - X-93: a reader's place belongs to one exchange of one run (2026-08-23)
+
+`convThread` held a bare conversation id, and every run starts at `c1`. With two
+run rows open, one click on `c1` opened BOTH of them, drew two elements carrying
+the id `cv-scroll`, and `getElementById` then managed the scroll position and
+unseen count of whichever came first. The key is the run and the conversation
+together now, everywhere, and the transcript box is named for it — so it cannot
+collide even if two were ever drawn at once.
+
+The rest of the reading state was global too — the scroll offset, the "new
+below" count, "show all" and the message the reader had jumped to — so opening a
+second exchange silently handed it the first one's place. All of it is now per
+exchange, and the "unanswered only" filter is per RUN, which is the scope of the
+checkbox that sets it.
+
+**And a ref link now reaches a target that was not on screen.** It set the mark
+and redrew, and that was all: a message older than the compact window, or hidden
+behind "unanswered only", or in a different exchange, was still not drawn — so
+the link visibly went nowhere and the reader was left to work out why. The jump
+opens the target's own thread, expands past the compact window, and lifts the
+filter when (and only when) that filter is what is hiding it. A ref that names
+nothing in the run is refused outright rather than redrawing to no effect.
+
 ## 3.256.0 - X-89: the journal's guidance, put back into the snapshot on reload (2026-08-23)
 
 Two-phase delivery writes the journal FIRST and saves the snapshot second, in

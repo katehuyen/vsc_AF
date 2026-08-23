@@ -146,7 +146,21 @@ const sandbox = {
             const re = new RegExp(`${spec.attr}="([^"]*)"`, 'g');
             let m;
             while ((m = re.exec(app._html))) {
-                const el = { dataset: { [spec.key]: m[1] } };
+                // ‼️ X-93 — the WHOLE tag's dataset, not the one attribute the
+                // selector matched. A handler that needs to know which RUN a
+                // row belongs to reads a second `data-` off the same element,
+                // and a shim that hands it one attribute measures a fiction.
+                const open = app._html.lastIndexOf('<', m.index);
+                const close = app._html.indexOf('>', m.index);
+                const tag = open >= 0 && close > open ? app._html.slice(open, close) : '';
+                const dataset = {};
+                const dre = /data-([a-z0-9-]+)="([^"]*)"/gi;
+                let d;
+                while ((d = dre.exec(tag))) {
+                    dataset[d[1].replace(/-([a-z])/g, (_s, c) => c.toUpperCase())] = d[2];
+                }
+                dataset[spec.key] = m[1];
+                const el = { dataset };
                 el.addEventListener = (_e, fn) => { el._click = fn; };
                 list.push(el);
             }
@@ -729,6 +743,56 @@ msgHandler({ data: { type: 'created' } });
     ok('a ref marks the message it points at, so a reader can follow the thread',
         html().includes('cvmsg marked'));
 
+    // ‼️ X-93 — THE READER'S STATE BELONGS TO ONE EXCHANGE OF ONE RUN.
+    //
+    // `convThread` held a bare conversation id, and every run starts at `c1`.
+    // With two run rows open, one click opened BOTH, drew two elements carrying
+    // the id `cv-scroll`, and `getElementById` managed whichever came first.
+    // The scroll offset, the unseen count, "show all" and the jump mark were
+    // global as well, so opening a second exchange handed it the first one's
+    // reading position.
+    {
+        ok('‼️ the transcript box is named for the run AND the exchange',
+            html().includes('id="cv-scroll-run3_cv1"') && !html().includes('id="cv-scroll"'));
+        ok('…exactly one of them is drawn, whatever else is open',
+            (html().match(/class="cvmsgs"/g) || []).length === 1);
+        ok('…and the row that opens it says which run it is in',
+            /data-cvthread="cv1" data-cvrun="run3"/.test(html()));
+
+        // the mark stays with ITS exchange when the reader moves to another
+        const cv2 = wired.cvthread.find(e => e.dataset.cvthread === 'cv2');
+        cv2._click();
+        ok('opening a second exchange does not inherit the first one\'s mark',
+            !html().includes('cvmsg marked'));
+        wired.cvthread.find(e => e.dataset.cvthread === 'cv1')._click();
+        ok('…and coming back to the first is coming back to it, not to a reset',
+            html().includes('id="cv-scroll-run3_cv1"')
+            && !html().includes('id="cv-scroll-run3_cv2"'));
+
+        // ‼️ a ref whose target is HIDDEN still gets there. Under the filter,
+        // the link used to redraw to no visible effect at all.
+        getEl('cv-open-run3').listeners.click();
+        ok('the filter is on and the ordinary turn is hidden',
+            !html().includes('Agreed for those; a reporting engine is a different case.'));
+        const link = wired.cvjump[0];
+        const target = link && link.dataset.cvjump;
+        ok('there is a ref to follow while the filter is on', !!target);
+        link._click();
+        ok('‼️ a jump to a target the filter was hiding OPENS it and lands',
+            new RegExp(`cvmsg marked" id="cvm-run3-${target}"`).test(html()));
+        ok('…and the filter really came off rather than the link going nowhere',
+            html().includes('Agreed for those; a reporting engine is a different case.'));
+        // and the jump reaches past the compact window too, which is the other
+        // way a target is on the record and not on the screen
+        const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+        ok('‼️ a jump opens the whole exchange rather than hoping the target is drawn',
+            /rd\.all = true;\s*\/\/ past the compact window/.test(page));
+        ok('…and does not ride the reader back to the bottom afterwards',
+            /rd\.atEnd = false;/.test(page));
+        ok('a ref naming nothing in this run is refused, not redrawn to no effect',
+            /if \(!dest\) \{ return; \}/.test(page));
+    }
+
     // ‼️ U-65 — A LIVE REPAINT MUST NOT TAKE THE READER'S PLACE AWAY.
     //
     // This page redraws once a second while a mission runs, and the transcript
@@ -738,12 +802,15 @@ msgHandler({ data: { type: 'created' } });
     // who wants each new turn as it lands, and one reading further up, whose
     // place must be kept and who is told what arrived in a count.
     {
-        const box = getEl('cv-scroll');
+        // ‼ X-93 - the box is named for the exchange it belongs to: two runs
+        // both open on their own c1 used to draw two elements with one id.
+        const CVBOX = 'cv-scroll-run3_cv1';
+        const box = getEl(CVBOX);
         // the reader has gone back up: 120px into a 900px transcript
         box.scrollTop = 120; box.clientHeight = 400; box.scrollHeight = 900;
         send();
         ok('‼️ a reader who scrolled up keeps the exact line they were on',
-            getEl('cv-scroll').scrollTop === 120);
+            getEl(CVBOX).scrollTop === 120);
         ok('…and the accordion it lives in is still open',
             html().includes('A zero on an engine that states no price is a MISSING price.'));
 
@@ -762,27 +829,27 @@ msgHandler({ data: { type: 'created' } });
             intent: 'evidence', refs: [], excerpt: 'Measured on run2: the same line meant both things.',
             orderedAt: 2300, settledAt: 2400, state: 'delivered'
         });
-        getEl('cv-scroll').scrollTop = 120;
-        getEl('cv-scroll').clientHeight = 400;
-        getEl('cv-scroll').scrollHeight = 900;
+        getEl(CVBOX).scrollTop = 120;
+        getEl(CVBOX).clientHeight = 400;
+        getEl(CVBOX).scrollHeight = 900;
         sendLive();
         ok('‼️ …and is TOLD what arrived rather than being moved to it',
             html().includes('new below'));
-        ok('…their place is still theirs', getEl('cv-scroll').scrollTop === 120);
+        ok('…their place is still theirs', getEl(CVBOX).scrollTop === 120);
 
         // pressing the count is how they choose to go there
         wired.cvend[0]._click();
         ok('…and pressing it follows the exchange down',
-            getEl('cv-scroll').scrollTop === getEl('cv-scroll').scrollHeight);
+            getEl(CVBOX).scrollTop === getEl(CVBOX).scrollHeight);
         ok('…so the count is spent', !html().includes('new below'));
 
         // the other reader: at the bottom, following it live
-        getEl('cv-scroll').scrollTop = 500;
-        getEl('cv-scroll').clientHeight = 400;
-        getEl('cv-scroll').scrollHeight = 900;
+        getEl(CVBOX).scrollTop = 500;
+        getEl(CVBOX).clientHeight = 400;
+        getEl(CVBOX).scrollHeight = 900;
         sendLive();
         ok('‼️ a reader who was following it rides down with the new turn',
-            getEl('cv-scroll').scrollTop === 900);
+            getEl(CVBOX).scrollTop === 900);
         ok('…and is never shown a count for something already on their screen',
             !html().includes('new below'));
     }
