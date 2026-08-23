@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.254.0 - X-70: the planner call is not free, and the guard is asked after it (2026-08-23)
+
+The registry-driven guard landed last round: a primitive whose shape is `work`
+cannot begin once a ceiling is spent, and the next primitive is covered on the
+day it is declared. The audit found the reading was taken at the wrong moment.
+
+`guardReason` was computed BEFORE `runPlanner`, and the planner call is not
+free: its own cost and tokens are added to the run the instant it returns, and
+the clock has moved. So a call that spent the last of the budget still had the
+work in its own reply started against a ceiling that was already gone — the
+exact failure the guard exists to prevent, one round later. Every axis only ever
+shrinks across a planner call (cost and tokens grow, time passes, rounds and
+tasks are untouched), so the later reading is simply the true one, and it is now
+the one that decides. When it newly bites, the prompt did not carry the
+finish-only note, so the lead ordered work in good faith and gets its one nudge
+before the structured hard-limit ending — which is what that nudge always meant.
+
+And the permanent test now measures what it claims:
+
+- **All ten work primitives, derived from the registry rather than listed.** It
+  covered seven names typed into the file; `compare`, `message` and `council`
+  were missing. The list is now checked against `PRIMITIVES` itself, so a
+  primitive added tomorrow fails this file until somebody measures it.
+- **All five ceilings.** It said "five" and tested four — `rounds` was not
+  there at all.
+- **Real handler counters.** Waves alone cannot tell "the handler was reached
+  and unrelated validation stopped it" from "the handler was never reached", so
+  every step that crosses into `delegateWave` is now counted by its kind — a
+  workflow run, a child objective and a conversation turn all cross there.
+- **One nudge, then the terminal.** A lead that keeps ordering work at a spent
+  ceiling ends on `hard-limit` after exactly three planner calls, not by being
+  fought to the planner-call cap.
+
+The one-off proof scripts left in `.tmp/` by that round (`p_x70.js`,
+`x70proof.js`, `x70proof2.js`) are out of the source tree.
+
 ## 3.253.0 - X-88: a verdict is a vertex, and a target is something you can read (2026-08-23)
 
 Two holes on the same edge of the adaptive audit graph.

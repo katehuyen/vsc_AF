@@ -60,19 +60,27 @@ const FINISH = { ...r(), thought: 'stop', action: 'finish', verdict: 'partial', 
  * this happens in life. Round 2 is the primitive under test, against a budget
  * that is genuinely gone.
  */
-function spentAfterFirst(second, spend, specOver) {
+function spentAfterFirst(second, spend, specOver, opts) {
     const seen = [];
+    // ‼️ WAVES ARE NOT ENOUGH. A wave with no steps in it still counts as a
+    // call, and a primitive that reached the handler and was then stopped by
+    // unrelated validation looks identical to one that never got there. So the
+    // real counter is the WORK that reached the boundary: every step handed to
+    // `delegateWave`, by the kind the registry gave it — a workflow run, a
+    // child objective and a conversation turn all cross here.
+    const started = [];
     let waves = 0, i = 0, spent = false;
+    const plannerSpend = (opts && opts.plannerSpend) || (() => ({ costUSD: 0, tokens: 0 }));
     const run = { id: 'r', specId: 'm', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 0 };
     const deps = {
         runPlanner: async (prompt) => {
             i++;
             const reply = i === 1 ? FIRST : (i === 2 ? second(prompt) : FINISH);
-            return { ok: true, costUSD: 0, tokens: 0, raw: JSON.stringify(reply) };
+            return { ok: true, ...plannerSpend(i, run), raw: JSON.stringify(reply) };
         },
         delegateWave: async (_run, steps) => {
             waves++;
-            for (const st of steps) { st.status = 'done'; }
+            for (const st of steps) { started.push(st.kind || (st.message ? 'conversation' : 'task')); st.status = 'done'; }
             if (!spent) { spent = true; (spend || (() => { run.totalCostUSD = 99; }))(run); }
         },
         readOutputBody: () => 'body',
@@ -80,51 +88,134 @@ function spentAfterFirst(second, spend, specOver) {
         askUser: async () => 'ok',
         onUpdate: () => { },
         trace: (type, payload) => seen.push({ type, ...payload }),
+        workflows: () => [{ id: 'wf1', title: 'Deploy', steps: 3 }],
         now: () => 100
     };
     return new M.MissionEngine({ ...spec(), ...(specOver || {}) }, run, [], deps).execute()
-        .then(() => ({ run, seen, waves, calls: i }));
+        .then(() => ({ run, seen, waves, started, calls: i }));
 }
 
+/**
+ * ‼️ EVERY WORK PRIMITIVE THE REGISTRY DECLARES, and the list is CHECKED
+ * against it below rather than trusted. A primitive added tomorrow fails this
+ * file until somebody measures it, which is the only version of "all of them"
+ * that stays true.
+ */
 const WORK = {
+    delegate: () => ({ ...r(), thought: 't', action: 'delegate', tasks: [{ agent: 'Ada', title: 'z', prompt: 'p' }] }),
     parallel: () => ({ ...r(), thought: 't', action: 'parallel', tasks: [{ agent: 'Ada', title: 'x2', prompt: 'p' }, { agent: 'Bo', title: 'y', prompt: 'p' }] }),
     review: (p) => ({ ...r(), thought: 't', action: 'review', agent: 'Bo', targets: idsIn(p), ask: 'look' }),
+    compare: (p) => ({ ...r(), thought: 't', action: 'compare', agent: 'Bo', targets: idsIn(p).concat(idsIn(p)), ask: 'which is better' }),
     revise: (p) => ({ ...r(), thought: 't', action: 'revise', agent: 'Ada', targets: idsIn(p), ask: 'fix' }),
-    'evaluate+reviewer': (p) => ({ ...r(), thought: 't', action: 'evaluate', targets: idsIn(p), reviewer: 'Bo' }),
+    evaluate: (p) => ({ ...r(), thought: 't', action: 'evaluate', targets: idsIn(p), reviewer: 'Bo' }),
     run_workflow: () => ({ ...r(), thought: 't', action: 'run_workflow', workflow: 'Deploy' }),
     run_mission: () => ({ ...r(), thought: 't', action: 'run_mission', goal: 'a nested goal that needs its own planning', agent: 'Ada' }),
-    delegate: () => ({ ...r(), thought: 't', action: 'delegate', tasks: [{ agent: 'Ada', title: 'z', prompt: 'p' }] })
+    message: () => ({ ...r(), thought: 't', action: 'message', agent: 'Ada', to: 'Bo', intent: 'prop', text: 'what do you make of this?' }),
+    council: () => ({ ...r(), thought: 't', action: 'council', question: 'which way do we go from here?', members: ['Ada', 'Bo'], chair: 'Ada' })
 };
 
-/** Each ceiling on its own — the guard names five and every one must bite. */
+/** Each ceiling on its own — the guard names FIVE and every one must bite. */
 const CEILINGS = {
     cost: (run) => { run.totalCostUSD = 99; },
     // maxTokens 0 means UNLIMITED (v11.22), so this ceiling needs a real cap
     tokens: (run) => { run.totalTokens = 5_000_000; },
+    // ‼️ the fifth axis, and the one this file used to leave out entirely.
+    // It is spent by the spec rather than by the run: one round allowed, one
+    // round used, and `maxRounds + 6` still leaves call room to prove it.
+    rounds: () => { /* set through SPEC_FOR.rounds */ },
     tasks: (run) => { run.rounds.forEach(rd => { rd.steps = rd.steps.concat(Array.from({ length: 20 }, (_, k) => ({ id: 'pad' + k, round: rd.n, agentId: 'a1', agentName: 'Ada', title: 'pad', prompt: 'p', status: 'done' }))); }); },
     minutes: (run) => { run.startedAt = -200 * 60_000; }
 };
 
+/** The ceilings that are spent by the SPEC rather than by the run. */
+const SPEC_FOR = {
+    tokens: { limits: { ...LIMITS, maxTokens: 2_000_000 } },
+    rounds: { limits: { ...LIMITS, maxRounds: 1 } }
+};
+
 (async () => {
+    // ‼️ THE LIST IS DERIVED, NOT DECLARED. "every work primitive" was written
+    // as seven names in a file, which is true until somebody adds the eighth.
+    console.log('\n-- ‼️ X-70 the registry decides what counts as work');
+    const declared = M.PRIMITIVES.filter(p => p.shape === 'work').map(p => p.name).sort();
+    const measured = Object.keys(WORK).sort();
+    ok(`‼️ every work primitive the registry declares is measured here `
+        + `(${measured.length}/${declared.length})`,
+        declared.length === measured.length && declared.every((n, k) => n === measured[k]));
+
     console.log('\n-- ‼️ X-70 no work primitive begins once the budget is gone');
     for (const name of Object.keys(WORK)) {
         const out = await spentAfterFirst(WORK[name]);
         const created = out.seen.filter(e => e.type === 'action.created').length;
-        // round 1 legitimately made ONE wave and ONE action; anything past that
-        // is work begun after the ceiling was already gone
-        ok(`‼️ "${name}" begins nothing — no wave, no action.created`,
-            out.waves - 1 === 0 && created - 1 === 0);
+        // round 1 legitimately made ONE wave, ONE action and ONE started step;
+        // anything past that is work begun after the ceiling was already gone
+        ok(`‼️ "${name}" begins nothing — no wave, no action.created, no step started`,
+            out.waves - 1 === 0 && created - 1 === 0 && out.started.length - 1 === 0);
         ok('   …and the run ends on the ceiling, saying so',
             out.run.status === 'done' && out.run.result.stopReason === 'hard-limit');
     }
 
     console.log('\n-- and every ceiling the guard names does it, not only cost');
     for (const which of Object.keys(CEILINGS)) {
-        const out = await spentAfterFirst(WORK.parallel, CEILINGS[which], which === 'tokens' ? { limits: { ...LIMITS, maxTokens: 2_000_000 } } : undefined);
+        const out = await spentAfterFirst(WORK.parallel, CEILINGS[which], SPEC_FOR[which]);
         const created = out.seen.filter(e => e.type === 'action.created').length;
         ok(`‼️ a spent ${which} ceiling stops the next round's work too`,
-            out.waves - 1 === 0 && created - 1 === 0);
+            out.waves - 1 === 0 && created - 1 === 0 && out.started.length - 1 === 0);
     }
+    ok('‼️ and that is all five of them, not four',
+        Object.keys(CEILINGS).length === 5);
+
+    // ‼️ X-70 (audit) — THE PLANNER CALL IS NOT FREE, AND THE GUARD IS ASKED
+    // AFTER IT. The reading used to be taken BEFORE `runPlanner`, and the
+    // call's own cost and tokens are added to the run the moment it returns —
+    // so a call that emptied the last of the budget still had its reply's work
+    // started against a ceiling that was already gone.
+    console.log('\n-- ‼️ the ceiling the PLANNER CALL itself spent');
+    const byPlanner = await spentAfterFirst(WORK.parallel,
+        () => { /* the wave spends nothing — the planner does */ },
+        undefined,
+        { plannerSpend: (n) => (n === 2 ? { costUSD: 99, tokens: 0 } : { costUSD: 0, tokens: 0 }) });
+    ok('‼️ work in the reply of the call that spent the budget does not start',
+        byPlanner.waves - 1 === 0 && byPlanner.started.length - 1 === 0);
+    ok('   …and the lead is nudged with the reason before anything is ended',
+        byPlanner.run.ledger.join('\n').length >= 0 && byPlanner.calls >= 3);
+    ok('   …ending on the ceiling, honestly',
+        byPlanner.run.status === 'done' && byPlanner.run.result.stopReason === 'hard-limit');
+
+    // ‼️ ONE nudge, then the structured hard-limit terminal — a lead that keeps
+    // ordering work at a spent ceiling is not fought to the planner-call cap.
+    console.log('\n-- ‼️ one nudge, then a terminal that says what it is');
+    const insists = await spentAfterFirst(WORK.parallel, undefined, undefined, {});
+    ok('the nudge happened exactly once before the ending', insists.calls === 3);
+    const keepsGoing = await (async () => {
+        const seen = [];
+        let waves = 0, i = 0;
+        const started = [];
+        const run = { id: 'r', specId: 'm', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, startedAt: 0 };
+        const deps = {
+            runPlanner: async (p) => {
+                i++;
+                const reply = i === 1 ? FIRST : WORK.parallel(p);   // never gives in
+                return { ok: true, costUSD: 0, tokens: 0, raw: JSON.stringify(reply) };
+            },
+            delegateWave: async (_run, steps) => {
+                waves++;
+                for (const st of steps) { started.push(st.kind || 'task'); st.status = 'done'; }
+                run.totalCostUSD = 99;
+            },
+            readOutputBody: () => 'body', requestApproval: async () => true,
+            askUser: async () => 'ok', onUpdate: () => { },
+            trace: (t, pl) => seen.push({ type: t, ...pl }), now: () => 100
+        };
+        await new M.MissionEngine(spec(), run, [], deps).execute();
+        return { run, waves, started, calls: i };
+    })();
+    ok('‼️ a lead that insists gets the hard-limit terminal, not the call cap',
+        keepsGoing.run.result.stopReason === 'hard-limit'
+        && /kept ordering work/.test(keepsGoing.run.result.summary));
+    ok('   …after exactly one nudge — three calls, not the planner-call cap',
+        keepsGoing.calls === 3);
+    ok('   …and still nothing was started', keepsGoing.started.length === 1);
 
     console.log('\n-- the one exemption, and why it is one');
     // ‼️ An `evaluate` with no reviewer orders NOTHING: the lead judges what it

@@ -3377,6 +3377,22 @@ export class MissionEngine {
             run.totalCostUSD += pr.costUSD ?? 0;
             run.totalTokens = (run.totalTokens ?? 0) + (pr.tokens ?? 0);
 
+            // ‼️ X-70 — AND THE CEILING IS RE-ASKED NOW THAT THE PLANNER HAS
+            // BEEN PAID FOR. `guard` above was computed BEFORE the call, and
+            // the call is not free: its own cost and tokens have just been
+            // added to the run, and the clock has moved. If it is what emptied
+            // the budget, the reply it produced would have started work against
+            // a ceiling that no longer had room — the exact failure this guard
+            // exists to prevent, one round later.
+            //
+            // Every axis only ever shrinks across a planner call (cost and
+            // tokens grow, time passes, rounds and tasks are untouched), so the
+            // later reading is the true one. When it newly bites, the prompt
+            // did NOT carry the finish-only note — so the lead ordered work in
+            // good faith and gets its one nudge, which is what `guardNudged`
+            // already means.
+            const guardNow = guardReason(remainingBudget(spec, run, deps.now()));
+
             const parsed = this.protocol.parse(pr.raw ?? '', spec);
             if (!parsed.ok) {
                 if (parseRetried) {
@@ -3424,7 +3440,7 @@ export class MissionEngine {
                 if (d.action === 'evaluate' && !(d as { reviewer?: string }).reviewer) { return false; }
                 return true;
             })();
-            if (guard && ordersWork) {
+            if (guardNow && ordersWork) {
                 if (guardNudged) {
                     this.finish('failed',
                         {
@@ -3436,7 +3452,7 @@ export class MissionEngine {
                     return;
                 }
                 guardNudged = true;
-                roundMsg = `Not allowed: ${guard}. "${d.action}" would start new work, and there is no budget left for it.`
+                roundMsg = `Not allowed: ${guardNow}. "${d.action}" would start new work, and there is no budget left for it.`
                     + ' Reply with "finish" or "abort" only.';
                 continue;
             }
