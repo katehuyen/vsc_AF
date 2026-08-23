@@ -592,7 +592,8 @@ export function normalizeStrategy(text: string): string {
     return (text ?? '').toLowerCase().replace(/\s+/g, ' ').replace(/[.!?;:,\s]+$/, '').trim();
 }
 
-export type GraphNodeKind = 'decision' | 'delegation' | 'question' | 'approval' | 'guidance' | 'finish';
+export type GraphNodeKind =
+    'decision' | 'delegation' | 'question' | 'approval' | 'guidance' | 'finish' | 'evaluation';
 export type GraphNodeStatus = 'open' | 'running' | 'done' | 'failed' | 'cancelled';
 
 /**
@@ -694,6 +695,10 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
     const asks = new Map<string, PendingHuman>();
     const nodes = new Map<string, GraphNode>();
     const guideById = new Map<string, TraceGuidance>();
+    /** ‼️ X-88 — which criteria each evaluation node has already been told
+     *  about, so its label is a fact about the whole verdict and stays right
+     *  however many times the journal is replayed. */
+    const evalNodeCriteria = new Map<string, Map<string, boolean>>();
     /** the decision a node written now hangs under, when the writer said nothing */
     let lastDecision = '';
     let strategyVersion = 0;
@@ -820,6 +825,36 @@ export function projectTrace(events: readonly MissionTraceEvent[]): TraceProject
                 break;
             }
             case 'evaluation.recorded': {
+                // ‼️ X-88 — AN EVALUATION IS A NODE OF THE GRAPH, NOT A FOOTNOTE.
+                //
+                // `knownRefs` lets a later decision rest on an evaluation id
+                // (`basedOn: ["e2-1"]`) and the engine accepts it — but nothing
+                // here ever built a node for that id, so the graph carried an
+                // edge into a vertex that did not exist. A projection that
+                // records a dependency on nothing is exactly what M-16 was
+                // written to stop.
+                //
+                // One evaluation is ONE node however many criteria it judged:
+                // the engine writes a line per criterion, all under the same
+                // `actionId`, and `node()` is idempotent — so the first line
+                // creates it and the rest only widen its label. Its inputs are
+                // the targets it looked at, which is the fan-in a reader wants.
+                if (ev.actionId) {
+                    const n = node(ev.actionId, 'evaluation', ev.actor || 'lead', '', ev);
+                    n.status = 'done';
+                    n.settledAt = ev.ts;
+                    for (const r of ev.inputRefs ?? []) {
+                        if (!n.inputRefs.includes(r)) { n.inputRefs.push(r); }
+                    }
+                    if (ev.criterionId) {
+                        const seen = evalNodeCriteria.get(ev.actionId) ?? new Map<string, boolean>();
+                        seen.set(ev.criterionId, ev.met === true);
+                        evalNodeCriteria.set(ev.actionId, seen);
+                        const met = [...seen.values()].filter(Boolean).length;
+                        n.label = `${seen.size} criterion${seen.size === 1 ? '' : 'a'} — ${met} met`
+                            + (ev.status ? ` · ${ev.status}` : '');
+                    }
+                }
                 if (!ev.criterionId) { break; }
                 const prev = evalById.get(ev.criterionId);
                 evalById.set(ev.criterionId, {

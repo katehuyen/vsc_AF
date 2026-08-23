@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.253.0 - X-88: a verdict is a vertex, and a target is something you can read (2026-08-23)
+
+Two holes on the same edge of the adaptive audit graph.
+
+**An evaluation had no node.** `knownRefs` lets a later decision rest on an
+evaluation id (`basedOn: ["e2-1"]`) and the engine accepts it as a real earlier
+node — but the projection only ever updated the criterion summary from
+`evaluation.recorded` and never built a vertex for `ev.actionId`. So the graph
+carried an edge into something that was not drawn, which is precisely what M-16
+exists to prevent. The verdict is now a node of its own kind: ONE node however
+many criteria it judged (the engine writes a line per criterion under the same
+id, and the projection is idempotent), settled the moment it was recorded, with
+the results it looked at as its fan-in and the criteria it covered on its label.
+It draws at the depth of the work it judged, because it is a reading of that
+work rather than a decision of the lead's.
+
+**And a failure that produced nothing could be evaluated.** The target allowlist
+counted `failed` as settled and stopped there — so a delegation that came back
+with nothing at all could be named as an evaluation target, and a
+self-evaluation would record a `pass` against it. That is the success gate
+opening on a verdict about an artefact that does not exist. X-67 asked for a
+target that is real, settled AND readable, and the last of the three was
+missing. A failure now qualifies only if it left something the canonical reader
+can show: the conversation turn it spoke, the verdict sentence it handed back,
+or a non-empty output archive. The line is at failures on purpose — a step that
+came back `done` did the work that was ordered, and how thin its archive is, is
+a judgement for the evaluation to make, not a reason to refuse to look.
+
+`basedOn` is unchanged and stays wide: "we tried this and it came back with
+nothing" is a real thing for a decision to rest on. The two lists were never the
+same question.
+
 ## 3.252.0 - X-84: a setting the page shows applied and the engine ignores (2026-08-23)
 
 VS Code can hand back `undefined` for a key its own manifest declares, so this

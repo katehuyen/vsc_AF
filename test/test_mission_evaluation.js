@@ -309,17 +309,21 @@ function part5() {
         ok('the journal records the finding under the evaluation id',
             seen.some(e => e.type === 'evaluation.recorded' && e.actionId === run.evaluations[0].id && e.verdict === 'pass'));
 
-        // ‼️ a review that cannot be read says nothing about the WORK
+        // ‼️ a review that cannot be read says nothing about the WORK. The
+        // delegation under it settles `done` with a body in both cases — the
+        // subject here is the REVIEWER coming back unreadable, and X-88 makes
+        // an unreadable failure an unnameable target, which is a different
+        // rule and is measured on its own below.
         const cases = [
-            ['prose instead of JSON', { Rev: 'Looks good to me!' }, 'done'],
-            ['a review that failed outright', { Rev: '' }, 'failed']
+            ['prose instead of JSON', { Ada: 'the docs', Rev: 'Looks good to me!' }],
+            ['a review that failed outright', { Ada: 'the docs', Rev: '' }]
         ];
-        const runOne = ([name, outputs, status]) => {
+        const runOne = ([name, outputs]) => {
             // ‼️ X-67 — the delegation first: a review names the results it
             // was sent to read, and there has to be one.
             const pp = scripted([DELEGATE, REVIEW, { ...reflect(), thought: 'honest', action: 'finish', verdict: 'partial', summary: 'unverified', stopReason: 'no-new-information' }]);
             const dd = deps(pp, outputs);
-            dd.d.delegateWave = dd.settle(status);
+            dd.d.delegateWave = dd.settle(s => (s.evaluates && outputs.Rev === '' ? 'failed' : 'done'));
             const rr = newRun('r5-' + name.slice(0, 4));
             return new M.MissionEngine(spec(), rr, [], dd.d).execute().then(() => {
                 ok(`‼️ ${name}: unknown on every criterion — never a fail the delegate did not earn`,
@@ -328,7 +332,55 @@ function part5() {
                 ok(`   …and it does not open the gate`, rr.result.verdict === 'partial');
             });
         };
-        return runOne(cases[0]).then(() => runOne(cases[1])).then(part6);
+        return runOne(cases[0]).then(() => runOne(cases[1])).then(x88).then(part6);
+    });
+}
+
+// ====================== 6b. ‼️ X-88 — a target is something that can be READ
+//
+// `results` counted `failed` as settled and stopped there, so a delegation that
+// came back with NOTHING could be named as an evaluation target — and a
+// self-evaluation would record a `pass` against it. That is the success gate
+// opening on a verdict about an artefact that does not exist. The line is drawn
+// at failures: a `done` step did the work that was ordered, and how thin its
+// archive is, is a judgement for the evaluation to make.
+function x88() {
+    console.log('\n-- ‼️ X-88: a failure that left nothing cannot be evaluated');
+
+    // the lead tries to pass itself on a failure that produced nothing
+    const passOnAsh = selfEval([{ criterion: 'c1', verdict: 'pass', evidence: 'looks fine' }]);
+    const p = scripted([DELEGATE, passOnAsh, passOnAsh,
+        { ...reflect(), thought: 'honest', action: 'finish', verdict: 'partial', summary: 'unverified', stopReason: 'no-new-information' }]);
+    const dd = deps(p, {});                      // no bodies at all
+    dd.d.delegateWave = dd.settle('failed');
+    const run = newRun('x88a');
+    return new M.MissionEngine(spec(), run, [], dd.d).execute().then(() => {
+        ok('‼️ THE BUG: no pass is recorded against a failure that produced nothing',
+            !(run.evaluations ?? []).length);
+        ok('…so the success gate never opens on it', run.result.verdict !== 'success');
+        ok('…and the lead is TOLD why, rather than silently ignored',
+            p.prompts.some(t => /nothing that can be read|No result of this run/i.test(t)));
+        ok('the failed step is still in the record as a step',
+            run.rounds[0].steps[0].status === 'failed');
+    }).then(() => {
+        // …but a failure that DID leave a readable archive is judgeable: the
+        // rule is about what can be read, not about the word "failed".
+        const pp = scripted([DELEGATE, selfEval([{ criterion: 'c1', verdict: 'fail', gap: 'it crashed halfway' }], 'revise'),
+            { ...reflect(), thought: 'honest', action: 'finish', verdict: 'partial', summary: 'unverified', stopReason: 'no-new-information' }]);
+        const d2 = deps(pp, {});
+        d2.d.delegateWave = async (_run, steps) => {
+            for (const s of steps) {
+                s.status = 'failed';
+                s.resultText = 'crashed after writing three of nine ops';
+                d2.d.trace('action.settled', { actionId: s.id, kind: 'task', outcome: 'failed' });
+            }
+        };
+        const r2 = newRun('x88b');
+        return new M.MissionEngine(spec(), r2, [], d2.d).execute().then(() => {
+            ok('a failure that DID hand something back can be judged',
+                (r2.evaluations ?? []).length === 1
+                && r2.evaluations[0].targets[0] === r2.rounds[0].steps[0].id);
+        });
     });
 }
 

@@ -1864,6 +1864,10 @@
                 .gnode.decision { border-left:2px solid var(--vscode-textLink-foreground); padding-left:6px; }
                 .gnode.delegation { padding-left:22px; }
                 .gnode.question, .gnode.approval, .gnode.guidance { padding-left:22px; opacity:.9; }
+                /* ‼️ X-88 — a verdict sits at the depth of the work it judged,
+                   not at the lead's own margin: it is a reading of that work. */
+                .gnode.evaluation { padding-left:22px;
+                    border-left:2px solid var(--vscode-charts-purple, #b180d7); }
                 .gnode.finish { border-left:2px solid var(--vscode-testing-iconPassed, #2d7d46); padding-left:6px; }
                 .gin { font-size:10px; opacity:.75; }
                 .guideform { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px; }

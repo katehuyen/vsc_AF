@@ -2752,23 +2752,56 @@ export class MissionEngine {
      *   * `results` — work that has SETTLED and left a record: it can be read,
      *     reviewed and evaluated. Queued and running steps are deliberately not
      *     here; a review of work that has not finished reviews nothing.
-     *   * `nodes` — the results plus the decisions and evaluations already taken.
-     *     The round being decided right now is NOT among them, so a decision
-     *     can never claim to rest on itself.
+     *   * `nodes` — every settled step plus the decisions and evaluations
+     *     already taken. The round being decided right now is NOT among them,
+     *     so a decision can never claim to rest on itself.
+     *
+     * ‼️ X-88 — AND THE TWO ARE NOT THE SAME LIST.
+     *
+     * `results` took every settled step, and `failed` counted as settled — so a
+     * delegation that came back with NOTHING could be named as an evaluation
+     * target and a self-evaluation would record a pass against it. That is the
+     * success gate opening on a verdict about an artefact that does not exist.
+     * X-67 asked for a target that is real, settled AND readable, and it is the
+     * last of the three that was missing.
+     *
+     * A FAILURE now has to have left something a reader can be shown — the
+     * conversation turn it spoke, the verdict sentence it handed back, or a
+     * non-empty output archive. The line is drawn at failures on purpose: a
+     * step that came back `done` did the work the lead ordered, and "the
+     * archive it wrote is thin" is a judgement for the evaluation to make, not
+     * a reason to refuse to look. A step that came back `failed` with nothing
+     * attached is the one case where there is provably nothing to judge.
+     *
+     * `nodes` stays wide: "we tried this and it came back with nothing" is a
+     * real thing for a decision to rest on, and `basedOn` is a claim about
+     * causality rather than about something to read.
      */
     private knownRefs(): { results: string[]; nodes: string[] } {
         const results: string[] = [];
+        const settled: string[] = [];
         for (const r of this.run.rounds) {
             for (const st of r.steps) {
-                if (st.status === 'done' || st.status === 'failed') { results.push(st.id); }
+                if (st.status !== 'done' && st.status !== 'failed') { continue; }
+                settled.push(st.id);
+                if (st.status === 'done' || this.hasReadableResult(st)) { results.push(st.id); }
             }
         }
         const nodes = [
-            ...results,
+            ...settled,
             ...this.run.rounds.map(r => 'd' + r.n),
             ...(this.run.evaluations ?? []).map(e => e.id)
         ];
         return { results, nodes };
+    }
+
+    /** ‼️ X-88 — can the canonical reader put words in front of a reviewer for
+     *  this step? The same three sources `stepResults` reads, in that order. */
+    private hasReadableResult(step: MissionStep): boolean {
+        if (step.message) { return true; }
+        if ((step.resultText ?? '').trim()) { return true; }
+        if (!step.outputFile) { return false; }
+        try { return !!this.deps.readOutputBody(step.outputFile, step.taskId).trim(); } catch { return false; }
     }
 
     /** The correction a lead is sent when it named an id that is not real. */

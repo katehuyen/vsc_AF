@@ -156,11 +156,30 @@ const reflect = (over = {}) => ({
             run.strategy.phase, 'verifying');
 
         const g = M.projectTrace(seen.map((e, i) => ({ v: 2, seq: i + 1, ts: i + 1, ...e })));
-        eq('the graph has a node per decision, per delegation and one ending',
-            g.graph.length, 5);
+        eq('a node per decision, per delegation, per evaluation and one ending',
+            g.graph.length, 6);
         const d1 = g.graph.find(n => n.id === 'd1');
         const d2 = g.graph.find(n => n.id === 'd2');
         const del = g.graph.find(n => n.kind === 'delegation');
+
+        // ‼️ X-88 — AN EVALUATION IS A VERTEX, NOT A FOOTNOTE. `knownRefs` lets
+        // a later decision rest on an evaluation id and the engine accepts it,
+        // so a graph without that node carries an edge into nothing.
+        const ev = g.graph.find(n => n.kind === 'evaluation');
+        ok('the evaluation is in the graph under its own id', !!ev && /^e\d/.test(ev.id));
+        eq('…settled the moment it was recorded', ev.status, 'done');
+        ok('…and it names the result it judged as its fan-in',
+            ev.inputRefs.length === 1 && ev.inputRefs[0] === del.id);
+        ok('…the criteria it covered are on its label, not scattered',
+            /criterion/.test(ev.label) && /met/.test(ev.label));
+        ok('‼️ every id a decision may rest on is really in the graph',
+            g.graph.every(n => (n.inputRefs || []).every(r => g.graph.some(m => m.id === r))));
+
+        // …and a replay does not turn a projection into a counter
+        const again = M.projectTrace(seen.map((e, i) => ({ v: 2, seq: i + 1, ts: i + 1, ...e }))
+            .concat(seen.map((e, i) => ({ v: 2, seq: i + 1, ts: i + 1, ...e }))));
+        eq('replayed, the evaluation is still ONE node', again.graph.length, 6);
+
         eq('the first decision hangs under nothing', d1.parentRefs.length, 0);
         eq('the delegation hangs under the decision that ordered it', del.parentRefs[0], 'd1');
         eq('the second decision hangs under the first', d2.parentRefs[0], 'd1');

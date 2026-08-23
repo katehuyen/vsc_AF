@@ -453,7 +453,11 @@ const ADAPTIVE_TRACE = {
         { id: 'd3', kind: 'decision', status: 'done', actor: 'lead', label: 'add an independent reader', parentRefs: ['d2'], inputRefs: ['a1'], outputRefs: [], createdAt: Date.now() - 11 * 60000, phase: 'verifying', strategyVersion: 3 },
         { id: 'a2', kind: 'delegation', status: 'running', actor: 'a1', label: 'developer — read the price back off the CLI', parentRefs: ['d3'], inputRefs: ['a1'], outputRefs: [], createdAt: Date.now() - 10 * 60000, strategyVersion: 3 },
         { id: 'a3', kind: 'delegation', status: 'done', actor: 'a2', label: 'basit — say what the transcript does NOT show', parentRefs: ['d3'], inputRefs: ['a1'], outputRefs: [], createdAt: Date.now() - 10 * 60000, settledAt: Date.now() - 2 * 60000, strategyVersion: 3 },
-        { id: 'g1', kind: 'guidance', status: 'done', actor: 'user', label: 'do not spend another round on the catalog', parentRefs: ['d2'], inputRefs: [], outputRefs: [], createdAt: Date.now() - 20 * 60000, strategyVersion: 2 }
+        { id: 'g1', kind: 'guidance', status: 'done', actor: 'user', label: 'do not spend another round on the catalog', parentRefs: ['d2'], inputRefs: [], outputRefs: [], createdAt: Date.now() - 20 * 60000, strategyVersion: 2 },
+        // ‼️ X-88 — the verdict is a vertex: a later decision may rest on `e3-1`,
+        // and an edge into a node that is not drawn is an edge into nothing.
+        // ONE node for the whole evaluation however many criteria it judged.
+        { id: 'e3-1', kind: 'evaluation', status: 'done', actor: 'a2', label: '3 criteria — 2 met · revise', parentRefs: ['d3'], inputRefs: ['a1', 'a3'], outputRefs: [], createdAt: Date.now() - 2 * 60000, settledAt: Date.now() - 2 * 60000, strategyVersion: 3 }
     ]
 };
 
