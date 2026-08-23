@@ -4,8 +4,9 @@
 // host via a 'sessionTurns' message); active rows carry a ⌨ jump-to-terminal
 // button. A narrow origin column (🧑 you / 🤖 automation / 🎯 a mission's own
 // run) separates your own dialogs from the runs the farm started by itself; the
-// table opens scoped to 🧑 with mission sessions left out entirely, and the two
-// chips next to Filters flip User ↔ All and mission sessions in ↔ out. A ★ column
+// table opens with You on and Auto/Mission off, and three independent chips
+// next to Filters switch those categories without changing either of the
+// others. A ★ column
 // holds the shelf: pinned sessions sort first and are exempt from the row
 // limit, and running rows carry a ⎋ interrupt button next to the ⌨ jump.
 // A Show box picks how many rows to list (empty / All = every one);
@@ -39,18 +40,19 @@
         { id: 'tools', label: 'Tools', get: r => r.toolCalls || 0 },
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 }
     ];
-    // Origin scope (who started the session). 'user' is the DEFAULT: the table
-    // is first of all the log of your own conversations, and on a farm with
-    // standing duties the automation runs outnumber them several times over.
-    // '' = both. The glyphs are the queue page's author language (🧑 you /
-    // 🤖 agent), so one vocabulary carries across the whole extension.
-    const ORIGINS = [
-        { id: '', label: 'All', glyph: '🧑🤖', tip: 'Both your own sessions and automation runs' },
-        { id: 'user', label: 'User', glyph: '🧑', tip: 'Only sessions you started yourself — your dialogs' },
-        { id: 'auto', label: 'Auto', glyph: '🤖', tip: 'Only automation runs — schedule / trigger / task / mission' }
+    /**
+     * ‼️ THREE CATEGORIES, THREE SWITCHES — NEVER A RADIO GROUP PLUS AN
+     * EXCEPTION. A mission session is technically automation, but in this table
+     * it is its own category so one busy mission cannot bury ordinary tasks and
+     * dialogs. Each switch owns exactly one boolean: pressing Mission never
+     * widens You or Auto, and pressing it again has nothing else to reconstruct.
+     */
+    const CATEGORIES = [
+        { id: 'user', key: 'showUser', label: 'You', glyph: '🧑', tip: 'Sessions you started yourself — your dialogs' },
+        { id: 'auto', key: 'showAuto', label: 'Auto', glyph: '🤖', tip: 'Automation outside missions — schedules, triggers and tasks' },
+        { id: 'mission', key: 'showMission', label: 'Mission', glyph: '🎯', tip: 'Stamped mission sessions — classic and adaptive, planner and delegations' }
     ];
     const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
-    const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
     /**
      * ‼️ X-95 — THE THIRD KIND OF ROW, AND WHY IT IS NOT A THIRD ORIGIN.
      *
@@ -101,33 +103,24 @@
     // "only Codex sessions of the developer agent with errors" are the same
     // gesture, in the same panel, with the same Clear.
     const FDEF = () => ({
-        text: '', agents: null, engines: null, projects: null, origin: 'user',
+        text: '', agents: null, engines: null, projects: null,
+        // The permanent switches. You is the fresh-table default; Auto and
+        // Mission are separate opt-ins, never aliases for "All".
+        showUser: true, showAuto: false, showMission: false,
         // ‼️ S-35 — headless runs are IN by default, so the table on a fresh
         // panel is the table it has always been: a filter that hides rows
         // nobody asked it to hide is how a count stops being trustworthy. It
-        // only bites in the Auto and All scopes — under 🧑 there is nothing
+        // only bites in the Auto and Mission categories — under 🧑 there is nothing
         // headless to drop.
         headless: true,
         /**
          * ‼️ X-95 — WHICH MISSIONS' SESSIONS MAY BE LISTED. Same three-state
          * shape as `agents`/`engines` and for the same reason (null = no filter,
          * so a mission started after this box was last opened is not silently
-         * excluded by a list of ids from yesterday) — with the OPPOSITE default:
-         * `[]`, none of them. This table is first of all the log of a person's
-         * own conversations, and a mission's runs bury it.
-         *
-         * It says nothing about the rows that are NOT a mission's: those are
-         * untouched by it, which is what makes it an exclusion rather than a
-         * scope. `missionsOnly` is the other half — see below.
+         * excluded by a list of ids from yesterday). Visibility belongs to
+         * `showMission`; this value only narrows WHICH mission rows are eligible.
          */
-        missions: [],
-        /**
-         * "This mission's sessions AND NOTHING ELSE" — what the button on a
-         * mission's own page means. Without it, scoping to one mission would
-         * still leave every dialog of your own in the list, and the reader would
-         * have to finish the filter by hand.
-         */
-        missionsOnly: false,
+        missions: null,
         activeOnly: false, errorsOnly: false,
         mainOnly: false, pinnedOnly: false, from: '', to: '', ranges: {}
     });
@@ -224,9 +217,8 @@
         .af-fpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
             padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
         .af-frow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-        /* S-35 — a hairline between the three scope chips (one choice) and the
-           🌙 chip beside them (a separate yes/no), so a row of four buttons does
-           not read as a row of four scopes. */
+        /* S-35 — a hairline between the three category switches and the 🌙
+           narrowing control, so the latter cannot read as a fourth category. */
         .af-fsep { width:1px; align-self:stretch; margin:1px 3px;
             background:var(--vscode-widget-border, #4444); }
         .af-frange { font-size:11px; display:flex; gap:3px; align-items:center; white-space:nowrap; }
@@ -354,7 +346,35 @@
         // page's own, or the pre-2.57 top-level one — still wins.
         let single = saved.single !== undefined ? !!saved.single
             : opts.fallbackSingle !== undefined ? !!opts.fallbackSingle : true;
-        let filters = Object.assign(FDEF(), saved.filters || {});
+        const savedFilters = saved.filters || {};
+        let filters = Object.assign(FDEF(), savedFilters);
+        /**
+         * ‼️ X-95 FILTER MIGRATION — THE OLD SHAPE COUPLED TWO AXES.
+         *
+         * `origin` was a User/Auto/All radio and `missionsOnly` was a second
+         * switch layered over it. Preserve what an existing page was showing
+         * once, then throw those keys away: after this point only the three
+         * independent booleans are persisted and no click can mutate another
+         * category as a side effect.
+         */
+        const hasSaved = k => Object.prototype.hasOwnProperty.call(savedFilters, k);
+        if (!hasSaved('showUser') && (hasSaved('origin') || hasSaved('missionsOnly'))) {
+            filters.showUser = !savedFilters.missionsOnly && savedFilters.origin !== 'auto';
+        }
+        if (!hasSaved('showAuto') && (hasSaved('origin') || hasSaved('missionsOnly'))) {
+            filters.showAuto = !savedFilters.missionsOnly && savedFilters.origin !== 'user';
+        }
+        if (!hasSaved('showMission') && (hasSaved('missions') || hasSaved('missionsOnly'))) {
+            filters.showMission = savedFilters.missions === null
+                || (Array.isArray(savedFilters.missions) && savedFilters.missions.length > 0);
+        }
+        // In the old shape [] meant "the category is off". That fact moved to
+        // showMission, so keeping [] would make its first ON click show nothing.
+        if (!hasSaved('showMission') && Array.isArray(filters.missions) && !filters.missions.length) {
+            filters.missions = null;
+        }
+        delete filters.origin;
+        delete filters.missionsOnly;
         let filtersOpen = !!saved.filtersOpen;
         const open = new Set();
         const turnCache = {}; // file -> { ts, turns|null } (null = request in flight)
@@ -383,15 +403,13 @@
             vscode.setState(Object.assign({}, st, { afSess: all }));
         }
 
-        // The origin scope is deliberately NOT counted here: it has its own
-        // always-visible switch in the chip row, so counting it would park a
-        // permanent "(1)" on the Filters chip and say nothing new. ‼️ X-95 —
-        // the MISSION axis is left out for exactly the same reason and no
-        // other: it too has a chip of its own that is always on screen and
-        // always states what it is currently doing.
+        // The three categories are deliberately NOT counted here: each has its
+        // own always-visible switch. A SPECIFIC mission selection is counted,
+        // because that narrower answer lives only inside the panel.
         function activeFilterCount() {
             let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.engines ? 1 : 0)
                 + (filters.projects ? 1 : 0)
+                + (filters.missions !== null ? 1 : 0)
                 // …but 🌙 IS counted, and for the opposite reason: it lives only
                 // inside the panel, so with the panel shut nothing else on the
                 // page would say that a whole class of runs is being hidden.
@@ -404,25 +422,6 @@
                 if (rg) { n += (rg.min !== undefined ? 1 : 0) + (rg.max !== undefined ? 1 : 0); }
             });
             return n;
-        }
-
-        /**
-         * ‼️ X-95 — LETTING MISSION SESSIONS IN HAS TO ACTUALLY SHOW THEM.
-         *
-         * Every mission session is `auto` by rule (a mission is one of Agent
-         * Farm's own mechanisms), and this table opens scoped to 🧑 User. So the
-         * 🎯 chip, on its own, admitted rows that the scope beside it then threw
-         * straight back out: pressing "list them all" changed nothing on screen
-         * and the count line did not move. A control that says it is showing you
-         * something and shows you nothing is worse than not having it.
-         *
-         * The origin scope is therefore widened WITH it — the same widening
-         * setProjectFilter does, for the same reason: a slice defined by
-         * something other than who started the run must not be silently
-         * intersected with who started the run.
-         */
-        function widenForMissions() {
-            if (filters.origin === 'user') { filters.origin = ''; }
         }
 
         function filterRows(list) {
@@ -447,15 +446,16 @@
                 // the cell beside it is unreadable.
                 if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
                 if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
-                if (filters.origin && originOf(r) !== filters.origin) { return false; }
-                // ‼️ X-95 — the mission axis, in the order the two halves are
-                // read: a mission's row has to be let in by the picker, and a
-                // row that is nobody's mission is dropped only when the reader
-                // asked for one mission and nothing else.
+                // ‼️ A ROW BELONGS TO EXACTLY ONE OF THE THREE SWITCHES. Mission
+                // wins over its technical `auto` origin, so 🎯 never needs 🤖
+                // to be on beside it and neither switch changes the other.
                 const mid = missionOf(r);
                 if (mid) {
+                    if (!filters.showMission) { return false; }
                     if (filters.missions && filters.missions.indexOf(mid) < 0) { return false; }
-                } else if (filters.missionsOnly) { return false; }
+                } else if (originOf(r) === 'auto') {
+                    if (!filters.showAuto) { return false; }
+                } else if (!filters.showUser) { return false; }
                 // S-35 — an exclusion, not a scope: off means "leave the
                 // headless runs out of whichever scope is showing".
                 if (!filters.headless && isHeadless(r)) { return false; }
@@ -579,63 +579,50 @@
                     <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
                 </label>`, k.label, `${set}\n\n${RANGE_TIP[k.id] || ''}\n\nEither end may be left empty — a min with no max means "at least this much".`);
             }).join('');
-            const origins = ORIGINS.map(o => ftip(
-                `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}">${o.glyph} ${o.label}</button>`,
-                `${o.glyph} ${o.label}`, o.tip)).join('');
-            // ‼️ S-35 — the fourth chip on this row is NOT a fourth scope. The
-            // three above are one choice (a person, a program, or both); this
-            // one narrows whichever of them is showing by dropping the runs that
-            // had no terminal. It is a MIRROR control: its first tooltip line is
-            // its current value, because pressed and unpressed chips look alike
-            // in a row of four.
+            const categories = CATEGORIES.map(o => ftip(
+                `<button class="chip af-cat-${o.id}${filters[o.key] ? ' on' : ''}" aria-pressed="${filters[o.key]}" aria-label="Show ${o.label} sessions">${o.glyph} ${o.label}</button>`,
+                `${o.glyph} ${o.label} — ${filters[o.key] ? 'ON: listed' : 'OFF: hidden'}`,
+                `${o.tip}. Pressing this changes only ${o.label}; the other two categories keep their state.`)).join('');
+            // ‼️ S-35 — headless is not a fourth category. It narrows the Auto
+            // and Mission rows that are on by dropping runs with no terminal.
+            // It never changes any of their category switches.
             const headlessChip = ftip(
                 `<button class="chip af-fhless${filters.headless ? ' on' : ''}">${HLESS_GLYPH} Headless</button>`,
                 `${HLESS_GLYPH} Headless — ${filters.headless ? 'ON: headless runs are listed' : 'OFF: headless runs are hidden'}`,
                 'A headless run is automation with no terminal behind it — a `claude -p` started by a schedule, a trigger, a task or a mission, with nobody at the keyboard. '
                 + 'An automation run launched in interactive mode opened a real terminal and is NOT headless, which is the difference this chip lets you see.\n\n'
-                + 'Press to drop them from the list. It changes nothing under 🧑 User: a session you started yourself is never headless.');
+                + 'Press to drop them from whichever automation categories are on. It changes no category switch and nothing under 🧑 You.');
             /**
              * ‼️ X-95 — THE MISSION ROW OF THE PANEL, and it is a row of its own
              * rather than another box in the flags line, because it carries the
-             * one control on this page that is HIDING rows on a fresh panel.
-             * The picker names which missions may be listed; the ONLY chip
-             * beside it says whether anything that is not a mission's may be.
-             * Both are MIRROR controls — their first tooltip line is what they
-             * are doing right now, which a pressed-vs-unpressed chip cannot say.
+             * picker answers only WHICH missions inside the Mission category.
+             * Whether that category is visible belongs to the same 🎯 switch
+             * above and nowhere else.
              */
             const misN = missionRowCount();
             const misOpts = missionOptions();
             const misState = filters.missions === null ? 'every mission'
-                : !filters.missions.length ? 'none — mission sessions are hidden'
+                : !filters.missions.length ? 'none selected'
                     : filters.missions.length + ' of ' + misOpts.length;
             const missionRow = !misN ? '' : `<div class="af-frow">
                     ${ftip(`<span class="muted small">${MISSION_GLYPH} Missions:</span>`,
                 `${MISSION_GLYPH} Mission sessions — ${misState}`,
-                'A mission runs its planner in a session of its own and opens one more for every delegation it hands out, so a farm that runs missions fills this log with them. '
-                + 'They are left OUT by default: this table is first of all the record of your own conversations.\n\n'
-                + `${misN} of the ${rows.length} sessions in this pool were opened by a mission. Tick the ones you want listed — the rows that are nobody's mission are not affected by this box.`)}
+                'This picker narrows the Mission category; it never turns You or Auto on or off. Classic and adaptive missions use the same stamp and both appear here.\n\n'
+                + `${misN} of the ${rows.length} sessions in this pool were opened by a mission. Tick the ones eligible when the 🎯 Mission switch is on.`)}
                     ${window.AFFilter.multi({
                     id: MISSION_MS, label: 'Missions', options: misOpts, selected: filters.missions,
                     allLabel: 'every mission',
-                    title: 'Which missions\' sessions to include. Each is listed by its title and matched by its run id, so two missions with the same name never merge.',
-                    presets: [{
-                        id: 'nomission', label: 'Hide all', values: [],
-                        title: 'Back to the default — no mission session in the list.'
-                    }]
+                    title: 'Which mission runs are eligible when 🎯 Mission is on. Each is listed by title and matched by run id, so two missions with the same name never merge.'
                 })}
-                    ${ftip(`<button class="chip af-fmisonly${filters.missionsOnly ? ' on' : ''}">${MISSION_GLYPH} Only missions</button>`,
-                    `${MISSION_GLYPH} Only missions — ${filters.missionsOnly ? 'ON: nothing but mission sessions is listed' : 'OFF: your own sessions are listed too'}`,
-                    'The other half of the mission axis. The picker beside it decides WHICH missions may be listed; this decides whether anything else may be.\n\n'
-                    + 'It is what a mission\'s own page turns on when you press its Sessions button: "the sessions of this mission" has to mean exactly that.')}
                 </div>`;
             const dateSet = filters.from || filters.to
                 ? `Now: ${filters.from || 'the beginning'} → ${filters.to || 'today'}`
                 : 'Now: every date';
             return `<div class="af-fpanel">
                 <div class="af-frow">
-                    ${ftip('<span class="muted small">Started by:</span>', 'Started by',
-                'Who began the session: a person at a keyboard, or one of Agent Farm\'s own mechanisms — a schedule, a trigger, a task, a mission. Decided from a recorded launcher first and the transcript\'s entrypoint second, never guessed from timing.\n\n'
-                + '🌙 Headless splits the robots in two: runs with no terminal behind them, and automation that opened one.')}${origins}<span class="af-fsep"></span>${headlessChip}
+                    ${ftip('<span class="muted small">Show:</span>', 'Visible session categories',
+                'Three independent switches: You, automation outside missions, and mission runs. Any combination is valid; one never changes another.\n\n'
+                + '🌙 Headless then narrows the automation categories without changing these switches.')}${categories}<span class="af-fsep"></span>${headlessChip}
                 </div>
                 ${missionRow}
                 <div class="af-frow">
@@ -679,7 +666,7 @@
                     ${ftip(`<label class="af-frange">When <input type="date" class="af-ffrom" value="${C.esc(filters.from)}">–<input type="date" class="af-fto" value="${C.esc(filters.to)}"></label>`,
                     'When', `${dateSet}\n\nThe window is the session's own last-activity date, and both ends are included — a single day means that whole day. Leave an end empty for an open one.`)}
                     ${ftip('<button class="chip af-fclear">Clear</button>', 'Clear',
-                        'Reset every filter in this panel, including the origin scope above it and the text box. The sort order and the row count are not filters and are left alone.', 'tip-right')}</div>
+                        'Reset every filter in this panel and the three category switches to their fresh-table state: You on, Auto and Mission off. The sort order and row count are left alone.', 'tip-right')}</div>
             </div>`;
         }
 
@@ -999,7 +986,7 @@
                 if (missionOf(r)) {
                     return `<td class="origcell mission" title="${tipOf(TIP.origin(r))}">${MISSION_GLYPH}</td>`;
                 }
-                const o = originMeta(originOf(r));
+                const o = CATEGORIES.find(x => x.id === originOf(r)) || CATEGORIES[0];
                 // S-35 — the moon rides on the robot, touching it: two glyphs
                 // side by side are ONE fact about one run, not two columns.
                 const moon = isHeadless(r) ? `<span class="hgl">${HLESS_GLYPH}</span>` : '';
@@ -1132,21 +1119,23 @@
             const pool = filterRows(rows);
             const nf = activeFilterCount();
             const hidden = rows.length - pool.length;
-            const scope = originMeta(filters.origin);
             /**
-             * ‼️ X-95 — THE ONE CONTROL THAT HIDES ROWS ON A FRESH PANEL SAYS SO
-             * WITHOUT BEING OPENED. The origin switch beside it set the
-             * precedent: a filter with a permanent effect gets a permanent chip,
-             * because a count that silently leaves a whole class of runs out is
-             * a count nobody can trust. One click flips hidden ↔ every mission;
-             * choosing particular ones is the panel's job, and the chip then
-             * says how many rather than pretending it is a two-state switch.
+             * ‼️ THE THREE PERMANENT SWITCHES SAY THE WHOLE CATEGORY STATE AT A
+             * GLANCE. Icon only in the dense toolbar; the AFTip opens with the
+             * current ON/OFF answer and names exactly what the one press changes.
              */
             const misN = missionRowCount();
-            const misAll = filters.missions === null;
-            const misSome = !misAll && filters.missions.length > 0;
-            const misChip = !misN ? '' : `<button class="chip af-mswitch${misAll || misSome ? ' on' : ''}"
-                title="${MISSION_GLYPH} Mission sessions: ${misAll ? 'all listed' : misSome ? filters.missions.length + ' mission(s) listed' : 'hidden'}${filters.missionsOnly ? ' · nothing else is listed' : ''} · ${misN} of the ${rows.length} sessions here were opened by a mission · click to ${misAll || misSome ? 'hide them again' : 'list them all'}">${MISSION_GLYPH}${misSome ? ` ${filters.missions.length}` : ''}</button>`;
+            const categoryChips = CATEGORIES.map(o => {
+                const extra = o.id === 'mission'
+                    ? `\n\n${misN} of ${rows.length} sessions in this pool carry a mission stamp. `
+                        + (filters.missions === null ? 'Every mission is eligible.'
+                            : `${filters.missions.length} mission run(s) are selected in Filters.`)
+                    : '';
+                return ftip(
+                    `<button class="chip af-cat-${o.id}${filters[o.key] ? ' on' : ''}" aria-pressed="${filters[o.key]}" aria-label="Show ${o.label} sessions">${o.glyph}</button>`,
+                    `${o.glyph} ${o.label} — ${filters[o.key] ? 'ON: listed' : 'OFF: hidden'}`,
+                    `${o.tip}. Press to turn only this category ${filters[o.key] ? 'off' : 'on'}; the other two keep their state.${extra}`);
+            }).join('');
             // The shelf sits on top: pinned rows first, then whatever criterion
             // is picked — a session you keep coming back to is never scrolled to.
             shown = pool.slice().sort((a, b) =>
@@ -1190,9 +1179,8 @@
                 <button class="chip af-expand" title="List every shown session's turns">Expand all</button>
                 <button class="chip af-collapse" title="Hide all turn lists">Collapse all</button>
                 <button class="chip af-single${single ? ' on' : ''}" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
-                <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
-                ${misChip}
-                <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by origin, text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+                ${categoryChips}
+                <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by category, text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
                 <!-- ‼️ THE ONE PLACE THE HINT IS SAID. It used to be appended to
                      every cell's tooltip on every row, which is a sentence you
                      read once printed several hundred times. Everything true of
@@ -1306,31 +1294,16 @@
             if (allBtn) {
                 allBtn.addEventListener('click', () => setCount(tableN === 0 ? defaultN : 0));
             }
-            // ---- origin scope: one-click User ↔ All, without opening the panel ----
-            const osw = root.querySelector('.af-oswitch');
-            if (osw) {
-                osw.addEventListener('click', () => {
-                    filters.origin = filters.origin ? '' : 'user';
+            // ---- three category switches, each touching only its own boolean.
+            // The same controls are mirrored inside the open filter panel, so
+            // wire every copy rather than whichever querySelector finds first.
+            CATEGORIES.forEach(o => {
+                root.querySelectorAll(`.af-cat-${o.id}`).forEach(btn => btn.addEventListener('click', () => {
+                    filters[o.key] = !filters[o.key];
                     saveState();
                     renderSection();
-                });
-            }
-            // ---- X-95: mission sessions in ↔ out, without opening the panel.
-            // The reverse of "all" is `[]` and never null: null is "no filter",
-            // which is exactly the state this chip exists to escape from.
-            const msw = root.querySelector('.af-mswitch');
-            if (msw) {
-                msw.addEventListener('click', () => {
-                    const listing = filters.missions === null || filters.missions.length > 0;
-                    filters.missions = listing ? [] : null;
-                    // Turning them off must not leave a table showing NOTHING:
-                    // "only missions" plus "no missions" is an empty page with
-                    // two controls each blaming the other.
-                    if (listing) { filters.missionsOnly = false; } else { widenForMissions(); }
-                    saveState();
-                    renderSection();
-                });
-            }
+                }));
+            });
             // ---- filter panel ----
             const fchip = root.querySelector('.af-filter');
             if (fchip) {
@@ -1352,8 +1325,6 @@
                 if (el) { window.AFFilter.live(el, fn, delay); }
             };
             if (filtersOpen) {
-                ORIGINS.forEach(o =>
-                    wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
                 wireEl('.af-fhless', 'click', () => { filters.headless = !filters.headless; apply(); });
                 liveEl('.af-ftext', el => { filters.text = el.value || ''; apply(); });
                 // the ✕ that empties it — the shared control (common.css .af-clr)
@@ -1372,21 +1343,7 @@
                 });
                 window.AFFilter.wireMulti({
                     root, id: MISSION_MS,
-                    onChange: sel => {
-                        filters.missions = sel;
-                        if (sel === null || sel.length) { widenForMissions(); }
-                        apply();
-                    }
-                });
-                wireEl('.af-fmisonly', 'click', () => {
-                    filters.missionsOnly = !filters.missionsOnly;
-                    if (filters.missionsOnly) { widenForMissions(); }
-                    // Asking for nothing but missions while none are allowed in
-                    // is an empty table, so the picker is opened with it.
-                    if (filters.missionsOnly && filters.missions && !filters.missions.length) {
-                        filters.missions = null;
-                    }
-                    apply();
+                    onChange: sel => { filters.missions = sel; apply(); }
                 });
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
                 wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
@@ -1534,12 +1491,10 @@
             renderSection();
         }
 
-        /** Scope the table to one project (the Projects card clicks through to
-         *  here). The origin scope is widened at the same time: "everything on
-         *  this project" must not silently exclude its automation runs. */
+        /** Scope the table to one project without changing what categories the
+         *  reader chose to show. Project and category are independent axes. */
         function setProjectFilter(name) {
             filters.projects = name ? [name] : null;
-            filters.origin = '';
             filtersOpen = true;
             saveState();
             renderSection();
@@ -1547,23 +1502,17 @@
 
         /**
          * ‼️ X-95 — SCOPE THE TABLE TO ONE MISSION. What the Sessions button on
-         * a mission's own page opens, and the one gesture on this page that sets
-         * BOTH halves of the mission axis: this mission may be listed, and
-         * nothing that is not a mission's may be. Anything less and the reader
-         * still has to finish the filter by hand, which is what the button was
-         * put there to save them.
-         *
-         * The origin scope is widened at the same time and for the same reason
-         * setProjectFilter widens it: a mission's sessions are automation runs
-         * to a rule, and 🧑 User is what this table opens on.
+         * a mission's own page opens. This deliberate deep-link means exactly
+         * that mission and nothing else, so it sets the three category booleans
+         * explicitly; ordinary category clicks remain independent.
          */
         function setMissionFilter(id) {
             filters.missions = id ? [id] : null;
-            filters.missionsOnly = !!id;
-            widenForMissions();
-            // …and the panel is opened, so the reader can SEE which two controls
-            // are doing this. A table that has silently hidden most of itself is
-            // the failure this whole item is about.
+            filters.showUser = !id;
+            filters.showAuto = !id;
+            filters.showMission = !!id;
+            // …and the panel is opened, so the reader can SEE the named mission
+            // selection behind the category switch.
             filtersOpen = true;
             saveState();
             renderSection();

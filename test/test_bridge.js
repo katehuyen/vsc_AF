@@ -4758,7 +4758,8 @@ const { opencodeStatus, syncToOpencode } =
         ok('stageBridgeCli is idempotent when version matches', !r2.staged && fs.existsSync(r2.path));
 
         // 2. Test af.js module
-        const { parseCliArgs, resolvePayload, executeBridgeRequest, writeResponseFile } =
+        const { parseCliArgs, resolvePayload, parsePayloadText, decodeBase64Stdin,
+            executeBridgeRequest, writeResponseFile } =
             require(path.join(extPath, 'out', 'service', 'af.js'));
 
         // parseCliArgs
@@ -4816,6 +4817,25 @@ const { opencodeStatus, syncToOpencode } =
         ok('af.js parses -o with --raw', c5.outFile === 'catalog.json' && c5.rawOutput);
         const c6 = parseCliArgs(['node', 'af.js', 'farm.ops', '--out=deep/catalog.json']);
         ok('af.js parses --out= form', c6.outFile === 'deep/catalog.json');
+        const c7 = parseCliArgs(['node', 'af.js', 'notices.post', '--stdin-base64']);
+        ok('af.js parses the PowerShell-safe Base64 stdin form',
+            c7.op === 'notices.post' && c7.fromStdin && c7.stdinBase64);
+        const unicodePayload = { text: 'Türkçe denetim — ölçü ✓', icon: '🎯' };
+        const unicodeJson = JSON.stringify(unicodePayload);
+        const encodedPayload = Buffer.from(unicodeJson, 'utf8').toString('base64');
+        const decodedPayload = parsePayloadText(decodeBase64Stdin(encodedPayload), 'stdin');
+        ok('Base64 stdin round-trips non-ASCII JSON without the PowerShell codepage touching it',
+            decodedPayload.text === unicodePayload.text && decodedPayload.icon === unicodePayload.icon);
+        ok('Base64 stdin preserves a literal replacement glyph already present in valid UTF-8',
+            decodeBase64Stdin(Buffer.from('{"text":"�"}', 'utf8').toString('base64')).includes('�'));
+        let badBase64Rejected = false;
+        try { decodeBase64Stdin('not base64 ?'); } catch { badBase64Rejected = true; }
+        ok('Base64 stdin refuses malformed transport instead of dispatching corrupted text',
+            badBase64Rejected);
+        let invalidUtf8Rejected = false;
+        try { decodeBase64Stdin(Buffer.from([0xC3, 0x28]).toString('base64')); } catch { invalidUtf8Rejected = true; }
+        ok('Base64 stdin refuses invalid UTF-8 bytes instead of inserting replacement glyphs',
+            invalidUtf8Rejected);
         // A path that looks like an args file must not be mistaken for one: --out consumes
         // its value, so the positional slot stays empty and the op runs with no args.
         ok('--out value is not read as args', !c4.argsFile && !c4.rawArgs);

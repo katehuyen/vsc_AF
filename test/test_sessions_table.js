@@ -1,8 +1,8 @@
 // DOM-stub test for the shared Sessions table (media/sessionsTable.js):
 // sorting (incl. the Ctx-now criterion), the turn accordion (fold → host
 // request → turn rows → turn jump), single-open mode, expand/collapse,
-// the ⌨ jump-to-terminal button, the origin scope (🧑 user / 🤖 auto column,
-// its one-click switch and its filter chips), and per-page state persistence.
+// the ⌨ jump-to-terminal button, the three session categories (🧑 You / 🤖 Auto /
+// 🎯 Mission), their independent switches, and per-page state persistence.
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -550,7 +550,7 @@ const mkRow = (i, extra) => Object.assign({
         ms.presets('sess-engines-flt').length === 0);
 }
 
-// ---------- part: origin scope — the column, the one-click switch, the chips ----------
+// ---------- part: three independent session-category switches ----------------
 {
     posted = []; state = {};
     const t = sandbox.window.AFSessionsTable.create({
@@ -567,43 +567,82 @@ const mkRow = (i, extra) => Object.assign({
     const shownRows = () => containers.orig.querySelectorAll('[data-fold]').length;
 
     ok('origin column rendered with its own header', html().includes('>By</th>'));
-    ok('the table opens scoped to your own sessions',
+    ok('the table opens with You on and Auto off',
         shownRows() === 2 && html().includes('title1') && html().includes('title4') && !html().includes('title2'));
     ok('…and says how many rows that hides', html().includes('2/5 sessions'));
     ok('user rows carry the 🧑 glyph, and no 🤖 is on screen',
         html().includes('🧑</td>') && !html().includes('🤖</td>'));
-    ok('the scope switch shows the current scope and is lit', html().includes('af-oswitch on'));
+    ok('the three permanent switches expose the whole category state',
+        html().includes('af-cat-user on') && html().includes('af-cat-auto')
+        && !html().includes('af-cat-auto on') && html().includes('af-cat-mission')
+        && !html().includes('af-cat-mission on'));
 
-    click(q('.af-oswitch'));
-    ok('one click on the switch shows everything', shownRows() === 5 && html().includes('title2'));
+    click(q('.af-cat-auto'));
+    ok('Auto turns on without changing You', shownRows() === 5 && html().includes('title2')
+        && state.afSess.orig.filters.showUser === true
+        && state.afSess.orig.filters.showAuto === true
+        && state.afSess.orig.filters.showMission === false);
     ok('…automation rows carry the 🤖 glyph', html().includes('🤖</td>'));
-    ok('…the switch goes quiet and the row count note disappears',
-        !html().includes('af-oswitch on') && !html().includes('/5 sessions'));
-    ok('scope persisted under the page key', state.afSess.orig.filters.origin === '');
+    click(q('.af-cat-auto'));
+    ok('a second press turns only Auto back off', shownRows() === 2
+        && state.afSess.orig.filters.showUser === true
+        && state.afSess.orig.filters.showAuto === false);
 
-    click(q('.af-oswitch'));
-    ok('clicking again returns to your own sessions', shownRows() === 2);
+    click(q('.af-cat-user'));
+    ok('You can be turned off independently, including an empty category selection',
+        shownRows() === 0 && state.afSess.orig.filters.showUser === false
+        && state.afSess.orig.filters.showAuto === false
+        && state.afSess.orig.filters.showMission === false);
+    click(q('.af-cat-auto'));
+    ok('Auto alone lists only automation', shownRows() === 3
+        && html().includes('title2') && !html().includes('title1'));
 
-    // the filter panel carries the three-way scope, incl. Auto (the switch has no third stop)
+    // The filter panel mirrors the same switches; it is not a second radio model.
     click(q('.af-filter'));
-    ok('filter panel offers all three scopes',
-        html().includes('af-forig-all') && html().includes('af-forig-user') && html().includes('af-forig-auto'));
-    click(q('.af-forig-auto'));
-    ok('Auto shows only automation runs',
-        shownRows() === 3 && html().includes('title2') && !html().includes('title1'));
-    ok('…and the switch reflects the narrowed scope', html().includes('af-oswitch on'));
-    click(q('.af-oswitch'));
-    ok('the switch does what its label says from any scope: Auto → All', shownRows() === 5);
-    click(q('.af-oswitch'));
-    ok('…and the next click lands back on your own sessions', shownRows() === 2);
-    ok('the Filters chip is NOT inflated by the scope', !html().includes('Filters ('));
+    ok('filter panel mirrors You, Auto and Mission as independent switches',
+        (html().match(/af-cat-user/g) || []).length === 2
+        && (html().match(/af-cat-auto/g) || []).length === 2
+        && (html().match(/af-cat-mission/g) || []).length === 2
+        && !html().includes('af-forig-'));
+    ok('category switches do not inflate the Filters count', !html().includes('Filters ('));
     click(q('.af-fclear'));
-    ok('Clear restores the default scope, not "all"', shownRows() === 2);
+    ok('Clear restores You on, Auto and Mission off', shownRows() === 2
+        && state.afSess.orig.filters.showUser === true
+        && state.afSess.orig.filters.showAuto === false
+        && state.afSess.orig.filters.showMission === false);
 
     // a row without an origin field (older host, external CLI) counts as yours
     t.setRows([mkRow(9)], 10);
     ok('a row with no origin stays visible in the User scope',
         containers.orig.querySelectorAll('[data-fold]').length === 1);
+}
+
+// ---------- migration: the released coupled shape becomes three booleans ----
+{
+    posted = [];
+    state = { afSess: { legacy: { filters: {
+        origin: 'user', missions: [], missionsOnly: false, headless: true, ranges: {}
+    } } } };
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'legacy',
+        columns: ['origin', 'title'], stateKey: 'legacy'
+    });
+    t.setRows([
+        mkRow(1, { origin: 'user' }),
+        mkRow(2, { origin: 'auto' }),
+        mkRow(3, { origin: 'auto', mission: { id: 'classic-1', title: 'Classic mission' } })
+    ], 10);
+    const q = sel => containers.legacy.querySelector(sel);
+    const shownRows = () => containers.legacy.querySelectorAll('[data-fold]').length;
+    ok('the released User-only state keeps showing the same rows after migration', shownRows() === 1);
+    click(q('.af-cat-mission'));
+    ok('its first Mission press works instead of retaining the old empty-selection sentinel',
+        shownRows() === 2 && state.afSess.legacy.filters.showUser === true
+        && state.afSess.legacy.filters.showAuto === false
+        && state.afSess.legacy.filters.showMission === true
+        && state.afSess.legacy.filters.missions === null
+        && !Object.prototype.hasOwnProperty.call(state.afSess.legacy.filters, 'origin')
+        && !Object.prototype.hasOwnProperty.call(state.afSess.legacy.filters, 'missionsOnly'));
 }
 
 // ---------- part: X-95 — a mission's sessions are their own kind of row ------
@@ -613,8 +652,8 @@ const mkRow = (i, extra) => Object.assign({
 // conversations — and every one of them is `auto`, so the 🤖 glyph could not
 // tell the twelfth delegation of one mission from a nightly schedule. What is
 // pinned here: the third glyph, the default exclusion, the always-visible chip
-// that admits to it, the per-mission picker, and the two-part scope the button
-// on a mission's own page sets.
+// that admits to it, the per-mission picker, and the exact scope the button on a
+// mission's own page sets.
 {
     posted = []; state = {};
     const t = sandbox.window.AFSessionsTable.create({
@@ -626,9 +665,9 @@ const mkRow = (i, extra) => Object.assign({
     t.setRows([
         mkRow(1, { origin: 'user' }),
         mkRow(2, { origin: 'auto', headless: true }),
-        mkRow(3, { origin: 'auto', headless: true, mission: A }),
-        mkRow(4, { origin: 'auto', headless: true, mission: A }),
-        mkRow(5, { origin: 'auto', headless: true, mission: B })
+        mkRow(3, { origin: 'auto', headless: true, mission: A, missionMode: 'classic' }),
+        mkRow(4, { origin: 'auto', headless: true, mission: A, missionMode: 'adaptive' }),
+        mkRow(5, { origin: 'auto', headless: true, mission: B, missionMode: 'adaptive' })
     ], 10);
     const html = () => containers.mis.innerHTML;
     const ms = containers.mis.ms;
@@ -637,82 +676,98 @@ const mkRow = (i, extra) => Object.assign({
 
     ok('‼️ mission sessions are OUT of the table by default',
         shownRows() === 1 && html().includes('title1') && !html().includes('title3'));
-    ok('the 🎯 chip is on screen saying so, without the panel being opened',
-        html().includes('af-mswitch') && html().includes('Mission sessions: hidden'));
-    ok('…and it counts what it is leaving out, against the whole pool',
-        html().includes('3 of the 5 sessions here were opened by a mission'));
+    ok('the permanent Mission switch is on screen and visibly off',
+        html().includes('af-cat-mission') && !html().includes('af-cat-mission on')
+        && html().includes('Mission — OFF: hidden'));
+    ok('…and its hover counts every stamped mission row in the pool',
+        html().includes('3 of 5 sessions in this pool carry a mission stamp'));
     ok('the Filters chip is NOT inflated by it — it has its own permanent chip',
         !html().includes('Filters ('));
 
-    // ‼️ Every mission session is `auto`, and this table opens scoped to 🧑
-    // User — so letting them in without widening the scope showed the reader
-    // exactly nothing while lighting the chip that promised otherwise.
-    click(q('.af-mswitch'));
-    ok('‼️ one click from the DEFAULT scope really lists them — the origin scope widens with it',
-        shownRows() === 5 && html().includes('title3')
-        && state.afSess.mis.filters.origin === '');
+    click(q('.af-cat-mission'));
+    ok('‼️ Mission turns on without widening or changing either other category',
+        shownRows() === 4 && html().includes('title1') && html().includes('title3')
+        && !html().includes('title2')
+        && state.afSess.mis.filters.showUser === true
+        && state.afSess.mis.filters.showAuto === false
+        && state.afSess.mis.filters.showMission === true);
+    ok('‼️ classic and adaptive mission rows obey the same Mission switch',
+        html().includes('title3') && html().includes('title4') && html().includes('title5'));
     ok('‼️ a mission row wears its own glyph — never 🧑 and never 🤖',
         html().includes('🎯</td>') && !/🎯<span class="hgl">/.test(html()));
     ok('…and the moon is not drawn on it: a mission lane is nobody\'s terminal either way',
-        (html().match(/class="hgl"/g) || []).length === 1);
+        (html().match(/class="hgl"/g) || []).length === 0);
     ok('the hover names WHICH mission, which is the answer the glyph is read for',
         html().includes('Mission — Ship the viewer') && html().includes('run-a'));
-    ok('the choice is persisted under the page key', state.afSess.mis.filters.missions === null);
+    ok('the choice is persisted under the page key',
+        state.afSess.mis.filters.showMission === true && state.afSess.mis.filters.missions === null);
 
-    click(q('.af-mswitch'));
-    ok('clicking again hides them, and the reverse of "all" is none — not "no filter"',
-        shownRows() === 2 && Array.isArray(state.afSess.mis.filters.missions)
-        && state.afSess.mis.filters.missions.length === 0);
+    click(q('.af-cat-mission'));
+    ok('clicking Mission again hides only missions and preserves its specific picker state',
+        shownRows() === 1 && state.afSess.mis.filters.showUser === true
+        && state.afSess.mis.filters.showAuto === false
+        && state.afSess.mis.filters.showMission === false
+        && state.afSess.mis.filters.missions === null);
 
-    // ---- the panel: which missions, and whether anything else may be listed
+    // ---- the panel: which missions inside the independent Mission category
+    click(q('.af-cat-mission'));
     click(q('.af-filter'));
     ok('the picker lists the missions this pool actually holds, newest first',
         ms.options('sess-missions-mis').join() === 'run-a,run-b');
     ok('…by TITLE, because that is what a person reads',
-        ms.label('sess-missions-mis') === 'Missions: none');
+        ms.label('sess-missions-mis') === 'Missions: every mission');
     ms.only('sess-missions-mis', ['run-a']);
     ok('‼️ picking one mission lists its sessions and no other mission\'s',
         html().includes('title3') && html().includes('title4') && !html().includes('title5'));
-    ok('…and leaves the rows that are nobody\'s mission alone — it is an exclusion, not a scope',
-        html().includes('title1') && html().includes('title2'));
-    ok('the chip counts the picked missions rather than pretending to be a switch',
-        html().includes('af-mswitch on') && /🎯 1<\/button>/.test(html()));
+    ok('…and leaves the other category switches exactly as they were',
+        html().includes('title1') && !html().includes('title2')
+        && state.afSess.mis.filters.showUser === true
+        && state.afSess.mis.filters.showAuto === false);
+    ok('the old coupled Only missions control is gone', !html().includes('af-fmisonly'));
 
-    click(q('.af-fmisonly'));
-    ok('‼️ "Only missions" drops everything that is not a mission\'s',
-        html().includes('title3') && !html().includes('title1') && !html().includes('title2'));
-    ok('…and the chip says both halves at once',
-        html().includes('nothing else is listed'));
-
-    // ‼️ The two halves must never be able to empty the table between them.
-    click(q('.af-mswitch'));
-    ok('hiding the missions while "only missions" is on withdraws it rather than showing nothing',
-        state.afSess.mis.filters.missionsOnly === false && shownRows() === 2);
+    click(q('.af-cat-auto'));
+    ok('Auto can join a specifically filtered mission without disturbing it',
+        shownRows() === 4 && html().includes('title2')
+        && state.afSess.mis.filters.missions.join() === 'run-a');
+    click(q('.af-cat-mission'));
+    ok('Mission off leaves You and Auto on, and keeps the picker for the next press',
+        shownRows() === 2 && state.afSess.mis.filters.showUser === true
+        && state.afSess.mis.filters.showAuto === true
+        && state.afSess.mis.filters.missions.join() === 'run-a');
+    click(q('.af-cat-mission'));
+    ok('Mission on restores the same selected mission without touching You or Auto',
+        shownRows() === 4 && !html().includes('title5'));
 
     click(q('.af-fclear'));
-    ok('Clear restores the default: missions out, everything else in',
-        shownRows() === 1 && state.afSess.mis.filters.missionsOnly === false);
+    ok('Clear restores the default: You on, Auto and Mission off, every mission eligible',
+        shownRows() === 1 && state.afSess.mis.filters.showUser === true
+        && state.afSess.mis.filters.showAuto === false
+        && state.afSess.mis.filters.showMission === false
+        && state.afSess.mis.filters.missions === null);
 
     // ---- the deep link a mission's own page uses
     t.setMissionFilter('run-b');
     ok('‼️ setMissionFilter means THIS mission and nothing else',
         shownRows() === 1 && html().includes('title5'));
-    ok('…with the origin scope widened, because a mission\'s runs are automation',
-        state.afSess.mis.filters.origin === '');
+    ok('…with only the Mission category on',
+        state.afSess.mis.filters.showUser === false
+        && state.afSess.mis.filters.showAuto === false
+        && state.afSess.mis.filters.showMission === true);
     ok('…and the panel opened, so the reader can see what is narrowing the list',
         html().includes('af-fpanel'));
 
-    // A table with no mission session in it says nothing about missions at all.
+    // The category switch is permanent even when this particular pool has none.
     t.setRows([mkRow(1, { origin: 'user' })], 10);
-    ok('no mission sessions in the pool → no chip, no picker, no row of controls',
-        !html().includes('af-mswitch') && !ms.has('sess-missions-mis'));
+    ok('no mission rows → all three switches remain, but there is no mission picker',
+        html().includes('af-cat-user') && html().includes('af-cat-auto')
+        && html().includes('af-cat-mission') && !ms.has('sess-missions-mis'));
 }
 
 // ---------- part: S-35 — headless is the second half of "who started it" ----
 //
 // 🤖 covered two different things: a `claude -p` with no terminal and nobody
 // at it, and a task launched in interactive mode that opened a real terminal.
-// The moon marks the first, and the chip beside the scope chips drops them.
+// The moon marks the first, and the chip beside the category switches drops them.
 {
     posted = []; state = {};
     const t = sandbox.window.AFSessionsTable.create({
@@ -731,7 +786,7 @@ const mkRow = (i, extra) => Object.assign({
     const q = sel => containers.hless.querySelector(sel);
     const shownRows = () => containers.hless.querySelectorAll('[data-fold]').length;
 
-    click(q('.af-oswitch'));   // open the scope to All — the robots live there
+    click(q('.af-cat-auto'));   // admit automation without changing You or Mission
     ok('a headless run wears the moon, touching the robot it qualifies',
         html().includes('🤖<span class="hgl">🌙</span></td>'));
     ok('…and an automation run that opened a terminal does not',
@@ -742,10 +797,10 @@ const mkRow = (i, extra) => Object.assign({
         html().includes('Automation · headless'));
 
     click(q('.af-filter'));
-    ok('the chip is offered beside the scope chips, and starts ON — nothing is hidden by default',
+    ok('the chip is offered beside the category switches, and starts ON — nothing is hidden by default',
         html().includes('af-fhless on'));
     click(q('.af-fhless'));
-    ok('‼️ pressing it drops the headless runs from whichever scope is showing',
+    ok('‼️ pressing it drops the headless runs from whichever categories are showing',
         shownRows() === 3 && !html().includes('title2'));
     ok('…and the Filters chip says so, because the panel can be shut over it',
         html().includes('Filters (1)'));
@@ -754,7 +809,7 @@ const mkRow = (i, extra) => Object.assign({
     ok('the choice is persisted under the page key',
         state.afSess.hless.filters.headless === false);
 
-    click(q('.af-forig-user'));
+    click(q('.af-cat-auto'));
     ok('it changes nothing under 🧑 User — your own sessions are never headless',
         shownRows() === 1);
 
@@ -824,13 +879,13 @@ const mkRow = (i, extra) => Object.assign({
     // `title` here does not survive the repaint every filter change causes, and
     // three of these controls carried no hover at all.
     ok('‼️ every control in the filter panel carries a rich hover',
-        ['Started by', 'Active now', 'Has errors', 'Main only', 'Pinned only',
+        ['Visible session categories', 'Active now', 'Has errors', 'Main only', 'Pinned only',
             'When', 'Clear', 'Tokens', 'Minutes', 'Errors']
             .every(head => html().includes(`<span class="af-tiph">${head}</span>`)));
     ok('…and the range boxes say what is set as well as what the column means',
         html().includes('Now: no limit') && html().includes('Now: every date'));
     ok('…so nothing in it is left on a native title',
-        !/class="chip af-forig-[a-z]+[^"]*" title=/.test(html())
+        !/class="chip af-cat-[a-z]+[^"]*" title=/.test(html())
         && !/class="af-ftext" title=/.test(html()));
 
     // the ★ Pinned filter = the shelf on its own
@@ -1136,7 +1191,9 @@ const mkRow = (i, extra) => Object.assign({
         mkRow(4, { engine: 'codex' })
     ];
     const mk = (key, filters) => {
-        state = { afSess: { [key]: { filtersOpen: true, filters: Object.assign({ origin: '' }, filters) } } };
+        state = { afSess: { [key]: { filtersOpen: true, filters: Object.assign({
+            showUser: true, showAuto: true, showMission: true
+        }, filters) } } };
         const t = sandbox.window.AFSessionsTable.create({
             vscode: vscodeStub, C, containerId: key, columns: cols, stateKey: key
         });

@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.274.0 - Sessions has three honest switches; PowerShell cannot corrupt bridge text in transit (2026-08-24)
+
+**You, Auto and Mission are three independent ON/OFF switches.** The Sessions
+table no longer mixes a User/Auto/All radio with a separate mission exception.
+Each row belongs to exactly one category: a mission stamp wins over its technical
+automation origin, so Mission includes classic and adaptive missions, their
+planners and every delegation without requiring Auto beside it. Pressing one
+icon changes only that category; pressing it again reverses only that change.
+The filled chip background is the whole state, the filter panel mirrors the same
+three switches, and a particular-mission picker remains a narrower filter inside
+Mission. Existing saved filters migrate once without changing which rows they
+initially show, and the first Mission press after migration cannot inherit the
+old empty-list sentinel and appear to do nothing.
+
+**The bridge CLI has an ASCII-safe stdin route for Windows PowerShell 5.1.** That
+shell can replace Turkish and other non-ASCII characters before Node receives a
+piped JSON string, which was discovered while recording this audit's backlog
+items. `--stdin-base64` (alias `--stdin-b64`) now accepts Base64-wrapped UTF-8
+JSON, validates both the encoding and UTF-8 strictly, and preserves legitimate
+replacement glyphs. Malformed transport is rejected before an operation can
+write corrupted text.
+
 ## 3.273.0 - X-32 phase B complete: a mission's sessions are its own, and a run says what it really ran with (2026-08-24)
 
 **X-95 — a mission's sessions are stamped, separated, and one click away.** A

@@ -104,8 +104,8 @@ const data = (extra) => Object.assign({
     }));
     ok('X-95 — with no scope a mission\'s sessions are left out by default',
         /session 1/.test(plain.html()) && !/session 2/.test(plain.html()));
-    ok('…and the 🎯 chip says so without the panel being opened',
-        /af-mswitch/.test(plain.html()) && /Mission sessions: hidden/.test(plain.html()));
+    ok('…and the 🎯 switch says so without the panel being opened',
+        /af-cat-mission/.test(plain.html()) && /Mission — OFF: hidden/.test(plain.html()));
 }
 
 // ---------- the host contract ----------

@@ -98,14 +98,12 @@ const variants = () => [
         id: 'filters', label: 'Sessions — the filter panel open', data: data(),
         act: (r) => { r.query('.af-filter')[0].click(); }
     },
-    // S-35 — the origin column and its chip row are only worth looking at with
-    // the scope opened to All: the default User scope has no robot in it at
-    // all, which is why the two kinds of automation run could stay identical
-    // for so long without anybody seeing them side by side.
+    // S-35 — compare You and Auto with both independent categories switched on;
+    // otherwise the default You-only table has no robot in it at all.
     {
         id: 'origins', label: 'Sessions — every origin, filters open (🧑 · 🤖 · 🤖🌙)',
         data: data(),
-        act: (r) => { r.query('.af-oswitch')[0].click(); r.query('.af-filter')[0].click(); }
+        act: (r) => { r.query('.af-cat-auto')[0].click(); r.query('.af-filter')[0].click(); }
     },
     // ‼️ X-95 — the mission rows and the row of controls that governs them. They
     // are invisible in every variant above, by design: this is the only one that
@@ -114,10 +112,10 @@ const variants = () => [
     {
         id: 'missions', label: 'Sessions — mission sessions listed (🎯), filters open',
         data: data(),
-        act: (r) => { r.query('.af-mswitch')[0].click(); r.query('.af-filter')[0].click(); }
+        act: (r) => { r.query('.af-cat-mission')[0].click(); r.query('.af-filter')[0].click(); }
     },
     // …and what a mission's own Sessions button opens: this run and nothing
-    // else, with both halves of the mission axis set for the reader to see.
+    // else, with its category and specific-mission picker visible.
     {
         id: 'mission-scope', label: 'Sessions — opened from one mission',
         data: Object.assign(data(), {

@@ -7,7 +7,7 @@
  * shell quote-escaping errors.
  *
  * Usage:
- *   node af.js <op> [key=value ... | args-json | @args-file.json | -] [--timeout <ms>] [--bridge-dir <dir>]
+ *   node af.js <op> [key=value ... | args-json | @args-file.json | -] [--stdin-base64] [--timeout <ms>] [--bridge-dir <dir>]
  *
  * Examples:
  *   node af.js farm.ops
@@ -24,6 +24,13 @@
  * then rejects. Writing the file here keeps it UTF-8 without a BOM, whatever shell
  * invoked us.
  *
+ * `--stdin-base64` closes the same trap in the other direction. Windows PowerShell
+ * 5.1 converts strings sent to a native process through `|` with its legacy output
+ * encoding before Node can see them; characters outside that codepage have already
+ * become `?` by the time stdin arrives and no JavaScript decoder can recover them.
+ * Base64 is ASCII on the pipe and decoded back to UTF-8 here, so a long Turkish or
+ * markdown payload remains byte-for-byte intact without a temporary file.
+ *
  * Zero external dependencies: Node.js standard library only (fs, path, os, crypto).
  */
 
@@ -31,6 +38,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { TextDecoder } from 'util';
 
 export interface CliOptions {
     op?: string;
@@ -38,6 +46,7 @@ export interface CliOptions {
     keyValueArgs?: string[];
     argsFile?: string;
     fromStdin?: boolean;
+    stdinBase64?: boolean;
     timeoutMs: number;
     bridgeDir?: string;
     rawOutput: boolean;
@@ -101,6 +110,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
             opts.outFile = argv[++i];
         } else if (arg.startsWith('--out=')) {
             opts.outFile = arg.slice('--out='.length);
+        } else if (arg === '--stdin-base64' || arg === '--stdin-b64') {
+            opts.fromStdin = true;
+            opts.stdinBase64 = true;
         } else if (arg === '-') {
             opts.fromStdin = true;
         } else {
@@ -144,13 +156,11 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
     }
 
     if (opts.fromStdin) {
-        const content = fs.readFileSync(0, 'utf8').replace(/^\uFEFF/, '').trim();
-        if (!content) { return {}; }
-        const parsed = JSON.parse(content) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            throw new Error('Args from stdin must be a JSON object.');
-        }
-        return parsed as Record<string, unknown>;
+        const raw = fs.readFileSync(0);
+        const content = opts.stdinBase64
+            ? decodeBase64Stdin(raw.toString('ascii'))
+            : raw.toString('utf8');
+        return parsePayloadText(content, 'stdin');
     }
 
     if (opts.keyValueArgs) {
@@ -178,16 +188,44 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
     }
 
     if (opts.rawArgs) {
-        const content = opts.rawArgs.replace(/^\uFEFF/, '').trim();
-        if (!content) { return {}; }
-        const parsed = JSON.parse(content) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            throw new Error('Inline args must be a valid JSON object string.');
-        }
-        return parsed as Record<string, unknown>;
+        return parsePayloadText(opts.rawArgs, 'inline args');
     }
 
     return {};
+}
+
+/** Parse one JSON-object payload after the transport has preserved its bytes. */
+export function parsePayloadText(raw: string, source: string): Record<string, unknown> {
+    const content = raw.replace(/^\uFEFF/, '').trim();
+    if (!content) { return {}; }
+    const parsed = JSON.parse(content) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error(`${source} must contain a JSON object.`);
+    }
+    return parsed as Record<string, unknown>;
+}
+
+/** Decode the ASCII-safe form PowerShell 5.1 can pipe without codepage loss. */
+export function decodeBase64Stdin(raw: string): string {
+    const encoded = raw.trim();
+    if (!encoded) { return ''; }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+        throw new Error('Base64 stdin is malformed. Encode the UTF-8 JSON bytes before piping them.');
+    }
+    const bytes = Buffer.from(encoded, 'base64');
+    const canonical = bytes.toString('base64').replace(/=+$/, '');
+    if (canonical !== encoded.replace(/=+$/, '')) {
+        throw new Error('Base64 stdin is malformed. Encode the UTF-8 JSON bytes before piping them.');
+    }
+    try {
+        // `Buffer.toString('utf8')` replaces malformed byte sequences with U+FFFD,
+        // but U+FFFD may also be legitimate text already present in a document.
+        // A fatal decoder distinguishes those two cases instead of rejecting a
+        // perfectly valid 500 KB payload because one real replacement glyph is in it.
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        throw new Error('Base64 stdin did not decode to valid UTF-8 JSON.');
+    }
 }
 
 export function printHelp(): void {
@@ -208,6 +246,10 @@ Options:
   -o, --out <file>      Write the response to <file> as UTF-8 (no BOM) and print a
                         one-line summary. Use this instead of a shell redirection:
                         "> file" is re-encoded by the shell and corrupts the bytes.
+  --stdin-base64        Read a Base64-encoded UTF-8 JSON object from stdin. Use this
+                        for piped non-ASCII text in Windows PowerShell 5.1, whose
+                        native-process pipe replaces unsupported characters before
+                        Node can read them. Alias: --stdin-b64.
   -h, --help            Show this help message
 
 Examples:
@@ -216,6 +258,7 @@ Examples:
   node af.js notices.list handled=false limit=5
   node af.js notices.post @report.json
   cat payload.json | node af.js tasks.add -
+  $b64 | node af.js notices.post --stdin-base64
   node af.js farm.ops --out docs/farm_ops_catalog.json
 `);
 }
