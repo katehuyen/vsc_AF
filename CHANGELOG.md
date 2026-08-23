@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.267.0 - Adaptive Mission architecture and operation guide (2026-08-23)
+
+A new 37-section, source-verified handbook documents the Adaptive Mission
+system from the user's outcome contract down to the processes and records that
+run it. It covers Classic versus Adaptive semantics, the separate planner and
+worker sessions, the exact engine/model/effort/permission resolution ladder,
+all 14 primitives, real conversations and councils, evaluation staleness and
+the success gate, limits, failure recovery, persistence, Bridge operations and
+five end-to-end examples.
+
+The guide explicitly separates today's engine contract, today's contradictory
+composer, and the U-99 target interface. It also corrects three misleading
+earlier descriptions: the primitive registry contains 14 distinct actions, the
+current `Delegation engine` is a mission-level engine fallback rather than a
+bulk row-editing switch, and Classic Mission is a shared planner lifecycle rather
+than a pre-drawn workflow.
+
 ## 3.266.0 - X-77: a ref points at something that was said, and an answer is the addressee's (2026-08-23)
 
 Four things about a speaking turn were checked too loosely to mean anything.
