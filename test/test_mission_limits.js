@@ -264,6 +264,145 @@ function makeDeps(replies) {
             r.rounds[0].steps.some(st => /stopped by the mission ceiling/.test(st.note || '')));
     }
 
+    // ---------- ‼️ X-83: THE IN-FLIGHT CEILING IS A DIFFERENT QUESTION ----------
+    //
+    // The wave guard reused `guardReason(remainingBudget(...))`, which answers
+    // "is there room to START another round?". By the time a wave is running,
+    // its round is already in `run.rounds` and its steps are already in
+    // `spentTasks` — so under `maxRounds: 1` or `maxTasks: 1` the remaining
+    // count is 0 while the one legal wave is still working, and the guard
+    // cancelled it as soon as it outlived a guard interval. A limit of one
+    // meant a limit of fifteen seconds.
+    //
+    // In the other direction the commit claimed cost and tokens "ride along for
+    // free" and they did not: run totals are only advanced AFTER the wave, so
+    // the guard read a figure that could not move and never cut on spending.
+    {
+        /** One delegate that takes `ticks` guard intervals to answer. */
+        const slowWave = (o) => {
+            let cancelled = null, t = 0, planned = 0;
+            const seen = [];
+            const r = run();
+            const deps = {
+                runPlanner: async () => {
+                    planned++;
+                    return {
+                        ok: true, sessionId: 's', costUSD: 0,
+                        raw: JSON.stringify(planned === 1
+                            ? { action: 'delegate', tasks: [{ agent: 'coder', title: 'slow', prompt: 'take your time' }] }
+                            : { action: 'finish', verdict: 'success', summary: 'it came back' })
+                    };
+                },
+                delegateWave: (_run, steps) => new Promise(res => {
+                    // let the guard tick several times before answering
+                    let n = 0;
+                    const iv = setInterval(() => {
+                        if (++n < 4) { o.each && o.each(steps); return; }
+                        clearInterval(iv);
+                        for (const st of steps) { st.status = 'done'; st.costUSD = o.stepCost || 0; st.tokens = o.stepTokens || 0; }
+                        res();
+                    }, 2);
+                }),
+                cancelWave: (_run, steps, reason) => {
+                    cancelled = { n: steps.length, reason };
+                    for (const st of steps) { st.status = 'cancelled'; }
+                },
+                waveGuardMs: 3,
+                readOutputBody: () => 'the answer',
+                requestApproval: async () => true,
+                askUser: async () => 'yes',
+                onUpdate: () => { },
+                trace: (type, payload) => seen.push({ type, ...payload }),
+                now: () => (o.clock ? o.clock(t++) : 100)
+            };
+            return new M.MissionEngine(spec(N(o.limits)), r, [{ name: 'coder' }], deps)
+                .execute().then(() => ({ r, cancelled, planned, seen }));
+        };
+
+        // ‼️ THE BUG: an allocation already granted is not an overrun.
+        for (const [name, limits] of [
+            ['maxRounds: 1', { maxRounds: 1, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 }],
+            ['maxTasks: 1', { maxRounds: 0, maxTasks: 1, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 }]
+        ]) {
+            const out = await slowWave({ limits });
+            ok(`‼️ under ${name} the one legal wave is allowed to outlive the guard interval`,
+                !out.cancelled && out.r.rounds[0].steps[0].status === 'done');
+            ok('   …and the run ends on its own word, not on a ceiling',
+                out.r.status === 'done' && !/hard-limit/.test((out.r.result || {}).stopReason || ''));
+        }
+
+        // …and the boundary guard still refuses the NEXT round, which is its job
+        {
+            let planned = 0;
+            const r2 = run();
+            const deps = {
+                runPlanner: async () => {
+                    planned++;
+                    return {
+                        ok: true, sessionId: 's', costUSD: 0,
+                        raw: JSON.stringify({ action: 'delegate', tasks: [{ agent: 'coder', title: 'more', prompt: 'again' }] })
+                    };
+                },
+                delegateWave: async (_run, steps) => { for (const st of steps) { st.status = 'done'; } },
+                readOutputBody: () => 'x', requestApproval: async () => true,
+                askUser: async () => 'y', onUpdate: () => { }, now: () => 100
+            };
+            await new M.MissionEngine(
+                spec(N({ maxRounds: 1, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 })),
+                r2, [{ name: 'coder' }], deps).execute();
+            ok('‼️ …while a SECOND round is still refused — one round means one round',
+                r2.rounds.length === 1 && r2.result.stopReason === 'hard-limit');
+        }
+
+        // ‼️ AND THE OTHER DIRECTION: live spending really is measured now.
+        {
+            // an earlier step of the same round settles expensive while the next
+            // wave is still running — none of it has reached run.totalCostUSD
+            const out = await slowWave({
+                limits: { maxRounds: 0, maxTasks: 0, maxCostUSD: 1, maxTokens: 0, maxMinutes: 0, maxParallel: 1 },
+                each: (steps) => { steps[0].costUSD = 5; }
+            });
+            ok('‼️ a wave that spends past the cost ceiling IS cut, for the right reason',
+                !!out.cancelled && /cost budget/.test(out.cancelled.reason || ''));
+        }
+        {
+            const out = await slowWave({
+                limits: { maxRounds: 0, maxTasks: 0, maxCostUSD: 0, maxTokens: 1000, maxMinutes: 0, maxParallel: 1 },
+                each: (steps) => { steps[0].tokens = 9999; }
+            });
+            ok('…and the token ceiling too, which is the one a plan-billed run has',
+                !!out.cancelled && /token budget/.test(out.cancelled.reason || ''));
+        }
+        {
+            const out = await slowWave({
+                limits: { maxRounds: 0, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 },
+                each: (steps) => { steps[0].costUSD = 500; steps[0].tokens = 9e9; }
+            });
+            ok('‼️ …and with NO ceiling set, spending anything is not a reason to cut',
+                !out.cancelled);
+        }
+
+        // the pure function, on its own, says the same thing
+        const sp = (l) => ({ limits: N(l) });
+        const rr = (o) => Object.assign({ id: 'r', specId: 'm', status: 'running', rounds: [], ledger: [], totalCostUSD: 0, totalTokens: 0, startedAt: 0 }, o);
+        ok('‼️ inFlightGuardReason never measures rounds or tasks',
+            M.inFlightGuardReason(
+                sp({ maxRounds: 1, maxTasks: 1, maxCostUSD: 0, maxTokens: 0, maxMinutes: 0, maxParallel: 1 }),
+                rr({ rounds: [{ n: 1, steps: [{ id: 's1' }, { id: 's2' }] }] }), [], 100) === null);
+        ok('…it counts unbooked step spending against the run total',
+            M.inFlightGuardReason(
+                sp({ maxRounds: 0, maxTasks: 0, maxCostUSD: 2, maxTokens: 0, maxMinutes: 0, maxParallel: 1 }),
+                rr({ totalCostUSD: 1 }), [{ costUSD: 1.5 }], 100) === 'the cost budget is spent');
+        ok('…and a step still running contributes nothing, because nobody knows yet',
+            M.inFlightGuardReason(
+                sp({ maxRounds: 0, maxTasks: 0, maxCostUSD: 2, maxTokens: 0, maxMinutes: 0, maxParallel: 1 }),
+                rr({ totalCostUSD: 1 }), [{ id: 'running' }], 100) === null);
+        ok('…while the wall clock, the reason this guard exists, still cuts',
+            /time limit/.test(M.inFlightGuardReason(
+                sp({ maxRounds: 0, maxTasks: 0, maxCostUSD: 0, maxTokens: 0, maxMinutes: 10, maxParallel: 1 }),
+                rr({ startedAt: 0 }), [], 60_000 * 30) || ''));
+    }
+
     // ---------- ‼️ X-82: THE SAME REFUSAL ON THE BRIDGE AND IN THE PANEL ----------
     // The form's `type="number" min="0"` is a convenience; `missions.start`
     // reaches the identical function with no HTML in front of it, so the guard

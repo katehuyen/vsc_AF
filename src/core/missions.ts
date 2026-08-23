@@ -1548,6 +1548,52 @@ export function remainingBudget(spec: MissionSpec, run: MissionRun, now: number)
     };
 }
 
+/**
+ * ‼️ X-83 — THE CEILING IN FLIGHT IS A DIFFERENT QUESTION FROM THE ONE AT THE
+ * BOUNDARY, AND ASKING IT WITH THE SAME WORDS GETS THE WRONG ANSWER TWICE.
+ *
+ * `guardReason(remainingBudget(...))` answers "is there room to START another
+ * round?". The wave guard was reusing it to answer "has the work already
+ * running gone past a ceiling?", and those two disagree on every axis:
+ *
+ *   * ROUNDS and TASKS are ALLOCATIONS, and the round in flight has already
+ *     been granted one — it is in `run.rounds` and its steps are in
+ *     `spentTasks` the moment it starts. So under `maxRounds: 1` or
+ *     `maxTasks: 1` the remaining count is already 0 while the legal, first,
+ *     only wave is running, and the guard cancelled it the first time it took
+ *     longer than one guard interval. A limit of one meant a limit of fifteen
+ *     seconds. They are not measured here at all: refusing the NEXT round is
+ *     the boundary guard's job and it does it.
+ *
+ *   * COST and TOKENS were claimed to "ride along for free" and did not:
+ *     `run.totalCostUSD` is only advanced AFTER the wave returns, so the guard
+ *     read a figure that could not move and never cut on spending. What CAN be
+ *     measured mid-flight is the steps that have already settled — their own
+ *     `costUSD`/`tokens` are filled in as they come back — so the live figure
+ *     is the run's booked total plus everything settled and not yet booked.
+ *     A step still running contributes nothing, which is the honest answer:
+ *     nobody knows what it has spent until it says so.
+ *
+ *   * TIME is the one that genuinely keeps moving while nothing else does, and
+ *     it is why this guard exists (X-46b). Unchanged.
+ */
+export function inFlightGuardReason(
+    spec: MissionSpec, run: MissionRun, unbooked: readonly MissionStep[], now: number
+): string | null {
+    const liveCost = run.totalCostUSD + unbooked.reduce((a, s) => a + (s.costUSD ?? 0), 0);
+    const liveTokens = (run.totalTokens ?? 0) + unbooked.reduce((a, s) => a + (s.tokens ?? 0), 0);
+    const maxTokens = spec.limits.maxTokens ?? 0;
+    if (spec.limits.maxCostUSD > 0 && Math.round((spec.limits.maxCostUSD - liveCost) * 100) / 100 <= 0) {
+        return 'the cost budget is spent';
+    }
+    if (maxTokens > 0 && maxTokens - liveTokens <= 0) { return 'the token budget is spent'; }
+    if (spec.limits.maxMinutes > 0) {
+        const elapsedMin = (now - run.startedAt - (run.waitedMs ?? 0)) / 60_000;
+        if (Math.round(spec.limits.maxMinutes - elapsedMin) <= 0) { return 'the time limit is reached'; }
+    }
+    return null;
+}
+
 /** Non-null when some limit is exhausted — the next round is finish-only. */
 export function guardReason(rem: RemainingBudget): string | null {
     if (rem.costUSD <= 0) { return `the cost budget is spent (${rem.costUSD} USD left)`; }
@@ -2493,8 +2539,15 @@ export class MissionEngine {
      * delegate sat 45+ minutes without answering, the run went past its
      * 50-minute ceiling, was still `running` at minute 70, and had to be stopped
      * by hand. The wall clock is the ceiling that keeps moving while nothing
-     * else does — but cost and tokens ride along for free here, because a wave
-     * can spend both without ever returning either.
+     * else does, and cost and tokens ride along with it as far as they can
+     * honestly be read — see `inFlightGuardReason`, which is what this asks and
+     * is deliberately NOT the question the planner boundary asks.
+     *
+     * `unbooked` is the work whose spending has not reached the run's totals
+     * yet: those are added once, after the whole round, so during a wave the
+     * live figure is the run plus every step of this round that has already
+     * settled. Defaults to the wave itself for a caller with nothing else in
+     * flight.
      *
      * What this does NOT do is walk away from the wave. A promise dropped on the
      * floor leaves real processes running that nothing will ever claim, so it
@@ -2502,12 +2555,14 @@ export class MissionEngine {
      * to settle: the steps come back with a real outcome, the ledger with a real
      * cost, and the step says which ceiling cut it.
      */
-    private async runWave(run: MissionRun, steps: MissionStep[]): Promise<string | null> {
+    private async runWave(
+        run: MissionRun, steps: MissionStep[], unbooked?: readonly MissionStep[]
+    ): Promise<string | null> {
         const { spec, deps } = this;
         let cut: string | null = null;
         const timer = setInterval(() => {
             if (cut) { return; }
-            const reason = guardReason(remainingBudget(spec, run, deps.now()));
+            const reason = inFlightGuardReason(spec, run, unbooked ?? steps, deps.now());
             if (!reason) { return; }
             cut = reason;
             for (const s of steps) {
@@ -3938,7 +3993,10 @@ export class MissionEngine {
                 this.setNow(`round ${round.n}: running ${steps.map(s => s.agentName).join(' + ')}`
                     + (waves.length > 1 ? ` (wave ${w + 1}/${waves.length})` : ''));
                 deps.onUpdate(run);
-                const cut = await this.runWave(run, steps);
+                // ‼️ X-83 — the WHOLE round is what is unbooked: an earlier wave
+                // of this round has settled and carries its own cost, and none
+                // of it reaches `run.totalCostUSD` until every wave is done.
+                const cut = await this.runWave(run, steps, round.steps);
                 deps.onUpdate(run);
                 if (this.cancelRequested) { this.end('cancelled'); return; }
                 if (cut) { this.endAtCeiling(cut); return; }

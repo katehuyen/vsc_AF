@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.255.0 - X-83: an allocation already granted is not an overrun (2026-08-23)
+
+X-46b made a ceiling reach a wave in flight, by asking the wave guard the same
+question the planner boundary asks. They are not the same question, and the
+reused wording got it wrong in both directions.
+
+**A limit of one meant a limit of fifteen seconds.** `remainingBudget` answers
+"is there room to START another round?" — and by the time a wave is running its
+round is already in `run.rounds` and its steps are already in `spentTasks`. So
+under `maxRounds: 1` or `maxTasks: 1` the remaining count was 0 while the one
+legal, first, only wave was still working, and the guard cancelled it the moment
+it outlived a guard interval. Rounds and tasks are ALLOCATIONS: the round in
+flight has already been granted one, and refusing the NEXT round is the boundary
+guard's job, which it does. The in-flight guard does not measure them at all.
+
+**And cost and tokens did not "ride along for free".** The run's totals are only
+advanced after the whole round, so the guard was reading a figure that could not
+move and never cut on spending. What can honestly be read mid-flight is the
+steps that have already settled — their own cost and tokens are filled in as
+they come back — so the live figure is the run's booked total plus everything
+settled and not yet booked, including earlier waves of the same round. A step
+still running contributes nothing, which is the true answer: nobody knows what
+it has spent until it says so.
+
+The wall clock, which is why this guard exists, is unchanged. The two questions
+now have two names (`inFlightGuardReason` beside `guardReason`) so the next
+reader cannot reuse one for the other by accident.
+
 ## 3.254.0 - X-70: the planner call is not free, and the guard is asked after it (2026-08-23)
 
 The registry-driven guard landed last round: a primitive whose shape is `work`
