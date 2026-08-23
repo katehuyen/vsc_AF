@@ -137,8 +137,13 @@ eq('and still says it finished — from the tasks, not from a memo it never had'
 eq('the result survives too', reloaded.handoff.text, 'STEP-TWO-OUT');
 const reloadedFail = forgotten.workflowRunState(r2);
 eq('a failed run is still failed after the reload', reloadedFail.status, 'failed');
-ok('…though the REASON is honestly gone rather than invented',
-    reloadedFail.reason === undefined && reloadedFail.stoppedAtStep === undefined);
+// ‼️ X-71 — and the REASON survives with it now. It used to die with the
+// window, on the grounds that a derived answer is more honest than a stored
+// one — but the reason a chain stopped is exactly what the rows cannot derive,
+// so what the reader actually got was "failed" and no answer to "where".
+ok('‼️ X-71 the reason the chain stopped survives the reload',
+    /step 2 failed/.test(reloadedFail.reason || ''));
+eq('…and so does the step it died on', reloadedFail.stoppedAtStep, 1);
 
 // ---- 5. whose work the chain is ----
 console.log('\n-- ‼️ a chain started FOR a project is that project\'s work, from step 1');
@@ -209,6 +214,55 @@ eq('‼️ after a reload the next step still belongs to the run\'s project',
     mgrR2.tasks.find(t => t.workflowRunId === r73d && t.stepIndex === 1).projectId, 'prj_keep');
 ok('and the reloaded manager can still name the run',
     !!mgrR2.workflowRunState(r73d) && !!w73aR);
+
+// ---- 5c. X-71: the runs the rows cannot describe ----
+//
+// `workflowRunState` began by filtering the task rows and returning undefined
+// when there were none. Two real chains produce none: one whose every step is
+// skipped by `runIf`, and one whose first step names an agent that is gone.
+// Both are OVER — one done, one failed — and both came back "undefined", which
+// a parent mission reads as "still working" and polls for ever.
+console.log('\n-- ‼️ X-71 a run with no rows is still an answer');
+const w71a = mgr.addWorkflow('W71a', [
+    step('skipped', { runIf: 'NEVER-MATCHES' }),
+    step('also skipped', { runIf: 'NEVER-MATCHES' })
+]);
+const r71a = mgr.runWorkflow(w71a);
+const s71a = mgr.workflowRunState(r71a);
+ok('‼️ a chain whose every step was skipped is answerable at all', !!s71a);
+eq('…and it is DONE, not "still running"', s71a && s71a.status, 'done');
+eq('…with no steps, honestly', s71a && s71a.steps.length, 0);
+ok('…and it names the workflow it was', s71a && s71a.title === 'W71a');
+
+const w71b = mgr.addWorkflow('W71b', [step('gone', { agentId: 'ghost', agentName: 'Ghost' })]);
+const r71b = mgr.runWorkflow(w71b);
+const s71b = mgr.workflowRunState(r71b);
+eq('‼️ a first step whose agent is gone FAILS the run, it does not hang it',
+    s71b && s71b.status, 'failed');
+ok('…saying which agent it could not find', s71b && /Ghost/.test(s71b.reason || ''));
+eq('an id nothing was ever started under is still undefined',
+    mgr.workflowRunState('never-ran'), undefined);
+
+console.log('\n-- ‼️ X-71 an abandoned attempt does not outvote the one that worked');
+const w71c = mgr.addWorkflow('W71c', [step('one'), step('two')]);
+const r71c = mgr.runWorkflow(w71c);
+completeWith(mgr, queued(mgr, w71c.id, 0), 'A');
+failStep(mgr, queued(mgr, w71c.id, 1));
+eq('the chain failed on its second step', mgr.workflowRunState(r71c).status, 'failed');
+// the resume: a NEW row for the same step, under the same run id
+mgr.addTask(agent, 'retry two', 'p', 'headless',
+    { workflowId: w71c.id, workflowRunId: r71c, stepIndex: 1 });
+const retry = mgr.tasks[mgr.tasks.length - 1];
+retry.startedAt = Date.now() + 1000;
+completeWith(mgr, retry, 'B');
+eq('‼️ the successful retry is what its step says now',
+    mgr.workflowRunState(r71c).status, 'done');
+mgr.persist();
+const after = new TaskManager(path.join(tmp, 'f.json'), agents, () => false, () => '', { quotaCheck: () => 'hold' });
+eq('‼️ …and it still says so after a reload, with the failed attempt still on file',
+    after.workflowRunState(r71c).status, 'done');
+ok('the abandoned attempt is kept as history, not erased',
+    after.workflowRunState(r71c).steps.filter(x => x.index === 1).length === 2);
 
 // ---- 6. the tasks outrank the memo ----
 console.log('\n-- a resumed chain is running again, whatever an earlier ending said');

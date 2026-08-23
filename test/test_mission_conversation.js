@@ -774,6 +774,140 @@ async function repeatedTurnTest() {
     }
 }
 
+// ‼️ X-80 — WHAT A LEAD COMING BACK FROM A RELOAD IS TOLD ABOUT THE TALKING.
+//
+// The generic resume message carries the round's results and the budget and
+// nothing else: no message ids, no open questions, no council mandate. A lead
+// resumed mid-debate therefore could not answer anybody (it had no id to put
+// in `refs`), could not tell whose turn it was, and could not see that the
+// turns a reload left pending had just been settled underneath it — because
+// the host writes that message from the snapshot BEFORE the engine's catch-up
+// pass runs.
+async function resumeDigestTest() {
+    console.log('\n-- ‼️ X-80 the resumed lead is told where the talking had got to');
+    const run = newRun();
+    run.conversations = [{
+        id: 'c1', objective: 'is the resume flag per engine or shared?',
+        participants: ['a1', 'a2'], openedAt: 1
+    }];
+    run.messages = [
+        { id: 'm1', conversationId: 'c1', from: 'a1', fromName: 'Ada', to: [], intent: 'proposal',
+          refs: [], state: 'delivered', excerpt: 'Per engine.', orderedAt: 1, settledAt: 2, carried: 'new' },
+        { id: 'm2', conversationId: 'c1', from: 'a2', fromName: 'Bo', to: ['a1'], intent: 'question',
+          refs: ['m1'], state: 'delivered', excerpt: 'What about a shared one?', orderedAt: 3, settledAt: 4, carried: 'new' }
+    ];
+    const { d, prompts } = deps([FINISH], {});
+    await new M.MissionEngine(spec(), run, [], d).execute('The mission was interrupted and has been resumed.');
+    const first = prompts[0];
+    ok('the resume text itself is still there', /interrupted and has been resumed/.test(first));
+    ok('‼️ …and the live conversation comes with it', /resume flag per engine or shared/.test(first));
+    ok('‼️ …with the message ids, which is the only way the lead can answer anything',
+        /m1/.test(first) && /m2/.test(first));
+    ok('…and it says what is still unanswered', /m2/.test(first));
+
+    // a run with nothing open pays nothing for this
+    const quiet = newRun();
+    const q = deps([FINISH], {});
+    await new M.MissionEngine(spec(), quiet, [], q.d).execute('Resumed.');
+    eq('‼️ a run that held no conversation gets the message it always got',
+        q.prompts[0], 'Resumed.');
+
+    // a CLOSED conversation is history — the record keeps it, the prompt does not
+    const shut = newRun();
+    shut.conversations = [{ id: 'c1', objective: 'settled long ago', participants: ['a1'], openedAt: 1, closedAt: 9 }];
+    shut.messages = [{ id: 'm1', conversationId: 'c1', from: 'a1', fromName: 'Ada', to: [], intent: 'proposal',
+        refs: [], state: 'delivered', excerpt: 'x', orderedAt: 1, settledAt: 2, carried: 'new' }];
+    const c = deps([FINISH], {});
+    await new M.MissionEngine(spec(), shut, [], c.d).execute('Resumed.');
+    eq('a closed conversation is not re-read to the lead on every resume', c.prompts[0], 'Resumed.');
+}
+
+// ‼️ X-80 — ONE READER FOR A MESSAGE'S WORDS, on the host side.
+function canonicalReaderTest() {
+    console.log('\n-- ‼️ X-80 the bridge and the room read the same words');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('there is ONE reader, and it prefers the archive over the stored excerpt',
+        /const missionMessageText = \(m: \{[\s\S]{0,400}missionReadBody\(m\.contentRef, m\.taskId\)/.test(ext));
+    ok('‼️ …and it says WHICH of the two it handed back',
+        /source: 'file'/.test(ext) && /source: 'excerpt'/.test(ext));
+    ok('the bridge hands back the full text, with the excerpt beside it',
+        /text: t\.text \|\| null, textSource: t\.source/.test(ext));
+    ok('‼️ the conversation room uses the same reader, not its own copy',
+        /text: words\.text, textSource: words\.source/.test(ext));
+    ok('‼️ …and falls back to the message\'s own durable ref when the task row is gone',
+        /outputFile: t\?\.outputFile \?\? m\.contentRef/.test(ext));
+    ok('‼️ the resume message reads the archive through the speaker\'s own engine',
+        /missionReadBody\(step\.outputFile, step\.taskId\)/.test(ext));
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+    ok('…and the page draws what the host read, not the bounded excerpt',
+        /const body = spoken \? \(m\.text \|\| m\.excerpt \|\| ''\) : '';/.test(page));
+}
+
+// ‼️ X-76 — THE LIFECYCLE OF A TURN THAT NEVER HAPPENED.
+//
+// `prepareMessage` wrote its messages onto the run BEFORE the duplicate guard
+// and the task budget had had their say, and three exits from the round loop
+// returned above `settleMessages`. Both leave the same wreck: a `pending`
+// message nobody will ever settle — and pending is what holds a participant's
+// lane, so that agent can never speak in that conversation again and the lead
+// is refused every time it tries, without being told a real reason.
+async function orphanTurnTest() {
+    console.log('\n-- ‼️ X-76 a turn dropped before it ran does not hold a lane');
+    const run = newRun();
+    // the same speaker, the same words, twice: the second is the planning-loop
+    // guard's to drop, and it is the one that used to leave a pending message
+    const twice = say();
+    const { d } = deps([twice, twice, FINISH], { Ada: 'Per engine.' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const pending = (run.messages || []).filter(m => m.state === 'pending');
+    eq('‼️ nothing is left pending on a settled run', pending.length, 0);
+    const dropped = (run.messages || []).filter(m => m.state === 'cancelled');
+    eq('the turn that was dropped is on the record as cancelled, not deleted', dropped.length, 1);
+    ok('…saying why it never ran', /already delegated once|dropped/.test(dropped[0].note || ''));
+    ok('‼️ and the speaker\'s lane is free — the conversation will take another turn',
+        !/already speaking|pending/i.test(M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [] },
+            run.conversations[0], run.messages, [{ id: 'a1', name: 'Ada' }]) || ''));
+}
+
+async function emptyCloseTest() {
+    console.log('\n-- ‼️ X-76 a conversation is closed by a turn that was really spoken');
+    const run = newRun();
+    const replies = [
+        say(),
+        say({
+            conversation: 'c1', objective: undefined, participants: undefined,
+            from: 'Rev', intent: 'concede', refs: ['m1'], close: 'consensus — nothing left open'
+        }),
+        FINISH
+    ];
+    // Ada speaks; Rev's closing turn comes back with NOTHING
+    const { d } = deps(replies, { Ada: 'Per engine.', Rev: '' });
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const c = run.conversations[0];
+    ok('‼️ a closer that said nothing does not close the conversation', !c.closedAt);
+    ok('…and no reason is recorded for a closing that did not happen', !c.closeReason);
+    eq('the turn itself is on the record as failed', run.messages[1].state, 'failed');
+    ok('…and it says the conversation is still open',
+        /still open/.test(run.messages[1].note || ''));
+    ok('‼️ so the conversation still takes another turn',
+        !/is closed/.test(M.refuseMessage(
+            { conversationId: 'c1', from: 'a1', to: [], intent: 'proposal', refs: [] },
+            c, run.messages, [{ id: 'a1', name: 'Ada' }]) || ''));
+}
+
+async function rejectedRoundTest() {
+    console.log('\n-- ‼️ X-76 a round the user refused settles its messages too');
+    const run = newRun();
+    const { d } = deps([say(), FINISH], { Ada: 'Per engine.' },
+        { requestApproval: async () => false });
+    await new M.MissionEngine({ ...spec(), approvalMode: 'each-round' }, run, [], d).execute();
+    eq('‼️ the message ordered in the rejected round is settled, not left pending',
+        (run.messages || []).filter(m => m.state === 'pending').length, 0);
+    eq('…as cancelled, which is what a person saying no produced',
+        run.messages[0].state, 'cancelled');
+}
+
 (async () => {
     await firstTurnTest();
     await independentRoundTest();
@@ -786,6 +920,11 @@ async function repeatedTurnTest() {
     await oneToManyTest();
     await failedSpeakerTest();
     await repeatedTurnTest();
+    await orphanTurnTest();
+    await emptyCloseTest();
+    await rejectedRoundTest();
+    await resumeDigestTest();
+    canonicalReaderTest();
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

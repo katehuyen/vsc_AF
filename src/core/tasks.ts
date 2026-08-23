@@ -1010,11 +1010,35 @@ interface StoreShape {
      *  on the pump's beat. Persisted because the failure it repairs is the disk
      *  refusing writes, and a restart is often what clears it. */
     archiveRepair?: { id: string; month: string }[];
-    /** ‼️ X-73 — WHOSE WORK A CHAIN IS, kept where the chain can outlive the
-     *  window that started it. `null` is a real answer ("no project"), told
-     *  apart from the run that was never asked; a run absent from here predates
-     *  the record and still derives from its own first task. */
-    workflowRunProjects?: Record<string, string | null>;
+    /** ‼️ X-71/X-73 — the runs themselves (see `WorkflowRunRecord`). */
+    workflowRuns?: Record<string, WorkflowRunRecord>;
+}
+
+/**
+ * ‼️ X-71/X-73 — THE RUN ITSELF, AS A RECORD.
+ *
+ * A workflow run used to exist only as a property of its task rows, plus two
+ * in-memory memos beside them. That works right up to the moment there are no
+ * rows — a chain whose every step was skipped by `runIf`, or one whose first
+ * step names an agent that is gone — and then the run is simply unanswerable:
+ * `undefined`, which a parent mission reads as "still working" and polls for
+ * ever. And the memos died with the window, so after a reload a stopped chain
+ * and a chain waiting for its next step looked identical.
+ *
+ * One record, written when the run starts and kept: what it is, when it began,
+ * whose work it is, and — once there is one — how it ended. The task rows are
+ * still what says whether it is running NOW; this says everything they cannot.
+ */
+interface WorkflowRunRecord {
+    workflowId: string;
+    title: string;
+    startedAt: number;
+    /** ‼️ X-73 — a project id · `null` for an explicit "no project". */
+    project: string | null;
+    /** ‼️ X-71 — the terminal the rows alone cannot state: the loop guard, a
+     *  chain that reached its end, a first step whose agent was gone. Cleared
+     *  when the run is resumed, because a resumed run has not ended. */
+    ended?: { status: WorkflowRunStatus; reason?: string; stepIndex?: number; at: number };
 }
 
 export interface TaskManagerOptions {
@@ -1353,13 +1377,14 @@ export class TaskManager implements vscode.Disposable {
                     .filter(x => typeof x?.id === 'string' && typeof x?.month === 'string')
                     .map(x => ({ id: x.id as string, month: x.month as string }))
                 : [];
-            // ‼️ X-73 — the run's project binding comes back with it. Held in
-            // memory alone it died on reload, and every step made after the
-            // reload fell back to whatever the window happened to be showing.
-            this.workflowProjects = new Map(Object.entries(
-                (json.workflowRunProjects && typeof json.workflowRunProjects === 'object'
-                    ? json.workflowRunProjects : {}) as Record<string, string | null>)
-                .filter(([, v]) => v === null || typeof v === 'string'));
+            // ‼️ X-71/X-73 — the runs come back with their rows. Held in memory
+            // alone, the project binding died on reload (every later step fell
+            // back to whatever the window was showing) and so did the reason a
+            // chain stopped (a stopped run and a waiting one looked the same).
+            this.runRecords = new Map(Object.entries(
+                (json.workflowRuns && typeof json.workflowRuns === 'object'
+                    ? json.workflowRuns : {}) as Record<string, WorkflowRunRecord>)
+                .filter(([, v]) => !!v && typeof v === 'object'));
             // ‼️ M-8 — a task that predates the event log gets one built from
             // its own fields (see `migrateTaskEvents`). Before the follower
             // return, because a follower window DRAWS these rows and would
@@ -1645,6 +1670,12 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         this.runCounts.set(runId, 0);
+        // ‼️ X-71 — A RESUMED RUN HAS NOT ENDED. The record carries the reason
+        // the chain stopped, and it is persisted now, so leaving it in place
+        // would have the resumed chain reporting the ending of the attempt it
+        // was started to replace.
+        const rec = this.runRecords.get(runId);
+        if (rec) { delete rec.ended; this.save(); }
         void vscode.window.showInformationMessage(
             `Agent Farm: resuming workflow "${w.title}" from step ${r.stepIndex + 1}.`);
         this.routeToStep(w, r.stepIndex, this.rebuildHandoff(runId, r.stepIndex), runId);
@@ -1930,8 +1961,8 @@ export class TaskManager implements vscode.Disposable {
             automation: this.automation,
             automationLog: this.automationLog,
             ...(this.archiveRepair.length ? { archiveRepair: this.archiveRepair } : {}),
-            ...(this.workflowProjects.size
-                ? { workflowRunProjects: Object.fromEntries(this.workflowProjects) } : {})
+            ...(this.runRecords.size
+                ? { workflowRuns: Object.fromEntries(this.runRecords) } : {})
         }, this.proots()), null, 2);
         const tmp = `${this.storageFile}.tmp`;
         try {
@@ -3914,7 +3945,6 @@ export class TaskManager implements vscode.Disposable {
         if (!w.steps.length) { return undefined; }
         const runId = newId();
         this.runCounts.set(runId, 0);
-        this.workflowEnds.delete(runId);
         // ‼️ M-18/X-73 — WHOSE WORK THIS CHAIN IS, DECIDED ONCE, HERE. A chain
         // started by a mission is work for the MISSION's project; a trigger
         // firing an hour after anybody looked at this window passes the key
@@ -3922,44 +3952,63 @@ export class TaskManager implements vscode.Disposable {
         // inherits the window — and even that is resolved now, at the start,
         // not whenever each step happens to be made: a run is one piece of
         // work, so the row made an hour later belongs where the first one did.
-        this.workflowProjects.set(runId,
-            (opts && 'projectId' in opts)
+        this.runRecords.set(runId, {
+            workflowId: w.id, title: w.title, startedAt: Date.now(),
+            project: (opts && 'projectId' in opts)
                 ? (opts.projectId ?? null)
-                : (this.opts.activeProjectId?.() ?? null));
+                : (this.opts.activeProjectId?.() ?? null)
+        });
         this.routeToStep(w, 0, {}, runId);
         return runId;
     }
 
-    /** ‼️ X-73 — THREE STATES, NOT TWO: a project id · `null` for an explicit
-     *  "no project" · absent for a run that predates this record and still
-     *  derives from its own first task. Persisted as `workflowRunProjects`, so
-     *  the binding outlives the window that made it. */
-    private workflowProjects = new Map<string, string | null>();
+    /** ‼️ X-71/X-73 — one record per run, persisted. A run absent from here
+     *  predates it and is still derived from its own rows, exactly as it was. */
+    private runRecords = new Map<string, WorkflowRunRecord>();
 
     /**
-     * Why a run ended when the tasks alone cannot say — the loop guard and a
-     * stopped chain leave rows that look exactly like a chain still waiting for
-     * its next step. In memory only, and deliberately: after a reload the
-     * derivation below is what answers, and it answers honestly rather than
-     * from a record that survived its own subject.
+     * ‼️ X-71 — WHY A RUN ENDED, ONTO THE RUN'S OWN RECORD. The loop guard, a
+     * chain that reached its end and a first step whose agent is gone all leave
+     * rows that look exactly like a chain waiting for its next step — or, in the
+     * last case, no rows at all. Persisted with the record, because the reason a
+     * chain stopped is precisely the thing a reload used to lose.
      */
-    private workflowEnds = new Map<string, { status: WorkflowRunStatus; reason?: string; stepIndex?: number; at: number }>();
-
     private endWorkflowRun(runId: string, status: WorkflowRunStatus, reason: string, stepIndex?: number): void {
-        this.workflowEnds.set(runId, {
+        const rec = this.runRecords.get(runId);
+        if (!rec) { return; }
+        rec.ended = {
             status, reason, at: Date.now(),
             ...(stepIndex !== undefined ? { stepIndex } : {})
-        });
+        };
+        this.save();
     }
 
     /**
-     * The state of one workflow run, derived from its tasks. Undefined when no
-     * task of that run exists — which is the honest answer for a run id that
-     * was never started, and the same answer for one whose rows were purged.
+     * The state of one workflow run: its rows say whether it is running, its
+     * record says everything the rows cannot.
+     *
+     * ‼️ X-71 — A RUN WITH NO ROWS IS STILL AN ANSWER. A chain whose every step
+     * was skipped by `runIf` is `done`; one whose first step names an agent that
+     * is gone is `failed`. Both produce no task at all, and both used to come
+     * back `undefined` — which a parent mission reads as "still working" and
+     * polls for ever. Undefined now means only what it should: nothing was ever
+     * started under this id, or its whole record is gone.
      */
     workflowRunState(runId: string): WorkflowRunState | undefined {
         const tasks = this.tasks.filter(t => t.workflowRunId === runId);
-        if (!tasks.length) { return undefined; }
+        const rec = this.runRecords.get(runId);
+        if (!tasks.length) {
+            if (!rec) { return undefined; }
+            return {
+                runId, workflowId: rec.workflowId, title: rec.title,
+                status: rec.ended?.status ?? 'running',
+                startedAt: rec.startedAt,
+                ...(rec.ended ? { endedAt: rec.ended.at } : {}),
+                ...(rec.ended?.reason ? { reason: rec.ended.reason } : {}),
+                ...(rec.ended?.stepIndex !== undefined ? { stoppedAtStep: rec.ended.stepIndex } : {}),
+                steps: [], costUSD: 0, tokens: 0
+            };
+        }
         tasks.sort((a, b) => (a.stepIndex ?? 0) - (b.stepIndex ?? 0) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
         const w = this.workflows.find(x => x.id === tasks[0].workflowId);
         const steps: WorkflowRunStep[] = tasks.map(t => ({
@@ -3973,7 +4022,23 @@ export class TaskManager implements vscode.Disposable {
             ...(t.tokens !== undefined ? { tokens: t.tokens } : {})
         }));
         const live = tasks.some(t => t.status === 'queued' || t.status === 'running');
-        const end = this.workflowEnds.get(runId);
+        const end = rec?.ended;
+        // ‼️ X-71 — ONE VERDICT PER STEP, AND IT IS THE LATEST ONE. A failed step
+        // resumed under the same run id leaves BOTH rows behind, and reading
+        // "did anything fail?" across all of them let the abandoned first
+        // attempt outvote the attempt that succeeded: after a reload, a chain
+        // that was resumed and finished cleanly reported itself failed. The
+        // earlier attempts stay on the record as history; only the current one
+        // speaks for its step.
+        const currentByStep = new Map<number, FarmTask>();
+        for (const t of tasks) {
+            const i = t.stepIndex ?? 0;
+            const prev = currentByStep.get(i);
+            if (!prev || (t.startedAt ?? t.createdAt) >= (prev.startedAt ?? prev.createdAt)) {
+                currentByStep.set(i, t);
+            }
+        }
+        const current = [...currentByStep.values()];
         // ‼️ THE TASKS OUTRANK THE MEMO. Something still running means running,
         // whatever an earlier ending said — a resumed chain re-enters an id that
         // has already ended once, and a memo that could overrule the rows would
@@ -3983,7 +4048,7 @@ export class TaskManager implements vscode.Disposable {
             status = 'running';
         } else if (end) {
             status = end.status;
-        } else if (tasks.some(t => t.status === 'failed' || t.status === 'cancelled')) {
+        } else if (current.some(t => t.status === 'failed' || t.status === 'cancelled')) {
             status = 'failed';
         } else if (w && (tasks[tasks.length - 1].stepIndex ?? 0) >= w.steps.length - 1) {
             status = 'done';
@@ -4150,6 +4215,11 @@ export class TaskManager implements vscode.Disposable {
         if (!agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — agent "${step.agentName}" not found.`);
+            // ‼️ X-71 — and it is an ENDING, not a silent return. On the first
+            // step there is no row at all to infer it from, so a caller waiting
+            // on this run waited for ever.
+            this.endWorkflowRun(runId, 'failed',
+                `step ${index + 1} could not start — agent "${step.agentName}" not found`, index);
             return;
         }
         const prompt = this.substitute(step.prompt, handoff);
@@ -4180,11 +4250,12 @@ export class TaskManager implements vscode.Disposable {
      * started under, whatever that was, including none.
      */
     private runProject(runId: string): { projectId?: string } {
-        if (this.workflowProjects.has(runId)) {
+        const rec = this.runRecords.get(runId);
+        if (rec) {
             // The key is PRESENT either way: `projectId: undefined` is how a
             // caller tells `addTask` "no project", and dropping the key would
             // hand the row straight back to the active window.
-            return { projectId: this.workflowProjects.get(runId) ?? undefined };
+            return { projectId: rec.project ?? undefined };
         }
         const first = this.tasks.find(t => t.workflowRunId === runId);
         return first ? { projectId: first.projectId } : {};

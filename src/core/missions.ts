@@ -2871,6 +2871,33 @@ export class MissionEngine {
         this.deps.onUpdate(this.run);
     }
 
+    /**
+     * ‼️ X-80 — WHERE THE TALKING HAD GOT TO, for a lead coming back from a
+     * reload. The generic resume message carries the round's results and the
+     * budget and nothing else: no message ids, no open questions, no council
+     * mandate — so a lead resumed mid-debate could not answer anybody, could
+     * not tell whose turn it was, and had no id to put in `refs`.
+     *
+     * Only conversations that are still LIVE (open, or holding an unanswered
+     * question) are worth the tokens; a closed one is history and the record
+     * keeps it. Empty string when there is nothing to say, so the ordinary
+     * resume message is left exactly as it was.
+     */
+    private resumeDigest(): string {
+        const { spec, run } = this;
+        const live = (run.conversations ?? []).filter(c => !c.closedAt);
+        if (!live.length) { return ''; }
+        const roster = allowedAgents(spec);
+        const nameOf = (id: string) =>
+            roster.find(m => m.agentId === id)?.agentName ?? (id === 'lead' ? 'you' : id);
+        const parts = live.map(c => conversationDigest(c, run.messages ?? [], { nameOf }).text);
+        const councils = live
+            .map(c => councilOf(run.councils, c.id))
+            .filter((k): k is MissionCouncil => !!k)
+            .map(k => councilDigest(k, run.messages ?? [], { nameOf }));
+        return '\n\n' + [...parts, ...councils].join('\n\n');
+    }
+
     private setNow(what?: string): void {
         this.run.now = what ? { what, since: this.deps.now() } : undefined;
     }
@@ -3458,13 +3485,20 @@ export class MissionEngine {
             if (step.taskId) { msg.taskId = step.taskId; }
             if (step.runSessionId) { msg.sessionId = step.runSessionId; }
             if (step.outputFile) { msg.contentRef = step.outputFile; }
-            // ‼️ A CONVERSATION IS CLOSED BY A STATED REASON, and only after the
-            // message that closed it exists. "Nothing has been said for a
-            // while" is not a closing; a reader three months later needs the
-            // sentence, and `refuseMessage` needs a closed conversation to be
-            // closed for something.
             const council = councilOf(run.councils, link.conversationId);
-            if (link.close) {
+            const body = step.outputFile ? this.deps.readOutputBody(step.outputFile, step.taskId) : '';
+            const text = (body || step.resultText || '').trim();
+            const delivered = step.status === 'done' && !!text;
+            // ‼️ X-76 — A CLOSING IS A MESSAGE THAT WAS ACTUALLY SPOKEN.
+            //
+            // The close was applied from the ORDER — the lead had said this turn
+            // would end the conversation — before anything checked whether the
+            // turn came back. So a closer that failed, was cancelled, or came
+            // back with no text closed the conversation anyway: the record said
+            // "consensus", the council said it had reached its verdict, and the
+            // message that was supposed to say so did not exist. Now the close
+            // lands only alongside the delivered message that carries it.
+            if (link.close && delivered) {
                 const conv = (run.conversations ?? []).find(c => c.id === link.conversationId);
                 if (conv && !conv.closedAt) {
                     conv.closedAt = now;
@@ -3485,9 +3519,7 @@ export class MissionEngine {
                     });
                 }
             }
-            const body = step.outputFile ? this.deps.readOutputBody(step.outputFile, step.taskId) : '';
-            const text = (body || step.resultText || '').trim();
-            if (step.status === 'done' && text) {
+            if (delivered) {
                 msg.excerpt = outputExcerpt(text, 1200, 600);
                 msg.state = 'delivered';
                 // ‼️ M-20 — A VOTE IS A MESSAGE, AND ITS CHOICE IS THE VOTER'S
@@ -3537,8 +3569,15 @@ export class MissionEngine {
                 continue;
             }
             msg.state = step.status === 'cancelled' ? 'cancelled' : 'failed';
+            // ‼️ X-76 — and when the turn was the one that was to CLOSE the
+            // conversation, the note says the closing did not happen either. The
+            // lead ordered an ending and did not get one; being told so is the
+            // whole point, and a record that says "closed" cannot tell it.
+            const stillOpen = link.close
+                ? ' — and it was the turn that was to close this conversation, which is therefore still open'
+                : '';
             if (step.status === 'done') {
-                msg.note = 'the turn came back with no text — nothing was said';
+                msg.note = 'the turn came back with no text — nothing was said' + stillOpen;
                 step.failure = failure('delegate-failed', step, msg.note);
                 // ‼️ AND THE STEP SAYS SO TOO. A step left `done` while the
                 // message it exists to produce is `failed` is one event with two
@@ -3550,8 +3589,53 @@ export class MissionEngine {
                 // did not happen — the exact failure M-19 exists to refuse.
                 step.status = 'failed';
             } else {
-                msg.note = step.failure?.detail || step.note || 'the speaking turn did not come back';
+                msg.note = (step.failure?.detail || step.note || 'the speaking turn did not come back') + stillOpen;
             }
+        }
+    }
+
+    /**
+     * ‼️ X-76 — A TURN THAT WAS PLANNED AND NEVER RAN MUST NOT HOLD A LANE.
+     *
+     * `prepareMessage` writes its messages onto the run before the duplicate
+     * guard and the task budget have had their say, so a turn dropped by
+     * either left a `pending` message nobody would ever settle. Pending is
+     * what holds a participant's lane: that agent could then never speak in
+     * that conversation again, and the lead was refused every time it tried
+     * without being told a real reason.
+     *
+     * Cancelled rather than deleted: the lead really did order it, and the
+     * record of an order that was refused is worth more than a gap. A
+     * conversation whose every turn was dropped is closed the same way — an
+     * open room nobody ever spoke in is the same lock by another name.
+     */
+    private reapUnsent(
+        run: MissionRun, ordered: readonly PlannerTaskReq[], kept: ReadonlySet<string>,
+        why: string, now: number
+    ): void {
+        const dropped = ordered
+            .map(t => t.message?.messageId)
+            .filter((id): id is string => !!id && !kept.has(id));
+        if (!dropped.length) { return; }
+        const touched = new Set<string>();
+        for (const id of dropped) {
+            const msg = (run.messages ?? []).find(m => m.id === id);
+            if (!msg || msg.state !== 'pending') { continue; }
+            msg.state = 'cancelled';
+            msg.settledAt = now;
+            msg.note = why;
+            touched.add(msg.conversationId);
+        }
+        for (const cid of touched) {
+            const conv = (run.conversations ?? []).find(c => c.id === cid);
+            if (!conv || conv.closedAt) { continue; }
+            const spoke = (run.messages ?? []).some(
+                m => m.conversationId === cid && m.state !== 'cancelled' && m.state !== 'failed');
+            if (spoke) { continue; }
+            conv.closedAt = now;
+            conv.closeReason = 'nothing was ever said in it — every turn ordered for it was dropped before it ran';
+            const council = councilOf(run.councils, cid);
+            if (council && !council.closedAt) { council.closedAt = now; }
         }
     }
 
@@ -3597,7 +3681,18 @@ export class MissionEngine {
         for (const g of reopenGuidance(run)) {
             run.ledger.push(`(guidance ${g.id} was in flight when the window closed — sending it again)`);
         }
-        let roundMsg: string | undefined = initialMsg;
+        // ‼️ X-80 — AND THE RESUME MESSAGE WAS WRITTEN BEFORE ANY OF THAT.
+        //
+        // The host builds the resume text out of the SNAPSHOT, and the two
+        // catch-up passes above — settling the messages a reload left pending,
+        // reopening guidance that was in flight — happen after it. So the first
+        // thing the lead read on the way back described a conversation state
+        // that had already changed underneath it: turns still listed as pending
+        // that had just been settled, participants shown as locked who were free.
+        // The digest is taken HERE, after the catch-up, from the record itself.
+        let roundMsg: string | undefined = initialMsg
+            ? initialMsg + this.resumeDigest()
+            : undefined;
         let parseRetried = false;
         let guardNudged = false;
         /** ‼️ X-65 — a lead is corrected on invented provenance once. */
@@ -4111,6 +4206,10 @@ export class MissionEngine {
                 notes.push(`only ${rem.tasks} task(s) left in the budget — the rest of this round was dropped`);
                 tasks = tasks.slice(0, Math.max(0, rem.tasks));
             }
+            // ‼️ X-76 — the turns that did NOT survive the two filters above.
+            this.reapUnsent(run, requested,
+                new Set(tasks.map(t => t.message?.messageId).filter((x): x is string => !!x)),
+                notes[0] ?? 'this turn was dropped before it ran', deps.now());
             if (!tasks.length) {
                 run.ledger.push(`R? delegate rejected — ${notes.join('; ')}`);
                 roundMsg = `Nothing was run:\n${notes.map(n => `- ${n}`).join('\n')}\nChoose different work, ask the user, or finish. Reply with ONLY the JSON decision object.`;
@@ -4199,6 +4298,11 @@ export class MissionEngine {
                         // classification exists to prevent.
                         s.failure = failure('cancelled', s, 'the round was rejected at approval');
                     });
+                    // ‼️ X-76 — including the speaking turns. The steps were
+                    // marked cancelled and the loop went straight on, so a
+                    // message ordered in a rejected round stayed `pending` and
+                    // held its speaker's lane for the rest of the run.
+                    this.settleMessages(run, round.steps, deps.now());
                     run.ledger.push(ledgerLine(round));
                     deps.onUpdate(run);
                     roundMsg = 'The user REJECTED this round\'s delegations. Re-plan differently, ask the user what they want, or finish. Reply with ONLY the JSON decision object.';
@@ -4236,8 +4340,17 @@ export class MissionEngine {
                 // one: its steps settled, its delegates ran, and the ledger
                 // line for the round is the only place that says what the
                 // round did. Both of these used to return above the rollup.
-                if (this.cancelRequested) { this.bookRound(round); this.endAtCancel(); return; }
-                if (cut) { this.bookRound(round); this.endAtCeiling(cut); return; }
+                // ‼️ X-76 — AND THE MESSAGES ARE SETTLED ON THE WAY OUT TOO. A
+                // cut or a cancel used to return above `settleMessages`, so a
+                // conversation turn that had really settled stayed `pending`
+                // for ever and its speaker's lane stayed locked — on a run that
+                // was already over, which is when nobody looks again.
+                if (this.cancelRequested || cut) {
+                    this.settleMessages(run, round.steps, deps.now());
+                    this.bookRound(round);
+                    if (this.cancelRequested) { this.endAtCancel(); } else { this.endAtCeiling(cut as string); }
+                    return;
+                }
             }
             // ‼️ M-19 — BEFORE THE LEDGER AND BEFORE THE LEAD IS TOLD ANYTHING.
             // A speaking turn's step is settled by the wave; the MESSAGE it was

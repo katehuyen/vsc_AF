@@ -1387,7 +1387,10 @@
          */
         const spoken = m.state === 'delivered';
         const waiting = !spoken && !failed;
-        const body = spoken ? (m.excerpt || '') : '';
+        // ‼️ X-80 — the words the host read for us: the FULL archived text when
+        // there is one, the stored excerpt when the archive is gone. The room
+        // used to draw `m.excerpt` and call it full text in its own release note.
+        const body = spoken ? (m.text || m.excerpt || '') : '';
         // ‼️ X-93 — a ref carries WHERE it lands, not just what it names. The
         // handler has to be able to open the right thread and expand whatever
         // is hiding the target, and it cannot work that out from an id alone.

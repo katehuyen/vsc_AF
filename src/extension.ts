@@ -4101,6 +4101,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try { return archivedReplyText(fs.readFileSync(file, 'utf8'), engine); } catch { return ''; }
     };
 
+    /**
+     * ‼️ X-80 — THE ONE READER FOR WHAT A SPEAKER ACTUALLY SAID.
+     *
+     * A message stores a BOUNDED excerpt plus a `contentRef` pointing at the
+     * archived output the speaking turn produced. Three surfaces then called
+     * the excerpt "full text" — the bridge said so in the field name, the
+     * conversation room said so in its release note, and both drew the same
+     * truncated paragraph. A 1200-character answer read as an 800-character
+     * one with no sign that anything was missing.
+     *
+     * The archive is read through the SAME engine-aware path the engine uses,
+     * so an OpenCode JSONL stream is the reply and not 4 KB of transport. When
+     * the file is gone (a purge, a moved folder) the excerpt is what there is
+     * — and the caller is told which of the two it got rather than left to
+     * guess from the length.
+     */
+    const missionMessageText = (m: { excerpt?: string; contentRef?: string; taskId?: string }):
+        { text: string; source: 'file' | 'excerpt' | 'none' } => {
+        if (m.contentRef) {
+            const full = missionReadBody(m.contentRef, m.taskId).trim();
+            if (full) { return { text: full, source: 'file' }; }
+        }
+        const ex = (m.excerpt ?? '').trim();
+        return ex ? { text: ex, source: 'excerpt' } : { text: '', source: 'none' };
+    };
+
     const missionDepsFor = (spec: MissionSpec, run: MissionRun): MissionEngineDeps => ({
         runPlanner: runMissionPlanner(spec),
         delegateWave: missionDelegateWave(spec),
@@ -4298,7 +4324,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             initialMsg = buildResumeMessage(run,
                 last.steps.map(step => ({
                     step,
-                    excerpt: step.outputFile ? outputExcerpt(missionReadBody(step.outputFile)) : ''
+                    // ‼️ X-80 — WITH THE TASK, so the archive is read through its own
+                    // engine. Without it an OpenCode run's raw JSONL event stream went
+                    // into the planner's resume message as "what the delegate said".
+                    excerpt: step.outputFile
+                        ? outputExcerpt(missionReadBody(step.outputFile, step.taskId)) : ''
                 })),
                 remainingBudget(spec, run, Date.now()), resumeHead);
         } else if (run.rounds.length || run.plannerSessionId) {
@@ -5836,7 +5866,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: '‼️ M-19 — THE REAL TRANSCRIPT of one conversation inside a run: every message '
                 + 'in order with its speaker, who it was addressed to, its intent ('
                 + messageIntentMenu()
-                + '), the message ids it answers as `refs`, its full text, and the task and session it '
+                + '), the message ids it answers as `refs`, its FULL text (read from the archive '
+                + 'through the speaker\'s own engine — `textSource` says whether that is what you got '
+                + 'or the stored `excerpt`, which is all there is once the archive has been purged), '
+                + 'and the task and session it '
                 + 'was produced by. This is the record, not a rendering: a message exists here only '
                 + 'because a real speaking turn produced it, so a lead cannot report a discussion that '
                 + 'did not happen. `carried` says how the speaker\'s lane was continued — `resumed` is '
@@ -5865,7 +5898,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         to: m.to, toNames: m.to.map(x => missionCastName(r, x)),
                         intent: m.intent, refs: m.refs,
                         state: m.state, carried: m.carried ?? null,
-                        text: m.excerpt ?? null, note: m.note ?? null,
+                        // ‼️ X-80 — the FULL text, read from the archive through the
+                        // speaker's own engine, with the stored excerpt beside it and
+                        // `textSource` saying which of the two `text` really is.
+                        ...(() => {
+                            const t = missionMessageText(m);
+                            return {
+                                text: t.text || null, textSource: t.source,
+                                excerpt: m.excerpt ?? null
+                            };
+                        })(),
+                        note: m.note ?? null,
                         taskId: m.taskId ?? null, sessionId: m.sessionId ?? null,
                         outputFile: m.contentRef ?? null,
                         orderedAt: m.orderedAt, settledAt: m.settledAt ?? null
@@ -11201,10 +11244,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 messages: (run.messages ?? []).map(m => {
                     const sess = m.sessionId ? bySessionId.get(m.sessionId) : undefined;
                     const t = m.taskId ? byTask.get(m.taskId) : undefined;
+                    // ‼️ X-80 — THE SAME READER THE BRIDGE USES, and the same
+                    // fallback. The output link was resolved ONLY from the live task
+                    // row, so once retention rolled that row out the room lost both
+                    // the link and the full text — while `contentRef`, which is on
+                    // the message itself and outlives every task, sat there unused.
+                    const words = missionMessageText(m);
                     return {
                         ...m,
                         ...(sess ? { transcript: sess.file } : {}),
-                        ...(t?.outputFile ? { outputFile: t.outputFile } : {})
+                        text: words.text, textSource: words.source,
+                        ...(t?.outputFile || m.contentRef
+                            ? { outputFile: t?.outputFile ?? m.contentRef } : {})
                     };
                 }),
                 rounds: run.rounds.map(round => ({

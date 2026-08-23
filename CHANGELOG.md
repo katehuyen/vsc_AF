@@ -2,6 +2,73 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.264.0 - X-76: a turn that never happened does not hold a lane (2026-08-23)
+
+A speaking turn's message was written onto the run BEFORE the planning-loop
+guard and the task budget had had their say, and three exits from the round loop
+returned above the line that settles messages. Both leave the same wreck: a
+`pending` message nobody will ever settle — and pending is what holds a
+participant's lane. That agent could then never speak in that conversation
+again, and the lead was refused every time it tried without being told a real
+reason.
+
+A turn dropped before it ran is now settled as cancelled, on the record, saying
+why. A conversation whose every turn was dropped is closed the same way: an open
+room nobody ever spoke in is the same lock under another name. And the three
+exits — a ceiling cut, a cancel, and a round the user refused — settle their
+messages before they leave.
+
+**And a conversation is closed by a turn that was really spoken.** The close was
+applied from the ORDER, before anything checked whether the turn came back, so a
+closer that failed or came back empty closed the conversation anyway: the record
+said "consensus", the council said it had reached its verdict, and the message
+that was to say so did not exist. The close now lands only alongside the
+delivered message that carries it, and a failed closer says on its own record
+that the conversation is still open.
+
+## 3.263.0 - X-80: one reader for what a speaker actually said (2026-08-23)
+
+A message stores a bounded excerpt plus a `contentRef` pointing at the archived
+output the speaking turn produced. Three surfaces then called the excerpt "full
+text" — the bridge in its field name, the conversation room in its own release
+note — and both drew the same truncated paragraph, with nothing to say anything
+was missing.
+
+There is one reader now. It prefers the archive, read through the SPEAKER'S OWN
+ENGINE (so an OpenCode run's JSONL event stream is the reply and not 4 KB of
+transport), falls back to the stored excerpt when the archive is gone, and says
+which of the two it handed back. The conversation room uses it too — and falls
+back to the message's own `contentRef`, which outlives every task, instead of
+losing both the link and the text the moment retention rolls the task row out.
+
+**The resume message reads the archive with its task**, which it did not: an
+OpenCode delegate's raw event stream went into the planner's resume prompt as
+"what the delegate said". **And a lead coming back from a reload is told where
+the talking had got to** — the live conversations, the open questions, the
+council's mandate and the message ids, taken after the engine's catch-up pass
+rather than from a snapshot written before it.
+
+## 3.262.0 - X-71: a workflow run that has no rows is still an answer (2026-08-23)
+
+`workflowRunState` began by filtering the task rows and returned `undefined` when
+there were none. Two real chains produce none: one whose every step is skipped by
+its `runIf`, and one whose first step names an agent that is gone. Both are OVER
+— one done, one failed — and both came back `undefined`, which a parent mission
+reads as "still working" and polls for ever.
+
+A run is a record now: what it is, when it began, whose work it is, and how it
+ended. Persisted, so the reason a chain stopped survives the window that knew it
+— the loop guard's verdict and the step it died on used to be lost on reload,
+leaving the reader "failed" and no answer to "where". A first step whose agent is
+gone ends the run instead of returning in silence.
+
+**And an abandoned attempt no longer outvotes the one that worked.** A failed step
+resumed under the same run id leaves both rows behind, and asking "did anything
+fail?" across all of them let the first attempt speak for a step the second one
+had finished: after a reload, a chain that was resumed and completed cleanly
+reported itself failed. Only the latest attempt speaks for its step; the earlier
+ones stay on the record as history.
+
 ## 3.261.0 - X-72: money already spent is finished work, on every way out (2026-08-23)
 
 The rollup that adds a round's spending to the run was a line in the MIDDLE of
