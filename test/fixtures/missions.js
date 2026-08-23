@@ -127,7 +127,12 @@ const RUN = {
                 {
                     id: 's1', round: 1, agentId: 'a1', agentName: 'developer',
                     title: 'wire the resume path', prompt: 'p', status: 'done',
-                    costUSD: 0, tokens: 214000, outputFile: 'D:/out/s1.md'
+                    costUSD: 0, tokens: 214000, outputFile: 'D:/out/s1.md',
+                    // ‼️ X-96 — a step that left BOTH kinds of evidence: the
+                    // session it ran in (resolved to a file by the host) and the
+                    // output it wrote. The row draws the pair; s3 below has
+                    // neither, which is the other case worth picturing.
+                    runSessionId: 'ses_9f31c0a4', transcript: 'D:/sessions/sess-dev-1.jsonl'
                 },
                 {
                     id: 's2', round: 1, agentId: 'a2', agentName: 'basit',
@@ -405,7 +410,11 @@ const ADAPTIVE_RUN = {
             steps: [{
                 id: 's1', round: 1, agentId: 'a1', agentName: 'developer', title: 'open a session, answer a turn',
                 prompt: 'p', status: 'done', criteria: ['c1'], costUSD: 0.4, tokens: 260000,
-                outputFile: 'D:/out/s1.md'
+                outputFile: 'D:/out/s1.md',
+                // ‼️ X-96 — both kinds of evidence on one row: the session it ran
+                // in and the file it wrote. Other steps here have neither, which
+                // is the case the picture also has to show honestly.
+                runSessionId: 'ses_9f31c0a4', transcript: 'D:/sessions/sess-dev-1.jsonl'
             }]
         },
         {

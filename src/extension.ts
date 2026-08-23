@@ -11360,13 +11360,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...round,
                     steps: round.steps.map(step => {
                         const t = step.taskId ? byTask.get(step.taskId) : undefined;
-                        if (!t) { return step; }
-                        const sess = t.costSessionFile ? bySessionFile.get(t.costSessionFile) : undefined;
+                        const sess = t?.costSessionFile ? bySessionFile.get(t.costSessionFile) : undefined;
+                        /**
+                         * ‼️ X-96 — THE SESSION THE DELEGATION RAN IN, RESOLVED
+                         * HERE, for the same reason the message links above are:
+                         * the step records a session ID and the viewer opens a
+                         * FILE, and the page has no index to turn one into the
+                         * other. The ID is the honest source — it is written the
+                         * moment the task binds and it OUTLIVES the task row
+                         * retention eventually removes — with the task's own
+                         * cost session as the fallback for steps recorded before
+                         * `runSessionId` existed.
+                         */
+                        const byIdSess = step.runSessionId ? bySessionId.get(step.runSessionId) : undefined;
+                        const transcript = byIdSess?.file ?? sess?.file;
+                        if (!t) { return transcript ? { ...step, transcript } : step; }
                         return {
                             ...step,
                             costUSD: step.costUSD ?? t.costUSD,
                             tokens: step.tokens ?? t.tokens ?? (sess ? totalTokens(sess.usage) : undefined),
-                            outputFile: step.outputFile ?? t.outputFile
+                            outputFile: step.outputFile ?? t.outputFile,
+                            ...(transcript ? { transcript } : {})
                         };
                     })
                 }))

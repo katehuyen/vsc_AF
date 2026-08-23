@@ -781,10 +781,43 @@
         </td></tr>`;
     }
 
+    /**
+     * ‼️ X-96 — WHERE THIS DELEGATION ACTUALLY RAN, one click from the row.
+     *
+     * The step row carried the archived OUTPUT and nothing else, so the
+     * question every mission detail eventually asks — "which session was this,
+     * and what did it really do?" — meant leaving the mission, opening
+     * Sessions, and matching by agent and clock. The session the delegate ran
+     * in is recorded on the step (`runSessionId`, M-19) and the host resolves
+     * it to the transcript file; both links live in the same cell because they
+     * are the same subject: the evidence this step left behind.
+     *
+     * A step with no session yet (queued, or a delegation that never launched)
+     * says so rather than drawing a link that would do nothing.
+     */
+    function stepLinks(s) {
+        const links = [];
+        if (s.transcript) {
+            links.push(`<a data-opensession="${C.esc(s.transcript)}"
+                title="${C.esc('Open this delegation\'s own session in the viewer — the raw transcript, its tool calls and its turns.'
+                    + (s.runSessionId ? '\n\nSession: ' + s.runSessionId : ''))}">session</a>`);
+        }
+        if (s.outputFile) {
+            links.push(`<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output this delegation wrote">output</a>`);
+        }
+        if (links.length) { return links.join(' <span class="muted">·</span> '); }
+        return `<span class="muted small" title="${C.esc(s.status === 'queued' || s.status === 'blocked'
+            ? 'Nothing to open yet — this delegation has not launched.'
+            : 'No session was recorded for this step and no output file was kept.')}">—</span>`;
+    }
+
     function stepRow(s, run) {
         const open = expandedStep === s.id;
         const ctx = window.AFCtx.row('afMissionStep', {
-            run: run ? run.id : '', step: s.id, agentId: s.agentId, afOutput: !!s.outputFile
+            run: run ? run.id : '', step: s.id, agentId: s.agentId, afOutput: !!s.outputFile,
+            // X-96 — gates "Open the session it ran in" the way afOutput gates
+            // the output entry: an action that cannot act is not offered.
+            afSession: !!s.transcript
         });
         return `<tr class="srow" data-step="${C.esc(s.id)}" ${ctx}
             title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
@@ -796,7 +829,7 @@
             <td>${chip(s.status)}${failChip(s.failure)}</td>
             <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>
             <td class="num">${s.costUSD !== undefined ? usd(s.costUSD) : '—'}</td>
-            <td>${s.outputFile ? `<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output">output</a>` : ''}</td>
+            <td class="slinks">${stepLinks(s)}</td>
         </tr>` + (open ? stepDetail(s) : '');
     }
 
@@ -1115,7 +1148,7 @@
         // with their steps invisible. The classic path is unchanged: a classic
         // round that delegates has steps and draws the same table it always did.
         if (r.steps && r.steps.length) {
-            body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th><th></th></tr></thead>
+            body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th><th title="What this delegation left behind: its own CLI session (the raw transcript and tool calls) and the output file it wrote. Either can be missing — a step that never launched has neither.">Evidence</th></tr></thead>
                 <tbody>${r.steps.map(s => stepRow(s, run)).join('')}</tbody></table>
                 ${r.rejectedReason ? `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>` : ''}`;
         } else if (r.action === 'ask_user') {
@@ -2140,6 +2173,10 @@
                 .lerow.alert { color:var(--vscode-inputValidation-warningBorder, #d0a500); }
                 .srow { cursor:pointer; }
                 .stoggle { width:14px; opacity:.7; }
+                /* X-96 — the evidence cell holds two links on one line; the row
+                   is already narrow, so it never wraps mid-word. */
+                .slinks { white-space:nowrap; }
+                .slinks a { cursor:pointer; }
                 .sdetail td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 4%, transparent); }
                 .sdlabel { font-size:11px; opacity:.85; margin:6px 0 3px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
                 .sdpre { font-family:var(--vscode-editor-font-family, monospace); font-size:11px; white-space:pre-wrap;
@@ -2606,6 +2643,11 @@
             case 'mstOut': {
                 const s = findStep(runId, ctx.step);
                 if (s && s.outputFile) { vscode.postMessage({ type: 'openFile', file: s.outputFile }); }
+                return;
+            }
+            case 'mstSession': {
+                const s = findStep(runId, ctx.step);
+                if (s && s.transcript) { vscode.postMessage({ type: 'openSession', file: s.transcript }); }
                 return;
             }
             case 'mstAgent':

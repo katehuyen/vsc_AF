@@ -38,7 +38,7 @@ const RUN = {
         {
             n: 1, thought: 'split the work', action: 'delegate', plannerCostUSD: 0.11, plannerTokens: 5000, at: 1000,
             steps: [
-                { id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, tokens: 12000, outputFile: 'D:/out/s1.md' },
+                { id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, tokens: 12000, outputFile: 'D:/out/s1.md', runSessionId: 'ses_a1', transcript: 'D:/s/step-a1.jsonl' },
                 { id: 's2', round: 1, agentId: 'a2', agentName: 'reviewer', title: 'review', prompt: 'p', readonly: true, status: 'failed', note: 'agent said no' }
             ]
         },
@@ -1164,6 +1164,22 @@ ok('step expands to the full prompt + output box',
     html().includes('Prompt sent to') && html().includes('id="tailbox"'));
 const tailReq = posted.find(p => p.type === 'tail');
 ok('expanding a step requests the output tail', tailReq && tailReq.file === 'D:/out/s1.md');
+
+// ---------- X-96: a delegation's evidence is one click from its row ----------
+// The row carried the archived OUTPUT and nothing else, so "which session was
+// this, and what did it really do?" meant leaving the mission detail, opening
+// Sessions and matching by agent and clock.
+ok('a step that ran in a session offers it beside the output',
+    html().includes('data-opensession="D:/s/step-a1.jsonl"')
+    && html().includes('data-openfile="D:/out/s1.md"'));
+ok('…and names the session in the tooltip the link is too short to carry',
+    html().includes('Session: ses_a1'));
+ok('‼️ …while a step with neither says so rather than drawing a dead link',
+    html().includes('No session was recorded for this step'));
+ok('the right-click entry is gated on the same fact the link is',
+    html().includes('&quot;afSession&quot;:true'));
+ok('…and the column says what it holds, once, on its heading',
+    html().includes('>Evidence<'));
 msgHandler({ data: { type: 'tail', file: 'D:/out/s1.md', text: 'ran 12 tests — all green', size: 24 } });
 ok('tail reply lands in the output box',
     getEl('tailbox').textContent === 'ran 12 tests — all green');

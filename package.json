@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.270.0",
+  "version": "3.271.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2256,6 +2256,11 @@
       {
         "command": "agentfarm.ctx.msStepOut",
         "title": "Open the delegation output",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.msStepSession",
+        "title": "Open the session it ran in",
         "category": "Agent Farm"
       },
       {
@@ -4891,9 +4896,14 @@
           "group": "1_open@2"
         },
         {
+          "command": "agentfarm.ctx.msStepSession",
+          "when": "webviewSection == 'afMissionStep' && afSession",
+          "group": "1_open@3"
+        },
+        {
           "command": "agentfarm.ctx.msStepAgent",
           "when": "webviewSection == 'afMissionStep'",
-          "group": "1_open@3"
+          "group": "1_open@4"
         },
         {
           "command": "agentfarm.ctx.msRoundOpen",
@@ -6763,6 +6773,11 @@
         },
         {
           "command": "agentfarm.ctx.msStepOut",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.msStepSession",
           "when": "false",
           "group": "ctx"
         },

@@ -777,9 +777,17 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'msStepOut', title: 'Open the delegation output', act: 'mstOut',
         when: `${MISSION_STEP} && afOutput`, group: '1_open@2'
     },
+    // ‼️ X-96 — the OTHER half of what a delegation leaves behind. The output is
+    // what it wrote; the session is what it did. The row has both links now and
+    // the menu offers the same two, gated the same way — a step with no session
+    // recorded (queued, never launched) does not offer one.
+    {
+        id: 'msStepSession', title: 'Open the session it ran in', act: 'mstSession',
+        when: `${MISSION_STEP} && afSession`, group: '1_open@3'
+    },
     {
         id: 'msStepAgent', title: 'Open the agent that ran it', act: 'mstAgent',
-        when: MISSION_STEP, group: '1_open@3'
+        when: MISSION_STEP, group: '1_open@4'
     },
     ...picker(CTX_PREFIX + 'mstCopy', MISSION_STEP, 'mstCopy', [
         ['prompt', 'The prompt it was given'],

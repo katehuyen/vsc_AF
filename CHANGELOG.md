@@ -2,6 +2,59 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.271.0 - X-32 phase A: the mission composer says what it will actually do (2026-08-23)
+
+**U-97 — the worker row now reads in the order it resolves.** It was laid out
+engine → permissions → effort → model, while the model depends on the engine and
+the effort depends on the model: both stood to the LEFT of the thing that
+decides what they may offer. The row is `Agent/role → Engine → Model → Effort →
+Permissions`. The model box was free text over a `<datalist>`, which Chromium
+anchors on the flex parent rather than the box — so the second press drew the
+list at the far left of the row and a repaint collapsed it to one line. Model and
+planner model are plain `<select>`s over the same `AFEngine` catalog every other
+launch surface reads, and not one `<datalist>` is left on the form. Changing the
+engine or the model narrows the row through `AFEngine.narrow`, the page-side
+mirror of the rule the host applies at launch, so a member moved onto an engine
+with `takesEffort:false` no longer carries a hidden `--effort` its CLI refuses.
+An engine that publishes no catalog is not allowed to call a model wrong; a value
+the catalog does not carry is kept as `⚠ <name>` with the sentence in its
+tooltip. Four pickers at a fixed width overflowed a docked panel, so they shrink
+together, the row wraps rather than clipping, and a hairline says where a member
+starts.
+
+**U-102 — an empty pool was two opposite answers in one picture.** Every box
+empty posted `pool: []` and the host read it as the whole fleet, while the same
+screen could as truthfully be read as "nobody is picked". The pool heading now
+carries the answer: `Whole fleet` (the default, and what the old behaviour meant)
+or `Selected agents`, where ticking nobody is REFUSED on both sides rather than
+silently expanded to every agent on the machine. In whole-fleet scope every tick
+is in and says so instead of offering a choice that would be ignored — the row
+overrides stay live, because a whole-fleet pool is still a pool you may profile.
+
+The contract is `poolScope: fleet | selected`, refused on the raw request if it
+is anything else. **Omitting it is the old contract, untouched** — every stored
+spec, template and bridge caller written before this sends no such key, and an
+empty pool there still means the whole fleet. `missions.start` says all of that
+in its own description.
+
+Classic’s cast list and an objective’s pool shared one checkbox map, so choosing
+a pool silently re-cast the mission; they are two answers and they are kept
+apart. And the adaptive lead box, where leaving the field empty is legal, said
+"— pick the lead —" and nothing else: it now names the agent the deterministic
+rule would land on (`Automatic → <agent>`) and re-says it when the pool changes.
+An explicit lead outside the pool is drawn as **planner only**; one inside it is
+told that its row is about its worker delegations, not its planning calls.
+
+**X-96 — a delegation’s evidence is one click from its row.** The step row
+carried the archived output and nothing else, so "which session was this, and
+what did it really do?" meant leaving the mission detail, opening Sessions and
+matching by agent and clock. The session a delegate ran in has been recorded on
+the step since M-19; the host resolves it to a transcript file the way it already
+does for a speaking turn, and the row offers `session · output` under one
+**Evidence** heading. The right-click menu offers the same two, gated on the same
+facts. A step with neither says so rather than drawing a link that would do
+nothing.
+
 ## 3.270.0 - X-69: a primitive is a contract, not a line in a menu (2026-08-23)
 
 **What a mission's lead can do was a list that promised more than it kept.** The
