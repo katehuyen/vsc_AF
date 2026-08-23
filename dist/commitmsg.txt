@@ -1,9 +1,5 @@
-v11.69 - 3.273.0: X-32 B fazı paketlendi, doğrulandı, kuruldu
+v11.70 - x-32 b fazi: kayitlar ve devir notu
 
-X-95 and U-104 shipped together — the two halves of "a mission is legible after
-it has run": its sessions are its own and gatherable, and every delegation says
-what it was asked to run with, what that resolved into, and what the engine
-actually served.
-
-212 files · 13.834 checks · 0 failures. Parity 16/16, gapBudget unchanged (38).
-verify_vsix 13/13. Installed: extensions.json reads muvusoft.agent-farm 3.273.0.
+Backlog X-95 / U-104 / U-99 kapandi, worklog + teslimat + iki karar kaydi
+yazildi, X-32 yol haritasi guncellendi, devir notu 01_CEVAPLAR altina birakildi
+ve Notices duyurusu yapildi. Kodda degisiklik yok.
