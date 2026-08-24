@@ -44,7 +44,7 @@
 
 import { agyDefaultEffort } from './agy';
 import { EngineId, EngineProbe } from './engines';
-import { engineFlagFor } from './consoleEngine';
+import { engineFlagFor, engineOf, engineTakesEffort } from './consoleEngine';
 import { EFFORT_CHOICES, LaunchChoice } from './launch';
 
 const CODEX_CATALOG = '.codex/models_cache.json';
@@ -612,4 +612,74 @@ export function narrowLaunch(
         model: keptModel,
         effort: rows.some(e => e.id === fallback) ? fallback : ''
     };
+}
+
+/**
+ * Which catalogue row a written model id IS — by id, or by the same
+ * family+variant key the merge dedupes on, so `claude-opus-4-5-20251101` and
+ * the alias `opus` are one model rather than one model and one stranger.
+ * `undefined` = this catalogue has never heard of it.
+ */
+function catalogRow(em: EngineModels, model: string): LaunchChoice | undefined {
+    const want = String(model ?? '').trim();
+    if (!want) { return undefined; }
+    const key = (id: string) => `${modelFamily(id)}|${modelVariant(id)}`;
+    const wantKey = key(want);
+    return em.models.find(m => !!m.id
+        && (m.id.toLowerCase() === want.toLowerCase() || key(m.id) === wantKey));
+}
+
+/**
+ * ‼️ X-120 / X-122 — THE PAIR IS REFUSED WHERE IT IS PROMISED, NOT WHERE IT DIES.
+ *
+ * `narrowLaunch` is the SILENT half of this same question, and it is right for
+ * a picker the user is still moving: what does not fit is dropped as they move.
+ * It is wrong for a launch that has already been asked for. A model kept from
+ * the engine a row USED to be on, or an effort left behind by the model it was
+ * chosen for, is then dropped without a word and the run goes ahead on
+ * something nobody typed — or, where nothing narrows it at all, the CLI answers
+ * hours later in a file nobody is reading:
+ *
+ *   invalid model selection (--model "gemini-3.1-pro" --effort "medium"):
+ *   gemini-3.1-pro has no "medium" effort (available: low, high)
+ *
+ * So this is the same catalogue knowledge stated as a refusal, before the run.
+ *
+ * ‼️ IGNORANCE IS NOT EVIDENCE. Only a REAL catalogue — `source: 'catalog'`,
+ * the engine's own answer — may refuse a model. A `settings` list is this
+ * extension's alias guess, and refusing from it would refuse models that work.
+ * An engine with NO effort setting at all is `headlessEffortRefusal`'s
+ * question and is left to it: two refusals for one fault is how two wordings
+ * start disagreeing.
+ */
+export function capabilityRefusal(
+    em: EngineModels | undefined,
+    engine: string | undefined,
+    model: string | undefined,
+    effort: string | undefined
+): string {
+    const wantModel = String(model ?? '').trim();
+    const wantEffort = String(effort ?? '').trim();
+    if (!wantModel && !wantEffort) { return ''; }
+    if (!em || em.source !== 'catalog') { return ''; }
+    const label = engineOf(engine).label;
+    const known = em.models.filter(m => !!m.id);
+    if (!known.length) { return ''; }
+    const row = catalogRow(em, wantModel);
+    if (wantModel && !row) {
+        const few = known.slice(0, 4).map(m => m.id);
+        return `model "${wantModel}" is not one ${label} offers here — it lists `
+            + few.join(', ') + (known.length > few.length ? ', …' : '')
+            + ' (engines.models has the full list) — pick one of those, or change the engine this runs on';
+    }
+    if (!wantEffort || !engineTakesEffort(engine)) { return ''; }
+    const rows = effortsFor(em, row?.id ?? '');
+    const words = rows.filter(e => !!e.id).map(e => e.id);
+    // A model that states an EMPTY vocabulary takes no --effort at all; one that
+    // states none is unknown, and unknown refuses nothing.
+    if (!rows.length) {
+        return `effort "${wantEffort}" is not something ${row?.id || label} takes at all — clear the effort`;
+    }
+    if (!words.length || rows.some(e => e.id === wantEffort)) { return ''; }
+    return `effort "${wantEffort}" is not one ${row?.id || label} takes — ${words.join(', ')}`;
 }

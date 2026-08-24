@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const { readCodexCatalog, readClaudeExtras, readEngineModels, effortsFor,
-    modelFamily, modelVariant, mergeModelRows, narrowLaunch } =
+    modelFamily, modelVariant, mergeModelRows, narrowLaunch, capabilityRefusal } =
     require(path.join(__dirname, '..', 'out', 'core', 'models.js'));
 const { EFFORT_CHOICES } = require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
 
@@ -284,6 +284,69 @@ const CLAUDE_STATE = JSON.stringify({
         narrowLaunch({ ...em, defaultEffort: {} }, 'gemini-3.1-pro', 'medium').effort === '');
     ok('‼️ an engine that publishes no catalog narrows NOTHING — ignorance is not a refusal',
         narrowLaunch(undefined, 'anything', 'medium').effort === 'medium');
+}
+
+// ‼️ X-120 / X-122 — THE SAME KNOWLEDGE, STATED AS A REFUSAL.
+//
+// `narrowLaunch` is right for a picker the user is still moving: what does not
+// fit is dropped as they move. For a launch that has already been ASKED for it
+// is wrong — a mission row that kept `opus` from the engine it used to be on
+// either ran on something nobody typed, or reached a CLI that answered hours
+// later in a file nobody reads. Same catalogue, said out loud, before the run.
+{
+    const codex = {
+        models: [
+            { id: '', label: 'Default' },
+            { id: 'gpt-5.6-luna', label: 'Luna' },
+            { id: 'gpt-5.5', label: '5.5' }
+        ],
+        efforts: {
+            '': [{ id: 'low' }, { id: 'medium' }, { id: 'high' }],
+            'gpt-5.6-luna': [{ id: 'low' }, { id: 'high' }]
+        },
+        defaultEffort: {}, source: 'catalog', note: ''
+    };
+    ok('‼️ a model this engine does not offer is REFUSED rather than silently dropped',
+        /model "opus" is not one Codex offers here/.test(capabilityRefusal(codex, 'codex', 'opus', '')));
+    ok('…and the refusal says what it DOES offer, so it is fixable in one pass',
+        /gpt-5\.6-luna/.test(capabilityRefusal(codex, 'codex', 'opus', ''))
+        && /change the engine this runs on/.test(capabilityRefusal(codex, 'codex', 'opus', '')));
+    ok('a model it does offer passes', capabilityRefusal(codex, 'codex', 'gpt-5.5', '') === '');
+    ok('‼️ an effort the CHOSEN model has never heard of is refused with the words it does take',
+        capabilityRefusal(codex, 'codex', 'gpt-5.6-luna', 'medium')
+        === 'effort "medium" is not one gpt-5.6-luna takes — low, high');
+    ok('…while the same effort on a model that states no vocabulary of its own passes',
+        capabilityRefusal(codex, 'codex', 'gpt-5.5', 'medium') === '');
+    ok('…and the Default model box is judged by the engine\'s shared list, not refused',
+        capabilityRefusal(codex, 'codex', '', 'medium') === '');
+    ok('‼️ a model that states an EMPTY vocabulary takes no effort at all, and says so',
+        /not something gpt-5\.5 takes at all/.test(
+            capabilityRefusal({ ...codex, efforts: { ...codex.efforts, 'gpt-5.5': [] } }, 'codex', 'gpt-5.5', 'high')));
+    // ‼️ IGNORANCE IS NOT EVIDENCE — the half that keeps this from refusing work
+    // that works. A `settings` list is this extension's alias guess; an engine
+    // that published nothing has no opinion to hold.
+    ok('‼️ a settings list refuses NOTHING — an alias guess is not a catalogue',
+        capabilityRefusal({ ...codex, source: 'settings' }, 'codex', 'opus', 'medium') === '');
+    ok('…and neither does an absent one',
+        capabilityRefusal(undefined, 'codex', 'opus', 'medium') === '');
+    // An engine with no reasoning-effort flag at all is `headlessEffortRefusal`'s
+    // question. Two refusals for one fault is how two wordings start disagreeing.
+    ok('‼️ an engine with no effort flag is left to the refusal that already owns it',
+        capabilityRefusal({ ...codex, efforts: { '': [] } }, 'gemini', '', 'high') === '');
+    // ‼️ AND AN ALIAS IS NOT A STRANGER. `opus` and the dated id the CLI records
+    // are one model — the same family+variant key the catalogue merge dedupes
+    // on — so a spec written either way passes, and a real typo still does not.
+    const claude = {
+        models: [{ id: '', label: 'Default' }, { id: 'opus', label: 'Opus' }, { id: 'opus[1m]', label: 'Opus · 1m' }],
+        efforts: { '': [{ id: 'low' }, { id: 'high' }] },
+        defaultEffort: {}, source: 'catalog', note: ''
+    };
+    ok('‼️ an alias and the dated id it resolves to are ONE model',
+        capabilityRefusal(claude, 'claude', 'claude-opus-4-5-20251101', '') === '');
+    ok('…and the 1m variant is its own row rather than a second name for the bare model',
+        capabilityRefusal(claude, 'claude', 'opus[1m]', '') === '');
+    ok('…while a model nothing on that catalogue resolves to is still refused',
+        !!capabilityRefusal(claude, 'claude', 'gpt-5.5', ''));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

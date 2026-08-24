@@ -154,7 +154,7 @@ import {
     claudeOnlyScopeNote
 } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
-import { effortsFor, readEngineModels } from './core/models';
+import { capabilityRefusal, effortsFor, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
@@ -4927,6 +4927,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (typeof resolved === 'string') { return resolved; }
         const spec = resolved.spec;
         const engines = engineMatrix();
+        // ‼️ X-120 — AND WHAT EACH ENGINE ACTUALLY OFFERS. `engineRefusal`
+        // answers "can this machine run it at all"; the catalogue answers "does
+        // that engine have this model, and does that model take this effort",
+        // which is the pair a row keeps from the engine it used to be on.
+        const models = engineModelMatrix();
         const launch = launchDefaults();
         const agentDefaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
         /** One cast row through the SAME ladder the wave climbs. */
@@ -4947,7 +4952,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // reports one fault per press makes the user find them serially.
             const problems = [
                 engineRefusal(engines, dims.engine),
-                headlessEffortRefusal(dims.engine, dims.effort) || undefined
+                headlessEffortRefusal(dims.engine, dims.effort) || undefined,
+                // ‼️ X-120 — THE PAIR, AGAINST THE ENGINE IT REALLY LANDS ON. A
+                // row moved between engines keeps its model, and a model changed
+                // under a kept effort keeps that: both were dropped or sent
+                // silently, and the launch either ran on something nobody typed
+                // or died at the CLI hours later. An engine that publishes no
+                // catalogue refuses nothing — see `capabilityRefusal`.
+                capabilityRefusal(
+                    models[dims.engine as EngineId], dims.engine, dims.model, dims.effort
+                ) || undefined
             ].filter((p): p is string => !!p)
                 .map(p => `${member.agentName}: ${p}`);
             return {
@@ -5016,8 +5030,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     effort: plannerEffort ? 'mission' : 'cli', permissionMode: 'cli'
                 }
             }),
-            problems: engineRefusal(engines, 'claude')
-                ? [`${spec.leadAgentName}: ${engineRefusal(engines, 'claude')}`] : []
+            // ‼️ X-122 — THE ORCHESTRATOR'S PAIR IS CHECKED LIKE A MEMBER'S. The
+            // planner's model and effort were validated for VOCABULARY only —
+            // legal words, illegal combination — and then handed to a real
+            // `--model`/`--effort` on every planning call of the run. The engine
+            // is fixed here, so the catalogue asked is Claude Code's own.
+            problems: [
+                engineRefusal(engines, 'claude'),
+                capabilityRefusal(models.claude, 'claude', plannerModel, plannerEffort)
+            ].filter((p): p is string => !!p)
+                .map(p => `${spec.leadAgentName}: ${p}`)
         };
         const problems = [...new Set([...planner.problems, ...workers.flatMap(w => w.problems)])];
         const project = spec.projectId ? projectStore.get(spec.projectId) : undefined;
@@ -6068,8 +6090,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'delegate run on a model nobody typed into this mission?". A field that NOBODY '
                 + 'resolved is ABSENT rather than guessed: absent = the CLI chooses. `problems` is '
                 + 'EVERY refusal at once (an engine this machine cannot run, an effort the engine has '
-                + 'no flag for), per row and deduplicated at the top, so a caller fixes them in one '
-                + 'pass instead of one per attempt. ‼️ THE PLANNER IS NOT A WORKER: it is a headless '
+                + 'no flag for, and — X-120/X-122 — a model the engine it LANDS on does not offer or an '
+                + 'effort that model does not take, the planner included), per row and deduplicated at '
+                + 'the top, so a caller fixes them in one pass instead of one per attempt. A catalogue '
+                + 'that is only this extension\'s alias guess (engines.models `source: "settings"`) '
+                + 'refuses nothing: ignorance is not evidence. ‼️ THE PLANNER IS NOT A WORKER: it is a headless '
                 + 'Claude Code call whose engine cannot be chosen, whose model and effort come from the '
                 + 'MISSION (plannerModel / plannerEffort — never from a row, never from a fleet default), '
                 + 'which takes no permission mode at all because its write and spawn tools are cut off by '

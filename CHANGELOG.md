@@ -4,6 +4,26 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-120 / X-122 — the model+effort pair is refused where it is promised, not
+where it dies.** A mission row moved from one engine to another keeps its model,
+and a model changed under a kept effort keeps that effort. The narrow strip
+noticed and asked; press `Keep as they are` and its tooltip promised that the
+draft's refusal list above Start would say so — and the list never looked. The
+preview checked whether the machine could run the engine at all and whether the
+engine had an effort flag, and nothing checked whether that engine's catalogue
+had that model or whether that model takes that effort. So a Codex model on a
+Claude row, or an effort belonging to a different model, went to a real
+`--model`/`--effort` and was answered by the CLI hours later in a file nobody
+reads. `capabilityRefusal` is now the one gate both questions go through, for
+every worker AND for the planner (whose pair was validated for vocabulary only,
+then handed to every planning call of the run). It states what the engine does
+offer and what the model does take, so a fault is fixable in one pass. ‼️
+Ignorance is not evidence: only a real catalogue (`engines.models` `source:
+"catalog"`) can refuse a model — an alias-guess list and an engine that
+publishes nothing refuse nothing — an engine with no effort flag at all is left
+to the refusal that already owns that question, and an alias and the dated id it
+resolves to are one model rather than one model and one stranger.
+
 **X-119 — a draft the preview refuses can no longer be started.** `missions.preview`
 resolved every participant and reported every refusal it would meet — an engine
 this machine cannot run, an effort that engine has no flag for — and `create`

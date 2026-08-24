@@ -3004,6 +3004,21 @@ const { opencodeStatus, syncToOpencode } =
                 ok('…and every refusal at once — an engine this machine cannot run AND an effort it has no flag for',
                     /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort\)/.test(src)
                     && /EVERY refusal at once/.test(prevBlock));
+                // ‼️ X-120 — AND THE PAIR AGAINST THE ENGINE IT REALLY LANDS ON.
+                // `engineRefusal` answers "can this machine run it at all" and
+                // said nothing about a model kept from the engine the row used
+                // to be on, or an effort left behind by the model it was chosen
+                // for: the narrow strip asked the user, "Keep as they are"
+                // promised the draft's refusal list would say so, and the list
+                // never looked.
+                ok('‼️ X-120 — a model or effort the RESOLVED engine does not offer is refused before Start',
+                    /const models = engineModelMatrix\(\);/.test(src)
+                    && /capabilityRefusal\(\s*models\[dims\.engine as EngineId\], dims\.engine, dims\.model, dims\.effort\s*\)/.test(src));
+                ok('‼️ X-122 — and the PLANNER\'s model+effort pair goes through the same gate',
+                    /capabilityRefusal\(models\.claude, 'claude', plannerModel, plannerEffort\)/.test(src));
+                ok('…and the op says so, including that an alias-guess catalogue refuses nothing',
+                    /a model the engine it LANDS on does not offer/.test(prevBlock.replace(/'\s*\+\s*'/g, ''))
+                    && /ignorance is not evidence/.test(prevBlock.replace(/'\s*\+\s*'/g, '')));
                 ok('‼️ …and the PLANNER is not described as a worker: no engine choice, no permission mode, the LEAD\'s folder',
                     /THE PLANNER IS NOT A WORKER/.test(prevBlock)
                     && /LEAD AGENT.{0,3}s folder rather than the mission workdir/.test(prevBlock.replace(/'\s*\+\s*'/g, ''))
