@@ -211,7 +211,20 @@
      * lie in a new costume, so anything but the latest is dropped.
      */
     let PREVIEW = null;
+    /**
+     * ‼️ X-118 — THE GENERATION BELONGS TO THE DRAFT, NOT TO THE REQUEST.
+     *
+     * It used to be bumped inside the debounce timer, so for the 220ms between
+     * an edit and its own request the answer already in flight about the
+     * PREVIOUS draft still counted as current: it was accepted, it painted the
+     * new draft's model boxes and refusal list with the old resolution, and the
+     * repaint it caused restarted the clock and pushed the new draft's request
+     * another 220ms away. `seq` now moves the moment the draft does — it is the
+     * fingerprint's generation — so an answer is only ever accepted about the
+     * draft it was actually asked for.
+     */
     let previewSeq = 0;
+    let previewFp = '';
     let previewTimer = 0;
     /** The resolved row for one agent, or null until the first answer lands. */
     const previewOf = (agentId) =>
@@ -265,10 +278,25 @@
      */
     const schedulePreview = () => {
         if (!formOpen) { return; }
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(() => {
+        // The draft's own fingerprint, taken SYNCHRONOUSLY: this is the instant
+        // the change happened, not the instant a request goes out about it.
+        let fp;
+        try { fp = JSON.stringify(draftInput()); } catch (e) { fp = 'draft-' + Date.now(); }
+        if (fp === previewFp) {
+            // ‼️ A REPAINT THAT CHANGED NOTHING MUST NOT RESTART THE CLOCK. A
+            // render caused by an arriving answer or by a panel data refresh
+            // would otherwise push the pending request 220ms further away every
+            // single time, and a form that is being typed into never asks.
+            if (previewTimer) { return; }
+        } else {
             previewSeq += 1;
-            vscode.postMessage({ type: 'preview', seq: previewSeq, input: draftInput() });
+            previewFp = fp;
+        }
+        clearTimeout(previewTimer);
+        const gen = previewSeq;
+        previewTimer = setTimeout(() => {
+            previewTimer = 0;
+            vscode.postMessage({ type: 'preview', seq: gen, input: draftInput() });
         }, 220);
     };
     /**
@@ -3451,10 +3479,14 @@
             const el = document.querySelector('[data-run="' + m.id + '"]');
             if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
         } else if (m.type === 'preview') {
-            // ‼️ U-103 — LATEST ONLY, AND ONLY WHEN IT SAYS SOMETHING NEW.
-            // Dropping a stale answer stops an older resolution painting over a
-            // newer one; repainting only on a CHANGE stops the loop, because
-            // `render` is what asked for this in the first place.
+            // ‼️ U-103 / X-118 — THE LATEST DRAFT ONLY, AND ONLY WHEN IT SAYS
+            // SOMETHING NEW. `previewSeq` is the generation of the draft as it
+            // stands right now, so an answer whose token is behind it was asked
+            // about a draft the user has since edited — it is dropped before it
+            // can paint anything, and before it can restart the clock on the
+            // request the new draft is still waiting for. Repainting only on a
+            // CHANGE stops the loop, because `render` is what asked for this in
+            // the first place.
             if (m.seq !== previewSeq) { return; }
             const next = JSON.stringify(m.preview || null);
             if (next === JSON.stringify(PREVIEW)) { return; }

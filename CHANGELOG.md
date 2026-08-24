@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## Unreleased
+
+**X-118 — a preview answer belongs to the draft it was asked about.** The New
+Mission form debounces its resolution request by 220ms, and the generation that
+guards it was bumped when the REQUEST went out rather than when the draft
+changed. So for the whole window between an edit and its own request, the answer
+already in flight about the PREVIOUS draft still counted as current: it was
+accepted, it painted the new draft's model and effort boxes and its refusal list
+with the old resolution, and the repaint it caused cleared and re-armed the
+debounce — pushing the new draft's own request another 220ms away every time it
+happened. The generation now moves with the draft: it is the draft
+fingerprint's generation, taken synchronously, so an answer whose token is
+behind the draft is dropped before it can paint anything, and a repaint that
+changed nothing (an arriving answer, a panel data refresh) no longer restarts
+the clock on a request that is still waiting.
+
 ## 3.274.0 - Sessions has three honest switches; PowerShell cannot corrupt bridge text in transit (2026-08-24)
 
 **You, Auto and Mission are three independent ON/OFF switches.** The Sessions

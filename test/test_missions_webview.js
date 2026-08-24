@@ -719,6 +719,69 @@ msgHandler({ data: { type: 'preview', seq: askedPreview.seq, preview: null } });
 ok('…and with no answer in hand the row falls back to its own words, not to a stale one',
     !html().includes('opencode/grok-code') && !html().includes('This draft would be refused'));
 
+// ---------- X-118: an answer is only ever about the draft it was ASKED for ----------
+// The generation used to be bumped inside the debounce timer, so for the 220ms
+// between an edit and its own request the answer still in flight about the
+// PREVIOUS draft counted as current: it painted the new draft's model boxes and
+// refusal list with the old resolution, and the repaint it caused restarted the
+// clock on the request the new draft was still waiting for.
+posted = [];
+flushTimers();
+const reqA = posted.filter(p => p.type === 'preview').pop();
+ok('a settled draft has exactly one request in flight', !!reqA);
+// The user edits while A is still out. Nothing is flushed: B is the draft now
+// and B's own request is still sitting in the debounce.
+const goalWas = getEl('f-goal').value;
+getEl('f-goal').value = 'A completely different objective, typed while A was in flight.';
+// ‼️ THE CLOCK IS WATCHED, NOT GUESSED. A fake clock cannot show 220ms passing,
+// so what is measured is the handle: B's timer must still be the SAME one after
+// the stale answer and after a data refresh. Clearing and re-arming it is the
+// defect — in real time it pushes B's request another debounce away, every time.
+const clearedHandles = [];
+const realSetTimeout = sandbox.setTimeout, realClearTimeout = sandbox.clearTimeout;
+let lastHandle = 0;
+sandbox.setTimeout = (fn, ms) => (lastHandle = realSetTimeout(fn, ms));
+sandbox.clearTimeout = (h) => { if (h) { clearedHandles.push(h); } return realClearTimeout(h); };
+getEl('tm-0').listeners.change();
+const bHandle = lastHandle;
+ok('…and an edit schedules the NEW draft\'s own request',
+    typeof sandbox.timers[bHandle - 1] === 'function');
+// A comes back now, about a draft that no longer exists.
+answerPreview(reqA.seq, [fleetWorker], ['coder: OpenCode cannot run on this machine']);
+ok('‼️ X-118 — an answer about the draft the user has already edited paints NOTHING',
+    !html().includes('opencode/grok-code') && !html().includes('This draft would be refused'));
+ok('…and it does not restart the clock on the newer draft\'s own request',
+    !clearedHandles.includes(bHandle) && typeof sandbox.timers[bHandle - 1] === 'function');
+msgHandler({ data: { type: 'data', data: DATA } });
+ok('…nor does a panel data refresh, which repaints a draft that did not change',
+    !clearedHandles.includes(bHandle) && typeof sandbox.timers[bHandle - 1] === 'function');
+sandbox.setTimeout = realSetTimeout; sandbox.clearTimeout = realClearTimeout;
+// B's own request goes out: one generation ahead, carrying B's words.
+posted = [];
+flushTimers();
+const reqB = posted.filter(p => p.type === 'preview').pop();
+ok('‼️ …then B\'s request goes out, a generation ahead of A and about B\'s draft',
+    reqB && reqB.seq > reqA.seq
+    && String(reqB.input.goal).startsWith('A completely different objective'));
+answerPreview(reqB.seq, [fleetWorker], []);
+ok('…and B\'s own answer is the one that paints', html().includes('opencode/grok-code'));
+// Reverse order: A finally lands, long after B was accepted.
+answerPreview(reqA.seq, [{
+    ...fleetWorker, effective: { engine: 'claude' },
+    origin: { engine: 'cli', model: 'cli', effort: 'cli', permissionMode: 'cli' }
+}], []);
+ok('…and A landing LAST still cannot overwrite it', html().includes('opencode/grok-code'));
+// Back to the draft every test below this was written against, with no answer
+// in hand — which is a real state: it is what the form shows for the first 220ms.
+getEl('f-goal').value = goalWas;
+getEl('tm-0').listeners.change();
+posted = [];
+flushTimers();
+const reqRestore = posted.filter(p => p.type === 'preview').pop();
+msgHandler({ data: { type: 'preview', seq: reqRestore.seq, preview: null } });
+ok('…and with no answer in hand the row falls back to its own words again',
+    !html().includes('opencode/grok-code') && !html().includes('This draft would be refused'));
+
 // ‼️ BACKWARDS COMPATIBILITY IS THE POINT: a classic Start posts the message it
 // always posted. Not `mode: 'classic'` on every payload — the absent key IS the
 // classic answer, and a payload that grows keys nobody reads is how a
