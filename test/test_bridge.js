@@ -2959,6 +2959,12 @@ const { opencodeStatus, syncToOpencode } =
                 && /filter\(e => !e\.reportsCost\)/.test(misBlock));
             ok('…and missions.status reports the tokens beside the dollars',
                 /tokens: r\.totalTokens \?\? 0/.test(src));
+            // ‼️ X-119 — and the op SAYS that a preview refusal is a start
+            // refusal. A caller that reads the two describes and concludes the
+            // preview is advisory is the mistake this sentence removes.
+            ok('‼️ …and missions.start says that what the preview refuses, it refuses',
+                /WHAT missions\.preview REFUSES, THIS REFUSES/.test(misBlock)
+                && /one refusal set/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
 
             // ‼️ U-103 — ONE RESOLVER. The Missions form worked the effective
             // engine out for itself (`member || mission || 'claude'`) while the
@@ -2975,14 +2981,26 @@ const { opencodeStatus, syncToOpencode } =
                     /previewMission\(bridgeMissionInput\(args\)\)/.test(src)
                     && /createMission\(bridgeMissionInput\(args\)\)/.test(src));
                 ok('‼️ …and start and preview run ONE resolution rather than two copies of it',
-                    (src.match(/resolveMissionInput\(input\)/g) || []).length >= 2
-                    && /const createMission = [^]{0,200}resolveMissionInput\(input\)/.test(src)
-                    && /const previewMission = [^]{0,400}resolveMissionInput\(input\)/.test(src));
+                    (src.match(/resolveMissionInput\(input\)/g) || []).length === 1
+                    && /const planMissionLaunch = [^]{0,600}resolveMissionInput\(input\)/.test(src)
+                    && /const createMission = [^]{0,900}planMissionLaunch\(input\)/.test(src)
+                    && /const previewMission = [^]{0,400}planMissionLaunch\(input\)/.test(src));
                 ok('…and the refusal a preview reports is the sentence a start would have used',
-                    /return \{ ok: false, error: resolved, mode, title, goal, workers: \[\], problems: \[resolved\] \}/.test(src));
+                    /return \{ ok: false, error: plan, mode, title, goal, workers: \[\], problems: \[plan\] \}/.test(src));
+                // ‼️ X-119 — AND THE SHARED ANSWER INCLUDES THE REFUSALS, not
+                // just the resolution. The per-participant checks lived inside
+                // `previewMission` alone, so the very draft the form drew "This
+                // draft would be refused" for went on to create a spec, a run
+                // and its tasks through Start and through `missions.start`, and
+                // the refusal arrived one layer down after planner turns were
+                // already spent.
+                ok('‼️ X-119 — a draft the preview REFUSES cannot be started, with the same sentence',
+                    /const createMission = [^]{0,900}if \(plan\.preview\.problems\.length\) \{[^]{0,200}This mission cannot start — \$\{plan\.preview\.problems\.join\('; '\)\}/.test(src));
+                ok('…and nothing is written to a store before that gate',
+                    /if \(plan\.preview\.problems\.length\) \{[^]{0,220}\}\s*startMission\(/.test(src));
                 ok('‼️ …resolved by the SAME ladder a delegation climbs, with the same two stores',
                     /const dims = resolveDelegateRun\(member, spec, \{/.test(src)
-                    && /const previewMission = [^]{0,3000}storedDefault\(agentDefaults, agent\.dir, engine as EngineId\)/.test(src));
+                    && /const planMissionLaunch = [^]{0,3000}storedDefault\(agentDefaults, agent\.dir, engine as EngineId\)/.test(src));
                 ok('…and every refusal at once — an engine this machine cannot run AND an effort it has no flag for',
                     /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort\)/.test(src)
                     && /EVERY refusal at once/.test(prevBlock));

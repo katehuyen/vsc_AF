@@ -4,6 +4,21 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-119 — a draft the preview refuses can no longer be started.** `missions.preview`
+resolved every participant and reported every refusal it would meet — an engine
+this machine cannot run, an effort that engine has no flag for — and `create`
+never ran a single one of those checks. Start and `missions.start` shared the
+resolution and not the refusals, so the very draft the form was drawing `This
+draft would be refused` for created a real spec, a real run and its tasks, and
+the refusal arrived one delegation at a time after the planner had spent its
+turns. Both doors go through one plan now: the same resolution AND the same
+refusal set, in one structured answer. Looking still writes nothing; starting
+refuses on a non-empty problem list, with the same sentences and all of them at
+once, before anything reaches a store. Note the consequence on a whole-fleet
+adaptive pool: if any agent in the fleet resolves onto an engine this machine
+cannot run, the mission is refused up front rather than discovering it mid-run —
+override that row's engine, or narrow the pool.
+
 **X-118 — a preview answer belongs to the draft it was asked about.** The New
 Mission form debounces its resolution request by 220ms, and the generation that
 guards it was bumped when the REQUEST went out rather than when the draft

@@ -4873,10 +4873,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
 
+    /**
+     * ‼️ X-119 — THE DOOR THAT LOOKS AND THE DOOR THAT STARTS ASK THE SAME
+     * QUESTION AND ACCEPT THE SAME ANSWER.
+     *
+     * `resolveMissionInput` was shared from the day the preview existed, but
+     * the REFUSALS were not: the per-participant checks — an engine this
+     * machine cannot run, an effort the engine has no flag for — were computed
+     * inside `previewMission` alone. So the very payload the form was drawing
+     * `This draft would be refused` for created a real spec and a real run
+     * through Start and through `missions.start`, and the refusal arrived one
+     * layer down, per delegation, after the planner had spent its turns.
+     *
+     * Both doors go through `planMissionLaunch` now and get ONE structured
+     * result: the resolved spec and the preview of it, refusals included.
+     * Looking runs no side effect; starting refuses on a non-empty `problems`
+     * with the same sentence, before anything is written to a store.
+     */
     const createMission = (input: Record<string, unknown>): string | undefined => {
-        const resolved = resolveMissionInput(input);
-        if (typeof resolved === 'string') { return resolved; }
-        startMission({ id: newMissionId(), ...resolved.spec, createdAt: Date.now() });
+        const plan = planMissionLaunch(input);
+        if (typeof plan === 'string') { return plan; }
+        if (plan.preview.problems.length) {
+            return `This mission cannot start — ${plan.preview.problems.join('; ')}.`;
+        }
+        startMission({ id: newMissionId(), ...plan.resolved.spec, createdAt: Date.now() });
         return undefined;
     };
 
@@ -4897,14 +4917,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * a reader gets wrong by analogy with a worker row, so the preview says
      * them rather than filling the same five boxes twice.
      */
-    const previewMission = (input: Record<string, unknown>): MissionPreview => {
+    const planMissionLaunch = (
+        input: Record<string, unknown>
+    ): string | { resolved: MissionResolved; preview: MissionPreview } => {
         const mode: MissionMode = String(input.mode ?? '') === 'adaptive' ? 'adaptive' : 'classic';
         const goal = String(input.goal ?? '').trim();
         const title = String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60);
         const resolved = resolveMissionInput(input);
-        if (typeof resolved === 'string') {
-            return { ok: false, error: resolved, mode, title, goal, workers: [], problems: [resolved] };
-        }
+        if (typeof resolved === 'string') { return resolved; }
         const spec = resolved.spec;
         const engines = engineMatrix();
         const launch = launchDefaults();
@@ -5002,20 +5022,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const problems = [...new Set([...planner.problems, ...workers.flatMap(w => w.problems)])];
         const project = spec.projectId ? projectStore.get(spec.projectId) : undefined;
         return {
-            ok: !problems.length,
-            mode, title, goal,
-            lead: {
-                agentId: spec.leadAgentId, agentName: spec.leadAgentName,
-                origin: resolved.leadOrigin
-            },
-            planner, workers,
-            ...(resolved.poolScope ? { poolScope: resolved.poolScope } : {}),
-            ...(spec.workdir ? { workdir: spec.workdir } : {}),
-            ...(project ? { project: { id: project.id, name: project.name } } : {}),
-            approvalMode: spec.approvalMode,
-            limits: spec.limits,
-            problems
+            resolved,
+            preview: {
+                ok: !problems.length,
+                mode, title, goal,
+                lead: {
+                    agentId: spec.leadAgentId, agentName: spec.leadAgentName,
+                    origin: resolved.leadOrigin
+                },
+                planner, workers,
+                ...(resolved.poolScope ? { poolScope: resolved.poolScope } : {}),
+                ...(spec.workdir ? { workdir: spec.workdir } : {}),
+                ...(project ? { project: { id: project.id, name: project.name } } : {}),
+                approvalMode: spec.approvalMode,
+                limits: spec.limits,
+                problems
+            }
         };
+    };
+
+    /** The looking door: the same plan, with nothing written anywhere. */
+    const previewMission = (input: Record<string, unknown>): MissionPreview => {
+        const plan = planMissionLaunch(input);
+        if (typeof plan !== 'string') { return plan.preview; }
+        const mode: MissionMode = String(input.mode ?? '') === 'adaptive' ? 'adaptive' : 'classic';
+        const goal = String(input.goal ?? '').trim();
+        const title = String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60);
+        return { ok: false, error: plan, mode, title, goal, workers: [], problems: [plan] };
     };
 
     // Step statuses move on task events while a wave runs — mirror those into
@@ -6006,7 +6039,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'whole fleet), autonomy? (ask-when-unsure|decide-alone). `lead` and '
                 + '`team` are OPTIONAL on an adaptive run: the lead is resolved deterministically (first of '
                 + 'the pool) and the cast is chosen at runtime, one role bound per agent. Every other arg '
-                + 'above means the same thing in both modes',
+                + 'above means the same thing in both modes. '
+                + '‼️ X-119 — WHAT missions.preview REFUSES, THIS REFUSES: the two run one resolution AND '
+                + 'one refusal set, so a participant on an engine this machine cannot run, or an '
+                + 'engine+effort pair the CLI has no flag for, is answered here — with the same '
+                + 'sentences, all of them at once — instead of creating a spec, a run and its tasks and '
+                + 'failing one delegation at a time after the planner has spent its turns. Ask '
+                + 'missions.preview first and there is nothing left for this to refuse',
             handler: (args) => {
                 const err = createMission(bridgeMissionInput(args));
                 need(!err, err ?? '');

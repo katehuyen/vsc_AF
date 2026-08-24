@@ -1,34 +1,32 @@
-v11.72 - x-118: bir çözümleme cevabı, sorulduğu taslağa aittir
+v11.73 - x-119: önizlemenin reddettiği taslak artık başlatılamıyor
 
-The New Mission form debounces its "what would this launch with?" request by
-220ms, and the generation that guards the answers was bumped inside the timer —
-when the request went out — instead of when the draft changed. So for the whole
-window between an edit and its own request, the answer already in flight about
-the PREVIOUS draft still passed the `m.seq !== previewSeq` gate: it was
-accepted, it painted the new draft's model box, effort box and refusal list with
-the old resolution, and the repaint it caused cleared and re-armed the debounce,
-pushing the new draft's own request another 220ms further away every time it
-happened. U-103's "an older answer may not paint over a newer one" was measured
-on a stale token only, never on this window, which is the one a typing hand
-actually lives in.
+`previewMission` resolved every participant through the delegation ladder and
+collected everything that would refuse the draft — an engine this machine cannot
+run, an engine+effort pair the CLI has no flag for — and `createMission` ran
+none of it. The two shared `resolveMissionInput` and nothing else, so the refusal
+set was a property of LOOKING rather than of the mission: the same payload the
+form was drawing "This draft would be refused" for created a spec, a run and its
+tasks through the Start button and through `missions.start`, and the refusal
+arrived one delegation at a time, after the planner had already spent its turns
+deciding who does what.
 
-The generation is the DRAFT's now, taken synchronously: `schedulePreview`
-fingerprints `draftInput()` on the spot, advances `previewSeq` only when that
-fingerprint really changed, and the timer sends the generation it captured. An
-answer whose token is behind the draft is dropped before it can paint anything
-and before it can touch the clock. A repaint that changed nothing — an arriving
-answer, a panel data refresh, any of the twenty other reasons this page renders
-— finds a pending request for the same draft and leaves it alone rather than
-restarting it.
+`planMissionLaunch` is now the one answer both doors eat: the resolved spec and
+the preview of it, refusals included. `previewMission` returns its preview and
+writes nothing; `createMission` refuses a non-empty `problems` with the same
+sentence the preview reports, all faults at once, before `startMission` touches
+a store. `missions.start` says so in its describe, so a bridge caller cannot
+read the preview as advisory.
 
-Measured in test/test_missions_webview.js: request A is put in flight, the goal
-is edited, A is answered before B's debounce fires — the DOM does not move, B's
-timer handle is never cleared (setTimeout/clearTimeout are wrapped to watch the
-handle, since a fake clock cannot show 220ms passing), a panel data refresh in
-the middle does not clear it either, B's request then goes out one generation
-ahead carrying B's own words, and A landing LAST cannot overwrite B's answer.
-All three assertions fail on the previous code.
+Consequence worth knowing on an adaptive whole-fleet pool: one agent resolving
+onto an engine this machine cannot run now refuses the whole mission up front
+instead of failing that delegation mid-run. That is this codebase's own rule
+("a mission that plans three rounds and then fails every delegation has spent
+planner turns to discover something one disk read knew") applied to the members
+as it already was to the mission-wide engine; the way out is the row's own
+engine box or a narrower pool.
 
-No visual change: this is the timing of a request, not what the page draws.
+Measured in test/test_bridge.js: one resolution and one refusal set, the create
+gate placed BEFORE startMission, and the describe that tells a caller the two
+doors refuse alike.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
