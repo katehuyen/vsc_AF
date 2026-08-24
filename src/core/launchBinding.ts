@@ -56,6 +56,15 @@ export interface LaunchBinding {
     launcherId?: string;
     /** what a person calls it — the schedule's name, the task's title */
     label: string;
+    /**
+     * ‼️ X-125 — the MISSION's own name, on `kind === 'mission'` only. The
+     * binding already carried which mission (`launcherId`) and `applyBinding`
+     * copied neither it nor this onto the session, so a session the binding
+     * itself proved was a mission's could still read as nobody's. `label` is
+     * the delegation's title and is not a substitute: it names the step, not
+     * the run the step belongs to.
+     */
+    launcherTitle?: string;
     /** empty/absent = claude, the same absence SessionInfo.source uses */
     engine?: string;
     cwd: string;
@@ -210,7 +219,7 @@ export function isBindingHit(r: BindingHit | BindingAmbiguity | undefined): r is
  */
 export function applyBinding<T extends {
     agentId?: string; agentName?: string; projectId?: string; cwd?: string;
-    launchedBy?: { kind: string; label: string; mode?: string };
+    launchedBy?: { kind: string; label: string; mode?: string; missionId?: string; missionTitle?: string };
 }>(info: T, hit: BindingHit): T {
     if (!info.agentId) {
         info.agentId = hit.binding.agentId;
@@ -223,12 +232,34 @@ export function applyBinding<T extends {
     // answer there is — and without it the row has no folder to show.
     if (!info.cwd) { info.cwd = hit.binding.cwd; }
     if (!info.projectId && hit.binding.projectId) { info.projectId = hit.binding.projectId; }
+    // ‼️ X-125 — AND WHICH MISSION, WHERE THE BINDING KNOWS. A mission binding
+    // has carried the run's id in `launcherId` since it was written, and only
+    // `kind`/`label`/`mode` were ever copied — so `sessionMission`, which reads
+    // `missionId` and nothing else, did not count a session the binding itself
+    // proved was a mission's. Added like every other field here: filled where
+    // the session says nothing, never over the top of what it does say, so an
+    // existing stamp (a fresher one, or the persisted snapshot) survives.
+    const stamp = hit.binding.kind === 'mission' && hit.binding.launcherId
+        ? {
+            missionId: hit.binding.launcherId,
+            ...(hit.binding.launcherTitle ? { missionTitle: hit.binding.launcherTitle } : {})
+        }
+        : undefined;
     if (!info.launchedBy) {
         info.launchedBy = {
             kind: hit.binding.kind,
             label: hit.binding.label,
-            ...(hit.binding.mode ? { mode: hit.binding.mode } : {})
+            ...(hit.binding.mode ? { mode: hit.binding.mode } : {}),
+            ...(stamp ?? {})
         };
+    } else if (stamp && !info.launchedBy.missionId) {
+        // ‼️ AND `kind` COMES WITH IT, because `sessionMission` reads BOTH: a
+        // stamp under `kind: 'task'` is a fact nobody asks for, and the row it
+        // was supposed to save still shows up as nobody's. The launcher the
+        // session already had is the step; the binding is proof of the run the
+        // step belongs to, and the run is what the mark is about. The label —
+        // which names the step, and says more — is left exactly as it was.
+        info.launchedBy = { ...info.launchedBy, kind: 'mission', ...stamp };
     }
     return info;
 }

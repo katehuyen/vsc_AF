@@ -166,6 +166,53 @@ const session = (over) => Object.assign({
     ok('‼️ a session the path already owns is never re-owned by a binding',
         owned.agentId === 'basit' && owned.agentName === 'basit');
     ok('…but it still learns who launched it', owned.launchedBy.kind === 'schedule');
+
+    // ‼️ X-125 — AND WHICH MISSION, WHERE THE BINDING KNOWS ONE.
+    //
+    // A mission binding has carried the run's id in `launcherId` since it was
+    // written, and `applyBinding` copied kind/label/mode and nothing else. So a
+    // session this binding PROVES belongs to a mission still had no
+    // `missionId`, which is the only field `sessionMission` reads — and after a
+    // reload, once the run record or the task rows were gone, a planner or
+    // delegation session lost its 🎯 and reappeared in the pool a person's own
+    // dialogs live in.
+    const mHit = {
+        binding: binding({
+            kind: 'mission', launcherId: 'run_7', launcherTitle: 'Parser mission',
+            label: 'fix the parser'
+        }),
+        proof: 'matched'
+    };
+    const mFresh = applyBinding({}, mHit);
+    ok('‼️ X-125 — a mission binding stamps the session with WHICH mission',
+        mFresh.launchedBy.kind === 'mission' && mFresh.launchedBy.missionId === 'run_7'
+        && mFresh.launchedBy.missionTitle === 'Parser mission');
+    ok('…and keeps the step\'s own label, which says more than the run\'s name',
+        mFresh.launchedBy.label === 'fix the parser');
+    // The binding is published once before the mission store exists, so a
+    // title-less mission binding is a normal state: the id is the fact.
+    const mBare = applyBinding({}, { binding: binding({ kind: 'mission', launcherId: 'run_7' }), proof: 'matched' });
+    ok('…a binding with no title yet still carries the id rather than nothing',
+        mBare.launchedBy.missionId === 'run_7' && mBare.launchedBy.missionTitle === undefined);
+    // Enrichment, never overwriting: a stamp already on the session — the
+    // fresher one, or the persisted snapshot — is what survives.
+    const already = applyBinding(
+        { launchedBy: { kind: 'mission', label: 'planner', missionId: 'run_1', missionTitle: 'Older run' } },
+        mHit
+    );
+    ok('‼️ …and a session that already carries a stamp is not restamped by a binding',
+        already.launchedBy.missionId === 'run_1' && already.launchedBy.missionTitle === 'Older run');
+    const unstamped = applyBinding({ launchedBy: { kind: 'task', label: 'a step' } }, mHit);
+    ok('…while one that carries a launcher but NO stamp is enriched with it',
+        unstamped.launchedBy.missionId === 'run_7');
+    // ‼️ `sessionMission` reads kind AND missionId, so a stamp filed under
+    // `kind: 'task'` marks nothing — the enrichment has to move the kind too,
+    // and keep the step's own label, which says more than the run's name.
+    ok('‼️ …kind travels with the stamp, or the mark the stamp was for is still missing',
+        unstamped.launchedBy.kind === 'mission' && unstamped.launchedBy.label === 'a step');
+    const notMission = applyBinding({}, hit);
+    ok('…and a schedule binding stamps nothing at all — the stamp is missions only',
+        notMission.launchedBy.missionId === undefined);
 }
 
 // ===========================================================================

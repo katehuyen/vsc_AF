@@ -2188,6 +2188,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * ‼️ It is published BEFORE the first `scanAll`, because the filter it
      * repairs runs inside that scan.
      */
+    /**
+     * ‼️ X-125 — the mission-title lookup, late-bound ON PURPOSE. Bindings are
+     * published once during activation, BEFORE `missionStore` is constructed,
+     * so this file cannot reach for the store here: it is filled in the moment
+     * the store exists, and every republish after that (any task change, and a
+     * mission start is one) carries the name. A binding without it is still a
+     * complete binding — `missionId` is the fact, the title is the wording.
+     */
+    let missionRunTitle: ((runId: string) => string) | undefined;
     const publishLaunchBindings = (): void => {
         const out: LaunchBinding[] = [];
         // ‼️ AND THE ARCHIVE, WHICH IS THE OTHER HALF OF THAT SAME STORE (S-37).
@@ -2252,6 +2261,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 launcherId: origin.missionId || origin.fromSchedule
                     || origin.fromTrigger || origin.workflowId,
                 label: sched?.title || trig?.title || flow?.title || t.title,
+                // ‼️ X-125 — the MISSION's own name travels with the binding, so
+                // a session bound off a task row can be stamped with the run it
+                // belongs to and not only with the step's title.
+                ...(origin.missionId && missionRunTitle
+                    ? { launcherTitle: missionRunTitle(origin.missionId) } : {}),
                 engine: t.engine,
                 cwd,
                 startedAt: t.startedAt,
@@ -15339,8 +15353,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const spec = run ? missionStore.spec(run.specId) : undefined;
         return (spec?.title || '').trim() || runId;
     };
+    // …and this is where the launch bindings get it (see `missionRunTitle`):
+    // the store exists by now, and every republish from here on names the run.
+    missionRunTitle = missionTitleOf;
+    /**
+     * ‼️ X-125 — A MISSION'S STAMP OUTLIVES THE STORES IT WAS DERIVED FROM.
+     *
+     * The stamp used to be re-derived on every refresh out of two stores that
+     * both forget: the task rows (retention files them, then removes them) and
+     * `missionStore.runs` (a run can be deleted from the Missions page). When
+     * the last of them let go, a historical planner or delegation session lost
+     * its 🎯 identity, reappeared in the You/Auto pool a person's own dialogs
+     * live in, and changed what the Sessions table shows by default — for
+     * sessions that are months old and cannot have changed.
+     *
+     * So the stamp is WRITTEN DOWN the first time a mission binds a session,
+     * with the run's title as it read at that moment, and kept: a snapshot, in
+     * `globalState`, that no later deletion can take back. The live stores stay
+     * the fresher statement while they exist (a renamed mission renames its
+     * sessions) and this is the floor under them.
+     */
+    const MISSION_SESSIONS_KEY = 'agentfarm.missionSessions';
+    type MissionSessionStamp = { missionId: string; title: string; label: string; at: number };
+    /** Keeps the newest N stamps; a farm that has run missions for a year must
+     *  not carry an unbounded map in globalState. */
+    const MISSION_SESSIONS_MAX = 5000;
+    // Read once and kept: `publishLaunchers` runs on every task and mission
+    // event, and this store is only ever written from here.
+    let missionStampCache: Record<string, MissionSessionStamp> | undefined;
+    const readMissionStamps = (): Record<string, MissionSessionStamp> => {
+        if (missionStampCache) { return missionStampCache; }
+        const raw = context.globalState.get<unknown>(MISSION_SESSIONS_KEY, {});
+        const out: Record<string, MissionSessionStamp> = {};
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+                if (!id || !v || typeof v !== 'object') { continue; }
+                const r = v as Record<string, unknown>;
+                const missionId = String(r.missionId ?? '').trim();
+                if (!missionId) { continue; }
+                out[id] = {
+                    missionId,
+                    title: String(r.title ?? '').trim() || missionId,
+                    label: String(r.label ?? '').trim() || String(r.title ?? '').trim() || missionId,
+                    at: typeof r.at === 'number' && r.at > 0 ? r.at : Date.now()
+                };
+            }
+        }
+        // ‼️ The cache is filled on EVERY path, the empty one included: a store
+        // that holds nothing, or holds nonsense, is an answer too, and asking
+        // globalState for it again on every task event is not free.
+        missionStampCache = out;
+        return out;
+    };
+    /** Write back only what changed — this runs on every task and mission event. */
+    const rememberMissionStamps = (
+        seen: Record<string, { missionId: string; title: string; label: string }>
+    ): void => {
+        const had = readMissionStamps();
+        let dirty = false;
+        for (const [id, v] of Object.entries(seen)) {
+            const was = had[id];
+            if (was && was.missionId === v.missionId && was.title === v.title && was.label === v.label) { continue; }
+            had[id] = { ...v, at: was?.at ?? Date.now() };
+            dirty = true;
+        }
+        if (!dirty) { return; }
+        const ids = Object.keys(had);
+        if (ids.length > MISSION_SESSIONS_MAX) {
+            ids.sort((a, b) => had[b].at - had[a].at)
+                .slice(MISSION_SESSIONS_MAX)
+                .forEach(id => delete had[id]);
+        }
+        void context.globalState.update(MISSION_SESSIONS_KEY, had);
+    };
+
     const publishLaunchers = (): void => {
         const map: Record<string, SessionLauncher> = {};
+        // ‼️ X-125 — THE FLOOR GOES DOWN FIRST. Every stamp this window has ever
+        // written is laid in before the stores speak, so a session whose task
+        // rows and whose mission run are both gone is still that mission's. The
+        // walks below are free to overwrite it with something fresher.
+        for (const [id, s] of Object.entries(readMissionStamps())) {
+            map[id] = { kind: 'mission', label: s.label, missionId: s.missionId, missionTitle: s.title };
+        }
         // ‼️ AND THE ARCHIVE, BECAUSE THE LIVE LIST FORGETS (S-37). A finished
         // task is moved to `task-history/YYYY-MM.jsonl` and leaves
         // `taskManager.tasks`, so a run's launcher used to survive only as long
@@ -15403,7 +15498,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             : t.fromSchedule ? { kind: 'schedule', label: t.title, mode: t.mode }
                                 : t.fromTrigger ? { kind: 'trigger', label: t.title, mode: t.mode }
                                     : { kind: 'task', label: t.title, mode: t.mode };
-            for (const id of ids) { map[id] = entry; }
+            // ‼️ X-125 — A FRESHER LAUNCHER MAY NOT UNSTAMP A SESSION. The task
+            // walk used to assign outright, so a row that had lost its
+            // `missionId` (or a non-mission row that named the same session)
+            // could take the mission identity off a session that had one. The
+            // label is the fresher statement; the stamp is only ever added —
+            // and `kind` travels with it, because `sessionMission` reads both
+            // and a stamp filed under `kind: 'task'` leaves the row unmarked
+            // exactly as if nothing had been kept.
+            for (const id of ids) {
+                const had = map[id];
+                map[id] = (had?.missionId && !entry.missionId)
+                    ? { ...entry, kind: 'mission', missionId: had.missionId, missionTitle: had.missionTitle }
+                    : entry;
+            }
         }
         /**
          * ‼️ X-95 — AND THE HALF OF A MISSION THE TASK LEDGER CANNOT SEE.
@@ -15443,6 +15551,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             for (const m of run.messages ?? []) { stamp(m.sessionId, title); }
         }
+        // ‼️ X-125 — AND WHATEVER THE STORES COULD STILL SEE IS WRITTEN DOWN, so
+        // the next refresh does not have to be able to see it again. This is
+        // also the migration: the first run of this code persists the stamp of
+        // every mission session the old derivation could still reach.
+        const seen: Record<string, { missionId: string; title: string; label: string }> = {};
+        for (const [id, v] of Object.entries(map)) {
+            if (!v.missionId) { continue; }
+            seen[id] = { missionId: v.missionId, title: v.missionTitle || v.missionId, label: v.label };
+        }
+        rememberMissionStamps(seen);
         index.setLaunchers(map);
     };
     publishLaunchers();

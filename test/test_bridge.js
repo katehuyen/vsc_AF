@@ -3122,6 +3122,45 @@ const { opencodeStatus, syncToOpencode } =
                     && /missionId: t\.missionId, missionTitle: missionTitleOf\(t\.missionId\)/.test(src));
                 ok('…and is republished when a MISSION moves, not only when a task does',
                     /missionEmitter\.event\(\(\) => publishLaunchers\(\)\)/.test(src));
+
+                // ‼️ X-125 — AND THE STAMP OUTLIVES BOTH STORES IT CAME FROM.
+                //
+                // It was re-derived on every refresh out of the task rows and
+                // `missionStore.runs`, and both forget: retention files and then
+                // removes a task, and a run can be deleted from the page. When
+                // the last of them let go, a months-old planner or delegation
+                // session lost its 🎯, reappeared in the pool a person's own
+                // dialogs live in, and changed what the table shows by default.
+                ok('‼️ X-125 — the stamp is written down, in its own persisted store',
+                    /const MISSION_SESSIONS_KEY = 'agentfarm\.missionSessions'/.test(src)
+                    && /context\.globalState\.update\(MISSION_SESSIONS_KEY, had\)/.test(src));
+                ok('…laid down as the FLOOR before either store speaks',
+                    /for \(const \[id, s\] of Object\.entries\(readMissionStamps\(\)\)\) \{[^]{0,220}map\[id\] = \{ kind: 'mission'/.test(src)
+                    && src.indexOf('readMissionStamps())') < src.indexOf('const missionMark = t.missionId'));
+                ok('‼️ …and a fresher launcher may not UNSTAMP a session that has one',
+                    /map\[id\] = \(had\?\.missionId && !entry\.missionId\)\s*\?\s*\{ \.\.\.entry, kind: 'mission', missionId: had\.missionId, missionTitle: had\.missionTitle \}/.test(src));
+                ok('…whatever the stores can still see is persisted on the way out — which is also the migration',
+                    /rememberMissionStamps\(seen\);\s*index\.setLaunchers\(map\);/.test(src));
+                ok('…and the store is capped, so a year of missions is not an unbounded map in globalState',
+                    /MISSION_SESSIONS_MAX = \d+/.test(src)
+                    && /ids\.length > MISSION_SESSIONS_MAX/.test(src));
+                // The read is a cache with one entry point, and the guard at the
+                // top of it is only true if some path below actually fills it —
+                // an early `return out` that skips the assignment turns the whole
+                // thing back into a globalState read on every task event, and
+                // worse: `rememberMissionStamps` then mutates a throwaway object.
+                ok('…the stamp store is read ONCE, and the cache is filled on every path out of the read',
+                    /if \(missionStampCache\) \{ return missionStampCache; \}/.test(src)
+                    && /missionStampCache = out;\s*return out;\s*\};/.test(src)
+                    && !/const out: Record<string, MissionSessionStamp> = \{\};[^]{0,160}\breturn out;\s*\}\s*\n/.test(src));
+                // The other half of the same item: the binding itself carries
+                // the run's name, and it is read at a moment when the mission
+                // store does not exist yet — so the lookup is late-bound rather
+                // than reached for during activation.
+                ok('‼️ X-125 — a mission BINDING carries the run\'s name, without touching a store too early',
+                    /let missionRunTitle: \(\(runId: string\) => string\) \| undefined;/.test(src)
+                    && /origin\.missionId && missionRunTitle\s*\?\s*\{ launcherTitle: missionRunTitle\(origin\.missionId\) \}/.test(src)
+                    && /missionRunTitle = missionTitleOf;/.test(src));
             }
 
             // ‼️ U-104 — REQUESTED, RESOLVED AND APPLIED ARE THREE FACTS.
