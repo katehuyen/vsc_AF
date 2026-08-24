@@ -4,6 +4,46 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-126 — the extension host is no longer frozen by the size of its own
+history.** Agent Farm read every Claude transcript from byte zero,
+synchronously, on the extension host's only thread: once at every window open,
+and again in full every time a live session appended a line. Measured on this
+machine on the day it became unusable — 328 transcripts, 703 MB, **7.5 s of
+completely blocked host per scan**, plus 159–257 ms per write for each active
+agent's own 12–37 MB file. With several agents running the host never got the
+thread back; and since every extension in a window shares that thread, the
+whole extension layer went unresponsive together, which is what "the New
+Session button does nothing" actually was. This was not a new bug — it was the
+architecture reaching the size of the user's history. VS Code's own profiler
+had already named `muvusoft.agent-farm` in six of that day's unresponsive
+events, at 42–59% of each profiled window.
+
+The cost now follows what CHANGED, not what has ever been said, and three
+things make that true. **The parser is resumable:** a transcript is
+append-only, so its running total is kept and only the new bytes are fed into
+it — an append costs about a millisecond however large the file has grown.
+**Finished parses are written down** (`session-index.jsonl`, ~10 KB per session
+against the ~2 MB it summarises), and a remembered parse is reused only while
+its file still has the same size and mtime AND the arithmetic behind it —
+prices, quota weights, the parser version — is unchanged; anything else is read
+again, because the transcripts remain the only source of truth and this is a
+cache that may never become one. **And nothing holds the event loop:** every
+read is async, the walk breathes on a clock, and a large transcript is fed in
+chunks, so no single parse can freeze the window by itself.
+
+Measured after, same corpus: a first-ever scan 6.5 s with the longest single
+freeze down from 7.5 s to **38 ms**, every scan after it **142 ms** (46×
+faster), and an append to a 37.6 MB transcript **1 ms** instead of 159 ms.
+Extrapolated to the sizes a tool kept for years has to survive, the old design
+cost 68 s of frozen window at 3 000 sessions and 228 s at 10 000; the new one
+reads a 31 MB index and re-parses only the day's work. The old parse stays the
+definition of the right answer and is pinned as such: all 328 transcripts on
+this machine come out byte-for-byte identical through the new path, and
+`test_session_index.js` holds chunked feeding to the same standard at chunk
+sizes chosen to split multi-byte characters — the one thing a byte-offset
+resume can silently corrupt. Deleting `session-index.jsonl` is always safe: the
+next scan simply rebuilds it from the transcripts.
+
 **X-123 — "don't change" no longer means "profile everything against Claude".**
 The bulk profile's Model and Effort lists were drawn from `claude`
 unconditionally whenever the Engine box was left on `don't change`. So a user

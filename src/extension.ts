@@ -128,8 +128,10 @@ import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import {
-    provenanceFields, SessionIndex, SessionInfo, SessionLauncher, sessionMission, sessionOrigin, sessionHeadless
+    provenanceFields, SESSION_PARSER_VERSION, SessionIndex, SessionInfo, SessionLauncher, sessionMission,
+    sessionOrigin, sessionHeadless
 } from './core/sessions';
+import { SessionStore } from './core/sessionStore';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
     LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices, modelIdOk, ONE_EXECUTOR,
@@ -758,7 +760,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pricing,
         () => agents,
         () => cfg().get<boolean>('includeUnmatchedProjects', false),
-        () => cfg().get<number>('activeThresholdSeconds', 150) * 1000
+        () => cfg().get<number>('activeThresholdSeconds', 150) * 1000,
+        new SessionStore(path.join(context.globalStorageUri.fsPath, 'session-index.jsonl')),
+        /**
+         * ‼️ WHAT WOULD MAKE A REMEMBERED PARSE FALSE, NOT MERELY OLD.
+         *
+         * Cost and the weighted total are summed while a transcript is read,
+         * so they are frozen at the rates in force at that moment. Re-price a
+         * model, or re-weight the quota, and every figure already on disk
+         * describes arithmetic the user no longer uses — so the signature
+         * changes, the whole store is discarded, and the transcripts are read
+         * again. The parser version is in here for the same reason: a parse is
+         * only as trustworthy as the code that produced it.
+         */
+        () => JSON.stringify([
+            SESSION_PARSER_VERSION,
+            cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING),
+            cfg().get<QuotaWeight[]>('quotaWeights', []),
+            cfg().get<QuotaWeightMode>('quotaWeightMode', 'model-aware')
+        ])
     );
     context.subscriptions.push(index);
 
