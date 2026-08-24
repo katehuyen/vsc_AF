@@ -457,6 +457,79 @@
             if (el && el.value) { profile[key] = el.value; }
         });
     };
+    /** The effort rows one engine+model publishes — the same answer the member
+     *  rows draw their box from, asked where the profile tool can reach it. */
+    const effortRowsOf = (engine, model) =>
+        (window.AFEngine.efforts(launchView(), engine, model) || []);
+    /**
+     * ‼️ X-123 — WHOSE CATALOGUE THE PROFILE'S VALUE LISTS BELONG TO.
+     *
+     * `Engine: don't change` used to mean `claude` here, unconditionally. So a
+     * user who deliberately left the engine alone and wanted to set only a
+     * model was offered CLAUDE's models and wrote the chosen one onto every
+     * included row — the Codex row, the OpenCode row, and the rows that inherit
+     * a different engine from the agent or the fleet. "Don't touch the engine"
+     * came out as "profile everything against Claude".
+     *
+     * The answer is the engine the included rows RESOLVE to (`effEngine` — the
+     * host's ladder, the row's own words until it answers):
+     *   · an explicit engine on the profile — that one, it is what is being set;
+     *   · `don't change` and every included row lands on the same engine — that
+     *     engine, which is the common case and the one that was wrong before;
+     *   · `don't change` over a mixed pool, or `clear` (which hands each row
+     *     back to a default only the host knows) — NO honest single answer, so
+     *     the value lists close and say why. `don't change` and `clear` stay
+     *     offered on every dimension: they are safe on any engine, and taking
+     *     them away would be a second bug in the shape of a fix.
+     */
+    const profileEngines = () => [...new Set(includedAgents().map(a => effEngine(a.id)))];
+    const profileEngine = () => {
+        if (profile.engine !== 'keep' && profile.engine !== 'clear') { return profile.engine; }
+        if (profile.engine === 'clear') { return ''; }
+        const set = profileEngines();
+        return set.length === 1 ? set[0] : '';
+    };
+    /**
+     * ‼️ X-123 — ALL OF THE ROWS OR NONE OF THEM. The tool used to mutate every
+     * included row and only then raise the narrow warning, so a heterogeneous
+     * pool was left half-profiled and the user had to undo it row by row. What
+     * this apply WOULD produce is checked first, per row, and one fault refuses
+     * the whole press.
+     *
+     * Only what the apply itself decides is judged, and only where the engine is
+     * knowable: a row that already carried an odd pair keeps its own narrow
+     * warning, and an engine nobody can resolve here refuses only the values
+     * this press would WRITE.
+     */
+    const profileFaults = () => {
+        const faults = [];
+        includedAgents().forEach(a => {
+            const pick = (key, was) => (profile[key] === 'keep' ? was : (profile[key] === 'clear' ? '' : profile[key]));
+            const engine = profile.engine === 'keep' ? effEngine(a.id)
+                : (profile.engine === 'clear' ? '' : profile.engine);
+            const model = pick('model', form.models[a.id] || '');
+            const effort = pick('effort', form.efforts[a.id] || '');
+            const writes = (key) => profile[key] !== 'keep' && profile[key] !== 'clear';
+            if (!engine) {
+                if (writes('model') || writes('effort')) {
+                    faults.push(`${a.name} — clearing the engine hands this row back to a default this form cannot resolve, so a model or effort cannot be written onto it`);
+                }
+                return;
+            }
+            if (model && !modelKnown(engine, model)) {
+                faults.push(`${a.name} — ${engine} does not offer model ${model}`);
+            }
+            if (effort) {
+                const rows = effortRowsOf(engine, modelKnown(engine, model) ? model : '');
+                if (!rows.some(e => e.id === effort)) {
+                    faults.push(`${a.name} — ${model || engine} does not take effort ${effort}`);
+                }
+            }
+        });
+        return faults;
+    };
+    /** What the last Apply refused to do, shown inside the fold that asked. */
+    let profileErr = '';
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
@@ -887,7 +960,13 @@
         // The profile's own model/effort lists follow the engine the profile is
         // SETTING, not any one row's — otherwise the tool would offer a value it
         // is about to make invalid on every row it touches.
-        const profEngine = (profile.engine !== 'keep' && profile.engine !== 'clear') ? profile.engine : 'claude';
+        // ‼️ X-123 — the engine these value lists BELONG to, or '' when the pool
+        // gives no single honest answer. `claude` used to be written in here.
+        const profEngine = profileEngine();
+        const profMixed = profileEngines();
+        const profWhy = profEngine ? '' : (profile.engine === 'clear'
+            ? 'Clearing the engine hands every row back to its own default, which only the launch can resolve — so there is no catalogue to pick a model or an effort from. Set an explicit engine here, or clear those two as well.'
+            : `These rows are not on one engine (${profMixed.join(', ') || 'none included'}), so no model or effort is right for all of them. Pick an engine above to profile them together, or set those two on the rows themselves.`);
         const profileTool = `
             <button type="button" class="secondary small profbtn" id="f-profile"
                 title="${C.esc('Apply one profile to every INCLUDED row at once — engine, model, effort and permissions together.'
@@ -899,14 +978,23 @@
             ${profileOpen ? `<div class="profbody">
                 ${profDim('engine', 'Engine', profOpts('engine', DATA.engines || []),
                     'Which CLI these delegations run on. Cleared, the row falls through to that agent\'s own default and then your fleet default.')}
-                ${profDim('model', 'Model', profOpts('model', modelListOf(profEngine)),
-                    'The model for these delegations — from ' + C.esc(profEngine) + '\'s catalog, because that is the engine this profile is setting.')}
-                ${profDim('effort', 'Effort', profOpts('effort', effortRowsFor(profEngine, profile.model !== 'keep' && profile.model !== 'clear' ? profile.model : '')),
-                    'How hard these members think per turn. An engine with no effort flag offers nothing here.')}
+                ${profDim('model', 'Model', profEngine ? profOpts('model', modelListOf(profEngine)) : '',
+                    profEngine
+                        ? 'The model for these delegations — from ' + C.esc(profEngine) + '\'s catalog, because that is the engine every included row lands on.'
+                        : profWhy)}
+                ${profDim('effort', 'Effort', profEngine
+                    ? profOpts('effort', effortRowsFor(profEngine, profile.model !== 'keep' && profile.model !== 'clear' ? profile.model : ''))
+                    : '',
+                    profEngine
+                        ? 'How hard these members think per turn. An engine with no effort flag offers nothing here.'
+                        : profWhy)}
                 ${profDim('permissionMode', 'Permissions', profOpts('permissionMode', DATA.permissions || []),
-                    'What these members may do unattended. A delegation is headless — there is nobody to ask.')}
+                    'What these members may do unattended. A delegation is headless — there is nobody to ask. This one is engine-independent, so it is offered whatever the rows are on.')}
+                ${profWhy ? `<div class="profnote">⚠ ${C.esc(profWhy)}</div>` : ''}
+                ${profileErr ? `<div class="fperr"><b>Nothing was applied.</b><ul class="fplist">${
+                    profileErr.split('\n').map(l => `<li>${C.esc(l)}</li>`).join('')}</ul></div>` : ''}
                 <button type="button" class="small" id="f-profile-apply"
-                    title="Writes the chosen dimensions onto every included row. Dimensions left on &quot;don't change&quot; are not touched.">Apply to ${includedAgents().length} included</button>
+                    title="Writes the chosen dimensions onto every included row. Dimensions left on &quot;don't change&quot; are not touched, and a value that would not fit one of the rows refuses the whole press rather than half-profiling the pool.">Apply to ${includedAgents().length} included</button>
             </div>` : ''}`;
         /**
          * ‼️ U-101 — A VALUE IS NOT TAKEN AWAY WITHOUT SAYING SO. Changing an
@@ -2742,6 +2830,12 @@
                     margin:6px 0 8px; padding:8px; border-radius:4px;
                     background:color-mix(in srgb, var(--vscode-foreground) 6%, transparent); }
                 .profbody > label { flex:1 1 130px; min-width:110px; font-size:12px; }
+                /* ‼️ X-123 — why a value list is closed, and what a press
+                   refused to do. Both are sentences, so both take the whole
+                   width of the fold rather than squeezing in beside a select. */
+                .profnote, .fperr { flex-basis:100%; font-size:11px; margin:0; }
+                .profnote { color:var(--vscode-editorWarning-foreground, #b58900); }
+                .fperr { color:var(--vscode-errorForeground); }
                 .narrowask { margin:6px 0 8px; padding:8px; border-radius:4px;
                     font-size:12px; color:var(--vscode-editorWarning-foreground, #b58900);
                     border:1px solid currentColor; }
@@ -2995,10 +3089,21 @@
             // ‼️ U-101 — THE BULK PROFILE. It writes onto the rows and leaves
             // nothing behind it; the dimensions left on "don't change" are not
             // touched, which is what stops an engine apply from wiping models.
-            wire('f-profile', () => { readForm(); profileOpen = !profileOpen; render(); });
+            wire('f-profile', () => { readForm(); profileOpen = !profileOpen; profileErr = ''; render(); });
             wire('f-profile-apply', () => {
                 readForm();
                 readProfile();
+                // ‼️ X-123 — PREFLIGHT, THEN ALL OF THEM OR NONE. The tool used
+                // to write onto every included row and raise the warning
+                // afterwards, which left a mixed pool half-profiled and the user
+                // undoing it row by row.
+                const faults = profileFaults();
+                if (faults.length) {
+                    profileErr = faults.join('\n');
+                    render();
+                    return;
+                }
+                profileErr = '';
                 includedAgents().forEach(a => {
                     const set = (key, map) => {
                         if (profile[key] === 'keep') { return; }

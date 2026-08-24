@@ -889,6 +889,77 @@ getEl('pf-engine').listeners.change();
 getEl('f-profile-apply').listeners.click();
 ok('…and "inherit — clear the override" really removes one rather than writing another value',
     enBox(1).includes('value="" selected') || !enBox(1).includes(' selected'));
+
+// ---------- X-123: "don't change" is not "profile everything against Claude" ----------
+// `Engine: don't change` used to mean `claude` in this tool, unconditionally. So
+// leaving the engine alone and setting only a Model offered CLAUDE's catalogue
+// and wrote the chosen value onto every included row — the OpenCode row too.
+{
+    const profBox = (key) => {
+        const h = html();
+        const at = h.indexOf('<select id="pf-' + key + '"');
+        return at < 0 ? '' : h.slice(at, h.indexOf('</select>', at));
+    };
+    // the block above left the profile's engine on "clear"
+    getEl('pf-engine').value = 'keep'; getEl('pf-engine').listeners.change();
+    getEl('tm-0').checked = false; getEl('tm-0').listeners.change();
+    getEl('tm-1').checked = true; getEl('tm-1').listeners.change();
+    getEl('tm-2').checked = true; getEl('tm-2').listeners.change();
+    getEl('en-1').value = 'opencode'; getEl('en-1').listeners.change();
+    getEl('en-2').value = ''; getEl('en-2').listeners.change();
+    getEl('f-profile').listeners.click();
+    ok('‼️ X-123 — a pool on two engines offers NO model under "don\'t change", instead of Claude\'s',
+        profBox('model').includes('don\'t change') && profBox('model').includes('inherit')
+        && !profBox('model').includes('>opus<') && !profBox('model').includes('Grok'));
+    ok('…and says why, naming the engines those rows are actually on',
+        html().includes('not on one engine') && html().includes('opencode'));
+    ok('…while the permission box, which no engine has an opinion about, stays open',
+        profBox('permissionMode').includes('>plan<'));
+    getEl('en-2').value = 'opencode'; getEl('en-2').listeners.change();
+    ok('‼️ …and a pool that IS on one engine gets THAT engine\'s catalogue rather than Claude\'s',
+        profBox('model').includes('Grok') && !profBox('model').includes('>opus<'));
+    getEl('pf-engine').value = 'claude'; getEl('pf-engine').listeners.change();
+    ok('…and an explicit engine on the profile is the catalogue, whatever the rows are on now',
+        profBox('model').includes('>opus<'));
+    // The real sequence that used to write a Claude model onto an OpenCode row:
+    // pick the pair, then send the engine back to "inherit". Nothing can resolve
+    // what those rows will land on any more, so the values may not be written.
+    getEl('pf-model').value = 'opus'; getEl('pf-model').listeners.change();
+    getEl('pf-engine').value = 'clear'; getEl('pf-engine').listeners.change();
+    const before = { md1: mdBox(1), md2: mdBox(2), en1: enBox(1) };
+    getEl('f-profile-apply').listeners.click();
+    ok('‼️ X-123 — a press that cannot be honoured on every row applies to NONE of them',
+        html().includes('Nothing was applied')
+        && mdBox(1) === before.md1 && mdBox(2) === before.md2 && enBox(1) === before.en1);
+    ok('…and it names the row and the reason rather than failing quietly',
+        html().includes('coder') && html().includes('cannot resolve'));
+    // …and the same tool, asked something it CAN do, still does it.
+    getEl('pf-engine').value = 'keep'; getEl('pf-engine').listeners.change();
+    getEl('pf-model').value = 'opencode/grok-code'; getEl('pf-model').listeners.change();
+    const row0 = mdBox(0) + enBox(0) + efBox(0) + pmBox(0);
+    getEl('f-profile-apply').listeners.click();
+    // ‼️ AND THE PAIR ACROSS ROWS, WHICH IS THE OTHER HALF OF ALL-OR-NOTHING:
+    // this row still carries `high` from the engine it used to be on, and the
+    // model this press would write takes no effort at all. The old tool wrote
+    // the model anyway and raised a warning afterwards.
+    ok('‼️ …and an effort a row KEPT, that the new model cannot take, refuses the press too',
+        html().includes('Nothing was applied')
+        && html().includes('does not take effort high'));
+    // (the dead effort box on an OpenCode row has no listener of its own, so the
+    // clearing is read back the way any other repaint reads the form)
+    getEl('ef-1').value = ''; getEl('tm-1').listeners.change();
+    getEl('f-profile-apply').listeners.click();
+    ok('‼️ …and a press that CAN be honoured writes every INCLUDED row',
+        mdBox(1).includes('value="opencode/grok-code" selected')
+        && mdBox(2).includes('value="opencode/grok-code" selected'));
+    ok('…and leaves an unticked row byte-identical',
+        (mdBox(0) + enBox(0) + efBox(0) + pmBox(0)) === row0);
+    // Back to the state the tests below were written against.
+    getEl('en-1').value = ''; getEl('en-1').listeners.change();
+    getEl('en-2').value = ''; getEl('en-2').listeners.change();
+    getEl('md-1').value = ''; getEl('md-1').listeners.change();
+    getEl('md-2').value = ''; getEl('md-2').listeners.change();
+}
 msgHandler({ data: { type: 'created' } });
 
 // ---------- U-64: the list says which kind of run each row is ----------

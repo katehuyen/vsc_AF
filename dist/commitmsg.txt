@@ -1,12 +1,50 @@
-v11.75 - x-122: planner çifti her turda aynı, taze de resume de
+v11.76 - x-123: "dokunma" artık "hepsini Claude'a göre profille" demek değil
 
-Fresh/resume parity for the planner's model+effort, pinned where it can fail the
-build: the project brief is deliberately first-call-only (a `--resume` already
-has it in that conversation) and the model and the effort are built before
-`resumeSessionId` is read at all, so round 7 thinks with what round 1 was given
-— and the pair the capability gate approved is the pair every round rides on.
+The bulk profile's own value lists were drawn from `claude` whenever its Engine
+box was left on `don't change`:
 
-This closes the last acceptance line of X-122; the capability gate itself
-shipped in v11.74.
+    const profEngine = (profile.engine !== 'keep' && profile.engine !== 'clear')
+        ? profile.engine : 'claude';
+
+So the user who deliberately left the engine alone and wanted to set only a
+Model was offered CLAUDE's catalogue, and the value they picked was written onto
+every included row — the OpenCode row, and the rows carrying no engine of their
+own that resolve to whatever the agent or the fleet says. "Don't touch the
+engine" came out as "profile everything against Claude". The tool also mutated
+the rows first and raised the narrow warning afterwards, so a mixed pool was
+left half-profiled and undone row by row.
+
+The lists now belong to the engine the INCLUDED rows really resolve to
+(`effEngine` — the host's ladder, the row's own words until it answers):
+
+  · an explicit engine on the profile — that is what is being set;
+  · `don't change` and one engine under all of them — that engine, which is the
+    common case and the one that was wrong;
+  · a mixed pool, or `inherit` (each row falls back to a default only the launch
+    can resolve) — no honest single answer, so the value lists close and the
+    fold says why, naming the engines involved.
+
+`don't change` and `inherit` stay on every dimension — they are safe on any
+engine, and taking them away would be a second bug in the shape of a fix — and
+Permissions stays open because no engine has an opinion about it.
+
+The press is atomic. `profileFaults()` builds what each included row WOULD end
+up with and refuses the whole apply on the first fault, by row and reason: a
+model that engine does not offer, an effort the resulting model does not take
+(the row that kept `high` while the new model takes none), or a value being
+written onto a row whose engine nobody here can resolve. Nothing is written when
+it refuses.
+
+Measured in test/test_missions_webview.js: a two-engine pool offers no model
+under "don't change" and says which engines those are; a one-engine pool gets
+THAT catalogue and not Claude's; an explicit engine overrides both; the
+pick-then-inherit sequence that used to write a Claude model onto an OpenCode row
+applies to nothing; a kept effort the new model cannot take refuses the press;
+and a press that CAN be honoured writes every ticked row and leaves an unticked
+one byte-identical. Six of these fail on the previous code.
+
+Looked at: dist/render/missions.png and missions.light.png, fixture
+"form-profile" — the closed lists, the reason line on its own row of the fold,
+and the apply button under them, in both themes.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

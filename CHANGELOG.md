@@ -4,6 +4,24 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-123 — "don't change" no longer means "profile everything against Claude".**
+The bulk profile's Model and Effort lists were drawn from `claude`
+unconditionally whenever the Engine box was left on `don't change`. So a user
+who deliberately left the engine alone and wanted to set only a model was
+offered Claude's catalogue and wrote the chosen value onto every included row —
+the Codex row, the OpenCode row, and the rows that inherit a different engine
+from the agent or the fleet. The lists now belong to the engine those rows
+really resolve to: an explicit engine on the profile, or the one engine every
+included row lands on. Over a mixed pool — or with the engine on `inherit`,
+which hands each row back to a default only the launch can resolve — the value
+lists close and the fold says why, naming the engines involved. `don't change`
+and `inherit` stay offered on every dimension, because they are safe whatever
+the rows are on, and Permissions stays open because no engine has an opinion
+about it. And the press is atomic: what the apply would produce is checked on
+every included row first, so one value that would not fit refuses the whole
+press by name instead of half-profiling the pool and warning about it
+afterwards.
+
 **X-120 / X-122 — the model+effort pair is refused where it is promised, not
 where it dies.** A mission row moved from one engine to another keeps its model,
 and a model changed under a kept effort keeps that effort. The narrow strip
