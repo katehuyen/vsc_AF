@@ -1,47 +1,12 @@
-v11.74 - x-120 ve x-122: model+effort çifti öldüğü yerde değil, söz verildiği yerde reddediliyor
+v11.75 - x-122: planner çifti her turda aynı, taze de resume de
 
-A mission row moved between engines keeps its model, and a model changed under a
-kept effort keeps that effort. The composer's narrow strip noticed both and
-asked; `Keep as they are` promised, in its own tooltip, that the draft's refusal
-list above Start would say so. The list never looked: `previewMission` asked
-`engineRefusal` (can this machine run that engine at all) and
-`headlessEffortRefusal` (does that engine have an effort flag) and nothing else.
-Whether the resolved engine's catalogue HAS that model, and whether that model
-takes that effort, was checked by no door on the mission path — so a Codex model
-kept on a Claude row, or `medium` left behind by a model that offers low/high,
-reached a real `--model`/`--effort` and was answered by the CLI hours later in an
-archive file nobody is reading.
+Fresh/resume parity for the planner's model+effort, pinned where it can fail the
+build: the project brief is deliberately first-call-only (a `--resume` already
+has it in that conversation) and the model and the effort are built before
+`resumeSessionId` is read at all, so round 7 thinks with what round 1 was given
+— and the pair the capability gate approved is the pair every round rides on.
 
-The planner had the same hole one control over (X-122): `plannerModel` was
-checked for legal characters and `plannerEffort` against the shared effort
-vocabulary — legal words, illegal combination — and then went onto every
-planning call of the run.
-
-`capabilityRefusal` (core/models.ts) is the one gate now, beside `narrowLaunch`
-rather than inside it: narrowing is right for a picker the user is still moving,
-and wrong for a launch that has already been asked for. It is asked for every
-worker on the engine that row really lands on, and for the planner on Claude
-Code's own catalogue. It names what the engine does offer and what the model does
-take, so a fault is fixable in one pass instead of one attempt at a time.
-
-What it will NOT do, deliberately:
-- refuse from an alias guess — only `source: 'catalog'` (the engine's own answer)
-  may refuse a model; a `settings` list and an absent catalogue refuse nothing;
-- answer a question that already has an owner — an engine with no effort flag at
-  all is `headlessEffortRefusal`'s, and two refusals for one fault is how two
-  wordings start disagreeing;
-- treat an alias as a stranger — `opus` and the dated id the CLI records are one
-  model, matched on the same family+variant key the catalogue merge dedupes on.
-
-Because X-119 landed first, this reaches the Start button and `missions.start`
-as well as the preview, in the same sentence: a draft carrying an off-catalogue
-pair cannot create a spec, a run or a task.
-
-Measured in test/test_models.js (13 new): off-catalogue model, model-specific
-effort vocabulary, the Default box judged by the shared list, an empty
-vocabulary, settings-source and absent catalogues refusing nothing, the
-no-effort engine left alone, alias/dated-id/1m-variant matching, and a real typo
-still refused. test/test_bridge.js pins the wiring for the worker rows and the
-planner, and the op's describe.
+This closes the last acceptance line of X-122; the capability gate itself
+shipped in v11.74.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

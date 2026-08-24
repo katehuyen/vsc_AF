@@ -3073,6 +3073,16 @@ const { opencodeStatus, syncToOpencode } =
                 ok('…and readable back off the run, which the planner\'s dimensions never were',
                     /planner: \{[^]{0,240}effort: sp\?\.plannerEffort \?\? null/.test(src)
                     && /WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON/.test(src));
+                // ‼️ X-122 — FRESH AND RESUME ARE THE SAME COMMAND on this pair.
+                // The project brief is deliberately first-call-only (a --resume
+                // already has it in the conversation); the model and the effort
+                // are built before `resumeSessionId` is read at all, so round 7
+                // thinks with what round 1 was given — and the pair the
+                // capability gate approved is the pair every round rides on.
+                ok('‼️ X-122 — only the brief is first-call-only: model and effort ride every round',
+                    /const ctxFile = resumeSessionId \? undefined : projectContextFileFor/.test(src)
+                    && !/const model = [^\n]*resumeSessionId/.test(src)
+                    && !/const effort = [^\n]*resumeSessionId/.test(src));
             }
 
             // ‼️ X-95 — A MISSION'S SESSIONS, AS A SET AND AS A PAGE.
