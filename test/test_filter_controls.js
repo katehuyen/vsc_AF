@@ -274,20 +274,66 @@ ok('opening the menu is not a filter change', renders === before);
     ok('focus lands back on the re-rendered box', box.focused === true);
     ok('and the caret is where it was', box.selectionStart === 3 && box.selectionEnd === 3);
 
-    // number inputs throw on selectionStart in a real browser — must not break
-    const num = {
-        tagName: 'INPUT', value: '', className: 'af-count', listeners: {},
-        get selectionStart() { throw new Error('InvalidStateError'); },
-        addEventListener(ev, fn) { this.listeners[ev] = fn; },
-        getAttribute: () => null, focus() { }
+    // ---- U-98: a live box is a box whose caret can be read --------------
+    //
+    // ‼️ THE BUG THIS REPLACES AN ASSUMPTION WITH. `<input type="number">` has
+    // no selection API — `selectionStart` answers null (older Chromium threw)
+    // and `setSelectionRange` is refused. So the caret machinery ran on the
+    // min/max filters, saved nothing and restored nothing, while `restore()`
+    // still put the focus back — and a freshly focused input starts at 0. Every
+    // keystroke threw the caret to the far left, so `120` came out `021`. The
+    // old test here asserted the box "filters without a caret to save", which
+    // wrote the defect down as the contract.
+    //
+    // `live()` now converts such a box at the door, on the way in AND on the
+    // way back from the re-render, because the element restore finds is a new
+    // one built from the same markup.
+    const mkNum = (value) => {
+        const attrs = { type: 'number' };
+        return {
+            tagName: 'INPUT', value, className: 'af-count', id: '', type: 'number',
+            selectionStart: null, selectionEnd: null, listeners: {}, focused: false,
+            addEventListener(ev, fn) { this.listeners[ev] = fn; },
+            getAttribute(a) { return attrs[a] === undefined ? null : attrs[a]; },
+            setAttribute(a, v) { attrs[a] = v; },
+            focus() { this.focused = true; },
+            setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; }
+        };
     };
+    let num = mkNum('');
     let numApplied = 0;
     sandbox.document.querySelectorAll = (sel) => (sel === 'input.af-count' ? [num] : []);
     AF.live(num, () => { numApplied++; }, 50);
+    ok('‼️ a number box handed to live() is turned into one with a caret',
+        num.type === 'text');
+    ok('…and keeps the numeric keypad it had, so nothing is lost but the spinner',
+        num.getAttribute('inputmode') === 'numeric');
     num.value = '5000';
     num.listeners.input();
     runTimers();
-    ok('a number box filters as you type without a caret to save', numApplied === 1);
+    ok('a number box filters as you type', numApplied === 1);
+
+    // the caret survives the re-render, which is the whole report
+    {
+        const older = num;
+        older.value = '120';
+        older.selectionStart = older.selectionEnd = 3;
+        num = mkNum('120');                    // the re-render builds it fresh…
+        num.selectionStart = num.selectionEnd = 0;
+        older.listeners.change();
+        ok('‼️ …and the box restore lands on is converted before the focus does',
+            num.type === 'text' && num.focused === true);
+        ok('‼️ …so the caret comes back where it was instead of jumping to the far left',
+            num.selectionStart === 3 && num.selectionEnd === 3);
+    }
+
+    // a box that is already text is left exactly as it was
+    {
+        const plain = mkNum('x'); plain.type = 'text';
+        AF.live(plain, () => { }, 50);
+        ok('a text box is not touched — no inputmode is invented for it',
+            plain.type === 'text' && plain.getAttribute('inputmode') === null);
+    }
 
     ok('live() on a missing element is a no-op', AF.live(null, () => { }) === undefined);
 

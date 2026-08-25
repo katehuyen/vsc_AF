@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.278.0 - U-98: a filter you could not type a number into, because a number box has no caret to put back (2026-08-26)
+
+**Typing into a min/max filter sent the caret to the far left after every
+keystroke, so `120` came out `021`.** The filter boxes apply as you type, and
+applying re-renders the page — which replaces the very box being typed into. The
+component has always handled that: it saves the caret, lets the page repaint,
+finds the new box and puts the caret back. On a numeric box none of that
+happened. `<input type="number">` does not implement the selection API:
+`selectionStart` answers `null` and `setSelectionRange` is refused with
+`InvalidStateError` (measured, in this machine's own Chromium). Both calls sat
+inside `try/catch` clauses that read like they were handling the case and were in
+fact dropping it, so the caret was never saved and never restored — while the
+focus still went back, and a freshly focused input starts at position 0.
+
+The fix is at the root rather than at the six call sites that hit it: a box
+handed to the live-filter component is by definition a box that will be
+re-rendered under the reader's hand, so the component now makes sure it is one
+whose caret can be read — on the way in, and again on the way back, because the
+element it finds after the repaint is a new one built from the same markup.
+`inputmode="numeric"` keeps the numeric keypad; what goes is the spinner, which
+was never usable on a filter box this narrow, and every handler already parsed
+the text because a filter box could always be empty.
+
+That covers every live-filtered numeric box in the extension at once — the
+Sessions and Turns range filters and their "Show" counts, the Missions run
+filters, and the Dashboard compare count — and any added later. The one other
+page that restores its own focus across a repaint (Search) now shares the same
+guard, so it cannot grow a second blind spot beside the first.
+
 ## 3.277.0 - X-32 closes: the adaptive acceptance matrix is a table that breaks the build, and an un-pause that never travelled down is fixed (2026-08-26)
 
 **X-46 — the gate X-32 had to pass is now an ADDRESS for every line it asks

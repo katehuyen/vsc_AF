@@ -397,9 +397,13 @@
         let el = null;
         try { el = document.querySelector(m.sel); } catch (e) { return false; }
         if (!el || typeof el.focus !== 'function') { return false; }
+        // ‼️ U-98 — a number box has no caret to put back, and focusing one
+        // parks it at 0. This page has none today; the guard is here so adding
+        // one cannot quietly reintroduce the bug that was fixed in afFilters.
+        try { if (window.AFFilter && window.AFFilter.caretable) { window.AFFilter.caretable(el); } } catch (e) { /* no shared component on this shell */ }
         try { el.focus(); } catch (e) { return false; }
         if (m.start !== undefined && m.start !== null && el.setSelectionRange) {
-            try { el.setSelectionRange(m.start, m.end); } catch (e) { /* date and number boxes */ }
+            try { el.setSelectionRange(m.start, m.end); } catch (e) { /* date boxes have no caret either */ }
         }
         return true;
     }

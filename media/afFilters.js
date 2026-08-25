@@ -347,6 +347,45 @@
         return s;
     }
 
+    /**
+     * ‼️ U-98 — A NUMBER BOX HAS NO CARET TO PUT BACK, SO `live()` GIVES IT ONE.
+     *
+     * `<input type="number">` does not implement the selection API: reading
+     * `selectionStart` answers `null` (older Chromium threw), and
+     * `setSelectionRange` is refused outright. Everything below stands on those
+     * two calls — so on a numeric box the whole caret machinery ran, saved
+     * nothing and restored nothing. `restore()` still put the focus back, and a
+     * freshly focused input starts at position 0, so **every keystroke sent the
+     * caret to the far left**: typing `120` into a min/max filter produced
+     * `021`, one character at a time, and the two `catch` clauses that made it
+     * possible read like they were handling the case rather than dropping it.
+     *
+     * The fix is at the root and not at the six call sites that hit it. A box
+     * handed to `live()` is by definition a box that will be re-rendered under
+     * the reader's hand, so it must be a box whose caret can be read — the
+     * component enforces that itself rather than trusting six pages to
+     * remember. `inputmode="numeric"` keeps the numeric keypad where there is
+     * one; what is given up is the spinner, which was never usable on a filter
+     * this narrow. Nothing downstream notices: every handler already parses the
+     * text (`Number()` / `parseInt` behind an `isNaN` guard), because a filter
+     * box could always be empty.
+     */
+    function caretable(el) {
+        if (!el) { return el; }
+        let t = '';
+        try {
+            t = String(el.type || (el.getAttribute ? el.getAttribute('type') : '') || '').toLowerCase();
+        } catch (e) { return el; }
+        if (t !== 'number') { return el; }
+        try {
+            el.type = 'text';
+            if (el.setAttribute && el.getAttribute && !el.getAttribute('inputmode')) {
+                el.setAttribute('inputmode', 'numeric');
+            }
+        } catch (e) { /* a host that refuses keeps the old, caret-less behaviour */ }
+        return el;
+    }
+
     function snapshot(el) {
         const sel = selPath(el);
         if (!sel || typeof document === 'undefined' || !document.querySelectorAll) { return null; }
@@ -362,6 +401,11 @@
         let el = null;
         try { el = document.querySelectorAll(s.sel)[s.idx]; } catch (e) { return; }
         if (!el || !el.focus) { return; }
+        // ‼️ U-98 — the element that came back from the re-render is a NEW one,
+        // built from the same markup, so it is a number box again. Convert it
+        // before the focus lands: `focus()` on a box with no selection API is
+        // exactly what parks the caret at 0.
+        caretable(el);
         try { el.focus(); } catch (e) { return; }
         if (s.start !== undefined && s.start !== null && el.setSelectionRange) {
             try { el.setSelectionRange(s.start, s.end); } catch (e) { /* number/date inputs */ }
@@ -376,6 +420,7 @@
      */
     function live(el, fn, delay) {
         if (!el || !el.addEventListener) { return; }
+        caretable(el);          // ‼️ U-98 — see the note on caretable()
         const wait = delay === undefined ? 180 : delay;
         let timer = null;
         let last = el.value;
@@ -492,6 +537,10 @@
 
     window.AFFilter = {
         multi, wireMulti, live, liveAll, clearable, clearableAll, esc,
+        // U-98: exported so the one other page that restores its own focus
+        // across a re-render (search.js) shares this guard instead of growing a
+        // second blind spot beside it
+        caretable,
         // testing / reset hooks
         _closeMenus: () => { openId = null; closeMenus(document); },
         _openId: () => openId
