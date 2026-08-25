@@ -1,54 +1,74 @@
-v11.79 - x-94: bir misyona projenin ne olduğu söylenir, sırada ne olduğu değil
+v11.80 - b-13: adaptif misyon köprüden sürülebiliyor, iki okumanın tavanı var
 
-A person ran an adaptive objective, read the planner's transcript, and found
-this project's BACKLOG in it — five unrelated items, the recent worklog, and an
-instruction to record what it did in the worklog before finishing. None of that
-is a mission's subject.
+The ops were all there and no second `objectives.*` namespace was ever opened.
+What was missing was what they SAID, and two of them answered without a ceiling.
 
-A mission arrives with an objective, its constraints and its success criteria.
-The project's standing work is the question a SESSION opens with; the write-back
-protocol is addressed to a person's own conversation, not to a headless delegate
-that would then file worklog lines about work nobody asked it to record.
+WHAT A CALLER COULD NOT READ BACK
 
-THE BRIEF NOW HAS AN AUDIENCE.
+  · `missions.list` had no `mode`. So every adaptive-only field elsewhere was an
+    absence with two possible meanings — not adaptive, or adaptive and nothing
+    recorded yet. It also returned `agent: "d:/zone/agent/ajanlar/asistan"` where
+    a name belongs (X-85's lesson, one surface further out).
+  · `missions.status` could not say the strategy IN FORCE, whether a steer had
+    actually been delivered, whether the journal was sound, or what the run had
+    started and not finished. Those are the four questions "what is it doing?"
+    decomposes into.
+  · a step said it had run a workflow or a nested mission and handed back no id
+    to follow it with.
 
-  · the mission copy keeps the MAP — what the project is, its people, its code
-    roots, and which document holds which role. Deliberately: a mission CAN be
-    told to record something, and then it has to know where.
-  · it drops the four standing lists — open plan items, top of the backlog,
-    recent decisions, recent worklog — and the session's write-back tail.
-  · NOT MERELY HIDDEN. `briefSource` returns early for this audience, so a
-    mission spawn does not read Plan.md, Backlog.md or Worklog.md at all. The
-    test counts the reads rather than trusting the absence of the words.
-  · the frame around it stops saying "work on this project" and "record what you
-    did in the worklog", and says the objective is the work.
-  · the lead's briefing says the omission OUT LOUD. It used to promise "what is
-    open on it", which is now deliberately false — a briefing that goes on
-    promising a list somebody removed sends the lead reading files for it.
-  · two audiences, two files. A mission's delegations ARE spawns and they happen
-    while somebody is starting a session; one path for both means whichever
-    wrote last decides what the other reads. `_AF/BRIEF.md` stays the session
-    document and a mission never rewrites it.
+Now: `mode` · `project` · `phase` · `strategyVersion` · criterion, evaluation,
+conversation, council and message counts · `pending` {question, approval,
+guidance} · `trace` {journalled, degraded} on every LIST row; and on `status`
+`strategy`, `guidance` with a real delivery state (pending | inflight | applied
+— two-phase delivery has three states and `missions.guide` could only ever
+promise the first), `trace` {health, resume, degraded, snapshotBehind} from the
+SAME reconciler the reload uses, `frontier` (started and not finished), plus
+`taskId`/`workflowRunId`/`missionRunId`/`sessionId`/`outputFile` per step.
 
-AND THE SECOND HALF OF THE SAME QUESTION — is a mission even associated with a
-project? It was, invisibly. `MissionSpec.projectId` has existed since Faz 5 and
-this form drew no control for it, so a mission started while the window sat on a
-project was filed under it, briefed with it and had every delegation filed under
-it, without the word "project" appearing anywhere on the form.
+THE CEILINGS
 
-There is a Project box now, offering all three answers the host has always
-accepted: this window's project (the visible default, named in the option), a
-deliberate none, or one you pick. An untouched box posts the exact message it
-posted before the control existed. `missions.preview` and the caption both say
-WHICH of the two it was — `requested` or `window` — because "inherited while you
-were not looking" is the answer to the question that opened this item.
+`missions.list` returned every run the farm has ever made; `missions.conversation`
+every message of a conversation, each one's body read off disk through the
+speaker's engine. Both page now, through ONE shared contract — `bridgePage` in
+core/bridge.ts, which the whole bridge can use rather than each op inventing its
+own. KEYSET, not offset: these lists grow at the END while a caller reads them,
+so an offset re-reads or skips a row every time one arrives. An unknown cursor is
+REFUSED — silently re-serving page one is indistinguishable from an honest answer
+to the caller who then reads the newest rows twice. `more` is computed from the
+position, never from `rows.length === limit`, which is wrong exactly when the
+last page is full.
 
-The caption was wrong once and a rendered picture caught it: it read the preview
-alone, so before the host answered it claimed "filed under no project" beneath a
-box reading "this window's project: …". It is derived from the form now and the
-host's reply overrides only when it exists.
+`missions.trace` reads the journal FORWARDS (it returned the LAST n events — the
+wrong end of an audit record) with `after` as a seq and `kinds` as a filter
+applied BEFORE the page is cut, so a limit of 50 gives 50 MATCHING events rather
+than the matches inside the first 50. A misspelled kind matches nothing and is
+named back in `unknownKinds`; falling back to "no filter" would answer a typo
+with the whole journal. The kind vocabulary is one runtime list and the TYPE is
+derived from it, so the catalog can print it and can never be one kind behind.
 
-Measured in test/test_project_audience.js (new, 50 assertions — including the
-read count and the byte-identical session file name), test_mission_project.js
-and test_missions_webview.js. Looked at: dist/render/missions.png, dark and
-light. 13980 tests pass.
+ONE READ OF THE JOURNAL
+
+`missions.status` needs the journal for two of the fields above, and a status
+call is what an agent POLLS with — a JSONL re-parse per poll for the life of a
+run is the cost curve X-126/X-127 already put this farm through. There were
+three independent `reconcileRun` sites (reload, missions.trace, the page's trace
+view) and the page kept its own cache keyed on the SNAPSHOT's `lastSeq`. That key
+is not the file: the journal is appended first and the snapshot saved second, so
+between the two the file holds events `lastSeq` has not counted, and a repaint in
+that window drew a graph missing the work that had just started. One memo now,
+keyed on size + mtime, shared by all three reading surfaces; the reload still
+reconciles directly, before there is any memo to trust.
+
+AND WHAT THIS LAYER IS NOT, said in the catalog so an agent stops looking for it:
+there is NO cost optimisation in a mission. No cheap-first routing, no model
+escalation, no budget reserve, no expected-value stop. The limits are MECHANICAL
+CEILINGS; cost and tokens are recorded as observation and nothing routes on them.
+The planner is Claude Code in both modes — not a default, but what the control
+flow parses — while delegations run on whichever engine the mission or member
+names.
+
+Measured in test/test_mission_bridge_plane.js (new, 53) — including the full
+final page, the row inserted before the cursor, the refused cursor, the filter
+that must run before the cut, and the typo that must be named — plus
+test_mission_reload.js, which now counts two reconcile sites instead of three
+and holds the memo to the file rather than the seq. 14042 tests pass.

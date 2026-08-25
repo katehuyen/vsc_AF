@@ -156,6 +156,68 @@ export function need(cond: unknown, message: string): void {
     if (!cond) { throw new Error(message); }
 }
 
+export interface BridgePage<T> {
+    /** the rows the caller was handed */
+    rows: T[];
+    /** how many there are IN ALL — the page and the whole, said apart */
+    total: number;
+    /** id of the first row of this page, or null on an empty page */
+    from: string | null;
+    /** id of the LAST row — what the caller passes back as `after` */
+    last: string | null;
+    /** whether another page exists. Never inferred from `rows.length === limit`,
+     *  which is wrong exactly when the last page is full. */
+    more: boolean;
+}
+
+/**
+ * ‼️ B-13 — ONE PAGINATION CONTRACT FOR THE WHOLE BRIDGE.
+ *
+ * Every read op whose answer grows with the farm's history needs one, and the
+ * mistake is for each to invent its own: an offset here, a page number there, a
+ * timestamp somewhere else, and an agent has to learn three.
+ *
+ * KEYSET, NOT OFFSET, and that is the whole design. These lists grow at the
+ * END while a caller is reading them — a mission appends a message, a run
+ * finishes — so an offset silently re-reads or skips a row every time one
+ * arrives. `after` is an id the caller already holds, so the page is stable
+ * whatever happens to the list meanwhile.
+ *
+ * AN UNKNOWN CURSOR IS AN ERROR, never "start from the top". A caller paging a
+ * history while somebody deletes a run would otherwise read the newest rows a
+ * second time and never know it happened — and silently re-serving page one is
+ * indistinguishable from an honest answer.
+ *
+ * `more` is computed, not guessed: `rows.length === limit` is wrong exactly
+ * when the last page happens to be full, which is the case a caller hits once
+ * and then stops trusting the field.
+ */
+export function bridgePage<T>(
+    all: readonly T[],
+    idOf: (row: T) => string,
+    opts: { limit?: unknown; after?: unknown; max?: number; fallback?: number; what?: string } = {}
+): BridgePage<T> {
+    const max = opts.max ?? 500;
+    const fallback = opts.fallback ?? 100;
+    const limit = Math.max(1, Math.min(max, Number(opts.limit ?? fallback) || fallback));
+    const after = String(opts.after ?? '').trim();
+    let from = 0;
+    if (after) {
+        const at = all.findIndex(row => idOf(row) === after);
+        need(at >= 0, `No ${opts.what ?? 'row'} "${after}" here — `
+            + 'pass the id of the last one you read, or omit it for the first page.');
+        from = at + 1;
+    }
+    const rows = all.slice(from, from + limit);
+    return {
+        rows,
+        total: all.length,
+        from: rows.length ? idOf(rows[0]) : null,
+        last: rows.length ? idOf(rows[rows.length - 1]) : null,
+        more: from + rows.length < all.length
+    };
+}
+
 /** A required string arg, trimmed. */
 export function argStr(args: Record<string, unknown>, key: string): string {
     const v = args[key];

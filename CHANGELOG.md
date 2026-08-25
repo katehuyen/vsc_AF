@@ -4,6 +4,45 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**B-13 — an adaptive mission is drivable from the bridge, and two reads that
+had no ceiling now have one.** The ops were all there — start, preview, status,
+trace, guide, conversation, council, and the whole control set — and no second
+`objectives.*` namespace was ever opened. What was missing was what they SAID.
+A caller could start an adaptive run and not read back that it was one:
+`missions.list` had no `mode`, so every adaptive-only field elsewhere was an
+absence with two possible meanings. `missions.status` could not say the
+strategy in force, whether a steer had actually been delivered, whether the
+journal was sound, or what the run had started and not finished — the four
+questions "what is it doing?" actually decomposes into. A step said it had run
+a workflow or a nested mission and handed back no id to follow it with.
+
+All of that is on the two read ops now: `mode`, `project`, `phase`,
+`strategyVersion`, criterion and conversation counts and a `pending` object on
+each list row; `strategy`, `guidance` with a real delivery state (pending /
+inflight / applied), `trace` health and `resume` from the same reconciler the
+reload uses, and `frontier` — the graph nodes started and not finished — on
+`missions.status`, with `taskId` / `workflowRunId` / `missionRunId` /
+`sessionId` on every step.
+
+And the ceilings. `missions.list` returned every run the farm has ever made and
+`missions.conversation` every message of a conversation, each one's body read
+off disk; both are paged now through one shared contract (`bridgePage`) that
+the whole bridge can use. It is KEYSET, not offset — these lists grow at the
+end while a caller reads them — and an unknown cursor is refused rather than
+silently answered from page one. `missions.trace` reads the journal FORWARDS
+(it used to return the last n events, the wrong end of an audit record) with a
+kind filter applied before the page is cut, so "show me every strategy change"
+does not cost the whole file, and a misspelled kind is named back instead of
+matching nothing in silence.
+
+The journal itself is now read once per window through one memo, keyed on the
+file's size and mtime rather than on the snapshot's `lastSeq` — the reload, the
+Missions page, `missions.status` and `missions.trace` had been three separate
+reads and one stale-prone cache, and a status call is what an agent polls with.
+The catalog also says out loud what this layer is NOT: there is no cost
+optimisation in a mission, the limits are mechanical ceilings, and nothing
+decides anything from a price.
+
 **X-94 — a mission is told what a project IS, not what is queued on it.** A
 person ran an adaptive objective, read the planner's transcript, and found this
 project's backlog in it: five unrelated items, the recent worklog, and an

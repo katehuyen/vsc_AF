@@ -34,27 +34,85 @@ import * as path from 'path';
 /** Bumped when an event's SHAPE changes. A line from the future is not read. */
 export const MISSION_TRACE_SCHEMA = 2;
 
-export type MissionTraceType =
+/**
+ * Every kind of thing that can be written to a run's journal.
+ *
+ * ‼️ B-13 — A LIST AT RUNTIME, and the TYPE IS DERIVED FROM IT rather than the
+ * other way round. `missions.trace` lets a caller filter the journal by kind, so
+ * the vocabulary has to be something the bridge can PRINT — and a second,
+ * hand-written copy of it in a `describe` string would be one event type behind
+ * the day somebody adds one. There is one list; the union is `typeof` it.
+ */
+export const MISSION_TRACE_TYPES = [
     /** ‼️ M-16 — one per planner round: the lead decided something. This is a
      *  NODE, written whether or not the strategy moved, because a round is a
      *  decision either way and the graph hangs that round's work under it. */
-    | 'decision.made'
-    | 'strategy.changed'
-    | 'action.created' | 'action.started' | 'action.settled'
-    | 'evaluation.recorded'
+    'decision.made',
+    'strategy.changed',
+    'action.created', 'action.started', 'action.settled',
+    'evaluation.recorded',
     /** ‼️ M-19 — a conversation was opened: its purpose and its cast, once. */
-    | 'conversation.opened'
+    'conversation.opened',
     /** ‼️ M-19 — a speaking turn came back with words. Written when the message
      *  is DELIVERED, never when it is ordered: a turn that failed or said
      *  nothing leaves no message, which is the whole point of the item. */
-    | 'message.sent'
+    'message.sent',
     /** ‼️ M-20 — a CHAIRED debate opened over a conversation, and later ended
      *  for one of its seven stated reasons. Two events rather than one node
      *  rewritten, because "it is still going" and "it ended, and why" are what a
      *  reader of the journal is actually asking at two different moments. */
-    | 'council.opened' | 'council.closed'
-    | 'human.asked' | 'human.answered' | 'human.guided'
-    | 'run.finished';
+    'council.opened', 'council.closed',
+    'human.asked', 'human.answered', 'human.guided',
+    'run.finished'
+] as const;
+
+export type MissionTraceType = typeof MISSION_TRACE_TYPES[number];
+
+/**
+ * ‼️ B-13 — READING THE JOURNAL FORWARDS, A PAGE AND A KIND AT A TIME.
+ *
+ * `missions.trace` used to hand back the LAST n events, which is the wrong end
+ * of an audit record: a journal is read from the beginning, in order, and
+ * "what happened after seq 400" could only be asked by requesting more and
+ * more of the tail. `after` is a seq the caller already read — keyset, so the
+ * page is stable while the run goes on appending.
+ *
+ * ‼️ THE FILTER IS APPLIED BEFORE THE PAGE IS CUT. A limit of 50 with a kind
+ * filter has to give 50 MATCHING events, not the matches inside the first 50
+ * events — the second reads as "there were only three strategy changes" when
+ * there were thirty.
+ *
+ * An unknown kind is not an error and not silently dropped either: `unknown`
+ * names it back, so a caller that typed `strategy.change` learns why its filter
+ * matched nothing instead of concluding the run never changed strategy.
+ */
+export function selectTraceEvents(
+    events: readonly MissionTraceEvent[],
+    opts: { after?: number; kinds?: readonly string[]; limit?: number } = {}
+): {
+    events: MissionTraceEvent[]; matched: number; more: boolean;
+    lastSeq: number | null; unknownKinds: string[];
+} {
+    const kinds = (opts.kinds ?? []).map(k => String(k).trim()).filter(Boolean);
+    const known = kinds.filter(k => (MISSION_TRACE_TYPES as readonly string[]).includes(k));
+    const unknownKinds = kinds.filter(k => !(MISSION_TRACE_TYPES as readonly string[]).includes(k));
+    const after = Number(opts.after ?? 0) || 0;
+    const limit = Math.max(1, Math.min(2000, Number(opts.limit ?? 200) || 200));
+    const matching = events.filter(e =>
+        (!after || e.seq > after)
+        // ‼️ A filter naming only kinds that do not exist matches NOTHING, and
+        // says so through `unknownKinds`. Falling back to "no filter" would
+        // answer a typo with the whole journal.
+        && (!kinds.length || known.includes(e.type)));
+    const page = matching.slice(0, limit);
+    return {
+        events: page,
+        matched: matching.length,
+        more: matching.length > page.length,
+        lastSeq: page.length ? page[page.length - 1].seq : null,
+        unknownKinds
+    };
+}
 
 /** What an action actually IS in this codebase — never a new kind of work. */
 export type MissionActionKind = 'task' | 'workflow' | 'mission' | 'conversation';

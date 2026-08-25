@@ -162,11 +162,30 @@ const byId = (rec, id) => rec.actions.find(a => a.actionId === id);
     // the reason this is counted rather than eyeballed: a reconcile that asked
     // the journal alone would tell the reader an action was interrupted while
     // the task store had it finished ten minutes ago.
-    eq('‼️ and EVERY reconcile call site uses it — the reload, missions.trace and '
-        + 'the page\'s trace view, or three surfaces answer differently about one run',
-        (ext.match(/reconcileRun\([\s\S]{0,120}?missionExternalLookup\)/g) || []).length, 3);
+    eq('‼️ and EVERY reconcile call site uses it, or two surfaces answer '
+        + 'differently about one run',
+        (ext.match(/reconcileRun\([\s\S]{0,120}?missionExternalLookup\)/g) || []).length, 2);
     eq('…and no reconcile is left asking the journal alone',
-        (ext.match(/reconcileRun\(/g) || []).length, 3);
+        (ext.match(/reconcileRun\(/g) || []).length, 2);
+    /**
+     * ‼️ B-13 — AND THE THREE READING SURFACES ARE NOW ONE READ.
+     *
+     * There used to be three `reconcileRun` sites — the reload, `missions.trace`
+     * and the page's trace view — each opening the same file for itself, and the
+     * page keeping its own cache keyed on the SNAPSHOT's `lastSeq` rather than
+     * on the file. `missions.status` needed the journal too (B-13's `trace` and
+     * `frontier`), and a status call is what an agent POLLS with, so a fourth
+     * independent read would have been a JSONL re-parse per poll for the life of
+     * the run. They go through one memo now, keyed on the file itself.
+     */
+    ok('‼️ the reading surfaces share ONE memoised read of the journal',
+        /const missionReconciled = \(run: MissionRun\)/.test(ext)
+        && (ext.match(/missionReconciled\(r(un)?\)/g) || []).length === 3);
+    ok('…keyed on the FILE, because the journal is appended before the snapshot saves',
+        /hit\.size === key\.size && hit\.mtime === key\.mtime/.test(ext)
+        && !/const missionTraceCache = new Map/.test(ext));
+    ok('…while the RELOAD still reconciles directly, before any memo exists to trust',
+        /const rec = reconcileRun\(readTrace\(r\.trace\.file\), r\.trace\.lastSeq, missionExternalLookup\);/.test(ext));
     // ‼️ X-89 — and the reload reads the projection's GUIDANCE too. It read
     // `answers` and stopped there, so both write-ahead windows lost: a steer
     // that only reached the journal vanished, and one the journal proved was

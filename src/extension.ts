@@ -246,8 +246,8 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgeRunDimensions, DIMS_OUT_NOTE,
-    INTERACTIVE_NOTE, need,
+    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
+    DIMS_OUT_NOTE, INTERACTIVE_NOTE, need,
     needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
@@ -279,9 +279,9 @@ import {
     orphanTraceFiles, outputExcerpt, parsePlannerEnvelope, pendingGuidance, PlannerResult,
     validateMissionInput,
     normalizeMissionLimits, validateMissionLimitsInput,
-    bookSettledRounds, cancelledResult,
+    bookSettledRounds, cancelledResult, MISSION_TRACE_TYPES,
     poolFromFleet, projectTrace, readTrace, Reconciliation, reconcileGuidance, reconcileRun, remainingBudget,
-    resolveLead, settledCriteriaWork, traceFileFor, validateObjective
+    resolveLead, selectTraceEvents, settledCriteriaWork, traceFileFor, validateObjective
 } from './core/missions';
 // `isStale` is already taken by codexctx (a context measurement going out of
 // date) — a different subject entirely, so this one travels under its own name.
@@ -3407,6 +3407,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 : step.taskId ? missionExternalLookup('task', step.taskId)
                     : undefined;
 
+    /**
+     * ‼️ B-13 / X-127 — ONE READ OF A RUN'S JOURNAL, MEMOISED ON THE FILE.
+     *
+     * `missions.status` now answers two questions that need the journal — is
+     * this record sound, and what has the run started and not finished — and a
+     * status call is what an agent POLLS with. Re-parsing a JSONL that grows
+     * for the life of the run, on every poll, is precisely the cost curve this
+     * farm has already been through once (X-126/X-127).
+     *
+     * ‼️ KEYED ON THE FILE, NOT ON `run.trace.lastSeq`. The snapshot's seq is
+     * what the RUN has written down; the journal is appended first and saved
+     * second, so between the two the file can hold events the snapshot has not
+     * counted yet. Size and mtime move whenever the file does, which is the
+     * only honest statement of "this is the same read".
+     *
+     * A file that cannot be stat'ed is not cached at all — an unreadable
+     * journal must be re-attempted, never remembered as broken for ever.
+     */
+    const missionReconCache = new Map<string, { size: number; mtime: number; rec: Reconciliation; read: ReturnType<typeof readTrace> }>();
+    const missionReconciled = (run: MissionRun): { read: ReturnType<typeof readTrace>; rec: Reconciliation } | undefined => {
+        const file = run.trace?.file;
+        if (!file) { return undefined; }
+        let key: { size: number; mtime: number } | undefined;
+        try {
+            const st = fs.statSync(file);
+            key = { size: st.size, mtime: st.mtimeMs };
+            const hit = missionReconCache.get(run.id);
+            if (hit && hit.size === key.size && hit.mtime === key.mtime) {
+                return { read: hit.read, rec: hit.rec };
+            }
+        } catch { key = undefined; }
+        const read = readTrace(file);
+        const rec = reconcileRun(read, run.trace?.lastSeq ?? 0, missionExternalLookup);
+        if (key) { missionReconCache.set(run.id, { ...key, rec, read }); }
+        return { read, rec };
+    };
+
     /** The words all three stores use for "this is over". `stopped` is a
      *  chain's own word for what a task calls `cancelled`. */
     const SETTLED_ON_RESUME = new Set(['done', 'failed', 'cancelled', 'stopped']);
@@ -6063,11 +6100,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
                 + ') it is not a cheap run at all, it is a run with no dollar figure — read `tokens` beside it; on one that states its own ('
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
-                + ') a zero is a real zero, which a free model genuinely produces. The planner is always Claude Code and is a separate axis (`plannerEngine`). args: none',
-            handler: () => missionStore.runs.slice().reverse().map(r => {
+                + ') a zero is a real zero, which a free model genuinely produces. The planner is always Claude Code and is a separate axis (`plannerEngine`). '
+                + '‼️ B-13 — WHICH KIND OF RUN EACH ONE IS, on the row: `mode` is '
+                + '`classic` (a lead plans round by round and delegates to a fixed team — the '
+                + 'default, and what a run with no mode recorded is) or `adaptive` (an OBJECTIVE: '
+                + 'the lead builds the strategy at runtime and cannot close as success until a '
+                + 'structured evaluation ties every required criterion to real work). An adaptive '
+                + 'row also carries `phase` and `strategyVersion` — where the lead says it is and '
+                + 'how many times the approach has MOVED — plus one-line counts: `criteria` '
+                + '(total/required/passed/failed/unjudged), `evaluations`, `conversations`, '
+                + '`councils`, `messages`, and `pending` (a question waiting on you, an approval '
+                + 'gate, undelivered guidance). None of it is a transcript: the record is '
+                + '`missions.status`, `missions.trace` and `missions.conversation`, all paged. '
+                + '`project` says what the run is filed under (X-94) and `team[].agentName` is who '
+                + 'each id IS — the id stays exactly as it was, because it is the handle. '
+                + '‼️ IT IS PAGED, because this list grows for the life of the farm: newest first, '
+                + '`limit` rows at a time (default 100, max 500). Pass the id of the last row you '
+                + 'read as `before` to get the next page; a page shorter than `limit` is the end. '
+                + 'args: limit?, before? (a run id)',
+            handler: (args) => {
+                /**
+                 * ‼️ B-13 — KEYSET PAGING THAT KEEPS THE ARRAY CONTRACT.
+                 *
+                 * This op has answered with a bare ARRAY since it was written and
+                 * callers index it; wrapping it in an envelope to carry a
+                 * `nextCursor` would break every one of them for a fact they can
+                 * derive. So the cursor is a row id they already have: ask for
+                 * what comes after `before`, and a short page means the end.
+                 *
+                 * A cursor naming a run that is gone is REFUSED rather than
+                 * silently answered from the top — a caller paging through a
+                 * history while a run is deleted would otherwise read the newest
+                 * rows a second time and never know.
+                 */
+                const page = bridgePage(missionStore.runs.slice().reverse(), r => r.id,
+                    { limit: args.limit, after: args.before, what: 'run' });
+                return page.rows.map(r => {
                 const sp = missionStore.spec(r.specId);
+                const adaptive = isAdaptive(sp);
+                // ‼️ Counted from the run's OWN record, never by opening its
+                // journal: this is a list, and a page of 100 runs must not be
+                // 100 JSONL reads. `missions.trace` is where the journal is read.
+                const crit = (sp?.successCriteria ?? []);
+                const live = adaptive
+                    ? currentEvaluations(r.evaluations ?? [], settledCriteriaWork(r)) : [];
+                const verdictOf = (id: string) =>
+                    live.flatMap(e => e.findings).filter(x => x.criterionId === id).pop()?.verdict;
+                const proj = sp?.projectId ? projectStore.get(sp.projectId) : undefined;
                 return {
                     id: r.id, title: sp?.title ?? r.specId, status: r.status,
+                    // ‼️ B-13 — THE FIRST THING A CALLER HAS TO KNOW ABOUT A RUN
+                    // and the one field this list never said. A spec with no
+                    // `mode` recorded is classic, definitively (M-15).
+                    mode: adaptive ? 'adaptive' : 'classic',
+                    ...(proj ? { project: { id: proj.id, name: proj.name } } : { project: null }),
                     verdict: r.result?.verdict, rounds: r.rounds.length,
                     costUSD: Math.round(r.totalCostUSD * 100) / 100,
                     tokens: r.totalTokens ?? 0,
@@ -6080,6 +6166,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     plannerEngine: 'claude',
                     team: (sp?.team ?? []).map(m => ({
                         agent: m.agentId, role: m.role ?? null,
+                        // ‼️ X-85 (B-13) — AND WHO THAT IS. `agent` is the handle
+                        // and stays a raw id, which on this farm is a folder
+                        // path; a reader given only that is reading
+                        // `d:/zone/agent/ajanlar/asistan` where a name belongs.
+                        // Read off the spec's OWN snapshot, so an agent that has
+                        // since left the fleet is still the person who was cast.
+                        agentName: m.agentName ?? m.agentId,
                         engine: m.engine ?? sp?.engine ?? 'claude',
                         model: m.model ?? null,
                         // ‼️ M-14 — readable back for the same reason `engine` is
@@ -6089,9 +6182,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // null = the engine's own default.
                         permissionMode: m.permissionMode ?? null
                     })),
+                    /**
+                     * ‼️ B-13 — WHERE THE LEAD SAYS IT IS, AND HOW OFTEN THE
+                     * APPROACH HAS MOVED. Off `run.strategy`, which M-16 keeps on
+                     * the snapshot precisely so a LIST can draw "v3 · verifying"
+                     * without opening a JSONL file. Null on a classic run, which
+                     * has neither.
+                     */
+                    phase: adaptive ? (r.strategy?.phase ?? null) : null,
+                    strategyVersion: adaptive ? (r.strategy?.version ?? null) : null,
+                    /**
+                     * ‼️ B-13 — THE SUMMARY, NEVER THE RECORD. Enough to answer
+                     * "did this reach its objective, and is anything still
+                     * open?" on a row; the evidence is `missions.status` and the
+                     * transcripts are `missions.conversation`.
+                     */
+                    ...(adaptive ? {
+                        criteria: {
+                            total: crit.length,
+                            required: crit.filter(c => c.required !== false).length,
+                            passed: crit.filter(c => verdictOf(c.id) === 'pass').length,
+                            failed: crit.filter(c => verdictOf(c.id) === 'fail').length,
+                            unjudged: crit.filter(c => !verdictOf(c.id)).length
+                        },
+                        evaluations: (r.evaluations ?? []).length,
+                        conversations: (r.conversations ?? []).length,
+                        councils: (r.councils ?? []).length,
+                        messages: (r.messages ?? []).length
+                    } : {}),
+                    /**
+                     * ‼️ B-13 — WHAT THIS RUN IS WAITING FOR, in one object, on
+                     * every row. A run parked on a question and a run parked on
+                     * an approval gate both read "running" and are two completely
+                     * different things to do about it. `guidance` counts steers
+                     * recorded and not yet delivered to a planner boundary — the
+                     * one wait a caller CAUSED and could otherwise not see.
+                     */
+                    pending: {
+                        question: missionQuestions.get(r.id)?.question ?? null,
+                        approval: missionApprovals.has(r.id),
+                        guidance: (r.guidance ?? []).filter(g => !g.appliedAt).length
+                    },
+                    /**
+                     * ‼️ B-13 — WHETHER THE JOURNAL IS SOUND, without reading it.
+                     * `journalled` says an adaptive run keeps one at all;
+                     * `degraded` is what the LAST run of this window recorded
+                     * against it. The real health (`ok|missing|truncated|damaged|
+                     * future`) needs the file opened, and that is
+                     * `missions.trace` — a list op that read 100 journals to
+                     * answer one field would be the scaling bug this farm has
+                     * already been through once (X-127).
+                     */
+                    trace: r.trace?.file
+                        ? { journalled: true, degraded: r.traceDegraded ?? null }
+                        : null,
                     startedAt: r.startedAt
                 };
-            })
+                });
+            }
         },
         {
             op: 'missions.start',
@@ -6166,7 +6314,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'engine+effort pair the CLI has no flag for, is answered here — with the same '
                 + 'sentences, all of them at once — instead of creating a spec, a run and its tasks and '
                 + 'failing one delegation at a time after the planner has spent its turns. Ask '
-                + 'missions.preview first and there is nothing left for this to refuse',
+                + 'missions.preview first and there is nothing left for this to refuse. '
+                + '‼️ B-13 — WHAT THIS LAYER IS NOT, said here so an agent does not go looking for '
+                + 'it: THERE IS NO COST OPTIMISATION IN A MISSION. No cheap-first routing, no model '
+                + 'escalation or de-escalation, no budget reserve, no expected-value stop. The '
+                + 'limits above are MECHANICAL CEILINGS and nothing else decides anything from a '
+                + 'price: cost and tokens are recorded as observation, and no routing, model choice '
+                + 'or stop decision reads them. A lead that "should have used a cheaper model" is '
+                + 'not a bug in this version, it is a feature nobody has asked for yet. The PLANNER '
+                + 'is Claude Code in every mode — that is not a default, it is what the control '
+                + 'flow parses — while DELEGATIONS run on whichever engine the mission or the '
+                + 'member names',
             handler: (args) => {
                 const err = createMission(bridgeMissionInput(args));
                 need(!err, err ?? '');
@@ -6229,7 +6387,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'delegation actually used and which layer decided each. '
                 + '‼️ X-95: `sessions` is EVERY session this run opened — the planner\'s own lane and one per delegation — each with its `role`, '
                 + 'its transcript `file` and its own turns/cost, gathered off the mission stamp the Sessions table filters on. '
-                + 'Use `sessions.page { mission: <id> }` to put the same set in front of the user. args: id',
+                + 'Use `sessions.page { mission: <id> }` to put the same set in front of the user. '
+                + '‼️ B-13 — AND THE SIX THINGS THIS OP USED TO MAKE A CALLER GUESS AT: `mode` '
+                + '(classic|adaptive — every adaptive field below is null on a classic run, and '
+                + 'without this an absence had two possible meanings); `project` (X-94 — what the '
+                + 'run and its delegations are filed under); `strategy` (the approach IN FORCE with '
+                + 'its version and `phase`; the history of revisions is missions.trace); `guidance` '
+                + '(every steer with `state` — pending | inflight | applied — because '
+                + 'missions.guide said when one WOULD land and nothing said whether it did); '
+                + '`trace` (`health`, `resume` and `degraded` from the SAME reconciler the reload '
+                + 'uses, so "can this be continued?" has one answer, not two); and `frontier` — the '
+                + 'graph nodes this run has STARTED AND NOT FINISHED, which is what "what is it '
+                + 'doing right now?" means. Each step also carries the handle to whatever it '
+                + 'really was: `taskId`, `workflowRunId`, `missionRunId` (a nested objective — call '
+                + 'this op on it), `sessionId`, `outputFile`. '
+                + '‼️ NO TRANSCRIPT IS EMBEDDED HERE, however long the run: conversations come back '
+                + 'as counts and are read in pages through missions.conversation, the journal '
+                + 'through missions.trace. `rounds` is the decision log and is capped by the '
+                + 'mission\'s own maxRounds; pass `rounds:"none"` to leave it out entirely when you '
+                + 'are only asking whether the run is still going. args: id, rounds? ("none" omits '
+                + 'the round-by-round log)',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -6240,8 +6417,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // was asked for. Built once: a run with forty steps must not
                 // walk the whole index forty times.
                 const bySid = new Map(index.allWithExternal().map(x => [x.sessionId, x]));
+                const adaptive = isAdaptive(sp);
+                const proj = sp?.projectId ? projectStore.get(sp.projectId) : undefined;
+                /**
+                 * ‼️ B-13 — THE JOURNAL IS OPENED ONCE, for the two questions
+                 * that need it: is this record sound, and what is still open on
+                 * the graph. Reading it twice would be two answers about one
+                 * file, which is the shape of half the faults X-59 collected.
+                 * A classic run has no journal and this is null for it — not an
+                 * empty projection, which would read as "adaptive, nothing yet".
+                 */
+                const traced = (() => {
+                    if (!r.trace?.file) { return null; }
+                    try {
+                        const got = missionReconciled(r);
+                        if (!got) { return null; }
+                        return { ok: true as const, read: got.read, rec: got.rec };
+                    } catch (e) {
+                        // ‼️ X-62's rule: a journal this window cannot read is a
+                        // fact stated out loud, never a status call that fails
+                        // and never an empty object that reads as "fine".
+                        return { ok: false as const, error: String(e).slice(0, 200) };
+                    }
+                })();
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
+                    /**
+                     * ‼️ B-13 — WHICH KIND OF RUN THIS IS, and it was the one
+                     * thing this op did not say. Every adaptive field below
+                     * (`criteria`, `stopReason`, `unmet`, `strategy`, `frontier`)
+                     * is absent or null on a classic run, and a caller reading
+                     * those absences had to GUESS which of the two reasons it
+                     * was: not adaptive, or adaptive and nothing recorded yet.
+                     * A spec with no mode is classic, definitively (M-15).
+                     */
+                    mode: adaptive ? 'adaptive' : 'classic',
+                    // ‼️ X-94 — and what it is filed under. Every delegation this
+                    // run makes lands on that project's Work tab, and the lead is
+                    // briefed with the project's MAP (never its backlog).
+                    ...(proj ? { project: { id: proj.id, name: proj.name } } : { project: null }),
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
                     // ‼️ U-100 — WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON.
                     // Every dimension of every DELEGATE has been readable here
@@ -6321,6 +6535,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         stale: evaluationIsStale(e, settledCriteriaWork(r)),
                         findings: e.findings
                     })),
+                    /**
+                     * ‼️ B-13 — THE APPROACH IN FORCE, AND HOW MANY TIMES IT HAS
+                     * MOVED. Off `run.strategy`, which M-16 keeps on the snapshot
+                     * so this costs no journal read. The HISTORY of revisions
+                     * (with the reason for each) is `missions.trace`; this is the
+                     * one currently being executed. Null on a classic run and on
+                     * an adaptive one whose lead has not stated a strategy yet —
+                     * two facts `mode` above tells the two apart.
+                     */
+                    strategy: adaptive && r.strategy
+                        ? {
+                            version: r.strategy.version,
+                            phase: r.strategy.phase ?? null,
+                            text: r.strategy.text,
+                            at: r.strategy.at
+                        } : null,
+                    phase: adaptive ? (r.strategy?.phase ?? null) : null,
+                    /**
+                     * ‼️ B-13 — THE STEERS, AND WHETHER THEY HAVE LANDED YET.
+                     *
+                     * `missions.guide` records a one-off instruction and answers
+                     * `appliesAt`, and after that a caller had NO way to ask
+                     * whether it was ever delivered. Two-phase delivery (X-66/
+                     * X-89) means there are three real states and they are not
+                     * the same thing: `pending` (recorded, the lead has not been
+                     * told), `inflight` (handed to a planner call whose outcome
+                     * this window has not seen — a crash window) and `applied`.
+                     */
+                    guidance: (r.guidance ?? []).map(g => ({
+                        id: g.id, text: g.text, at: g.at,
+                        state: g.appliedAt ? 'applied' : (g.inflightAt ? 'inflight' : 'pending'),
+                        appliedAt: g.appliedAt ?? null,
+                        ...(g.standing ? { standing: true } : {})
+                    })),
+                    /**
+                     * ‼️ B-13 — IS THE JOURNAL SOUND, AND MAY THIS RUN BE
+                     * CONTINUED. The one run in front of us, so the file is
+                     * really opened and the answer is the reconciler's own —
+                     * the SAME lookup `missions.trace` and the reload use, never
+                     * a second opinion about the same file. Null on a classic
+                     * run, which keeps no journal and is not degraded for it.
+                     *
+                     * The graph, the strategy history and the events stay in
+                     * `missions.trace`: this says whether that record can be
+                     * trusted, not what is in it.
+                     */
+                    trace: !traced ? null : (traced.ok ? {
+                        file: r.trace?.file ?? null,
+                        health: traced.read.health,
+                        resume: traced.rec.resume,
+                        degraded: traced.rec.degraded || r.traceDegraded || null,
+                        snapshotBehind: traced.rec.snapshotBehind,
+                        lastSeq: traced.rec.projection.lastSeq
+                    } : {
+                        file: r.trace?.file ?? null, health: 'unreadable',
+                        resume: 'refuse', degraded: traced.error,
+                        snapshotBehind: null, lastSeq: null
+                    }),
+                    /**
+                     * ‼️ B-13 — THE GRAPH'S FRONTIER: what this run has started
+                     * and not finished. The WHOLE graph is `missions.trace` and
+                     * grows without limit; the frontier is the answer to "what
+                     * is it doing right now?", which is the question a status
+                     * call exists for, and it is bounded by how much work can be
+                     * open at once.
+                     *
+                     * Derived from the same reconciled projection the trace op
+                     * answers with — a node the reload considers settled is
+                     * settled here too. Null (not []) when there is no journal,
+                     * because "no frontier" and "no record of one" are different.
+                     */
+                    frontier: traced?.ok
+                        ? traced.rec.projection.graph
+                            .filter(n => n.status !== 'done' && n.status !== 'failed'
+                                && n.status !== 'cancelled')
+                            .map(n => ({
+                                id: n.id, kind: n.kind, status: n.status,
+                                actor: n.actor, label: n.label,
+                                parentRefs: n.parentRefs, inputRefs: n.inputRefs,
+                                phase: n.phase ?? null,
+                                strategyVersion: n.strategyVersion ?? null,
+                                createdAt: n.createdAt
+                            }))
+                        : null,
                     // ‼️ X-19 — the other currency, and on a plan-billed team the
                     // only one that moves. A caller reading `costUSD: 0` off a
                     // mission that ran all morning is not looking at a cheap run.
@@ -6358,7 +6656,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // call missions.answer / missions.approve
                     pendingQuestion: missionQuestions.get(r.id)?.question ?? null,
                     awaitingApproval: missionApprovals.has(r.id),
-                    rounds: r.rounds.map(rd => ({
+                    /**
+                     * ‼️ B-13 — HOW MANY THERE ARE, stated separately from the
+                     * list. A caller that asked for `rounds:"none"` still has to
+                     * know whether this run has decided anything, and a caller
+                     * that read the list still has to know it read all of it.
+                     */
+                    roundCount: r.rounds.length,
+                    rounds: String(args.rounds ?? '') === 'none' ? null : r.rounds.map(rd => ({
                         n: rd.n, action: rd.action, thought: rd.thought?.slice(0, 200),
                         // ‼️ M-18 — A FAILED STEP SAYS WHY IN A SHAPE. `status:
                         // "failed"` and nothing else is what a caller had, so
@@ -6368,6 +6673,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // `detail`; `class` and `retry` are what to branch on.
                         steps: rd.steps.map(s => ({
                             agent: s.agentName, title: s.title, status: s.status,
+                            /**
+                             * ‼️ B-13 — THE CHILD THIS STEP REALLY IS, by id.
+                             *
+                             * A step is not always a delegation: M-18 made
+                             * `run_workflow` and `run_mission` first-class, so a
+                             * row here may BE a workflow run or a whole nested
+                             * mission. A caller could see it had happened and had
+                             * no handle to follow it with — no way to call
+                             * `missions.status` on the child, `tasks.list` on the
+                             * task, or read the chain. Present only when the step
+                             * really produced one, so an absent field is "this
+                             * step is not that kind", never "the id was lost".
+                             */
+                            ...(s.taskId ? { taskId: s.taskId } : {}),
+                            ...(s.workflowRunId ? { workflowRunId: s.workflowRunId } : {}),
+                            ...(s.missionRunId ? { missionRunId: s.missionRunId } : {}),
+                            ...(s.runSessionId ? { sessionId: s.runSessionId } : {}),
+                            ...(s.outputFile ? { outputFile: s.outputFile } : {}),
                             ...(s.failure ? {
                                 failure: {
                                     class: s.failure.class,
@@ -6484,8 +6807,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'its own session picked back up, `handoff` is a NEW session that was given the '
                 + 'exchange as text (the two are not the same and are never labelled the same), `new` '
                 + 'is a first turn. `open` lists the questions and challenges nothing has answered '
-                + 'yet. Omit `conversation` to get every conversation of the run. args: id (run id), '
-                + 'conversation? (c1, c2…)',
+                + 'yet. Omit `conversation` to get every conversation of the run. '
+                + '‼️ B-13 — THIS IS THE PAGED READER, because a transcript has no ceiling and this '
+                + 'op reads each message\'s full body off disk. `limit` (default 100, max 500) and '
+                + '`after` — a message id you already have, so the page is stable while the '
+                + 'conversation goes on growing under it. `messageCount` is the whole conversation, '
+                + '`from`/`last` are the ends of the page you were handed, and `more` says whether '
+                + 'there is another one; an `after` that is not in that conversation is refused '
+                + 'rather than answered from the top. missions.status gives the counts alone when '
+                + 'that is all you need. args: id (run id), conversation? (c1, c2…), limit?, after? '
+                + '(a message id)',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -6495,13 +6826,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(list.length, wanted
                     ? `No conversation "${wanted}" in this run.`
                     : 'This run has held no conversations.');
-                return list.map(c => ({
+                /**
+                 * ‼️ B-13 — THE PAGED READER, because a transcript has no ceiling.
+                 *
+                 * This op read EVERY message of every conversation and pulled the
+                 * full body of each one off disk through the speaker's engine
+                 * (X-80). A council that argued two hundred turns therefore
+                 * answered a question nobody asked with a response nobody could
+                 * hold, and the cost was paid in file reads.
+                 *
+                 * Keyset, not offset: `after` is a message id the caller already
+                 * has, so a page is stable while the conversation goes on
+                 * growing underneath it — an offset would re-read or skip a
+                 * message every time one arrived. `more` says whether there is
+                 * another page, so a caller never has to infer it from a count.
+                 * An `after` naming a message that is not in that conversation
+                 * is refused rather than answered from the top.
+                 */
+                return list.map(c => {
+                    const page = bridgePage(
+                        conversationMessages(r.messages ?? [], c.id), m => m.id,
+                        { limit: args.limit, after: args.after, what: `message in ${c.id}` });
+                    return {
                     id: c.id, objective: c.objective, participants: c.participants,
                     participantNames: c.participants.map(p => missionCastName(r, p)),
                     openedAt: c.openedAt, closedAt: c.closedAt ?? null,
                     closeReason: c.closeReason ?? null,
                     open: openThreads(r.messages ?? [], c.id).map(m => m.id),
-                    messages: conversationMessages(r.messages ?? [], c.id).map(m => ({
+                    // ‼️ The page and the whole, said apart. `messageCount` is
+                    // the conversation; `messages` is what you were handed.
+                    messageCount: page.total,
+                    from: page.from, last: page.last, more: page.more,
+                    messages: page.rows.map(m => ({
                         id: m.id, from: m.from, fromName: m.fromName ?? null,
                         to: m.to, toNames: m.to.map(x => missionCastName(r, x)),
                         intent: m.intent, refs: m.refs,
@@ -6521,7 +6877,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         outputFile: m.contentRef ?? null,
                         orderedAt: m.orderedAt, settledAt: m.settledAt ?? null
                     }))
-                }));
+                    };
+                });
             }
         },
         {
@@ -11102,8 +11459,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the run is, and `graph` is what actually happened — a node per decision and per '
                 + 'real primitive, with parentRefs/inputRefs/outputRefs, so parallel work branches '
                 + 'from one parent and a fan-in is visible on the decision that read the results. '
-                + 'args: id, events? (true = every raw '
-                + 'event, default is the folded projection), limit? (default 200, newest last)',
+                + '‼️ B-13 — THE RAW EVENTS ARE PAGED FORWARD AND FILTERABLE. `events: true` adds '
+                + 'them; `after` is a seq you already read (keyset, so the page is stable while the '
+                + 'run appends), `kinds` is a comma-separated list of event types ('
+                + MISSION_TRACE_TYPES.join(', ')
+                + ') and `limit` caps the page. The filter is applied BEFORE the page is cut, so a '
+                + 'kind filter gives you that many MATCHING events. `eventsMore` says there is '
+                + 'another page and `eventsMatched` how many matched in all. Before this the op '
+                + 'returned the LAST n events — the wrong end of a journal, which is read forwards. '
+                + 'args: id, events? (true = the raw journal; default is the folded projection), '
+                + 'limit? (default 200, max 2000), after? (a seq), kinds? (comma-separated)',
             handler: (args) => {
                 const runId = argStr(args, 'id');
                 const run = missionStore.run(runId);
@@ -11116,12 +11481,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         note: 'This run keeps no trace — only adaptive missions journal their work.'
                     };
                 }
-                const read = readTrace(r.trace.file);
-                // ‼️ THE SAME LOOKUP THE RELOAD USES. This asked the journal
-                // alone, so a caller reading a run's trace was told an action
-                // was interrupted while the task store had it finished ten
-                // minutes ago — two surfaces, two answers, one run.
-                const rec = reconcileRun(read, r.trace.lastSeq, missionExternalLookup);
+                // ‼️ THE SAME LOOKUP THE RELOAD USES, through the SAME memo
+                // `missions.status` reads. This op asked the journal alone, so a
+                // caller reading a run's trace was told an action was
+                // interrupted while the task store had it finished ten minutes
+                // ago — two surfaces, two answers, one run. And two READS of one
+                // file would be the same fault one layer down.
+                const got = missionReconciled(r);
+                need(got, 'This run keeps no journal.');
+                const { read, rec } = got as NonNullable<ReturnType<typeof missionReconciled>>;
                 const p = rec.projection;
                 const limit = Math.max(1, Math.min(2000, Number(args.limit ?? 200) || 200));
                 return {
@@ -11166,8 +11534,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             outputFile: a.outputFile ?? null
                         };
                     }),
+                    /**
+                     * ‼️ B-13 — THE RAW EVENTS, PAGED FORWARD AND FILTERED BY KIND.
+                     *
+                     * `events: true` used to hand back the LAST `limit` events and
+                     * nothing else, which is exactly the wrong end for an audit: a
+                     * journal is read from the beginning, in order, and a caller
+                     * that wanted "what happened after seq 400" could only ask for
+                     * more and more of the tail. `after` is a seq — keyset, so the
+                     * page is stable while the run goes on appending — and `kinds`
+                     * is a comma-separated list of event types, because "show me
+                     * every strategy change" should not cost the whole file.
+                     *
+                     * `eventsMore` says whether there is another page. Filtering
+                     * happens BEFORE the page is cut, so a `limit` of 50 with a
+                     * kind filter gives 50 matching events, not 50 events of which
+                     * some match.
+                     */
                     ...(args.events === true || String(args.events ?? '') === 'true'
-                        ? { events: read.events.slice(-limit) }
+                        ? (() => {
+                            const sel = selectTraceEvents(read.events, {
+                                after: Number(args.after ?? 0) || 0,
+                                kinds: String(args.kinds ?? '').split(','),
+                                limit
+                            });
+                            return {
+                                events: sel.events,
+                                eventsMore: sel.more,
+                                eventsMatched: sel.matched,
+                                eventsLastSeq: sel.lastSeq,
+                                // ‼️ A typo in `kinds` matched nothing and this
+                                // is why — never a silent empty journal.
+                                ...(sel.unknownKinds.length
+                                    ? { unknownKinds: sel.unknownKinds } : {})
+                            };
+                        })()
                         : {})
                 };
             }
@@ -11971,33 +12372,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * detail surface has to answer "what is it doing and why", and "why" is
      * exactly the half that lives there.
      *
-     * ‼️ CACHED ON `lastSeq`, because this page repaints ONCE A SECOND while a
-     * mission runs and re-parsing a JSONL per repaint per run is a cost nobody
-     * asked for. `lastSeq` only moves when the journal grew, which is precisely
-     * when the projection can differ — so a cache hit is not a stale read, it
-     * is the same file.
+     * ‼️ B-13 — READ THROUGH `missionReconciled`, WHICH IS THE ONE READ PATH.
+     *
+     * This page repaints ONCE A SECOND while a mission runs, so the read has to
+     * be memoised — but it used to keep its own cache keyed on the SNAPSHOT's
+     * `lastSeq`, and that key is not the file. The journal is appended first and
+     * the snapshot saved second, so between the two the file holds events
+     * `lastSeq` has not counted, and a repaint in that window drew a graph
+     * missing the work that had just started. The shared memo keys on the
+     * file's own size and mtime, so a hit really is the same read — and the
+     * page, `missions.status` and `missions.trace` cannot come to three
+     * conclusions about one file.
      */
-    const missionTraceCache = new Map<string, { seq: number; view: unknown }>();
     const missionTraceView = (run: MissionRun) => {
         if (!run.trace?.file) { return undefined; }
-        const hit = missionTraceCache.get(run.id);
-        if (hit && hit.seq === run.trace.lastSeq) { return hit.view; }
-        let view: unknown;
         try {
-            const rec = reconcileRun(readTrace(run.trace.file), run.trace.lastSeq, missionExternalLookup);
-            const p = rec.projection;
-            view = {
+            const got = missionReconciled(run);
+            if (!got) { return undefined; }
+            const p = got.rec.projection;
+            return {
                 strategies: p.strategies, graph: p.graph,
-                phase: p.phase ?? null, degraded: rec.degraded || null
+                phase: p.phase ?? null, degraded: got.rec.degraded || null
             };
         } catch {
             // A journal this window cannot read is a fact the page says out
             // loud — never a reason to hide the run or to draw an empty graph
             // as though nothing had happened.
-            view = { strategies: [], graph: [], phase: null, degraded: 'the journal could not be read' };
+            return { strategies: [], graph: [], phase: null, degraded: 'the journal could not be read' };
         }
-        missionTraceCache.set(run.id, { seq: run.trace.lastSeq, view });
-        return view;
     };
 
     const missionsPanelDeps = {

@@ -31,8 +31,9 @@ import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
 export {
-    deleteTrace, MISSION_TRACE_SCHEMA, MissionTraceWriter, normalizeStrategy, orphanTraceFiles,
-    projectTrace, readTrace, reconcileRun, runIdOfTraceFile, traceFileFor
+    deleteTrace, MISSION_TRACE_SCHEMA, MISSION_TRACE_TYPES, MissionTraceWriter, normalizeStrategy,
+    orphanTraceFiles, projectTrace, readTrace, reconcileRun, runIdOfTraceFile, selectTraceEvents,
+    traceFileFor
 } from './missionTrace';
 export type {
     ExternalLookup, ExternalRecord, GraphNode, GraphNodeKind, GraphNodeStatus, HumanFlavor,
