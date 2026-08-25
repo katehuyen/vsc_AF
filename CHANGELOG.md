@@ -4,6 +4,24 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**A project document that grew past half a megabyte could no longer be written to
+at all — including by the one operation that would have shrunk it.** Every
+bridge write into a project's folder (`backlog.add`, `.check`, `.set`, `.move`,
+`.promote`, `.archive`, `plan.check`, `decision.add`, `doc.write` with `append`)
+reads the document, changes it and writes it back. That read used the ceiling
+meant for a WEBVIEW: a file too big to paint comes back as its head and says so,
+and the rewrite then — correctly — refuses, because writing the head over the
+whole file deletes the tail. Sharing one number between painting and rewriting
+turned the safety into a trap. A backlog at 525 KB refused every op it had, the
+only remedy the system offers (archiving closed items out of it) was refused by
+the same rule, and the way out was to hand-edit the file — which is the exact
+work the bridge exists to spare the user.
+
+The edit path now has a ceiling of its own, far above anything a person writes by
+hand and still finite, so a folder pointed at something absurd refuses rather
+than loading it into memory. The truncation guard stays exactly where it was; it
+simply no longer fires on a document somebody actually wrote.
+
 **M-29 — a finished run says what its orchestrator actually launched with, out of
 its own record rather than out of today's files.** X-121 gave the preview a real
 ladder; the run detail and `missions.status` still built the planner's profile

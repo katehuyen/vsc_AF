@@ -334,7 +334,7 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
 // ===========================================================================
 
 const {
-    addDecision, addDeliverableRow, buildBrief, decisionsFolder, DOC_READ_CAP,
+    addDecision, addDeliverableRow, buildBrief, decisionsFolder, DOC_EDIT_CAP, DOC_READ_CAP,
     listProjectDocs, parseDeliverables, readProjectDoc, resolveInFolder,
     scanProjectFolder, writeProjectDoc
 } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
@@ -498,6 +498,20 @@ const {
     const read = readProjectDoc(dir, '10_Notes/big.md');
     ok('a huge file comes back as its head and SAYS so, rather than freezing a webview',
         read.ok && read.truncated === true && read.text.length === DOC_READ_CAP && read.size === big.length);
+
+    // ‼️ THE EDIT PATH HAS ITS OWN CEILING. Sharing the display cap turned a
+    // safety into a trap: a backlog past 512 KB could not be added to, ticked,
+    // moved, promoted or ARCHIVED — and archiving is the operation that would
+    // have shrunk it, so the only way out was to hand-edit the file. Half a
+    // megabyte of markdown was never what the webview cap was about.
+    const whole = readProjectDoc(dir, '10_Notes/big.md', DOC_EDIT_CAP);
+    ok('‼️ …but a caller that is going to WRITE it back reads all of it',
+        whole.ok && whole.truncated === false && whole.text.length === big.length);
+    ok('…and the edit ceiling is far above anything a person writes by hand, without being unlimited',
+        DOC_EDIT_CAP > DOC_READ_CAP && Number.isFinite(DOC_EDIT_CAP));
+    ok('‼️ the rewrite paths ask for the EDIT ceiling — the trap was one shared number',
+        (fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')
+            .match(/readProjectDoc\(folder, rel, DOC_EDIT_CAP\)/g) || []).length === 2);
 }
 
 // ---------- the brief carries the plan and the decisions ----------

@@ -828,6 +828,26 @@ const DOC_TREE_CAP = 500;
 /** Bigger than this and the reader gets the head plus an honest note — a 40 MB
  *  file posted into a webview freezes it. */
 export const DOC_READ_CAP = 512 * 1024;
+/**
+ * ‼️ THE EDIT PATH HAS ITS OWN CEILING, AND IT IS NOT THE DISPLAY ONE.
+ *
+ * `DOC_READ_CAP` protects a WEBVIEW: a document too big to paint is cut to its
+ * head and says so. An edit reads the text only to hand it straight back to
+ * disk, and `editProjectDoc` — correctly — refuses to write a truncated buffer,
+ * because writing the head over the whole file deletes the tail.
+ *
+ * Sharing one number between the two turned that safety into a trap. A backlog
+ * that grew past 512 KB could no longer be added to, ticked, moved, promoted or
+ * ARCHIVED — and archiving is the one operation that would have shrunk it. The
+ * only way out of the state was to hand-edit the file, which is exactly what
+ * the bridge exists to spare the user. It cost nothing to read the whole file:
+ * half a megabyte of markdown is not what the display cap was ever about.
+ *
+ * So the edit path gets a ceiling of its own, high enough that no document a
+ * person writes by hand will meet it and low enough that a folder pointed at
+ * something absurd still refuses rather than loading it into memory.
+ */
+export const DOC_EDIT_CAP = 16 * 1024 * 1024;
 
 /**
  * The project folder as a flat, sorted list of entries.
@@ -907,19 +927,24 @@ export interface ReadDocResult {
     missing?: boolean;
 }
 
-export function readProjectDoc(dir: string, rel: string): ReadDocResult {
+/**
+ * @param cap how much may be read before the answer is cut to the head. Defaults
+ * to the DISPLAY ceiling; a caller that is going to write the text back passes
+ * `DOC_EDIT_CAP` instead, because a truncated read is unwritable by design.
+ */
+export function readProjectDoc(dir: string, rel: string, cap = DOC_READ_CAP): ReadDocResult {
     const file = resolveInFolder(dir, rel);
     if (!file) { return { ok: false, error: 'that path is not inside the project folder' }; }
     try {
         const stat = fs.statSync(file);
         if (stat.isDirectory()) { return { ok: false, error: 'that is a folder' }; }
-        const truncated = stat.size > DOC_READ_CAP;
+        const truncated = stat.size > cap;
         let text: string;
         if (truncated) {
             const fd = fs.openSync(file, 'r');
             try {
-                const buf = Buffer.alloc(DOC_READ_CAP);
-                const read = fs.readSync(fd, buf, 0, DOC_READ_CAP, 0);
+                const buf = Buffer.alloc(cap);
+                const read = fs.readSync(fd, buf, 0, cap, 0);
                 text = buf.slice(0, read).toString('utf8');
             } finally { fs.closeSync(fd); }
         } else {

@@ -185,7 +185,7 @@ import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
     addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton, DecisionDoc,
-    dirExists, DEFAULT_SKELETON, ensureRoleDoc, insertLogEntry, listProjectDocs, localDay,
+    dirExists, DEFAULT_SKELETON, DOC_EDIT_CAP, ensureRoleDoc, insertLogEntry, listProjectDocs, localDay,
     localStamp, normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
     renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
     tracksFolder, writeBrief, writeProjectDoc
@@ -9705,7 +9705,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const { project, folder } = projectDocsFor(argStr(args, 'project'));
                 const rel = argStr(args, 'path');
                 const content = String(args.content ?? '');
-                const existing = readProjectDoc(folder, rel);
+                // The EDIT ceiling: `append:true` rewrites the whole file, so a
+                // read cut to the display cap would delete its tail — and the
+                // guard below turns that into a refusal, which on a growing log
+                // is a document that can no longer be written to at all.
+                const existing = readProjectDoc(folder, rel, DOC_EDIT_CAP);
                 // ‼️ "not there" and "there but unreadable" are two answers and
                 // only one of them makes a write harmless. Everything below
                 // reads `!existing.ok` as "nothing to lose" — so a file that IS
@@ -19115,7 +19119,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         change: (text: string) => { ok: boolean; text?: string; error?: string; note?: string }
     ): { file: string; note?: string } => {
         const rel = relDoc(folder, file);
-        const read = readProjectDoc(folder, rel);
+        // ‼️ THE EDIT CEILING, NOT THE DISPLAY ONE. Sharing the webview's cap
+        // made a backlog past 512 KB unaddable, untickable and — the trap —
+        // unarchivable, so the one operation that would have shrunk it was
+        // refused by its own size. The truncation guard below stays: it is what
+        // stops a head being written over a whole file, and with the right cap
+        // it simply never fires on a document a person wrote.
+        const read = readProjectDoc(folder, rel, DOC_EDIT_CAP);
         need(read.ok, read.error ?? 'could not read the document');
         need(!read.truncated, 'that document is too large to rewrite safely — edit it in your editor');
         const next = change(read.text ?? '');
