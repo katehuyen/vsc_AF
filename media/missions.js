@@ -1464,13 +1464,48 @@
     ];
     const NOT_SET = '— CLI chooses —';
     const NOT_REPORTED = 'not reported';
+    /** ‼️ X-124 — a window was known and NO turn of that lane fell inside it.
+     *  Different from "the engine did not say": the engine said plenty, none of
+     *  it about this piece of work. */
+    const NOT_BOUND = 'not attributable to this step';
+    /** ‼️ X-124 — which evidence the `applied` column is, in one line. `turn` is
+     *  the only scope a verdict may be drawn on; the others say what they are
+     *  instead of passing for it. */
+    const SCOPE_LINE = {
+        turn: n => 'applied: read off the ' + n + (n === 1 ? ' turn' : ' turns')
+            + ' this piece of work occupied — not the whole conversation.',
+        session: () => '‼️ applied: this is the WHOLE session\'s reading, not this step\'s. '
+            + 'Its task row is gone (retention), so there is no window to bind it to — '
+            + 'a lane that was resumed served other work too, and some of what is above may be theirs.',
+        unattributed: () => '‼️ applied: nothing in that session falls inside the stretch this '
+            + 'ran in, so none of its testimony is about this piece of work. Showing the lane\'s '
+            + 'own totals here is what X-124 removed.'
+    };
+    /** Which evidence a reading is. Defaults to the lane, which is what an
+     *  unlabelled reading always was. */
+    function scopeOf(applied) { return (applied && applied.scope) || 'session'; }
 
     /** What the engine says it served, for one dimension — or the honest
      *  silence. `applied` absent altogether means the session is not indexed. */
     function appliedValue(applied, key) {
         if (!applied) { return ''; }
-        if (key === 'model') { return (applied.models || []).join(', ') || NOT_REPORTED; }
-        if (key === 'permissionMode') { return applied.permissionMode || NOT_REPORTED; }
+        // ‼️ X-124 — said on the two dimensions that would otherwise have
+        // carried a value. Effort reports nothing whatever the scope, and the
+        // engine and workdir never had an applied reading at all — putting the
+        // sentence on those too would be one fact printed five times.
+        const unbound = scopeOf(applied) === 'unattributed';
+        if (key === 'model') {
+            return unbound ? NOT_BOUND : ((applied.models || []).join(', ') || NOT_REPORTED);
+        }
+        if (key === 'permissionMode') {
+            if (unbound) { return NOT_BOUND; }
+            // ‼️ X-124 — a mode that CHANGED inside the window has no single
+            // value, and printing one of the two would be a coin toss on the
+            // fact somebody is reading this row to check.
+            const many = applied.permissionModes || [];
+            if (many.length > 1) { return many.join(' → ') + ' (changed during this work)'; }
+            return applied.permissionMode || NOT_REPORTED;
+        }
         if (key === 'effort') { return applied.effort || NOT_REPORTED; }
         return '';
     }
@@ -1482,6 +1517,12 @@
      * warning on every step of every engine that reports nothing.
      */
     function dimMismatch(dims, applied, key) {
+        // ‼️ X-124 — A VERDICT IS ONLY DRAWN ON TURN-BOUND EVIDENCE. The lane's
+        // aggregate contains every model it ever used, so "was my model among
+        // them?" found the request in some unrelated round and reported
+        // agreement — hiding the one case this comparison exists for. Evidence
+        // that is not about this work answers nothing about it, either way.
+        if (scopeOf(applied) !== 'turn') { return false; }
         const want = String((dims && dims[key]) || '').trim();
         const got = appliedValue(applied, key);
         if (!want || !got || got === NOT_REPORTED) { return false; }
@@ -1566,7 +1607,8 @@
                 '',
                 applied === null || applied === undefined
                     ? 'The engine reported nothing back: its session is not in the index (yet, or at all).'
-                    : 'applied: what the CLI\'s own transcript says it ran with. Effort is reported by no engine today, so it is always "not reported".',
+                    : (SCOPE_LINE[scopeOf(applied)] || SCOPE_LINE.session)(applied.turns || 0),
+                applied ? 'Effort is reported by no engine today, so it is always "not reported".' : '',
                 tail || ''
             ]), cls);
     }

@@ -182,6 +182,7 @@ import {
 } from './core/projectHandover';
 import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
+import { AppliedReading, AppliedWindow, appliedInWindow } from './core/appliedTurn';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
     addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton, DecisionDoc,
@@ -6693,6 +6694,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the taskExtraArgs flags the mission\'s own choice took off the command line). It is '
                 + 'null on a run that predates the record — deliberately not re-derived, because the '
                 + 'settings and extra args readable now are today\'s, not that run\'s. '
+                + '‼️ X-124 — every `applied` block (a step\'s and the planner\'s) carries `scope`, and '
+                + 'reading it is not optional: `turn` means it was read off the turns that piece of '
+                + 'work actually occupied and is the ONLY scope a mismatch verdict may be drawn on; '
+                + '`session` means the whole lane\'s reading is being shown because the task row is '
+                + 'gone and there is no window to bind — a resumed lane served other work too, so some '
+                + 'of it may be theirs; `unattributed` means a window was known and no turn of that '
+                + 'session falls inside it, so none of its testimony is about this work. '
+                + '`permissionModes` lists every distinct mode across the bound turns — longer than '
+                + 'one means it CHANGED inside the window and `permissionMode` is null, because no '
+                + 'single value is true. '
                 + 'args: id, rounds? ("none" omits '
                 + 'the round-by-round log)',
             handler: (args) => {
@@ -6705,6 +6716,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // was asked for. Built once: a run with forty steps must not
                 // walk the whole index forty times.
                 const bySid = new Map(index.allWithExternal().map(x => [x.sessionId, x]));
+                // ‼️ X-124 — and the task rows, for the same reason and once:
+                // what a delegation ACTUALLY ran with is read off the turns its
+                // own task occupied, not off everything its lane ever did.
+                const byTaskId = new Map(taskManager.tasks.map(t => [t.id, t]));
                 const adaptive = isAdaptive(sp);
                 const proj = sp?.projectId ? projectStore.get(sp.projectId) : undefined;
                 /**
@@ -6785,8 +6800,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // ‼️ U-104 — the orchestrator is a participant, so the
                         // same requested/applied split applies to it. Null while
                         // its session is unindexed; never the spec repeated.
+                        // ‼️ X-124 — over the RUN'S OWN window: a lead lane that
+                        // was alive before this mission must not testify about it.
                         applied: r.plannerSessionId
-                            ? appliedDimensions(bySid.get(r.plannerSessionId)) : null
+                            ? appliedDimensions(bySid.get(r.plannerSessionId), plannerWindow(r)) : null
                     },
                     /**
                      * ‼️ X-95 — EVERY SESSION THIS RUN OPENED, gathered.
@@ -7050,7 +7067,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                              * Absent when the session has not been indexed.
                              */
                             ...(s.runSessionId && bySid.has(s.runSessionId)
-                                ? { applied: appliedDimensions(bySid.get(s.runSessionId)) } : {}),
+                                ? {
+                                    applied: appliedDimensions(
+                                        bySid.get(s.runSessionId),
+                                        stepWindow(s.taskId ? byTaskId.get(s.taskId) : undefined))
+                                } : {}),
                             // ‼️ A CEILING IS NOT PROGRESS. A delegation a
                             // budget or a concurrency limit is holding sits at
                             // "running" on every surface while nothing runs, and
@@ -12573,20 +12594,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * echoing the request back as if it had been confirmed. Showing a requested
      * value in a column headed "applied" is how a mismatch stays invisible.
      */
+    /**
+     * ‼️ X-124 — AND IT IS A FACT ABOUT A STRETCH OF THE CONVERSATION, NOT
+     * ABOUT THE WHOLE LANE.
+     *
+     * `sess.models` is every model the session ever used and `sess.permissionMode`
+     * is the last mode it ever mentions. A delegate lane that is RESUMED serves
+     * several delegations, and a lead's lane can be older than the mission — so
+     * a step was being handed the testimony of rounds it had nothing to do
+     * with, and the mismatch check found the requested model in some earlier
+     * turn and reported agreement. `window` is the caller's binding: a task's
+     * own start and end, a run's own start and end. The ladder, the three
+     * scopes and why a verdict may only be drawn on `turn` are in
+     * `core/appliedTurn.ts`.
+     */
     const appliedDimensions = (
-        sess: SessionInfo | undefined
-    ): { models: string[]; permissionMode: string | null; effort: null } | null => {
-        if (!sess) { return null; }
-        return {
-            models: sess.models ?? [],
-            permissionMode: sess.permissionMode || null,
-            // No engine states the effort it ran at anywhere in its transcript.
-            // The field exists so the surfaces have one shape to draw and one
-            // word for "nobody said", and so the day an engine starts reporting
-            // it there is a place for it to land.
-            effort: null
-        };
-    };
+        sess: SessionInfo | undefined, window?: AppliedWindow
+    ): AppliedReading | null => appliedInWindow(sess, window);
+
+    /** The stretch a delegation occupied, off its own task row. Absent when the
+     *  row is gone (retention) — and then the reading says it is the lane's,
+     *  rather than pretending to be about this step. */
+    const stepWindow = (t: { startedAt?: number; endedAt?: number } | undefined):
+        AppliedWindow | undefined =>
+        t?.startedAt ? { from: t.startedAt, ...(t.endedAt ? { to: t.endedAt } : {}) } : undefined;
+
+    /** ‼️ The ORCHESTRATOR'S window is the RUN'S OWN, which is what keeps a
+     *  lead lane that existed before this mission from testifying about it. */
+    const plannerWindow = (r: MissionRun): AppliedWindow =>
+        ({ from: r.startedAt, ...(r.endedAt ? { to: r.endedAt } : {}) });
 
     const missionRunsForPanel = () => {
         const byTask = new Map(taskManager.tasks.map(t => [t.id, t]));
@@ -12608,7 +12644,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * seen that session — a run whose planner has not written a
                  * transcript yet says "not reported", never today's spec.
                  */
-                plannerApplied: appliedDimensions(ps),
+                // ‼️ X-124 — the RUN'S window, so a lead lane that was alive
+                // before this mission does not testify about it.
+                plannerApplied: appliedDimensions(ps, plannerWindow(run)),
                 /**
                  * ‼️ U-65 — A SPEAKING TURN'S TWO DEEP LINKS, RESOLVED HERE.
                  *
@@ -12660,7 +12698,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // here for the same reason the link is — the page has no
                         // index, and half-resolving would leave a provenance row
                         // quietly showing the request twice.
-                        const applied = appliedDimensions(byIdSess ?? sess);
+                        // ‼️ X-124 — bound to the stretch this delegation's own
+                        // task occupied. A resumed lane serves several of them,
+                        // and the lane's aggregate was being shown as each one's.
+                        const applied = appliedDimensions(byIdSess ?? sess, stepWindow(t));
                         if (!t) {
                             return transcript || applied
                                 ? { ...step, ...(transcript ? { transcript } : {}), ...(applied ? { applied } : {}) }

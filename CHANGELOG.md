@@ -4,6 +4,35 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-124 — "what it actually ran with" is now a fact about the turns a piece of
+work occupied, not about everything its conversation ever did.** U-104 put the
+engine's own testimony beside the request, and read it off the session: `models`
+is every model the lane ever used and `permissionMode` is the last mode its
+transcript mentions. A session is not a delegation. A lane that is resumed serves
+several of them and a lead's lane can be older than the mission entirely, so
+every step listed models from rounds it had nothing to do with — and the mismatch
+check, which asks "is the model I requested among the ones that served me", found
+the request in some unrelated turn and reported agreement. The one comparison the
+feature exists for was being answered out of the wrong evidence, silently.
+
+The reading is now bound to a window the caller owns: a delegation gets the
+stretch its own task occupied, the orchestrator gets the run's own start and end.
+A turn carries the permission mode in force while it ran — the last such event at
+or before it opened, and a mode changed mid-turn governs the rest of that turn —
+so a mode set on a later resume can no longer speak for work taken before it.
+
+‼️ **And the three possible answers are kept apart rather than collapsed, because
+collapsing them is the defect.** `turn` is evidence about this piece of work.
+`session` is the old whole-lane reading, still shown when a step's task row has
+been rolled out by retention and there is no window to bind — but labelled as the
+lane's, out loud. `unattributed` is the honest silence: a window was known, no
+turn of that session falls inside it, so none of its testimony is about this
+work. **A ≠ verdict is only ever drawn on `turn`**; a disagreement computed from
+the lane's aggregate is a claim about the wrong evidence. A permission mode that
+changed inside the window has no single value and both are shown, because picking
+one would be a coin toss on the fact somebody is reading the row to check.
+`missions.status` carries `scope` and `permissionModes` on every `applied` block.
+
 **A project document that grew past half a megabyte could no longer be written to
 at all — including by the one operation that would have shrunk it.** Every
 bridge write into a project's folder (`backlog.add`, `.check`, `.set`, `.move`,

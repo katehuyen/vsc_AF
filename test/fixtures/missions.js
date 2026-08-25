@@ -119,7 +119,13 @@ const RUN = {
     // ‼️ U-104 — what the PLANNER'S own session says it ran on. The spec asks
     // for opus; the transcript is the only witness that it got it, and the
     // orchestrator's applied profile had never been on this page at all.
-    plannerApplied: { models: ['claude-opus-5'], permissionMode: null, effort: null },
+    // ‼️ X-124 — over the RUN'S own window, not the lead lane's whole history.
+    // The lead's conversation can be older than the mission; only the turns
+    // inside this run testify about it.
+    plannerApplied: {
+        models: ['claude-opus-5'], permissionMode: null, permissionModes: [],
+        effort: null, scope: 'turn', turns: 3
+    },
     // ‼️ M-29 — WHAT THE ORCHESTRATOR ACTUALLY LAUNCHED WITH, kept by the run.
     // The interesting shape, on purpose: the mission's own `opus` won rung 1 and
     // therefore took the user's `--model sonnet` OFF the command line, while the
@@ -167,7 +173,14 @@ const RUN = {
                             permissionMode: 'fleet', workDir: 'mission'
                         }
                     },
-                    applied: { models: ['claude-haiku-4-5'], permissionMode: 'plan', effort: null }
+                    // ‼️ X-124 — evidence BOUND to the two turns this delegation's own
+                    // task occupied. The ≠ mark is only drawn on turn-bound
+                    // evidence: the lane's aggregate holds every model it ever
+                    // used, so a comparison against it hides the mismatch.
+                    applied: {
+                        models: ['claude-haiku-4-5'], permissionMode: 'plan',
+                        permissionModes: ['plan'], effort: null, scope: 'turn', turns: 2
+                    }
                 },
                 {
                     id: 's2', round: 1, agentId: 'a2', agentName: 'basit',
@@ -185,7 +198,14 @@ const RUN = {
                             permissionMode: 'cli', workDir: 'cli'
                         }
                     },
-                    applied: { models: ['claude-haiku-4-5'], permissionMode: null, effort: null }
+                    // ‼️ X-124 — the other case: this step's task row is gone, so
+                    // there is no window to bind it to and what is shown is the
+                    // LANE'S reading, labelled as the lane's. No verdict is drawn
+                    // on it, whatever it says.
+                    applied: {
+                        models: ['claude-haiku-4-5'], permissionMode: null,
+                        permissionModes: [], effort: null, scope: 'session'
+                    }
                 }
             ]
         },

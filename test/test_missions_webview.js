@@ -56,7 +56,14 @@ const RUN = {
                         engine: 'claude', model: 'opus', effort: 'high', permissionMode: 'plan',
                         origin: { engine: 'cli', model: 'member', effort: 'fleet', permissionMode: 'member', workDir: 'cli' }
                     },
-                    applied: { models: ['claude-haiku-4-5'], permissionMode: 'plan', effort: null }
+                    // ‼️ X-124 — evidence BOUND to the turns this delegation's own
+                    // task occupied. The ≠ verdict is only drawn on turn-bound
+                    // evidence, so the scope is part of what makes this a
+                    // mismatch rather than a coincidence in an unrelated round.
+                    applied: {
+                        models: ['claude-haiku-4-5'], permissionMode: 'plan',
+                        permissionModes: ['plan'], effort: null, scope: 'turn', turns: 2
+                    }
                 },
                 {
                     id: 's2', round: 1, agentId: 'a2', agentName: 'reviewer', title: 'review', prompt: 'p', readonly: true, status: 'failed', note: 'agent said no',
@@ -276,6 +283,78 @@ ok('team chips carry the delegation permissions when one was set',
         html().includes('not reported'));
     ok('‼️ a delegation that took every default wears NO mark — a glyph on every row says nothing',
         /<span class="pname">reviewer<\/span>/.test(html()));
+}
+
+// ---------- X-124: the evidence is a TURN's, and it says which ----------
+//
+// `applied` was read off the whole session: every model the lane ever used and
+// the last permission mode it ever mentions. A lane that is RESUMED serves
+// several delegations, so each step listed the others' models — and the
+// mismatch check, which asks "is what I requested among them", found the
+// request in an unrelated round and reported agreement, hiding the one case it
+// exists for. The reading is now bound to the turns the work occupied, and the
+// three possible answers are kept apart on the surface.
+{
+    ok('X-124 — a turn-bound reading says how much of the conversation it is',
+        html().includes('read off the 2 turns this piece of work occupied'));
+
+    const sessionScoped = {
+        ...RUN,
+        rounds: RUN.rounds.map(r => ({
+            ...r,
+            steps: r.steps.map(s => (s.id === 's1' ? {
+                ...s,
+                applied: {
+                    models: ['claude-haiku-4-5'], permissionMode: 'plan',
+                    permissionModes: ['plan'], effort: null, scope: 'session'
+                }
+            } : s))
+        }))
+    };
+    msgHandler({ data: { type: 'data', data: { ...DATA, runs: [sessionScoped] } } });
+    ok('‼️ …and the SAME disagreeing values draw no ≠ when the evidence is the whole lane',
+        !html().includes('pmark bad'));
+    ok('…the panel says so rather than letting the lane pass for the step',
+        html().includes('this is the WHOLE session\'s reading, not this step\'s'));
+
+    const unbound = {
+        ...RUN,
+        rounds: RUN.rounds.map(r => ({
+            ...r,
+            steps: r.steps.map(s => (s.id === 's1' ? {
+                ...s,
+                applied: {
+                    models: [], permissionMode: null, permissionModes: [],
+                    effort: null, scope: 'unattributed'
+                }
+            } : s))
+        }))
+    };
+    msgHandler({ data: { type: 'data', data: { ...DATA, runs: [unbound] } } });
+    ok('‼️ a window that bound no turn says the testimony is not about this step',
+        html().includes('not attributable to this step'));
+    ok('…and still draws no verdict, because nothing here is evidence about it',
+        !html().includes('pmark bad'));
+
+    const changed = {
+        ...RUN,
+        rounds: RUN.rounds.map(r => ({
+            ...r,
+            steps: r.steps.map(s => (s.id === 's1' ? {
+                ...s,
+                applied: {
+                    models: ['claude-opus-5'], permissionMode: null,
+                    permissionModes: ['plan', 'bypassPermissions'],
+                    effort: null, scope: 'turn', turns: 3
+                }
+            } : s))
+        }))
+    };
+    msgHandler({ data: { type: 'data', data: { ...DATA, runs: [changed] } } });
+    ok('‼️ a permission mode that changed mid-work shows BOTH — one of them would be a coin toss',
+        html().includes('plan → bypassPermissions (changed during this work)'));
+
+    msgHandler({ data: { type: 'data', data: DATA } });
 }
 
 // ---------- M-29: the orchestrator's profile is the RUN's record ----------

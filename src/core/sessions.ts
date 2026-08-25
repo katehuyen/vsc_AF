@@ -103,6 +103,21 @@ export interface SessionTurn {
     errors: number;
     /** Model(s) that served this turn — can change mid-session. */
     models: string[];
+    /**
+     * ‼️ X-124 — THE PERMISSION MODE IN FORCE DURING THIS TURN.
+     *
+     * The session-level field is the LAST mode the whole transcript mentions,
+     * which is the right answer for "what is this session on now" and the wrong
+     * one for "what did that delegation run under" — a lane resumed with a
+     * different mode reported today's for a step taken last week. The transcript
+     * states the mode as an event in its own order, so the mode a turn ran under
+     * is the last such event at or before the turn opened; carrying it onto the
+     * turn is reading that order rather than re-deciding it.
+     *
+     * Absent when nothing had stated a mode yet, and on every engine that never
+     * writes the event at all — an absence, never a default.
+     */
+    permissionMode?: string;
 }
 
 /**
@@ -802,7 +817,11 @@ export function feedSessionParser(
         info.turns.push({
             n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
             tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, thinking: 0, ms: 0, endCtx: 0,
-            tools: 0, errors: 0, models: []
+            tools: 0, errors: 0, models: [],
+            // ‼️ X-124 — whatever mode the transcript had last stated when this
+            // turn opened. Read off the running value rather than the finished
+            // session's, which is how a later change stops speaking for it.
+            ...(info.permissionMode ? { permissionMode: info.permissionMode } : {})
         });
         turnModelSets.push(new Set());
     };
@@ -830,6 +849,12 @@ export function feedSessionParser(
         }
         if (line.type === 'permission-mode' && line.permissionMode) {
             info.permissionMode = line.permissionMode;
+            // ‼️ X-124 — a mode changed MID-TURN governs the rest of that turn,
+            // so the open turn takes it too. Without this the turn would keep
+            // reporting the mode it opened under while the transcript below it
+            // shows tools running under another.
+            const open = curTurn();
+            if (open) { open.permissionMode = line.permissionMode; }
             continue;
         }
 

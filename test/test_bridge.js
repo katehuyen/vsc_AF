@@ -3189,19 +3189,29 @@ const { opencodeStatus, syncToOpencode } =
             {
                 const stBlock = src.slice(src.indexOf("op: 'missions.status'"),
                     src.indexOf("op: 'missions.conversation'"));
+                // ‼️ X-124 — the reading itself moved into a pure module; the
+                // rule that a silence is a value moved with it and is measured
+                // where it now lives, not loosened.
+                const appliedSrc = fs.readFileSync(
+                    path.join(__dirname, '..', 'src', 'core', 'appliedTurn.ts'), 'utf8');
                 ok('‼️ U-104 — the lossy line is UNTOUCHED, so no caller reading it breaks',
                     /\.\.\.\(s\.runNote \? \{ ran: s\.runNote \} : \{\}\)/.test(stBlock));
                 ok('‼️ …and the same answer whole rides beside it, `cli` origins included',
                     /dimensions: \{/.test(stBlock)
                     && /origin: s\.ran\.origin/.test(stBlock)
                     && /workDir: s\.ran\.workDir \?\? null/.test(stBlock));
-                ok('‼️ …with what the ENGINE says it actually served, per step',
-                    /applied: appliedDimensions\(bySid\.get\(s\.runSessionId\)\)/.test(stBlock));
-                ok('…and for the orchestrator, which had no applied profile anywhere',
-                    /applied: r\.plannerSessionId/.test(stBlock));
+                // ‼️ X-124 — and it is per step AND bound to the stretch that
+                // step occupied. The lane's aggregate holds every model it ever
+                // served, so an unbound reading answered "was my model among
+                // them?" out of somebody else's round.
+                ok('‼️ …with what the ENGINE says it actually served, per step and over its own window',
+                    /applied: appliedDimensions\(\s*bySid\.get\(s\.runSessionId\),\s*stepWindow\(/.test(stBlock));
+                ok('…and for the orchestrator, over the RUN\'s window, which it had no profile for at all',
+                    /applied: r\.plannerSessionId\s*\?\s*appliedDimensions\(bySid\.get\(r\.plannerSessionId\), plannerWindow\(r\)\)/
+                        .test(stBlock));
                 ok('‼️ silence is a VALUE — a field the transcript does not state is null, never the request echoed back',
-                    /effort: null/.test(src)
-                    && /SILENCE IS A VALUE HERE/.test(src));
+                    /effort: null/.test(appliedSrc)
+                    && /SILENCE IS A VALUE HERE/.test(appliedSrc));
                 ok('‼️ …and the index is walked ONCE per call, not once per step',
                     /const bySid = new Map\(index\.allWithExternal\(\)\.map\(x => \[x\.sessionId, x\]\)\);/.test(stBlock));
                 ok('‼️ the resolver\'s answer is KEPT at the spawn, or none of the above has a source',
