@@ -247,6 +247,37 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         ok('new session id adopted after fallback', run.plannerSessionId === 'S10');
     }
 
+    // ---------- X-46: the fallback fails too — the lead is simply gone ------
+    // ‼️ The resume-fallback above is the RECOVERABLE half of a planner that
+    // did not answer. The other half had no test at all: when the fresh
+    // session dies as well, there is no lead left to ask and the run has to
+    // end. What matters is HOW. A run that quietly sat there, or one that
+    // called itself `cancelled` (which claims a hand did it), or one that said
+    // `success` on a mission nobody planned, would each be a different lie.
+    // The honest ending names the ceiling it hit and quotes the engine's own
+    // error, so a reader knows the lead was unreachable and not that the work
+    // was judged.
+    {
+        const { deps, calls } = makeDeps([
+            { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'fix', prompt: 'fix it' }] }, sid: 'S9' },
+            { fail: 'resume: session not found' },
+            { fail: 'claude: timed out after 600s' }
+        ]);
+        const run = newRun();
+        await new M.MissionEngine(spec(), run, HINTS, deps).execute();
+        ok('an unreachable lead ends the run failed, never cancelled and never done',
+            run.status === 'failed' && run.result.verdict === 'failed'
+            && run.result.stopReason === 'hard-limit');
+        ok('…and the ending quotes the engine\'s own error, so it is not read as a verdict on the work',
+            /could not be reached/.test(run.result.summary)
+            && run.result.summary.includes('timed out after 600s'));
+        ok('…after the fallback was really tried, and not a fourth time',
+            calls.length === 3 && calls[2].resumeSessionId === undefined);
+        ok('…and the round the wave already paid for is still on the ledger',
+            run.ledger.length === 1 && run.rounds.length === 1
+            && Math.abs(run.totalCostUSD - (0.1 + 0.2)) < 1e-9);
+    }
+
     // ---------- cancel during a wave ----------
     {
         let engine;

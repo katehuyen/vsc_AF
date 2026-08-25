@@ -11687,6 +11687,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(run, 'Run not found — missions.list shows current ids.');
                 const engine = missionEngines.get(runId);
                 if (engine) {
+                    // ‼️ X-46 — AND IT TRAVELS DOWN AGAIN. `missions.pause`
+                    // above cascades; this did not, so a parent paused from
+                    // anywhere and resumed from here came back alive with its
+                    // children still parked — and its own wave is waiting on
+                    // one of them. A pause that only descends is a deadlock
+                    // with a green status.
+                    pauseMissionChildren(runId, false);
                     engine.unpause();
                     missionChanged();
                 } else {
@@ -12917,7 +12924,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 missionChanged();
             }
-            else if (action === 'unpause') { missionEngines.get(runId)?.unpause(); missionChanged(); }
+            // ‼️ X-46 — the page's Resume button unparks the descendants too;
+            // see `missions.resume`. The pause above descends, so this must.
+            else if (action === 'unpause') {
+                pauseMissionChildren(runId, false);
+                missionEngines.get(runId)?.unpause();
+                missionChanged();
+            }
             else if (action === 'resume') { resumeMission(runId); }
             else { cancelMission(runId); }
         },

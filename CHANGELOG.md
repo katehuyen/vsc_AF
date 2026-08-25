@@ -2,7 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## Unreleased
+## 3.277.0 - X-32 closes: the adaptive acceptance matrix is a table that breaks the build, and an un-pause that never travelled down is fixed (2026-08-26)
+
+**X-46 — the gate X-32 had to pass is now an ADDRESS for every line it asks
+for, not a claim that "it is all covered".** The item lists twenty-four
+behaviours that must be proven — legacy records with no `mode`, every classic
+verb and its bridge contract, revise and replan, serialized writers, nested
+roll-up, independent review, hard ceilings, malformed planner output, reload at
+every stage, cancel propagation, per-engine capability, the planner's honesty
+about being Claude-only. Fourteen thousand green tests do not answer that: a
+suite can be green with a matrix row nobody ever measured. The mapping is now
+`docs/X-46-KABUL-MATRISI.md`, a table whose right-hand column is the exact test
+file and the exact assertion that proves each row — and `test_x46_matrix.js`
+reads that table back. A cited test renamed, deleted or reworded fails
+`npm test`, so the document cannot go stale in silence. It deliberately does not
+re-run the cited suites: the runner already proves they are green, and this
+proves the citation points at something real.
+
+**‼️ Filling the table found two things nobody had measured, and one of them was
+a live defect.** A pause travels down to a mission's children — its own wave is
+waiting on them, so a pause that stopped at the parent would leave the only
+thing still spending money untouched. The un-pause did not: it descended from
+the sidebar command and from nowhere else. Resume the parent from the Bridge
+(`missions.resume`) or from the page's own button and it came back alive with
+its children parked for ever — waiting on work that would never move again, a
+deadlock wearing a green status. Both surfaces now descend, and
+`test_mission_cascade.js` measures it **per call site**, so a new Pause/Resume
+surface added without the cascade is refused rather than remembered.
+
+The second was a hole in the record rather than in the behaviour: when the
+planner could not be reached at all — the resumed session dead and the fresh one
+dead too — nothing checked how the run ended. It ends `failed` with the engine's
+own error quoted, never `cancelled` (which would claim a hand did it) and never
+a verdict on work nobody planned; the round already paid for stays on the
+ledger. That is now pinned.
 
 **X-124 — "what it actually ran with" is now a fact about the turns a piece of
 work occupied, not about everything its conversation ever did.** U-104 put the
