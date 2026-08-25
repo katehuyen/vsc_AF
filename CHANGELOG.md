@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.279.0 - U-105: the session column is 250px of content whether or not it is scrolling · U-96: Check now is on every engine that has something to check, and the others say why (2026-08-26)
+
+**U-105 — opening the Resume section at the bottom of the Console's left column
+narrowed every card above it.** The Resume list lives inside that column, and the
+column is the scroller: opening the section is what pushes it past the window, so
+the scrollbar appeared and — on a classic, non-overlay scrollbar — was taken out
+of the 250px the column is. Every card lost the gutter on a section being opened
+underneath them and got it back when it closed. The width was never wrong; it was
+being measured from a box that changed.
+
+The gutter is now reserved permanently, so the first overflow moves nothing, and
+the column is widened by exactly that gutter so its CONTENT stays at the 250px
+everything on it is designed around — the width it had with the section closed,
+which is the state being kept. The gutter is read off the column itself rather
+than off a probe elsewhere on the page: measured on this machine, a probe answers
+0 while the column really reserves 15. Where scrollbars are overlays the
+measurement is 0 and the rule is exactly what it was. Verified on the rendered
+page in this machine's own Chromium: 250px of content with the section closed and
+with 3000px of content forced into it.
+
+**U-96 — "Check now" was Claude's alone, and the reader could not tell a
+technical limit from an oversight.** It was both. Codex's figures come off the
+newest rollout file on this disk, so they can be re-read at any moment and there
+was simply no way to ask — while Gemini is billed per token (there is no plan to
+be a percentage of) and Antigravity writes its quota nowhere this machine can
+read, so for those two there is genuinely nothing to press.
+
+Check now is now offered wherever there is a source, and where there is not, the
+panel says which of the two reasons it is, in the place the link would have been.
+The rule is derived from what the engine's record already states rather than from
+a list of ids, so an engine added later is covered by arriving. Only Claude's
+re-read spends a request; every other engine is a disk read, and asking again on
+one of them no longer touches the endpoint's budget. This also closes the last
+place the hover still changed shape between engines, which is what U-40 was for.
+
 ## 3.278.0 - U-98: a filter you could not type a number into, because a number box has no caret to put back (2026-08-26)
 
 **Typing into a min/max filter sent the caret to the far left after every

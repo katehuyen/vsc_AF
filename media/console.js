@@ -128,6 +128,27 @@
     // Before this, the wrapper had a `min-height` and the conversation box a
     // `max-height` — so a short conversation left a tall empty gap between the
     // last line and the composer, and the whole page scrolled as well as the box.
+    /**
+     * U-105 — how many pixels the column's own scrollbar gutter takes, read off
+     * THE COLUMN rather than off a synthetic probe.
+     *
+     * ‼️ A probe div with `overflow:scroll` is the usual trick and it is wrong
+     * here: measured, it answers 0 on this machine while `.clist` really
+     * reserves 15 — the gutter is decided by `scrollbar-gutter` on that element
+     * and the theme it is under, not by a bare scroller somewhere else on the
+     * page. So the answer comes from the box the number is FOR. Reading it back
+     * after the value is applied gives the same 15 (the gutter does not depend
+     * on the width), so this settles in one pass rather than chasing itself.
+     */
+    function measureScrollbar() {
+        try {
+            const col = document.querySelector('.clist');
+            if (!col) { return; }
+            const gutter = col.offsetWidth - col.clientWidth;
+            document.documentElement.style.setProperty('--af-sbw', (gutter > 0 ? gutter : 0) + 'px');
+        } catch (e) { /* the 0px default is the old behaviour, not a break */ }
+    }
+
     const STYLE = `<style>
         /* ‼️ The Console is an APP, not a document: it is exactly as tall as the
            window and NOTHING here scrolls the page. Two things made the composer
@@ -151,8 +172,22 @@
         #app { height:100%; min-height:0; display:flex; flex-direction:column; }
         #c-head { flex:none; }
         .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:0; }
-        .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px;
-            min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; }
+        /* ‼️ U-105 — THE COLUMN IS 250px OF CONTENT, SCROLLBAR OR NO SCROLLBAR.
+           The Resume section lives inside this scroller, so opening it is what
+           pushes the column past the window — the bar appears, and on a classic
+           (non-overlay) scrollbar it is taken OUT OF the 250px. Every card above
+           narrowed by ~15px on a section being opened at the bottom, and went
+           back when it closed. The width was never wrong; it was measured from
+           a box that changed.
+           So the gutter is reserved ALWAYS (scrollbar-gutter:stable, no flicker
+           on the first overflow) and the basis is widened by exactly the gutter,
+           which the shell measures once into --af-sbw. The content box stays
+           at the 250px everything on this column is designed around — the width
+           it had with the section CLOSED, which is the state being kept. Where
+           scrollbars are overlays (headless Chrome, macOS) the measurement is 0
+           and this is literally the old rule. */
+        .clist { flex:0 0 calc(250px + var(--af-sbw, 0px)); display:flex; flex-direction:column; gap:6px;
+            min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
         /* The column is four independent sections, not one block of html: the
            filter you are TYPING in must not be destroyed and rebuilt every time
            a streamed line arrives (that is the same bug the composer had). Each
@@ -2800,6 +2835,10 @@
                     </div>
                 </div>
             </div>`;
+        // ‼️ U-105 — the column exists now, so its gutter can be read off it.
+        // Done on every shell rebuild rather than once at boot: a theme change
+        // is a rebuild, and a theme is allowed to change the scrollbar.
+        measureScrollbar();
         // A rebuild starts every slot over — including the conversation's own
         // "nothing changed" key, or the new empty #talkinner would keep the old
         // key and never be filled (see paint's talkKey).

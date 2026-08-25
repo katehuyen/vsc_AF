@@ -1918,5 +1918,31 @@ const html = allHtml;
         /if \(stopBoxH\) \{ stopBoxH\(\); \}\s*\n\s*stopBoxH = window\.AFTextTools\.keepHeight/.test(src));
 }
 
+// ---- U-105: the column is 250px of CONTENT, scrolling or not --------------
+//
+// ‼️ THE RESUME SECTION LIVES INSIDE THE SCROLLER. Opening it is what pushes
+// the column past the window, so the bar appeared and — on a classic scrollbar —
+// was taken out of the 250px: every card above narrowed by the gutter on a
+// section being opened underneath them, and widened again when it closed. The
+// width was never wrong; it was measured from a box that changed.
+//
+// Measured in this machine's own Chromium on the rendered page: gutter 15px,
+// and with the compensation the column reads 250px of content with the section
+// closed AND with 3000px of content forced into it. What is pinned here is the
+// three parts that produce that, because any one of them alone does not.
+{
+    const src = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    ok('the column reserves its gutter always, so the first overflow does not move it',
+        /\.clist \{[^}]*scrollbar-gutter:stable/.test(src.replace(/\n/g, ' ')));
+    ok('‼️ …and is widened by exactly that gutter, so the CONTENT stays at 250px',
+        /flex:0 0 calc\(250px \+ var\(--af-sbw, 0px\)\)/.test(src));
+    ok('the shell publishes the gutter after the column exists to be measured',
+        src.indexOf('measureScrollbar();') > src.indexOf('<div class="clist">'));
+    ok('‼️ …and reads it off THE COLUMN, not off a probe that answers about something else',
+        /function measureScrollbar\(\)[\s\S]{0,400}querySelector\('\.clist'\)[\s\S]{0,200}offsetWidth - col\.clientWidth/.test(src));
+    ok('…and an unmeasurable gutter falls back to 0px, which is the old rule and not a break',
+        /var\(--af-sbw, 0px\)/.test(src) && /catch \(e\) \{ \/\* the 0px default/.test(src));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

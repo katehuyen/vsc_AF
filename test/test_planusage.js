@@ -746,7 +746,37 @@ const LIVE_PAYLOAD = {
                 /enabledCommands: \['agentfarm\.planUsageRefresh', 'agentfarm\.setUsageEngine'\]/.test(bar));
             ok('‼️ an engine with no figures is never coloured as if it were at 0%',
                 /const peak = enginePeak\(shown\);/.test(bar));
+
+            // ---- U-96: the action line no longer changes shape by engine ----
+            //
+            // ‼️ THE QUESTION THIS ANSWERS IS "TECHNICAL OR FORGOTTEN?". Check
+            // now was on Claude and simply absent elsewhere, so an engine that
+            // CANNOT be re-read looked exactly like one nobody had wired. Both
+            // are stated now: Codex reads its own rollout file and gets the
+            // action, the two with no readable source say which of the two
+            // reasons it is.
+            ok('the action line is decided by whether there IS a source, not by an id list',
+                /canRecheck\(shown\)/.test(bar) && !/shown\.id === 'codex'/.test(bar));
+            ok('‼️ …and an engine that cannot be re-read says why, where the link would have been',
+                /Nothing to check — /.test(bar)
+                && /billed per token, so there is no plan to be a percentage of/.test(bar)
+                && /publishes no quota this machine can read/.test(bar));
+            ok('…while the Dashboard card stays reachable either way',
+                (bar.match(/click the bar for the Dashboard card/g) || []).length === 2);
+
+            const eu = fs.readFileSync(path.resolve(__dirname, '../src/core/engineUsage.ts'), 'utf8');
+            ok('‼️ "can it be re-read" is derived from the state, so a new engine is covered by arriving',
+                /export function canRecheck\(u: EngineUsage \| undefined\): boolean \{/.test(eu)
+                && /u\.state === 'ok' \|\| u\.state === 'unknown'/.test(eu));
+            ok('…and "never read yet" counts as re-readable, which is when it matters most',
+                /'unknown'/.test(eu.slice(eu.indexOf('export function canRecheck'))));
         }
+        // ‼️ U-96 — and only Claude's re-read spends a request. Every other
+        // engine's source is on this disk, so asking again must not quietly
+        // charge the endpoint's budget for a file the extension already walks.
+        ok('‼️ a non-Claude Check now repaints from disk instead of spending a request',
+            /if \(usageEngine\(\) !== 'claude'\) \{\s*\n\s*planUsageBar\.paint\(\);/.test(ext)
+            && ext.indexOf("if (usageEngine() !== 'claude')") < ext.indexOf('await planUsage.get(true)'));
         ok('an agent asking usage.plan is told how live the answer is',
             /beat: planBeat\(\),/.test(ext));
         // ‼️ "nothing changed" and "we are not allowed to look" read identically

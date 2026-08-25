@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PlanUsageSnapshot, PlanUsageService, remainingText, untilText } from '../core/planusage';
-import { EngineUsage, engineBarText, enginePeak, usageSummary } from '../core/engineUsage';
+import { EngineUsage, canRecheck, engineBarText, enginePeak, usageSummary } from '../core/engineUsage';
 import { OPEN_DASHBOARD_AT_TOP } from './statusBar';
 import { clockUtc as afClockUtc } from '../core/aftime';
 
@@ -277,10 +277,28 @@ export class PlanUsageBar implements vscode.Disposable {
         lines.push(isClaude ? this.beatLine() : `_${shown.note}_`);
 
         // ---- what you can do from here ----
+        //
+        // ‼️ U-96 — THE ACTION LINE WAS THE LAST PLACE THIS PANEL STILL CHANGED
+        // SHAPE. Check now appeared on Claude and simply was not there on the
+        // others, so the reader could not tell an engine that CANNOT be
+        // re-read from one nobody had got round to wiring — which is exactly
+        // the question that was asked about it.
+        //
+        // Both halves are now stated. An engine with a source can be re-read on
+        // demand, and Codex has one: its figures come off the newest rollout
+        // file, so a re-read is a disk read and cheaper than Claude's, which
+        // spends a request. An engine with no source says so where the link
+        // would have been, rather than leaving a gap for the reader to
+        // interpret: `no-plan` is billed per token and has no percentage to
+        // refresh, `not-published` writes its quota nowhere this machine can
+        // read. Neither is an omission, and now neither looks like one.
         lines.push('');
-        lines.push(isClaude
+        lines.push(!shown || canRecheck(shown)
             ? '[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_'
-            : '_click the bar for the Dashboard card_');
+            : `_Nothing to check — ${shown.state === 'no-plan'
+                ? 'billed per token, so there is no plan to be a percentage of'
+                : 'this engine publishes no quota this machine can read'}._`
+                + ' · _click the bar for the Dashboard card_');
 
         const md = new vscode.MarkdownString([...lines, ...this.engineLines()].join('\n'));
         // ‼️ BOTH commands, or the engine rows render as dead text. A trusted

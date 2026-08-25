@@ -23125,7 +23125,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The status-bar indicator's "Check now" — the same forced read the
         // Dashboard card's ⟳ and the usage.plan bridge op perform, on the same
         // cache, so there is one implementation and one request budget.
+        // ‼️ U-96 — AND IT RE-READS WHATEVER THE SHOWN ENGINE READS. Check now
+        // was Claude's alone, so on Codex — whose figures come off the newest
+        // rollout file and are therefore re-readable at any moment — the reader
+        // had no way to ask for them and no way to know why. Only Claude costs
+        // a request; every other engine's source is on this disk, so a re-read
+        // there is a repaint (`engineUsageMatrix` walks the files each call)
+        // and it must NOT spend Claude's request budget to do it.
         vscode.commands.registerCommand('agentfarm.planUsageRefresh', async () => {
+            if (usageEngine() !== 'claude') {
+                planUsageBar.paint();
+                DashboardPanel.refreshIfOpen();
+                return;
+            }
             const snap = await planUsage.get(true);
             planUsageBar.paint();
             DashboardPanel.refreshIfOpen();

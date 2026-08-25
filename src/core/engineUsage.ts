@@ -259,6 +259,29 @@ export function readEngineUsage(
 }
 
 /** The one line an engine's row prints where a percentage would be. */
+/**
+ * U-96 — CAN THIS ENGINE'S FIGURES BE ASKED FOR AGAIN?
+ *
+ * ‼️ Derived from the state rather than declared per engine, because a list of
+ * ids is a list that goes out of date on the next engine. An engine either has
+ * a source this machine can read or it does not, and that is exactly what the
+ * state already says:
+ *
+ *   · `ok` / `unknown` — there IS a source. Claude's is the usage endpoint (a
+ *     request), Codex's is the newest rollout file (a disk read). `unknown` is
+ *     the case where re-reading matters most: it publishes them and nothing has
+ *     been read yet.
+ *   · `not-published` — it writes its quota nowhere readable, so a re-read
+ *     would read the same nothing.
+ *   · `no-plan` — billed per token; there is no percentage to refresh.
+ *
+ * So the two that offer no action offer none for a REASON, and the surface can
+ * say which rather than leaving a gap.
+ */
+export function canRecheck(u: EngineUsage | undefined): boolean {
+    return !u || u.state === 'ok' || u.state === 'unknown';
+}
+
 export function usageSummary(u: EngineUsage): string {
     if (u.state === 'ok' && u.bars.length) {
         return u.bars.map(b => `${b.title.replace(/^Current /, '')} ${b.percent}%`).join(' · ');
