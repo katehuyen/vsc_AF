@@ -22,3 +22,6 @@ par.out
 # had to be told so as a trap. Scratch is anything here that is not a tool.
 .tmp/*
 !.tmp/*.js
+# same rule, the other scratch folder a session may reach for. The reusable
+# bridge/measurement tools live in .tmp/ and are the ones that are kept.
+scratchpad/
