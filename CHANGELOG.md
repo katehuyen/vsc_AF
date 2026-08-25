@@ -4,6 +4,32 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-121 — the orchestrator's launch is resolved in one place, so the preview and
+the run describe the same command.** The planner is a headless `claude` in the
+LEAD AGENT'S folder with `agentFarm.taskExtraArgs` pasted onto its command line,
+and two pieces of code described that line without reading it. The preview read
+nothing: an empty planner-model box was reported as "nobody set it, the CLI
+decided" while the extra args, or the lead folder's own `.claude/settings.json`,
+were naming a model on that very line. The launch pasted the extra args down and
+then appended its own `--model`, so a user whose extra args carry one got the
+flag twice, with a precedence nobody here had measured.
+
+There is one ladder now and both callers climb it: the mission's explicit
+override, then the extra args' own flag (it is on the command line, so it beats
+a file), then the settings chain the CLI itself reads in that folder — in the
+CLI's own order, from the list measured once for X-84 rather than a second copy
+of the same filenames — and only then `cli`, which finally means what it says.
+The conflict is settled by REMOVAL rather than by a bet: when the mission
+overrides a dimension, the extra-args flag comes off the line, so it appears
+exactly once and the reported answer is the answer the CLI is given. The
+displaced flag is named rather than dropped in silence. A value that came from a
+settings file never becomes a flag — handing a file's own value back on the
+command line is a second source of truth over a file the user edits by hand.
+Effort has no settings rung at all, because Claude Code's settings.json has no
+effort key, and saying so is part of the answer. And the resolver takes no "is
+this a resume" flag: that absence is what keeps the first round and every later
+one on the same launch.
+
 **A-17 (second half) — the record is where the next mission is started, and a
 delete means what it says.** The measurement had no surface: it existed, it was
 correct, and the only way to read it was a bridge op — which is to say nobody
