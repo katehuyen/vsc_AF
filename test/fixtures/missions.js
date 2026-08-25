@@ -514,6 +514,18 @@ const data = (over) => Object.assign({
     specs: [SPEC],
     runs: [RUN],
     agents: AGENTS,
+    /**
+     * ‼️ X-94 — THE PROJECTS THE FORM MAY FILE THIS RUN UNDER, with a real
+     * distribution: a long name, a short one, and a window that IS sitting on
+     * one — which is the case the control exists for, because it is the one
+     * that used to happen silently.
+     */
+    projects: [
+        { id: 'prj_9ujsbtzr', name: 'PRS.MuratVural_DEV_VSC.AgentFarm' },
+        { id: 'prj_talk', name: 'TalkScribe' },
+        { id: 'prj_z', name: 'Zone' }
+    ],
+    activeProject: { id: 'prj_9ujsbtzr', name: 'PRS.MuratVural_DEV_VSC.AgentFarm' },
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable', 'grok-code'],
     engines: ENGINES,
     engineModels: ENGINE_MODELS,

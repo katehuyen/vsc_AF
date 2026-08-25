@@ -84,10 +84,25 @@ const brief = (s, d) => {
         /You cannot write to it/.test(text) && /no write tools, deliberately/.test(text));
     ok('‼️ …so recording what changed is a DELEGATION like any other',
         /RECORDING THAT IS A DELEGATION/.test(text));
-    ok('…and the delegate will know where, because it gets the same brief',
-        /runs under this project and is given the same brief/.test(text));
-    ok('…with the consequence stated rather than implied',
-        /left the next session blind/.test(text));
+    ok('…and the delegate will know where, because it gets the same map',
+        /runs under this project and is given the same map/.test(text));
+    /**
+     * ‼️ X-94 — AND IT IS TOLD WHAT IS **NOT** IN THE BRIEF.
+     *
+     * The lead used to be told its instructions carried "what is open on it",
+     * which was true and is now deliberately false: the mission copy of the
+     * brief has no plan items, no backlog, no worklog and no decisions in it.
+     * A briefing that goes on promising them sends the lead reading files
+     * looking for a list that was removed on purpose — the drift that turns one
+     * fix into two bugs.
+     */
+    ok('‼️ the lead is told the project\'s OPEN WORK is deliberately not in its brief',
+        /WHAT IS OPEN ON THAT PROJECT IS NOT IN IT, on purpose/.test(text));
+    ok('‼️ …and told not to go looking for it',
+        /Do not go and read them looking for something to do/.test(text));
+    ok('…while the promise it still makes is the one that survives — the MAP, not the queues',
+        /where its code is, and which document holds which role/.test(text)
+        && !/what is open on it/.test(text));
 }
 
 // ================================== 3. the block goes BEFORE the answer schema
@@ -121,7 +136,16 @@ const brief = (s, d) => {
     console.log('\n-- the brief rides the same flag every other Claude surface uses');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('the planner call asks for the project\'s context file',
-        /const ctxFile = resumeSessionId \? undefined : projectContextFileFor\(spec\.projectId\);/.test(ext));
+        /const ctxFile = resumeSessionId \? undefined : projectContextFileFor\(spec\.projectId, 'mission'\);/.test(ext));
+    // ‼️ X-94 — AND IT ASKS FOR THE MISSION'S COPY, which is a different text:
+    // no open plan items, no backlog, no worklog, no write-back protocol. The
+    // audience argument is the whole of that difference, so a refactor that
+    // drops it silently puts the project's standing queues back in front of
+    // every planner call and every delegation.
+    ok('‼️ …the MISSION\'s copy of it, not a session\'s',
+        /projectContextFileFor\(spec\.projectId, 'mission'\)/.test(ext));
+    ok('‼️ …and a mission DELEGATION reads the same copy — `missionId` is the discriminator',
+        /projectContextFileFor\(\s*\n?\s*task\.projectId, task\.missionId \? 'mission' : 'session'\)/.test(ext));
     ok('‼️ …and ONLY when it is not resuming — a resume already has it in the conversation',
         /resumeSessionId \? undefined :/.test(ext));
     ok('…passed as a file, quoted, on the flag Claude reads it with',

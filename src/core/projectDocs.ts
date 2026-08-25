@@ -1291,6 +1291,24 @@ export interface BriefInput {
      * to hold more than the injected copy, not the same thing.
      */
     maxChars?: number;
+    /**
+     * ‼️ X-94 — WHO IS READING IT. `session` (default) is the brief as it has
+     * always been. `mission` drops the four STANDING LISTS — open plan items,
+     * the top of the backlog, recent decisions, recent worklog — and replaces
+     * the write-back protocol, because a mission arrives with its own objective
+     * and the project's queues are not its subject.
+     *
+     * What it KEEPS is the map: identity, people, code roots and "Where things
+     * are". That is deliberate — a mission can be told to record something, and
+     * then it has to know which document holds which role. What it must not be
+     * handed is the standing pile of unrelated work, nor an instruction to file
+     * a worklog line for work nobody asked it to record.
+     *
+     * The lists are not merely hidden: `briefSource` does not read them off
+     * disk at all for this audience, so a mission spawn does not pay for
+     * parsing a 500KB backlog either.
+     */
+    audience?: 'session' | 'mission';
 }
 
 interface BriefLevel {
@@ -1381,6 +1399,10 @@ interface BriefSource {
 function briefSource(o: BriefInput): BriefSource {
     const roles = o.roles ?? {};
     const widest = BRIEF_LEVELS[0];
+    // ‼️ X-94 — a mission is not shown the standing lists, so it does not read
+    // them. Returning early rather than filtering later is the difference
+    // between not printing a 500KB backlog and not parsing one.
+    if (o.audience === 'mission') { return { plan: [], backlog: [], log: [] }; }
     return {
         plan: roles.plan
             ? openPlanItems(readTextOrEmpty(roles.plan), widest.plan)
@@ -1505,7 +1527,11 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         for (const item of backlog) { out.push(briefBacklogLine(item, level.chars)); }
     }
 
-    const decisions = (o.decisions ?? []).slice(0, level.decisions);
+    // ‼️ X-94 — the decision records are the project's own history, which is
+    // the fourth standing list and off-topic for the same reason as the other
+    // three. `Where things are` names the folder if a run really needs one.
+    const decisions = o.audience === 'mission'
+        ? [] : (o.decisions ?? []).slice(0, level.decisions);
     if (decisions.length) {
         out.push('', '## Recent decisions');
         for (const d of decisions) {
@@ -1520,6 +1546,29 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
             const body = clipEntry(line.replace(/^-\s*/, ''), level.chars);
             out.push(`- ${body}`);
         }
+    }
+
+    /**
+     * ‼️ X-94 — THE TAIL A MISSION GETS INSTEAD.
+     *
+     * The session tail is a PROTOCOL: record what you did, tick the plan, close
+     * the backlog item. Handed to a headless delegate that was started for an
+     * objective of its own, it is an instruction to write into the user's
+     * documents about work they never asked it to record — and the user reads
+     * the result as the mission wandering into the project.
+     *
+     * What survives is the one true half: the paths are above, and if the
+     * OBJECTIVE says to record something, that is where it goes.
+     */
+    if (o.audience === 'mission') {
+        out.push('', '## This project, for a mission');
+        out.push('- Your objective is the work. This project is where it happens, not what it is.');
+        out.push(`- Do not record anything in the documents above unless the objective says to${roles.log
+            ? `; if it does, the worklog is ${rel(roles.log)}` : ''}.`);
+        out.push('- Do not reformat the user\'s documents, their icons or their task metadata.');
+        out.push('');
+        out.push(`_generated ${localStamp(now)}_`);
+        return out.join('\n') + '\n';
     }
 
     out.push('', '## Writing back');

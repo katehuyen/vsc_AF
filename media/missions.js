@@ -114,6 +114,26 @@
     // form model survives re-renders
     const form = {
         title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '', plannerEffort: '',
+        /**
+         * ‼️ X-94 — WHICH PROJECT THIS RUN IS FILED UNDER, as a CHOICE.
+         *
+         * There was no control here at all, and the host's contract has three
+         * answers, not two: the key ABSENT means "the window's active project",
+         * the empty string means "deliberately none", and an id means that one.
+         * With no control the form could only ever say the first, so a mission
+         * started while the window sat on a project was filed under it, briefed
+         * with it and had every delegation filed under it — without the person
+         * starting it ever being shown the word.
+         *
+         * Three values, mapping exactly onto that contract:
+         *   ''         → send no `project` key   (inherit the window's)
+         *   '--none--' → send `project: ''`      (deliberately none)
+         *   '<id>'     → send `project: '<id>'`  (that one)
+         * The sentinel carries dashes a generated project id never does, and an
+         * id the host cannot match is REFUSED rather than dropped, so even a
+         * collision could not pass silently.
+         */
+        projectId: '',
         // ‼️ `engine` AND `engines` — the mission-wide default and each member's
         // override (X-35). The core has taken both since X-18 and this form
         // offered neither, so every mission delegated on Claude no matter what
@@ -1015,6 +1035,75 @@
             <button type="button" class="small" id="f-narrow-clear">Clear them</button>
             <button type="button" class="secondary small" id="f-narrow-keep">Keep as they are</button>
         </div>` : '';
+        /**
+         * ‼️ X-94 — THE PROJECT, AS A CONTROL RATHER THAN AS SOMETHING THAT
+         * HAPPENED TO YOU.
+         *
+         * A mission started from this page inherited whatever project the
+         * window was sitting on. That is not a small filing detail: the run,
+         * every delegation it makes and the planner's own session are filed
+         * under it, and the LEAD is briefed with that project. A person who
+         * never chose it reads the transcript and asks what their objective has
+         * to do with that project — which is exactly how this item was opened.
+         *
+         * MIRROR: the box is narrow, so its first tooltip line is what the run
+         * would REALLY be filed under and who decided that (`window` = nobody
+         * did), then the description. The muted line beside it carries the same
+         * fact where it costs no hover, because it is the one people are
+         * surprised by.
+         */
+        const projects = DATA.projects || [];
+        const winProject = DATA.activeProject || null;
+        const projInherit = winProject
+            ? `— this window's project: ${winProject.name} —`
+            : '— none: this window is not on a project —';
+        /**
+         * ‼️ WHAT THIS DRAFT WOULD BE FILED UNDER — answered from the FORM, and
+         * only then confirmed by the host.
+         *
+         * The first version of this line read the preview alone, so before the
+         * first resolution came back (and on any repaint that had none) the box
+         * said "this window's project: X" while the sentence under it said
+         * "filed under no project". A control that contradicts its own caption
+         * is worse than one with no caption: the page knows all three answers
+         * from `form.projectId`, `DATA.projects` and `DATA.activeProject`, so it
+         * states them, and the host's reply — which ran the REAL resolver, and
+         * is the thing that can refuse an id — overrides when it exists.
+         */
+        const projPv = (PREVIEW && PREVIEW.project) || null;
+        const projPicked = form.projectId === '--none--'
+            ? null
+            : (form.projectId
+                ? (projects.filter(p => p.id === form.projectId)[0] || null)
+                : winProject);
+        const projName = projPv ? projPv.name : (projPicked ? projPicked.name : '');
+        const projOrigin = projPv
+            ? projPv.origin
+            : (projPicked && !form.projectId ? 'window' : 'requested');
+        const projNow = projName
+            ? `${projName}${projOrigin === 'window' ? ' — inherited from this window, nobody chose it' : ' — chosen on this draft'}`
+            : 'No project — this run is filed nowhere';
+        const projectRow = `
+            <div class="frow"><label>Project
+                <select id="f-project" title="${C.esc(projNow + '\n\n'
+                    + 'Which project this run is FILED UNDER. It is not a label: the run, the planner\'s own'
+                    + ' session and every delegation it makes land on that project\'s Work tab, and the lead is'
+                    + ' told what the project is and where its documents live.'
+                    + '\n\n‼️ It is NOT told what is open on that project. A mission arrives with its own'
+                    + ' objective, so the project\'s plan, backlog, worklog and decisions are left out of the'
+                    + ' brief deliberately — they are a different subject and they were being paid for on'
+                    + ' every planning call and every delegation.'
+                    + '\n\nLeft on the first option this follows the window, which is what every mission'
+                    + ' started before this control existed did.')}">
+                    <option value=""${form.projectId === '' ? ' selected' : ''}>${C.esc(projInherit)}</option>
+                    <option value="--none--"${form.projectId === '--none--' ? ' selected' : ''}>None — deliberately file this run nowhere</option>
+                    ${projects.map(p => `<option value="${C.esc(p.id)}"${form.projectId === p.id ? ' selected' : ''}>${C.esc(p.name)}</option>`).join('')}
+                </select></label>
+                <span class="muted small">${projName
+                    ? (projOrigin === 'window'
+                        ? `Filed under <b>${C.esc(projName)}</b> — inherited from this window, not chosen here. The lead is told what that project is and where its documents are; it is <b>not</b> given its backlog, plan or worklog.`
+                        : `Filed under <b>${C.esc(projName)}</b>. The lead is told what it is and where its documents are — not what is open on it.`)
+                    : 'Filed under no project. Its delegations appear on no project\'s Work tab.'}</span></div>`;
         const commonBlock = `
             ${orchestratorBlock}
             <div class="frow"><span class="flabel">${adaptive
@@ -1030,6 +1119,7 @@
             <div class="frow"><label>Workdir <input type="text" id="f-workdir" placeholder="(optional) target repo/folder — delegations run inside it" value="${C.esc(form.workdir)}"></label>
                 <button class="secondary small" id="f-browse">Browse…</button>
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
+            ${projectRow}
             <div class="frow limrow">
                 ${lim('maxCostUSD', 'Max cost $', 'Hard budget: the planner is forced to finish when spent. Only an engine that states a per-turn price can move this figure — ' + priced + ' do; on ' + unpriced + ' it can never be reached, and the token ceiling beside it is what fences that run')}
                 ${lim('maxTokens', 'Max tokens', 'The ceiling that binds when the engine states no price: total tokens across the whole mission. This is the ONLY hard budget for a team delegating on ' + unpriced)}
@@ -1117,6 +1207,10 @@
         form.goal = val('f-goal', form.goal);
         form.leadAgentId = val('f-lead', form.leadAgentId);
         form.workdir = val('f-workdir', form.workdir);
+        // ‼️ X-94 — guarded like every other read: on an adaptive draft the row
+        // lives inside the Advanced fold, and an unguarded read would wipe a
+        // chosen project the moment the fold closed.
+        form.projectId = val('f-project', form.projectId);
         form.plannerModel = val('f-planner', form.plannerModel);
         form.plannerEffort = val('f-planner-effort', form.plannerEffort);
         DATA.agents.forEach((a, i) => {
@@ -1199,6 +1293,17 @@
             maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
             approvalMode: form.approvalMode
         };
+        /**
+         * ‼️ X-94 — THE THREE-WAY ANSWER, SENT AS THREE ANSWERS. The host reads
+         * an ABSENT `project` key as "use the window's" and a present empty
+         * string as "deliberately none"; collapsing them would make "none"
+         * impossible to say from this page and would turn every draft into an
+         * explicit claim about a project the user never typed. The key is added
+         * only when the user actually moved the box, so a draft left alone
+         * posts the exact message it posted before this control existed.
+         */
+        if (form.projectId === '--none--') { input.project = ''; }
+        else if (form.projectId) { input.project = form.projectId; }
         if (form.mode === 'adaptive') {
             input.mode = 'adaptive';
             input.autonomy = form.autonomy;
@@ -3049,6 +3154,13 @@
             wire('f-scope-fleet', () => setScope('fleet'));
             wire('f-scope-sel', () => setScope('selected'));
             wire('f-adv', () => { readForm(); advOpen = !advOpen; render(); });
+            // ‼️ X-94 — the project box REDRAWS on change. Its MIRROR line and
+            // the sentence beside it state what the run would be filed under
+            // and who decided that, and both come from the preview: without
+            // this the user picks a project and the page goes on telling them
+            // the old answer until something else happens to repaint.
+            const projSel = document.getElementById('f-project');
+            if (projSel) { projSel.addEventListener('change', () => { readForm(); render(); }); }
             wire('cn-add', () => { readForm(); form.constraints.push(''); render(); });
             wire('cr-add', () => { readForm(); form.criteria.push({ text: '', required: true }); render(); });
             form.constraints.forEach((_, i) => wire('cn-del-' + i, () => {

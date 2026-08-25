@@ -4,6 +4,39 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**X-94 — a mission is told what a project IS, not what is queued on it.** A
+person ran an adaptive objective, read the planner's transcript, and found this
+project's backlog in it: five unrelated items, the recent worklog, and an
+instruction to record what it did in the worklog before it finished. None of
+that is a mission's subject. A mission arrives with an objective, its
+constraints and its success criteria — the project's standing work is the
+question a SESSION opens with, and the write-back protocol is addressed to a
+person's own conversation, not to a headless delegate that would then file
+worklog lines about work nobody asked it to record.
+
+The brief now has an audience. A mission's copy keeps the MAP — what the
+project is, its people, its code roots and which document holds which role,
+because a mission CAN be told to record something and then has to know where —
+and drops the four standing lists (open plan items, top of backlog, recent
+decisions, recent worklog) along with the session's write-back tail. Not merely
+hidden: those documents are not read off disk at all on a mission spawn, so a
+500 KB backlog is not parsed to be thrown away. The lead's briefing says the
+omission out loud rather than leaving it to be discovered, because it used to
+promise "what is open on it" and that promise is now deliberately false. The
+two audiences are written to different files, since a mission's delegations are
+spawns and they happen while somebody is starting a session.
+
+And the second half of the same question — *is a mission even associated with a
+project?* It was, invisibly. `MissionSpec.projectId` has existed since Faz 5 and
+the Missions form drew no control for it, so a mission started while the window
+sat on a project was filed under it, briefed with it, and had every delegation
+filed under it, without the word "project" appearing anywhere on the form. There
+is a Project box now, offering all three answers the host has always accepted:
+this window's project (the visible default, named), a deliberate none, or one
+you pick. `missions.preview` and the form both say which of the two it was —
+`requested` or `window` — because "inherited while you were not looking" is the
+answer to the question that opened this item.
+
 **X-126 — the extension host is no longer frozen by the size of its own
 history.** Agent Farm read every Claude transcript from byte zero,
 synchronously, on the extension host's only thread: once at every window open,

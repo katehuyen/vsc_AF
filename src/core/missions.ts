@@ -458,7 +458,16 @@ export interface MissionPreview {
     /** U-102 — which reading of the pool this draft means; classic drafts omit it. */
     poolScope?: 'fleet' | 'selected';
     workdir?: string;
-    project?: { id: string; name: string };
+    /**
+     * ‼️ X-94 — WHICH PROJECT THIS RUN IS FILED UNDER, AND WHO DECIDED THAT.
+     *
+     * `requested` = the draft named one (or named "" for deliberately none, in
+     * which case this is absent). `window` = nobody named one and the window's
+     * ACTIVE project was inherited — the case a person is surprised by, because
+     * they never chose it and yet the run and every delegation it makes are
+     * filed under that project and briefed with it.
+     */
+    project?: { id: string; name: string; origin: 'requested' | 'window' };
     approvalMode?: 'each-round' | 'auto';
     limits?: MissionLimits;
     /** Draft-wide refusals — every row's problems, deduplicated, plus anything
@@ -3736,14 +3745,16 @@ export class MissionEngine {
         const proj = this.deps.project?.();
         if (proj?.name) {
             blocks.push(`## Project — this run is work for "${proj.name}"\n`
-                + 'Its brief is already in your instructions above: what it is, what is open on it, and which '
+                + 'Its brief is already in your instructions above: what it is, where its code is, and which '
                 + 'document holds which role.\n'
-                + '‼️ You cannot write to it. You have no write tools, deliberately — so if this run changes what '
-                + 'is true of the project (something shipped, a plan item finished, a decision settled, a backlog '
-                + 'item closed), RECORDING THAT IS A DELEGATION like any other. Every delegate you send runs under '
-                + 'this project and is given the same brief, so it can be told "update the plan/backlog/worklog" '
-                + 'and will know where. A run that moved the project and recorded nothing has left the next '
-                + 'session blind.\n');
+                + '‼️ X-94 — WHAT IS OPEN ON THAT PROJECT IS NOT IN IT, on purpose. Your objective is the work; '
+                + 'the project\'s plan, backlog and worklog are a different subject and you were not started to '
+                + 'act on them. Do not go and read them looking for something to do.\n'
+                + '‼️ You cannot write to it either. You have no write tools, deliberately — so if THIS RUN\'s '
+                + 'objective is to change what is true of the project (something shipped, a plan item finished, a '
+                + 'decision settled, a backlog item closed), RECORDING THAT IS A DELEGATION like any other. Every '
+                + 'delegate you send runs under this project and is given the same map, so it can be told '
+                + '"update the plan/backlog/worklog" and will know where.\n');
         }
 
         const list = isAdaptive(this.spec) ? (this.deps.workflows?.() ?? []) : [];

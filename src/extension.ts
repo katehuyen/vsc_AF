@@ -211,7 +211,8 @@ import {
     setBacklogQueue, setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
-    buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
+    buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX,
+    ProjectAudience
 } from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, recentCommits, repoRelative } from './core/gitfile';
@@ -1729,7 +1730,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * so a streaming turn would have run that scan — and two file writes —
      * dozens of times a second.
      */
-    const composeProjectContext = (projectId: string | undefined) => {
+    const composeProjectContext = (
+        projectId: string | undefined,
+        audience: ProjectAudience = 'session'
+    ) => {
         const p = projectId ? projectStore.get(projectId) : undefined;
         if (!p) { return undefined; }
         // Already absolute: the store expands its tokenised paths on load.
@@ -1751,11 +1755,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // one is built to a budget, which shortens its lists instead of letting
         // the system-prompt cap slice the tail off; the tail is "Writing back",
         // the only part of a brief an agent has to act on.
+        // ‼️ X-94 — `_AF/BRIEF.md` IS THE SESSION BRIEF AND ONLY EVER THAT. A
+        // mission spawn must not rewrite that file with its own shorter shape:
+        // it is the document the "[cut to fit — the full brief is at …]" pointer
+        // points at and the one a person opens in Obsidian, and a delegation
+        // firing while somebody is reading it would silently replace it with a
+        // copy that has no backlog in it. `writeBrief` is skipped for the
+        // mission audience below; this stays the session text either way.
         const brief = buildBrief(seed);
         const briefPath = hasFolder ? path.join(folder, BRIEF_REL) : undefined;
         const text = buildProjectContext({
-            name: p.name, id: p.id, folder, repos, briefPath,
-            brief: buildBrief({ ...seed, maxChars: PROJECT_BRIEF_MAX }),
+            name: p.name, id: p.id, folder, repos, briefPath, audience,
+            brief: buildBrief({ ...seed, maxChars: PROJECT_BRIEF_MAX, audience }),
             generatedAt: Date.now(),
             extra: cfg().get<string>('projectContextExtra', '')
         });
@@ -1769,11 +1780,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * its own: a session the user starts in their own terminal never gets the
      * flag (measured), but it can still read `_AF/BRIEF.md`.
      */
-    const projectContextFileFor = (projectId: string | undefined): string | undefined => {
-        const c = composeProjectContext(projectId);
+    const projectContextFileFor = (
+        projectId: string | undefined,
+        audience: ProjectAudience = 'session'
+    ): string | undefined => {
+        const c = composeProjectContext(projectId, audience);
         if (!c) { return undefined; }
-        if (c.hasFolder) { writeBrief(c.folder, c.brief); }
-        const file = path.join(contextDir, contextFileName(c.project.id));
+        // ‼️ X-94 — only a SESSION spawn refreshes the folder's own copy; see
+        // `composeProjectContext`. A mission writes nothing into the project.
+        if (c.hasFolder && audience === 'session') { writeBrief(c.folder, c.brief); }
+        const file = path.join(contextDir, contextFileName(c.project.id, audience));
         try {
             fs.mkdirSync(contextDir, { recursive: true });
             fs.writeFileSync(file, c.text, 'utf8');
@@ -2005,7 +2021,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // The project the task was CREATED under — not the active one now.
             // A queued task can start hours later, in a window that has moved on.
             activeProjectId: () => activeProjectId() || undefined,
-            projectContextFile: (task) => projectContextFileFor(task.projectId),
+            // ‼️ X-94 — A MISSION DELEGATION READS THE MISSION'S COPY. Its
+            // prompt already says what it is for; the project's open plan
+            // items, backlog and worklog are not its subject, and the session
+            // brief's tail would tell it to file a worklog line for work
+            // nobody asked it to record. `missionId` is the discriminator and
+            // it is set the moment a delegation task is created.
+            projectContextFile: (task) => projectContextFileFor(
+                task.projectId, task.missionId ? 'mission' : 'session'),
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
                 const quotaPct = windowPct();
@@ -3614,7 +3637,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // of the same session: the brief is already in that
                 // conversation, and repeating it would pay for the same tokens
                 // once per round for the whole run.
-                const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId);
+                //
+                // ‼️ X-94 — AND IT IS THE MISSION'S COPY OF THE BRIEF, not a
+                // session's. The lead is told what the project IS and where its
+                // documents are; it is not handed the project's open plan
+                // items, the top of its backlog, its recent worklog or the
+                // instruction to write into any of them. A mission arrives with
+                // an objective — the project's standing queues are a different
+                // subject, and they were being paid for on every run.
+                const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId, 'mission');
                 const ctx = ctxFile && !ctxFile.includes('"')
                     ? `--append-system-prompt-file "${ctxFile}" ` : '';
                 const command = `claude ${extra ? extra + ' ' : ''}${model}${effort}${ctx}` +
@@ -4649,6 +4680,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         /** Whether the caller named the lead or `resolveLead` picked it. */
         leadOrigin: 'requested' | 'auto';
         poolScope?: 'fleet' | 'selected';
+        /**
+         * ‼️ X-94 — WHETHER THE PROJECT WAS CHOSEN OR INHERITED. `requested` is
+         * a draft that named one; `window` is a draft that named nothing and
+         * took whatever project the window happened to be on. Undefined when
+         * the run has no project at all. Without this the two are the same
+         * field and a person cannot tell "I filed this here" from "this was
+         * filed for me while I was not looking".
+         */
+        projectOrigin?: 'requested' | 'window';
     };
     /**
      * ‼️ U-103 — ONE RESOLUTION, TWO CALLERS.
@@ -4855,15 +4895,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // rather than dropped: a mission whose whole output quietly lands
         // nowhere is the failure that takes a week to notice.
         let projectId: string | undefined;
+        // ‼️ X-94 — …AND WHICH OF THE TWO WAYS IT GOT THERE, kept apart. The
+        // inherited case is the one that surprises a person: they never picked
+        // a project, and the run plus every delegation it makes is filed under
+        // one and briefed with it.
+        let projectOrigin: 'requested' | 'window' | undefined;
         if (input.project !== undefined) {
             const key = String(input.project ?? '').trim();
             if (key) {
                 const p = projectStore.get(key);
                 if (!p) { return `No project matches "${key}" — the Projects page lists them.`; }
                 projectId = p.id;
+                projectOrigin = 'requested';
             }
         } else {
             projectId = activeProjectId() || undefined;
+            if (projectId) { projectOrigin = 'window'; }
         }
         // ‼️ M-15 — THE OBJECTIVE IS CHECKED BEFORE A PENNY IS SPENT. An adaptive
         // run with no criteria cannot be judged, and one with a duplicate
@@ -4903,7 +4950,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round'
             },
             leadOrigin,
-            ...(poolScope === 'fleet' || poolScope === 'selected' ? { poolScope } : {})
+            ...(poolScope === 'fleet' || poolScope === 'selected' ? { poolScope } : {}),
+            ...(projectOrigin ? { projectOrigin } : {})
         };
     };
 
@@ -5089,7 +5137,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 planner, workers,
                 ...(resolved.poolScope ? { poolScope: resolved.poolScope } : {}),
                 ...(spec.workdir ? { workdir: spec.workdir } : {}),
-                ...(project ? { project: { id: project.id, name: project.name } } : {}),
+                // ‼️ X-94 — and WHO filed it there. `window` means nobody named
+                // a project on this draft; the run inherits the one the window
+                // is on, which is the answer to "what has this mission got to
+                // do with that project?" being asked at all.
+                ...(project ? {
+                    project: {
+                        id: project.id, name: project.name,
+                        origin: resolved.projectOrigin ?? 'requested'
+                    }
+                } : {}),
                 approvalMode: spec.approvalMode,
                 limits: spec.limits,
                 problems
@@ -6081,7 +6138,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the one-writer rule still applies), '
                 + 'project? (id or name — the mission AND every delegation it makes are filed under it, so the '
                 + 'project\'s Work tab shows the whole run; pass "" for deliberately none. Omit it and the '
-                + 'window\'s active project is used, which is only right when a person just started this). '
+                + 'window\'s active project is used, which is only right when a person just started this. '
+                + '‼️ X-94 — WHAT THE PROJECT GIVES A MISSION IS A MAP, NOT A QUEUE: the lead and every '
+                + 'delegate are told what the project is, where its code is and which document holds which '
+                + 'role, and are NOT given its open plan items, the top of its backlog, its recent worklog '
+                + 'or its decisions. A mission arrives with an objective; the project\'s standing work is a '
+                + 'different subject and was being paid for on every planning call. The session protocol — '
+                + '"work on this project, record what you did in the worklog" — is a SESSION\'s and is not '
+                + 'handed to a headless run. missions.preview says which project a draft lands on and '
+                + 'whether you named it or the window did), '
                 + '‼️ mode? (classic|adaptive, default classic — M-15). An ADAPTIVE mission is given an '
                 + 'OUTCOME rather than a recipe: successCriteria ([{id?, text, required?}] — required, and '
                 + 'each id is stable for the life of the mission because evaluations refer to it), '
@@ -6117,7 +6182,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'answers is what that mission will be, not a second opinion about it. Answers '
                 + '`ok`, `error` (the sentence start would have refused with, worded identically), '
                 + '`mode`, `title`, `goal`, `lead` (with `origin`: requested = you named it, auto = '
-                + 'resolveLead picked the first of the pool), `poolScope`, `workdir`, `project`, '
+                + 'resolveLead picked the first of the pool), `poolScope`, `workdir`, '
+                + '‼️ `project` (X-94 — with its own `origin`: `requested` = this draft named it, '
+                + '`window` = NOBODY named one and the window\'s active project was inherited. The second '
+                + 'is the case a person is surprised by: the run, the planner\'s session and every '
+                + 'delegation are filed under a project they never chose. Absent = no project at all), '
                 + '`approvalMode`, `limits`, and the cast. ‼️ EACH CAST ROW CARRIES `requested` vs '
                 + '`effective` {engine, model, effort, permissionMode, workDir} AND `origin` per field '
                 + '— member | mission | agent | fleet | cli — which is the answer to "why did that '
@@ -11937,6 +12006,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             specs: missionStore.specs,
             runs: missionRunsForPanel(),
             agents: agents.map(a => ({ id: a.id, name: a.name })),
+            /**
+             * ‼️ X-94 — THE PROJECTS, SO THE FORM CAN OFFER ONE.
+             *
+             * `MissionSpec.projectId` has existed since Faz 5 and this page drew
+             * no control for it, so a mission started here silently inherited
+             * whatever project the window was on — and the run, the planner's
+             * session and every delegation were filed under it and briefed with
+             * it. `activeProject` is what that inheritance would land on, named
+             * in the first option so it is a visible default rather than an
+             * invisible one.
+             *
+             * Archived projects are left out: filing new work under one is not
+             * a thing to offer, and the bridge still accepts an explicit id for
+             * a caller that means it.
+             */
+            projects: projectStore.all()
+                .filter(p => p.status !== 'archived')
+                .map(p => ({ id: p.id, name: p.name })),
+            activeProject: (() => {
+                const id = activeProjectId();
+                const p = id ? projectStore.get(id) : undefined;
+                return p ? { id: p.id, name: p.name } : null;
+            })(),
             // ‼️ X-77 (U-65) — WHICH INTENTS AWAIT AN ANSWER AND WHICH SETTLE
             // ONE, from the registry that owns them. The page carried its own
             // copy and it was two intents out of date: `synthesis` and `vote`

@@ -73,6 +73,12 @@ const DATA = {
     }],
     runs: [RUN],
     agents: [{ id: 'a0', name: 'lead' }, { id: 'a1', name: 'coder' }, { id: 'a2', name: 'reviewer' }],
+    // ‼️ X-94 — the projects the form may file a run under, and the one this
+    // window is sitting on. The window HAS one here on purpose: that is the
+    // case the control exists for, because it is the one that used to happen
+    // without anybody being shown a word about it.
+    projects: [{ id: 'prj_af', name: 'Agent Farm' }, { id: 'prj_talk', name: 'TalkScribe' }],
+    activeProject: { id: 'prj_af', name: 'Agent Farm' },
     // The host's own PERMISSION_CHOICES, verbatim — the form must never carry a
     // copy of this vocabulary, so the fixture is the real list.
     permissions: [
@@ -403,6 +409,66 @@ ok('Start posts the assembled form', created && created.input.goal === 'Ship the
 ok('planner-model override rides along', created && created.input.plannerModel === 'opus');
 ok('‼️ U-100 — and so does the planner EFFORT, on the same payload',
     created && created.input.plannerEffort === 'high');
+/**
+ * ‼️ X-94 — THE PROJECT IS A THREE-WAY ANSWER AND IT IS POSTED AS THREE.
+ *
+ * The host reads an ABSENT `project` key as "the window's active project", a
+ * present empty string as "deliberately none", and an id as that one. Before
+ * this the page could only ever say the first, so a mission started while the
+ * window sat on a project was filed under it, briefed with it and had every
+ * delegation filed under it — and nobody was ever shown the word "project".
+ *
+ * The untouched case is the one that must not move: a draft where nobody
+ * touched the box posts the exact message it posted before the control existed.
+ */
+{
+    ok('‼️ an untouched project box posts NO `project` key at all',
+        created && !('project' in created.input));
+
+    posted = [];
+    getEl('f-project').value = '--none--';
+    getEl('f-start').listeners.click();
+    const none = posted.find(p => p.type === 'create');
+    ok('‼️ "None" posts an EMPTY STRING — the host\'s word for deliberately nowhere',
+        none && none.input.project === '');
+
+    posted = [];
+    getEl('f-project').value = 'prj_talk';
+    getEl('f-start').listeners.click();
+    const named = posted.find(p => p.type === 'create');
+    ok('‼️ …and a named project posts its id', named && named.input.project === 'prj_talk');
+
+    /**
+     * ‼️ AND THE SENTENCE UNDER THE BOX IS NOT A STALE ANSWER.
+     *
+     * This is the bug the first draft of the control shipped and a rendered
+     * picture caught: the caption read the PREVIEW alone, so until the host
+     * answered — which is never, on a repaint that asked nothing — the box said
+     * "this window's project: Agent Farm" while the line beneath it said "filed
+     * under no project". The page knows all three answers from the form, so it
+     * states them, and the host's reply overrides only when it exists.
+     */
+    getEl('f-project').value = 'prj_talk';
+    getEl('f-project').listeners.change();
+    ok('‼️ picking a project redraws the caption to name THAT project',
+        html().includes('Filed under <b>TalkScribe</b>'));
+    ok('‼️ …and it does not contradict the box by claiming no project',
+        !html().includes('Filed under no project. Its delegations'));
+
+    getEl('f-project').value = '';
+    getEl('f-project').listeners.change();
+    ok('‼️ left alone the caption names the WINDOW\'s project and says nobody chose it',
+        html().includes('Filed under <b>Agent Farm</b>')
+        && html().includes('inherited from this window, not chosen here'));
+
+    getEl('f-project').value = '--none--';
+    getEl('f-project').listeners.change();
+    ok('‼️ …and "None" says so plainly rather than naming a project it will not use',
+        html().includes('Filed under no project.'));
+
+    getEl('f-project').value = '';   // leave the form as it was found
+    getEl('f-project').listeners.change();
+}
 // ‼️ U-100 — LEAD AND PLANNER ARE ONE SUBJECT, SO THEY ARE ONE BLOCK. They used
 // to sit eight rows apart with the team, the workdir, six ceilings and the
 // delegation engine between them — two halves of one answer, separated by

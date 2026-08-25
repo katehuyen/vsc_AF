@@ -41,9 +41,34 @@
  */
 export const PROJECT_BRIEF_MAX = 2500;
 
+/**
+ * ‼️ X-94 — WHO IS BEING BRIEFED, WHICH IS NOT THE SAME AS WHICH PROJECT.
+ *
+ * `session` is a person's own conversation: it opens with "what do I do next
+ * and where do I write down that I did it", so it is handed the standing lists
+ * (open plan items, the top of the backlog, recent work) and the write-back
+ * protocol. That is the whole point of a project session.
+ *
+ * `mission` is a headless run that ALREADY HAS ITS WORK — an objective, its
+ * constraints and its success criteria. The project tells it WHERE it is
+ * working and WHAT the project is; the project's own queues are somebody
+ * else's subject, they are off-topic in a run that was not started to work on
+ * them, and they are paid for on the planner's first call and on every
+ * delegation. The write-back protocol is worse than noise here: it instructs a
+ * delegate to file worklog lines for work the user never asked it to record.
+ *
+ * The two are different TEXTS, not one text with a flag, and they are written
+ * to different files so a mission spawn and a session spawn racing on the same
+ * project can never hand each other the wrong one.
+ */
+export type ProjectAudience = 'session' | 'mission';
+
 export interface ProjectContextInput {
     name: string;
     id: string;
+    /** Who this copy is for — default `session`, which is the text as it was
+     *  before this existed. */
+    audience?: ProjectAudience;
     /** documents folder — absolute, already detokenised. '' if none is set */
     folder?: string;
     /** code roots — absolute, already detokenised */
@@ -101,14 +126,29 @@ export function trimBrief(brief: string, max = PROJECT_BRIEF_MAX): { text: strin
  */
 export function buildProjectContext(o: ProjectContextInput): string {
     const lines: string[] = [MARK_START];
-    lines.push(`This session belongs to the project "${o.name}" (id: ${o.id}).`);
+    lines.push(o.audience === 'mission'
+        ? `This MISSION run belongs to the project "${o.name}" (id: ${o.id}).`
+        : `This session belongs to the project "${o.name}" (id: ${o.id}).`);
     if (o.folder) { lines.push(`Docs folder: ${o.folder}`); }
     const repos = (o.repos ?? []).filter(r => !!r && r.trim());
     if (repos.length) { lines.push(`Code repos:  ${repos.join(' · ')}`); }
     lines.push('');
-    lines.push('Work on this project unless the user says otherwise. The brief below is its');
-    lines.push('current state. Open files in the docs folder when you need more depth, and');
-    lines.push('record what you did in the project worklog before you finish.');
+    if (o.audience === 'mission') {
+        // ‼️ X-94 — A MISSION IS NOT "WORK ON THIS PROJECT". It was started with
+        // an objective of its own, and the sentence a session gets — "work on
+        // this project", "record what you did in the worklog" — turns that
+        // objective into a suggestion and turns a delegate into something that
+        // writes into the user's documents unasked.
+        lines.push('This is a MISSION run, not a project session: the objective you were given is');
+        lines.push('the work, and this block only says where that work is happening. The project\'s');
+        lines.push('own plan, backlog and worklog are NOT your subject and are not reproduced here.');
+        lines.push('Open a document below only if the objective needs it, and write into one only if');
+        lines.push('the objective asks you to.');
+    } else {
+        lines.push('Work on this project unless the user says otherwise. The brief below is its');
+        lines.push('current state. Open files in the docs folder when you need more depth, and');
+        lines.push('record what you did in the project worklog before you finish.');
+    }
 
     const extra = String(o.extra ?? '').trim();
     if (extra) { lines.push('', extra); }
@@ -137,9 +177,16 @@ export function buildProjectContext(o: ProjectContextInput): string {
  * Keyed by the project's immutable id, so renaming a project never orphans a
  * file, and one file per project means a second window starting a session for
  * the same project rewrites the same path instead of littering.
+ *
+ * ‼️ X-94 — AND BY AUDIENCE, because the two texts are different. A mission
+ * spawn and a session spawn on the same project happen at the same time (a
+ * mission's delegations ARE spawns), and one path for both means whichever
+ * wrote last decides what the other one reads. The session's name is unchanged,
+ * so nothing that existed before this can be affected by it.
  */
-export function contextFileName(projectId: string): string {
-    return `${String(projectId ?? '').replace(/[^A-Za-z0-9_-]/g, '')}.txt`;
+export function contextFileName(projectId: string, audience: ProjectAudience = 'session'): string {
+    const id = String(projectId ?? '').replace(/[^A-Za-z0-9_-]/g, '');
+    return audience === 'mission' ? `${id}-mission.txt` : `${id}.txt`;
 }
 
 /**
