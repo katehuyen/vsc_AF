@@ -535,7 +535,20 @@ export interface DelegateRunLayers {
     launch?: { engine?: string; model?: string; effort?: string; permissionMode?: string };
 }
 
-export type DelegateOrigin = 'member' | 'mission' | 'agent' | 'fleet' | 'cli';
+/**
+ * Which rung decided a dimension.
+ *
+ * ‼️ X-121 — THE LAST TWO BELONG TO THE ORCHESTRATOR ALONE. A worker is spawned
+ * through the engine layer and climbs the five rungs above; the planner is a
+ * headless `claude` in the lead's own folder, so its command line can also be
+ * written by `agentFarm.taskExtraArgs` (`extra-args`) and by the
+ * `.claude/settings*.json` chain the CLI reads there (`settings`). They are in
+ * this union rather than in one of their own because every surface that draws
+ * an origin draws both kinds, and two vocabularies for one column is how a
+ * rung ends up printed as its own raw word. The ladder is `plannerLaunch.ts`.
+ */
+export type DelegateOrigin =
+    'member' | 'mission' | 'agent' | 'fleet' | 'cli' | 'extra-args' | 'settings';
 
 /** The dimensions a delegation actually runs with. An unresolved field is
  *  ABSENT, never `''` — a written empty string is a claim that somebody chose

@@ -434,6 +434,21 @@ export interface MissionPreviewMember {
     };
     /** Which rung decided each field — the answer to "why did it run on that?". */
     origin: Record<'engine' | 'model' | 'effort' | 'permissionMode', DelegateOrigin>;
+    /**
+     * ‼️ X-121 — WHERE a rung that has an address said it: the settings file's
+     * path, or the extra-args flag verbatim. Absent for rungs that are their own
+     * explanation ("set mission-wide" needs no address) and for `cli`, which is
+     * the absence of a source rather than one.
+     */
+    originSource?: Partial<Record<'model' | 'effort', string>>;
+    /**
+     * ‼️ X-121 — flags this member's own override took OFF the command line,
+     * verbatim. Only the orchestrator can have any: it is the one participant
+     * whose line carries `agentFarm.taskExtraArgs`, so it is the one place where
+     * "the mission says opus" and "my extra args say sonnet" are the same
+     * command. Empty is normal and is left absent.
+     */
+    displaced?: string[];
     /** `describeDelegateRun` — the one line a narrow surface can carry. */
     note: string;
     /** Everything that would refuse THIS row at launch: an engine this machine

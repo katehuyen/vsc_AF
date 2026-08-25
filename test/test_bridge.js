@@ -3061,10 +3061,25 @@ const { opencodeStatus, syncToOpencode } =
                 ok('…and says that leaving it out is exactly today\'s behaviour, not a new default',
                     /no\s*.\s*\+\s*.\s*--effort reaches that command line at all/.test(misBlock)
                     || /--effort reaches that command line at all/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
-                ok('‼️ …and it reaches the real planner command line, guarded like the model is',
-                    /const effort = spec\.plannerEffort && \/\^\[\\w-\]\+\$\/\.test\(spec\.plannerEffort\)/.test(src)
-                    && /--effort \$\{spec\.plannerEffort\}/.test(src)
-                    && /`claude \$\{extra \? extra \+ ' ' : ''\}\$\{model\}\$\{effort\}\$\{ctx\}`/.test(src));
+                // ‼️ X-121 — the command line moved into `core/plannerLaunch.ts`,
+                // where BOTH the launch and the preview now read it. The claim
+                // is unchanged and in fact stronger: the effort still reaches a
+                // real `--effort`, still behind the same bare-word guard the
+                // model has, and now it can only get there from the MISSION —
+                // an effort that came off a settings file must not be handed
+                // back to the CLI as a flag.
+                {
+                    const pl = require('fs').readFileSync(
+                        require('path').join(__dirname, '..', 'src', 'core', 'plannerLaunch.ts'), 'utf8');
+                    ok('‼️ …and it reaches the real planner command line, guarded like the model is',
+                        /const BARE = \/\^\[\\w\.:-\]\+\$\//.test(pl)
+                        && /BARE\.test\(mission\)/.test(pl)
+                        && /--effort \$\{launch\.effort\.value\}/.test(pl)
+                        && /`claude \$\{extra \? extra \+ ' ' : ''\}\$\{model\}\$\{effort\}\$\{ctx\}`/.test(pl));
+                    ok('‼️ …only when the MISSION said it — a file\'s own value is never echoed back as a flag',
+                        /launch\.effort\.origin === 'mission' && launch\.effort\.value/.test(pl)
+                        && /launch\.model\.origin === 'mission' && launch\.model\.value/.test(pl));
+                }
                 ok('…refused on a typo rather than dropped, by the validator a member\'s effort uses',
                     /validateLaunch\(\{ effort: plannerEffort \}\)/.test(src)
                     && /return `Planner: \$\{bad\}`/.test(src));

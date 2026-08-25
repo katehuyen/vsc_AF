@@ -295,6 +295,18 @@ import {
     aggregateOutcomes, MissionOutcomeStore, outcomePatterns, OutcomeSource,
     OutcomeVerdict, toOutcome
 } from './core/missionOutcomes';
+/**
+ * ‼️ X-121 — the ORCHESTRATOR's own ladder. The planner is a headless `claude`
+ * in the lead agent's folder, so its command line is written by the mission,
+ * by `agentFarm.taskExtraArgs` and by the `.claude/settings*.json` chain in
+ * that folder; the module resolves all three and builds the one command, so a
+ * preview and a launch cannot describe different runs.
+ */
+import {
+    describePlannerLaunch, plannerCommand, PlannerLaunch, PlannerSettingsLayer,
+    resolvePlannerLaunch
+} from './core/plannerLaunch';
+import { permissionLayerPaths } from './core/permissionmode';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
@@ -3760,26 +3772,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const MISSION_PLANNER_MAX_TURNS = 15;
     const MISSION_PLANNER_TIMEOUT_MIN = 10;
 
+    /**
+     * ‼️ X-121 — THE ORCHESTRATOR'S LAUNCH, RESOLVED IN ONE PLACE.
+     *
+     * The lead's folder is a real Claude Code cwd: it has its own
+     * `.claude/settings(.local).json`, and `agentFarm.taskExtraArgs` is pasted
+     * onto the planner's command line as it is. Both of those can name a model,
+     * and neither was being read — the preview reported `origin: cli` ("nobody
+     * set it") over a command line that had a `--model` on it. The ladder and
+     * its reasoning live in `core/plannerLaunch.ts`; what belongs here is
+     * reading the layers off disk, which is the one thing that file may not do.
+     *
+     * The layer LIST is `permissionLayerPaths` — the CLI's own order, measured
+     * once for X-84 and not re-derived here, because two lists of the same
+     * files is how they drift.
+     */
+    const plannerLayersFor = (dir: string): PlannerSettingsLayer[] =>
+        permissionLayerPaths(dir, os.homedir()).map(l => {
+            let text: string | undefined;
+            try { text = fs.readFileSync(l.file, 'utf8'); } catch { /* not on disk */ }
+            return { id: l.id, file: l.file, ...(text ? { text } : {}) };
+        });
+
+    /** What the planner of THIS mission would actually launch with. One call
+     *  site's worth of disk reading around the pure resolver, so the preview and
+     *  the launch cannot answer differently. */
+    const plannerLaunchFor = (spec: {
+        leadAgentId: string; plannerModel?: string; plannerEffort?: string;
+    }): PlannerLaunch => {
+        const lead = agents.find(a => a.id === spec.leadAgentId);
+        return resolvePlannerLaunch(
+            spec,
+            cfg().get<string>('taskExtraArgs', ''),
+            plannerLayersFor(lead?.dir ?? os.homedir())
+        );
+    };
+
     /** One headless planner call. The prompt goes via stdin (multi-line briefings
      *  must survive the Windows shell); --resume keeps the lead's context. */
     const missionPlannerCallOnce = (spec: MissionSpec) =>
         (prompt: string, resumeSessionId?: string): Promise<PlannerResult & { subtype?: string }> =>
             new Promise(resolve => {
                 const lead = agents.find(a => a.id === spec.leadAgentId);
-                const extra = cfg().get<string>('taskExtraArgs', '').trim();
-                // model override rides only on planner calls; strict charset so a
-                // form value can never smuggle shell syntax into the command line
-                const model = spec.plannerModel && modelIdOk(spec.plannerModel)
-                    ? `--model ${spec.plannerModel} ` : '';
-                // ‼️ U-100 — AND THE EFFORT, ON EVERY CALL OF THE RUN. Same bare-word
-                // guard the model has and the same guard a task's `--effort` has
-                // (`launchArgs`): these strings live on disk and can be written by the
-                // bridge, so anything that is not one plain word is dropped to the
-                // CLI's own default rather than smuggled into a shell. Absent on every
-                // spec written before this, which is what keeps their behaviour
-                // exactly as it was.
-                const effort = spec.plannerEffort && /^[\w-]+$/.test(spec.plannerEffort)
-                    ? `--effort ${spec.plannerEffort} ` : '';
+                // ‼️ X-121 — THE SAME RESOLVER THE PREVIEW CLIMBS, on every round
+                // of the run. It also strips a `--model`/`--effort` out of the
+                // extra args when the mission overrode it, so the flag reaches
+                // the CLI exactly once instead of twice with a precedence
+                // nobody here has measured.
+                const launch = plannerLaunchFor(spec);
                 // ‼️ M-18 — THE LEAD IS TOLD WHICH PROJECT IT IS PLANNING FOR.
                 //
                 // Every delegation this mission makes has carried the project
@@ -3807,12 +3847,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // an objective — the project's standing queues are a different
                 // subject, and they were being paid for on every run.
                 const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId, 'mission');
-                const ctx = ctxFile && !ctxFile.includes('"')
-                    ? `--append-system-prompt-file "${ctxFile}" ` : '';
-                const command = `claude ${extra ? extra + ' ' : ''}${model}${effort}${ctx}` +
-                    `--disallowedTools "${MISSION_PLANNER_DISALLOWED_TOOLS}" ` +
-                    `--max-turns ${MISSION_PLANNER_MAX_TURNS} ` +
-                    `${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
+                const command = plannerCommand({
+                    launch,
+                    disallowedTools: MISSION_PLANNER_DISALLOWED_TOOLS,
+                    maxTurns: MISSION_PLANNER_MAX_TURNS,
+                    ...(ctxFile ? { contextFile: ctxFile } : {}),
+                    ...(resumeSessionId ? { resumeSessionId } : {})
+                });
                 let settled = false;
                 const done = (r: PlannerResult & { subtype?: string }) => {
                     if (!settled) { settled = true; resolve(r); }
@@ -5275,6 +5316,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const leadAgent = agents.find(a => a.id === spec.leadAgentId);
         const plannerModel = spec.plannerModel;
         const plannerEffort = spec.plannerEffort;
+        // ‼️ X-121 — THE SAME LADDER THE LAUNCH CLIMBS, not a second guess at
+        // it. `requested` stays what the DRAFT typed (that is its definition);
+        // `effective` is now what the command line really carries, which for an
+        // empty planner box is the extra args' own flag or the lead folder's
+        // own `.claude/settings.json` — both of which used to be reported as
+        // "nobody set it, the CLI decided".
+        const plannerRun = plannerLaunchFor(spec);
         const planner: MissionPreviewMember = {
             agentId: spec.leadAgentId, agentName: spec.leadAgentName,
             kind: 'planner',
@@ -5285,29 +5333,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             effective: {
                 engine: 'claude',
-                ...(plannerModel ? { model: plannerModel } : {}),
-                ...(plannerEffort ? { effort: plannerEffort } : {}),
+                ...(plannerRun.model.value ? { model: plannerRun.model.value } : {}),
+                ...(plannerRun.effort.value ? { effort: plannerRun.effort.value } : {}),
                 ...(leadAgent ? { workDir: leadAgent.dir } : {})
             },
             origin: {
                 engine: 'cli',
-                model: plannerModel ? 'mission' : 'cli',
-                effort: plannerEffort ? 'mission' : 'cli',
+                model: plannerRun.model.origin,
+                effort: plannerRun.effort.origin,
                 // ‼️ No permission mode reaches the planner command line at all —
                 // the write and spawn tools are cut off by NAME instead
                 // (`MISSION_PLANNER_DISALLOWED_TOOLS`). Answering "fleet" here
                 // would be a claim about a flag that is not on that line.
                 permissionMode: 'cli'
             },
-            note: describeDelegateRun({
-                engine: 'claude',
-                ...(plannerModel ? { model: plannerModel } : {}),
-                ...(plannerEffort ? { effort: plannerEffort } : {}),
-                origin: {
-                    engine: 'cli', model: plannerModel ? 'mission' : 'cli',
-                    effort: plannerEffort ? 'mission' : 'cli', permissionMode: 'cli'
+            // ‼️ WHERE a non-mission rung said it. "settings" without the path
+            // sends a reader hunting through four files, and "extra-args"
+            // without the flag hides which of several it was.
+            ...(plannerRun.model.source || plannerRun.effort.source
+                ? {
+                    originSource: {
+                        ...(plannerRun.model.source ? { model: plannerRun.model.source } : {}),
+                        ...(plannerRun.effort.source ? { effort: plannerRun.effort.source } : {})
+                    }
                 }
-            }),
+                : {}),
+            // ‼️ AND THE CONFLICT, NAMED. A mission override that displaced a
+            // flag out of `agentFarm.taskExtraArgs` changed the command line the
+            // user's own setting was writing; dropping it silently is the bug
+            // report nobody can reconstruct six months later.
+            ...(plannerRun.displaced.length ? { displaced: plannerRun.displaced } : {}),
+            note: describePlannerLaunch(plannerRun),
             // ‼️ X-122 — THE ORCHESTRATOR'S PAIR IS CHECKED LIKE A MEMBER'S. The
             // planner's model and effort were validated for VOCABULARY only —
             // legal words, illegal combination — and then handed to a real

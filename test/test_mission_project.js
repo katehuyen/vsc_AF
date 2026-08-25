@@ -135,6 +135,8 @@ const brief = (s, d) => {
 {
     console.log('\n-- the brief rides the same flag every other Claude surface uses');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const plannerSrc = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'core', 'plannerLaunch.ts'), 'utf8');
     ok('the planner call asks for the project\'s context file',
         /const ctxFile = resumeSessionId \? undefined : projectContextFileFor\(spec\.projectId, 'mission'\);/.test(ext));
     // ‼️ X-94 — AND IT ASKS FOR THE MISSION'S COPY, which is a different text:
@@ -148,10 +150,16 @@ const brief = (s, d) => {
         /projectContextFileFor\(\s*\n?\s*task\.projectId, task\.missionId \? 'mission' : 'session'\)/.test(ext));
     ok('‼️ …and ONLY when it is not resuming — a resume already has it in the conversation',
         /resumeSessionId \? undefined :/.test(ext));
+    // ‼️ X-121 — the planner's command line is built by `core/plannerLaunch.ts`
+    // now, so that is where these two claims are read. The claim is unchanged:
+    // the brief is passed as a QUOTED FILE, and a path that would break the
+    // quoting is dropped rather than escaped into a shell.
     ok('…passed as a file, quoted, on the flag Claude reads it with',
-        /--append-system-prompt-file "\$\{ctxFile\}" /.test(ext));
+        /--append-system-prompt-file "\$\{parts\.contextFile\}" /.test(plannerSrc));
     ok('…and a path with a quote in it is dropped rather than smuggled into a shell',
-        /ctxFile && !ctxFile\.includes\('"'\)/.test(ext));
+        /parts\.contextFile && !parts\.contextFile\.includes\('"'\)/.test(plannerSrc));
+    ok('…and the caller only offers it on a FRESH round, so the resume never repeats it',
+        /\.\.\.\(ctxFile \? \{ contextFile: ctxFile \} : \{\}\)/.test(ext));
     ok('the dep is read at briefing time, never cached — a renamed project is a '
         + 'name the lead would otherwise keep repeating',
         /project: \(\) => \{\s*\n\s*const p = spec\.projectId \? projectStore\.get\(spec\.projectId\) : undefined;/.test(ext));

@@ -271,7 +271,18 @@
         mission: 'the mission',
         agent: 'this agent\'s own default for that engine',
         fleet: 'agentFarm.launchDefaults (fleet-wide)',
-        cli: 'nobody — the CLI chooses'
+        cli: 'nobody — the CLI chooses',
+        // ‼️ X-121 — the orchestrator's own two rungs. Its command line is the
+        // one a worker never has: the extra args are pasted onto it, and it
+        // runs in a folder whose Claude settings the CLI reads by itself.
+        'extra-args': 'agentFarm.taskExtraArgs',
+        settings: 'the lead folder\'s own Claude settings'
+    };
+    /** Which displaced flags belong to which field — a conflict is reported on
+     *  the control it is about, not on every control. */
+    const DISPLACED_OF = {
+        model: /^(--model\b|--model=|-m\b)/,
+        effort: /^(--effort\b|--effort=)/
     };
     /**
      * MIRROR — the value this control HOLDS RIGHT NOW on the first line, then
@@ -287,9 +298,28 @@
         const req = (p.requested || {})[field];
         const from = (p.origin || {})[field] || 'cli';
         const head = (eff || 'CLI chooses') + (from === 'member' ? '' : ' — from ' + (ORIGIN_WORDS[from] || from));
-        const chain = 'this row → the mission → this agent\'s default → fleet defaults → the CLI'
+        // ‼️ X-121 — THE ORCHESTRATOR CLIMBS A DIFFERENT LADDER, and printing
+        // the worker's under it was part of the lie this item is about: there
+        // is no member row, no per-agent engine default and no fleet default on
+        // a planner's command line. What there is: the mission, the extra args
+        // pasted onto that line, and the Claude settings of the folder it runs
+        // in — which is why an empty box here is not "the default".
+        const chain = (p.kind === 'planner'
+            ? 'the mission → agentFarm.taskExtraArgs → the lead folder\'s own Claude settings → the CLI'
+            : 'this row → the mission → this agent\'s default → fleet defaults → the CLI')
             + (from === 'cli' ? '\nNothing on that chain set it, so the CLI decides.' : '\nWon by: ' + (ORIGIN_WORDS[from] || from));
-        return head + '\n\nRequested here: ' + (req || '— nothing —') + '\n' + chain + '\n\n' + body;
+        // Where it was actually said — a path or the flag verbatim. "settings"
+        // without the file sends a reader hunting through four of them.
+        const src = (p.originSource || {})[field];
+        // ‼️ AND THE CONFLICT, on the control it is about. An override that
+        // took a flag off the command line changed what the user's own
+        // agentFarm.taskExtraArgs was doing; dropping that silently is the bug
+        // report nobody can reconstruct later.
+        const gone = (p.displaced || []).filter(d => (DISPLACED_OF[field] || /^$/).test(d));
+        return head + '\n\nRequested here: ' + (req || '— nothing —') + '\n' + chain
+            + (src ? '\nSaid by: ' + src : '')
+            + (gone.length ? '\n‼️ This override took off the command line: ' + gone.join(' · ') : '')
+            + '\n\n' + body;
     };
     /**
      * Ask the host what this draft would launch with. Debounced, because it is
@@ -1409,7 +1439,15 @@
         agent: 'this agent\'s own default for that engine (agentFarm.agentEngineDefaults)',
         fleet: 'the fleet default (agentFarm.launchDefaults)',
         cli: 'nobody set it — the CLI decided',
-        // ‼️ The sixth word, and the only one that is not a LAYER. Some of the
+        // ‼️ X-121 — TWO RUNGS ONLY THE ORCHESTRATOR HAS. It is a headless
+        // `claude` in the LEAD AGENT'S folder, so two things a worker never
+        // meets can write its command line: the extra args pasted onto it, and
+        // the `.claude/settings*.json` chain the CLI reads in that folder. Both
+        // used to be reported as `cli` — "nobody set it" — over a command line
+        // that had the flag on it, which is the whole of U-100's complaint.
+        'extra-args': 'a flag in agentFarm.taskExtraArgs, which is pasted onto the planner\'s command line',
+        settings: 'the lead agent folder\'s own Claude settings, which the CLI reads itself',
+        // ‼️ The last word, and the only one that is not a LAYER. Some of the
         // orchestrator's dimensions are not decisions at all — its engine is
         // Claude Code always, and it has no permission mode to set — and
         // printing "nobody set it, the CLI decided" for those would be a lie
