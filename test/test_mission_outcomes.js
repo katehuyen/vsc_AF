@@ -282,5 +282,46 @@ const src = (over = {}) => Object.assign({
             ext.indexOf('const syncMissionOutcomes'))));
 }
 
+// ==================================== 7. what DELETING a run means
+{
+    console.log('\n-- an explicit delete forgets; capacity does not');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    /**
+     * ‼️ THE WHOLE POINT OF THIS BLOCK IS THE SECOND HALF.
+     *
+     * `forget()` doing its job is arithmetic and is proved above. What must be
+     * held is WHERE it is called from: a person pressing Delete means "this
+     * one, gone", and an outcome left behind would go on moving an average
+     * they can no longer open or correct. But the store's own eviction is not
+     * a person — the history outliving MAX_STORED_RUNS is the reason A-17
+     * exists, and one careless `forget()` in a retention loop would quietly
+     * turn this feature into a duplicate of the run list.
+     *
+     * So: exactly one call site, and it is the one all three delete surfaces
+     * (the bridge op, the tree command, the panel's own Remove) funnel into.
+     */
+    const calls = ext.match(/outcomeStore\.forget\(/g) || [];
+    ok('‼️ `forget` is called from exactly ONE place', calls.length === 1);
+    ok('…and that place is the run delete', /\bconst deleteMissionRun = \(run: MissionRun\)[\s\S]*?outcomeStore\.forget\(run\.id\)/.test(ext));
+    ok('…which persists the drop rather than losing it on the next reload',
+        /if \(outcomeStore\.forget\(run\.id\)\) \{ outcomeStore\.save\(\); \}/.test(ext));
+    // The retention path is the mission STORE's own save, and it must stay
+    // ignorant of the outcome store — if it ever learns about it, the two
+    // lifetimes have been merged and this test is what says so.
+    const retention = ext.indexOf('MAX_STORED_RUNS');
+    ok('‼️ nothing in extension.ts ties the run-store rollover to the history',
+        retention < 0 || !/outcomeStore/.test(ext.slice(retention - 400, retention + 400)));
+    ok('…and the decision is written where the next writer will read it',
+        /AN EXPLICIT DELETE FORGETS THE OUTCOME; CAPACITY DOES NOT/.test(ext));
+
+    // ‼️ THE PAGE IS SENT THE HISTORY, and unscoped — the rows under the strip
+    // are not filtered by project either, and two populations on one screen is
+    // how a reader takes the smaller one for the larger.
+    ok('the Missions panel is handed the aggregate for its strip',
+        /outcomes: \(\(\) => \{\s*\n\s*const rep = aggregateOutcomes\(outcomeStore\.outcomes\);/.test(ext));
+    ok('…with the store\'s health, so an unreadable file cannot draw as a zero',
+        /health: outcomeStore\.health,\s*\n\s*degraded: outcomeStore\.degraded \?\? null/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

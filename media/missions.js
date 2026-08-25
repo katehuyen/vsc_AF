@@ -2716,6 +2716,143 @@
         </div>` + filterPanelHtml();
     }
 
+    /** The action shape a signature carries — `s1|delegate>evaluate>finish|review`
+     *  is a version, a shape and a feature set, and only the middle is readable
+     *  on a row. */
+    const shapeOf = (sig) => String(sig || '').split('|')[1] || '(no decisions recorded)';
+    const flagsOf = (sig) => String(sig || '').split('|')[2] || '';
+    const ratePct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
+
+    /**
+     * ‼️ A-17 — WHAT THIS FARM HAS LEARNED, ON ONE LINE ABOVE THE LIST.
+     *
+     * A-17 refuses this a dashboard on purpose, and the reason is not tidiness:
+     * a measurement is worth keeping only if it is in front of the person about
+     * to choose an approach. So SHORTHAND — the top shape and one rate on the
+     * strip, the whole table in its AFTip.
+     *
+     * Four things this surface must never do, each of which the core already
+     * refuses and a page could quietly reintroduce on its own:
+     *
+     *  · NEVER CONCLUDE FROM TOO FEW RUNS. A group under `minSample` is still
+     *    drawn — hiding it would be its own kind of lie — but it is drawn as a
+     *    count with "too few to read" where the rate would be, and never as a
+     *    percentage the eye can quote.
+     *  · NEVER DRAW THE COMPARISON THE CORE DECLINED. `compare.successRate` is
+     *    null when one side is short, and null is not "they are equal": the
+     *    note says which side has no denominator, and that sentence is what is
+     *    shown in place of the figures.
+     *  · NEVER PRESENT COST AS A REASON. It is in the panel, as an observation,
+     *    in the same line that says nothing routes on it.
+     *  · NEVER LET "MORE RECORDED THAN LISTED" READ AS A BUG. Run rows are
+     *    evicted long before outcomes are, so the panel states the two limits
+     *    rather than leaving a reader to reconcile them.
+     */
+    function outcomeStripHtml() {
+        const o = DATA.outcomes;
+        if (!o) { return ''; }
+        // A store that could not be read says so. A zero drawn over unreadable
+        // bytes is worse than no strip at all: it is a confident wrong answer.
+        if (o.health === 'unreadable' || o.health === 'future' || o.degraded) {
+            return `<div class="chiprow histrow">
+                <span class="muted small">History:</span>
+                <span class="mchip wait">unavailable</span>
+                <span class="muted small">${C.esc(o.degraded
+                    || 'the outcome history could not be read')}</span>
+            </div>`;
+        }
+        // A young farm has nothing to say and says nothing — an empty strip
+        // would be a permanent piece of furniture reporting no news.
+        if (!o.total) { return ''; }
+
+        const cmp = o.compare || {};
+        const top = (o.groups || [])[0];
+        const groupLine = (g) => {
+            const flags = flagsOf(g.signature);
+            const crit = g.requiredSatisfaction === null || g.requiredSatisfaction === undefined
+                ? ''
+                : ` · ${Math.round(g.requiredSatisfaction * 100)}% of required criteria met`;
+            const head = g.enough
+                ? `${g.runs} ${g.mode} run(s) · ${ratePct(g.success, g.runs)}% success${crit}`
+                : `${g.runs} ${g.mode} run(s) — under ${o.minSample}, too few to read; `
+                    + 'the figures below are real arithmetic over too small a sample '
+                    + 'and nothing may be concluded from them';
+            return [
+                shapeOf(g.signature),
+                '  ' + head,
+                `  verdicts: ${g.success} success · ${g.partial} partial · ${g.failed} failed`
+                    + ` · ${g.cancelled} cancelled`,
+                `  averages: ${g.avgRounds} rounds · ${g.avgTasks} tasks`
+                    + ` · ${g.avgStrategyChanges} strategy change(s)`
+                    + ` · ${g.avgUserInterventions} user intervention(s)`,
+                flags ? `  did: ${flags.split(',').join(', ')}` : '  did: nothing beyond delegating',
+                `  observed cost: ${usd(g.avgCostUSD)} · ${C.fmtTok(g.avgTokens)} per run`
+                    + ' (recorded so a person can read it; no decision anywhere looks at it)',
+                `  last: ${fmtTime(g.lastAt)}`,
+                ''
+            ].join('\n');
+        };
+
+        // ‼️ `AFTip.lines` DROPS an empty string — that is how a caller passes a
+        // conditional line, and it means '' cannot also mean "blank line here".
+        // A space survives the filter and is what separates the paragraphs; a
+        // panel this long run together is the wall this component exists to
+        // avoid.
+        const GAP = ' ';
+        const body = window.AFTip.lines([
+            `${o.total} finished run(s) recorded, in ${(o.groups || []).length}`
+                + `${o.more > 0 ? '+' : ''} shape(s).`,
+            '‼️ This is the recorded history, not the rows below it. Run rows are dropped'
+                + ' at 40 and outcomes are kept to 2000, so counting more here than the list'
+                + ' shows is the point of keeping it — not a miscount. Filters on the list'
+                + ' do not narrow this either.',
+            GAP,
+            cmp.successRate
+                ? `classic vs adaptive: ${Math.round(cmp.successRate.classic * 100)}% of`
+                    + ` ${cmp.classic.runs} classic run(s) succeeded, `
+                    + `${Math.round(cmp.successRate.adaptive * 100)}% of ${cmp.adaptive.runs}`
+                    + ' adaptive. Same farm, not the same work — this is a description of'
+                    + ' what has happened, not a verdict on which is better.'
+                : 'classic vs adaptive: ' + (cmp.note || 'not enough of one of them to say.'),
+            GAP,
+            'A SHAPE is the ordered decisions the lead actually took with consecutive'
+                + ' repeats collapsed, ending in how it stopped; the flags after it are what'
+                + " the run's own record shows it did, never what a planner claimed.",
+            GAP,
+            ...(o.groups || []).map(groupLine),
+            o.more > 0
+                ? `+${o.more} more shape(s) — the whole table is the missions.outcomes bridge op.`
+                : '',
+            (o.signatureVersions || []).length > 1
+                ? '‼️ Two signature versions are present (' + o.signatureVersions.join(', ')
+                    + '): a grouping rule changed, so the groups are not comparable across them.'
+                : ''
+        ]);
+
+        const topBit = top
+            ? `<span class="hshape">${C.esc(shapeOf(top.signature))}</span>`
+                + `<span class="muted small">×${top.runs}${top.enough
+                    ? ` · ${ratePct(top.success, top.runs)}% success`
+                    : ' · too few to read'}</span>`
+            : '';
+        const cmpBit = cmp.successRate
+            ? `<span class="mchip">classic ${Math.round(cmp.successRate.classic * 100)}%`
+                + ` · adaptive ${Math.round(cmp.successRate.adaptive * 100)}%</span>`
+            : '';
+
+        return `<div class="chiprow histrow">
+            <span class="muted small">History:</span>
+            ${window.AFTip.wrap(
+                `<span class="histtrig"><span class="mchip">${o.total} recorded</span>${topBit}${cmpBit}</span>`,
+                `Recorded history — ${o.total} finished run(s), most common shape first`,
+                body,
+                // the class is what makes the panel photographable
+                // (`render_page --tip tip-hist`), and it is also the flex child
+                // this row sizes — the trigger inside it is not.
+                'tip-hist')}
+        </div>`;
+    }
+
     /**
      * What a run IS, for the right-click menu.
      *
@@ -2740,7 +2877,11 @@
      *  expands inline under the row (nothing opens on its own). */
     function listHtml() {
         if (!DATA.runs.length) {
-            return '<p class="muted">No missions yet — <a id="firstmission">start the first one</a>.</p>';
+            // ‼️ The strip stays. A farm whose rows have all been evicted still
+            // has its history, and that is exactly the moment it is worth the
+            // most — "no missions yet" over 60 recorded runs would be false.
+            return outcomeStripHtml()
+                + '<p class="muted">No missions yet — <a id="firstmission">start the first one</a>.</p>';
         }
         const pool = filteredRuns(DATA.runs);
         const rows = sortedRuns(pool).map(r => {
@@ -2765,7 +2906,7 @@
                 <td class="muted small">${fmtTime(r.startedAt)}</td>
             </tr>` + (open ? `<tr class="rundetail"><td colspan="9">${detailHtml(r)}</td></tr>` : '');
         }).join('');
-        return runCtlHtml(pool.length) + `<table class="mtable" id="mlist"><thead>
+        return outcomeStripHtml() + runCtlHtml(pool.length) + `<table class="mtable" id="mlist"><thead>
             <tr><th></th><th>Mission</th><th>Lead + team</th><th>Status</th><th>Rounds</th><th>Tasks</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
         </thead><tbody>${rows || `<tr><td colspan="9" class="muted">No runs match the filters.</td></tr>`}</tbody></table>`;
     }
@@ -2882,6 +3023,15 @@
                 .mtable .num { text-align:right; }
                 /* Accordion controls — the viewer's chip row, verbatim. */
                 .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0 4px; }
+                /* ‼️ A-17 — the history strip. It is a READING, not a control:
+                   no button, no border of its own, sitting at the same muted
+                   weight as the labels beside it so it is never mistaken for
+                   something the page wants pressed. Only the shape carries the
+                   page's own foreground, because the shape is the fact. */
+                .histrow { margin:8px 0 0; }
+                .histtrig { display:inline-flex; align-items:center; gap:6px; cursor:help; }
+                .hshape { font-family:var(--vscode-editor-font-family, monospace); font-size:11px;
+                    color:var(--vscode-foreground); }
                 .chip { font-size:11px; padding:2px 10px; cursor:pointer; border-radius:10px;
                     background:transparent; color:var(--vscode-foreground);
                     border:1px solid var(--vscode-widget-border, #4444); opacity:.85; }

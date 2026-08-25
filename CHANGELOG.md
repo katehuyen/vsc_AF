@@ -4,6 +4,29 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**A-17 (second half) — the record is where the next mission is started, and a
+delete means what it says.** The measurement had no surface: it existed, it was
+correct, and the only way to read it was a bridge op — which is to say nobody
+would have read it. It is now one strip above the run list on the Missions page
+(no new dashboard: A-17 asked for exactly this), carrying the count, the most
+common shape and its success rate, with the whole table in a hover panel. The
+strip repeats every fence the core keeps rather than quietly relaxing one at
+the last step: a group under the sample floor is drawn as a count and never as
+a percentage; the classic-vs-adaptive pair is drawn only when the core computed
+it, and its "which side is short" note is shown in its place otherwise; cost
+appears in the panel as an observation, in the same line that says nothing acts
+on it; and a store that could not be read says so instead of drawing a
+confident zero. It also states why it can count more runs than the list shows —
+run rows are evicted at 40, outcomes are kept to 2000 — so the discrepancy
+reads as the feature it is.
+
+And the open decision is settled: **an explicit delete forgets the outcome, the
+store's own rollover does not.** Deleting a run (bridge, tree or panel — all
+three funnel into one place) drops its outcome, so it stops moving averages the
+person can no longer open or correct. Eviction at MAX_STORED_RUNS keeps it,
+because a history that expired with the rows would be a second copy of the run
+list rather than a memory. There is one call site and a test that says so.
+
 **A-17 (first half) — orchestration keeps a record of what it has observed.**
 A finished run knows something a run about to start does not: which SHAPE of
 approach was taken and what came of it. That is now kept — and only that. Not
@@ -25,10 +48,7 @@ escalation, no budget reserve and no expected-value stop anywhere in this
 build, which is asserted against the source because it is a promise about what
 the code does *not* do.
 
-Readable through `missions.outcomes`. **Still open on this item:** the Missions
-page has no surface for it yet, and whether deleting a run should also forget
-its outcome is an unmade decision (`MissionOutcomeStore.forget` exists and is
-deliberately unwired).
+Readable through `missions.outcomes`, and on the Missions page itself (above).
 
 **B-13 — an adaptive mission is drivable from the bridge, and two reads that
 had no ceiling now have one.** The ops were all there — start, preview, status,

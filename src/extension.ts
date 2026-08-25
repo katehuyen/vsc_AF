@@ -4843,6 +4843,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         missionTraceWriters.delete(run.id);
         if (run.trace?.file) { deleteTrace(run.trace.file); }
         missionStore.runs = missionStore.runs.filter(r => r.id !== run.id);
+        // ‼️ A-17 — AN EXPLICIT DELETE FORGETS THE OUTCOME; CAPACITY DOES NOT.
+        //
+        // This is where the outcome history's independence from the run list
+        // ends, and the line is drawn between two things that both look like
+        // "a run went away". The history is deliberately the longer-lived of
+        // the two: `MAX_STORED_RUNS` evicts the oldest row at 40 while the
+        // outcome survives to 2000, which is the entire reason for measuring —
+        // a farm that forgot each lesson as fast as it forgot the row would
+        // have learned nothing. But that is the STORE's capacity talking.
+        //
+        // A person pressing Delete is saying something about THAT run, and the
+        // one thing they certainly meant is "this one, gone". An outcome left
+        // behind would go on moving an average they can no longer open, audit
+        // or correct — figures unaccountable to the only person who can judge
+        // them. So the user's own delete forgets and the store's own eviction
+        // does not, and `forget()` is called from HERE and nowhere else, which
+        // is what keeps the two apart.
+        if (outcomeStore.forget(run.id)) { outcomeStore.save(); }
         const specDeleted = !!spec && !missionStore.runs.some(r => r.specId === spec.id);
         if (specDeleted && spec) {
             missionStore.specs = missionStore.specs.filter(s => s.id !== spec.id);
@@ -11625,7 +11643,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.run.delete',
-            describe: 'Drop a FINISHED mission run from the history. Archived task outputs stay on disk; what goes is the run\'s row, its rounds and its ledger. ‼️ Deleting the LAST run of a spec takes the spec with it — a mission nothing can reach — and `specDeleted` says whether that happened, because "that run is gone" and "the mission is gone from the list" are different answers. There is no undo. args: id',
+            describe: 'Drop a FINISHED mission run from the history. Archived task outputs stay on disk; what goes is the run\'s row, its rounds and its ledger. ‼️ Deleting the LAST run of a spec takes the spec with it — a mission nothing can reach — and `specDeleted` says whether that happened, because "that run is gone" and "the mission is gone from the list" are different answers. ‼️ A-17: it ALSO forgets the run\'s recorded outcome, so it stops counting in `missions.outcomes` and in what a lead is briefed with. That is what an explicit delete means and it is the only thing that does it — the run store\'s own rollover drops old rows and keeps their outcomes, which is why the history can be larger than the list. There is no undo. args: id',
             handler: (args) => {
                 const runId = argStr(args, 'id');
                 const run = missionStore.run(runId);
@@ -12699,7 +12717,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             traces: Object.fromEntries(missionStore.runs
                 .filter(r => isAdaptive(missionStore.spec(r.specId)) && r.trace?.file)
                 .map(r => [r.id, missionTraceView(r)])
-                .filter(([, v]) => !!v))
+                .filter(([, v]) => !!v)),
+            /**
+             * ‼️ A-17 — WHAT THIS FARM HAS ALREADY LEARNED, WHERE THE NEXT
+             * MISSION IS STARTED.
+             *
+             * A-17 is explicit that this gets no dashboard of its own, and the
+             * reason is not tidiness: a measurement is only worth keeping if it
+             * is in front of the person about to choose an approach, and a page
+             * they have to go and open is a page nobody opens. So it is one
+             * strip above the run list, with the table in its AFTip.
+             *
+             * ‼️ UNSCOPED, deliberately. `missions.outcomes` fences a lead to
+             * its own project because one project's objective wording, agent
+             * names and criteria are not another's business — but a person
+             * reading their own farm is not a lead, and the rows below this
+             * strip are not filtered by project either. Scoping the strip while
+             * the list stayed whole would put two populations on one screen and
+             * let the reader take the smaller one for the larger.
+             *
+             * ‼️ AND IT OUTLIVES `runs`. Run rows are evicted at
+             * MAX_STORED_RUNS (40); outcomes keep 2000. "60 recorded" over 40
+             * rows is the feature working, not a miscount — the panel says so
+             * itself rather than leaving the reader to assume a bug. `health`
+             * travels with it so a store that could not be READ says that,
+             * instead of drawing an honest-looking zero.
+             */
+            outcomes: (() => {
+                const rep = aggregateOutcomes(outcomeStore.outcomes);
+                // Only as many groups as a hover panel can be read in; the
+                // whole table is `missions.outcomes`, which is the surface for
+                // it. `more` keeps the page from implying these are all.
+                const shown = rep.groups.slice(0, 6);
+                return {
+                    total: rep.total,
+                    minSample: rep.minSample,
+                    signatureVersions: rep.signatureVersions,
+                    compare: rep.compare,
+                    groups: shown,
+                    more: rep.groups.length - shown.length,
+                    health: outcomeStore.health,
+                    degraded: outcomeStore.degraded ?? null
+                };
+            })()
         }),
         create: createMission,
         preview: previewMission,

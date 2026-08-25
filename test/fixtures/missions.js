@@ -509,6 +509,75 @@ const ADAPTIVE_TRACE = {
     ]
 };
 
+/**
+ * ‼️ A-17 — WHAT THE FARM HAS RECORDED, in the distribution the strip exists to
+ * draw honestly. Four shapes on purpose:
+ *  · shapes with enough runs behind them — the case a figure may be read from;
+ *  · one UNDER `minSample`, which must be drawn as a count with "too few to
+ *    read" and never as a percentage, because a rate over two runs is exactly
+ *    what this feature refuses to state;
+ *  · a classic side big enough that the comparison is actually computed, since
+ *    the null case (what a young farm has) is what every other variant shows;
+ *  · `more`, so the panel's "these are not all of them" line is in the picture.
+ * `total` deliberately exceeds both the run rows in this fixture and the sum of
+ * the groups shown: outcomes outlive rows and only the top shapes are sent, and
+ * a fixture where those three numbers matched would prove none of it.
+ */
+const OUTCOMES = {
+    total: 71,
+    minSample: 3,
+    signatureVersions: [1],
+    more: 2,
+    health: 'ok',
+    degraded: null,
+    compare: {
+        classic: { runs: 26, success: 18, enough: true },
+        adaptive: { runs: 45, success: 29, enough: true },
+        successRate: { classic: 0.692, adaptive: 0.644 },
+        note: '26 classic and 45 adaptive runs in this scope.'
+    },
+    groups: [
+        {
+            signature: 's1|delegate>evaluate>finish|review', signatureV: 1, mode: 'adaptive',
+            features: ['review'], runs: 24, enough: true,
+            success: 18, partial: 4, failed: 2, cancelled: 0,
+            requiredSatisfaction: 0.82, avgRounds: 4.2, avgTasks: 6.7,
+            avgStrategyChanges: 0.9, avgUserInterventions: 0.4,
+            featureUse: { review: 24 }, avgDurationMs: 1920000,
+            avgCostUSD: 1.83, avgTokens: 412000, lastAt: Date.now() - 3600000
+        },
+        {
+            signature: 's1|delegate>parallel>evaluate>revise>finish|branching,replan,review',
+            signatureV: 1, mode: 'adaptive',
+            features: ['branching', 'replan', 'review'], runs: 17, enough: true,
+            success: 9, partial: 5, failed: 3, cancelled: 0,
+            requiredSatisfaction: 0.61, avgRounds: 7.8, avgTasks: 14.2,
+            avgStrategyChanges: 1.6, avgUserInterventions: 1.1,
+            featureUse: { branching: 17, replan: 17, review: 12 }, avgDurationMs: 5400000,
+            avgCostUSD: 6.42, avgTokens: 1380000, lastAt: Date.now() - 86400000
+        },
+        {
+            signature: 's1|delegate>finish|', signatureV: 1, mode: 'classic',
+            features: [], runs: 20, enough: true,
+            success: 14, partial: 3, failed: 2, cancelled: 1,
+            requiredSatisfaction: null, avgRounds: 2.1, avgTasks: 3.4,
+            avgStrategyChanges: 0, avgUserInterventions: 0.2,
+            featureUse: {}, avgDurationMs: 900000,
+            avgCostUSD: 0.94, avgTokens: 208000, lastAt: Date.now() - 172800000
+        },
+        {
+            signature: 's1|delegate>council>evaluate>abort|conversation,council,human',
+            signatureV: 1, mode: 'adaptive',
+            features: ['conversation', 'council', 'human'], runs: 2, enough: false,
+            success: 0, partial: 1, failed: 1, cancelled: 0,
+            requiredSatisfaction: 0.25, avgRounds: 9.5, avgTasks: 4,
+            avgStrategyChanges: 2, avgUserInterventions: 3.5,
+            featureUse: { conversation: 2, council: 2, human: 2 }, avgDurationMs: 7200000,
+            avgCostUSD: 11.07, avgTokens: 2140000, lastAt: Date.now() - 259200000
+        }
+    ]
+};
+
 const data = (over) => Object.assign({
     newForm: false,
     specs: [SPEC],
@@ -544,7 +613,8 @@ const data = (over) => Object.assign({
     pending: { questions: [], approvals: [] },
     live: { agents: [], events: [] },
     plannerTranscripts: {},
-    traces: {}
+    traces: {},
+    outcomes: OUTCOMES
 }, over || {});
 
 /**
@@ -751,6 +821,16 @@ module.exports = {
             id: 'run', label: 'A running mission, open on its detail',
             data: data({}),
             act: (r) => fire(r.query('.mrow')[0], 'click')
+        },
+        {
+            // ‼️ A-17 — THE HISTORY PANEL OPEN. The strip itself is one line and
+            // a string test can read it; what cannot be read is the panel, which
+            // is a table of four shapes with a rate, four verdict counts, four
+            // averages and a cost caveat on each — the exact thing that looks
+            // fine as text and comes out as a wall. Shoot it with
+            // `render_page.js missions --only history --tip tip-hist`.
+            id: 'history', label: 'The recorded history strip, panel open',
+            data: data({})
         },
         {
             // ‼️ U-64 — THE ADAPTIVE DETAIL, which is the half of this item that

@@ -1814,5 +1814,116 @@ ok('Collapse all folds the whole list', detailCount() === 0);
     msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
 }
 
+// ---------- A-17: the recorded-history strip ----------
+//
+// ‼️ WHAT IS BEING TESTED IS THE PAGE'S RESTRAINT, not its arithmetic. The
+// figures are the core's (test_mission_outcomes) and are handed over ready; the
+// ways this surface can lie are its own, and each one below is a specific lie:
+// a rate quoted off two runs, a comparison drawn where the core declined to
+// draw one, a confident zero over a store that could not be read, and cost
+// presented as though something acted on it.
+{
+    const GROUP = (over) => Object.assign({
+        signature: 's1|delegate>evaluate>finish|review', signatureV: 1, mode: 'adaptive',
+        features: ['review'], runs: 24, enough: true,
+        success: 18, partial: 4, failed: 2, cancelled: 0,
+        requiredSatisfaction: 0.82, avgRounds: 4.2, avgTasks: 6.7,
+        avgStrategyChanges: 0.9, avgUserInterventions: 0.4,
+        featureUse: { review: 24 }, avgDurationMs: 1920000,
+        avgCostUSD: 1.83, avgTokens: 412000, lastAt: 1000
+    }, over || {});
+    const OUT = (over) => Object.assign({
+        total: 44, minSample: 3, signatureVersions: [1], more: 0,
+        health: 'ok', degraded: null,
+        compare: {
+            classic: { runs: 20, success: 14, enough: true },
+            adaptive: { runs: 24, success: 18, enough: true },
+            successRate: { classic: 0.7, adaptive: 0.75 },
+            note: '20 classic and 24 adaptive runs in this scope.'
+        },
+        groups: [GROUP()]
+    }, over || {});
+    const draw = (outcomes, runs) => msgHandler({
+        data: {
+            type: 'data', data: {
+                ...DATA, pending: { questions: [], approvals: [] },
+                runs: runs === undefined ? [RUN] : runs, outcomes
+            }
+        }
+    });
+
+    draw(undefined);
+    ok('a host that sends no outcomes draws no strip and does not break the page',
+        !html().includes('chiprow histrow') && html().includes('data-run="run1"'));
+
+    draw(OUT({ total: 0, groups: [], compare: { classic: { runs: 0, success: 0, enough: false },
+        adaptive: { runs: 0, success: 0, enough: false }, successRate: null, note: 'Insufficient sample' } }));
+    ok('a farm with nothing recorded says nothing rather than drawing an empty strip',
+        !html().includes('chiprow histrow'));
+
+    draw(OUT({}));
+    ok('‼️ A-17 — the strip states the count, the top shape and its rate',
+        html().includes('chiprow histrow') && html().includes('44 recorded')
+        && html().includes('delegate&gt;evaluate&gt;finish') && html().includes('×24')
+        && html().includes('75% success'));
+    ok('…and the comparison, because the core drew one',
+        html().includes('classic 70%') && html().includes('adaptive 75%'));
+    ok('…with the whole table in an AFTip rather than on the row',
+        html().includes('tip-hist') && html().includes('af-tip')
+        && html().includes('verdicts: 18 success · 4 partial · 2 failed · 0 cancelled')
+        && html().includes('82% of required criteria met'));
+    ok('‼️ cost is in the panel as an OBSERVATION and says so in the same line',
+        html().includes('observed cost: $1.83')
+        && html().includes('no decision anywhere looks at it'));
+    ok('‼️ the panel says why it may count more than the list shows',
+        html().includes('not the rows below it') && html().includes('kept to 2000'));
+
+    draw(OUT({
+        compare: {
+            classic: { runs: 1, success: 1, enough: false },
+            adaptive: { runs: 24, success: 18, enough: true },
+            successRate: null,
+            note: 'Insufficient sample — 1 classic and 24 adaptive run(s) in this scope; '
+                + '3 of each are needed before the two are compared.'
+        }
+    }));
+    ok('‼️ a comparison the core declined is NOT drawn — the row carries no rate pair',
+        !html().includes('classic 100%') && !html().includes('· adaptive 75%'));
+    ok('…and the panel says which side is short instead of implying a tie',
+        html().includes('Insufficient sample') && html().includes('3 of each are needed'));
+
+    draw(OUT({
+        total: 2,
+        compare: { classic: { runs: 0, success: 0, enough: false },
+            adaptive: { runs: 2, success: 1, enough: false }, successRate: null, note: 'Insufficient sample' },
+        groups: [GROUP({ runs: 2, enough: false, success: 1, partial: 1, failed: 0 })]
+    }));
+    ok('‼️ a group under minSample is drawn as a COUNT, never as a rate',
+        html().includes('×2') && html().includes('too few to read')
+        && !html().includes('50% success'));
+    ok('…and the panel says the arithmetic is real but the sample is not',
+        html().includes('under 3, too few to read')
+        && html().includes('nothing may be concluded from them'));
+
+    draw(OUT({ more: 3 }));
+    ok('the panel never implies the shapes it shows are all of them',
+        html().includes('+3 more shape(s)') && html().includes('missions.outcomes'));
+
+    draw(OUT({ signatureVersions: [1, 2] }));
+    ok('two signature versions warn that the groups are not comparable across them',
+        html().includes('not comparable across them'));
+
+    draw(OUT({ health: 'unreadable', total: 0, groups: [], degraded: 'the outcome history could not be read (EBUSY)' }));
+    ok('‼️ an unreadable store says so instead of drawing a confident zero',
+        html().includes('unavailable') && html().includes('EBUSY')
+        && !html().includes('0 recorded'));
+
+    draw(OUT({}), []);
+    ok('‼️ the history outlives the rows: no runs left, the strip stays',
+        html().includes('44 recorded') && html().includes('No missions yet'));
+
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
