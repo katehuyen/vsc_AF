@@ -484,7 +484,9 @@ Liderin planlama modeli, çalışan görevlerinde kullanılan modelleri değişt
 - **Worker model:** Somut görevi yapan çalışanın hangi modelle çalışacağı.
 
 > [!NOTE] Bugünkü planner effort durumu
-> Liderin planlama modeli için ayrı seçim vardır; fakat liderin planlama **düşünme düzeyi** bugün ayrı bir kullanıcı ayarı olarak tamamlanmış değildir. U-100, bunu lider bölümüne ekleyecek ve otomatik lider önizlemesiyle birlikte gösterecektir.
+> Liderin planlama modeli ve planlama **düşünme düzeyi** için ayrı seçimler vardır; ikisi de Orchestrator bölümündedir ve otomatik lider önizlemesiyle birlikte gösterilir (U-100 / X-121).
+>
+> İkisi de boş bırakıldığında değer havada kalmaz, bir merdivenden çözülür: **misyonun kendi override'ı → `agentFarm.taskExtraArgs` içindeki bayrak (komut satırında olduğu için dosyayı yener) → lead ajanın klasöründeki `.claude/settings*.json` zinciri (yalnız model; Claude Code'un settings.json'ında effort anahtarı yoktur) → CLI'nin kendi varsayılanı.** Misyon bir boyutu override ettiğinde extra-args'teki aynı bayrak satırdan çıkarılır, düşen bayrak adıyla raporlanır ve önizleme değeri kimin söylediğini yazar.
 
 ---
 
@@ -1946,6 +1948,19 @@ Her önemli ayar için üç aşama ayrılacaktır:
 
 Bu düzen, bir ayarın nerede değiştiğini veya neden beklenenden farklı olduğunu göstermeyi amaçlar.
 
+> [!IMPORTANT] "Uygulanan" hangi kanıttan okunur (X-124)
+> "Uygulanan", oturumun tamamının değil, **işin kapladığı turların** gerçeğidir. Bir konuşma resume edildiğinde birden çok delegasyona hizmet eder; oturum toplamını okumak, her adıma başka roundların modellerini yazmak demekti — ve "istediğim model bana hizmet edenler arasında mı" kontrolü isteği alakasız bir turda bulup **uyuşuyor** diyordu.
+>
+> Bu yüzden panel üç cevabı ayrı tutar:
+>
+> | Kapsam | Anlamı |
+> | :-- | :-- |
+> | **turn** | Bu işin kapladığı turlardan okundu. **≠ uyuşmazlık işareti yalnız buna çizilir.** |
+> | **session** | Adımın görev satırı retention ile silinmiş, bağlanacak pencere yok. Bütün lane'in okuması gösterilir ama **lane'in okuması olduğu açıkça yazılır**. |
+> | **unattributed** | Pencere biliniyor, o oturumun hiçbir turu içine düşmüyor — yani o tanıklığın hiçbiri bu iş hakkında değil. |
+>
+> Pencere içinde **değişen** permission mode tek değere indirgenmez; ikisi de gösterilir, çünkü birini seçmek satırı tam da bunu kontrol etmek için okuyan kişiye atılmış bir yazı tura olurdu.
+
 ### 21.6 Aynı önizleme Bridge’den de alınacak
 
 `missions.preview` işlemi, ekrandaki önizlemeyi ajanlar ve otomasyonlar için de erişilebilir yapacaktır. Böylece:
@@ -2266,7 +2281,9 @@ Hayır. Seçilen lider doğrudan planlama kimliğidir. Ayrı bir gizli delegasyo
 
 ### “Planner hangi motorla çalışıyor?”
 
-Bugünkü sistemde planner Claude ile çalışır. Kullanıcı planner modelini seçebilir; ayrı planner effort ayarı ise U-100 ile tamamlanacaktır.
+Bugünkü sistemde planner **yalnız Claude Code** ile çalışır; bu bir seçim değil, sabittir ve formda da "Planner engine: Claude Code · fixed" diye yazar. Kullanıcı planner modelini ve planner effort'unu seçebilir (U-100 / X-121); ikisi de boşsa değer yukarıdaki merdivenden çözülür.
+
+Bir koşum başladıktan sonra "orkestratör neyle koştu" sorusunun cevabı **koşumun kendi kaydından** okunur, o an yeniden hesaplanmaz (M-29): koşum geçmişte başlamıştır, `agentFarm.taskExtraArgs` ve settings dosyaları ise bugünkü hâlleriyle okunur. Kaydı olmayan eski koşumlarda yüzey "not recorded" der ve tahmin yürütmez.
 
 ### “Planner terminal açıyor mu?”
 
