@@ -251,9 +251,14 @@ if (!only || only === '2') {
     const spec = {
         id: 'sm2', title: 'the total, from whatever is really there',
         leadAgentId: 'lead', leadAgentName: 'lead', team: [], mode: 'adaptive',
-        goal: 'Write total.txt in the working folder containing the net total of the sales ledger '
-            + '(sales minus refunds). The README says the figures are in totals.csv; that file does '
-            + 'not exist, so the first approach will fail and a different one is needed.',
+        // ‼️ THE TRAP IS NOT DISCLOSED. The first version of this goal SAID that
+        // totals.csv was missing and that another approach would be needed — so
+        // the lead planned around the obstacle in its very first strategy and
+        // never had to revise anything. It behaved well and proved nothing: a
+        // stated obstacle is not a dead end. The README is left to mislead it,
+        // exactly as a real repository's stale documentation would.
+        goal: 'Follow the README and write total.txt in the working folder containing the net '
+            + 'total of the sales ledger — sales minus refunds, digits only.',
         successCriteria: [
             { id: 'c1', text: 'total.txt exists and contains 37', required: true },
             { id: 'c2', text: 'the figure was checked by an agent that did not compute it', required: true }
