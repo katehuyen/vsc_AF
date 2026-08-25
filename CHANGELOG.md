@@ -4,6 +4,32 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**A-17 (first half) — orchestration keeps a record of what it has observed.**
+A finished run knows something a run about to start does not: which SHAPE of
+approach was taken and what came of it. That is now kept — and only that. Not
+one prompt, artefact or message body is copied; what is stored is the sequence
+of primitives the lead used (consecutive repeats collapsed, so the same
+approach at two sizes is one group), the features of that approach, the
+verdict, how many required criteria were actually met, the counts, the duration
+and the money.
+
+The fences are the feature. A group under the sample floor is reported but
+never briefed to a lead — one run's accident read as a pattern is worse than
+silence. The classic-vs-adaptive comparison refuses to draw a number while
+either side lacks a denominator, and says which side is short instead of
+implying they are equal. A project never sees another's runs, and "no project"
+is its own scope rather than a wildcard. The same run recorded twice counts
+once, while a rerun counts twice because it really is a second attempt. And
+cost is recorded and decides nothing: there is no cheap-first, no model
+escalation, no budget reserve and no expected-value stop anywhere in this
+build, which is asserted against the source because it is a promise about what
+the code does *not* do.
+
+Readable through `missions.outcomes`. **Still open on this item:** the Missions
+page has no surface for it yet, and whether deleting a run should also forget
+its outcome is an unmade decision (`MissionOutcomeStore.forget` exists and is
+deliberately unwired).
+
 **B-13 — an adaptive mission is drivable from the bridge, and two reads that
 had no ceiling now have one.** The ops were all there — start, preview, status,
 trace, guide, conversation, council, and the whole control set — and no second

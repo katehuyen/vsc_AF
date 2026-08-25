@@ -286,6 +286,15 @@ import {
 // `isStale` is already taken by codexctx (a context measurement going out of
 // date) — a different subject entirely, so this one travels under its own name.
 import { currentEvaluations, isStale as evaluationIsStale } from './core/missionEvaluation';
+/**
+ * ‼️ A-17 — what orchestration has OBSERVED, and the fences around it. Nothing
+ * in that module copies a prompt, an artefact or a message, and nothing that
+ * reads it may route on a price; the file itself says why, at length.
+ */
+import {
+    aggregateOutcomes, MissionOutcomeStore, outcomePatterns, OutcomeSource,
+    OutcomeVerdict, toOutcome
+} from './core/missionOutcomes';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
@@ -3304,6 +3313,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         missionSaveWarned = said;
         void vscode.window.showErrorMessage('Agent Farm: ' + (missionStore.degraded ?? String(p.error)));
     };
+    /**
+     * ‼️ A-17 — WHAT ORCHESTRATION HAS OBSERVED, kept apart from what it did.
+     *
+     * A SEPARATE file from `missions.json` on purpose, and the reason is its
+     * lifetime: the mission store rolls old runs out once it is full, and the
+     * whole point of a history of outcomes is that it survives that. It holds
+     * no prompt, no artefact and no message — see `core/missionOutcomes.ts`,
+     * where every rule about what may and may not go in it is written down.
+     */
+    const outcomeStore = new MissionOutcomeStore(
+        path.join(context.globalStorageUri.fsPath, 'mission-outcomes.json'));
+    outcomeStore.load();
+    if (outcomeStore.degraded) {
+        // Said once, at startup, like the mission store's own damage: a history
+        // that came up empty because its bytes went bad reads exactly like a
+        // farm that has run nothing.
+        void vscode.window.showWarningMessage('Agent Farm: ' + outcomeStore.degraded);
+    }
+
     // ‼️ X-45 — the journals live beside the snapshot, one file per run, named
     // by run id so an orphan needs no index to be recognised.
     const missionTraceDir = path.join(context.globalStorageUri.fsPath, 'mission-trace');
@@ -3444,6 +3472,96 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { read, rec };
     };
 
+    /**
+     * ‼️ A-17 — ONE FINISHED RUN, NORMALISED INTO OBSERVATION.
+     *
+     * Built from the RUN RECORD, never from the journal. That is deliberate: a
+     * trace can be deleted, truncated or damaged, and a measurement that fell
+     * over when it was would have made the history unreliable exactly on the
+     * runs that went worst — which is the half worth counting. Everything here
+     * is on the snapshot: the rounds and their actions, the strategy version,
+     * the evaluations, the conversations, the guidance.
+     *
+     * The criterion verdicts come from `currentEvaluations` — the SAME reading
+     * the success gate uses — so what the history records as "met" is what the
+     * run itself would have called met, never a second opinion.
+     */
+    const missionOutcomeSource = (r: MissionRun): OutcomeSource | undefined => {
+        const sp = missionStore.spec(r.specId);
+        const terminal = r.status === 'done' || r.status === 'failed' || r.status === 'cancelled';
+        if (!terminal) { return undefined; }
+        const live = currentEvaluations(r.evaluations ?? [], settledCriteriaWork(r));
+        const verdicts: Record<string, string | undefined> = {};
+        for (const f of live.flatMap(e => e.findings)) { verdicts[f.criterionId] = f.verdict; }
+        // ‼️ A CANCELLED RUN IS `cancelled`, not `failed`. "Somebody stopped it"
+        // and "it could not reach its objective" are different facts, and
+        // folding the first into the second makes every failure rate a lie
+        // about how often the machine works.
+        const verdict: OutcomeVerdict = r.status === 'cancelled'
+            ? 'cancelled'
+            : (r.result?.verdict ?? (r.status === 'done' ? 'partial' : 'failed'));
+        return {
+            runId: r.id, specId: r.specId,
+            mode: isAdaptive(sp) ? 'adaptive' : 'classic',
+            projectId: sp?.projectId ?? null,
+            verdict,
+            stopReason: r.result?.stopReason ?? null,
+            actions: r.rounds.map(rd => String(rd.action)),
+            strategyVersion: r.strategy?.version ?? 1,
+            criteria: (sp?.successCriteria ?? []).map(c => ({ id: c.id, required: c.required })),
+            verdicts,
+            counts: {
+                rounds: r.rounds.length,
+                tasks: r.rounds.reduce((n, rd) => n + rd.steps.length, 0),
+                evaluations: (r.evaluations ?? []).length,
+                conversations: (r.conversations ?? []).length,
+                councils: (r.councils ?? []).length,
+                messages: (r.messages ?? []).length,
+                // A person answered a question the run asked.
+                questionsAnswered: r.rounds.filter(rd => !!rd.answer).length,
+                // …or steered it, and only a steer that really LANDED counts:
+                // one recorded and never delivered changed nothing about how
+                // the run went and must not be recorded as if it had.
+                guidanceDelivered: (r.guidance ?? []).filter(g => !!g.appliedAt).length,
+                // ‼️ M-17 — a verdict from a SECOND agent, not the lead grading
+                // its own homework. `review` as an action is the other half.
+                independentReviews: (r.evaluations ?? [])
+                    .filter(e => e.evaluator?.kind === 'agent').length
+            },
+            startedAt: r.startedAt,
+            endedAt: r.endedAt ?? r.startedAt,
+            costUSD: r.totalCostUSD,
+            tokens: r.totalTokens ?? 0
+        };
+    };
+
+    /**
+     * ‼️ A-17 — RECORD EVERY FINISHED RUN, IDEMPOTENTLY.
+     *
+     * Called at startup and every time an engine settles. It walks rather than
+     * hooking one exit because a run can reach a terminal state in ways this
+     * window never sees: it ended in a previous window, a reload reconciled it,
+     * a verdict was corrected. `record` is keyed on the run id and REPLACES, so
+     * walking the same run a hundred times records it once — which is also the
+     * rerun double-count guard, since a rerun is a different run id and is
+     * honestly a second attempt.
+     *
+     * Re-recording rather than skipping what is already there is what makes
+     * "an outcome changed, so the aggregate changed" true without an
+     * invalidation rule: the aggregate is derived on read, and the outcome is
+     * rebuilt from the run whenever this runs.
+     */
+    const syncMissionOutcomes = (): void => {
+        let touched = false;
+        for (const r of missionStore.runs) {
+            const src = missionOutcomeSource(r);
+            if (!src) { continue; }
+            outcomeStore.record(toOutcome(src));
+            touched = true;
+        }
+        if (touched) { outcomeStore.save(); }
+    };
+
     /** The words all three stores use for "this is over". `stopped` is a
      *  chain's own word for what a task calls `cancelled`. */
     const SETTLED_ON_RESUME = new Set(['done', 'failed', 'cancelled', 'stopped']);
@@ -3577,6 +3695,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     } catch { /* folder not readable — nothing to sweep */ }
     missionStore.save();
+    // ‼️ A-17 — AND THE HISTORY CATCHES UP WITH WHAT THE RELOAD JUST SETTLED.
+    // A run that ended while this window was closed, or one the reconciliation
+    // above just moved to a terminal state, is observation now. Idempotent by
+    // run id, so the first run of this code also records every mission the farm
+    // has ever finished — which IS the migration.
+    syncMissionOutcomes();
     const missionEngines = new Map<string, MissionEngine>();
     const missionQuestions = new Map<string, { question: string; askedAt: number; resolve: (a: string | undefined) => void }>();
     const missionApprovals = new Map<string, string>(); // runId → approvalQueue id
@@ -4367,6 +4491,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const p = spec.projectId ? projectStore.get(spec.projectId) : undefined;
             return p ? { name: p.name } : undefined;
         },
+        /**
+         * ‼️ A-17 — WHAT FINISHED RUNS OF THIS PROJECT ACTUALLY DID.
+         *
+         * Scoped to this mission's OWN project and to nothing else, including
+         * when it has none: `null` is that scope, not a wildcard that reaches
+         * every project on the machine. `outcomePatterns` then drops anything
+         * under the sample floor, so a young project is briefed with nothing
+         * at all rather than with one run's accident dressed as a pattern.
+         */
+        experience: () => outcomePatterns(
+            aggregateOutcomes(outcomeStore.outcomes, { projectId: spec.projectId ?? null })),
         now: () => Date.now()
     });
 
@@ -4396,6 +4531,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }).finally(() => {
             missionEngines.delete(run.id);
             missionChanged();
+            // ‼️ A-17 — the run is over, so what it DID is now observation.
+            // Walking every terminal run rather than recording this one alone:
+            // a run that ended in another window, or whose verdict was
+            // corrected, is picked up by the same pass, and `record` is keyed
+            // on the run id so nothing is ever counted twice.
+            syncMissionOutcomes();
             const r = missionStore.run(run.id);
             if (r && (r.status === 'done' || r.status === 'failed' || r.status === 'cancelled')) {
                 const line = `Mission "${spec.title}" ${r.status}` +
@@ -6093,6 +6234,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 specs: missionStore.specs.length,
                 runs: missionStore.runs.length
             })
+        },
+        {
+            op: 'missions.outcomes',
+            describe: '‼️ A-17 — WHAT ORCHESTRATION HAS OBSERVED, counted. Finished runs, normalised '
+                + 'into a strategy SIGNATURE (the sequence of primitives the lead used, consecutive '
+                + 'repeats collapsed, plus the features of the approach: branching, replan, revision, '
+                + 'review, conversation, council, workflow, nested, human) and grouped by it. Each '
+                + 'group carries how many runs took that shape, how they closed, the share of '
+                + 'REQUIRED criteria met, average rounds/tasks/strategy changes/user interventions, '
+                + 'and — as OBSERVATION ONLY — average duration, cost and tokens. '
+                + '‼️ NOTHING ROUTES ON ANY OF IT. There is no cheap-first, no model escalation, no '
+                + 'budget reserve and no expected-value stop anywhere in this build; a price here is '
+                + 'a fact about what happened, never an input to a decision. '
+                + '‼️ AND NOTHING IS CLAIMED FROM TOO FEW RUNS: a group under the sample floor comes '
+                + 'back with `enough: false` (shown, because hiding it would be its own lie) and is '
+                + 'never briefed to a lead. `compare` puts classic beside adaptive ONLY when both '
+                + 'sides have a real denominator; otherwise `successRate` is null and `note` says '
+                + 'which side is short. It holds no prompt, no artefact and no message text — the '
+                + 'record of what was SAID is missions.conversation. args: project? (id or name; '
+                + 'omit for every scope, "" for the runs filed under no project), minSample?',
+            handler: (args) => {
+                // ‼️ THE SCOPE FENCE, and the three answers are three answers: a
+                // key that is absent means every scope, `""` means the runs
+                // under no project, and a name means that project — the same
+                // contract missions.start uses for the same word.
+                let projectId: string | null | undefined;
+                if (args.project !== undefined) {
+                    const key = String(args.project ?? '').trim();
+                    if (!key) { projectId = null; } else {
+                        const p = projectStore.get(key);
+                        need(p, `No project matches "${key}" — the Projects page lists them.`);
+                        projectId = (p as { id: string }).id;
+                    }
+                }
+                const report = aggregateOutcomes(outcomeStore.outcomes, {
+                    projectId,
+                    ...(args.minSample !== undefined
+                        ? { minSample: Math.max(1, Number(args.minSample) || 1) } : {})
+                });
+                return {
+                    ...report,
+                    scope: {
+                        ...report.scope,
+                        ...(projectId ? { project: projectStore.get(projectId)?.name ?? null } : {}),
+                        all: projectId === undefined
+                    },
+                    // ‼️ The history's own health, for the same reason
+                    // missions.store exists: an empty report means one of two
+                    // very different things — a farm that has finished nothing,
+                    // or a file that could not be read.
+                    store: {
+                        file: outcomeStore.storeFile,
+                        health: outcomeStore.health,
+                        degraded: outcomeStore.degraded ?? null,
+                        quarantine: outcomeStore.quarantine ?? null,
+                        recorded: outcomeStore.outcomes.length
+                    }
+                };
+            }
         },
         {
             op: 'missions.list',

@@ -3161,6 +3161,21 @@ export interface MissionEngineDeps {
      */
     project?(): { name: string; docs?: string } | undefined;
     /**
+     * ‼️ A-17 — WHAT ORCHESTRATION HAS OBSERVED HERE BEFORE, in a few lines.
+     *
+     * Each line is a COUNT with an outcome attached, drawn from finished runs
+     * of THIS project only and only where there were enough of them to mean
+     * anything (`core/missionOutcomes.ts` holds all three fences). There is no
+     * instruction in it and there must never be: the lead is the thing that
+     * decides, and a recommendation dressed as data is how a runtime planner
+     * turns into a lookup table.
+     *
+     * Empty is the normal answer on a young farm and the block is then not
+     * drawn at all — an "insufficient sample" heading in a briefing would be
+     * paying tokens to say nothing.
+     */
+    experience?(): string[];
+    /**
      * ‼️ M-18 — the objectives ABOVE this run, nearest first. Empty for a root
      * run, and absent in a harness that does not nest. It is what makes a cycle
      * detectable: a child asked to reach a goal that is already its own
@@ -3756,6 +3771,29 @@ export class MissionEngine {
                 + 'decision settled, a backlog item closed), RECORDING THAT IS A DELEGATION like any other. Every '
                 + 'delegate you send runs under this project and is given the same map, so it can be told '
                 + '"update the plan/backlog/worklog" and will know where.\n');
+        }
+
+        /**
+         * ‼️ A-17 — WHAT HAS BEEN OBSERVED HERE BEFORE, and what it is not.
+         *
+         * Evidence, not advice. Each line is "n runs of this shape closed like
+         * this", from this project only and only where there were enough of
+         * them; the sentence around it says out loud that it is a record of
+         * what happened and not an instruction, because a lead handed counts
+         * with no framing will read them as a recommendation and stop thinking.
+         *
+         * The block is drawn only when there is something to say. On a young
+         * farm — which is most farms, most of the time — there is not, and an
+         * "insufficient sample" heading would be paying tokens to say nothing.
+         */
+        const seen = isAdaptive(this.spec) ? (this.deps.experience?.() ?? []) : [];
+        if (seen.length) {
+            blocks.push('## What has happened here before\n'
+                + 'Finished runs on THIS project, counted. It is a record, not a recommendation: '
+                + 'nobody has decided that any of these shapes is right for YOUR objective, and a shape '
+                + 'that worked often is still the wrong one for a different goal. Use it as evidence '
+                + 'about this codebase and these agents, and decide for yourself.\n'
+                + seen.map(s => `- ${s}`).join('\n') + '\n');
         }
 
         const list = isAdaptive(this.spec) ? (this.deps.workflows?.() ?? []) : [];
