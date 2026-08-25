@@ -3810,7 +3810,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /** One headless planner call. The prompt goes via stdin (multi-line briefings
      *  must survive the Windows shell); --resume keeps the lead's context. */
-    const missionPlannerCallOnce = (spec: MissionSpec) =>
+    const missionPlannerCallOnce = (spec: MissionSpec, run?: MissionRun) =>
         (prompt: string, resumeSessionId?: string): Promise<PlannerResult & { subtype?: string }> =>
             new Promise(resolve => {
                 const lead = agents.find(a => a.id === spec.leadAgentId);
@@ -3820,6 +3820,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the CLI exactly once instead of twice with a precedence
                 // nobody here has measured.
                 const launch = plannerLaunchFor(spec);
+                // ‼️ M-29 — AND THE ANSWER IS KEPT, because the reading surface
+                // must not climb this ladder again later: the files it would
+                // read then are today's, and this run is being launched now.
+                // Written on EVERY call so the record is the last call's, which
+                // is what a member's record already means on that page.
+                if (run) { run.plannerLaunch = launch; }
                 // ‼️ M-18 — THE LEAD IS TOLD WHICH PROJECT IT IS PLANNING FOR.
                 //
                 // Every delegation this mission makes has carried the project
@@ -3910,8 +3916,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Planner call with one built-in recovery: a lead that burns its turn cap
      *  on tools gets a single "decide NOW" nudge in the same session before the
      *  round is declared failed. */
-    const runMissionPlanner = (spec: MissionSpec) => {
-        const call = missionPlannerCallOnce(spec);
+    const runMissionPlanner = (spec: MissionSpec, run?: MissionRun) => {
+        const call = missionPlannerCallOnce(spec, run);
         return async (prompt: string, resumeSessionId?: string): Promise<PlannerResult> => {
             const first = await call(prompt, resumeSessionId);
             if (!first.ok && first.subtype === 'error_max_turns' && (first.sessionId ?? resumeSessionId)) {
@@ -4471,7 +4477,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const missionDepsFor = (spec: MissionSpec, run: MissionRun): MissionEngineDeps => ({
-        runPlanner: runMissionPlanner(spec),
+        runPlanner: runMissionPlanner(spec, run),
         delegateWave: missionDelegateWave(spec),
         // ‼️ X-46b — the ceiling reaches the processes. Narrower than
         // `cancelMission` on purpose: that stops the ENGINE too, and the run has
@@ -6679,7 +6685,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'as counts and are read in pages through missions.conversation, the journal '
                 + 'through missions.trace. `rounds` is the decision log and is capped by the '
                 + 'mission\'s own maxRounds; pass `rounds:"none"` to leave it out entirely when you '
-                + 'are only asking whether the run is still going. args: id, rounds? ("none" omits '
+                + 'are only asking whether the run is still going. '
+                + '‼️ M-29 — `planner.model`/`planner.effort` are what the MISSION declared; what the '
+                + 'orchestrator actually launched with is `planner.launch`, kept on the run when it '
+                + 'was launched (`modelFrom`/`effortFrom`: mission | extra-args | settings | cli, '
+                + '`modelSaidBy`/`effortSaidBy`: the settings file or the flag verbatim, `displaced`: '
+                + 'the taskExtraArgs flags the mission\'s own choice took off the command line). It is '
+                + 'null on a run that predates the record — deliberately not re-derived, because the '
+                + 'settings and extra args readable now are today\'s, not that run\'s. '
+                + 'args: id, rounds? ("none" omits '
                 + 'the round-by-round log)',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
@@ -6735,14 +6749,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // Every dimension of every DELEGATE has been readable here
                     // since M-18 while the participant that decides the whole
                     // run was invisible: "which model planned this, and how hard
-                    // was it thinking?" had no answer on the run at all. `null`
-                    // is the honest word for a field the mission never set — the
-                    // CLI chose, and saying so is not the same as a value.
+                    // was it thinking?" had no answer on the run at all.
+                    //
+                    // ‼️ M-29 — `model`/`effort` here are WHAT THE MISSION
+                    // DECLARED, which is rung 1 and nothing more. A null on them
+                    // means "the mission said nothing" — it does NOT mean the
+                    // CLI chose, because the extra args and the lead folder's
+                    // Claude settings sit between the two. What was really
+                    // resolved is `launch`, off the run's own record.
                     planner: {
                         agent: sp?.leadAgentName ?? null,
                         engine: 'claude',
                         model: sp?.plannerModel ?? null,
                         effort: sp?.plannerEffort ?? null,
+                        /**
+                         * ‼️ M-29 — THE RESOLVED LAUNCH, KEPT BY THE RUN.
+                         *
+                         * Not re-derived here on purpose: `agentFarm.taskExtraArgs`
+                         * and the settings chain are read as they are TODAY, and
+                         * answering a question about a run that started last
+                         * week out of this morning's files is the guess the
+                         * record exists to refuse. Null on a run that predates
+                         * it or whose planner has not been called yet.
+                         */
+                        launch: r.plannerLaunch ? {
+                            model: r.plannerLaunch.model.value ?? null,
+                            modelFrom: r.plannerLaunch.model.origin,
+                            modelSaidBy: r.plannerLaunch.model.source ?? null,
+                            effort: r.plannerLaunch.effort.value ?? null,
+                            effortFrom: r.plannerLaunch.effort.origin,
+                            effortSaidBy: r.plannerLaunch.effort.source ?? null,
+                            displaced: r.plannerLaunch.displaced
+                        } : null,
                         sessionId: r.plannerSessionId ?? null,
                         // ‼️ U-104 — the orchestrator is a participant, so the
                         // same requested/applied split applies to it. Null while

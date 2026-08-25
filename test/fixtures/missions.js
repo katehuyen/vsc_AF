@@ -120,6 +120,18 @@ const RUN = {
     // for opus; the transcript is the only witness that it got it, and the
     // orchestrator's applied profile had never been on this page at all.
     plannerApplied: { models: ['claude-opus-5'], permissionMode: null, effort: null },
+    // ‼️ M-29 — WHAT THE ORCHESTRATOR ACTUALLY LAUNCHED WITH, kept by the run.
+    // The interesting shape, on purpose: the mission's own `opus` won rung 1 and
+    // therefore took the user's `--model sonnet` OFF the command line, while the
+    // effort nobody overrode came from that same taskExtraArgs string. Drawing
+    // it proves the panel names the source and reports the displaced flag; the
+    // adaptive run below deliberately has no record, which is the other case.
+    plannerLaunch: {
+        model: { value: 'opus', origin: 'mission' },
+        effort: { value: 'high', origin: 'extra-args', source: '--effort high' },
+        extraArgs: '--effort high',
+        displaced: ['--model sonnet']
+    },
     startedAt: Date.now() - 41 * 60000,
     totalCostUSD: 1.42, totalTokens: 486000, ledger: [],
     rounds: [

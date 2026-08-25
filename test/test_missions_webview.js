@@ -34,6 +34,16 @@ const wired = {};
 const RUN = {
     id: 'run1', specId: 'spec1', status: 'waiting-approval',
     plannerSessionId: 'S1',
+    // ‼️ M-29 — WHAT THE ORCHESTRATOR ACTUALLY LAUNCHED WITH, kept on the run.
+    // The rung the old surface could never report: the model was named by the
+    // lead folder's own Claude settings, which the CLI reads by itself — the
+    // case the page used to draw as `cli`, "nobody set it". Effort really did
+    // fall all the way through, so the two absences are told apart.
+    plannerLaunch: {
+        model: { value: 'opus', origin: 'settings', source: 'D:/agents/lead/.claude/settings.json' },
+        effort: { origin: 'cli' },
+        extraArgs: '', displaced: []
+    },
     rounds: [
         {
             n: 1, thought: 'split the work', action: 'delegate', plannerCostUSD: 0.11, plannerTokens: 5000, at: 1000,
@@ -266,6 +276,47 @@ ok('team chips carry the delegation permissions when one was set',
         html().includes('not reported'));
     ok('‼️ a delegation that took every default wears NO mark — a glyph on every row says nothing',
         /<span class="pname">reviewer<\/span>/.test(html()));
+}
+
+// ---------- M-29: the orchestrator's profile is the RUN's record ----------
+//
+// X-121 gave the preview a real ladder; this surface still built the planner's
+// profile out of `sp.plannerModel`/`sp.plannerEffort` and wrote `origin: cli`
+// whenever they were empty — the same "nobody set it" over a command line that
+// had a flag on it. Re-climbing the ladder HERE would have been the second
+// mistake: the run started in the past and the extra args and settings readable
+// now are today's. So the launcher keeps its answer and this draws that record.
+{
+    ok('M-29 — the model comes from the run\'s record, with the rung that named it',
+        /Model: opus\s+\(the lead agent folder.{0,8}s own Claude settings, which the CLI reads itself\)/.test(html()));
+    ok('‼️ …and WHERE it was said, because "settings" without the file sends a reader hunting',
+        html().includes('Model said by: D:/agents/lead/.claude/settings.json'));
+    ok('‼️ …while a dimension that really did fall through still says the CLI decided',
+        /Effort: — CLI chooses —/.test(html()));
+    // ‼️ The spec is still the right source for what the mission DECLARED (the
+    // summary line, the lead's context menu). What may never be built from it
+    // again is the ORIGIN — "nobody set it" is a claim about three rungs, and
+    // the spec only knows the first.
+    const pageSrc = fs.readFileSync(path.join(__dirname, '..', 'media', 'missions.js'), 'utf8');
+    ok('‼️ the page no longer invents the planner\'s origin out of the spec',
+        !/plannerModel \? 'mission' : 'cli'/.test(pageSrc)
+        && /const pl = run\.plannerLaunch/.test(pageSrc));
+}
+
+// ---------- M-29: a run with no record says so, and guesses nothing ----------
+{
+    const bare = { ...RUN };
+    delete bare.plannerLaunch;
+    msgHandler({ data: { type: 'data', data: { ...DATA, runs: [bare] } } });
+    ok('‼️ M-29 — a run launched before the record reads "not recorded", never "CLI chooses"',
+        html().includes('not recorded')
+        && !/mchip prov">CLI chooses/.test(html()));
+    ok('…and the panel says why it will not be worked out now',
+        html().includes('Either this run predates the record, or its planner has not been called yet'));
+    ok('‼️ …the planner\'s two fixed facts survive the missing record — they were never a resolution',
+        html().includes('The planner ALWAYS runs on Claude Code'));
+    // put the recorded run back for everything below
+    msgHandler({ data: { type: 'data', data: DATA } });
 }
 
 // ---------- click routing ----------

@@ -216,6 +216,14 @@ console.log('\n-- the preview and the launch climb the same ladder');
     ok('‼️ the preview no longer hard-codes the origin as `cli`',
         !/model: plannerModel \? 'mission' : 'cli'/.test(src)
         && /model: plannerRun\.model\.origin/.test(src));
+
+    // ‼️ M-29 — AND THE ANSWER IS KEPT, because a run is read after it started.
+    // Re-climbing this ladder on a reading surface would answer a question
+    // about last week out of this morning's `taskExtraArgs` and settings.
+    ok('‼️ M-29 — the launcher writes its resolved answer onto the run',
+        /run\.plannerLaunch = launch/.test(src));
+    ok('…and missions.status reports that record beside what the mission declared',
+        /launch: r\.plannerLaunch \?/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

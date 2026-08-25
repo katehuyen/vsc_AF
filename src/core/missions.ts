@@ -27,6 +27,7 @@ import {
     newCouncilId, normalizeOptions, readVoteChoice, refuseCouncilTurn
 } from './missionCouncil';
 import type { DelegateOrigin, DelegateRun } from './missionMode';
+import type { PlannerLaunch } from './plannerLaunch';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
@@ -707,6 +708,25 @@ export interface MissionRun {
     status: MissionRunStatus;
     /** Planner continuity: each round resumes this headless session. */
     plannerSessionId?: string;
+    /**
+     * ‼️ M-29 — WHAT THE ORCHESTRATOR ACTUALLY LAUNCHED WITH, ON THE RUN.
+     *
+     * X-121 built one ladder (`plannerLaunch.ts`) and the preview climbs it
+     * live, which is right for a mission that has not started. A FINISHED run
+     * is a different question: re-climbing it would answer with today's
+     * `taskExtraArgs` and today's `.claude/settings*.json` — an assertion about
+     * last week made out of this morning's files. So the resolver's answer is
+     * kept HERE, on the run, the same way a delegation keeps its own `ran`.
+     *
+     * ‼️ THE LAST PLANNER CALL WINS, exactly as a member's record is its LAST
+     * delegation. Every round rebuilds the pair (X-122), a resume rebuilds it
+     * in a new window, and "what it is running with" is the reading a run still
+     * going and a run already finished both want.
+     *
+     * Absent on every run that predates this and on one whose planner never got
+     * as far as a call — and the surfaces say "not recorded", never a default.
+     */
+    plannerLaunch?: PlannerLaunch;
     rounds: MissionRound[];
     /** 1-2 compact lines per round — resume-fallback material + UI history. */
     ledger: string[];

@@ -4,6 +4,34 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 ## Unreleased
 
+**M-29 — a finished run says what its orchestrator actually launched with, out of
+its own record rather than out of today's files.** X-121 gave the preview a real
+ladder; the run detail and `missions.status` still built the planner's profile
+from `plannerModel`/`plannerEffort` alone and wrote "nobody set it, the CLI
+decided" whenever those were empty — the same claim X-121 deleted, on the surface
+a run is actually read from. Climbing the ladder again on the reading side would
+have been the second mistake: a run started last week, and `agentFarm.taskExtraArgs`
+and the lead folder's `.claude/settings*.json` are read as they are this morning,
+so the answer would be an assertion about the past assembled out of the present.
+
+So the launcher keeps the resolver's answer on the run and every reading surface
+draws that record. The last planner call wins, exactly as a member's profile is
+its last delegation — every round rebuilds the pair and a resume rebuilds it in a
+new window, so "what is it running with" has one meaning for a run still going
+and for one already finished. The detail panel names the rung that decided each
+dimension, WHERE it was said (the settings file's path, or the flag verbatim) and
+which `taskExtraArgs` flag the mission's own choice took off the command line.
+`missions.status` gains `planner.launch` with the same four facts, beside the
+`planner.model`/`planner.effort` that were always the mission's DECLARATION and
+now say only that.
+
+A run with no record — one that predates this, or one whose planner has not been
+called yet — reads "not recorded" and explains why nothing will be worked out for
+it now. That is the point of the item: the surface that cannot know stops
+guessing, and the two fixed facts about the planner (it always runs on Claude
+Code, in the lead agent's own folder, with no permission mode at all) survive the
+missing record, because they were never a resolution in the first place.
+
 **X-121 — the orchestrator's launch is resolved in one place, so the preview and
 the run describe the same command.** The planner is a headless `claude` in the
 LEAD AGENT'S folder with `agentFarm.taskExtraArgs` pasted onto its command line,

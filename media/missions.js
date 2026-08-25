@@ -1546,14 +1546,17 @@
      * MIRROR — the panel opens with the CURRENT effective line, because the row
      * shows a glyph and a glyph cannot say `codex · gpt-5 · high`.
      */
-    function provWrap(trigger, who, dims, applied, tail) {
+    function provWrap(trigger, who, dims, applied, tail, cls) {
         if (!dims) {
             return window.AFTip.wrap(trigger, who,
                 window.AFTip.lines([
-                    'No routing was recorded for this delegation.',
+                    // ‼️ M-29 — subject-neutral: this branch now serves the
+                    // ORCHESTRATOR as well as a delegation, and the difference
+                    // between the two is carried by the caller's `tail`.
+                    'Nothing was recorded here about what this actually ran with.',
                     'It ran before Agent Farm kept the resolver\'s answer, so what it used is only in its own transcript.',
                     tail || ''
-                ]));
+                ]), cls);
         }
         const short = describeEffective(dims) || 'every dimension left to the CLI';
         return window.AFTip.wrap(trigger, `${who} — ${short}`,
@@ -1565,7 +1568,7 @@
                     ? 'The engine reported nothing back: its session is not in the index (yet, or at all).'
                     : 'applied: what the CLI\'s own transcript says it ran with. Effort is reported by no engine today, so it is always "not reported".',
                 tail || ''
-            ]));
+            ]), cls);
     }
 
     /** The effective set as one short line — the panel's first line and the
@@ -2597,20 +2600,50 @@
          * The workdir is the LEAD AGENT'S folder, deliberately not the mission
          * workdir, which is where the delegations run.
          */
-        const plannerDims = {
+        /**
+         * ‼️ M-29 — AND IT IS READ OFF THE RUN'S OWN RECORD, NOT RE-RESOLVED.
+         *
+         * This used to derive from `sp.plannerModel`/`sp.plannerEffort` alone
+         * and write `origin: 'cli'` — "nobody set it" — whenever they were
+         * empty. That is the same lie X-121 deleted from the preview, and the
+         * fix is NOT to climb the ladder again here: the run started in the
+         * past, and `agentFarm.taskExtraArgs` and the lead folder's Claude
+         * settings are read as they are TODAY. Answering with them would be an
+         * assertion about last week made out of this morning's files.
+         *
+         * So the launcher keeps its answer on the run (`run.plannerLaunch`) and
+         * this draws that record. A run that has none gets `null` — the
+         * provenance panel's own "nothing was recorded here" — because a run
+         * whose ladder was never written down has no honest value to show.
+         */
+        const pl = run.plannerLaunch;
+        const plannerDims = !pl ? null : {
             engine: 'claude',
-            model: sp.plannerModel || '',
-            effort: sp.plannerEffort || '',
+            model: pl.model.value || '',
+            effort: pl.effort.value || '',
             permissionMode: 'none — its write and spawn tools are cut off by name',
             workDir: 'the lead agent\'s own folder',
             origin: {
                 engine: 'fixed',
-                model: sp.plannerModel ? 'mission' : 'cli',
-                effort: sp.plannerEffort ? 'mission' : 'cli',
+                model: pl.model.origin,
+                effort: pl.effort.origin,
                 permissionMode: 'fixed',
                 workDir: 'fixed'
             }
         };
+        /** Where each dimension was SAID — a settings file's path or the flag
+         *  verbatim. `mission` and `cli` are their own explanation and carry
+         *  none, exactly as the preview's `originSource` does. */
+        const plannerSaid = !pl ? [] : [
+            pl.model.source ? 'Model said by: ' + pl.model.source : '',
+            pl.effort.source ? 'Effort said by: ' + pl.effort.source : ''
+        ].filter(Boolean);
+        /** ‼️ The flags the mission's own override took OFF the command line.
+         *  A conflict a reader can see is a conflict; one dropped in silence is
+         *  a bug report nobody can reconstruct six months later. */
+        const plannerGone = (pl && pl.displaced && pl.displaced.length)
+            ? 'The mission\'s own choice displaced from agentFarm.taskExtraArgs: ' + pl.displaced.join(' · ')
+            : '';
         /** What each worker has actually run with in THIS run — see workerRuns. */
         const ran = workerRuns(run);
         const tasksUsed = run.rounds.reduce((a, r) => a + r.steps.length, 0);
@@ -2649,9 +2682,15 @@
                 <span class="plabel" title="Who plans the rounds, and what it plans with. The planner is not a worker: it always runs on Claude Code, in the LEAD AGENT'S own folder, with no permission mode at all.">Orchestrator</span>
                 <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
                     title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>
-                ${provWrap(`<span class="mchip prov">${C.esc(describeEffective(plannerDims) || 'CLI chooses')}${provMark(plannerDims, run.plannerApplied)}</span>`,
+                ${provWrap(`<span class="mchip prov">${C.esc(pl ? (describeEffective(plannerDims) || 'CLI chooses') : 'not recorded')}${provMark(plannerDims, run.plannerApplied)}</span>`,
                     sp.leadAgentName + ' — planner', plannerDims, run.plannerApplied,
-                    '\nThe planner ALWAYS runs on Claude Code and in the LEAD AGENT\'S own folder — not the mission workdir, which is where the delegations run. It takes no permission mode at all: its write and spawn tools are cut off by name instead.')}
+                    [
+                        '',
+                        ...plannerSaid,
+                        plannerGone,
+                        pl ? '' : 'Either this run predates the record, or its planner has not been called yet. Working it out now would read TODAY\'S agentFarm.taskExtraArgs and today\'s lead-folder Claude settings — an answer about this run built out of this morning\'s files, which is the guess this record exists to refuse.',
+                        'The planner ALWAYS runs on Claude Code and in the LEAD AGENT\'S own folder — not the mission workdir, which is where the delegations run. It takes no permission mode at all: its write and spawn tools are cut off by name instead.'
+                    ].filter((s, i) => i === 0 || s).join('\n'), 'tip-planner')}
                 ${pt ? `<a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">transcript</a>`
                     : `<span class="muted small" title="The planner's own session has not been indexed — there is nothing to open yet.">no transcript yet</span>`}
             </div>
