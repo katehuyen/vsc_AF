@@ -267,6 +267,28 @@ const pageFile = path.join(wikiRoot, 'Sistem', 'Aday_Havuzu.md');
         !b2.candidates.some(c => c.id === markId));
 }
 
+// ============================== 10. U-90/U-91: the two ops behind the picker
+{
+    const c = await call('wiki.categories');
+    ok('10 · the folders and the pool\'s topics are reported SEPARATELY',
+        Array.isArray(c.folders) && Array.isArray(c.topics) && Array.isArray(c.all));
+    ok('10 · …and the folder a compile wrote is one of them',
+        c.folders.some(f => f.name === 'Sistem' && f.pages >= 1));
+    ok('10 · …with the union assembled once, here, rather than per surface',
+        c.all.includes('Sistem') && c.all.includes('Derleme Motoru')
+        && c.all.length === new Set(c.all.map(s => s.toLowerCase())).size);
+
+    const made = await call('wiki.category.add', { name: 'Yeni / Konu' });
+    ok('10 · ‼️ a category is made at ONE level, with the separator removed',
+        made.name === 'Yeni Konu' && fs.existsSync(path.join(wikiRoot, 'Yeni Konu')));
+    ok('10 · …and it is offered from that moment, page or no page',
+        (await call('wiki.categories')).folders.some(f => f.name === 'Yeni Konu' && f.pages === 0));
+    ok('10 · a spelling that already exists is reported, not duplicated',
+        (await call('wiki.category.add', { name: 'yeni  konu' })).existed === true);
+    ok('10 · a name that cleans away is refused with a reason',
+        /no name/i.test(await refusal('wiki.category.add', { name: '::' })));
+}
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best-effort */ }
 
 console.log(`\ntest_wiki_e2e: ${pass} passed, ${fail} failed`);

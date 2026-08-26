@@ -75,6 +75,7 @@ ${read('media/common.css')}
 <div id="bands"></div>
 <div id="log">nothing marked yet</div>
 <script>${read('media/afTip.js')}</script>
+<script>${read('media/afCombo.js')}</script>
 <script>${read('media/afWiki.js')}</script>
 <script>
 try {
@@ -103,7 +104,20 @@ AFWiki.init(m => {
                 { topic: 'Görev Yaşam Döngüsü', pending: 1, total: 6 },
                 { topic: 'Token Ölçümü', pending: 0, total: 2 }
             ],
+            // U-90 — the wiki's own folders, the other half of the picker's list.
+            categories: [
+                { name: 'Agent Farm', pages: 6 }, { name: 'Wiki', pages: 2 },
+                { name: 'Kota', pages: 0 }, { name: 'Tarım', pages: 0 }
+            ],
             marks
+        }), 0);
+    }
+    // U-91 — the folder the picker offers to start. There is no disk here, so
+    // it answers the shape the host answers.
+    if (m.type === 'wikiCategory') {
+        setTimeout(() => AFWiki.receive({
+            type: 'wikiCategory', session: 'S1', ok: true,
+            name: String(m.name || '').trim(), existed: false, marks
         }), 0);
     }
     if (m.type === 'wikiMark') {

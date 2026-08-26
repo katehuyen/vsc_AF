@@ -325,6 +325,93 @@ export function readWikiPages(root: string): { pages: WikiPage[]; misplaced: str
     return { pages, misplaced };
 }
 
+export interface WikiCategory { name: string; pages: number }
+
+/**
+ * ‼️ U-91 — A FOLDER IN `00_WIKI` IS A CATEGORY THE MOMENT IT EXISTS.
+ *
+ * `readWikiPages` answers "what is written"; this answers "what is FILED
+ * UNDER", and the difference is the empty folder. Somebody who opens
+ * `00_WIKI/Tarım` in Obsidian has decided that Tarım is a category — the wiki
+ * has simply not been written yet — and a picker that only offered categories
+ * that already hold a page would refuse the one gesture the user just made.
+ *
+ * `_`-prefixed folders are the wiki's own (`_KURALLAR_`) and are not
+ * categories. Single level, by law (`_REF/wiki.md` §2): what is inside a
+ * category is pages, and anything deeper is `readWikiPages`' business to
+ * report.
+ */
+export function readWikiCategories(root: string): WikiCategory[] {
+    let dirs: fs.Dirent[];
+    try { dirs = fs.readdirSync(root, { withFileTypes: true }); } catch { return []; }
+    const out: WikiCategory[] = [];
+    for (const d of dirs) {
+        if (!d.isDirectory() || d.name.startsWith('_') || d.name.startsWith('.')) { continue; }
+        let pages = 0;
+        try {
+            pages = fs.readdirSync(path.join(root, d.name), { withFileTypes: true })
+                .filter(f => f.isFile() && f.name.toLowerCase().endsWith('.md')).length;
+        } catch { pages = 0; }
+        out.push({ name: d.name, pages });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+}
+
+/** Windows will not have these as a file name whatever you do to the rest. */
+const RESERVED_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * ‼️ U-91 — THE CATEGORY IS A FOLDER NAME, SO IT HAS TO SURVIVE BEING ONE.
+ *
+ * A topic typed into the picker becomes a directory on the user's disk, and
+ * `Ajanlar / Yol Haritası` would become two nested folders — which is exactly
+ * the deep hierarchy the single-level rule exists to prevent. So the separators
+ * and the characters Windows refuses go, and what is left is one name.
+ *
+ * `-` survives on purpose: `Teknoloji - Tarım` is how a family of categories is
+ * spelled here, ONE level deep, rather than `Teknoloji/Tarım`.
+ */
+export function safeCategoryName(v: unknown): string {
+    return String(v ?? '')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        // Windows silently drops a trailing dot or space, so a folder asked for
+        // as "Tarım." would come back named something else.
+        .replace(/^[\s.]+|[\s.]+$/g, '')
+        .slice(0, 60)
+        .trim();
+}
+
+/**
+ * Make one category folder. Refuses rather than guesses: a name that is nothing
+ * once cleaned, a name the platform reserves, and the `_` prefix the wiki keeps
+ * for itself — a folder created under that prefix would never appear in the
+ * list it was created for.
+ */
+export function createWikiCategory(root: string, name: unknown):
+    { ok: true; name: string; dir: string; existed: boolean } | { ok: false; error: string } {
+    if (!root) { return { ok: false, error: 'The wiki root is not set.' }; }
+    if (!fs.existsSync(root)) { return { ok: false, error: `The wiki root does not exist: ${root}` }; }
+    const safe = safeCategoryName(name);
+    if (!safe) { return { ok: false, error: 'That leaves no name once the characters a folder cannot carry are removed.' }; }
+    if (safe.startsWith('_')) {
+        return { ok: false, error: 'A leading _ is the wiki\'s own prefix — a folder there is not a category.' };
+    }
+    if (RESERVED_DEVICE.test(safe)) {
+        return { ok: false, error: `"${safe}" is a name Windows reserves for a device.` };
+    }
+    // An existing category, however it is spelled, is that category — creating
+    // "wiki" beside "Wiki" is the duplicate this picker exists to prevent.
+    const hit = readWikiCategories(root).find(c => c.name.toLowerCase() === safe.toLowerCase());
+    if (hit) { return { ok: true, name: hit.name, dir: path.join(root, hit.name), existed: true }; }
+    try {
+        const dir = path.join(root, safe);
+        fs.mkdirSync(dir, { recursive: true });
+        return { ok: true, name: safe, dir, existed: false };
+    } catch (e) { return { ok: false, error: String((e as Error).message) }; }
+}
+
 /**
  * ‼️ `wiki.lint` — REPORTS, NEVER REPAIRS (`_REF/wiki.md` §9). Everything here
  * is a question about the SHAPE of the wiki, which is the half a program can
@@ -807,6 +894,35 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
             op: 'wiki.candidates.remove',
             describe: 'Take marks out of the pool. args: id? (one) or ids? (a list) or state? (sweep every candidate in that state — compiled|dropped only, never pending). Removing a mark undoes nothing in the vault; a page already written stays written.',
             handler: (args) => removeCandidates(S(), args)
+        },
+        {
+            op: 'wiki.categories',
+            describe: 'U-90/U-91 — what a mark can be filed under: every single-level folder of the wiki root with the number of pages in it, and every topic the candidate pool already uses with how many marks carry it. The two are reported separately because they are different facts — a folder with no page yet is still a category, and a topic nobody has written a page for yet is not a folder. No arguments.',
+            handler: () => {
+                const root = deps.root();
+                const topics = S().topics();
+                const folders = readWikiCategories(root);
+                return {
+                    root, rootExists: fs.existsSync(root),
+                    folders,
+                    topics,
+                    // The union is what a picker offers, so it is assembled ONCE
+                    // here rather than differently on every surface that asks.
+                    all: [...folders.map(f => f.name),
+                        ...topics.map(t => t.topic)]
+                        .filter((n, i, a) => a.findIndex(x => x.toLowerCase() === n.toLowerCase()) === i)
+                        .sort((a, b) => a.localeCompare(b, 'tr'))
+                };
+            }
+        },
+        {
+            op: 'wiki.category.add',
+            describe: 'U-91 — open one category folder under the wiki root, so a category can be started without leaving for Obsidian. Single level by law: the separators and the characters a folder cannot carry are removed, and a family is spelled `Teknoloji - Tarım` rather than nested. A category that already exists, however it is spelled, is reported as that one rather than duplicated. args: name',
+            handler: (args) => {
+                const r = createWikiCategory(deps.root(), argStr(args, 'name'));
+                need(r.ok, r.ok ? '' : r.error);
+                return r;
+            }
         },
         {
             op: 'wiki.status',

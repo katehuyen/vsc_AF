@@ -17,15 +17,17 @@
 // pressed, over a backdrop you can see straight through, and closes on Esc, on
 // Save, or on a click anywhere else.
 //
-// ‼️ THE TOPICS ALREADY IN THE POOL ARE THE LIST. A pool where one subject is
-// spelled three ways files one concept three times, and nobody spells
-// consistently from memory across weeks — the same reason the session menu is a
-// picker and not a box (S-38). The chips are what is in use, ticked in any
-// combination; the box beside them takes anything new, comma-separated, and a
-// word typed there counts whether or not you also ticked something.
+// ‼️ WHAT IS ALREADY FILED IS THE LIST. A pool where one subject is spelled
+// three ways files one concept three times, and nobody spells consistently from
+// memory across weeks — the same reason the session menu is a picker and not a
+// box (S-38). The question is asked with `media/afCombo.js`: a searchable box
+// over the wiki's own folders AND the pool's topics, picked as chips. A word
+// nobody has filed yet still counts — it becomes a topic on Enter, and a folder
+// only when the reader asks for one.
 //
-// Two messages, answered by wikiMarkMessage in src/panels/base.ts:
-//   { type:'wikiAsk',  session, turn?, ts?, text? }  → topics, marks, the turn
+// Three messages, answered by wikiMarkMessage in src/panels/base.ts:
+//   { type:'wikiAsk',  session, turn?, ts?, text?, whole? } → topics, categories, marks, the turn
+//   { type:'wikiCategory', session, name } → the folder that now exists
 //   { type:'wikiMark', session, from, to, topics, note } → what it did
 // The turn NUMBER is the host's answer, never the page's guess: a Console row
 // carries a moment and an opening line, and only the transcript knows what turn
@@ -190,7 +192,10 @@
             whole,
             range: '', label: '', exact: true,
             scope: 'turn', anchor: 0,
-            topics: [], picked: [], typed: '', note: '',
+            topics: [], categories: [], picked: [], note: '',
+            // The picker's own three (U-90): what is typed, whether its list is
+            // down, and which row the keyboard is on.
+            query: '', open: false, active: 0,
             turnCount: 0, marks: [], pending: 0,
             loading: true, error: '', done: '',
             at: r ? { x: r.left, y: r.bottom, top: r.top } : null
@@ -217,6 +222,7 @@
             if (!msg.ok) { state.loading = false; state.error = msg.why || 'Unavailable.'; render(); return true; }
             state.loading = false;
             state.topics = msg.topics || [];
+            state.categories = msg.categories || [];
             state.marks = msg.marks || [];
             state.turnCount = msg.turnCount || 0;
             state.exact = msg.exact !== false;
@@ -237,6 +243,32 @@
                 if (state.picked.indexOf(t) < 0) { state.picked.push(t); }
             }));
             render();
+            return true;
+        }
+        // ‼️ U-91 — the folder was made (or was already there). Either way the
+        // answer is the name that REALLY exists on disk, not the one that was
+        // typed: "Tarim" typed beside an existing "Tarım" files under the one
+        // that is there, which is the duplicate this picker exists to prevent.
+        if (msg.type === 'wikiCategory') {
+            if (!state || msg.session !== state.session) { return true; }
+            if (!msg.ok) {
+                state.error = msg.why || 'The folder could not be made.';
+                render();
+                return true;
+            }
+            const name = msg.name || '';
+            if (name && !state.picked.some(p => p.toLowerCase() === name.toLowerCase())) {
+                state.picked.push(name);
+            }
+            state.categories = msg.categories || state.categories;
+            state.topics = msg.topics || state.topics;
+            state.query = '';
+            state.active = 0;
+            state.open = false;
+            state.error = '';
+            state.made = msg.existed ? `“${name}” was already there — filed under it.` : '';
+            render();
+            if (window.AFCombo) { window.AFCombo.focus('afw-cat', 0); }
             return true;
         }
         if (msg.type === 'wikiMarked') {
@@ -266,14 +298,33 @@
         return false;
     }
 
-    /** Everything ticked plus everything typed — the typed word counts whether
-     *  or not anything was ticked, which is the commonest way this is used. */
+    /**
+     * The two lists the picker offers, as one: the wiki's own folders and the
+     * pool's topics, merged on the name and each keeping what it knows (pages
+     * on disk · marks in the pool). Assembled here rather than on the wire so
+     * the two facts arrive separately and can still be told apart in the hover.
+     */
+    function comboOptions() {
+        const out = [];
+        const fold = s => String(s || '').toLocaleLowerCase('tr').trim();
+        (state.categories || []).forEach(c => {
+            if (c && c.name) { out.push({ name: c.name, pages: Number(c.pages) || 0 }); }
+        });
+        (state.topics || []).forEach(t => {
+            if (!t || !t.topic) { return; }
+            const at = out.findIndex(o => fold(o.name) === fold(t.topic));
+            if (at >= 0) { out[at].marks = t.total; out[at].pending = t.pending; }
+            else { out.push({ name: t.topic, marks: t.total, pending: t.pending }); }
+        });
+        return out.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    }
+
+    /** Everything picked plus anything still in the box — a word typed and not
+     *  yet entered counts, which is the commonest way this is used. */
     function chosenTopics() {
         const out = state.picked.slice();
-        String(state.typed || '').split(',').forEach(t => {
-            const s = t.trim();
-            if (s && !out.some(x => x.toLowerCase() === s.toLowerCase())) { out.push(s); }
-        });
+        const s = String(state.query || '').trim();
+        if (s && !out.some(x => x.toLowerCase() === s.toLowerCase())) { out.push(s); }
         return out;
     }
 
@@ -300,17 +351,6 @@
                 from: r.from, to: r.to, topics, note: state.note
             });
         }
-    }
-
-    function chipsHtml() {
-        if (!state.topics.length) {
-            return '<div class="afw-none">Nothing in the pool yet — type the first topic below.</div>';
-        }
-        return state.topics.slice(0, 24).map((t, i) => {
-            const on = state.picked.some(p => p.toLowerCase() === t.topic.toLowerCase());
-            return `<button class="afw-chip${on ? ' on' : ''}" data-afw-chip="${i}"
-                title="${esc(t.topic)} — ${t.pending} waiting, ${t.total} marked in all">${esc(t.topic)}</button>`;
-        }).join('');
     }
 
     /**
@@ -396,11 +436,13 @@
         ? ` · ${state.pending} waiting to be compiled` : ''}</div>` : `
                 ${scopeHtml(r, turnLine)}
                 ${state.label ? `<div class="afw-label">${esc(state.label)}</div>` : ''}
-                <div class="afw-ask" title="The compile files the concept under these. Ticking one that is already in use is what stops the same subject being spelled three ways and filed three times.">what is it about?</div>
-                <div class="afw-chips">${state.loading ? '' : chipsHtml()}</div>
-                <input id="afw-typed" type="text" value="${esc(state.typed)}"
-                    placeholder="a new topic, or two, comma-separated"
-                    title="Anything typed here counts whether or not you also ticked a chip. Enter saves.">
+                <div class="afw-ask" title="The compile files the concept under these. Picking one that is already in use is what stops the same subject being spelled three ways and filed three times — the list is the wiki's own folders and the topics the pool already carries.">what is it about?</div>
+                ${state.loading ? '' : window.AFCombo.html({
+        id: 'afw-cat', options: comboOptions(), picked: state.picked,
+        query: state.query, open: state.open, active: state.active, create: true,
+        placeholder: state.picked.length ? 'another…' : 'search the categories…'
+    })}
+                ${state.made ? `<div class="afw-made">${esc(state.made)}</div>` : ''}
                 <input id="afw-note" type="text" value="${esc(state.note)}"
                     placeholder="why it is worth keeping (optional)"
                     title="Your own words, kept with the mark so the pool is readable on its own.">
@@ -427,17 +469,26 @@
             if (ev.target && ev.target.id === 'afw-wrap') { close(); }
         });
         on('afw-go', 'click', save);
-        // Typing is recorded without a repaint — a render on every keystroke
-        // would take the caret out of the box the reader is in.
-        const typed = document.getElementById('afw-typed');
-        if (typed) {
-            typed.addEventListener('input', () => { state.typed = typed.value; });
-            typed.addEventListener('keydown', ev => {
-                if (ev.key === 'Enter') { state.typed = typed.value; save(); }
-                if (ev.key === 'Escape') { close(); }
+        // U-90 — the one question this panel asks is asked with the picker, and
+        // the picker keeps its own caret across the repaints it causes.
+        if (window.AFCombo && !state.loading && !state.done) {
+            window.AFCombo.wire(root, {
+                id: 'afw-cat', state, options: comboOptions(), create: true, render,
+                onCreate: (name) => {
+                    const n = String(name || '').trim();
+                    if (!n || !post) { return; }
+                    state.error = '';
+                    state.made = '';
+                    post({ type: 'wikiCategory', session: state.session, name: n });
+                },
+                onDone: save
             });
-            if (!state.loading && !state.done) {
-                try { typed.focus({ preventScroll: true }); } catch (e) { typed.focus(); }
+            const box = document.getElementById('afw-cat-in');
+            // The keyboard lands where the answer is typed — but only when it
+            // is not already there, or the picker's own caret restore would be
+            // undone by this every time it repaints (U-98).
+            if (box && document.activeElement !== box) {
+                try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
             }
         }
         const note = document.getElementById('afw-note');
@@ -459,19 +510,11 @@
         // The boxes are rewritten by the repaint, so what is in them now is
         // carried over rather than lost. Every control that repaints calls it.
         const carry = () => {
-            if (typed) { state.typed = typed.value; }
+            const box = document.getElementById('afw-cat-in');
+            if (box) { state.query = box.value; }
             if (note) { state.note = note.value; }
             if (range) { state.range = range.value; }
         };
-        root.querySelectorAll('[data-afw-chip]').forEach(node =>
-            node.addEventListener('click', () => {
-                const t = state.topics[Number(node.dataset.afwChip)];
-                if (!t) { return; }
-                const at = state.picked.findIndex(p => p.toLowerCase() === t.topic.toLowerCase());
-                if (at >= 0) { state.picked.splice(at, 1); } else { state.picked.push(t.topic); }
-                carry();
-                render();
-            }));
         root.querySelectorAll('[data-afw-scope]').forEach(node =>
             node.addEventListener('click', () => {
                 const next = node.dataset.afwScope;

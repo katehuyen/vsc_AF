@@ -26,6 +26,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // wanted it: the Console's send buttons and the Tasks form's four boxes.
     'afSnippets.js',
     'afTip.js',
+    // afCombo.js was the fourteenth — the searchable multi-pick box (U-90).
+    // Shared because the tagger asks its one question with it and the cockpit
+    // edits the same answer: a taxonomy typed from memory on one surface is
+    // the taxonomy the other one cannot offer.
+    'afCombo.js',
     // afWiki.js was the thirteenth — the wiki tagger's badge and popover
     // (K-26). Shared from the first line it was written: the badge belongs on
     // every surface that draws a turn, and a component a page had to opt into

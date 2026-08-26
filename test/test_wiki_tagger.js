@@ -102,6 +102,56 @@ const TURNS = [
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* windows */ }
 }
 
+// ====================================== U-90/U-91: what a mark can be filed under
+{
+    const os = require('os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'af-wiki-'));
+    fs.mkdirSync(path.join(root, 'Ajanlar'));
+    fs.writeFileSync(path.join(root, 'Ajanlar', 'Agent Farm.md'), '# x', 'utf8');
+    fs.writeFileSync(path.join(root, 'Ajanlar', 'Kota.md'), '# x', 'utf8');
+    fs.mkdirSync(path.join(root, 'Tarım'));                 // made in Obsidian, still empty
+    fs.mkdirSync(path.join(root, '_KURALLAR_'));            // the wiki's own
+    fs.writeFileSync(path.join(root, 'index.md'), '# i', 'utf8');
+
+    const cats = W.readWikiCategories(root);
+    ok('‼️ a folder somebody just made IS a category, page or no page',
+        cats.some(c => c.name === 'Tarım' && c.pages === 0));
+    ok('…and one that holds pages says how many',
+        cats.some(c => c.name === 'Ajanlar' && c.pages === 2));
+    ok('the wiki\'s own _ folders are not categories', !cats.some(c => c.name.startsWith('_')));
+    ok('a file at the root is not one either', cats.length === 2);
+    ok('an unreadable root answers nothing rather than throwing',
+        W.readWikiCategories(path.join(root, 'nope')).length === 0);
+
+    // ‼️ The name becomes a FOLDER, so it has to survive being one.
+    ok('a separator would have made a second level and is removed',
+        W.safeCategoryName('Ajanlar / Yol Haritası') === 'Ajanlar Yol Haritası');
+    ok('every character Windows refuses goes with it',
+        W.safeCategoryName('a\\b:c*d?e"f<g>h|i') === 'a b c d e f g h i');
+    ok('‼️ a hyphen SURVIVES — it is how a family is spelled at one level',
+        W.safeCategoryName('Teknoloji - Tarım') === 'Teknoloji - Tarım');
+    ok('a trailing dot is dropped, because Windows would drop it silently',
+        W.safeCategoryName(' Tarım. ') === 'Tarım');
+    ok('a name that is nothing but punctuation comes back empty',
+        W.safeCategoryName('  ///  ') === '');
+
+    const made = W.createWikiCategory(root, 'Yeni / Konu');
+    ok('a category is made under the root, at one level',
+        made.ok && made.name === 'Yeni Konu' && fs.existsSync(path.join(root, 'Yeni Konu')));
+    ok('…and it turns up in the list at once',
+        W.readWikiCategories(root).some(c => c.name === 'Yeni Konu'));
+    const again = W.createWikiCategory(root, 'yeni konu');
+    ok('‼️ a category that exists is REPORTED, not duplicated in another spelling',
+        again.ok && again.name === 'Yeni Konu' && again.existed === true);
+    ok('a name that cleans away is refused with a reason',
+        W.createWikiCategory(root, '::').ok === false);
+    ok('the wiki\'s own _ prefix is refused', W.createWikiCategory(root, '_KURALLAR_').ok === false);
+    ok('a device name Windows reserves is refused', W.createWikiCategory(root, 'CON').ok === false);
+    ok('a root that is not there is refused rather than created',
+        W.createWikiCategory(path.join(root, 'nope'), 'X').ok === false);
+    fs.rmSync(root, { recursive: true, force: true });
+}
+
 // ============================================ the popover itself (media/afWiki.js)
 function tagger() {
     const posted = [];
@@ -150,7 +200,31 @@ function tagger() {
         },
         document: {
             body,
-            createElement: () => { const e = mkEl(); nodes.host = e; return e; },
+            createElement: () => {
+                const e = mkEl();
+                let raw = '';
+                // ‼️ A REPAINT REPLACES THE MARKUP, so the elements the last
+                // render handed out are gone and their listeners go with them.
+                // A shim that kept them let every control fire once per repaint
+                // it had lived through — an ArrowDown that moved two rows.
+                Object.defineProperty(e, 'innerHTML', {
+                    get() { return raw; },
+                    set(v) {
+                        raw = v;
+                        Object.keys(nodes).forEach(k => {
+                            if (k !== 'host' && nodes[k]) { nodes[k].listeners = {}; }
+                        });
+                    }
+                });
+                nodes.host = e;
+                return e;
+            },
+            // The panel's Escape and the badge's click are document-level, and
+            // a shim that swallowed them measured the two gestures the feature
+            // is reached and left by.
+            listeners: {},
+            addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+            fire(ev, arg) { (this.listeners[ev] || []).forEach(f => f(arg || {})); },
             getElementById: (id) => {
                 const el = nodes[id];
                 // A repaint rewrites the control, so the element the component
@@ -164,13 +238,22 @@ function tagger() {
                 }
                 return el || null;
             },
-            addEventListener: () => { },
             querySelectorAll: () => []
         },
-        setTimeout: () => 0, clearTimeout: () => { }, console
+        // Timers are RECORDED rather than dropped or run: the picker opens on
+        // a 0ms one and the receipt closes the panel on an 1100ms one, and a
+        // shim that ran both would close the panel in the middle of the tests
+        // that read the receipt.
+        timers: [],
+        setTimeout: (fn, ms) => { sandbox.timers.push({ fn, ms: Number(ms) || 0 }); return sandbox.timers.length; },
+        clearTimeout: () => { }, console
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
+    // The shell ships both to every page, and the tagger asks its one question
+    // with the picker — a harness that loaded only half of that would measure a
+    // panel that does not exist anywhere.
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afCombo.js'), 'utf8'), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afWiki.js'), 'utf8'), sandbox);
     const AFWiki = sandbox.window.AFWiki;
     AFWiki.init(m => posted.push(m));
@@ -179,14 +262,24 @@ function tagger() {
     // component's own render() does.
     const bind = (id) => { nodes[id] = nodes[id] || mkEl(); return nodes[id]; };
     /** Press one of the data-attribute controls the last render drew. */
-    const press = (attr, value) => {
+    const press = (attr, value, ev) => {
         const list = (nodes.host && nodes.host.found && nodes.host.found['[' + attr + ']']) || [];
         const key = attr.slice(5).replace(/-([a-z])/g, (x, c) => c.toUpperCase());
         const el = list.find(e => e.dataset[key] === String(value));
-        if (el) { el.fire('click'); }
+        if (el) { el.fire(ev || 'click', { preventDefault() { }, stopPropagation() { } }); }
         return !!el;
     };
-    return { AFWiki, posted, html: () => (nodes.host ? nodes.host.innerHTML : ''), bind, press, nodes };
+    /** Run every timer due by `ms`. */
+    const tick = (ms) => {
+        const due = sandbox.timers.filter(t => t.ms <= (ms === undefined ? 0 : ms));
+        sandbox.timers = sandbox.timers.filter(t => t.ms > (ms === undefined ? 0 : ms));
+        due.forEach(t => t.fn());
+    };
+    return {
+        AFWiki, posted, bind, press, tick, nodes,
+        doc: sandbox.document,
+        html: () => (nodes.host ? nodes.host.innerHTML : '')
+    };
 }
 
 {
@@ -211,10 +304,10 @@ function tagger() {
         /class="afw-seg on"[^>]*data-afw-scope="turn"[\s\S]{0,80}This turn \(2\)/.test(h));
     ok('…and the reader is told what it is out of', /turn 2 of 5/.test(h));
     ok('…without being asked to type a number', !/id="afw-range"/.test(h));
-    ok('the topics already in the pool are the list', /Agent Farm/.test(h) && /Wiki/.test(h));
-    ok('…each saying how much is waiting under it', /3 waiting, 9 marked in all/.test(h));
     ok('a sure number does not cry wolf', !/check this/.test(h));
     ok('the panel says the vault is untouched', /Nothing is written to the vault/.test(h));
+    ok('U-90: the question is asked with the picker', /id="afw-cat-in"/.test(h));
+    ok('…whose list is not down until it is asked for', !/afc-pop/.test(h));
 }
 
 {
@@ -226,8 +319,6 @@ function tagger() {
         turnCount: 5, label: 'devam', topics: [], marks: []
     });
     ok('‼️ a guessed turn number says so on the row it is in', /check this/.test(t.html()));
-    ok('…and an empty pool asks for the first word rather than showing nothing',
-        /Nothing in the pool yet/.test(t.html()));
 }
 
 {
@@ -239,7 +330,7 @@ function tagger() {
         turnCount: 5, label: 'devam',
         topics: [{ topic: 'Agent Farm', pending: 1, total: 1 }], marks: []
     });
-    const typed = t.bind('afw-typed');
+    const typed = t.bind('afw-cat-in');
     const go = t.bind('afw-go');
     // Re-render so the freshly bound controls get this render's listeners.
     t.AFWiki.receive({
@@ -252,12 +343,12 @@ function tagger() {
         /at least one topic/.test(t.html())
         && !t.posted.some(m => m.type === 'wikiMark'));
 
-    typed.value = 'Tur Numarasi, Wiki';
+    typed.value = 'Tur Numarasi';
     typed.fire('input');
     go.fire('click');
     const sent = t.posted.find(m => m.type === 'wikiMark');
-    ok('‼️ what is TYPED counts without being ticked — the commonest way it is used',
-        sent && sent.topics.join('|') === 'Tur Numarasi|Wiki');
+    ok('‼️ a word left IN THE BOX still counts — pressing Keep does not lose it',
+        sent && sent.topics.join('|') === 'Tur Numarasi');
     ok('…and it carries the turn it was opened on', sent && sent.from === 3 && sent.to === 3);
 
     t.AFWiki.receive({
@@ -280,10 +371,20 @@ function tagger() {
         topics: [{ topic: 'Agent Farm', pending: 1, total: 1 }, { topic: 'Wiki', pending: 1, total: 1 }],
         marks: [{ id: 'w1', from: 2, to: 2, topics: ['Agent Farm'], state: 'pending' }]
     });
-    ok('a turn already kept opens with its own topics ticked',
-        /class="afw-chip on"[^>]*>Agent Farm</.test(t.html()));
-    ok('…and the other topics are still only a click away',
-        /class="afw-chip"[^>]*>Wiki</.test(t.html()));
+    ok('a turn already kept opens with its own topics already picked',
+        /class="afc-chip">Agent Farm/.test(t.html()));
+    ok('…and the other topics are one press of the list away', (() => {
+        const box = t.bind('afw-cat-in');
+        t.AFWiki.receive({
+            type: 'wikiAsk', session: 'S1', ok: true, from: 2, to: 2, exact: true,
+            turnCount: 5, label: 'x',
+            topics: [{ topic: 'Agent Farm', pending: 1, total: 1 }, { topic: 'Wiki', pending: 1, total: 1 }],
+            marks: [{ id: 'w1', from: 2, to: 2, topics: ['Agent Farm'], state: 'pending' }]
+        });
+        box.fire('mousedown');
+        t.tick(0);
+        return /data-afc-pick="Wiki"/.test(t.html());
+    })());
 }
 
 {
@@ -330,12 +431,15 @@ function tagger() {
         /id="afw-range"[^>]*value="6"/.test(t.html())
         && (t.html().match(/class="afw-tn on"/g) || []).length === 1);
 
-    // The box stays authoritative: what is typed there is what lights up.
+    // The box stays authoritative: what is typed there is what lights up — and
+    // typing a TOPIC afterwards must not throw the span away.
     const range = t.bind('afw-range');
-    t.press('data-afw-chip', 0);   // a repaint, so the box gets this render's listeners
+    const cat = t.bind('afw-cat-in');
+    t.press('data-afw-tn', 4);     // a repaint, so both boxes get this render's listeners
     range.value = '1-3';
     range.fire('input');
-    t.press('data-afw-chip', 0);
+    cat.value = 'wi';
+    cat.fire('input');
     ok('‼️ the box still rules the chips — typing a span lights it up',
         (t.html().match(/class="afw-tn on"/g) || []).length === 3
         && /id="afw-range"[^>]*value="1-3"/.test(t.html()));
@@ -354,7 +458,7 @@ function tagger() {
         const t = tagger();
         t.AFWiki.open({ session: 'S1', turn: 3 });
         t.AFWiki.receive(ask);
-        const typed = t.bind('afw-typed');
+        const typed = t.bind('afw-cat-in');
         const go = t.bind('afw-go');
         t.AFWiki.receive(ask);
         gesture(t);
@@ -408,24 +512,45 @@ function tagger() {
     // out work. This is the part that was already right; it is pinned so it
     // stays right.
     const t = tagger();
+    t.AFWiki.wire();
     t.AFWiki.open({ session: 'S1', turn: 1 });
-    const typed = t.bind('afw-typed');
+    const typed = t.bind('afw-cat-in');
     const wrap = t.bind('afw-wrap');
-    t.AFWiki.receive({
+    const ask = {
         type: 'wikiAsk', session: 'S1', ok: true, from: 1, to: 1, exact: true,
         turnCount: 3, label: 'x', topics: [], marks: []
-    });
+    };
+    t.AFWiki.receive(ask);
     ok('the keyboard opens in the box that takes the answer', typed.focused > 0);
+    // ‼️ Enter in a PICKER takes what is in it; the mark is kept by the next
+    // one. A single Enter that both filed a topic and saved the mark would
+    // close the panel on the reader mid-answer.
     typed.value = 'Wiki';
-    typed.fire('keydown', { key: 'Enter' });
-    ok('Enter saves from that box', t.posted.some(m => m.type === 'wikiMark'));
+    typed.fire('keydown', { key: 'Enter', preventDefault() { }, stopPropagation() { } });
+    ok('Enter takes the word as a topic rather than saving on top of it',
+        /class="afc-chip">Wiki/.test(t.html()) && !t.posted.some(m => m.type === 'wikiMark'));
+    typed.value = '';
+    typed.fire('keydown', { key: 'Enter', preventDefault() { }, stopPropagation() { } });
+    ok('…and Enter on an empty box is what keeps it',
+        t.posted.some(m => m.type === 'wikiMark'));
     ok('…and a click on the backdrop closes it', (() => {
         wrap.fire('mousedown', { target: { id: 'afw-wrap' } });
         return !t.AFWiki.isOpen();
     })());
+    // Esc: the picker's list first, the panel second — one key, two doors, in
+    // the order the reader put them there.
     t.AFWiki.open({ session: 'S1', turn: 1 });
-    t.bind('afw-typed').fire('keydown', { key: 'Escape' });
-    ok('…as does Esc', !t.AFWiki.isOpen());
+    t.AFWiki.receive(ask);
+    const box = t.bind('afw-cat-in');
+    t.AFWiki.receive(ask);
+    box.fire('mousedown');
+    t.tick(0);
+    ok('the list comes down on a press of the box', /afc-pop/.test(t.html()));
+    box.fire('keydown', { key: 'Escape', preventDefault() { }, stopPropagation() { } });
+    ok('…and Esc puts it away without closing the panel',
+        !/afc-pop/.test(t.html()) && t.AFWiki.isOpen());
+    t.doc.fire('keydown', { key: 'Escape' });
+    ok('…a second Esc closes the panel', !t.AFWiki.isOpen());
 }
 
 {
@@ -492,7 +617,7 @@ function tagger() {
     ok('…and the panel opens on the whole conversation with nothing to check',
         /class="afw-seg on"[^>]*data-afw-scope="all"/.test(u.html()) && !/check this/.test(u.html()));
     const go = u.bind('afw-go');
-    const typed = u.bind('afw-typed');
+    const typed = u.bind('afw-cat-in');
     u.AFWiki.receive({
         type: 'wikiAsk', session: 'S1', ok: true, from: 0, to: 0, exact: true,
         turnCount: 9, label: '', topics: [], marks: []
@@ -502,6 +627,148 @@ function tagger() {
     go.fire('click');
     const sent = u.posted.find(m => m.type === 'wikiMark');
     ok('…and it is filed as the whole conversation', sent && sent.from === 0 && sent.to === 0);
+}
+
+// ============================ U-90/U-91: the picker, driven the way a hand does
+{
+    const ASK = {
+        type: 'wikiAsk', session: 'S1', ok: true, from: 2, to: 2, exact: true,
+        turnCount: 5, label: 'x',
+        // The two lists are two facts and arrive separately: a folder with no
+        // page yet, a topic with no folder yet, and one that is both.
+        categories: [{ name: 'Ajanlar', pages: 2 }, { name: 'Tarım', pages: 0 }],
+        topics: [{ topic: 'Ajanlar', pending: 1, total: 4 }, { topic: 'Kota', pending: 2, total: 2 }],
+        marks: []
+    };
+    const opened = () => {
+        const t = tagger();
+        t.AFWiki.open({ session: 'S1', turn: 2 });
+        t.AFWiki.receive(ASK);
+        const box = t.bind('afw-cat-in');
+        t.AFWiki.receive(ASK);
+        box.fire('mousedown');
+        t.tick(0);
+        return { t, box };
+    };
+
+    const { t, box } = opened();
+    const h = t.html();
+    ok('‼️ pressing the empty box lists everything there is', /afc-pop/.test(h)
+        && /data-afc-pick="Ajanlar"/.test(h) && /data-afc-pick="Tarım"/.test(h)
+        && /data-afc-pick="Kota"/.test(h));
+    ok('…each with the figure that tells them apart',
+        (h.match(/class="afc-n">\d+</g) || []).length === 3);
+    ok('‼️ a name in BOTH lists is one row, not two',
+        (h.match(/data-afc-pick="Ajanlar"/g) || []).length === 1);
+    ok('a folder says it is one, and how much is in it', /Wiki folder: 2 pages/.test(h));
+    ok('…and a topic with no folder yet says that instead',
+        /Not a folder yet/.test(h) && /Marked: 2 in the pool/.test(h));
+    ok('nothing is offered as new while the box is empty', !/data-afc-new/.test(h));
+
+    // Typing filters, and it filters in Turkish.
+    box.value = 'tar';
+    box.fire('input');
+    ok('typing filters the list', /data-afc-pick="Tarım"/.test(t.html())
+        && !/data-afc-pick="Kota"/.test(t.html()));
+    ok('…and offers to start what it did not find, above what it did',
+        t.html().indexOf('data-afc-new') > 0
+        && t.html().indexOf('data-afc-new') < t.html().indexOf('data-afc-pick'));
+    box.value = 'TARIM';
+    box.fire('input');
+    ok('‼️ and it folds case the Turkish way — TARIM finds Tarım',
+        /data-afc-pick="Tarım"/.test(t.html()));
+    ok('…so an exact match offers nothing to create', !/data-afc-new/.test(t.html()));
+
+    // The create row, which is the one that writes to the vault.
+    box.value = 'Tohum';
+    box.fire('input');
+    const mk = t.html();
+    ok('‼️ a name nothing matches offers to START the category', /data-afc-new="1"/.test(mk));
+    ok('…and it says plainly that Enter alone would not make a folder',
+        /Enter on its own keeps the topic WITHOUT making a folder/.test(mk));
+    ok('pressing it asks the host, and asks with what was typed', (() => {
+        t.press('data-afc-new', '1', 'mousedown');
+        const m = t.posted.filter(x => x.type === 'wikiCategory').pop();
+        return m && m.name === 'Tohum' && m.session === 'S1';
+    })());
+    t.AFWiki.receive({
+        type: 'wikiCategory', session: 'S1', ok: true, name: 'Tohum', existed: false,
+        categories: [...ASK.categories, { name: 'Tohum', pages: 0 }], topics: ASK.topics, marks: []
+    });
+    ok('…and what comes back is picked, with the box cleared behind it',
+        /class="afc-chip">Tohum/.test(t.html()) && !/value="Tohum"/.test(t.html()));
+
+    // ‼️ The name that EXISTS wins over the name that was typed.
+    const two = opened();
+    two.box.value = 'ajanlar';
+    two.box.fire('input');
+    two.t.press('data-afc-new', '1', 'mousedown');
+    ok('a spelling that already exists is not offered as new', !/data-afc-new/.test(two.t.html()));
+    two.t.AFWiki.receive({
+        type: 'wikiCategory', session: 'S1', ok: true, name: 'Ajanlar', existed: true,
+        categories: ASK.categories, topics: ASK.topics, marks: []
+    });
+    ok('‼️ and when the host says it was already there, it is FILED UNDER THAT ONE',
+        /class="afc-chip">Ajanlar/.test(two.t.html()) && !/afc-chip">ajanlar/.test(two.t.html()));
+    ok('…and the reader is told, rather than left thinking they made one',
+        /was already there/.test(two.t.html()));
+
+    const bad = opened();
+    bad.box.value = 'CON';
+    bad.box.fire('input');
+    bad.t.press('data-afc-new', '1', 'mousedown');
+    bad.t.AFWiki.receive({
+        type: 'wikiCategory', session: 'S1', ok: false, why: '"CON" is a name Windows reserves for a device.'
+    });
+    ok('a refusal is said IN the panel, in the host\'s own words',
+        /Windows reserves for a device/.test(bad.t.html()));
+
+    // Keyboard: the list is reachable without the mouse.
+    const kb = opened();
+    kb.box.fire('keydown', { key: 'ArrowDown', preventDefault() { }, stopPropagation() { } });
+    ok('ArrowDown moves onto the second row', /class="afc-opt[^"]* hot"[^>]*data-afc-pick="Kota"/.test(kb.t.html()));
+    kb.box.fire('keydown', { key: 'Enter', preventDefault() { }, stopPropagation() { } });
+    ok('…and Enter takes the row the keyboard is on', /class="afc-chip">Kota/.test(kb.t.html()));
+    kb.box.value = '';
+    kb.box.fire('keydown', { key: 'Backspace', preventDefault() { }, stopPropagation() { } });
+    ok('‼️ Backspace on an empty box takes the last one back off',
+        !/class="afc-chip">Kota/.test(kb.t.html()));
+
+    // The ✕ on a chip, and what finally goes on the wire.
+    const pick = opened();
+    const again = (p) => { p.box.fire('mousedown'); p.t.tick(0); };
+    pick.t.press('data-afc-pick', 'Tarım', 'mousedown');
+    ok('‼️ taking one puts the list away — it was drawn over the Keep button',
+        !/afc-pop/.test(pick.t.html()));
+    again(pick);
+    pick.t.press('data-afc-pick', 'Kota', 'mousedown');
+    ok('two picks are two chips', /afc-chip">Tarım/.test(pick.t.html()) && /afc-chip">Kota/.test(pick.t.html()));
+    pick.t.press('data-afc-off', 'Tarım', 'mousedown');
+    ok('…and the ✕ takes one back off', !/afc-chip">Tarım/.test(pick.t.html()));
+    const go = pick.t.bind('afw-go');
+    pick.t.AFWiki.receive(ASK);
+    ok('‼️ what was PICKED is what is filed — nothing is retyped on the way out', (() => {
+        again(pick);
+        pick.t.press('data-afc-pick', 'Ajanlar', 'mousedown');
+        go.fire('click');
+        const sent = pick.t.posted.filter(m => m.type === 'wikiMark').pop();
+        return sent && sent.topics.join('|') === 'Kota|Ajanlar';
+    })());
+
+    // filter() is the same function the markup and the keyboard both read, so
+    // it is measured on its own rather than through a repaint.
+    const box2 = { window: {}, document: { addEventListener() { } }, console };
+    box2.globalThis = box2;
+    vm.createContext(box2);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afCombo.js'), 'utf8'), box2);
+    const C = box2.window.AFCombo;
+    const opts = [{ name: 'Kota' }, { name: 'Tarım' }, { name: 'Tarih' }, { name: 'Arıtma' }];
+    ok('‼️ what STARTS with the query comes before what merely contains it',
+        C.filter(opts, 'ar').map(o => o.name).join('|') === 'Arıtma|Tarım|Tarih');
+    ok('an empty query is not a filter', C.filter(opts, '').length === 4);
+    ok('a query nothing matches filters to nothing', C.filter(opts, 'zzz').length === 0);
+    ok('exact() folds the same way the list does',
+        C.exact(opts, 'TARIM') === true && C.exact(opts, 'tar') === false);
 }
 
 // ============================================ the surfaces actually draw it

@@ -12038,6 +12038,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const s = index.allWithExternal().find(x => x.sessionId === sessionId);
             return (s?.turns ?? []).map(t => ({ n: t.n, label: t.label, ts: t.ts }));
         },
+        root: () => wikiRoot(),
         add: (a) => {
             const s = index.allWithExternal().find(x => x.sessionId === a.sessionId);
             const r = wikiStore.add({

@@ -2,6 +2,57 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.282.0 - U-90: the tagger asks what a turn is about with a searchable picker over the wiki's own folders · U-91: a category can be started without leaving for Obsidian (2026-08-26)
+
+**U-90 — a taxonomy typed from memory is three taxonomies.** The tagger asked
+what a turn was about with a free-text box, and free text is how `Ajanlar`,
+`ajanlar` and `Ajanlar ` become three categories, three folders in the vault and
+an index that agrees with none of them. Nobody spells consistently from memory
+across weeks, so the list has to be in front of the person at the moment they
+answer.
+
+It is now a searchable multi-pick box (`media/afCombo.js`, shipped to every page
+for the same reason the tagger is). What it offers is the union of two different
+facts and it says which is which: the wiki's own folders — `00_WIKI/*`, where a
+page would go, whether or not one has been written yet — and the topics the pool
+already uses. A name in both lists is one row, with the figure that tells them
+apart (pages on disk · marks in the pool). Pressing the empty box lists
+everything; typing filters it, folding case the Turkish way, so `TARIM` finds
+`Tarım`; the arrows and Enter reach every row without the mouse; what is picked
+sits in the box as a chip with an ✕, and Backspace on an empty box takes the last
+one back off. A word nobody has filed yet still counts — Enter keeps it as a
+topic, exactly as the old box did.
+
+Taking one puts the list away. It is drawn over the panel it sits in, and
+leaving it down covered the "Keep it" button directly underneath — measured, in
+the picture, before it shipped.
+
+**U-91 — a folder in `00_WIKI` is a category the moment it exists.** Two things
+were missing at once. A folder somebody had just made in Obsidian was invisible
+until a page was written into it, because the only list was of pages; and a
+category the extension needed did not exist until the user left for Obsidian to
+make one. Both are closed from the same place: the picker reads the folders
+themselves (empty ones included, with their page count) and offers `+ start the
+category “X”` at the TOP of the list whenever what was typed matches nothing.
+
+The category is a folder name, so it has to survive being one. The separators
+and the characters Windows refuses are removed — `Ajanlar / Yol Haritası` would
+otherwise have made a second level, which is exactly the deep hierarchy the
+single-level rule exists to prevent — and a trailing dot goes, because Windows
+would have dropped it silently and named the folder something else. A hyphen
+survives on purpose: `Teknoloji - Tarım` is how a family is spelled here, at one
+level. A leading `_` is the wiki's own prefix and is refused, as are the device
+names Windows reserves.
+
+‼️ And a category that already exists, in ANY spelling, is reported as that one
+rather than duplicated: typing `ajanlar` beside an existing `Ajanlar` files the
+mark under `Ajanlar` and says so. That is the duplicate this whole picker exists
+to prevent, and it would have been the first one it created.
+
+Two ops carry it, so an agent can do the same: `wiki.categories` (the folders,
+the pool's topics, and the union — reported separately, because they are
+different facts) and `wiki.category.add`.
+
 ## 3.281.0 - U-93: which turns to keep is a choice, not a number to type · U-94: keeping the whole conversation is a button on the surfaces that show one (2026-08-26)
 
 **U-93 — the badge on every turn asked you which turn you meant.** Pressing the

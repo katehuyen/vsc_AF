@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
-const js = fs.readFileSync(path.join(ROOT, 'media', 'afWiki.js'), 'utf8');
+const js = fs.readFileSync(path.join(ROOT, 'media', 'afCombo.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.join(ROOT, 'media', 'afWiki.js'), 'utf8');
 const light = process.argv.indexOf('--light') >= 0;
 
 const dark = {
@@ -35,6 +36,10 @@ const ASK = {
         { topic: 'Ayarlar', pending: 0, total: 2 }, { topic: 'Kota', pending: 2, total: 6 },
         { topic: 'JSONC', pending: 1, total: 1 }
     ],
+    categories: [
+        { name: 'Agent Farm', pages: 6 }, { name: 'Ayarlar', pages: 2 },
+        { name: 'Kota', pages: 0 }, { name: 'Tarım', pages: 0 }, { name: 'Teknoloji - Tarım', pages: 1 }
+    ],
     marks: []
 };
 
@@ -61,6 +66,17 @@ body{margin:0;padding:0;background:var(--vscode-editor-background);
   ${process.argv.indexOf('--range') >= 0 ? `
   var seg = document.querySelector('[data-afw-scope="range"]');
   if (seg) { seg.click(); }` : ''}
+  ${process.argv.indexOf('--pick') >= 0 ? `
+  document.querySelectorAll('[data-afc-pick]').forEach(function (b) {
+    if (b.dataset.afcPick === 'Kota') { b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); }
+  });
+  var box = document.getElementById('afw-cat-in');
+  box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  setTimeout(function () {
+    var b2 = document.getElementById('afw-cat-in');
+    b2.value = 'Tar';
+    b2.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 20);` : ''}
 </script>
 </body></html>`;
 

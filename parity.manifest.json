@@ -622,6 +622,15 @@
       ]
     },
     {
+      "capability": "base.ts#wikiCategory",
+      "ui": [
+        "page:base.ts#wikiCategory"
+      ],
+      "ops": [
+        "wiki.category.add"
+      ]
+    },
+    {
       "capability": "base.ts#wikiMark",
       "ui": [
         "page:base.ts#wikiMark"

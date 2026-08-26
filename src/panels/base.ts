@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { normTopics, turnFor } from '../core/wiki';
+import { createWikiCategory, normTopics, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
 
 /**
@@ -319,6 +319,11 @@ export function htmlShell(
     // a turn worth keeping goes past at conversation speed on whichever surface
     // you happen to be reading it on, and a component a page had to opt into is
     // the page where the turn goes unmarked.
+    // The searchable multi-pick box (U-90). Ships everywhere for the reason the
+    // tagger does: it is what the tagger asks its one question with, and the
+    // cockpit edits the same answer — a taxonomy typed from memory on one
+    // surface is the taxonomy the other one cannot offer.
+    const combo = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCombo.js'));
     const wiki = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWiki.js'));
     // The query language. Ships everywhere for the strongest version of that
     // reason: the extension host runs the SAME FILE (src/core/query.ts loads it
@@ -379,6 +384,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
+<script nonce="${nonce}" src="${combo}"></script>
 <script nonce="${nonce}" src="${wiki}"></script>
 <script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
@@ -473,6 +479,11 @@ export interface WikiMarkBridge {
     }[];
     /** The transcript's turn rollup — how a row's moment becomes a number. */
     turns(sessionId: string): { n: number; label: string; ts: number }[];
+    /** ‼️ U-90/U-91 — where `00_WIKI` lives. Reading its folders and starting
+     *  one are `core/wiki.ts`'s own functions and are called here directly: the
+     *  bridge op does the same, so the page and the op cannot drift into two
+     *  implementations of "what is a category". */
+    root(): string;
     /** ‼️ The transcript's path and engine are re-derived by the implementation
      *  from the session id, never taken from the page: a webview is not where a
      *  file path is decided (the same rule attachmentsOf follows). */
@@ -499,6 +510,12 @@ export function wikiMarksOf(sessionId: string): {
     try { return wikiBridge && sessionId ? wikiBridge.marks(sessionId) : []; } catch { return []; }
 }
 
+/** A reading of the vault that is missing or unreadable must not take the
+ *  tagger down with it: the pool still works without a wiki folder. */
+function safely<T>(read: () => T, fallback: T): T {
+    try { return read(); } catch { return fallback; }
+}
+
 /** Everything a surface needs to draw the tagger for one conversation. */
 function wikiSnapshot(sessionId: string): Record<string, unknown> {
     if (!wikiBridge) { return { session: sessionId, ok: false, why: 'The candidate pool is not open yet.' }; }
@@ -506,6 +523,11 @@ function wikiSnapshot(sessionId: string): Record<string, unknown> {
         session: sessionId,
         ok: true,
         topics: wikiBridge.topics(),
+        // U-90: what the picker offers is the pool's topics AND the wiki's own
+        // folders. They stay two lists on the wire because they are two facts —
+        // a folder says where a page would go, a topic says what is already
+        // marked — and the picker says which is which.
+        categories: safely(() => readWikiCategories(wikiBridge!.root()), []),
         marks: wikiBridge.marks(sessionId),
         turnCount: wikiBridge.turns(sessionId).length
     };
@@ -551,6 +573,30 @@ export function wikiMarkMessage(
                 label: at.turn
                     ? (turns.find(t => t.n === at.turn)?.label ?? str('text').slice(0, 90))
                     : ''
+            });
+            return true;
+        }
+        // ‼️ U-91 — STARTING A CATEGORY IS THE ONE THING HERE THAT TOUCHES THE
+        // VAULT, and it makes a folder, never a page. The page sends what was
+        // typed; the name is cleaned and checked by the core, and the answer
+        // says what was REALLY made — including "that one already existed",
+        // which is the whole point of asking rather than spelling it again.
+        case 'wikiCategory': {
+            const session = str('session');
+            if (!wikiBridge) {
+                void webview.postMessage({
+                    type: 'wikiCategory', session, ok: false,
+                    why: 'The candidate pool is not open yet.'
+                });
+                return true;
+            }
+            const r = safely(() => createWikiCategory(wikiBridge!.root(), str('name')),
+                { ok: false as const, error: 'The wiki folder could not be written.' });
+            void webview.postMessage({
+                type: 'wikiCategory', session,
+                ok: r.ok === true,
+                name: r.ok ? r.name : '', existed: r.ok ? r.existed : false,
+                why: r.ok ? '' : r.error, ...(r.ok ? wikiSnapshot(session) : {})
             });
             return true;
         }
