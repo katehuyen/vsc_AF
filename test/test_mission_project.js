@@ -138,16 +138,16 @@ const brief = (s, d) => {
     const plannerSrc = fs.readFileSync(
         path.join(__dirname, '..', 'src', 'core', 'plannerLaunch.ts'), 'utf8');
     ok('the planner call asks for the project\'s context file',
-        /const ctxFile = resumeSessionId \? undefined : projectContextFileFor\(spec\.projectId, 'mission'\);/.test(ext));
+        /const ctxFile = resumeSessionId \? undefined : systemPromptFileFor\(spec\.projectId, 'mission'\);/.test(ext));
     // ‼️ X-94 — AND IT ASKS FOR THE MISSION'S COPY, which is a different text:
     // no open plan items, no backlog, no worklog, no write-back protocol. The
     // audience argument is the whole of that difference, so a refactor that
     // drops it silently puts the project's standing queues back in front of
     // every planner call and every delegation.
     ok('‼️ …the MISSION\'s copy of it, not a session\'s',
-        /projectContextFileFor\(spec\.projectId, 'mission'\)/.test(ext));
+        /systemPromptFileFor\(spec\.projectId, 'mission'\)/.test(ext));
     ok('‼️ …and a mission DELEGATION reads the same copy — `missionId` is the discriminator',
-        /projectContextFileFor\(\s*\n?\s*task\.projectId, task\.missionId \? 'mission' : 'session'\)/.test(ext));
+        /systemPromptFileFor\(\s*\n?\s*task\.projectId, task\.missionId \? 'mission' : 'session',/.test(ext));
     ok('‼️ …and ONLY when it is not resuming — a resume already has it in the conversation',
         /resumeSessionId \? undefined :/.test(ext));
     // ‼️ X-121 — the planner's command line is built by `core/plannerLaunch.ts`

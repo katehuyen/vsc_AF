@@ -182,13 +182,13 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
     console.log('\n-- _AF/BRIEF.md belongs to the session protocol and stays session-shaped');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('‼️ writeBrief is gated on the session audience',
-        /if \(c\.hasFolder && audience === 'session'\) \{ writeBrief\(c\.folder, c\.brief\); \}/.test(ext));
+        /if \(c && c\.hasFolder && audience === 'session'\) \{ writeBrief\(c\.folder, c\.brief\); \}/.test(ext));
     ok('‼️ …and the file it writes is built WITHOUT the audience — always the full session text',
         /const brief = buildBrief\(seed\);/.test(ext));
     ok('…while the INJECTED copy is the one that takes it',
         /brief: buildBrief\(\{ \.\.\.seed, maxChars: PROJECT_BRIEF_MAX, audience \}\)/.test(ext));
     ok('…and the context file path carries the audience so the two never collide',
-        /contextFileName\(c\.project\.id, audience\)/.test(ext));
+        /contextFileName\(c\?\.project\.id \?\? '', audience, !!hook\)/.test(ext));
 }
 
 // ========================= 7. the form can say which project, in three ways

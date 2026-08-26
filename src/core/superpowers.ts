@@ -181,19 +181,86 @@ export function superpowersBlock(root: string): string {
     ].join('\n');
 }
 
+/**
+ * ‼️ WHO GETS THE DISCIPLINE WITHOUT BEING ASKED.
+ *
+ * The switch is per session, but a switch that starts off every single time is
+ * a switch nobody remembers to flip: the agent whose whole job is building
+ * software wants TDD and root-cause debugging on its first turn, and the agent
+ * that files notes into a vault does not. So the default is per AGENT — and it
+ * is a SETTING with this only as its fallback, because a constant is a default
+ * the user cannot disagree with.
+ */
+export const SUPERPOWERS_DEFAULT_AGENTS = ['developer'];
+
+/**
+ * Is the switch on for this agent when nobody has touched it?
+ *
+ * Matched on the agent's NAME, case- and space-insensitively, because a name is
+ * what a person types into a settings box. An explicit `false` in the store
+ * beats the built-in list: turning the default OFF for `developer` has to be
+ * possible, and an entry that could only ever mean "on" would make it not.
+ */
+export function superpowersDefaultFor(
+    agentName: string, store?: Record<string, boolean>
+): boolean {
+    const key = String(agentName ?? '').trim().toLowerCase();
+    if (!key) { return false; }
+    const hit = store && Object.keys(store).find(k => k.trim().toLowerCase() === key);
+    if (hit !== undefined) { return !!(store as Record<string, boolean>)[hit]; }
+    return SUPERPOWERS_DEFAULT_AGENTS.includes(key);
+}
+
 export interface SuperpowersDeps {
     /** The skills folder — the setting, resolved. */
     root(): string;
     /** …and as the user typed it, for the report. */
     rootSetting?(): string;
+    /** Per-agent defaults, as the setting holds them. */
+    defaults?(): Record<string, boolean>;
+    /** Write one agent's answer back into that setting. Absent = the store is
+     *  read-only here, which is what a test wants. */
+    setDefault?(agent: string, on: boolean): Promise<void> | void;
 }
 
 export function registerSuperpowersOps(bridge: BridgeRegistry, deps: SuperpowersDeps): void {
     bridge.register([
         {
             op: 'superpowers.status',
-            describe: 'X-55 — the engineering-discipline skills that sleep on disk: where the folder is, whether the root hook (using-superpowers/SKILL.md) is in it, and every skill it holds with the one line saying when it applies. No arguments. ‼️ Nothing here is loaded into a session by reading this — the skills cost nothing until a session is given the hook, which is what makes keeping fourteen of them affordable.',
-            handler: () => superpowersHealth(deps.root(), deps.rootSetting ? deps.rootSetting() : '')
+            describe: 'X-55 — the engineering-discipline skills that sleep on disk: where the folder is, whether the root hook (using-superpowers/SKILL.md) is in it, every skill it holds with the one line saying when it applies, and WHICH AGENTS start a session with the switch already on (`defaults`, from agentFarm.superpowersDefaults; an agent not named there falls back to the built-in list). No arguments. ‼️ Nothing here is loaded into a session by reading this — the skills cost nothing until a session is given the hook, which is what makes keeping fourteen of them affordable.',
+            handler: () => ({
+                ...superpowersHealth(deps.root(), deps.rootSetting ? deps.rootSetting() : ''),
+                defaults: deps.defaults ? deps.defaults() : {},
+                defaultAgents: SUPERPOWERS_DEFAULT_AGENTS
+            })
+        },
+        {
+            op: 'superpowers.set',
+            describe: 'X-55 — turn the engineering discipline on or off BY DEFAULT for one agent: every session that agent starts from then on is given the hook (or is not) without anybody touching the switch in the composer. args: agent (its name), on (true|false). This is the DEFAULT, not a running session — a session already open keeps whatever it was started with, because its system prompt was written at spawn and cannot be rewritten under it. Ask superpowers.status for the current map.',
+            handler: async (args) => {
+                const agent = String((args as Record<string, unknown>).agent ?? '').trim();
+                if (!agent) { throw new Error('which agent? — pass agent:"<name>"'); }
+                if (!deps.setDefault) { throw new Error('the defaults are read-only here'); }
+                const on = (args as Record<string, unknown>).on !== false;
+                // ‼️ ONTO THE ROW THAT IS ALREADY THERE. The map is keyed by a
+                // name a person typed, and `superpowersDefaultFor` reads it
+                // case-insensitively — so writing `DEVELOPER` beside an existing
+                // `developer` would leave two rows for one agent and whichever
+                // `Object.keys` reached first would decide. Resolved here rather
+                // than in each host, because every host would have to get it
+                // right and one of them would not.
+                const current = deps.defaults ? deps.defaults() : {};
+                const key = Object.keys(current)
+                    .find(k => k.trim().toLowerCase() === agent.toLowerCase()) ?? agent;
+                await deps.setDefault(key, on);
+                return {
+                    agent: key, on,
+                    defaults: deps.defaults ? deps.defaults() : {},
+                    note: on
+                        ? 'New sessions for this agent start with the Superpowers hook in their system prompt.'
+                        : 'New sessions for this agent start plain — nothing is added.'
+                };
+            }
         },
         {
             op: 'superpowers.hook',

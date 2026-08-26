@@ -522,6 +522,26 @@
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
         .pchip.none { opacity:.45; background:none; color:inherit; }
         .pchip-hint { opacity:.6; font-style:italic; }
+        /* X-133 — the Superpowers switch sits ON THE SAME LINE as the project
+           chip because they are two halves of one appended system prompt: what
+           this session is told about, and how it is expected to work. Drawn as
+           a chip rather than a checkbox so the row stays one strip of facts,
+           and it is a BUTTON — a chip you can press, which is why the hover
+           panel yields to the hand (U-74, media/afTip.js does that itself). */
+        #c-project { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+        .pchip.sw { cursor:pointer; font:inherit; font-size:10px; line-height:normal; }
+        .pchip.sw:hover { filter:brightness(1.12); }
+        /* Off is the quiet state — same shape, no fill, so "nothing is being
+           added" reads as an absence rather than as a second badge. */
+        .pchip.sw.off { opacity:.5; background:none; color:inherit; }
+        /* …and unusable is not off: the switch cannot be honoured at all, and a
+           control that looks merely unticked would be a lie about why. */
+        .pchip.sw.broken { opacity:.5; background:none;
+            color:var(--vscode-editorWarning-foreground,#c90);
+            border-color:var(--vscode-editorWarning-foreground,#c90); cursor:help; }
+        /* A session already running wears its answer; it cannot be changed
+           under a system prompt that was written at spawn. */
+        .pchip.sw.fixed { cursor:help; }
         /* Which engine: media/afEngine.js draws it and media/common.css colours
            it, so this page, the sessions tables and a session's own page cannot
            disagree about what a Codex row looks like (U-26). The one rule that
@@ -2953,7 +2973,12 @@
             });
         } else {
             const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
-            pick('c-agent', 'agentId');
+            // ‼️ X-133 — the agent picker REPAINTS, which the shared `pick` does
+            // not. The Superpowers chip beside the project one shows this
+            // agent's own default until the user presses it, so an agent chosen
+            // after the strip was drawn left the strip describing the previous
+            // one — a switch reading "on" for an agent that starts plain.
+            byId('c-agent', 'change', e => { st.agentId = e.target.value; save(); paint(); });
             pick('c-effort', 'effort');
             byId('c-model', 'change', e => {
                 st.model = e.target.value;
@@ -3340,6 +3365,82 @@
             ctx);
     }
 
+    /**
+     * ‼️ X-133 — THE SUPERPOWERS SWITCH, AND WHY IT IS A CHIP ON THE SAME LINE.
+     *
+     * It travels on the SAME `--append-system-prompt-file` the project chip
+     * exists to make readable — one flag, one file, both halves invisible to
+     * the transcript. So it is drawn beside it and it obeys the same rule: the
+     * hover carries the TEXT, verbatim, not a description of it.
+     *
+     * Three states, and they are genuinely different:
+     *   · a SESSION is selected → a reading, not a control. Its system prompt
+     *     was written at spawn and cannot be rewritten under a running process.
+     *   · the folder cannot supply the hook → not "off": the switch cannot be
+     *     honoured at all, and it says which file is missing rather than
+     *     looking merely unticked.
+     *   · otherwise → the choice for the session about to be started, opening
+     *     on this AGENT's default and following it until it is pressed.
+     */
+    function superpowersState() {
+        const h = DATA.superpowersHealth || { usable: false, why: '', skills: 0 };
+        const s = sel();
+        if (s) { return { fixed: true, usable: h.usable, why: h.why, skills: h.skills, on: !!DATA.superpowersOn }; }
+        const agent = (DATA.agents || []).find(a => a.id === (st.agentId || ''));
+        const def = !!(agent && agent.superpowers);
+        const choice = DATA.superpowersChoice || '';
+        return {
+            fixed: false, usable: h.usable, why: h.why, skills: h.skills,
+            def, choice, agentName: agent ? agent.name : '',
+            on: choice ? choice === 'on' : def
+        };
+    }
+
+    function superpowersChipHtml() {
+        const T = window.AFTip;
+        const sp = superpowersState();
+        const label = `⚡ Superpowers${sp.on ? '' : ' off'}`;
+        if (!sp.usable) {
+            return T.wrap(
+                `<span class="pchip sw broken">⚡ Superpowers unavailable</span>`,
+                'The skills folder cannot supply the hook — nothing is added',
+                (sp.why || 'The folder is not readable.')
+                + '\n\nNothing is put in front of the model while this is true: half a hook — '
+                + '"use the relevant skill", with no skills behind it — sends it looking for files that are not there.'
+                + '\n\nagentFarm.superpowersPath is the folder; superpowers.status says what it found.');
+        }
+        // A running session wears what it was started with. Saying so is the
+        // point: a control here would promise a change the process cannot make.
+        if (sp.fixed) {
+            return T.wrap(
+                `<span class="pchip sw fixed${sp.on ? '' : ' off'}">${label}</span>`,
+                T.lines([sp.on
+                    ? `On for this session · ${sp.skills} skills within reach`
+                    : 'Off for this session — nothing was added']),
+                (sp.on
+                    ? 'This session was started with the engineering discipline in its system prompt, and it is given it again on every resume — the appended prompt does not survive --resume.'
+                    : 'This session was started plain. Nothing about Superpowers is in its system prompt.')
+                + '\n\nIt cannot be changed under a running session: the system prompt is written once, at spawn. '
+                + 'Start a new session to change it.'
+                + (sp.on ? `\n\nWhat it was given:\n\n${DATA.superpowersText || ''}` : ''));
+        }
+        const text = DATA.superpowersText || '';
+        const source = sp.choice
+            ? 'you set it here'
+            : `the default for ${sp.agentName || 'this agent'} (agentFarm.superpowersDefaults)`;
+        return T.wrap(
+            `<button type="button" class="pchip sw${sp.on ? '' : ' off'}" id="c-sp">${label}</button>`,
+            // MIRROR — the current value first, then where it came from.
+            T.lines([
+                sp.on ? `ON · ${T.sizeNote(text)} · ${sp.skills} skills` : 'OFF · nothing is added',
+                `Now: ${source} · click to turn it ${sp.on ? 'off' : 'on'}`
+            ]),
+            (sp.on
+                ? 'The session is given the library\'s own root hook plus an index of where the skills are. The skills themselves stay on disk at zero tokens — the model reads the one it needs, when it needs it.\n\nThis is what goes in:\n\n' + text
+                : 'Nothing is added: the session runs exactly as it did before any of this existed.\n\n'
+                + `Turned on, it would be given the root hook plus an index of ${sp.skills} skills — TDD, systematic debugging, planning, verification — for the model to read one at a time, on demand.`));
+    }
+
     function paint() {
         const s = sel();
         // ‼️ THE PIN IS PART OF THE KEY. It decides whether the composer draws a
@@ -3437,8 +3538,23 @@
         const hidden = s ? (s.messages || []).length - shown.length : 0;
         slot('c-hidden', hidden ? `${hidden} line(s) hidden by <b>show</b>` : '');
 
-        // What a session started here is being told — see projectChipHtml.
-        slot('c-project', projectChipHtml());
+        // What a session started here is being told, and how it is expected to
+        // work — see projectChipHtml / superpowersChipHtml. One strip, because
+        // both halves ride on the same appended system prompt.
+        if (slot('c-project', projectChipHtml() + superpowersChipHtml())) {
+            const sw = document.getElementById('c-sp');
+            // ‼️ PRESSING IT BACK ONTO THE AGENT'S OWN ANSWER CLEARS THE CHOICE
+            // rather than recording the same value as a decision. Otherwise
+            // switching the agent picker afterwards would carry the last
+            // agent's answer across as if the user had meant it for this one.
+            if (sw) {
+                sw.addEventListener('click', () => {
+                    const sp = superpowersState();
+                    const next = !sp.on;
+                    vscode.postMessage({ type: 'setSuperpowers', on: next === sp.def ? null : next });
+                });
+            }
+        }
 
         if (slot('c-head', headerHtml(s))) {
             window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
@@ -3894,6 +4010,11 @@
                 type: 'start', agentId: st.agentId, text: value,
                 engine: engineNow(),
                 model: st.model, effort: st.effort, permissionMode: st.permissionMode,
+                // ‼️ X-133 — RESOLVED HERE, because this is where the agent is
+                // known. The switch's untouched state means "this agent's own
+                // default", and the panel cannot resolve that: the picker lives
+                // on the page. It is sent as the answer, never as the choice.
+                superpowers: superpowersState().on,
                 attach: files
             });
         }

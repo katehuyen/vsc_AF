@@ -148,6 +148,104 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
     ok('‼️ an unusable folder answers an empty text AND the reason for it',
         empty.ok && empty.result.text === '' && /missing/.test(empty.result.why));
 
+    // ============================================================ X-133 ======
+    // THE SWITCH: who gets the discipline without asking, where the text goes,
+    // and the two places it would silently stop being applied.
+    console.log('\n-- X-133 · the switch');
+
+    ok('an untouched install gives it to developer and to nobody else',
+        S.superpowersDefaultFor('developer') && !S.superpowersDefaultFor('asistan')
+        && !S.superpowersDefaultFor(''));
+    ok('…matched on the NAME as a person types it, not on its case or padding',
+        S.superpowersDefaultFor('  Developer ') === true);
+    ok('‼️ an explicit false BEATS the built-in list, or the default could not be turned off',
+        S.superpowersDefaultFor('developer', { developer: false }) === false);
+    ok('…and a name the setting does not mention still falls back to the list',
+        S.superpowersDefaultFor('developer', { asistan: true }) === true);
+
+    // The op that writes it — the bridge half of item 5.
+    let stored = { developer: true };
+    const b3 = new BridgeRegistry();
+    S.registerSuperpowersOps(b3, {
+        root: () => root,
+        defaults: () => stored,
+        setDefault: (agent, on) => { stored = { ...stored, [agent]: on }; }
+    });
+    const names3 = (b3.catalog().ops || b3.catalog()).map(o => o.op || o);
+    ok('superpowers.set is on the bridge', names3.includes('superpowers.set'));
+    const set = await b3.dispatch('superpowers.set', { agent: 'psikolog', on: true });
+    ok('…and it writes the agent\'s default', set.ok && stored.psikolog === true);
+    const off = await b3.dispatch('superpowers.set', { agent: 'DEVELOPER', on: false });
+    ok('‼️ …onto the row that is already there, whatever case it was typed in',
+        off.ok && stored.developer === false && Object.keys(stored).length === 2);
+    const noAgent = await b3.dispatch('superpowers.set', { on: true });
+    ok('…and it refuses to guess which agent', !noAgent.ok);
+    const st3 = await b3.dispatch('superpowers.status', {});
+    ok('status prints the map, so the answer is readable before it is changed',
+        st3.ok && st3.result.defaults.psikolog === true
+        && st3.result.defaultAgents.includes('developer'));
+    const readOnly = await bridge.dispatch('superpowers.set', { agent: 'x', on: true });
+    ok('…and a host that supplies no writer refuses rather than pretending',
+        !readOnly.ok);
+
+    // ---- ONE FILE, TWO HALVES: the merge, and the names that keep it apart.
+    const PC = require(path.join(ROOT, 'out', 'core', 'projectContext.js'));
+    ok('‼️ a session with the switch ON does not overwrite the file of one with it OFF',
+        PC.contextFileName('prj_a', 'session', true) !== PC.contextFileName('prj_a', 'session', false));
+    ok('…and neither collides with the mission copy of either',
+        new Set([
+            PC.contextFileName('prj_a', 'session', true),
+            PC.contextFileName('prj_a', 'session', false),
+            PC.contextFileName('prj_a', 'mission', true),
+            PC.contextFileName('prj_a', 'mission', false)
+        ]).size === 4);
+    ok('‼️ …and there is a name for NO PROJECT AT ALL, because the switch alone is a reason to append',
+        PC.contextFileName('', 'session', true) === 'noproject-sp.txt');
+
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('‼️ the two halves are joined in ONE place — --append-system-prompt-file takes one file',
+        /const text = \[c\?\.text, hook\]\.filter\(t => !!t\)\.join\('\\n\\n'\);/.test(ext));
+    ok('‼️ …and EITHER HALF ALONE is a file: no project is no longer no context',
+        /if \(!c && !hook\) \{ return undefined; \}/.test(ext));
+    ok('a task that is not a delegation runs to its own agent\'s default',
+        /!task\.missionId && superpowersOnFor\(task\.agentName\)/.test(ext));
+    ok('‼️ a TERMINAL session gets it too, or an agent works one way in the panel and another in a terminal',
+        /systemPromptFileFor\(projectId \|\| undefined, 'session', superpowersOnFor\(agent\.name\)\)/.test(ext));
+    ok('‼️ …and a terminal RESUME is re-told, because the flag does not survive --resume',
+        /projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',\s*\n\s*superpowersOnFor\(s\.agentName\)\)/.test(ext));
+
+    const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('‼️ the hosted spawn carries it on EVERY spawn, on the one line that builds the command',
+        /projectContextFile: this\.projectContextFile\(projectId, superpowers\)/.test(host));
+    ok('‼️ …and a card retaking its own seat is asked what it was started with, before that record is dropped',
+        /const seatSuperpowers = seat \? !!this\.sessions\.get\(seat\.id\)\?\.state\.superpowers : false;/.test(host)
+        && host.indexOf('const seatSuperpowers') < host.indexOf('this.sessions.delete(seat.id)'));
+    ok('…while an explicit answer from the caller still wins, so it can be turned OFF on a resume',
+        /const superpowers = init\.superpowers \?\? seatSuperpowers;/.test(host));
+    ok('‼️ an engine with no system-prompt channel gets the same text inside its first prompt',
+        /context: init\.resume \? undefined : this\.readProjectContext\(projectId, superpowers\)/.test(host));
+
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('‼️ a resume off the SHELF comes back at the agent\'s default — the transcript does not record the flag',
+        /host\.list\(\)\.some\(x => x\.sessionId === sessionId\)\s*\n\s*\? \{\}\s*\n\s*: \{ superpowers: this\.deps\.superpowersDefault\(row\.agentName \?\? ''\) \}/.test(panel));
+    ok('…while a card the panel still holds answers for itself', /\? \{\}/.test(panel));
+    ok('the next session starts from its own agent\'s answer, not the last one\'s',
+        /this\.composerSuperpowers = undefined;/.test(panel));
+
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    ok('‼️ the chip shows the TEXT, verbatim, exactly as the project chip does',
+        /This is what goes in:\\n\\n' \+ text/.test(page));
+    ok('‼️ an unusable folder is drawn as UNAVAILABLE, never as merely off',
+        /pchip sw broken/.test(page) && /Superpowers unavailable/.test(page));
+    ok('a running session wears its answer and cannot be re-switched under itself',
+        /pchip sw fixed/.test(page) && /written once, at spawn/.test(page));
+    ok('‼️ pressing it back onto the agent\'s own answer CLEARS the choice',
+        /on: next === sp\.def \? null : next/.test(page));
+    ok('…and the agent picker repaints, or the strip describes the previous agent',
+        /byId\('c-agent', 'change', e => \{ st\.agentId = e\.target\.value; save\(\); paint\(\); \}\)/.test(page));
+    ok('the answer the page resolves is what start carries',
+        /superpowers: superpowersState\(\)\.on,/.test(page));
+
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* windows */ }
     console.log(`\ntest_superpowers: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

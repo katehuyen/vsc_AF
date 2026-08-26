@@ -1138,6 +1138,16 @@
       }
     },
     {
+      "capability": "consolePanel.ts#setSuperpowers",
+      "ui": [
+        "page:consolePanel.ts#setSuperpowers"
+      ],
+      "ops": [
+        "console.start",
+        "superpowers.set"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#start",
       "ui": [
         "page:consolePanel.ts#start"

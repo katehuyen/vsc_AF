@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.286.0",
+  "version": "3.287.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9138,6 +9138,14 @@
       "default": "",
       "x-af-browse": "folder",
       "description": "Folder that holds the Superpowers engineering-discipline skills (one folder per skill, each with a SKILL.md, plus using-superpowers/SKILL.md — the root hook). ‼️ Nothing here is loaded into a session by default: the files sleep on disk at zero tokens, and only the hook is put in front of a model when a session has Superpowers switched on. Portable: %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} are expanded when the folder is opened — what you type is kept exactly as typed. Empty = D:\\zone\\agent\\ajanlar\\_SKILLS\\superpowers."
+    },
+    "agentFarm.superpowersDefaults": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "markdownDescription": "Which agents start a session with the Superpowers engineering discipline already switched on — `{ \"developer\": true, \"asistan\": false }`, keyed by the agent's NAME. The switch itself is per session and sits next to the project chip above the composer; this is only what it shows before anybody touches it, and a session started outside the panel (a task, a terminal, a resume) has nothing else to go on.\n\n‼️ Switched on, the session's appended system prompt carries the library's root hook plus an index of where the skills are — the skills themselves stay on disk at zero tokens and are read one at a time, when one applies. Switched off, nothing is added at all.\n\nAn agent not named here falls back to the built-in list, which is `developer` on and everything else off. Write `false` to turn that off. Where the skills live is `agentFarm.superpowersPath`."
     },
     "agentFarm.wikiRoot": {
           "type": "string",

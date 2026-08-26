@@ -342,7 +342,9 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
-import { registerSuperpowersOps } from './core/superpowers';
+import {
+    registerSuperpowersOps, superpowersBlock, superpowersDefaultFor, superpowersHealth
+} from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
@@ -1744,6 +1746,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const contextDir = path.join(context.globalStorageUri.fsPath, 'project-context');
 
     /**
+     * ‼️ X-55 — THE SKILLS THAT SLEEP. Same rule as the wiki root and for the
+     * same reason: `settings.json` is synced between machines, so a literal
+     * `C:\Users\<name>\…` is a folder that exists on one computer. The
+     * variables are expanded when the folder is OPENED and never written back.
+     */
+    const superpowersRoot = (): string => {
+        const set = (cfg().get<string>('superpowersPath') ?? '').trim();
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        return set
+            ? expandUserPath(set, { workspaceRoot: ws })
+            : path.join('D:', 'zone', 'agent', 'ajanlar', '_SKILLS', 'superpowers');
+    };
+    /** Which agents start with the switch on — the setting, with the module's
+     *  own list as the fallback for an agent it does not name. */
+    const superpowersDefaults = (): Record<string, boolean> =>
+        cfg().get<Record<string, boolean>>('superpowersDefaults') ?? {};
+    const superpowersOnFor = (agentName: string | undefined): boolean =>
+        superpowersDefaultFor(agentName ?? '', superpowersDefaults());
+    /**
+     * The hook, cached for the length of a repaint storm.
+     *
+     * The Console chip asks for this text on every paint, exactly as it asks for
+     * the project context — and reading fourteen SKILL.md frontmatters off disk
+     * dozens of times a second while a turn streams is the same waste
+     * `composeProjectContext` was split up to avoid. The folder is a folder a
+     * person edits by hand, so the cache is short rather than permanent.
+     */
+    let spBlock = { ts: 0, root: '', text: '' };
+    const superpowersText = (): string => {
+        const root = superpowersRoot();
+        const now = Date.now();
+        if (spBlock.root === root && now - spBlock.ts < 15000) { return spBlock.text; }
+        spBlock = { ts: now, root, text: superpowersBlock(root) };
+        return spBlock.text;
+    };
+
+    /**
      * Compose the context — and touch NOTHING on disk.
      *
      * Separate from writing it because the two have completely different
@@ -1803,19 +1842,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * its own: a session the user starts in their own terminal never gets the
      * flag (measured), but it can still read `_AF/BRIEF.md`.
      */
-    const projectContextFileFor = (
+    const systemPromptFileFor = (
         projectId: string | undefined,
-        audience: ProjectAudience = 'session'
+        audience: ProjectAudience = 'session',
+        superpowers = false
     ): string | undefined => {
         const c = composeProjectContext(projectId, audience);
-        if (!c) { return undefined; }
+        // ‼️ X-133 — AND THIS IS WHY THERE IS ONE FUNCTION RATHER THAN TWO.
+        // `--append-system-prompt-file` takes exactly ONE file (measured), so a
+        // session cannot be handed its project context and its engineering
+        // discipline as two separate flags: whatever is appended has to be
+        // composed into a single text, and composing it in one place is what
+        // stops the second caller from quietly dropping the first one's half.
+        // Either half alone is a valid file — the switch is worth turning on in
+        // a session that belongs to no project, and that used to be impossible
+        // because this returned `undefined` the moment there was no project.
+        const hook = superpowers ? superpowersText() : '';
+        if (!c && !hook) { return undefined; }
         // ‼️ X-94 — only a SESSION spawn refreshes the folder's own copy; see
         // `composeProjectContext`. A mission writes nothing into the project.
-        if (c.hasFolder && audience === 'session') { writeBrief(c.folder, c.brief); }
-        const file = path.join(contextDir, contextFileName(c.project.id, audience));
+        if (c && c.hasFolder && audience === 'session') { writeBrief(c.folder, c.brief); }
+        const text = [c?.text, hook].filter(t => !!t).join('\n\n');
+        const file = path.join(contextDir, contextFileName(c?.project.id ?? '', audience, !!hook));
         try {
             fs.mkdirSync(contextDir, { recursive: true });
-            fs.writeFileSync(file, c.text, 'utf8');
+            fs.writeFileSync(file, text, 'utf8');
         } catch {
             return undefined;   // no context beats a half-written one
         }
@@ -2050,8 +2101,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // brief's tail would tell it to file a worklog line for work
             // nobody asked it to record. `missionId` is the discriminator and
             // it is set the moment a delegation task is created.
-            projectContextFile: (task) => projectContextFileFor(
-                task.projectId, task.missionId ? 'mission' : 'session'),
+            // ‼️ X-133 — …AND AN UNATTENDED RUN GETS THE AGENT'S OWN DEFAULT.
+            // There is no composer here to tick a box in, so the only honest
+            // answer is the one the agent would have started with anyway: a
+            // background run by `developer` works to the same discipline as a
+            // Console session by `developer`, or the switch means "when I am
+            // watching" and the rule it enforces is the one nobody applies at
+            // three in the morning. A DELEGATION is excluded with the brief for
+            // the same reason the brief is: it arrives with an objective, not
+            // with a way of working to adopt.
+            projectContextFile: (task) => systemPromptFileFor(
+                task.projectId, task.missionId ? 'mission' : 'session',
+                !task.missionId && superpowersOnFor(task.agentName)),
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
                 const quotaPct = windowPct();
@@ -3854,7 +3915,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // instruction to write into any of them. A mission arrives with
                 // an objective — the project's standing queues are a different
                 // subject, and they were being paid for on every run.
-                const ctxFile = resumeSessionId ? undefined : projectContextFileFor(spec.projectId, 'mission');
+                const ctxFile = resumeSessionId ? undefined : systemPromptFileFor(spec.projectId, 'mission');
                 const command = plannerCommand({
                     launch,
                     disallowedTools: MISSION_PLANNER_DISALLOWED_TOOLS,
@@ -8581,7 +8642,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -8627,6 +8688,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     resume,
                     carried: past ? carriedTotals(past) : undefined,
                     ...(projectId !== undefined ? { projectId } : {}),
+                    // ‼️ X-133 — ABSENT IS A THIRD ANSWER HERE TOO. Omitted, a
+                    // fresh session takes the agent's own default and a resume
+                    // takes whatever the card it is retaking was started with;
+                    // `false` is a decision and turns it off either way.
+                    superpowers: args.superpowers === undefined
+                        ? (resume ? undefined : superpowersOnFor(agent.name))
+                        : args.superpowers === true,
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
                 ConsolePanel.refreshIfOpen();
@@ -8639,7 +8707,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     steerable: spec.liveControls,
                     reportsCost: spec.reportsCost,
                     project: consoleHost.get(id)?.projectId
-                        ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null
+                        ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null,
+                    /** X-133 — whether the engineering discipline really went in.
+                     *  Stated on the way out because a folder that cannot supply
+                     *  the hook adds nothing at all, and a caller believing it
+                     *  asked for TDD would never find out otherwise. */
+                    superpowers: !!consoleHost.get(id)?.superpowers
                 };
             }
         },
@@ -9238,7 +9311,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Generating is what writes both files; asking for the brief and
                 // asking what a session gets must not be two code paths that can
                 // disagree about what the project's state is.
-                const file = projectContextFileFor(project.id);
+                const file = systemPromptFileFor(project.id);
                 if (args.context === true) {
                     const text = composeProjectContext(project.id)?.text ?? '';
                     need(text, 'the context could not be generated — the project folder may have moved');
@@ -12103,22 +12176,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         WikiPanel.refreshIfOpen();
     };
     registerWikiOps(bridge, wikiDeps);
-    /**
-     * ‼️ X-55 — THE SKILLS THAT SLEEP. Same rule as the wiki root and for the
-     * same reason: `settings.json` is synced between machines, so a literal
-     * `C:\Users\<name>\…` is a folder that exists on one computer. The
-     * variables are expanded when the folder is OPENED and never written back.
-     */
-    const superpowersRoot = (): string => {
-        const set = (cfg().get<string>('superpowersPath') ?? '').trim();
-        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        return set
-            ? expandUserPath(set, { workspaceRoot: ws })
-            : path.join('D:', 'zone', 'agent', 'ajanlar', '_SKILLS', 'superpowers');
-    };
+    // ‼️ X-55 — the skills that sleep. The folder and the per-agent defaults are
+    // resolved up where the appended system prompt is built (`superpowersRoot`),
+    // because that is the one place that has to agree with itself.
     registerSuperpowersOps(bridge, {
         root: superpowersRoot,
-        rootSetting: () => (cfg().get<string>('superpowersPath') ?? '').trim()
+        rootSetting: () => (cfg().get<string>('superpowersPath') ?? '').trim(),
+        defaults: superpowersDefaults,
+        // The op resolves WHICH row this is (see superpowers.set); this only
+        // writes it, so the settings file is the one thing this side owns.
+        setDefault: async (agent, on) => {
+            await cfg().update('superpowersDefaults',
+                { ...superpowersDefaults(), [agent]: on }, vscode.ConfigurationTarget.Global);
+        }
     });
     /** U-70 — the cockpit over that same pool. */
     const showWikiPanel = (focus?: string): void => WikiPanel.show({
@@ -15045,7 +15115,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const projectId = project !== undefined ? project : activeProjectId();
         // A terminal session gets the same project context a Console one does —
         // including on a resume, where the flag is not inherited (measured).
-        const contextFile = merged.projectContextFile ?? projectContextFileFor(projectId || undefined);
+        // ‼️ X-133 — and the same engineering discipline, at the agent's own
+        // default: a terminal has no switch to tick, so the alternative is an
+        // agent that works one way in the panel and another way in a terminal.
+        const contextFile = merged.projectContextFile
+            ?? systemPromptFileFor(projectId || undefined, 'session', superpowersOnFor(agent.name));
         // ‼️ The folder is passed as a DIMENSION, not just as the terminal's cwd:
         // Antigravity works in its own scratch workspace unless it is handed one
         // (`--add-dir`), so the same directory the terminal opens in has to be on
@@ -16154,7 +16228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => 'claude',
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
         () => activeProjectId() || undefined,
-        projectContextFileFor,
+        (projectId, superpowers) => systemPromptFileFor(projectId, 'session', !!superpowers),
         (threadId, force) => codexCtxProbe.read(threadId, { force: !!force }),
         // ‼️ K-25 — ONE shared `opencode acp` process for the whole window, and
         // it is handed IN rather than built inside the host: the host has to stay
@@ -17106,6 +17180,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // chip shows is what the next session will actually be given. Cached,
         // because this is asked for on every repaint (see the preview above).
         projectContextText: (projectId: string) => projectContextPreviewFor(projectId),
+        // X-133 — the other half of the same appended file; see ConsoleDeps.
+        superpowersText,
+        superpowersHealth: () => {
+            const h = superpowersHealth(superpowersRoot());
+            return { usable: h.usable, why: h.why, skills: h.skills.length };
+        },
+        superpowersDefault: (agentName: string) => superpowersOnFor(agentName),
         // ‼️ …and the project a session ALREADY belongs to, for the panel's own
         // resume — the same membership order every other resume route uses.
         sessionProject: (s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }) =>
@@ -21823,10 +21904,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // survive `--resume` (measured), so a resumed session that is
                 // not re-told knows nothing about its project. It is the
                 // SESSION's project, never the window's: see sessionOwnProject.
+                // ‼️ X-133 — the Superpowers hook rides on the SAME flag and is
+                // therefore lost by the same `--resume`. It comes back at the
+                // agent's own default: the transcript does not record which way
+                // the switch was set, and an agent that works to a discipline
+                // silently dropping it on the second sitting is exactly the
+                // failure the every-spawn rule exists to prevent.
                 const own = sessionOwnProject(s);
                 launchClaudeTerminal(`${spec.exe}: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
                     buildLaunchCommand(spec.exe, {
-                        ...merged, projectContextFile: projectContextFileFor(own || undefined)
+                        ...merged,
+                        projectContextFile: systemPromptFileFor(own || undefined, 'session',
+                            superpowersOnFor(s.agentName))
                     }),
                     // '' = do not stamp. A resume does not decide where a session
                     // belongs; it already belongs somewhere, or deliberately nowhere.

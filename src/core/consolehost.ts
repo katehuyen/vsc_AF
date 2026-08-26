@@ -283,6 +283,10 @@ export interface HostedSessionInit {
     /** the window's active project — recorded on the session so the stamp can be
      *  written once the CLI reports its id (see ConsoleSessionState.projectId) */
     projectId?: string;
+    /** ‼️ X-133 — give this session the Superpowers hook in its appended system
+     *  prompt. Absent on a RESUME means "whatever that card was started with";
+     *  absent on a fresh start means off. See ConsoleSessionState.superpowers. */
+    superpowers?: boolean;
     /** the conversation this session already had, read off its transcript —
      *  display only (consolehistory.ts), never sent anywhere */
     history?: ConsoleMessage[];
@@ -462,8 +466,9 @@ export class ConsoleHost {
          * system prompt does not survive `--resume` (measured), and the brief
          * it carries has to be current anyway.
          */
-        private projectContextFile: (projectId: string | undefined) => string | undefined =
-            () => undefined,
+        private projectContextFile: (
+            projectId: string | undefined, superpowers?: boolean
+        ) => string | undefined = () => undefined,
         /**
          * ‼️ X-43 — WHAT THE WINDOW IS HOLDING, ON AN ENGINE THAT DOES NOT SAY.
          *
@@ -668,13 +673,27 @@ export class ConsoleHost {
         const id = seat ? seat.id : `cs${++this.seq}-${Date.now().toString(36)}`;
         // …and what that card was SHOWING outlives the record of its process.
         const prior = seat ? this.sessions.get(seat.id)?.state.messages ?? [] : [];
+        /**
+         * ‼️ X-133 — …AND SO DOES THE DISCIPLINE IT WAS RUNNING TO.
+         *
+         * The appended system prompt does not survive `--resume` (measured), so
+         * a card taking its own seat again has to be handed the hook a second
+         * time — and the caller that does the picking up is a list of
+         * transcripts, which knows nothing about how the session was started.
+         * The seat does. Read HERE, a line before the old record is dropped,
+         * because after that there is nothing left to ask.
+         */
+        const seatSuperpowers = seat ? !!this.sessions.get(seat.id)?.state.superpowers : false;
         // The grey card's process is long gone; what is dropped here is the
         // record of it, a line before the new one takes the same seat.
         if (seat) { this.sessions.delete(seat.id); }
         const projectId = init.projectId ?? this.activeProjectId();
+        // An explicit answer from the caller always wins — including `false`, or
+        // switching the discipline OFF on a resume would be impossible.
+        const superpowers = init.superpowers ?? seatSuperpowers;
         const engine = engineOf(init.engine);
-        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, prior); }
-        if (engine.shape === 'sharedAcp') { return this.startShared(id, engine, init, projectId, prior); }
+        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, superpowers, prior); }
+        if (engine.shape === 'sharedAcp') { return this.startShared(id, engine, init, projectId, superpowers, prior); }
         /**
          * ‼️ K-22 — WHAT THIS SESSION WILL REALLY BE IN, decided before it runs.
          *
@@ -691,7 +710,8 @@ export class ConsoleHost {
             return this.refusePermissionMismatch(id, init, projectId, prior, permission);
         }
         const args = hostArgs({
-            ...init, permission, projectContextFile: this.projectContextFile(projectId)
+            ...init, permission,
+            projectContextFile: this.projectContextFile(projectId, superpowers)
         });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
@@ -706,7 +726,7 @@ export class ConsoleHost {
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
-            projectId,
+            projectId, superpowers,
             resumed: !!init.resume,
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
@@ -787,14 +807,14 @@ export class ConsoleHost {
      */
     private startPerTurn(
         id: string, engine: EngineTransport, init: HostedSessionInit, projectId: string | undefined,
-        prior: ConsoleMessage[] = []
+        superpowers: boolean, prior: ConsoleMessage[] = []
     ): string {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             now: Date.now(),
             sessionId: init.resume,
-            projectId,
+            projectId, superpowers,
             resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
@@ -847,7 +867,7 @@ export class ConsoleHost {
             // continuing a thread that was already told, and telling it again
             // would put the brief in the middle of a conversation as if the user
             // had typed it.
-            context: init.resume ? undefined : this.readProjectContext(projectId),
+            context: init.resume ? undefined : this.readProjectContext(projectId, superpowers),
             buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
@@ -878,14 +898,14 @@ export class ConsoleHost {
      */
     private startShared(
         id: string, engine: EngineTransport, init: HostedSessionInit,
-        projectId: string | undefined, prior: ConsoleMessage[] = []
+        projectId: string | undefined, superpowers: boolean, prior: ConsoleMessage[] = []
     ): string {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             now: Date.now(),
             sessionId: init.resume,
-            projectId,
+            projectId, superpowers,
             resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
@@ -917,7 +937,7 @@ export class ConsoleHost {
             // inside the first prompt exactly as it does on Codex — and only for
             // a session that is starting, because a resume is continuing a
             // conversation that was already told.
-            context: init.resume ? undefined : this.readProjectContext(projectId),
+            context: init.resume ? undefined : this.readProjectContext(projectId, superpowers),
             buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
@@ -1558,8 +1578,10 @@ export class ConsoleHost {
      * session for: the session simply starts unbriefed, which is the state it
      * would have been in with no project at all.
      */
-    private readProjectContext(projectId: string | undefined): string | undefined {
-        const file = this.projectContextFile(projectId);
+    private readProjectContext(
+        projectId: string | undefined, superpowers = false
+    ): string | undefined {
+        const file = this.projectContextFile(projectId, superpowers);
         if (!file) { return undefined; }
         try { return fs.readFileSync(file, 'utf8').trim() || undefined; } catch { return undefined; }
     }

@@ -383,6 +383,14 @@ export interface ConsoleSessionState {
      *  rules were deriving — and, if the window's project had been used, move
      *  the session into a project it never ran in. */
     resumed?: boolean;
+    /** ‼️ X-133 — was this session given the Superpowers hook, and is it to be
+     *  given it again? The appended system prompt does not survive `--resume`
+     *  (measured), so the answer has to live on the session rather than on the
+     *  composer that started it: the picker is cleared for the NEXT session the
+     *  moment one starts, and a session re-spawned from the picker's answer
+     *  would come back working to whatever discipline the box happens to be
+     *  showing now. Also what the chip reads to say what is being sent. */
+    superpowers?: boolean;
     model?: string;
     effort?: string;
     permissionMode: string;
@@ -1566,6 +1574,9 @@ export function newSessionState(o: {
     sessionId?: string;
     /** the window's active project at the moment this session was started */
     projectId?: string;
+    /** X-133 — the engineering discipline this session runs to, re-applied on
+     *  every spawn (see ConsoleSessionState.superpowers) */
+    superpowers?: boolean;
     /** an existing session picked up, not a new one — see ConsoleSessionState.resumed */
     resumed?: boolean;
     /** what a RESUMED conversation already spent — see CarriedTotals */
@@ -1576,6 +1587,7 @@ export function newSessionState(o: {
         id: o.id, agentId: o.agentId, agentName: o.agentName, cwd: o.cwd,
         sessionId: o.sessionId,
         projectId: o.projectId,
+        ...(o.superpowers ? { superpowers: true } : {}),
         // a resume is the one case that arrives with an id already — see `resumed`
         ...(o.resumed ? { resumed: true } : {}),
         model: o.model, effort: o.effort,

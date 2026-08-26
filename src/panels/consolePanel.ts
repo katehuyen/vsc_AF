@@ -181,6 +181,25 @@ export interface ConsoleDeps {
      */
     projectContextText(projectId: string): string;
     /**
+     * ‼️ X-133 — THE OTHER HALF OF THE SAME INVISIBLE CHANNEL.
+     *
+     * `--append-system-prompt-file` takes ONE file, so the engineering
+     * discipline the switch turns on is appended to the very same text the
+     * project chip exists to make readable. It is therefore shown the same way:
+     * verbatim, on hover, from the same composition the spawn will use. A
+     * switch that says "on" and cannot show what "on" put in front of the model
+     * is the transparency debt this panel already paid off once.
+     */
+    superpowersText(): string;
+    /** Whether the folder can supply anything at all, and — when it cannot —
+     *  the one sentence saying what is missing. A switch that silently does
+     *  nothing is worse than no switch: the model would be believed to be
+     *  working to a discipline it was never told about. */
+    superpowersHealth(): { usable: boolean; why: string; skills: number };
+    /** What this agent starts with when nobody has touched the switch
+     *  (agentFarm.superpowersDefaults). */
+    superpowersDefault(agentName: string): boolean;
+    /**
      * ‼️ THE PROJECT A SESSION ALREADY BELONGS TO — what a RESUME must be told.
      *
      * A resume is not a new session, so the window's active project has nothing
@@ -239,6 +258,23 @@ export class ConsolePanel {
      * project is the window's, and neither writes the other.
      */
     private composerProject = '';
+
+    /**
+     * ‼️ X-133 — THE ENGINEERING DISCIPLINE THE NEXT SESSION WILL BE STARTED
+     * WITH, and `undefined` is a THIRD answer, not a missing one.
+     *
+     * Untouched, the switch shows the AGENT's own default — `developer` opens
+     * with it on, an agent that files notes does not — and it has to keep
+     * following that default as the agent picker is changed, or picking a
+     * different agent would silently carry the last one's answer across. Once
+     * the user touches it, it is theirs: `true` and `false` both mean "I said
+     * so", and neither is overwritten by the next agent.
+     *
+     * Per composer for the same reason the project is: it is about the session
+     * being started, not about the window. Cleared on `start`, exactly as the
+     * project picker is — the next session gets its own agent's default back.
+     */
+    private composerSuperpowers: boolean | undefined = undefined;
 
     /**
      * The engine the NEXT session will be started on, and the answer cache.
@@ -542,7 +578,16 @@ export class ConsolePanel {
                 wikiKept: s.sessionId ? wikiMarksOf(s.sessionId).map(m => m.from) : [],
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
-            agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),
+            agents: this.deps.getAgents().map(a => ({
+                id: a.id, name: a.name, dir: a.dir,
+                // X-133 — …and whether THIS one opens the composer with the
+                // engineering discipline already on. It rides on the agent row
+                // rather than as a map beside it because the page resolves the
+                // switch against whichever agent the picker is showing, and a
+                // second list keyed by name would have to be kept in step with
+                // this one for no gain.
+                superpowers: this.deps.superpowersDefault(a.name)
+            })),
             // The flat pair stays as the FALLBACK every surface had before
             // engines existed; `engineModels` below is what a picker actually
             // reads once it knows which engine is in play.
@@ -634,6 +679,25 @@ export class ConsolePanel {
             // see ConsoleDeps.projectContextText — the chip shows this verbatim,
             // so it is read for the project the chip is about
             projectContext: this.deps.projectContextText(chipProject),
+            /**
+             * ‼️ X-133 — THE SUPERPOWERS SWITCH, and it answers the SAME two
+             * questions the project chip does with the same split.
+             *
+             * With a session selected the answer is that session's own — it was
+             * written into its system prompt at spawn and cannot be changed
+             * under it, so the switch is a READING there, not a control. In
+             * composer mode it is a choice about the session being started, and
+             * `''` means "nobody has touched it": the page resolves that against
+             * the agent it is showing (see agents[].superpowers).
+             */
+            superpowersOn: this.selected
+                ? !!hosted.find(s => s.id === this.selected)?.superpowers
+                : undefined,
+            superpowersChoice: this.composerSuperpowers === undefined
+                ? '' : (this.composerSuperpowers ? 'on' : 'off'),
+            // the exact text, for the hover — never a description of it
+            superpowersText: this.deps.superpowersText(),
+            superpowersHealth: this.deps.superpowersHealth(),
             // the agent this composer is fixed to, when it was opened from one
             pinnedAgent: this.pinnedAgent ?? '',
             // the shelf + the transcripts the query asks for (see resumeList)
@@ -830,6 +894,15 @@ export class ConsolePanel {
                 this.composerProject = str('id');
                 this.refresh();
                 break;
+            // ‼️ X-133 — the engineering discipline the NEXT session opens with.
+            // `null` is the way back to the agent's own default, so a switch
+            // touched by accident is not a decision the user is stuck with for
+            // the rest of the composer's life (see composerSuperpowers).
+            case 'setSuperpowers':
+                this.composerSuperpowers = msg.on === null || msg.on === undefined
+                    ? undefined : msg.on === true;
+                this.refresh();
+                break;
             // Which engine the next session opens on. It is only ever a choice
             // about the session being started — a running one cannot change
             // engine, and the composer does not draw the box for it.
@@ -873,11 +946,21 @@ export class ConsolePanel {
                     // down (ConsoleHost.start), which is the inheritance the box
                     // above exists to replace.
                     projectId: this.composerProject,
+                    // ‼️ X-133 — RESOLVED BY THE PAGE, because the page is where
+                    // the agent picker lives: the switch's untouched state means
+                    // "whatever this agent's default is", and the panel does not
+                    // know which agent is showing until this message arrives.
+                    // The choice itself is still kept here (composerSuperpowers)
+                    // so a repaint cannot lose it.
+                    superpowers: msg.superpowers === true,
                     firstPrompt: str('text') || undefined,
                     firstAttachments: attachmentsOf(msg)
                 });
                 // the next new session starts its own two answers from scratch
                 this.composerProject = '';
+                // …and its own agent's answer for the discipline, rather than
+                // the last session's — see composerSuperpowers.
+                this.composerSuperpowers = undefined;
                 // ‼️ …but NOT the engine. A project is about one piece of work
                 // and the next session is usually different work; an engine is
                 // about which machine you are working on today, and re-picking
@@ -989,6 +1072,21 @@ export class ConsolePanel {
                     projectId: this.deps.sessionProject({
                         sessionId, agentId: agent?.id, agentName: row.agentName, cwd: row.cwd
                     }),
+                    // ‼️ X-133 — …AND THE DISCIPLINE COMES BACK TOO, on the same
+                    // flag and for the same measured reason: the appended system
+                    // prompt does not survive `--resume`, so a conversation that
+                    // was working to TDD and root-cause debugging would quietly
+                    // stop the moment it was picked up again.
+                    //
+                    // A card the panel STILL HOLDS answers for itself — its seat
+                    // remembers what it was started with, including a switch the
+                    // user turned off by hand — so nothing is passed for it. A
+                    // transcript coming back off the shelf has no such memory
+                    // (the flag is not in the transcript), and the honest
+                    // fallback is the agent's own default.
+                    ...(host.list().some(x => x.sessionId === sessionId)
+                        ? {}
+                        : { superpowers: this.deps.superpowersDefault(row.agentName ?? '') }),
                     // resume means CONTINUE: what was said comes back with it
                     history: this.deps.history(sessionId),
                     // …and so does what it cost, or the composer's line would

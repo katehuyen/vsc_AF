@@ -177,7 +177,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         // start and resume alike, because it is not inherited across --resume
         // (measured: test/smoke_project_context.mjs).
         ok('…and the same spawn asks for that project\'s context file',
-            /hostArgs\(\{[\s\S]{0,120}projectContextFile: this\.projectContextFile\(projectId\)[\s\S]{0,20}\}\)/.test(host));
+            /hostArgs\(\{[\s\S]{0,160}projectContextFile: this\.projectContextFile\(projectId, superpowers\)[\s\S]{0,20}\}\)/.test(host));
         // ‼️ K-22 — and the SAME spawn carries the resolved permission decision,
         // not the raw picker value: the flag that enforces bypass is chosen
         // from this, and choosing it anywhere else is how a card came to say

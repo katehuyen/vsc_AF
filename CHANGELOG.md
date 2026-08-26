@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.287.0 - X-133: the switch that wakes them — one appended file, a chip beside the project chip, and a default per agent (2026-08-26)
+
+X-132 built the page; nothing was reading it. **Text that is generated and goes
+nowhere is not a feature**, so this is the half that puts it in front of a model
+and lets it be turned off again.
+
+‼️ **`--append-system-prompt-file` takes ONE file** (measured), so the project
+brief and the Superpowers hook cannot be two flags: they are composed into a
+single text in a single place (`systemPromptFileFor`, formerly
+`projectContextFileFor`). Either half alone is a valid file — which fixed a
+second thing on the way: a session under **no project** could previously be
+given nothing at all, because the function returned `undefined` the moment there
+was no project. The file name carries the switch, so a session with it on and a
+session with it off cannot take turns overwriting one path.
+
+**Every spawn, including a resume.** The appended prompt does not survive
+`--resume` (measured, `test/smoke_project_context.mjs`), so the hook rides on
+the same one line that already re-tells a resumed session about its project. A
+card retaking its own seat is asked what it was started with — read a line
+before that record is dropped — and a transcript coming off the shelf, which
+carries no such memory, comes back at the agent's own default.
+
+**The chip.** It sits on the project chip's line because they are two halves of
+one invisible channel: what this session is told ABOUT, and how it is expected
+to WORK. It shows the text **verbatim** on hover, the way the project chip does.
+With a session selected it is a reading, not a control — a system prompt is
+written once, at spawn. A folder that cannot supply the hook reads **⚡
+Superpowers unavailable** with the missing file named, never as merely unticked:
+an unticked box would be a lie about why nothing is being added.
+
+**A default per agent** (`agentFarm.superpowersDefaults`, `developer` on and
+everything else off until it is set). It is what the chip opens on, and it is
+the only answer available where there is no chip: an unattended task, a terminal
+launch, a resume. A mission delegation is excluded with the brief and for the
+same reason — it arrives with an objective, not with a way of working to adopt.
+
+**On an engine with no system-prompt channel** (Codex, Gemini, agy, OpenCode)
+the hook rides inside the first prompt, exactly as the project brief already
+does — otherwise the switch would look on and do nothing, which is worse than
+not offering it.
+
+Bridge: `console.start` takes `superpowers?` (omitted = the agent's default on a
+fresh start, the card's own answer on a resume) and reports what really went in;
+`superpowers.set { agent, on }` writes the default, onto the row already there
+whatever case it is typed in; `superpowers.status` prints the map.
+
 ## 3.286.0 - X-132: the Superpowers skills sleep on disk, and the extension can produce the one page that wakes them (2026-08-26)
 
 The engineering-discipline library (Obra superpowers v6.3.0 — TDD, systematic

@@ -212,7 +212,11 @@ const CATEGORY_OF: Record<string, string> = {
     // with the agents because it is about how an agent WORKS, not about
     // anything it produces; it stays a plain path until the switch that turns
     // it on has a surface of its own to sit on.
-    superpowersPath: 'core'
+    superpowersPath: 'core',
+    // X-133 — …and which agents open with the switch already on. It is filed
+    // beside the path because the two are one question: where the discipline
+    // lives, and who works to it without being asked.
+    superpowersDefaults: 'core'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [

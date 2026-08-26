@@ -3095,7 +3095,7 @@ const { opencodeStatus, syncToOpencode } =
                 // thinks with what round 1 was given — and the pair the
                 // capability gate approved is the pair every round rides on.
                 ok('‼️ X-122 — only the brief is first-call-only: model and effort ride every round',
-                    /const ctxFile = resumeSessionId \? undefined : projectContextFileFor/.test(src)
+                    /const ctxFile = resumeSessionId \? undefined : systemPromptFileFor/.test(src)
                     && !/const model = [^\n]*resumeSessionId/.test(src)
                     && !/const effort = [^\n]*resumeSessionId/.test(src));
             }

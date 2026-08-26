@@ -97,7 +97,7 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         && /if \(s\?\.sessionId && s\.projectId && !s\.resumed\)/.test(extTs)
         && /projectId: sessionOwnProject\(s\)/.test(extTs));
     ok('…and a terminal resume is re-told too — the flag does not survive --resume',
-        /const own = sessionOwnProject\(s\);[\s\S]{0,400}projectContextFile: projectContextFileFor\(own \|\| undefined\)/.test(extTs));
+        /const own = sessionOwnProject\(s\);[\s\S]{0,600}projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',/.test(extTs));
     ok('…a terminal launch takes the project at LAUNCH time, not when the id turns up',
         /const projectId = \(project !== undefined \? project : activeProjectId\(\)\) \|\| undefined;/.test(extTs)
         // ‼️ `sessionId: laneId` since X-35: on a first-class external engine
@@ -119,7 +119,7 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         extTs.indexOf('// Claude only announces its session id via hook events', startAt));
     ok('…and what a terminal session is TOLD and what it is FILED under come from one read',
         /const projectId = project !== undefined \? project : activeProjectId\(\);/.test(startClaude)
-        && /projectContextFileFor\(projectId \|\| undefined\)/.test(startClaude)
+        && /systemPromptFileFor\(projectId \|\| undefined, 'session',/.test(startClaude)
         // …and both reach the launcher on the same call. Since X-35 that call
         // also names the ENGINE, because a terminal on Codex/Gemini/Antigravity
         // needs a live lane opened for it and only the launcher knows one is

@@ -154,8 +154,10 @@ const data = () => ({
         })
     ],
     agents: [
-        { id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer' },
-        { id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager' }
+        // X-133 — the per-agent default rides on the agent's own row: the page
+        // resolves the switch against whichever agent the picker is showing.
+        { id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true },
+        { id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false }
     ],
     // The flat pair is the pre-engine FALLBACK, so it stays Claude's own.
     models: [
@@ -242,6 +244,12 @@ const data = () => ({
     activeProjectId: 'prj_9ujsbtzr',
     chipProjectId: 'prj_9ujsbtzr',
     projectContext: '=== AGENT FARM PROJECT CONTEXT ===\nThis session belongs to the project "Agent Farm".',
+    // X-133 — the OTHER half of the same appended system prompt: what this
+    // session is told ABOUT, and how it is expected to WORK.
+    superpowersOn: true,
+    superpowersChoice: '',
+    superpowersText: '# Superpowers — engineering discipline\n\nInvoke the relevant skill BEFORE any response.\n\n## The skills, and where they are\n\n- **test-driven-development** — Use when writing any code: RED, GREEN, REFACTOR\n- **systematic-debugging** — Use when something is broken: find the root cause',
+    superpowersHealth: { usable: true, why: '', skills: 14 },
     pinnedAgent: '',
     resumable: [], resumeTotal: 0, resumeAgents: [], resumeMax: 60,
     resumeDefaultN: 15, resumeFiltered: false
@@ -250,7 +258,21 @@ const data = () => ({
 /** The composer, with no session selected — the one place the engine PICKER is
  *  drawn, including the row that cannot be chosen. */
 const composerData = () => Object.assign(data(), {
-    selected: '', sessions: [], chipProjectId: '', projectContext: ''
+    selected: '', sessions: [], chipProjectId: '', projectContext: '',
+    // In composer mode the switch is a CHOICE, and untouched it follows the
+    // agent the picker is showing rather than any answer of its own.
+    superpowersOn: undefined, superpowersChoice: ''
+});
+
+/** ‼️ X-133 — the same composer with the skills folder UNABLE to supply the
+ *  hook. The switch cannot be honoured at all, and the picture is the proof
+ *  that it says so instead of looking merely unticked: an unticked box would be
+ *  a lie about why nothing is being added. */
+const noSkillsData = () => Object.assign(composerData(), {
+    superpowersHealth: {
+        usable: false, skills: 0,
+        why: 'using-superpowers\\SKILL.md is missing — that file IS the hook; without it there is nothing to put in front of a model.'
+    }
 });
 
 /** ‼️ U-59 — the same composer with the SHARED-ACP engine chosen, which is the
@@ -268,6 +290,11 @@ module.exports = {
             id: 'console-opencode',
             label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',
             data: opencodeComposerData()
+        },
+        {
+            id: 'console-no-skills',
+            label: 'Console — the Superpowers folder cannot supply the hook',
+            data: noSkillsData()
         }
     ]
 };

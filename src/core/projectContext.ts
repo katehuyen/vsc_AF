@@ -184,9 +184,19 @@ export function buildProjectContext(o: ProjectContextInput): string {
  * wrote last decides what the other one reads. The session's name is unchanged,
  * so nothing that existed before this can be affected by it.
  */
-export function contextFileName(projectId: string, audience: ProjectAudience = 'session'): string {
-    const id = String(projectId ?? '').replace(/[^A-Za-z0-9_-]/g, '');
-    return audience === 'mission' ? `${id}-mission.txt` : `${id}.txt`;
+export function contextFileName(
+    projectId: string, audience: ProjectAudience = 'session', superpowers = false
+): string {
+    // ‼️ X-133 — AND BY WHAT ELSE IS IN IT. `--append-system-prompt-file` takes
+    // ONE file, so the project's brief and the Superpowers hook have to be
+    // merged into a single text; a name that ignored the second half would let
+    // a session with the switch on and a session with it off take turns
+    // overwriting one path, and whichever spawned last would decide what the
+    // other one had been told. There is also a file with NO project at all now
+    // — the switch alone is a reason to append something.
+    const id = String(projectId ?? '').replace(/[^A-Za-z0-9_-]/g, '') || 'noproject';
+    const sp = superpowers ? '-sp' : '';
+    return audience === 'mission' ? `${id}-mission${sp}.txt` : `${id}${sp}.txt`;
 }
 
 /**
