@@ -2203,5 +2203,121 @@ function pickParent(r, code) {
     ok('…with the name cut rather than wrapped', /\.pj-name \{[^}]*text-overflow:ellipsis/.test(r.html()));
 }
 
+// ---------------------------------------------------------------------------
+// U-106 / U-107 — CLOSED IS NOT ARCHIVED
+// ---------------------------------------------------------------------------
+//
+// The two were drawn identically: grey, struck through, and nothing else. One is
+// finished work still sitting in the list where it was done; the other is a
+// historical record somebody deliberately moved to the end of the file, whose
+// code is reserved for ever and can never be reissued. "Is this recent, or is
+// this history?" is the first question a reader asks of a closed row, and the
+// page could not answer it by drawing.
+//
+// Its own data rather than the shared pile, because every count assertion above
+// is written against that pile — a row added there would be measured by ten
+// tests that are not about this.
+{
+    const archData = () => {
+        const d = data();
+        d.tabData.backlog.items = [
+            {
+                code: 'P-2', text: 'still open', state: 'open', area: 'P', line: 14,
+                section: 'P — Projeler', kinds: [], priority: 'normal', effort: 'S',
+                blockedBy: [], plan: null, from: null, due: null, score: 1, inbox: false
+            },
+            {
+                code: 'U-1', text: 'closed, still in the open list', state: 'done', area: 'U',
+                line: 23, section: 'U — Arayüz', kinds: [], priority: 'normal', effort: 'S',
+                blockedBy: [], plan: null, from: null, due: null, score: 1, inbox: false,
+                closedAt: Date.parse('2026-08-05T09:30:00Z')
+            },
+            {
+                code: 'U-4', text: 'archived last year', state: 'done', area: 'U', line: 60,
+                section: '🗄 Archive', kinds: [], priority: 'normal', effort: 'S',
+                blockedBy: [], plan: null, from: null, due: null, score: 1, inbox: false,
+                archived: true, closedAt: Date.parse('2025-12-15T09:00:00Z')
+            },
+            {
+                code: 'P-9', text: 'archived and cancelled', state: 'cancelled', area: 'P',
+                line: 62, section: '🗄 Archive', kinds: [], priority: 'normal', effort: 'S',
+                blockedBy: [], plan: null, from: null, due: null, score: 1, inbox: false,
+                archived: true, closedAt: null
+            }
+        ];
+        d.tabData.backlog.next = [];
+        d.tabData.backlog.queue = [];
+        d.tabData.backlog.blocked = [];
+        return d;
+    };
+    // Closed rows are out of the list until a closed state is ticked in, which
+    // is where the archive can be seen at all.
+    const showClosed = r => {
+        const sort = r.byId('bl-sort');
+        sort.value = 'closed';
+        sort.fire('change');
+    };
+
+    const r = run(archData());
+    showClosed(r);
+    const rowOf = code => r.all('[data-blrow]').find(e => e.dataset.code === code);
+    const marked = code => /pj-bl-arch/.test(rowOf(code) ? rowOf(code).innerHTML || '' : '');
+
+    ok('‼️ U-106 — an archived row wears the mark', /class="pj-bl-arch"/.test(r.html()));
+    ok('…on every archived row, not only the first',
+        (r.html().match(/class="pj-bl-arch"/g) || []).length === 2);
+    ok('‼️ …and a merely CLOSED row does not — that is the whole distinction',
+        !marked('U-1') && !marked('P-2'));
+    ok('…the mark says what archived MEANS, not merely that it is archived',
+        /Archived — this line lives under/.test(r.html())
+        && /can never be reissued/.test(r.html()));
+    ok('‼️ …and it sits OUTSIDE the words, or a closed row\'s strikethrough runs through it',
+        r.html().indexOf('pj-bl-arch') < r.html().indexOf('pj-bl-t"'));
+
+    // ---- U-107: the chip
+    ok('‼️ U-107 — the chip is on the strip, and it counts them',
+        /data-act="blArch"[\s\S]{0,600}🗄 archive 2</.test(r.html()));
+    ok('…and it is not narrowing anything until it is pressed',
+        !!rowOf('U-4') && !!rowOf('U-1'));
+
+    r.all('[data-act="blArch"]')[0].click();
+    ok('one press takes the archive out of the list',
+        !r.all('[data-blrow]').some(e => e.dataset.code === 'U-4')
+        && !!r.all('[data-blrow]').find(e => e.dataset.code === 'U-1'));
+    ok('…and the chip says so rather than leaving the reader to wonder where they went',
+        /🗄 archive hidden/.test(r.html()));
+
+    r.all('[data-act="blArch"]')[0].click();
+    ok('‼️ a second press is the OTHER question — only the archive, which is how you '
+        + 'go looking for what a code used to be',
+        r.all('[data-blrow]').every(e => ['U-4', 'P-9'].indexOf(e.dataset.code) >= 0)
+        && /🗄 archive only/.test(r.html()));
+
+    r.all('[data-act="blArch"]')[0].click();
+    ok('…and a third puts everything back — three answers, one press each',
+        !!r.all('[data-blrow]').find(e => e.dataset.code === 'U-1')
+        && !!r.all('[data-blrow]').find(e => e.dataset.code === 'U-4')
+        && /🗄 archive 2</.test(r.html()));
+
+    // ‼️ A filter you have forgotten you set is indistinguishable from a backlog
+    // that has lost your items — the count on the ⚙ chip is what stops that, so
+    // a new axis that does not reach it is a new way to be lost.
+    const activeNow = () => Number((/⚙ filters \((\d+)\)/.exec(r.html()) || [0, 0])[1]);
+    const before = activeNow();
+    r.all('[data-act="blArch"]')[0].click();
+    ok('‼️ the narrowing is counted on the filters chip like every other axis',
+        activeNow() === before + 1);
+    r.all('[data-act="blClear"]')[0].click();
+    ok('…and clear really clears it', /🗄 archive 2</.test(r.html()));
+
+    // A file with no archive in it gets no chip: a control for a section that
+    // does not exist teaches the reader to stop reading the strip.
+    const bare = archData();
+    bare.tabData.backlog.items = bare.tabData.backlog.items.filter(i => !i.archived);
+    const r2 = run(bare);
+    showClosed(r2);
+    ok('a file with no archive is not offered the chip', !/data-act="blArch"/.test(r2.html()));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

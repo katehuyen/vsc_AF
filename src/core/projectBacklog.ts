@@ -482,6 +482,12 @@ export interface BacklogItem {
     /** priority ÷ effort. Computed, never stored: a number in the file would be
      *  one more thing to keep true by hand. */
     score: number;
+    /** ‼️ U-106 — it sits under the 🗄 Archive heading: a historical record that
+     *  was moved out of the way, not merely a closed line still in the list.
+     *  The two were drawn identically (grey, struck through), so "is this
+     *  finished, or is this history?" could not be answered by looking. It is a
+     *  fact about WHERE the line is, exactly like `inbox`; absent means no. */
+    archived?: boolean;
     /** Something true about the line the reader should know. NOT an error: the
      *  line still works. E.g. the same code is on two lines. ‼️ Reported, never
      *  silently corrected — rearranging somebody's file to match our idea of it
@@ -775,7 +781,15 @@ export function parseBacklog(text: string): BacklogSummary {
             ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
             score: PRIORITY_WEIGHT[priority] /
                 (effort ? EFFORT_WEIGHT[effort] : UNKNOWN_EFFORT_WEIGHT),
-            ...(inArchive ? {} : {})
+            // ‼️ U-106 — AND WHETHER IT IS UNDER THE ARCHIVE HEADING, which the
+            // parser has known all along and was throwing away on this line.
+            // "Closed" and "archived" are two different things about an item: one
+            // is finished work still sitting in the list, the other is a
+            // historical record that has been moved out of the way — and drawn
+            // identically (grey, struck through) there was no way to tell them
+            // apart on the page. Kept only when true, so nothing about an
+            // ordinary line changes shape.
+            ...(inArchive ? { archived: true } : {})
         });
     }
 

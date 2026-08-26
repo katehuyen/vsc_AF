@@ -763,6 +763,27 @@ const FAMILY = [
         && /no closing date/.test(filtered.note));
     ok('a non-whole age is refused instead of rounded silently',
         !B.archiveBacklogDone(aged, { olderThanDays: 1.5 }).ok);
+
+    // ‼️ U-106 — AND THE SWEEP'S RESULT IS READABLE AFTERWARDS. The parser knew
+    // it was under the archive heading all along and threw the fact away, so a
+    // line that had been moved out of the way was indistinguishable from a
+    // closed line still in the list — on the page, in the bridge, everywhere.
+    const swept = B.parseBacklog(B.archiveBacklogDone(r.text).text);
+    const by = code => swept.items.find(i => i.code === code);
+    ok('‼️ U-106: an item under the archive heading says so',
+        !!by('K-3') && by('K-3').archived === true);
+    ok('…and one still in the open list does not — closed is not archived',
+        !!by('K-8') && by('K-8').archived === undefined);
+    ok('…the flag follows the HEADING, not the state: a cancelled line archived '
+        + 'with the rest is archived too',
+        swept.items.filter(i => i.archived).every(i => /archiv|arşiv|🗄/i.test(i.section)));
+    // Nothing about the sweep depends on the heading being ours: a file the user
+    // titled `## Arşiv` by hand reads the same, which is the rule ARCHIVE_HEADING
+    // already stated and this is the proof it reaches the item.
+    const byHand = B.parseBacklog('## K — C\n- [ ] K-1 open\n\n## Arşiv\n- [x] K-2 old\n');
+    ok('‼️ …and a heading the USER wrote in their own language still archives',
+        byHand.items.find(i => i.code === 'K-2').archived === true
+        && byHand.items.find(i => i.code === 'K-1').archived === undefined);
 }
 
 // ---------- finding an item without touching it ----------

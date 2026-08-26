@@ -38,7 +38,16 @@ const items = () => [
     // U-58 — and a closing that was not a finish, beside two that were: the
     // whole question is whether the two boxes read apart at a glance.
     item('U-37', 'Vazgeçilen satır — kodu harcanmış olarak dosyada kalır', { state: 'cancelled', closedAt: T - 3 * 86400000 }),
-    item('K-9', 'Konsol kısayolu vazgeçildi', { state: 'cancelled', kinds: ['chore'], closedAt: null })
+    item('K-9', 'Konsol kısayolu vazgeçildi', { state: 'cancelled', kinds: ['chore'], closedAt: null }),
+    // ‼️ U-106 — ARCHIVED ROWS BESIDE MERELY CLOSED ONES, which is the whole
+    // picture: closed and archived were drawn identically (grey, struck
+    // through), so "is this recent work or is this history?" could not be
+    // answered by looking. Two of them, under the archive heading, so the mark
+    // is judged in a column and not on one lonely row.
+    item('U-12', 'Arşive kaldırılmış eski satır — tarihî kayıt, kodu asla yeniden verilmez',
+        { state: 'done', closedAt: T - 240 * 86400000, archived: true, section: '🗄 Archive' }),
+    item('P-3', 'Arşivdeki vazgeçilmiş satır',
+        { state: 'cancelled', closedAt: T - 300 * 86400000, archived: true, section: '🗄 Archive' })
 ];
 
 const data = () => ({
@@ -98,6 +107,21 @@ module.exports = {
             // 'every line' plain, 'wholes only' marked, side by side.
             id: 'rollup', label: 'Backlog — counting wholes only (⊟)',
             data: data(), act: (r) => { r.query('.pj-bl-cnt')[0].click(); }
+        },
+        {
+            // ‼️ U-107 — the chip pressed ONCE: the archive is out of the list
+            // and the chip says so. What is judged is that a list with the same
+            // closed rows in it is now shorter, and that the reason is on
+            // screen — a narrowed list with nothing saying why is the failure
+            // this whole strip exists to avoid.
+            id: 'archive-hidden', label: 'Backlog — archive hidden by the chip',
+            data: data(),
+            act: (r) => {
+                showClosed(r);
+                const chip = r.query('[data-act="blArch"]')[0];
+                if (!chip) { throw new Error('no archive chip'); }
+                chip.click();
+            }
         }
     ]
 };

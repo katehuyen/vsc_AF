@@ -2050,6 +2050,22 @@
                    broken. Colour fades the words and leaves the box alone. */
                 .pj-bl-row.closed .pj-bl-t { color:var(--vscode-descriptionForeground);
                     text-decoration:line-through; }
+                /* ‼️ U-106 — the archive mark, beside the code. Small and faint
+                   because it is a fact about where the LINE is, not a state of
+                   the work: it must be findable when the reader is asking "is
+                   this history?", and invisible when they are not. It sits
+                   OUTSIDE .pj-bl-t on purpose — inside it the strikethrough of a
+                   closed row would run straight through the glyph. */
+                /* Faint, but a BADGE rather than a stray glyph: at opacity .5 and
+                   ten pixels the mark was invisible in a real list, which is the
+                   same as not shipping it. The pill is what makes it findable
+                   without making it loud — it reads as furniture belonging to
+                   the row, next to the code it qualifies. */
+                .pj-bl-arch { font-size:10px; cursor:help; flex:0 0 auto;
+                    line-height:1.5; align-self:center; padding:0 4px; border-radius:6px;
+                    opacity:.75; border:1px solid var(--vscode-widget-border,#4443);
+                    background:var(--vscode-editorWidget-background,#0002); }
+                .pj-bl-row:hover .pj-bl-arch { opacity:1; }
                 /* ‼️ U-58 — CANCELLED IS CLOSED, SO ITS BOX IS FILLED TOO.
                    The native tick is the platform's and is left alone — it is
                    what "done" means here and the reader already knows it. This
@@ -2773,7 +2789,20 @@
          *  exists to make askable. It is drawn as its own removable chip rather
          *  than hidden in the panel, because a list narrowed to eight rows with
          *  nothing on screen saying why is a backlog that has lost your items. */
-        family: ''
+        family: '',
+        /**
+         * ‼️ U-107 — THE ARCHIVE, IN ONE PRESS. `''` any · `'no'` hide the
+         * archive · `'yes'` only the archive.
+         *
+         * It is a chip on the strip rather than a row in the ⚙ panel for the
+         * same reason the family narrowing is: it is the one axis a person
+         * reaches for WHILE reading a list that has gone noisy, and a filter
+         * that costs two clicks to find is a filter nobody uses at the moment
+         * they need it. Default `''`, so nothing about the list as it stands
+         * changes — the archive only shows up at all once closed states are
+         * ticked in, and this is what gets it back out.
+         */
+        archived: ''
     });
     let blFilter = blFilterDefaults();
     /** Stops watching the PREVIOUS capture box's height (K-9, see keepHeight). */
@@ -3704,6 +3733,7 @@
             ${blFilter.family ? `<button class="pj-chip on" data-blfamily=""
                 title="${C.esc(`Showing only ${blFilter.family} and everything that is part of it — `
                 + 'press to see the whole pile again. Nothing about the items has changed; this narrows the view.')}">⊂ ${C.esc(blFilter.family)} ✕</button>` : ''}
+            ${blArchChipHtml(all)}
             <span class="grow"></span>
             <button class="pj-chip${blFiltersOpen ? ' on' : ''}" data-act="blFilters"
                 title="Type, priority, size, blocked, plan link, due date, family">⚙ filters${active ? ` (${active})` : ''}</button>
@@ -3963,6 +3993,37 @@
      * three axes you meant to keep. An always-present ✕ on four rows is four
      * pieces of furniture saying nothing, so absence IS the state.
      */
+    /**
+     * ‼️ U-107 — THE ARCHIVE CHIP, AND WHY IT CYCLES RATHER THAN TOGGLES.
+     *
+     * There are three things a reader wants of the archive and only one of them
+     * is "hide it": the other two are "show me only the archive" — which is how
+     * you go looking for what a code USED to be — and "show me everything",
+     * which is where the list starts. A two-state toggle would make the second
+     * one unreachable from the strip, so one press moves to the next of the
+     * three and the chip says which one it is on (MIRROR).
+     *
+     * It draws nothing at all when the file has no archive: a control for a
+     * section that does not exist is furniture that teaches the reader to stop
+     * reading the strip.
+     */
+    function blArchChipHtml(all) {
+        const n = (all || []).filter(i => i.archived).length;
+        if (!n && !blFilter.archived) { return ''; }
+        const mode = blFilter.archived;
+        const label = mode === 'no' ? `🗄 archive hidden` : mode === 'yes' ? `🗄 archive only` : `🗄 archive ${n}`;
+        const next = mode === '' ? 'hide it' : mode === 'no' ? 'show ONLY it' : 'show everything again';
+        return `<button class="pj-chip${mode ? ' on' : ''}" data-act="blArch"
+            title="${C.esc(
+            (mode === 'no'
+                ? `The ${n} archived line(s) are out of the list.`
+                : mode === 'yes'
+                    ? `Only the ${n} archived line(s) are listed.`
+                    : `${n} line(s) sit under 🗄 Archive at the end of the file — history, not open work. They are in the list.`)
+            + `\n\nPress to ${next}.`
+            + '\n\nArchived items only appear here at all once a closed state is ticked in the state box; this is how they come back out.')}">${label}</button>`;
+    }
+
     function blRowClear(axis, count, what) {
         if (!count) { return ''; }
         return `<button class="pj-chip clearf" data-blclearf="${axis}"
@@ -3985,6 +4046,7 @@
             + blFilter.efforts.length
             + BL_PICKS.filter(p => !same(blFilter[p.key], dflt[p.key])).length
             + (blFilter.family ? 1 : 0)
+            + (blFilter.archived ? 1 : 0)
             + (blFilter.q.trim() ? 1 : 0);
     }
 
@@ -4041,6 +4103,9 @@
         if (!on(blFilter.blocked, (i.blockedBy || []).length || i.onHold ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.plan, i.plan ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.due, i.due ? 'yes' : 'no')) { return false; }
+        // U-107 — the archive, in or out. `''` is any, and is the default: this
+        // narrows nothing until it is pressed.
+        if (blFilter.archived && (blFilter.archived === 'yes') !== !!i.archived) { return false; }
         // the code is part of the searchable text, so `K-3 bug` is one query
         // over one string rather than two half-answers OR'd together
         if (!q.empty && !q.test(`${i.code || ''} ${i.text || ''}`)) { return false; }
@@ -4438,6 +4503,18 @@
             ${i.code
                 ? `<code class="pj-bl-code open" data-blgo title="${C.esc(i.code + ' — permanent, quote it at an agent. ' + openTip)}">${C.esc(i.code)}</code>`
                 : `<span class="pj-bl-code unfiled open" data-blgo title="${C.esc('No code yet. ' + openTip)}">📥</span>`}
+            ${/* ‼️ U-106 — CLOSED IS NOT ARCHIVED, and the two were drawn
+                  identically: grey, struck through, indistinguishable. One is
+                  finished work still sitting in the list where it was done; the
+                  other is a historical record somebody deliberately moved to the
+                  end of the file. "Is this recent, or is this history?" is the
+                  first question a reader asks of a closed row, and until now the
+                  page could not answer it. Beside the code, faint on purpose —
+                  it is a fact about the row, not a state of the work. */''}
+            ${i.archived ? `<span class="pj-bl-arch" title="${C.esc(
+                'Archived — this line lives under 🗄 Archive at the end of the file, not in the open list. '
+                + 'It is a historical record: its code is still reserved and can never be reissued, '
+                + 'and nothing here moves it back. Everything else on the row still works.')}">🗄</span>` : ''}
             <span class="pj-bl-t">${C.esc(body)}${cut
                 ? blMoreHtml(i, full)
                 : (open && blChars > 0 && full.length > blChars ? ' <button class="pj-bl-more" data-blmore>less</button>' : '')}</span>
@@ -7649,6 +7726,13 @@
                 // same way the sort and the filters are.
                 case 'blRollUp': blRollUp = !blRollUp; render(); break;
                 case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
+                // U-107 — any → hidden → only → any. Three answers, one press
+                // each; see blArchChipHtml for why it is not a two-state toggle.
+                case 'blArch':
+                    blFilter.archived = blFilter.archived === ''
+                        ? 'no' : blFilter.archived === 'no' ? 'yes' : '';
+                    render();
+                    break;
                 case 'blDir': blDesc = !blDesc; render(); break;
                 case 'blClear':
                     // Everything the reader could have narrowed with, including the

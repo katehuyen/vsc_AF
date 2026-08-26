@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.288.0 - U-106 / U-107: closed is not archived — the backlog says which, and hides the archive in one press (2026-08-26)
+
+**Two rows, drawn identically, meaning completely different things.** An item
+that was finished last week and an item moved under 🗄 Archive last year were
+both just grey and struck through: "is this recent work, or is this history?"
+could not be answered by looking, on the page or through the bridge.
+
+The parser had known all along — and threw it away. `inArchive` was computed on
+every line and spent on `...(inArchive ? {} : {})`, a no-op somebody left behind.
+It is now `archived` on the item, on the row (a small boxed 🗄 beside the code,
+saying what archived MEANS — the line is history and its code can never be
+reissued), and on `projects.backlog`, where an agent quoting a code back at
+somebody can tell the two apart. It follows the HEADING, not the state, so a
+file whose owner typed `## Arşiv` by hand reads the same.
+
+**And the archive can be got out of the way.** `🗄 archive N` on the filter
+strip cycles through the three answers a reader actually wants — in the list ·
+hidden · **only** the archive, which is how you go looking for what a code used
+to be — one press each, saying which one it is on. It draws nothing at all when
+the file has no archive, and it counts on the ⚙ filters chip like every other
+axis, because a filter you have forgotten you set is indistinguishable from a
+backlog that has lost your items.
+
 ## 3.287.0 - X-133: the switch that wakes them — one appended file, a chip beside the project chip, and a default per agent (2026-08-26)
 
 X-132 built the page; nothing was reading it. **Text that is generated and goes
