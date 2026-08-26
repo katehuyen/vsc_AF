@@ -84,6 +84,7 @@
      * taken at PAINT time rather than after a round trip.
      */
     function badge(o) {
+        if (o && o.whole) { return wholeBadge(o); }
         const turn = Number(o && o.turn) || 0;
         const marks = (o && o.marks) || [];
         const on = marks.filter(m => covers(m, turn));
@@ -114,6 +115,50 @@
                 + ' same subject is not spelled three ways and filed three times.', 'tip-free');
     }
 
+    /**
+     * ‼️ U-94 — THE WHOLE CONVERSATION, FROM THE SURFACES THAT SHOW ONE.
+     *
+     * The turn badge lives on a row and needs one. A session card and a
+     * session's own heading have no rows — and keeping the LOT is the commonest
+     * thing to want from them, so it was the one thing only the right-click
+     * menu could do, which reads as the feature not existing.
+     *
+     * What it needs to know is thinner than what a row needs: whether anything
+     * of this conversation is already kept. `kept` is the turn each mark starts
+     * at (0 being the whole thing), which is what a list of cards can carry
+     * without shipping every mark of every conversation on every repaint.
+     */
+    function wholeBadge(o) {
+        const froms = Array.isArray(o.kept) ? o.kept.map(Number)
+            : ((o.marks || []).map(m => Number(m && m.from) || 0));
+        const on = froms.some(f => !f);
+        const parts = froms.filter(f => f).length;
+        const topics = [];
+        ((o.marks || []).filter(m => !m.from)).forEach(m => (m.topics || []).forEach(t => {
+            if (topics.indexOf(t) < 0) { topics.push(t); }
+        }));
+        const face = o.label ? `🔖 ${esc(o.label)}` : '🔖';
+        const btn = `<button class="afwiki${o.label ? ' wide' : ''}${on ? ' on' : ''}`
+            + `${o.cls ? ' ' + esc(o.cls) : ''}" data-afwiki="1" data-afw-whole="1"`
+            + ` data-afw-session="${esc(o.session || '')}" data-afw-turn="0"`
+            + ' data-afw-ts="0" data-afw-text="">' + face + '</button>';
+        if (!window.AFTip) { return btn; }
+        const partWords = parts
+            ? `\n\n${parts} turn${parts === 1 ? '' : 's'} of it ${parts === 1 ? 'is' : 'are'} kept on ${parts === 1 ? 'its' : 'their'} own as well.`
+            : '';
+        return on
+            ? window.AFTip.wrap(btn, 'Kept for the wiki — the whole conversation',
+                (topics.length ? `Filed under: ${topics.join(' · ')}\n\n` : '')
+                + 'Press it again to add another topic to the same mark; a second press never makes'
+                + ' a second row.' + partWords, 'tip-free')
+            : window.AFTip.wrap(btn, 'Keep this whole conversation for the wiki',
+                'Marks every turn of it in the candidate pool — free, reversible, and NOTHING is'
+                + ' written to the vault. All it asks for is what the conversation is about; a'
+                + ' compile does the reading and the writing later.'
+                + (parts ? partWords : '\n\nThe same panel opens for a single turn from the badge that row carries.'),
+                'tip-free');
+    }
+
     function ensureHost() {
         if (host) { return host; }
         const body = document.body;
@@ -138,10 +183,13 @@
     function open(o) {
         const el = (o && o.el) || null;
         const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+        const whole = !!(o && o.whole);
         state = {
             session: (o && o.session) || '',
-            turn: Number(o && o.turn) || 0,
+            turn: whole ? 0 : Number(o && o.turn) || 0,
+            whole,
             range: '', label: '', exact: true,
+            scope: 'turn', anchor: 0,
             topics: [], picked: [], typed: '', note: '',
             turnCount: 0, marks: [], pending: 0,
             loading: true, error: '', done: '',
@@ -150,7 +198,7 @@
         render();
         if (post) {
             post({
-                type: 'wikiAsk', session: state.session,
+                type: 'wikiAsk', session: state.session, whole,
                 turn: state.turn, ts: Number(o && o.ts) || 0, text: (o && o.text) || ''
             });
         }
@@ -177,6 +225,11 @@
             const to = Number(msg.to) || from;
             state.turn = from;
             state.range = from ? (from === to ? String(from) : `${from}-${to}`) : '';
+            // The turn the reader pressed is the answer nearly every time, so it
+            // is the one already chosen. A row the host could not place has no
+            // "this turn" to offer and opens on the whole conversation.
+            state.scope = from ? 'turn' : 'all';
+            state.anchor = 0;
             // A turn already marked opens with its own topics ticked: pressing
             // the badge on a kept turn is nearly always "…and this too".
             const on = state.marks.filter(m => covers(m, from));
@@ -260,6 +313,59 @@
         }).join('');
     }
 
+    /**
+     * ‼️ U-93 — WHICH TURNS IS A CHOICE, NOT A NUMBER TO TYPE.
+     *
+     * The scope used to be a 62px box the reader had to type digits into, which
+     * made the badge on every turn pointless: pressing the one you are reading
+     * still asked you which one you meant. The three answers are now on the
+     * panel — the turn you pressed (already chosen), the whole conversation, or
+     * a span — and the span is picked by pointing at the turns.
+     *
+     * The box has not gone anywhere. It is the escape hatch for a conversation
+     * whose turns the host could not count, and it stays authoritative: what is
+     * typed there is what is highlighted below it.
+     */
+    function scopeHtml(r, turnLine) {
+        const n = state.turnCount || 0;
+        const allWords = n ? `Turns 1–${n} — the whole conversation` : 'The whole conversation';
+        const seg = (id, text, tip, on) => `<button class="afw-seg${on ? ' on' : ''}"
+            data-afw-scope="${id}" title="${esc(tip)}">${esc(text)}</button>`;
+        const guess = state.exact ? '' : `<span class="afw-guess" title="The transcript did not carry this row's opening line, so the number came from its clock alone. Check it before saving — the neighbouring turn is a real possibility.">≈ check this</span>`;
+        const row = `<div class="afw-scope">
+            ${state.turn ? seg('turn', `This turn (${state.turn})`, turnLine, state.scope === 'turn') : ''}
+            ${seg('all', 'Whole session', allWords, state.scope === 'all')}
+            ${seg('range', 'Range', 'Pick a span: press the first turn, then the last.', state.scope === 'range')}
+            <span class="afw-grow"></span>${guess}
+        </div>`;
+        if (state.scope !== 'range') {
+            return row + `<div class="afw-of">${esc(state.scope === 'all' ? allWords : turnLine)}</div>`;
+        }
+        return row + `<div class="afw-tns">${turnChips(r)}</div>
+            <div class="afw-turn">
+                <label title="One number, a span like 3-7, or empty for the whole conversation. Typing here moves the chips above.">turns
+                    <input id="afw-range" type="text" value="${esc(state.range)}" placeholder="all"></label>
+                <span class="afw-of">${esc(turnLine)}</span>
+            </div>`;
+    }
+
+    /** One chip per turn of the conversation, the span highlighted across them.
+     *  A conversation the host could not count keeps the box and loses nothing. */
+    function turnChips(r) {
+        const n = state.turnCount || 0;
+        if (!n) {
+            return '<div class="afw-none">The turn count is not known here — type the span below.</div>';
+        }
+        let out = '';
+        for (let i = 1; i <= n; i++) {
+            const on = !!(r && r.from && i >= r.from && i <= r.to);
+            const next = state.anchor && !on ? ` — press to take turns ${Math.min(state.anchor, i)}–${Math.max(state.anchor, i)}` : '';
+            out += `<button class="afw-tn${on ? ' on' : ''}" data-afw-tn="${i}"
+                title="Turn ${i} of ${n}${next}">${i}</button>`;
+        }
+        return out;
+    }
+
     function html() {
         if (!state) { return ''; }
         const at = state.at;
@@ -288,12 +394,7 @@
                 </div>
                 ${state.done ? `<div class="afw-done">✓ ${esc(state.done)}${state.pending
         ? ` · ${state.pending} waiting to be compiled` : ''}</div>` : `
-                <div class="afw-turn">
-                    <label title="Which turns of this conversation the mark covers. One number, a span like 3-7, or empty for the whole thing.">turns
-                        <input id="afw-range" type="text" value="${esc(state.range)}" placeholder="all"></label>
-                    <span class="afw-of">${esc(turnLine)}</span>
-                    ${state.exact ? '' : `<span class="afw-guess" title="The transcript did not carry this row's opening line, so the number came from its clock alone. Check it before saving — the neighbouring turn is a real possibility.">≈ check this</span>`}
-                </div>
+                ${scopeHtml(r, turnLine)}
                 ${state.label ? `<div class="afw-label">${esc(state.label)}</div>` : ''}
                 <div class="afw-ask" title="The compile files the concept under these. Ticking one that is already in use is what stops the same subject being spelled three ways and filed three times.">what is it about?</div>
                 <div class="afw-chips">${state.loading ? '' : chipsHtml()}</div>
@@ -355,19 +456,65 @@
                 if (ev.key === 'Escape') { close(); }
             });
         }
+        // The boxes are rewritten by the repaint, so what is in them now is
+        // carried over rather than lost. Every control that repaints calls it.
+        const carry = () => {
+            if (typed) { state.typed = typed.value; }
+            if (note) { state.note = note.value; }
+            if (range) { state.range = range.value; }
+        };
         root.querySelectorAll('[data-afw-chip]').forEach(node =>
             node.addEventListener('click', () => {
                 const t = state.topics[Number(node.dataset.afwChip)];
                 if (!t) { return; }
                 const at = state.picked.findIndex(p => p.toLowerCase() === t.topic.toLowerCase());
                 if (at >= 0) { state.picked.splice(at, 1); } else { state.picked.push(t.topic); }
-                // The boxes are rewritten by the repaint, so what is in them now
-                // is carried over rather than lost.
-                if (typed) { state.typed = typed.value; }
-                if (note) { state.note = note.value; }
-                if (range) { state.range = range.value; }
+                carry();
                 render();
             }));
+        root.querySelectorAll('[data-afw-scope]').forEach(node =>
+            node.addEventListener('click', () => {
+                const next = node.dataset.afwScope;
+                if (!next || next === state.scope) { return; }
+                carry();
+                state.scope = next;
+                state.anchor = 0;
+                state.error = '';
+                if (next === 'all') { state.range = ''; }
+                else if (next === 'turn') { state.range = state.turn ? String(state.turn) : ''; }
+                else {
+                    const r = parseRange(state.range);
+                    if (!r || !r.from) { state.range = String(state.turn || 1); }
+                }
+                render();
+            }));
+        root.querySelectorAll('[data-afw-tn]').forEach(node =>
+            node.addEventListener('click', () => {
+                const n = Number(node.dataset.afwTn) || 0;
+                if (!n) { return; }
+                carry();
+                // ‼️ A SPAN IS TWO PRESSES, NEVER A NUMBER TYPED TWICE. The first
+                // takes that turn and remembers it; the second stretches to where
+                // you pressed, whichever side of it that is. Then it starts over,
+                // so the gesture has no mode to be stuck in.
+                if (state.anchor) {
+                    state.range = `${Math.min(state.anchor, n)}-${Math.max(state.anchor, n)}`;
+                    state.anchor = 0;
+                } else {
+                    state.anchor = n;
+                    state.range = String(n);
+                }
+                state.error = '';
+                render();
+            }));
+        // A long conversation opens on the turn that was pressed rather than on
+        // turn 1 — the strip scrolls, and a reader on turn 140 should not have to.
+        if (typeof root.querySelector === 'function') {
+            const sel = root.querySelector('.afw-tn.on');
+            if (sel && sel.scrollIntoView) {
+                try { sel.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (e) { /* no layout here */ }
+            }
+        }
     }
 
     /**
@@ -393,7 +540,8 @@
                 session: b.dataset.afwSession || '',
                 turn: Number(b.dataset.afwTurn) || 0,
                 ts: Number(b.dataset.afwTs) || 0,
-                text: b.dataset.afwText || ''
+                text: b.dataset.afwText || '',
+                whole: b.dataset.afwWhole === '1'
             });
         }, true);
         document.addEventListener('keydown', ev => {

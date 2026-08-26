@@ -111,21 +111,59 @@ function tagger() {
             innerHTML: '', value: '', dataset: {}, listeners: {},
             addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
             fire(ev, arg) { (this.listeners[ev] || []).forEach(f => f(arg || {})); },
-            focus() { }, setSelectionRange() { },
+            focused: 0,
+            focus() { this.focused++; }, setSelectionRange() { },
             appendChild() { },
             getBoundingClientRect: () => ({ left: 120, top: 200, bottom: 216 }),
-            querySelectorAll: () => [],
+            // ‼️ The data-attribute controls are wired through querySelectorAll,
+            // so a shim that answers [] measures the MARKUP and never the
+            // gesture. This reads the attribute back out of the html the render
+            // just wrote and hands over stubs the component then binds — which
+            // is what lets a press on a turn chip be tested at all.
+            querySelectorAll(sel) {
+                const m = /^\[(data-[a-z-]+)\]$/.exec(sel);
+                if (!m) { return []; }
+                const camel = m[1].slice(5).replace(/-([a-z])/g, (x, c) => c.toUpperCase());
+                const re = new RegExp(m[1] + '="([^"]*)"', 'g');
+                const out = [];
+                let hit;
+                while ((hit = re.exec(this.innerHTML || ''))) {
+                    const stub = mkEl();
+                    stub.dataset[camel] = hit[1];
+                    out.push(stub);
+                }
+                (this.found = this.found || {})[sel] = out;
+                return out;
+            },
             closest: () => null
         };
         return el;
     };
     const body = mkEl();
     const sandbox = {
-        window: { innerWidth: 1200, innerHeight: 900 },
+        // The real AFTip wraps the button in its own markup; here the panel's
+        // words are parked next to it, because what a badge SAYS is half of
+        // what it is and a shim that drops the text measures only the pixels.
+        window: {
+            innerWidth: 1200, innerHeight: 900,
+            AFTip: { wrap: (btn, head, body) => `${btn}<!--tip: ${head} | ${body}-->` }
+        },
         document: {
             body,
             createElement: () => { const e = mkEl(); nodes.host = e; return e; },
-            getElementById: (id) => nodes[id] || null,
+            getElementById: (id) => {
+                const el = nodes[id];
+                // A repaint rewrites the control, so the element the component
+                // finds carries the value the html it just wrote says it does —
+                // the same as a real DOM, and the difference decides whether
+                // carrying the boxes over a repaint is measured or assumed.
+                if (el && nodes.host) {
+                    const m = new RegExp('id="' + id + '"[^>]*value="([^"]*)"')
+                        .exec(nodes.host.innerHTML || '');
+                    if (m) { el.value = m[1].replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&'); }
+                }
+                return el || null;
+            },
             addEventListener: () => { },
             querySelectorAll: () => []
         },
@@ -140,7 +178,15 @@ function tagger() {
     // controls are handed back by id, so the test finds them the way the
     // component's own render() does.
     const bind = (id) => { nodes[id] = nodes[id] || mkEl(); return nodes[id]; };
-    return { AFWiki, posted, html: () => (nodes.host ? nodes.host.innerHTML : ''), bind, nodes };
+    /** Press one of the data-attribute controls the last render drew. */
+    const press = (attr, value) => {
+        const list = (nodes.host && nodes.host.found && nodes.host.found['[' + attr + ']']) || [];
+        const key = attr.slice(5).replace(/-([a-z])/g, (x, c) => c.toUpperCase());
+        const el = list.find(e => e.dataset[key] === String(value));
+        if (el) { el.fire('click'); }
+        return !!el;
+    };
+    return { AFWiki, posted, html: () => (nodes.host ? nodes.host.innerHTML : ''), bind, press, nodes };
 }
 
 {
@@ -159,8 +205,12 @@ function tagger() {
         marks: []
     });
     const h = t.html();
-    ok('the resolved turn is IN THE BOX, editable', /id="afw-range"[^>]*value="2"/.test(h));
+    // U-93: the resolved turn is not a number in a box, it is the answer
+    // already chosen — the badge on a turn would be pointless otherwise.
+    ok('the resolved turn is the scope already chosen',
+        /class="afw-seg on"[^>]*data-afw-scope="turn"[\s\S]{0,80}This turn \(2\)/.test(h));
     ok('…and the reader is told what it is out of', /turn 2 of 5/.test(h));
+    ok('…without being asked to type a number', !/id="afw-range"/.test(h));
     ok('the topics already in the pool are the list', /Agent Farm/.test(h) && /Wiki/.test(h));
     ok('…each saying how much is waiting under it', /3 waiting, 9 marked in all/.test(h));
     ok('a sure number does not cry wolf', !/check this/.test(h));
@@ -237,6 +287,148 @@ function tagger() {
 }
 
 {
+    // ‼️ U-93 — WHICH TURNS IS A CHOICE, AND THE GESTURE IS MEASURED, NOT THE
+    // MARKUP. Every assertion below presses the control and then reads what
+    // went on the wire, because a scope picker that renders beautifully and
+    // sends the wrong span is exactly the failure this feature can have.
+    const t = tagger();
+    t.AFWiki.open({ session: 'S1', turn: 3 });
+    const ask = {
+        type: 'wikiAsk', session: 'S1', ok: true, from: 3, to: 3, exact: true,
+        turnCount: 7, label: 'devam',
+        topics: [{ topic: 'Wiki', pending: 1, total: 1 }], marks: []
+    };
+    t.AFWiki.receive(ask);
+    ok('the three answers are all on the panel',
+        /data-afw-scope="turn"/.test(t.html()) && /data-afw-scope="all"/.test(t.html())
+        && /data-afw-scope="range"/.test(t.html()));
+    ok('the whole session says how much that is', /Turns 1–7 — the whole conversation/.test(t.html()));
+
+    // One press: the whole conversation.
+    ok('the scope buttons are really wired', t.press('data-afw-scope', 'all'));
+    ok('…and the whole session is chosen, not merely shown',
+        /class="afw-seg on"[^>]*data-afw-scope="all"/.test(t.html()));
+
+    // Two presses: a span, picked by pointing at the turns.
+    t.press('data-afw-scope', 'range');
+    ok('the range mode draws a chip per turn of the conversation',
+        (t.html().match(/data-afw-tn="/g) || []).length === 7);
+    ok('…and it opens on the turn that was pressed, not on turn 1',
+        /class="afw-tn on"[^>]*data-afw-tn="3"/.test(t.html()));
+    ok('the box is back as the escape hatch', /id="afw-range"[^>]*value="3"/.test(t.html()));
+    ok('the turn chips are really wired', t.press('data-afw-tn', 5));
+    ok('one press takes that turn alone',
+        /id="afw-range"[^>]*value="5"/.test(t.html())
+        && (t.html().match(/class="afw-tn on"/g) || []).length === 1);
+    t.press('data-afw-tn', 2);
+    ok('‼️ the second press stretches the span BACKWARDS as readily as forwards',
+        /id="afw-range"[^>]*value="2-5"/.test(t.html())
+        && (t.html().match(/class="afw-tn on"/g) || []).length === 4);
+    // The third press starts over, so the gesture has no mode to be stuck in.
+    t.press('data-afw-tn', 6);
+    ok('a third press starts a new span rather than growing the old one',
+        /id="afw-range"[^>]*value="6"/.test(t.html())
+        && (t.html().match(/class="afw-tn on"/g) || []).length === 1);
+
+    // The box stays authoritative: what is typed there is what lights up.
+    const range = t.bind('afw-range');
+    t.press('data-afw-chip', 0);   // a repaint, so the box gets this render's listeners
+    range.value = '1-3';
+    range.fire('input');
+    t.press('data-afw-chip', 0);
+    ok('‼️ the box still rules the chips — typing a span lights it up',
+        (t.html().match(/class="afw-tn on"/g) || []).length === 3
+        && /id="afw-range"[^>]*value="1-3"/.test(t.html()));
+}
+
+{
+    // What each scope puts ON THE WIRE. A picker that renders beautifully and
+    // files the wrong span is the failure this feature can actually have, so
+    // each one is pressed and the message read back.
+    const ask = {
+        type: 'wikiAsk', session: 'S1', ok: true, from: 3, to: 3, exact: true,
+        turnCount: 7, label: 'devam',
+        topics: [{ topic: 'Wiki', pending: 1, total: 1 }], marks: []
+    };
+    const filed = (gesture) => {
+        const t = tagger();
+        t.AFWiki.open({ session: 'S1', turn: 3 });
+        t.AFWiki.receive(ask);
+        const typed = t.bind('afw-typed');
+        const go = t.bind('afw-go');
+        t.AFWiki.receive(ask);
+        gesture(t);
+        typed.value = 'Wiki';
+        typed.fire('input');
+        go.fire('click');
+        return t.posted.filter(m => m.type === 'wikiMark').pop();
+    };
+    const whole = filed(t => t.press('data-afw-scope', 'all'));
+    ok('‼️ "whole session" is filed as the pool\'s own whole-conversation span',
+        whole && whole.from === 0 && whole.to === 0);
+    const one = filed(() => { });
+    ok('the turn that was pressed is filed untouched', one && one.from === 3 && one.to === 3);
+    const span = filed(t => {
+        t.press('data-afw-scope', 'range');
+        t.press('data-afw-tn', 2);
+        t.press('data-afw-tn', 5);
+    });
+    ok('‼️ a span picked by pointing is the span that is filed',
+        span && span.from === 2 && span.to === 5);
+}
+
+{
+    // A row the host could not place has no "this turn" to offer, and must not
+    // pretend it does — it opens on the whole conversation.
+    const t = tagger();
+    t.AFWiki.open({ session: 'S1', turn: 0, ts: 5, text: 'unplaceable' });
+    t.AFWiki.receive({
+        type: 'wikiAsk', session: 'S1', ok: true, from: 0, to: 0, exact: true,
+        turnCount: 4, label: '', topics: [], marks: []
+    });
+    ok('an unplaceable row offers no "this turn"', !/data-afw-scope="turn"/.test(t.html()));
+    ok('…and opens on the whole conversation',
+        /class="afw-seg on"[^>]*data-afw-scope="all"/.test(t.html()));
+
+    // And a conversation the host could not count keeps the box rather than
+    // drawing zero chips and looking broken.
+    const u = tagger();
+    u.AFWiki.open({ session: 'S1', turn: 2 });
+    u.AFWiki.receive({
+        type: 'wikiAsk', session: 'S1', ok: true, from: 2, to: 2, exact: true,
+        turnCount: 0, label: '', topics: [], marks: []
+    });
+    u.press('data-afw-scope', 'range');
+    ok('an uncounted conversation says so and keeps the box',
+        /turn count is not known/.test(u.html()) && /id="afw-range"/.test(u.html()));
+}
+
+{
+    // U-93 item 4 — the keyboard lands where the answer is typed, and both ways
+    // out work. This is the part that was already right; it is pinned so it
+    // stays right.
+    const t = tagger();
+    t.AFWiki.open({ session: 'S1', turn: 1 });
+    const typed = t.bind('afw-typed');
+    const wrap = t.bind('afw-wrap');
+    t.AFWiki.receive({
+        type: 'wikiAsk', session: 'S1', ok: true, from: 1, to: 1, exact: true,
+        turnCount: 3, label: 'x', topics: [], marks: []
+    });
+    ok('the keyboard opens in the box that takes the answer', typed.focused > 0);
+    typed.value = 'Wiki';
+    typed.fire('keydown', { key: 'Enter' });
+    ok('Enter saves from that box', t.posted.some(m => m.type === 'wikiMark'));
+    ok('…and a click on the backdrop closes it', (() => {
+        wrap.fire('mousedown', { target: { id: 'afw-wrap' } });
+        return !t.AFWiki.isOpen();
+    })());
+    t.AFWiki.open({ session: 'S1', turn: 1 });
+    t.bind('afw-typed').fire('keydown', { key: 'Escape' });
+    ok('…as does Esc', !t.AFWiki.isOpen());
+}
+
+{
     // The badge. It is the whole surface of this feature and it has two states.
     const t = tagger();
     const off = t.AFWiki.badge({ session: 'S1', turn: 4, marks: [], ts: 7, text: 'hi' });
@@ -264,6 +456,54 @@ function tagger() {
         && t.AFWiki.covers({ from: 3, to: 6 }, 2) === false);
 }
 
+{
+    // ‼️ U-94 — THE WHOLE-CONVERSATION BADGE. A surface with no rows (a session
+    // card, a session's own heading) had no way to keep the lot except the
+    // right-click menu, which is why the feature read as absent there.
+    const t = tagger();
+    const none = t.AFWiki.badge({ session: 'S1', whole: true, kept: [] });
+    ok('the whole-session badge says so on the wire it will send',
+        /data-afw-whole="1"/.test(none) && /data-afw-turn="0"/.test(none));
+    ok('…and a conversation with nothing kept is quiet', !/class="afwiki on"/.test(none));
+    ok('a whole-conversation mark lights it',
+        /class="afwiki on"/.test(t.AFWiki.badge({ session: 'S1', whole: true, kept: [0] })));
+    const parts = t.AFWiki.badge({ session: 'S1', whole: true, kept: [3, 7] });
+    ok('‼️ turns kept ON THEIR OWN do NOT claim the whole conversation is kept',
+        !/class="afwiki on"/.test(parts));
+    ok('…but the reader is told they are there rather than left to wonder',
+        /2 turns of this conversation are already kept|2 turns of it are kept/.test(parts));
+    const wide = t.AFWiki.badge({
+        session: 'S1', whole: true, label: 'Wiki', cls: 'secondary',
+        marks: [{ id: 'w1', from: 0, to: 0, topics: ['Wiki'], state: 'pending' }]
+    });
+    ok('where there is room for a word it is a labelled button',
+        /class="afwiki wide on secondary"/.test(wide) && /🔖 Wiki/.test(wide));
+    ok('…and it names what the whole thing is filed under', /Filed under: Wiki/.test(wide));
+
+    // What it asks the host, and what the host has to do with it.
+    const u = tagger();
+    u.AFWiki.open({ session: 'S1', whole: true, turn: 4 });
+    ok('‼️ opening it asks for the WHOLE conversation, not for turn 4',
+        u.posted[0] && u.posted[0].whole === true && u.posted[0].turn === 0);
+    u.AFWiki.receive({
+        type: 'wikiAsk', session: 'S1', ok: true, from: 0, to: 0, exact: true,
+        turnCount: 9, label: '', topics: [], marks: []
+    });
+    ok('…and the panel opens on the whole conversation with nothing to check',
+        /class="afw-seg on"[^>]*data-afw-scope="all"/.test(u.html()) && !/check this/.test(u.html()));
+    const go = u.bind('afw-go');
+    const typed = u.bind('afw-typed');
+    u.AFWiki.receive({
+        type: 'wikiAsk', session: 'S1', ok: true, from: 0, to: 0, exact: true,
+        turnCount: 9, label: '', topics: [], marks: []
+    });
+    typed.value = 'Wiki';
+    typed.fire('input');
+    go.fire('click');
+    const sent = u.posted.find(m => m.type === 'wikiMark');
+    ok('…and it is filed as the whole conversation', sent && sent.from === 0 && sent.to === 0);
+}
+
 // ============================================ the surfaces actually draw it
 {
     const viewer = fs.readFileSync(path.join(ROOT, 'media', 'sessionViewer.js'), 'utf8');
@@ -279,9 +519,22 @@ function tagger() {
     ok('every page gets the component, so no surface has to opt in',
         /'media',\s*'afWiki\.js'/.test(shell));
     ok('…and the host answers for it in one place', /export function wikiMarkMessage/.test(shell));
+    // U-94: the surfaces that show a conversation rather than a row.
+    ok('‼️ the session\'s own heading carries a labelled Wiki button',
+        /actions: `\$\{window\.AFWiki[\s\S]{0,200}whole: true, label: 'Wiki'/.test(viewer));
+    ok('‼️ every Console session card carries one too',
+        /AFWiki\.badge\(\{\s*session: s\.sessionId, whole: true, kept: s\.wikiKept/.test(consoleJs));
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('…and the host sends each card the figure that badge needs, not every mark',
+        /wikiKept: s\.sessionId \? wikiMarksOf\(s\.sessionId\)\.map\(m => m\.from\) : \[\]/.test(panel));
+    ok('‼️ a whole-conversation ask is answered WITHOUT guessing a turn',
+        shell.indexOf('msg.whole === true') > 0
+        && shell.indexOf('msg.whole === true') < shell.indexOf('turnFor(turns, { ts:'));
     const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
     ok('the badge is quiet until the row is under the pointer',
         /\.msg:hover \.afwiki/.test(css) && /\.afwiki \{[^}]*opacity: \.22/.test(css));
+    ok('the labelled badge reads as one of the buttons beside it',
+        /\.afwiki\.wide \{/.test(css) && /\.srow:hover \.afwiki/.test(css));
     ok('…and a kept one stays lit whatever the pointer does',
         /\.afwiki\.on \{[^}]*opacity: 1/.test(css));
 }

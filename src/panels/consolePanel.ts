@@ -534,6 +534,12 @@ export class ConsolePanel {
                 // drawn on its rows and nowhere else, and the other cards carry
                 // no messages either (above).
                 wikiMarks: s.id === this.selected && s.sessionId ? wikiMarksOf(s.sessionId) : [],
+                // U-94 — and EVERY card carries its own whole-conversation
+                // badge, which needs to know only whether anything of it is
+                // kept. That is the turn each mark starts at (0 = the whole
+                // thing) — a figure per mark rather than every mark of every
+                // conversation on every repaint.
+                wikiKept: s.sessionId ? wikiMarksOf(s.sessionId).map(m => m.from) : [],
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),

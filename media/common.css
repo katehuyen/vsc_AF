@@ -660,7 +660,23 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     font-size: 11px; line-height: 1; opacity: .22; transition: opacity .12s;
     filter: grayscale(1);
 }
-.msg:hover .afwiki, .turnhdr:hover .afwiki, .afwiki:hover, .afwiki:focus { opacity: 1; }
+.msg:hover .afwiki, .turnhdr:hover .afwiki, .srow:hover .afwiki,
+.afwiki:hover, .afwiki:focus { opacity: 1; }
+/* U-94: the same badge, labelled, where there is room for a word — a session's
+   own heading. It sits in a row of buttons and reads as one of them. */
+/* ‼️ It undoes the ghost treatment and NOTHING ELSE: the colour and the hover
+   are whatever the class the surface passed (`secondary`) already gives every
+   other button in that row, so it cannot drift away from its neighbours. */
+.afwiki.wide {
+    opacity: 1; filter: none; font-size: 12px; line-height: inherit;
+    padding: 5px 12px; border-radius: 4px;
+}
+/* Kept: the same filled state a primary button has, so "already in the pool"
+   reads from across the row. */
+.afwiki.wide.on {
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+}
+.afwiki.wide.on:hover { background: var(--vscode-button-hoverBackground); }
 /* Kept: colour comes back and stays back, whatever the pointer is doing. */
 .afwiki.on { opacity: 1; filter: none; }
 .afw-wrap { position: fixed; inset: 0; z-index: 70; }
@@ -680,7 +696,36 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .afw-turn { display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .afw-turn label { display: flex; align-items: center; gap: 4px; opacity: .7; }
 .afw-turn input { width: 62px; padding: 2px 5px; font-size: 11px; }
-.afw-of { opacity: .55; }
+.afw-of { opacity: .55; font-size: 11px; }
+/* U-93: which turns, as three answers rather than a box to type digits into.
+   A segmented control, so the one in force is visible without being read. */
+.afw-scope { display: flex; align-items: center; gap: 4px; }
+.afw-seg {
+    background: transparent; color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
+    padding: 1px 7px; font-size: 10px; cursor: pointer; opacity: .6;
+}
+.afw-seg:hover { opacity: .9; }
+.afw-seg.on {
+    opacity: 1; border-color: var(--vscode-focusBorder);
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+}
+/* The turns themselves. It scrolls, because a conversation is as long as it is. */
+.afw-tns {
+    display: flex; flex-wrap: wrap; gap: 3px; max-height: 58px; overflow: auto;
+    padding: 1px 0;
+}
+.afw-tn {
+    min-width: 20px; background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground); border: 1px solid transparent;
+    border-radius: 4px; padding: 1px 4px; font-size: 10px; cursor: pointer; opacity: .55;
+    font-family: var(--vscode-editor-font-family);
+}
+.afw-tn:hover { opacity: .85; }
+.afw-tn.on {
+    opacity: 1; border-color: var(--vscode-focusBorder);
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+}
 /* An inferred number says so IN the row it is in, not in a log nobody reads. */
 .afw-guess { color: var(--vscode-editorWarning-foreground, #d19a66); cursor: help; }
 .afw-label {

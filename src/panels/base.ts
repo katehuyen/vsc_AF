@@ -536,13 +536,21 @@ export function wikiMarkMessage(
             // A row that already knows its number (a transcript turn band) says
             // so and is believed; a Console row hands over its moment instead.
             const given = num('turn');
-            const at = given > 0
-                ? { turn: given, count: turns.length, exact: true }
-                : turnFor(turns, { ts: num('ts'), text: str('text') });
+            // ‼️ U-94 — a surface with no rows asks for the WHOLE conversation
+            // and there is nothing to resolve. Sending it through `turnFor` with
+            // no moment and no words would answer turn 1 flagged as a guess:
+            // a number nobody asked for, presented as something to check.
+            const at = msg.whole === true
+                ? { turn: 0, count: turns.length, exact: true }
+                : given > 0
+                    ? { turn: given, count: turns.length, exact: true }
+                    : turnFor(turns, { ts: num('ts'), text: str('text') });
             void webview.postMessage({
                 type: 'wikiAsk', ...snap,
                 from: at.turn, to: at.turn, exact: at.exact,
-                label: turns.find(t => t.n === at.turn)?.label ?? str('text').slice(0, 90)
+                label: at.turn
+                    ? (turns.find(t => t.n === at.turn)?.label ?? str('text').slice(0, 90))
+                    : ''
             });
             return true;
         }

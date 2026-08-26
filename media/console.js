@@ -1644,6 +1644,16 @@
                         twho.head, twho.body, 'nw')}
                     ${engineBadge(s)}
                     ${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}
+                    ${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
+                          The rows below carry one each, but only for the card
+                          being read; from a card in the list the whole thing is
+                          the only unit there is, and it was reachable only from
+                          the right-click menu. `wikiKept` is the turn each mark
+                          starts at, which is all a badge needs and all a list of
+                          cards can afford to carry. */''}
+                    ${s.sessionId && window.AFWiki ? window.AFWiki.badge({
+                        session: s.sessionId, whole: true, kept: s.wikiKept || []
+                    }) : ''}
                 </div>
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,

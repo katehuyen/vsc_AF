@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.281.0 - U-93: which turns to keep is a choice, not a number to type · U-94: keeping the whole conversation is a button on the surfaces that show one (2026-08-26)
+
+**U-93 — the badge on every turn asked you which turn you meant.** Pressing the
+🔖 on the turn you are reading opened a panel with a 62px box in it, and the
+scope was whatever you typed there. The turn number itself was already resolved
+and filled in — but a box full of digits is not an answer, it is a form, and it
+made the badge on each row pointless: you pressed the one you wanted and were
+asked again.
+
+The scope is now three answers on the panel, and the one you almost always want
+is already chosen: **This turn (3)** · **Whole session** · **Range**. The whole
+session says how much that is (`Turns 1–14 — the whole conversation`). Range
+draws a chip per turn of the conversation and a span is two presses — the first
+takes that turn, the second stretches to where you pressed, whichever side of it
+that is, and the third starts over so the gesture has no mode to be stuck in.
+The strip scrolls and opens on the turn that was pressed, so a reader on turn 140
+is not looking at turn 1.
+
+The box has not gone anywhere; it is the escape hatch for a conversation whose
+turns could not be counted, and it stays authoritative — a span typed there is
+the span the chips light up. A row the host could not place offers no "this
+turn" at all rather than pretending to, and opens on the whole conversation.
+
+**U-94 — keeping a whole conversation was only in the right-click menu.** A
+session card and a session's own heading have no turns to hang a badge on, and
+keeping the lot is the commonest thing to want from either — so on those two
+surfaces the feature read as absent. Both now carry it: the session page's
+heading has a labelled `🔖 Wiki` button in its action row, styled by the same
+class as the buttons beside it so it cannot drift away from them, and every
+Console session card carries the quiet badge in its header line, lit when the
+conversation is kept.
+
+The card badge needed a figure, not the marks: sending every mark of every
+conversation on every repaint to draw one icon would be paying transcript prices
+for a boolean. Each card is told the turn its marks start at, which is enough to
+say "kept", "partly kept — 3 turns of it on their own", or "not kept", and the
+tooltip says which. A whole-conversation ask is also answered without guessing a
+turn: sending it through the resolver with no moment and no words would have
+answered turn 1 flagged as something to check — a number nobody asked for,
+presented as a doubt.
+
+Measured against the item's own three surfaces: the transcript's turn bands and
+the Console's prompt rows already carried the badge, and the Console's is on the
+prompt deliberately — the backfill reads no result rows off a transcript, so a
+badge hung at the end of a turn would be missing from exactly the scrollback a
+reader goes back through.
+
 ## 3.280.0 - M-28: a setting VS Code refuses to register is written into settings.json by the extension itself, surgically (2026-08-26)
 
 **M-28 — `agentFarm.budgetsUnlimited` could be read and could not be written.**

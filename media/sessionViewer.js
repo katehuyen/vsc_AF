@@ -1198,7 +1198,14 @@
                         title: 'Console — resume this session, or open the page'
                     }
                 },
-                actions: `<button id="resume">⏵ Resume</button>
+                // ‼️ U-94 — KEEPING THE WHOLE CONVERSATION IS AN ACTION, NOT A
+                // MENU ITEM. Every turn band below carries its own badge; the
+                // one thing this page could not do without opening a right-click
+                // menu was the commonest — keep the lot.
+                actions: `${window.AFWiki ? window.AFWiki.badge({
+        session: DATA.sessionId, whole: true, label: 'Wiki', cls: 'secondary',
+        marks: DATA.wikiMarks || []
+    }) : ''}<button id="resume">⏵ Resume</button>
                     <button class="secondary" id="renamesess" title="Give this session your own name — the same rename as the side panel's">✎ Rename</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
