@@ -45,7 +45,7 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     const h = r.html();
     ok('the page draws', /Wiki<\/h1>/.test(h));
     ok('the subtitle counts both sides of the system',
-        /3 waiting/.test(h) && /1 compiling/.test(h) && /1 compiled/.test(h) && /14 wiki page\(s\)/.test(h));
+        /4 waiting/.test(h) && /1 compiling/.test(h) && /1 compiled/.test(h) && /14 wiki page\(s\)/.test(h));
     ok('…and names who writes the wiki', /writer: developer/.test(h));
 
     // The default view is what is LIVE: waiting and compiled. A dropped mark is
@@ -71,13 +71,30 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
         !el(r, 'cb', 'wc-2') && !!el(r, 'cb', 'wc-1'));
     // Two waiting marks, one of them claimed: the button must offer two.
     ok('‼️ "Compile All Pending" counts only what a run is NOT out for',
-        /Compile All Pending \(2\)/.test(h));
+        /Compile All Pending \(3\)/.test(h));
 
     // Ticking everything selects the compilable rows and no others.
     const all = r.query('#wk-all')[0];
     all.checked = true; all.fire('change');
-    ok('select-all takes every compilable row shown', /Compile Selected \(2\)/.test(r.html()));
+    ok('select-all takes every compilable row shown', /Compile Selected \(3\)/.test(r.html()));
     ok('…and still leaves the claimed one alone', !el(r, 'cb', 'wc-2'));
+
+    /**
+     * ‼️ X-58 — A MARK WHOSE LAST RUN DIED IS STILL WORK, AND IT DOES NOT LOOK
+     * LIKE WORK NOBODY HAS REACHED. It reads `failed`, the reason is in the
+     * panel rather than a badge with nothing behind it, and it is offered to a
+     * compile again — the whole point of releasing the claim.
+     */
+    ok('a mark whose last run produced nothing reads as failed, not as waiting',
+        /wk-failed/.test(h) && /⚠ failed/.test(h));
+    ok('…the reason is there in the words the host wrote, not just a colour',
+        h.indexOf('ran out of quota') > 0);
+    ok('…it is compilable again — a crash must not lock a turn out for ever',
+        !!el(r, 'cb', 'wc-6'));
+    ok('…and it offers ↻, which clears the record rather than undoing work',
+        /data-act="retry" data-id="wc-6"/.test(h));
+    ok('‼️ the exclusions are part of what the mark IS, so the row says so',
+        /whole session \(except 13, 14\)/.test(h));
 }
 
 // ================================================== the two compile selectors

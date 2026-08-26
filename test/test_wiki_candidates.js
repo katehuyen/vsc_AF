@@ -42,6 +42,12 @@ fs.writeFileSync(path.join(wikiRoot, 'index.md'),
 fs.writeFileSync(path.join(wikiRoot, 'log.md'), '# log\n', 'utf8');
 
 // ---- a session index, as the farm's own index hands it over ----
+// X-58 — with transcripts that are really on disk: a mark pointing at a file
+// that is not there is skipped by name now, so a fixture without one would be
+// testing the skip rather than the brief.
+fs.writeFileSync(path.join(tmp, 'sess.jsonl'), '{}\n', 'utf8');
+fs.writeFileSync(path.join(tmp, 'other.jsonl'), '{}\n', 'utf8');
+
 const SESSIONS = [{
     file: path.join(tmp, 'sess.jsonl'),
     sessionId: 'bb16dc64-ea30-4747-bf91-a6a3dcc1ad44',
@@ -131,25 +137,63 @@ const call = (op, args) => bridge.dispatch(op, args || {});
     ok('…and the topic thought of later is now on it',
         store.candidates[0].topics.join('|') === 'LLM Wiki|Aday Havuzu|Provenance');
 
-    // A range that touches the same turn is the same mark, widened.
-    await call('wiki.candidates.add', { session: 'bb16dc64', turn: '3-5', topics: 'Derleme' });
-    ok('an overlapping RANGE widens the mark rather than adding one',
-        store.candidates.length === 1 && store.candidates[0].fromTurn === 3
-        && store.candidates[0].toTurn === 5);
+    // ‼️ X-58 — A RANGE THAT MERELY TOUCHES IT IS A DIFFERENT MARK. This used
+    // to widen the row, which is how a whole-conversation mark swallowed every
+    // turn already kept inside it. A span is a different amount of text about a
+    // different thing, so it is its own row.
+    const span = await call('wiki.candidates.add', { session: 'bb16dc64', turn: '3-5', topics: 'Derleme' });
+    ok('an overlapping RANGE is its own mark, not a widening of the old one',
+        span.result.merged === false && store.candidates.length === 2
+        && store.candidates[0].fromTurn === 4 && store.candidates[0].toTurn === 4);
 
     // A turn that does not touch it is a different subject and a new row.
     const sep = await call('wiki.candidates.add', { session: 'bb16dc64', turn: 1, topics: 'Fikrin Cikisi' });
     ok('a turn outside the range is its own mark',
-        sep.result.merged === false && store.candidates.length === 2);
+        sep.result.merged === false && store.candidates.length === 3);
 
     // …and a mark on another conversation obviously is.
     await call('wiki.candidates.add', { session: 'ffffffff', topics: 'Baska' });
-    ok('another session is another mark', store.candidates.length === 3);
+    ok('another session is another mark', store.candidates.length === 4);
     ok('…and a whole-session mark says so, not "turn 0"',
-        store.candidates[2].fromTurn === 0
+        store.candidates[3].fromTurn === 0
         && (await call('wiki.candidates.list', { session: 'ffffffff' })).result.candidates[0].turns === 'whole session');
     ok('…and it carries the engine that ran it',
-        store.candidates[2].engine === 'codex');
+        store.candidates[3].engine === 'codex');
+
+    /**
+     * ‼️ X-58, THE BUG THIS RULE EXISTS FOR: marking the WHOLE of a conversation
+     * used to delete every single-turn mark inside it and absorb their topics.
+     * A session whose shape is one subject can perfectly well contain one turn
+     * that is the best thing anybody wrote about another, and they are two
+     * pages compiled from two different amounts of text.
+     */
+    const before = store.candidates.length;
+    const whole = await call('wiki.candidates.add', { session: 'bb16dc64', topics: 'Butun Oturum' });
+    ok('marking the whole conversation does NOT swallow the turns marked inside it',
+        whole.result.merged === false && store.candidates.length === before + 1);
+    ok('…the single turn is still there, with its own topics',
+        store.candidates.some(c => c.fromTurn === 4 && c.toTurn === 4
+            && c.topics.join('|') === 'LLM Wiki|Aday Havuzu|Provenance'));
+    ok('…and marking the whole conversation AGAIN is the same row',
+        (await call('wiki.candidates.add', { session: 'bb16dc64', topics: 'Ikinci Konu' }))
+            .result.merged === true && store.candidates.length === before + 1);
+
+    // X-58 — "the whole session except the last two", as a subtraction.
+    const cut = await call('wiki.candidates.add', {
+        session: 'bb16dc64', topics: 'Butun Oturum', excludeTurns: [4, 5, 99]
+    });
+    ok('exclusions land on the whole-session mark, and a turn past the end is dropped',
+        cut.result.excludeTurns.join(',') === '4,5');
+    ok('…and the mark SAYS what it leaves out wherever it is drawn',
+        cut.result.turns === 'whole session (except 4, 5)');
+    ok('…covered turns are the range minus the exclusions',
+        W.coveredTurns({ fromTurn: 0, toTurn: 0, excludeTurns: [4, 5] }, 5).join(',') === '1,2,3');
+    // Taking them off again is passing an empty list — an edit, not a delete.
+    ok('an empty list takes the exclusions off',
+        (await call('wiki.candidates.edit', { id: cut.result.id, excludeTurns: [] }))
+            .result.excludeTurns === null);
+    await call('wiki.candidates.remove', { ids: store.candidates
+        .filter(c => c.topics.includes('Butun Oturum')).map(c => c.id) });
 }
 
 // ---------- what it refuses ----------
@@ -167,7 +211,7 @@ const call = (op, args) => bridge.dispatch(op, args || {});
 // ---------- listing and filtering ----------
 {
     const all = (await call('wiki.candidates.list', { state: 'all' })).result;
-    ok('the list is the pool', all.total === 3);
+    ok('the list is the pool', all.total === 4);
     ok('…newest first', all.candidates[0].addedAt >= all.candidates[1].addedAt);
     ok('a topic filter narrows it',
         (await call('wiki.candidates.list', { topic: 'Derleme' })).result.total === 1);
@@ -198,7 +242,7 @@ let briefIds = [];
     ok('…it says what the wiki ALREADY holds, which is what decides create-vs-amend',
         r.existing.length === 3 && r.existing.some(p => p.concept === 'Memory_Graph'));
     ok('…every candidate resolves to a transcript on disk',
-        r.candidates.length === 3 && r.candidates.every(c => !!c.transcript));
+        r.candidates.length === 4 && r.candidates.every(c => !!c.transcript));
     ok('…and to the turns to read, not to a summary of them',
         r.candidates.find(c => c.turns === '3-5').readTurns === '3-5'
         && r.candidates.find(c => c.turns === 'whole session').readTurns === 'all');
@@ -228,7 +272,7 @@ let briefIds = [];
     ok('a candidate reports back as compiled', done.result.state === 'compiled');
     ok('…and is stamped with when', !!store.get(id).compiledAt);
     ok('…and remembers which pages it became', done.result.pages.length === 1);
-    ok('…and leaves the pending list', (await call('wiki.candidates.list')).result.total === 2);
+    ok('…and leaves the pending list', (await call('wiki.candidates.list')).result.total === 3);
 
     // ‼️ A CLAIM WITHDRAWN TAKES ITS STAMP WITH IT. A row reading "compiled at
     // 14:02" while sitting in the pending pool is the kind of half-truth that

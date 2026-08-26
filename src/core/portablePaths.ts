@@ -101,3 +101,54 @@ export function tokenizeDeep<T>(value: T, roots: PortableRoot[]): T {
 export function expandDeep<T>(value: T, roots: PortableRoot[]): T {
     return walk(value, s => expandPath(s, roots)) as T;
 }
+
+/**
+ * ‼️ X-57 — A PATH SOMEBODY TYPED, NOT A PATH THE FARM STORED.
+ *
+ * Everything above is about the farm's OWN stores: values it wrote, tokenised
+ * on the way out so the file survives being pulled onto another machine. This
+ * is the other direction — a folder the USER typed into a setting, in whichever
+ * spelling their shell taught them — and the two must not be confused, because
+ * a setting is never rewritten behind the user's back. What they typed stays in
+ * `settings.json` exactly as typed; only what the code OPENS is expanded, so
+ * the same `settings.json` can be synced to a machine with a different home.
+ *
+ * The forms are the ones people actually type: `~` (POSIX, and every tutorial),
+ * `%USERPROFILE%` (cmd, and how a Windows path gets pasted), `$HOME` and
+ * `${env:VAR}` (VS Code's own settings grammar), plus `${workspaceRoot}` /
+ * `${workspaceFolder}` for a folder inside the open project.
+ *
+ * ‼️ AN UNKNOWN VARIABLE IS LEFT ALONE RATHER THAN BLANKED. `${nope}/wiki`
+ * collapsing to `/wiki` would quietly name the drive root and the compile would
+ * read an empty folder as an empty wiki; left unexpanded, the path visibly does
+ * not exist and the page says so.
+ */
+export function expandUserPath(
+    raw: string,
+    ctx: { home?: string; workspaceRoot?: string; env?: Record<string, string | undefined> } = {}
+): string {
+    const s = String(raw ?? '').trim();
+    if (!s) { return ''; }
+    const env = ctx.env ?? process.env;
+    const trail = (p: string) => p.replace(/[\\/]+$/, '');
+    const home = trail(ctx.home || env.USERPROFILE || env.HOME || '');
+    const ws = trail(ctx.workspaceRoot || '');
+    const lookup = (name: string): string | undefined => {
+        const k = name.toLowerCase();
+        if (k === 'workspaceroot' || k === 'workspacefolder') { return ws || undefined; }
+        if (k === 'home' || k === 'userhome') { return home || undefined; }
+        // Case-insensitive, because Windows environment variables are: a path
+        // typed as %userprofile% is the same path as %USERPROFILE%.
+        const hit = Object.keys(env).find(n => n.toLowerCase() === k);
+        return hit ? env[hit] : undefined;
+    };
+    let out = s;
+    // `~` only at the start and only as a whole segment: `~/wiki` is home, but
+    // `C:\PROGRA~1\wiki` is a real folder name on a real disk.
+    if (out === '~') { out = home || out; }
+    else if (/^~[\\/]/.test(out) && home) { out = home + out.slice(1); }
+    out = out.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (m, n) => lookup(n) ?? m);
+    out = out.replace(/\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, n) => lookup(n) ?? m);
+    out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, n) => lookup(n) ?? m);
+    return out;
+}

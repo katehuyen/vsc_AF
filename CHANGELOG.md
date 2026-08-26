@@ -2,6 +2,83 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.283.0 - X-57: the wiki root is a section that reads the folder, and a path that survives another machine · X-58: a session no longer swallows the turns inside it, and a crashed compile no longer locks a turn out for ever (2026-08-26)
+
+**X-57 — a path in a box cannot tell you whether the folder is a wiki.**
+`agentFarm.wikiRoot` was one text field under *Reports & Digest*, and
+`wiki.compile` refuses without `_KURALLAR_/-WIKI-ANAYASA-.md` — so a perfectly
+spelled path to a folder that has never held that file looks exactly like a
+working configuration and silently never compiles. Nothing on the page could
+have told you, because a box shows a string and the question is "does a compile
+work from here?".
+
+So the wiki has its own section now, and it reads the folder: which of the three
+files a compile needs are there, how many categories and pages, whether anything
+is nested deeper than one level, and — loudly — that the law is the one absence
+that stops every run. **🛠 Start the wiki here** writes the three starters, and
+it only ever CREATES: a file already on disk is reported and left exactly as it
+is, because the law is yours. Beside it: pick the folder, re-scan it (it is a
+folder you edit in Obsidian while the page is open), reveal it, open the cockpit.
+`wiki.health` and `wiki.init` are the same two acts on the bridge.
+
+**And the path travels.** `settings.json` is synced between machines, so a
+literal `C:\Users\<name>\…` is a wiki that exists on one computer. `%USERPROFILE%`,
+`~`, `$HOME`, `${env:VAR}` and `${workspaceRoot}` are expanded when the folder is
+OPENED and never written back into the setting — what you typed stays what you
+typed, and the section shows both lines when they differ, which is also how a
+variable that did not resolve is visibly a typo rather than a missing folder. A
+variable nobody knows is left alone rather than blanked: `${nope}/wiki`
+collapsing to `/wiki` would quietly name the drive root.
+
+Who writes the wiki was already a setting; **what it writes with** now is too —
+`agentFarm.wikiEngine`, `wikiModel`, `wikiEffort`. Synthesis is the expensive
+half, and the cockpit's button, the palette command and the bridge op all resolve
+the same three, so they cannot start three different runs.
+
+**X-58 — marking a whole conversation used to delete the turns kept inside it.**
+Two marks were "the same mark" when their ranges OVERLAPPED, and a
+whole-conversation mark overlaps everything. So marking a session absorbed every
+single turn already marked in it, topics and all: a session whose shape is
+`Mimari` can perfectly well contain the one turn that is the best thing anybody
+wrote about `Güvenlik`, and those are two pages compiled from two different
+amounts of text. Identity is now the range, exactly — the same range marked again
+is still one row (that is what keeps "mark it again to add a topic you thought of
+later" working), and a different range is a different mark even when one contains
+the other.
+
+**"The whole session except the last two" is now a subtraction, not twelve
+clicks.** Fourteen turns are the work and the last two are "commit this" and
+"good night"; picking a span around them is a gesture nobody performs, so the
+compile read the noise. Whole-session scope now draws the same turn strip
+inverted — everything is IN, and a press takes one OUT, struck through so a turn
+deliberately left out never reads as one merely not reached yet. The mark says so
+wherever it is drawn (`whole session (except 13, 14)`), and the compile
+instruction says it in a line that cannot be read as anything else.
+
+**And the instruction itself is a block per mark instead of four dashes on one
+line:** the transcript path, the scope, the turns as numbers, what each one opened
+with, the note the person wrote, and the exclusion in capitals. A model reads past
+a parenthesis at the end of a range.
+
+**‼️ A crashed compile used to lock a turn out of the wiki for ever.** A run
+stamps every mark it takes so two compiles cannot read the same turns twice —
+and nothing took the stamp off. A rate limit, an expired sign-in, a cancelled
+task or a VS Code restart all left the mark `pending` with a claim on it, and
+every later compile refused it by name while the pool said "waiting". Now every
+claim is checked against the run it names whenever the pool is read, and one
+whose run is over is released with the reason written onto the mark: *the model
+ran out of quota* · *it was cancelled* · *it is not on the task list any more*
+· and the quiet one, ‼️ *it finished and reported no page* — silently the worst
+of the four, because nothing is compiled until the run says so, and everything
+looks healthy. The row reads ⚠ **failed** rather than *waiting*, carries the
+sentence in its panel, and offers ↻ to hand it back clean.
+
+**A mark whose transcript has been moved no longer takes the compile down with
+it.** It is skipped by name, with the path that is not there, in the brief, in
+the prompt, and on the mark itself; the other eleven are compiled. Only when NONE
+of them can be read is there nothing to do, and then the refusal names the files
+rather than the wiki root.
+
 ## 3.282.0 - U-90: the tagger asks what a turn is about with a searchable picker over the wiki's own folders · U-91: a category can be started without leaving for Obsidian (2026-08-26)
 
 **U-90 — a taxonomy typed from memory is three taxonomies.** The tagger asked

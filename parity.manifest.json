@@ -5367,6 +5367,45 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#wikiInit",
+      "ui": [
+        "page:settingsPanel.ts#wikiInit"
+      ],
+      "ops": [
+        "wiki.init"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#wikiRescan",
+      "ui": [
+        "page:settingsPanel.ts#wikiRescan"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reads the wiki folder again and repaints. It writes nothing, and wiki.health returns the same answer to an agent."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#wikiReveal",
+      "ui": [
+        "page:settingsPanel.ts#wikiReveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#wikiOpen",
+      "ui": [
+        "page:settingsPanel.ts#wikiOpen"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the Wiki cockpit. It moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "settingsPanel.ts#saveProfile",
       "ui": [
         "page:settingsPanel.ts#saveProfile"

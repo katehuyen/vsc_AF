@@ -40,6 +40,10 @@ fs.writeFileSync(path.join(wikiRoot, 'Agents', 'Weighted_Tokens.md'), '# Weighte
 fs.writeFileSync(path.join(wikiRoot, 'index.md'), '# index\n', 'utf8');
 fs.writeFileSync(path.join(wikiRoot, 'log.md'), '# log\n', 'utf8');
 
+// X-58 — the transcript is a REAL file here, because a mark whose file is gone
+// is now skipped by name rather than handed to a run that cannot read it.
+fs.writeFileSync(path.join(tmp, 'sess.jsonl'), '{}\n', 'utf8');
+
 const SESSIONS = [{
     file: path.join(tmp, 'sess.jsonl'),
     sessionId: 'bb16dc64-ea30-4747-bf91-a6a3dcc1ad44',
@@ -248,7 +252,8 @@ let first;
     ok('…and the parity manifest binds the command to the op',
         !!row && (row.ops || []).includes('wiki.compile.run'));
     const so = fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8');
-    ok('the new setting is filed, not left to leak into Other', /wikiAgent: 'reports'/.test(so));
+    // X-57 — it is filed under the wiki's own section now, not Reports & Digest.
+    ok('the new setting is filed, not left to leak into Other', /wikiAgent: 'wiki'/.test(so));
 }
 
 })().then(() => {

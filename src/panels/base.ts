@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { createWikiCategory, normTopics, readWikiCategories, turnFor } from '../core/wiki';
+import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
 
 /**
@@ -490,6 +490,8 @@ export interface WikiMarkBridge {
     add(a: {
         sessionId: string; from: number; to: number;
         topics: string[]; note: string; label: string;
+        /** X-58 — turn numbers inside the scope to leave out. */
+        excludeTurns?: number[];
     }): { merged: boolean; pending: number };
 }
 
@@ -624,8 +626,15 @@ export function wikiMarkMessage(
                 });
                 return true;
             }
+            // ‼️ X-58 — the turns inside the scope that are NOT part of it. Only
+            // meaningful when there is a scope to subtract from, so a number
+            // outside it is dropped here rather than stored as a puzzle.
+            const lo = from === 0 ? 1 : from;
+            const hi = from === 0 ? (turns.length || Number.MAX_SAFE_INTEGER) : to;
+            const exclude = normTurnList(msg.excludeTurns).filter(n => n >= lo && n <= hi);
             const r = wikiBridge.add({
                 sessionId: session, from, to, topics,
+                ...(exclude.length ? { excludeTurns: exclude } : {}),
                 note: str('note'),
                 label: turns.find(t => t.n === from)?.label ?? (turns[0]?.label ?? '')
             });

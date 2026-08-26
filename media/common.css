@@ -726,6 +726,23 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     opacity: 1; border-color: var(--vscode-focusBorder);
     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
 }
+/* X-58: the same strip read the other way round — everything is IN, and a
+   press takes one OUT. Struck through and dimmed, because "deliberately left
+   out" must not look like "not reached yet": on this strip everything else is
+   lit, so the excluded turn is the only thing a reader is scanning for. */
+.afw-tn.cut {
+    opacity: .5; text-decoration: line-through;
+    background: transparent; color: var(--vscode-descriptionForeground, #888);
+    border-color: var(--vscode-widget-border, #4444);
+}
+.afw-tn.cut:hover { opacity: .8; }
+.afw-of-cut { color: var(--vscode-editorWarning-foreground, #d19a66); opacity: .85; }
+.afw-clear {
+    background: transparent; color: inherit; border: none; cursor: pointer;
+    font-size: 10px; opacity: .7; text-decoration: underline; padding: 0 0 0 4px;
+}
+.afw-clear:hover { opacity: 1; }
+.afw-hint { font-size: 10px; opacity: .45; }
 /* An inferred number says so IN the row it is in, not in a log nobody reads. */
 .afw-guess { color: var(--vscode-editorWarning-foreground, #d19a66); cursor: help; }
 .afw-label {

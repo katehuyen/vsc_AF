@@ -150,7 +150,13 @@ export class WikiPanel {
                         id: msg.id,
                         ...(msg.topics !== undefined ? { topics: msg.topics } : {}),
                         ...(msg.note !== undefined ? { note: msg.note } : {}),
-                        ...(msg.state !== undefined ? { state: msg.state } : {})
+                        ...(msg.state !== undefined ? { state: msg.state } : {}),
+                        // X-58 — the row's ↻ and its exclusions. Both go through
+                        // `editCandidate`, which is the same body `wiki.candidates.edit`
+                        // calls: a second implementation of "what clears a
+                        // failure" is a second set of rules (U-70).
+                        ...(msg.excludeTurns !== undefined ? { excludeTurns: msg.excludeTurns } : {}),
+                        ...(msg.retry === true ? { retry: true } : {})
                     });
                     this.mutated();
                 });

@@ -49,6 +49,19 @@ export interface WikiCandidate {
      *  the whole conversation (S-38 marks a session, not a turn). */
     fromTurn: number;
     toTurn: number;
+    /**
+     * ‼️ X-58 — THE TURNS INSIDE THE RANGE THAT ARE NOT PART OF IT.
+     *
+     * Fourteen turns of a conversation are about one thing and the last two are
+     * "commit this" and "good night". Marking the whole session is one click;
+     * marking 1–12 by hand to leave those two out is twelve, so nobody does it
+     * and the compile reads the noise. A subtraction is the cheap gesture — say
+     * the whole thing, then say which ones are not it.
+     *
+     * Absent or empty means nothing is excluded. Numbers outside the range are
+     * meaningless rather than wrong, and are dropped when the mark is made.
+     */
+    excludeTurns?: number[];
     /** What it is ABOUT — the compiler's filing key, and the only field the
      *  person marking a turn is asked for. */
     topics: string[];
@@ -76,6 +89,24 @@ export interface WikiCandidate {
      */
     compileTaskId?: string;
     compileStartedAt?: number;
+    /**
+     * ‼️ X-58 — WHY THE LAST COMPILE OVER THIS MARK DID NOT PRODUCE A PAGE.
+     *
+     * A run dies of a rate limit, an expired sign-in, a VS Code restart, or it
+     * finishes and forgets to report back. Every one of those used to leave the
+     * mark exactly as a mark nobody had got to yet — `pending`, with a claim on
+     * it that no longer meant anything — so the pool said "waiting" about work
+     * that had already been attempted and lost. The claim is released when its
+     * run is over (`releaseStaleClaims`) and the reason is written HERE, so the
+     * row can say what happened and offer to try again.
+     *
+     * Cleared the moment a fresh run is started over the mark: it describes the
+     * LAST attempt, and a stale reason beside a live run is a lie.
+     */
+    lastError?: string;
+    /** When that reason was recorded — a failure from last week reads
+     *  differently from one two minutes ago. */
+    lastErrorAt?: number;
 }
 
 /** A pool that grows without bound is a pool nobody reads. The newest are the
@@ -177,13 +208,62 @@ export function turnFor(turns: readonly TurnAnchor[], at: { ts: number; text?: s
     return { turn: (before.length ? before[before.length - 1] : turns[0]).n, count, exact: false };
 }
 
-/** Two marks on the same conversation whose turn ranges touch are the same
- *  mark. A whole-conversation candidate (0) swallows any range in it. */
+/** Two marks on the same conversation whose turn ranges touch. Kept because
+ *  reading surfaces ask it (which turns are painted as taken), but it is NOT
+ *  what decides identity in the pool any more — see `sameRange`. */
 export function rangesOverlap(
     a: { fromTurn: number; toTurn: number }, b: { from: number; to: number }
 ): boolean {
     if (a.fromTurn === 0 || b.from === 0) { return true; }
     return a.fromTurn <= b.to && b.from <= a.toTurn;
+}
+
+/**
+ * ‼️ X-58 — WHAT MAKES TWO MARKS THE SAME MARK: THE RANGE, EXACTLY.
+ *
+ * Identity used to be OVERLAP, and a whole-conversation mark overlaps
+ * everything — so marking a session swallowed every single turn already marked
+ * inside it, whatever those turns had been filed under. That is a real loss and
+ * not a merge: a session whose shape is `Mimari` can perfectly well contain one
+ * turn that is the best thing anybody wrote about `Güvenlik`, and the two are
+ * different pages compiled from different amounts of text.
+ *
+ * So a mark is identified by (conversation, from, to) and nothing else. The
+ * same range marked again is the SAME row — which is what keeps "mark it again
+ * to add a topic you thought of later" working, and what stops two rows sending
+ * the same turns to two compiles. A different range is a different mark, even
+ * when one contains the other.
+ */
+export function sameRange(
+    a: { fromTurn: number; toTurn: number }, b: { from: number; to: number }
+): boolean {
+    return a.fromTurn === b.from && a.toTurn === b.to;
+}
+
+/** The turns a mark actually covers, once `excludeTurns` has been taken off.
+ *  `total` is how long the conversation is — needed to spell out what "the
+ *  whole session minus two" is. */
+export function coveredTurns(
+    c: { fromTurn: number; toTurn: number; excludeTurns?: number[] }, total: number
+): number[] {
+    const from = c.fromTurn === 0 ? 1 : c.fromTurn;
+    const to = c.fromTurn === 0 ? Math.max(total, 0) : c.toTurn;
+    const skip = new Set(c.excludeTurns ?? []);
+    const out: number[] = [];
+    for (let n = from; n <= to; n++) { if (!skip.has(n)) { out.push(n); } }
+    return out;
+}
+
+/** Turn numbers as a list, de-duplicated and in order. Anything that is not a
+ *  turn number is dropped rather than guessed at. */
+export function normTurnList(v: unknown): number[] {
+    const raw = Array.isArray(v) ? v : String(v ?? '').split(/[,\s]+/);
+    const out: number[] = [];
+    for (const x of raw) {
+        const n = Math.floor(Number(x));
+        if (isFinite(n) && n >= 1 && !out.includes(n)) { out.push(n); }
+    }
+    return out.sort((a, b) => a - b);
 }
 
 export class WikiStore {
@@ -223,29 +303,34 @@ export class WikiStore {
      * ‼️ MARKING THE SAME TURN TWICE IS NOT AN ERROR AND IT IS NOT A SECOND
      * ROW. The badge (K-26) is one click on a live conversation and the session
      * menu (S-38) covers whole sessions, so the same turn WILL be marked twice
-     * — and two rows for one turn means the compile reads it twice and the
-     * concept is filed twice. An overlapping mark on a pending candidate merges
-     * its topics instead, which is also how you add a topic you thought of
-     * later: mark it again.
+     * — and two rows for ONE RANGE means the compile reads it twice and the
+     * concept is filed twice. Marking the same range again merges its topics
+     * instead, which is also how you add a topic you thought of later: mark it
+     * again.
+     *
+     * ‼️ X-58 — BUT "THE SAME RANGE" MEANS THE SAME RANGE, NOT AN OVERLAPPING
+     * ONE. This used to merge anything that touched, so a whole-conversation
+     * mark absorbed every single turn already marked inside it and their topics
+     * with them: the session was filed under `Mimari` and the one turn somebody
+     * had kept for `Güvenlik` no longer existed as a mark of its own. A session
+     * and a turn inside it are different amounts of text about different
+     * things, and they are now different rows (`sameRange`).
      */
     add(c: Omit<WikiCandidate, 'id' | 'addedAt' | 'state'> & { state?: WikiCandidateState }):
         { candidate: WikiCandidate; merged: boolean } {
         const dup = this.candidates.find(x => x.state === 'pending'
             && x.sessionId === c.sessionId
-            && rangesOverlap(x, { from: c.fromTurn, to: c.toTurn }));
+            && sameRange(x, { from: c.fromTurn, to: c.toTurn }));
         if (dup) {
             const before = dup.topics.length;
             for (const t of c.topics) {
                 if (!dup.topics.some(x => x.toLowerCase() === t.toLowerCase())) { dup.topics.push(t); }
             }
-            // A whole-conversation mark widens what was a single turn; the
-            // reverse never narrows it.
-            if (c.fromTurn === 0) { dup.fromTurn = 0; dup.toTurn = 0; }
-            else if (dup.fromTurn !== 0) {
-                dup.fromTurn = Math.min(dup.fromTurn, c.fromTurn);
-                dup.toTurn = Math.max(dup.toTurn, c.toTurn);
-            }
             if (c.note && !dup.note) { dup.note = c.note; }
+            // X-58 — a later mark that names exclusions REPLACES them rather
+            // than unioning: "the whole session except 14 and 15" said twice
+            // with different numbers is a correction, not two subtractions.
+            if (c.excludeTurns !== undefined) { dup.excludeTurns = c.excludeTurns; }
             this.save();
             return { candidate: dup, merged: before !== dup.topics.length || true };
         }
@@ -466,12 +551,152 @@ export function lintWiki(root: string): {
     };
 }
 
+// ------------------------------------------------- X-57: is it a wiki yet?
+
+/**
+ * ‼️ X-57 — THE THREE FILES THAT DECIDE WHETHER A FOLDER IS A WIKI.
+ *
+ * `wiki.compile` refuses without `_KURALLAR_/-WIKI-ANAYASA-.md`, because the
+ * vault's own law outranks the agent procedure and a compile that could not
+ * find it would be working from memory (`buildBrief`). `index.md` and `log.md`
+ * are what every compile is told to keep true. So a folder that has been
+ * CHOSEN as the wiki root but holds none of them is not misconfigured — it is
+ * empty, and the only useful thing to offer is to fill it.
+ *
+ * These are STARTERS in the strict sense: written once, never rewritten, and
+ * the law's first line says so, because the moment the user edits it it stops
+ * being ours. Nothing here is generated on a later run — an existing file is
+ * reported as existing and left alone.
+ */
+export interface WikiHealthFile { rel: string; file: string; found: boolean }
+
+export interface WikiHealth {
+    root: string;
+    /** '' when the setting is empty and the fallback is in play. */
+    setting: string;
+    exists: boolean;
+    /** Every file a compile needs, in the order a reader should fix them. */
+    files: WikiHealthFile[];
+    /** What is missing, by rel path — empty means the folder is ready. */
+    missing: string[];
+    categories: WikiCategory[];
+    pages: number;
+    misplaced: string[];
+    /** ‼️ The one that stops a compile rather than merely making it messy. */
+    compilable: boolean;
+}
+
+const WIKI_STARTERS: { rel: string; body: () => string }[] = [
+    {
+        rel: WIKI_RULES_REL,
+        body: () => [
+            '# The wiki\'s own law',
+            '',
+            '> **This file is yours.** Agent Farm wrote this starter once, when the folder was',
+            '> empty, and will never write it again. Rewrite every line of it — what is here is',
+            '> the minimum a compile needs, not what you want your wiki to be.',
+            '',
+            'This file **outranks the agent procedure**. A compile reads it first; where the two',
+            'disagree, this one wins.',
+            '',
+            '## Shape',
+            '',
+            '- **One folder per category, one page per concept.** Categories are a single level:',
+            '  a family is spelled `Teknoloji - Tarım`, never `Teknoloji/Tarım`.',
+            '- **A page is one concept.** If a conversation carried three, that is three pages —',
+            '  not one page with three headings.',
+            '- `index.md` names every page, one line each. `log.md` records every compile.',
+            '',
+            '## Writing',
+            '',
+            '- **Nothing contradicted is deleted.** An older claim that turned out wrong is',
+            '  annotated with a dated line saying what superseded it, so a page reads as a',
+            '  history rather than a rewrite.',
+            '- **Every fact carries where it came from** — session id and turn range, under the',
+            '  text it supports. A wiki whose provenance cannot be audited is not worth keeping.',
+            '- Write what was *learned*, not what was *said*. A transcript summary is the',
+            '  mechanical output this whole idea exists to avoid.',
+            ''
+        ].join('\n')
+    },
+    {
+        rel: WIKI_INDEX_REL,
+        body: () => [
+            '# Index',
+            '',
+            'One line per page, grouped by category. A compile keeps this true; a page that is',
+            'not named here is a page nobody reaches.',
+            ''
+        ].join('\n')
+    },
+    {
+        rel: WIKI_LOG_REL,
+        body: () => [
+            '# Log',
+            '',
+            'One entry per compile, newest at the bottom:',
+            '`## [YYYY-MM-DD] compile | <Concept>` and what it wrote.',
+            ''
+        ].join('\n')
+    }
+];
+
+/** What the Settings card asks: is this folder a wiki, and what is missing? */
+export function wikiHealth(root: string, setting = ''): WikiHealth {
+    const exists = !!root && fs.existsSync(root);
+    const files: WikiHealthFile[] = WIKI_STARTERS.map(s => ({
+        rel: s.rel.split(path.sep).join('/'),
+        file: path.join(root, s.rel),
+        found: exists && fs.existsSync(path.join(root, s.rel))
+    }));
+    const { pages, misplaced } = exists ? readWikiPages(root) : { pages: [], misplaced: [] };
+    return {
+        root, setting, exists,
+        files,
+        missing: files.filter(f => !f.found).map(f => f.rel),
+        categories: exists ? readWikiCategories(root) : [],
+        pages: pages.length,
+        misplaced,
+        // Only the law stops a compile. A missing index or log is repaired by
+        // the next compile that writes one; a missing law is a guess.
+        compilable: exists && files[0].found
+    };
+}
+
+/**
+ * Create the wiki root and whatever of the three files is missing. Creating is
+ * the only thing it does: a file already on disk is REPORTED and not touched,
+ * because the user's own law is the last thing a program should overwrite.
+ */
+export function scaffoldWiki(root: string):
+    { ok: true; root: string; created: string[]; existed: string[] } | { ok: false; error: string } {
+    if (!root) { return { ok: false, error: 'The wiki root is not set — choose a folder first.' }; }
+    const created: string[] = [];
+    const existed: string[] = [];
+    try {
+        fs.mkdirSync(root, { recursive: true });
+        for (const s of WIKI_STARTERS) {
+            const file = path.join(root, s.rel);
+            const rel = s.rel.split(path.sep).join('/');
+            if (fs.existsSync(file)) { existed.push(rel); continue; }
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, s.body(), 'utf8');
+            created.push(rel);
+        }
+    } catch (e) { return { ok: false, error: String((e as Error).message) }; }
+    return { ok: true, root, created, existed };
+}
+
 // --------------------------------------------------------------- bridge ops
 
 export interface WikiDeps {
     store(): WikiStore;
     /** Where `00_WIKI` lives — the setting, resolved. */
     root(): string;
+    /** X-57 — and the setting as the user TYPED it, `%USERPROFILE%` and all.
+     *  Reported beside the resolved path so a root that did not expand can be
+     *  seen to be a typo rather than a missing folder. '' = unset. */
+    rootSetting?(): string;
     /** The session index, for turning "session X, turn 4" into a file and a label. */
     sessions(): SessionInfo[];
     /** The agent procedure, so the brief can point at it by path. */
@@ -489,8 +714,27 @@ export interface WikiDeps {
         { taskId: string; agent: string; started: boolean };
     /** Is a recorded claim still a run, or the ghost of one that died? */
     taskAlive?(taskId: string): boolean;
+    /**
+     * ‼️ X-58 — AND IF IT IS A GHOST, HOW IT DIED. `taskAlive` answers yes or
+     * no; a mark whose run ended needs to say WHY on the row, and only the host
+     * can read that (the task's status, its failure phase, whether it was
+     * cancelled by hand). Returning undefined is a real answer: the task is not
+     * in the list at all any more, which is what a restart or a Clear Finished
+     * looks like from here.
+     */
+    taskOutcome?(taskId: string): { status: string; reason?: string } | undefined;
     /** Which agent writes the wiki when nobody names one (the setting). */
     defaultAgent?(): string;
+    /**
+     * ‼️ X-57 — AND WITH WHAT INTELLIGENCE. The agent answers "whose hand";
+     * these answer "how much of a model", and they are settings for the same
+     * reason the agent is: a compile started from the cockpit button, from the
+     * bridge, or by a schedule must be the same run. Empty = the engine's own
+     * default, which is what an unset setting has always meant here.
+     */
+    defaultEngine?(): string;
+    defaultModel?(): string;
+    defaultEffort?(): string;
 }
 
 /** What a compile is handed — the same object whether a person reads it or a
@@ -504,6 +748,9 @@ export interface WikiBrief {
     log: string;
     existing: { category: string; concept: string; file: string }[];
     candidates: (Record<string, unknown> & { transcript: string; readTurns: string })[];
+    /** X-58 — marks that were asked for and cannot be read. Absent when every
+     *  chosen mark still has its transcript. */
+    skipped?: { id: string; transcript: string; why: string }[];
     next: string[];
 }
 
@@ -514,6 +761,65 @@ const COMPILE_STEPS = [
     'Update index.md (one line per page) and append to log.md.',
     'Report back: wiki.candidates.edit { id, state:"compiled", pages:[…] } for each one.'
 ];
+
+/**
+ * ‼️ X-58 — HOW LONG A CLAIM SURVIVES WITH NOBODY ABLE TO VOUCH FOR IT.
+ *
+ * Only used when there is no task manager to ask (a headless deps, a store read
+ * outside the extension). When there IS one, a run that is alive is alive
+ * however long it takes — a compile of forty marks is a long job and killing it
+ * on a clock would be the bug, not the fix.
+ */
+export const STALE_CLAIM_MS = 10 * 60 * 1000;
+
+/**
+ * ‼️ X-58 — A CRASHED COMPILE MUST NOT LOCK A TURN OUT OF THE WIKI FOR EVER.
+ *
+ * `wiki.compile.run` stamps every mark it takes with the run's id, so a second
+ * compile over the same turns is refused — reading them twice files the concept
+ * twice. The stamp was only ever meant to last as long as the run, and nothing
+ * took it off: a rate limit, an expired sign-in, a cancelled task or a VS Code
+ * restart all left the mark `pending` with a claim on it, and every later
+ * compile refused it by name. The pool said "waiting" and the turn was
+ * unreachable.
+ *
+ * So before anything reads or acts on the pool, every claim is checked against
+ * the run it names, and one whose run is over is released — with the reason
+ * written onto the mark (`lastError`), because "this was tried and the model ran
+ * out of quota" is a different row from "nobody has got to this yet".
+ *
+ * ‼️ A RUN THAT FINISHED WELL AND SAID NOTHING IS ALSO A FAILURE HERE. Nothing
+ * is compiled until the agent reports back (B-14), so a `done` task over a mark
+ * that is still pending means the synthesis never landed — silently the worst
+ * of the four, because everything looks healthy.
+ */
+export function releaseStaleClaims(deps: WikiDeps, now = Date.now()): WikiCandidate[] {
+    const store = deps.store();
+    const freed: WikiCandidate[] = [];
+    for (const c of store.candidates) {
+        if (c.state !== 'pending' || !c.compileTaskId) { continue; }
+        if (deps.taskAlive) {
+            if (deps.taskAlive(c.compileTaskId)) { continue; }
+        } else if (!c.compileStartedAt || now - c.compileStartedAt < STALE_CLAIM_MS) {
+            // Nothing to ask, so the clock is all there is.
+            continue;
+        }
+        const out = deps.taskOutcome?.(c.compileTaskId);
+        c.lastError = !out
+            ? 'The run that claimed this mark is no longer on the task list — VS Code was restarted, or the row was cleared. Nothing was compiled.'
+            : out.status === 'done'
+                ? 'The run finished without reporting any page for this mark. Nothing is compiled until it says so (wiki.candidates.edit), so the mark is still waiting.'
+                : out.status === 'cancelled'
+                    ? 'The run was cancelled before it wrote a page for this mark.'
+                    : `The run ended as "${out.status}"${out.reason ? ` — ${out.reason}` : ''}. Nothing was compiled for this mark.`;
+        c.lastErrorAt = now;
+        c.compileTaskId = undefined;
+        c.compileStartedAt = undefined;
+        freed.push(c);
+    }
+    if (freed.length) { store.save(); }
+    return freed;
+}
 
 /** Which marks a compile is about. The three selectors are exclusive on
  *  purpose: a compile of "whatever is there" is never implied. */
@@ -538,8 +844,18 @@ export function chooseCandidates(store: WikiStore, args: Record<string, unknown>
     return chosen;
 }
 
-/** The brief: the law, the root, what the wiki already holds, and every chosen
- *  mark resolved to a transcript on disk and a turn range inside it. */
+/**
+ * The brief: the law, the root, what the wiki already holds, and every chosen
+ * mark resolved to a transcript on disk and a turn range inside it.
+ *
+ * ‼️ X-58 — A MARK WHOSE TRANSCRIPT IS GONE DOES NOT TAKE THE OTHERS WITH IT.
+ * A session file gets moved, pruned or cleaned out from under a mark made weeks
+ * ago; a compile of twelve marks would then be a compile of nothing, and the
+ * error would name the wiki root rather than the one missing file. The mark is
+ * skipped instead, by name and with the path that is not there, and the other
+ * eleven are compiled. Only when NONE of them can be read is there nothing to
+ * do, and then the refusal says which files were looked for.
+ */
 export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
     const root = deps.root();
     const rules = path.join(root, WIKI_RULES_REL);
@@ -548,6 +864,26 @@ export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
     need(fs.existsSync(rules),
         `The wiki's own law is missing: ${rules}. It outranks the agent procedure, so a compile without it would be a guess.`);
     const { pages } = readWikiPages(root);
+
+    const sessions = deps.sessions();
+    const skipped: { id: string; transcript: string; why: string }[] = [];
+    const readable: WikiCandidate[] = [];
+    for (const c of chosen) {
+        if (!c.sessionFile || !fs.existsSync(c.sessionFile)) {
+            skipped.push({
+                id: c.id,
+                transcript: c.sessionFile || '(none recorded)',
+                why: 'missing transcript — the file this mark points at is not on disk'
+            });
+            continue;
+        }
+        readable.push(c);
+    }
+    need(readable.length > 0,
+        'None of those marks has a transcript on disk any more: '
+        + skipped.map(s => `${s.id} → ${s.transcript}`).join(' · ')
+        + '. Nothing can be compiled from a file that is not there — remove the marks, or restore the sessions.');
+
     return {
         rules,
         procedure: deps.procedure ?? '_REF/wiki.md',
@@ -557,13 +893,30 @@ export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
         // What already exists decides create-vs-amend, which is the first
         // judgement of every compile (_REF/wiki.md §3).
         existing: pages.map(p => ({ category: p.category, concept: p.concept, file: p.file })),
-        candidates: chosen.map(c => ({
-            ...candidateView(c),
-            // The transcript and the range, so the agent reads the turns itself
-            // rather than trusting a summary of them.
-            transcript: c.sessionFile,
-            readTurns: c.fromTurn === 0 ? 'all' : `${c.fromTurn}-${c.toTurn}`
-        })),
+        candidates: readable.map(c => {
+            const turns = (sessions.find(s => s.sessionId === c.sessionId)?.turns ?? []) as TurnAnchor[];
+            const covered = coveredTurns(c, turns.length);
+            return {
+                ...candidateView(c),
+                // The transcript and the range, so the agent reads the turns
+                // itself rather than trusting a summary of them.
+                transcript: c.sessionFile,
+                readTurns: c.fromTurn === 0 ? 'all' : `${c.fromTurn}-${c.toTurn}`,
+                // ‼️ X-58 — and WHICH turns those are, with what each one opened
+                // with. A range is a pair of numbers; a list of numbered
+                // openings is something a reader (and a model) can check itself
+                // against, and it is the only way an exclusion is visible as a
+                // gap rather than as a footnote nobody applied.
+                sessionTurns: turns.length,
+                turnList: covered,
+                turnTitles: covered.map(n => ({
+                    n, label: String(turns.find(t => t.n === n)?.label ?? '').slice(0, 120)
+                })).filter(t => t.label)
+            };
+        }),
+        // X-58 — reported, never silently dropped: a compile that quietly did
+        // eleven of twelve is a compile whose twelfth is lost for good.
+        ...(skipped.length ? { skipped } : {}),
         next: COMPILE_STEPS
     };
 }
@@ -600,15 +953,57 @@ export function compilePrompt(brief: WikiBrief): string {
             + brief.existing.map(p => `${p.category}/${p.concept}`).join(' · ')
         : '- it holds no pages yet — every concept here is a new page.');
     L.push('');
+    /**
+     * ‼️ X-58 — ONE BLOCK PER MARK, AND THE SCOPE IS SPELLED OUT RATHER THAN
+     * IMPLIED. This was four dashes on one line, and the exclusions had nowhere
+     * to go but a parenthesis at the end of a range — which is exactly the kind
+     * of instruction a model reads past. A heading per mark, the file, the turn
+     * numbers as numbers, what each one opened with, and, where there are
+     * exclusions, a line that cannot be read as anything else.
+     */
     L.push('## What to read');
+    L.push('');
     for (const c of brief.candidates) {
         const topics = Array.isArray(c.topics) ? (c.topics as string[]).join(', ') : String(c.topics ?? '');
-        L.push(`- **${c.id}** — turns ${c.turns} of \`${c.transcript}\``);
-        L.push(`  · filed under: ${topics}`);
-        if (c.label) { L.push(`  · opening line: ${String(c.label).slice(0, 160)}`); }
-        if (c.note) { L.push(`  · why it was kept: ${String(c.note)}`); }
+        const list = Array.isArray(c.turnList) ? c.turnList as number[] : [];
+        const excl = Array.isArray(c.excludeTurns) ? c.excludeTurns as number[] : [];
+        const titles = Array.isArray(c.turnTitles)
+            ? c.turnTitles as { n: number; label: string }[] : [];
+        L.push(`### ${c.id} — filed under: ${topics}`);
+        L.push('');
+        L.push(`- **transcript:** \`${c.transcript}\``);
+        L.push(`- **turn scope:** ${c.turns}`
+            + (c.sessionTurns ? ` · the conversation is ${c.sessionTurns} turn(s) long` : ''));
+        if (list.length) {
+            L.push(`- **read exactly these turns:** ${list.join(', ')}`);
+        }
+        if (excl.length) {
+            L.push(`- ‼️ **TURN SCOPE: ${c.readTurns} — EXCEPT TURNS ${excl.join(', ')}, WHICH ARE`
+                + ' EXCLUDED. DO NOT INCLUDE ANYTHING FROM THOSE TURNS IN THE ANALYSIS.** They were'
+                + ' left out deliberately by the person who marked this; treat them as if they were'
+                + ' not in the file.');
+        }
+        if (c.note) { L.push(`- **why it was kept:** ${String(c.note)}`); }
+        if (c.label) { L.push(`- **opening line:** ${String(c.label).slice(0, 160)}`); }
+        if (titles.length) {
+            L.push('- **the turns, as the transcript numbers them:**');
+            for (const t of titles.slice(0, 40)) { L.push(`  - ${t.n}. ${t.label}`); }
+            if (titles.length > 40) { L.push(`  - …and ${titles.length - 40} more`); }
+        }
+        L.push('');
     }
-    L.push('');
+    if (brief.skipped?.length) {
+        // ‼️ Told, not hidden. A run that silently compiled eleven of twelve
+        // would leave the twelfth looking waited-for for ever.
+        L.push('## Marks that could NOT be included');
+        L.push('');
+        for (const s of brief.skipped) {
+            L.push(`- **${s.id}** — ${s.why}: \`${s.transcript}\``);
+        }
+        L.push('');
+        L.push('Do not invent anything for these. Say in your report that they were skipped.');
+        L.push('');
+    }
     L.push('## What to do');
     brief.next.forEach((s, i) => L.push(`${i + 1}. ${s}`));
     L.push('');
@@ -654,8 +1049,14 @@ export function candidateView(c: WikiCandidate): Record<string, unknown> {
         id: c.id,
         session: shortOf(c.sessionId),
         sessionId: c.sessionId,
-        turns: c.fromTurn === 0 ? 'whole session'
-            : c.fromTurn === c.toTurn ? String(c.fromTurn) : `${c.fromTurn}-${c.toTurn}`,
+        turns: (c.fromTurn === 0 ? 'whole session'
+            : c.fromTurn === c.toTurn ? String(c.fromTurn) : `${c.fromTurn}-${c.toTurn}`)
+            // X-58 — the exclusions are part of what the mark IS, so they travel
+            // with the one string every surface prints. A row that said "whole
+            // session" while two turns were being left out was a row that lied
+            // about what a compile would read.
+            + ((c.excludeTurns ?? []).length ? ` (except ${c.excludeTurns!.join(', ')})` : ''),
+        excludeTurns: c.excludeTurns ?? null,
         topics: c.topics,
         label: c.label,
         note: c.note || null,
@@ -669,7 +1070,12 @@ export function candidateView(c: WikiCandidate): Record<string, unknown> {
         // M-23 — a run is out for this mark. Still `pending`: nothing is
         // compiled until the run says the pages exist.
         compileTaskId: c.compileTaskId ?? null,
-        compileStartedAt: c.compileStartedAt ?? null
+        compileStartedAt: c.compileStartedAt ?? null,
+        // X-58 — why the last attempt over this mark produced no page. A row
+        // carrying one is still pending work, but it is pending work somebody
+        // has already tried, which reads completely differently.
+        lastError: c.lastError ?? null,
+        lastErrorAt: c.lastErrorAt ?? null
     };
 }
 
@@ -699,6 +1105,12 @@ export function editCandidate(store: WikiStore, args: Record<string, unknown>): 
         }
     }
     if (args.note !== undefined) { c!.note = String(args.note ?? ''); }
+    // X-58 — the turns inside the scope that are not part of it. Passing an
+    // empty list is how you take the exclusions off again.
+    if (args.excludeTurns !== undefined) {
+        const list = normTurnList(args.excludeTurns);
+        c!.excludeTurns = list.length ? list : undefined;
+    }
     if (args.pages !== undefined) {
         c!.pages = (Array.isArray(args.pages) ? args.pages : [args.pages])
             .map(p => String(p ?? '').trim()).filter(Boolean);
@@ -718,6 +1130,20 @@ export function editCandidate(store: WikiStore, args: Record<string, unknown>): 
         // would refuse the next compile of a turn it no longer has anything to
         // do with.
         if (st !== 'pending') { c!.compileTaskId = undefined; c!.compileStartedAt = undefined; }
+        // X-58 — a mark that has just been compiled, or dropped, is not a mark
+        // carrying the reason its last compile failed.
+        if (st !== 'pending') { c!.lastError = undefined; c!.lastErrorAt = undefined; }
+    }
+    // ‼️ X-58 — `retry: true` is the row's [↻ Try again]: it takes the reason
+    // off and hands the mark back to the pool clean, which is the whole gesture
+    // once a quota has refilled or a sign-in has been repaired. It is a separate
+    // argument rather than an implied side effect of any edit, because clearing
+    // the record of a failure is not something to do by accident.
+    if (args.retry === true) {
+        c!.lastError = undefined;
+        c!.lastErrorAt = undefined;
+        c!.compileTaskId = undefined;
+        c!.compileStartedAt = undefined;
     }
     store.save();
     return candidateView(c!);
@@ -748,6 +1174,9 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
     const root = deps.root();
     const rules = path.join(root, WIKI_RULES_REL);
     const { pages, misplaced } = readWikiPages(root);
+    // X-58 — asking what the pool holds is one of the moments a dead claim is
+    // noticed, so it is one of the moments it is released.
+    const freed = releaseStaleClaims(deps);
     const pool = deps.store().candidates;
     const count = (st: WikiCandidateState) => pool.filter(c => c.state === st).length;
     return {
@@ -758,6 +1187,10 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             // pending, and asking for them again is refused.
             compiling: pool.filter(c => c.state === 'pending' && c.compileTaskId
                 && (deps.taskAlive ? deps.taskAlive(c.compileTaskId) : true)).length,
+            // X-58 — pending marks whose last attempt produced no page. Still
+            // waiting, but waiting for a second try rather than a first.
+            failed: pool.filter(c => c.state === 'pending' && c.lastError).length,
+            ...(freed.length ? { justReleased: freed.map(c => c.id) } : {}),
             topics: deps.store().topics()
         },
         wiki: {
@@ -783,6 +1216,9 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
 export function startCompileRun(deps: WikiDeps, args: Record<string, unknown>): Record<string, unknown> {
     need(!!deps.startCompile,
         'This build has no way to start a run — wiki.compile hands back the brief and you do the work.');
+    // ‼️ X-58 — BEFORE ANYTHING ELSE: a claim whose run is over is not a claim.
+    // Without this the refusal below would name a compile that died last week.
+    releaseStaleClaims(deps);
     const chosen = chooseCandidates(deps.store(), args);
     // ‼️ CAN A COMPILE HAPPEN AT ALL, before which marks it is about: a missing
     // root or a wiki with no law of its own stops every run, and answering
@@ -800,23 +1236,53 @@ export function startCompileRun(deps: WikiDeps, args: Record<string, unknown>): 
     const title = `Wiki compile — ${topics.slice(0, 3).join(', ')}`
         + (topics.length > 3 ? ` +${topics.length - 3}` : '')
         + ` (${chosen.length} mark${chosen.length === 1 ? '' : 's'})`;
+    // X-57 — what the call said, else what Settings says, else the engine's own
+    // default. One resolution, so the cockpit's button and the op cannot start
+    // two different runs over the same marks.
+    const engine = optStr(args, 'engine') || (deps.defaultEngine ? deps.defaultEngine() : '');
+    const model = optStr(args, 'model') || (deps.defaultModel ? deps.defaultModel() : '');
+    const effort = optStr(args, 'effort') || (deps.defaultEffort ? deps.defaultEffort() : '');
     const run = deps.startCompile!({
         title,
         prompt: compilePrompt(brief),
         agent: optStr(args, 'agent') || (deps.defaultAgent ? deps.defaultAgent() : ''),
-        engine: optStr(args, 'engine'),
-        model: optStr(args, 'model'),
-        effort: optStr(args, 'effort'),
+        engine, model, effort,
         start: args.start !== false
     });
     const at = Date.now();
-    for (const c of chosen) { c.compileTaskId = run.taskId; c.compileStartedAt = at; }
+    // ‼️ X-58 — ONLY WHAT THE RUN IS ACTUALLY GOING TO READ IS CLAIMED. A mark
+    // whose transcript is gone was never handed to the run, so stamping it
+    // would lock it behind a compile that is not about it — and it keeps its
+    // own reason instead, which is what the row needs to say.
+    const skippedIds = new Set((brief.skipped ?? []).map(s => s.id));
+    for (const c of chosen) {
+        if (skippedIds.has(c.id)) {
+            const why = brief.skipped!.find(s => s.id === c.id)!;
+            c.lastError = `Skipped: ${why.why} (${why.transcript}).`;
+            c.lastErrorAt = at;
+            continue;
+        }
+        c.compileTaskId = run.taskId;
+        c.compileStartedAt = at;
+        // The reason belongs to the LAST attempt; a fresh run replaces it.
+        c.lastError = undefined;
+        c.lastErrorAt = undefined;
+    }
     deps.store().save();
     return {
         taskId: run.taskId, agent: run.agent, started: run.started, title,
-        marks: chosen.length,
+        // What it is actually running with, resolved — the caller passed some
+        // of this and the settings supplied the rest, and "which model wrote
+        // that page" is the first question asked of a compile afterwards.
+        engine: engine || 'claude', model: model || null, effort: effort || null,
+        marks: brief.candidates.length,
         topics,
-        reads: brief.candidates.map(c => ({ id: c.id, transcript: c.transcript, turns: c.readTurns })),
+        reads: brief.candidates.map(c => ({
+            id: c.id, transcript: c.transcript, turns: c.turns,
+            ...(Array.isArray(c.excludeTurns) && (c.excludeTurns as number[]).length
+                ? { excludeTurns: c.excludeTurns } : {})
+        })),
+        ...(brief.skipped?.length ? { skipped: brief.skipped } : {}),
         root: brief.root, rules: brief.rules,
         note: 'Nothing is compiled yet. The run reports back with wiki.candidates.edit '
             + '{state:"compiled", pages:[…]} when the pages exist — that is what closes a mark.'
@@ -829,7 +1295,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
     bridge.register([
         {
             op: 'wiki.candidates.add',
-            describe: 'Mark a turn (or a whole session) as worth compiling into the wiki. Cheap and reversible: it writes to the candidate pool, never to the vault. args: session (session id — a 6+ char prefix is enough), topics (what it is ABOUT — a string, "a, b" or a list; this is the compiler\'s filing key), turn? (4, "3-7", or omit for the whole conversation), note? (why it is worth keeping), by? (who marked it; default "agent"). Marking the same turn again MERGES topics rather than adding a second row.',
+            describe: 'Mark a turn (or a whole session) as worth compiling into the wiki. Cheap and reversible: it writes to the candidate pool, never to the vault. args: session (session id — a 6+ char prefix is enough), topics (what it is ABOUT — a string, "a, b" or a list; this is the compiler\'s filing key), turn? (4, "3-7", or omit for the whole conversation), excludeTurns? (X-58 — turn numbers inside that scope to leave OUT, e.g. [14,15]: the cheap way to say "the whole session except the last two"), note? (why it is worth keeping), by? (who marked it; default "agent"). Marking the SAME RANGE again merges topics into that row rather than adding a second one; a different range is a different mark, so a whole-session mark no longer swallows the single turns marked inside it.',
             handler: (args) => {
                 const sessions = deps.sessions();
                 const s = findSession(sessions, argStr(args, 'session'));
@@ -845,12 +1311,20 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                 const label = range.from > 0
                     ? (turns.find(t => t.n === range.from)?.label ?? '')
                     : (turns[0]?.label ?? '');
+                // X-58 — exclusions are only meaningful inside the scope, so a
+                // number outside it is dropped rather than kept as a puzzle for
+                // whoever reads the row later.
+                const lo = range.from === 0 ? 1 : range.from;
+                const hi = range.from === 0 ? (turns.length || Number.MAX_SAFE_INTEGER) : range.to;
+                const exclude = args.excludeTurns === undefined ? undefined
+                    : normTurnList(args.excludeTurns).filter(n => n >= lo && n <= hi);
                 const { candidate, merged } = S().add({
                     sessionId: s.sessionId,
                     sessionFile: s.file,
                     engine: s.source ?? s.producerEngine ?? 'claude',
                     agentName: s.agentName ?? '',
                     fromTurn: range.from, toTurn: range.to,
+                    ...(exclude && exclude.length ? { excludeTurns: exclude } : {}),
                     topics, label,
                     note: optStr(args, 'note'),
                     addedBy: optStr(args, 'by') || 'agent'
@@ -859,7 +1333,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                     ...candidateView(candidate), merged,
                     pending: S().candidates.filter(c => c.state === 'pending').length,
                     ...(merged ? {
-                        note2: 'An overlapping mark on this conversation was already pending — its topics were merged into that one.'
+                        note2: 'This exact range was already marked on this conversation — the topics were merged into that row rather than adding a second one.'
                     } : {})
                 };
             }
@@ -868,6 +1342,10 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
             op: 'wiki.candidates.list',
             describe: 'The candidate pool. args: state? (pending|compiled|dropped|all — default pending), topic? (only marks carrying it), session? (id prefix), limit? (default 50). Newest first.',
             handler: (args) => {
+                // X-58 — the list is the cockpit's own source, so a claim whose
+                // run died is released here too: a row cannot show [↻ Try again]
+                // for a lock nobody has taken off.
+                releaseStaleClaims(deps);
                 const state = (optStr(args, 'state') || 'pending').toLowerCase();
                 need(state === 'all' || (WIKI_STATES as readonly string[]).includes(state),
                     `Unknown state "${state}" — use ${WIKI_STATES.join(', ')} or all.`);
@@ -887,7 +1365,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         },
         {
             op: 'wiki.candidates.edit',
-            describe: 'Change a candidate. args: id, then any of topics? (replaces the list), addTopics? (adds to it), note?, state? (pending|compiled|dropped), pages? (the wiki files a compile wrote for it — provenance read backwards). Setting state=compiled stamps the time; this is how a compile reports back (_REF/wiki.md §8 step 6).',
+            describe: 'Change a candidate. args: id, then any of topics? (replaces the list), addTopics? (adds to it), note?, excludeTurns? (X-58 — turn numbers inside the scope to leave out; pass [] to take the exclusions off), state? (pending|compiled|dropped), pages? (the wiki files a compile wrote for it — provenance read backwards), retry? (true = clear the reason the last compile failed and release any claim, so the mark is a clean pending row again). Setting state=compiled stamps the time; this is how a compile reports back (_REF/wiki.md §8 step 6).',
             handler: (args) => editCandidate(S(), args)
         },
         {
@@ -928,6 +1406,20 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
             op: 'wiki.status',
             describe: 'What the pool holds and what the wiki holds. No arguments. Reports both sides: pending/compiled marks and their topics, and the vault\'s own state (root, rules, index, log, page count).',
             handler: () => wikiStatus(deps)
+        },
+        {
+            op: 'wiki.health',
+            describe: 'X-57 — is the folder chosen as the wiki root actually a wiki? No arguments. Reports the resolved root (portable variables in agentFarm.wikiRoot are expanded), whether it exists, which of the three files a compile needs are there (_KURALLAR_/-WIKI-ANAYASA-.md, index.md, log.md), the categories and page count, folders nested deeper than one level, and `compilable` — false when the law is missing, which is the one absence that stops every compile.',
+            handler: () => wikiHealth(deps.root(), deps.rootSetting ? deps.rootSetting() : '')
+        },
+        {
+            op: 'wiki.init',
+            describe: 'X-57 — make the chosen root a wiki: create the folder and whatever of _KURALLAR_/-WIKI-ANAYASA-.md, index.md and log.md is missing, from starters. ‼️ It only CREATES: a file already on disk is reported as existing and is never rewritten, because the law is the user\'s own. No arguments.',
+            handler: () => {
+                const r = scaffoldWiki(deps.root());
+                need(r.ok, r.ok ? '' : r.error);
+                return { ...r, health: wikiHealth(deps.root(), deps.rootSetting ? deps.rootSetting() : '') };
+            }
         },
         {
             op: 'wiki.compile',

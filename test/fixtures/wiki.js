@@ -59,6 +59,23 @@ const candidates = [
         compiledAt: null, pages: null, compileTaskId: null, compileStartedAt: null,
         compiling: false
     },
+    // ‼️ X-58 — STILL WAITING, AND SOMEBODY ALREADY TRIED IT. The claim was
+    // released when the run died, so the row is compilable again; what it must
+    // NOT look like is a mark nobody has reached. Also the excluded-turns case:
+    // the whole session minus the two that were about something else.
+    {
+        id: 'wc-6', session: '4c81aa02', sessionId: '4c81aa02-9e77-41d3-8b52-6f0aa1d3e991',
+        turns: 'whole session (except 13, 14)', fromTurn: 0, toTurn: 0,
+        excludeTurns: [13, 14],
+        topics: ['Kota', 'Oturum Ekonomisi'],
+        label: '5 saatlik pencerede ne kadar iş sığdırılabilir',
+        note: 'son iki tur commit ve iyi geceler', agent: 'developer', engine: 'claude',
+        state: 'pending', addedAt: T - 3 * 60 * M, addedBy: 'you',
+        compiledAt: null, pages: null, compileTaskId: null, compileStartedAt: null,
+        lastError: 'The run ended as "failed" — the model ran out of quota before the first page. Nothing was compiled for this mark.',
+        lastErrorAt: T - 41 * M,
+        compiling: false
+    },
     {
         id: 'wc-5', session: '7d10ba55', sessionId: '7d10ba55-3e64-42aa-9b18-11c0f7de2380',
         turns: '2', fromTurn: 2, toTurn: 2,
@@ -73,7 +90,9 @@ const candidates = [
 
 const status = (over) => Object.assign({
     pool: {
-        pending: 3, compiled: 1, dropped: 1, total: 5, compiling: 1,
+        // X-58 — `failed` is a slice OF pending, not a sixth state: the mark is
+        // still waiting, and somebody has already tried it once.
+        pending: 4, compiled: 1, dropped: 1, total: 6, compiling: 1, failed: 1,
         topics: [
             { topic: 'Wiki Derleme', pending: 2, total: 2, lastAt: T - 8 * M },
             { topic: 'Agent Farm', pending: 1, total: 1, lastAt: T - 8 * M },

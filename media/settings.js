@@ -28,7 +28,8 @@
         // The saved-prompts row answers to the words a person would actually
         // type looking for it — its own key and description say "snippets file"
         // and nothing about right-clicking Send (see PROMPT_TERMS).
-        const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS : '';
+        const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS
+            : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS : '';
         return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
@@ -592,6 +593,97 @@
             </div>`;
     }
 
+    /**
+     * ‼️ X-57 — THE WIKI SECTION ANSWERS "IS THIS FOLDER A WIKI?", NOT "WHAT DID
+     * YOU TYPE?".
+     *
+     * `agentFarm.wikiRoot` was one text box under Reports & Digest, and a text
+     * box cannot tell you the one thing that matters: `wiki.compile` REFUSES
+     * without `_KURALLAR_/-WIKI-ANAYASA-.md`, so a perfectly spelled path to a
+     * folder that has never held that file is a wiki that silently never
+     * compiles. The section reads the resolved folder and says which of the
+     * three files are there, with the button that writes the missing ones next
+     * to the sentence explaining what they are.
+     *
+     * ‼️ AND IT SHOWS THE PATH TWICE ON PURPOSE when they differ — what was
+     * typed (`%USERPROFILE%\…`) above what it opened. That is the whole point
+     * of portable variables, and it is also how a variable that did not resolve
+     * is seen to be a typo rather than a missing folder.
+     */
+    const WIKI_TERMS = 'wiki knowledge base kb 00_WIKI vault obsidian anayasa constitution rules '
+        + 'index log compile candidate category categories portable path root';
+
+    function wikiSection(cat) {
+        const w = DATA.wiki;
+        const items = (cat && cat.items) || [];
+        const boxes = items.map(itemHtml).join('');
+        if (!w) { return boxes; }
+
+        const ready = w.exists && !(w.missing || []).length;
+        const badge = !w.exists
+            ? '<span class="rootbadge warn">folder does not exist</span>'
+            : ready
+                ? `<span class="rootbadge">${w.pages} page(s) · ${(w.categories || []).length} categor${(w.categories || []).length === 1 ? 'y' : 'ies'}</span>`
+                : `<span class="rootbadge warn">${w.missing.length} file(s) missing</span>`;
+
+        // The rule on the left is the state (the engines rows do the same):
+        // green is compilable, yellow is a wiki with gaps, grey is not one yet.
+        const cls = !w.exists ? 'eng-off' : w.compilable ? 'eng-ok' : 'eng-warn';
+
+        const fileRow = f => `<div class="wikifile">
+            <span class="wikimark ${f.found ? 'ok' : 'no'}">${f.found ? '✓' : '✗'}</span>
+            <span class="wikirel">${C.esc(f.rel)}</span>
+            <span class="wikipath">${C.esc(f.file)}</span>
+        </div>`;
+
+        const catList = (w.categories || []).length
+            ? window.AFTip.wrap(
+                `<div class="setdesc">Categories: <b>${(w.categories || []).length}</b> · ${C.esc((w.categories || []).slice(0, 8).map(c => c.name).join(' · '))}${(w.categories || []).length > 8 ? ` +${(w.categories || []).length - 8}` : ''}</div>`,
+                `${(w.categories || []).length} categor${(w.categories || []).length === 1 ? 'y' : 'ies'} · ${w.pages} page(s)`,
+                (w.categories || []).map(c => `${c.name} — ${c.pages} page${c.pages === 1 ? '' : 's'}`).join('\n')
+                + '\n\nA folder here is a category the moment it exists, whether or not a page has been\nwritten into it (U-91). The picker offers every one of these.')
+            : `<div class="setdesc">No categories yet — a folder under the root becomes one the moment you make it, in Obsidian or from the tagger's picker.</div>`;
+
+        const why = !w.exists
+            ? `<div class="seterr">⚠ Nothing is at this path. Choose the folder below, or press <b>🛠 Start the wiki here</b> to create it with the three files a compile needs.</div>`
+            : !w.compilable
+                ? `<div class="seterr">⚠ The vault's own law (<code>_KURALLAR_/-WIKI-ANAYASA-.md</code>) is not here, and <b>every compile refuses without it</b> — it outranks the agent procedure, so a compile that could not find it would be working from memory. <b>🛠 Start the wiki here</b> writes a starter you then rewrite.</div>`
+                : w.missing.length
+                    ? `<div class="setdesc">Missing: <code>${C.esc(w.missing.join('</code>, <code>'))}</code> — a compile can run, but it is told to keep these true and will have to create them itself.</div>`
+                    : '';
+
+        const typed = String(w.setting || '');
+        const differs = typed && typed.replace(/[\\/]+$/, '').toLowerCase() !== String(w.root || '').replace(/[\\/]+$/, '').toLowerCase();
+
+        const misplaced = (w.misplaced || []).length
+            ? `<div class="setdesc">⚠ ${w.misplaced.length} folder(s) nested deeper than one category (<code>${C.esc(w.misplaced.slice(0, 4).join('</code>, <code>'))}</code>) — pages in them are not indexed. Categories are a single level: a family is spelled <code>Teknoloji - Tarım</code>.</div>`
+            : '';
+
+        return `
+            <p class="muted small" style="max-width:760px">Marking a turn is free and writes nothing to the
+            vault; <b>compiling</b> is the expensive half — an agent reads the transcripts and writes pages
+            under the vault's own law. This is where that half is configured: <b>which folder</b> the wiki
+            lives in, and <b>whose hand and which model</b> write it.</p>
+            <div class="setitem eng ${cls}" data-item="agentFarm.wikiRoot">
+                <div class="sethead"><span class="setname">Wiki root</span> ${badge}</div>
+                ${differs ? `<div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(typed)}</div>` : ''}
+                <div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(w.root || '—')}${differs ? ' <span class="muted">← what it opens</span>' : ''}</div>
+                ${why}
+                <div class="wikifiles">${(w.files || []).map(fileRow).join('')}</div>
+                ${catList}
+                ${misplaced}
+                <div class="btnrow">
+                    <button class="secondary" data-browse="agentFarm.wikiRoot" data-browsekind="folder"
+                        title="Pick the folder — the path is written into the box below and saved">📁 Choose the folder…</button>
+                    ${ready ? '' : `<button id="wikiinit" title="Create the folder and whatever of the three files is missing. It only CREATES: a file already on disk is left exactly as it is, because the law is yours.">🛠 Start the wiki here</button>`}
+                    <button class="secondary" id="wikirescan" title="Read the folder again. It is a folder you edit in Obsidian while this page is open, so a category you just made shows up here without a reload.">↻ Re-scan</button>
+                    <button class="secondary" id="wikireveal" ${w.exists ? '' : 'disabled'} title="Open the folder in the file manager">📂 Reveal</button>
+                    <button class="secondary" id="wikiopen" title="Open the Wiki cockpit — the pool of marked turns waiting to be compiled">📚 Open the cockpit</button>
+                </div>
+            </div>
+            ${boxes}`;
+    }
+
     function render() {
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
@@ -677,6 +769,17 @@
                 .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:#000; border-color:transparent; }
                 .engnext { font-size:12px; margin-top:4px; max-width:760px; }
                 .engdetail { margin-top:2px; }
+                /* wiki — the three files a compile needs, read as a checklist:
+                   the mark says whether it is there, the rel path says what it
+                   is, and the full path is what you would go and look at. */
+                .wikifiles { margin:6px 0 4px; }
+                .wikifile { display:flex; gap:8px; align-items:baseline; font-size:11px; padding:1px 0; }
+                .wikimark { flex:none; width:12px; text-align:center; font-weight:600; }
+                .wikimark.ok { color:var(--vscode-charts-green, #3fb950); }
+                .wikimark.no { color:var(--vscode-charts-red, #f85149); }
+                .wikirel { flex:0 0 210px; font-family:var(--vscode-editor-font-family); }
+                .wikipath { flex:1 1 auto; opacity:.5; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; font-family:var(--vscode-editor-font-family); }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -695,7 +798,9 @@
             ${docOpenHtml}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
-                ${c.id === 'prompts' ? promptsSection(c) : c.items.map(itemHtml).join('')}`).join('')
+                ${c.id === 'prompts' ? promptsSection(c)
+                    : c.id === 'wiki' ? wikiSection(c)
+                        : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
@@ -737,6 +842,13 @@
         onClick('promptsopen', 'promptsOpen');
         onClick('promptsreload', 'promptsReload');
         onClick('promptsdefault', 'promptsUseDefault');
+        // X-57 — the wiki root. Choosing the folder is the ordinary Browse…
+        // binding below (the setting declares itself a folder in the schema);
+        // these four are the acts a text box cannot do.
+        onClick('wikiinit', 'wikiInit');
+        onClick('wikirescan', 'wikiRescan');
+        onClick('wikireveal', 'wikiReveal');
+        onClick('wikiopen', 'wikiOpen');
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             // the box is a QUERY, not a substring — media/afQuery.js. Kept as

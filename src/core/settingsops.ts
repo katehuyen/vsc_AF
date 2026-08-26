@@ -195,14 +195,19 @@ const CATEGORY_OF: Record<string, string> = {
     // work queue (user→agent async channel) + its answer folder
     answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',
     'queue.targets': 'queue',
-    // ‼️ B-14 (X-50) — the LLM wiki's root. It sits beside the other two folders
-    // agents WRITE into (the report folder and the answer folder), because that
-    // is the question a reader has about it: where does what the agents produce
-    // end up.
-    wikiRoot: 'reports',
-    // M-23 — and who writes it. Same category as the root for the same reason:
-    // both answer "where does what the agents produce end up, and by whose hand".
-    wikiAgent: 'reports'
+    /**
+     * ‼️ X-57 — THE WIKI GETS ITS OWN SECTION, AND THE REASON IS THE SAME ONE
+     * "Saved prompts" got one for.
+     *
+     * The root and the compiling agent used to sit under Reports & Digest, on
+     * the argument that both answer "where does what the agents produce end
+     * up". True, and useless: a path in a box cannot tell you whether the
+     * folder is a wiki at all, and the one file whose absence stops every
+     * compile (`-WIKI-ANAYASA-.md`) was invisible from this page. A section can
+     * read the folder and say so — see `wikiSection` in `media/settings.js`.
+     */
+    wikiRoot: 'wiki', wikiAgent: 'wiki',
+    wikiEngine: 'wiki', wikiModel: 'wiki', wikiEffort: 'wiki'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [
@@ -217,6 +222,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['cli', 'Multi-CLI'],
     ['health', 'Health & Insights'],
     ['reports', 'Reports & Digest'],
+    ['wiki', 'Wiki & Knowledge Base'],
     ['queue', 'Work Queue'],
     ['access', 'Access (web view · messaging)'],
     ['other', 'Other']

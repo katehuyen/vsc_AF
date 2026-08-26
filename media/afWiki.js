@@ -192,6 +192,9 @@
             whole,
             range: '', label: '', exact: true,
             scope: 'turn', anchor: 0,
+            // X-58 — turns taken OUT of a whole-session mark. Empty is the
+            // ordinary case and the one nobody has to think about.
+            exclude: [],
             topics: [], categories: [], picked: [], note: '',
             // The picker's own three (U-90): what is typed, whether its list is
             // down, and which row the keyboard is on.
@@ -348,7 +351,10 @@
         if (post) {
             post({
                 type: 'wikiMark', session: state.session,
-                from: r.from, to: r.to, topics, note: state.note
+                from: r.from, to: r.to, topics, note: state.note,
+                // X-58 — only a whole-session mark carries exclusions; a span
+                // that leaves turns out is simply a different span.
+                excludeTurns: state.scope === 'all' ? (state.exclude || []) : []
             });
         }
     }
@@ -378,8 +384,37 @@
             ${seg('range', 'Range', 'Pick a span: press the first turn, then the last.', state.scope === 'range')}
             <span class="afw-grow"></span>${guess}
         </div>`;
+        /**
+         * ‼️ X-58 — "THE WHOLE SESSION" USUALLY MEANS "THE WHOLE SESSION EXCEPT
+         * THE LAST TWO", AND SAYING SO USED TO COST TWELVE CLICKS.
+         *
+         * Fourteen turns are the work and the last two are "commit this" and
+         * "good night". Marking the session is one press; picking 1–12 out of
+         * the chips to leave those two out is a span you have to get right, so
+         * nobody does it and the compile reads the noise. Subtraction is the
+         * cheap gesture: everything is taken, and a press REMOVES a turn.
+         *
+         * Same chips as Range, inverted — an excluded turn is struck through
+         * rather than merely unlit, because "not chosen yet" and "deliberately
+         * left out" must not look alike on a strip where everything else is on.
+         */
+        if (state.scope === 'all') {
+            const ex = (state.exclude || []).slice().sort((a, b) => a - b);
+            const kept = n ? n - ex.length : 0;
+            const words = !n ? allWords
+                : ex.length
+                    ? `Turns 1–${n} except ${ex.join(', ')} — ${kept} turn${kept === 1 ? '' : 's'}`
+                    : allWords;
+            const strip = n ? `<div class="afw-tns">${excludeChips()}</div>` : '';
+            const clear = ex.length
+                ? ` <button class="afw-clear" id="afw-exclear" title="Put every turn back — the whole conversation, nothing left out">↺ take all ${n}</button>`
+                : '';
+            return row + strip
+                + `<div class="afw-of${ex.length ? ' afw-of-cut' : ''}">${esc(words)}${clear}</div>`
+                + (n ? '<div class="afw-hint">Press a turn to leave it OUT of the compile.</div>' : '');
+        }
         if (state.scope !== 'range') {
-            return row + `<div class="afw-of">${esc(state.scope === 'all' ? allWords : turnLine)}</div>`;
+            return row + `<div class="afw-of">${esc(turnLine)}</div>`;
         }
         return row + `<div class="afw-tns">${turnChips(r)}</div>
             <div class="afw-turn">
@@ -387,6 +422,21 @@
                     <input id="afw-range" type="text" value="${esc(state.range)}" placeholder="all"></label>
                 <span class="afw-of">${esc(turnLine)}</span>
             </div>`;
+    }
+
+    /** X-58 — the same strip, read the other way round: every turn is IN and a
+     *  press takes one out. Struck through, so a turn deliberately left out
+     *  never reads as one merely not reached yet. */
+    function excludeChips() {
+        const n = state.turnCount || 0;
+        const ex = state.exclude || [];
+        let out = '';
+        for (let i = 1; i <= n; i++) {
+            const off = ex.indexOf(i) >= 0;
+            out += `<button class="afw-tn${off ? ' cut' : ' on'}" data-afw-ex="${i}"
+                title="Turn ${i} of ${n} — ${off ? 'left OUT of the compile; press to put it back' : 'press to leave it out'}">${i}</button>`;
+        }
+        return out;
     }
 
     /** One chip per turn of the conversation, the span highlighted across them.
@@ -531,6 +581,24 @@
                 }
                 render();
             }));
+        // X-58 — the exclusion strip. A press toggles one turn OUT of a whole-
+        // session mark; every turn is in until it is taken out.
+        root.querySelectorAll('[data-afw-ex]').forEach(node =>
+            node.addEventListener('click', () => {
+                const n = Number(node.dataset.afwEx) || 0;
+                if (!n) { return; }
+                carry();
+                const list = state.exclude || (state.exclude = []);
+                const at = list.indexOf(n);
+                if (at >= 0) { list.splice(at, 1); } else { list.push(n); }
+                list.sort((a, b) => a - b);
+                state.error = '';
+                render();
+            }));
+        const exclear = document.getElementById('afw-exclear');
+        if (exclear) {
+            exclear.addEventListener('click', () => { carry(); state.exclude = []; render(); });
+        }
         root.querySelectorAll('[data-afw-tn]').forEach(node =>
             node.addEventListener('click', () => {
                 const n = Number(node.dataset.afwTn) || 0;

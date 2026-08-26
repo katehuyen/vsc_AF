@@ -17,6 +17,7 @@ import {
 import { EngineModels } from '../core/models';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
+import { WikiHealth } from '../core/wiki';
 import { handleAfNav, htmlShell } from './base';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
@@ -81,6 +82,23 @@ export interface FarmSettingsDeps {
     /** U-29 — what each engine currently offers, so the per-agent model box
      *  is drawn from the engine's own catalog rather than a typed list. */
     engineModels?(): Record<string, EngineModels>;
+    /**
+     * ‼️ X-57 — THE WIKI ROOT, READ RATHER THAN MERELY PRINTED.
+     *
+     * Same lesson as `promptSnippets` above, and it cost the same week: a path
+     * in a box is a string, and the question a person has is "does a compile
+     * work from here?". So the section is handed what is actually ON DISK at
+     * the resolved path — which of the three files a compile needs are there,
+     * how many categories, and whether the folder is compilable at all — and
+     * the button that fixes it stands next to the answer.
+     */
+    wikiHealth?(): WikiHealth;
+    /** Create the root and whatever starter file is missing. Creates only:
+     *  an existing law is the user's own and is never rewritten. */
+    wikiInit?(): { ok: boolean; created?: string[]; existed?: string[]; error?: string };
+    /** Open the cockpit over the candidate pool — the page this section
+     *  configures, so the reader can go and use what they just set up. */
+    openWiki?(): void;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -278,6 +296,10 @@ export class FarmSettingsPanel {
             },
             docOpen: this.deps.docOpen?.() ?? null,
             prompts: this.deps.promptSnippets?.() ?? null,
+            // X-57 — read on every draw, like the engines below: the folder is
+            // one somebody edits in Obsidian while this page is open, and a
+            // cached "index.md is missing" would be a lie thirty seconds later.
+            wiki: this.deps.wikiHealth?.() ?? null,
             // X-3 — which agent CLIs this machine can run and how each is paid
             // for. Read on every build rather than cached: a sign-in that
             // happened in the terminal thirty seconds ago is exactly the change
@@ -556,6 +578,42 @@ export class FarmSettingsPanel {
                 if (typeof msg.root === 'string' && msg.root) {
                     void revealPath(msg.root);
                 }
+                break;
+            /**
+             * X-57 — the four gestures of the Wiki section. Three of them do
+             * nothing this page decides: the scaffold, the reveal and the
+             * cockpit all belong to code that already exists, and the page's
+             * job is to put them next to the sentence that says why you would
+             * press them.
+             */
+            case 'wikiInit': {
+                const r = this.deps.wikiInit?.();
+                if (r && !r.ok) {
+                    void this.panel.webview.postMessage({
+                        type: 'error', key: 'agentFarm.wikiRoot', error: r.error ?? 'could not create it'
+                    });
+                } else if (r) {
+                    void vscode.window.showInformationMessage(
+                        r.created?.length
+                            ? `Agent Farm: wiki started — ${r.created.join(', ')} created.`
+                            : 'Agent Farm: the wiki already holds all three files; nothing was written.');
+                }
+                this.refresh();
+                break;
+            }
+            // Read the folder again without changing anything. It is a folder
+            // somebody edits in Obsidian while this page is open, so "nothing
+            // changed" is a real and useful answer.
+            case 'wikiRescan':
+                this.refresh();
+                break;
+            case 'wikiReveal': {
+                const root = this.deps.wikiHealth?.().root ?? '';
+                if (root) { void revealPath(root); }
+                break;
+            }
+            case 'wikiOpen':
+                this.deps.openWiki?.();
                 break;
             case 'rootCleanDupes': {
                 const cfg = vscode.workspace.getConfiguration();

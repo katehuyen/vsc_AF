@@ -308,7 +308,7 @@ import {
     resolvePlannerLaunch
 } from './core/plannerLaunch';
 import { permissionLayerPaths } from './core/permissionmode';
-import { standardRoots } from './core/portablePaths';
+import { expandUserPath, standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
@@ -342,7 +342,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
-import { normTopics, registerWikiOps, WikiDeps, WikiStore } from './core/wiki';
+import { normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
@@ -11951,10 +11951,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // to an agent under the vault's own law. See `src/core/wiki.ts` for why
     // `wiki.compile` hands back a brief instead of writing a page.
     const wikiStore = new WikiStore(path.join(context.globalStorageUri.fsPath, 'wiki_candidates.json'));
+    /**
+     * ‼️ X-57 — WHAT WAS TYPED IS KEPT; WHAT IS OPENED IS EXPANDED.
+     *
+     * The setting travels with `settings.json` between machines, so a literal
+     * `C:\Users\murat\…` is a wiki that exists on exactly one computer. The
+     * portable spellings (`%USERPROFILE%`, `~`, `${env:VAR}`, `${workspaceRoot}`)
+     * are resolved HERE, at the moment a folder is opened — never written back
+     * into the setting, because a setting the extension rewrites is a setting
+     * the user can no longer read.
+     */
     const wikiRoot = (): string => {
-        const set = cfg().get<string>('wikiRoot');
-        return (set && set.trim())
-            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI');
+        const set = (cfg().get<string>('wikiRoot') ?? '').trim();
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        return set
+            ? expandUserPath(set, { workspaceRoot: ws })
+            : path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI');
     };
     // ‼️ U-70 — ONE `WikiDeps`, TWO DOORS. The bridge ops and the Wiki page are
     // the same acts (`core/wiki.ts` holds the bodies), so they are handed the
@@ -11964,6 +11976,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const wikiDeps: WikiDeps = {
         store: () => wikiStore,
         root: wikiRoot,
+        rootSetting: () => (cfg().get<string>('wikiRoot') ?? '').trim(),
         sessions: () => index.allWithExternal(),
         procedure: '_REF/wiki.md',
         /**
@@ -11977,9 +11990,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * projects and engines.
          */
         defaultAgent: () => cfg().get<string>('wikiAgent')?.trim() || '',
+        // X-57 — and with what intelligence, from the same place.
+        defaultEngine: () => cfg().get<string>('wikiEngine')?.trim() || '',
+        defaultModel: () => cfg().get<string>('wikiModel')?.trim() || '',
+        defaultEffort: () => cfg().get<string>('wikiEffort')?.trim() || '',
         taskAlive: (taskId) => {
             const t = taskManager.tasks.find(x => x.id === taskId);
             return !!t && (t.status === 'queued' || t.status === 'running');
+        },
+        /**
+         * ‼️ X-58 — AND IF IT IS NOT ALIVE, HOW IT ENDED. The mark needs a
+         * sentence a person can act on ("the model ran out of quota") rather
+         * than the absence of one, and the failure phase the task manager
+         * already classifies is exactly that sentence. A task that is not in
+         * the list at all answers `undefined`, which is a real and different
+         * state: the row was cleared, or VS Code restarted past it.
+         */
+        taskOutcome: (taskId) => {
+            const t = taskManager.tasks.find(x => x.id === taskId);
+            if (!t) { return undefined; }
+            return {
+                status: t.status,
+                ...(t.status === 'failed' ? { reason: describeFailurePhase(t) } : {})
+            };
         },
         startCompile: (a) => {
             // Named, configured, or the farm's first agent — and if there is no
@@ -24738,6 +24771,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // catalog, not a list typed into a setting.
                     engineModels: () => engineModelMatrix(),
                     engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
+                    // X-57 — the wiki root, READ. `wiki.compile` refuses without
+                    // the vault's own law, so a well-spelled path to a folder
+                    // that never held it is a wiki that silently never compiles;
+                    // the section says which of the three files are there and
+                    // offers to write the missing ones. Same functions the
+                    // `wiki.health` / `wiki.init` ops call — one implementation
+                    // of "is this a wiki", two doors.
+                    wikiHealth: () => wikiHealth(wikiRoot(), cfg().get<string>('wikiRoot')?.trim() || ''),
+                    wikiInit: () => {
+                        const r = scaffoldWiki(wikiRoot());
+                        return r.ok
+                            ? { ok: true, created: r.created, existed: r.existed }
+                            : { ok: false, error: r.error };
+                    },
+                    openWiki: () => showWikiPanel(),
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),

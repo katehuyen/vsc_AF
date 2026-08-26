@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.282.0",
+  "version": "3.283.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9136,12 +9136,44 @@
         "agentFarm.wikiRoot": {
           "type": "string",
           "default": "",
-          "description": "Folder that holds the LLM wiki — one folder per category, a page per concept, plus index.md, log.md and _KURALLAR_/-WIKI-ANAYASA-.md. wiki.compile and wiki.lint read it. Empty = D:\\zone\\know\\note\\obsidian\\00_WIKI."
+          "x-af-browse": "folder",
+          "description": "Folder that holds the LLM wiki — one folder per category, a page per concept, plus index.md, log.md and _KURALLAR_/-WIKI-ANAYASA-.md. wiki.compile and wiki.lint read it. Portable: %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} are expanded when the folder is opened, so the same settings.json works on another machine — what you type is kept exactly as typed. Empty = D:\\zone\\know\\note\\obsidian\\00_WIKI."
         },
         "agentFarm.wikiAgent": {
           "type": "string",
           "default": "",
           "description": "Which agent writes the wiki. wiki.compile.run starts a headless run under this agent unless one is named in the call \u2014 the synthesis belongs to an agent, so a compile needs somebody to be one. Empty = the first agent the farm knows."
+        },
+        "agentFarm.wikiEngine": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "claude",
+            "codex",
+            "gemini",
+            "agy",
+            "opencode"
+          ],
+          "description": "Which engine a wiki compile runs on when the call does not name one. Empty = Claude Code. A compile reads whole transcripts and writes pages under the vault's own law, so it is worth choosing deliberately rather than inheriting whatever the last session used."
+        },
+        "agentFarm.wikiModel": {
+          "type": "string",
+          "default": "",
+          "description": "--model for a wiki compile (alias or full id) when the call does not name one. Empty = the agent's own default. Synthesis is the expensive half of the wiki: this is where you decide it is worth a capable model."
+        },
+        "agentFarm.wikiEffort": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "description": "--effort for a wiki compile when the call does not name one. Empty = no flag."
         },
         "agentFarm.projectsRoot": {
           "type": "string",

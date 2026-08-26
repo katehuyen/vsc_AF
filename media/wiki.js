@@ -45,10 +45,18 @@
     const STATE = {
         pending: { icon: '⏳', label: 'waiting', cls: 'wk-pending' },
         compiling: { icon: '⚙', label: 'compiling', cls: 'wk-compiling' },
+        // ‼️ X-58 — STILL WAITING, BUT WAITING FOR A SECOND TRY. A mark whose
+        // last run died of a rate limit or a cancel is `pending` like any other
+        // and reads completely differently: somebody already tried this one and
+        // it produced nothing. Drawn as its own state so the row is scannable,
+        // never as a fifth value of `state` — the store has three and this is a
+        // fact ABOUT a pending mark.
+        failed: { icon: '⚠', label: 'failed', cls: 'wk-failed' },
         compiled: { icon: '✅', label: 'compiled', cls: 'wk-compiled' },
         dropped: { icon: '🚫', label: 'dropped', cls: 'wk-dropped' }
     };
-    const stateOf = c => (c.compiling ? 'compiling' : c.state);
+    const stateOf = c => (c.compiling ? 'compiling'
+        : c.state === 'pending' && c.lastError ? 'failed' : c.state);
 
     function pool() { return (DATA.status && DATA.status.pool) || {}; }
     function vault() { return (DATA.status && DATA.status.wiki) || {}; }
@@ -222,9 +230,15 @@
             T.lines([
                 st.label === 'waiting' ? 'Marked, and nothing has been compiled from it yet.'
                     : st.label === 'compiling' ? 'Still waiting — but a run is out for it, so it is not offered again.'
-                        : st.label === 'compiled' ? 'A run reported the pages it wrote for this mark.'
-                            : 'Taken out of the queue without being compiled.',
-                '', 'Only a run reporting back closes a mark.'
+                        : st.label === 'failed' ? 'Still waiting, and the last run over it produced no page:'
+                            : st.label === 'compiled' ? 'A run reported the pages it wrote for this mark.'
+                                : 'Taken out of the queue without being compiled.',
+                // X-58 — the reason, in the panel, in the words the host wrote.
+                // A ⚠ with no sentence behind it is a badge, not an answer.
+                ...(st.label === 'failed'
+                    ? ['', c.lastError || '', c.lastErrorAt ? '(' + window.AFTime.ago(c.lastErrorAt) + ')' : '',
+                        '', 'Press ↻ to clear it and put the mark back in the queue, or simply compile it again.']
+                    : ['', 'Only a run reporting back closes a mark.'])
             ]))}
             ${T.cell('wk-sess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
             `<code>${esc(c.session)}</code> <span class="wk-turns">${esc(c.turns)}</span>`,
@@ -239,6 +253,10 @@
             ${pagesCell(c)}
             <td class="wk-act">
                 <button class="mini" data-act="topics" data-id="${esc(c.id)}" title="Edit this mark's topics">✎</button>
+                ${c.state === 'pending' && c.lastError
+                ? `<button class="mini wk-retry" data-act="retry" data-id="${esc(c.id)}"
+                        title="Clear what the last run said and put this mark back in the queue as a clean waiting row. It writes nothing — the mark was never compiled.">↻</button>`
+                : ''}
                 ${c.state === 'pending'
                 ? `<button class="mini" data-act="drop" data-id="${esc(c.id)}" title="Take it out of the queue without compiling — reversible, and it writes nothing to the vault">🚫</button>`
                 : `<button class="mini" data-act="reopen" data-id="${esc(c.id)}" title="Put it back in the queue as waiting${c.state === 'compiled' ? ' — the pages it already wrote stay written' : ''}">↺</button>`}
@@ -350,6 +368,12 @@
                 .wk-st { opacity:.9; }
                 tr.wk-compiled .wk-st { color:var(--vscode-charts-green,#4caf50); }
                 tr.wk-compiling .wk-st { color:var(--vscode-charts-blue,#3794ff); }
+                /* X-58: waiting, and the last run over it produced nothing.
+                   Red on the state cell only — the row is still ordinary work,
+                   and tinting the whole line would read as an error to fix
+                   rather than a mark to compile again. */
+                tr.wk-failed .wk-st { color:var(--vscode-charts-red,#f14c4c); }
+                .wk-retry { color:var(--vscode-charts-red,#f14c4c); }
                 tr.wk-dropped { opacity:.55; }
                 .wk-sess { white-space:nowrap; width:1%; cursor:pointer; }
                 .wk-sess code { font-size:11px; }
@@ -483,6 +507,10 @@
             const id = e.currentTarget.dataset.id;
             switch (e.currentTarget.dataset.act) {
                 case 'topics': editing = id; refocus = 'topics'; render(); break;
+                // X-58 — the mark was never compiled, so this clears a record
+                // rather than undoing work: the reason goes, the claim goes,
+                // and the row is a clean waiting row again.
+                case 'retry': post({ type: 'edit', id, retry: true }); break;
                 case 'drop': post({ type: 'edit', id, state: 'dropped' }); break;
                 case 'reopen': post({ type: 'edit', id, state: 'pending' }); break;
                 case 'remove': post({ type: 'remove', ids: [id] }); break;

@@ -66,6 +66,13 @@ body{margin:0;padding:0;background:var(--vscode-editor-background);
   ${process.argv.indexOf('--range') >= 0 ? `
   var seg = document.querySelector('[data-afw-scope="range"]');
   if (seg) { seg.click(); }` : ''}
+  ${process.argv.indexOf('--exclude') >= 0 ? `
+  var segAll = document.querySelector('[data-afw-scope="all"]');
+  if (segAll) { segAll.click(); }
+  [13, 14].forEach(function (n) {
+    var c = document.querySelector('[data-afw-ex="' + n + '"]');
+    if (c) { c.click(); }
+  });` : ''}
   ${process.argv.indexOf('--pick') >= 0 ? `
   document.querySelectorAll('[data-afc-pick]').forEach(function (b) {
     if (b.dataset.afcPick === 'Kota') { b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); }

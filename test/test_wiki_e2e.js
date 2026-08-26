@@ -137,11 +137,14 @@ let brief;
 {
     const p = W.compilePrompt(brief);
     ok('3 · the law comes first, and by path', p.indexOf(brief.rules) < p.indexOf(transcript));
-    // ‼️ The prompt prints the turn the way a person names it (`turns 2`), while
-    // the brief carries the machine form (`2-2`). Both are right; asserting the
-    // brief's form here would be asserting the wrong document.
+    // ‼️ The prompt prints the turn the way a person names it (`turn scope: 2`),
+    // while the brief carries the machine form (`2-2`). Both are right;
+    // asserting the brief's form here would be asserting the wrong document.
+    // X-58 turned the one-line entry into a block per mark, so the file and the
+    // scope are two labelled lines and the turns are also listed as numbers.
     ok('3 · the run is pointed at the file and the turns',
-        p.includes(transcript) && /turns 2 of/.test(p));
+        p.includes(transcript) && /\*\*turn scope:\*\* 2\b/.test(p)
+        && /\*\*read exactly these turns:\*\* 2\b/.test(p));
     ok('3 · …and at the wiki, told it holds nothing yet',
         p.includes(wikiRoot) && /holds no pages yet/.test(p));
     ok('3 · ‼️ the three lines it may not cross are in the words it works from',
