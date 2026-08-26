@@ -48,12 +48,35 @@ module.exports = function createAfmsDom(getHtml) {
             // ‼️ The row is a checkbox AND a name, and they do different things
             // (toggle vs "only this"), so the stub carries both elements.
             const names = [];
+            // ‼️ U-92 — AND THE ROW ITSELF, because that is what a find box
+            // hides. The component reads `box.parentNode.hidden` to know which
+            // options are still on screen ("Select all" acts on those), so a
+            // stub whose checkboxes have no parent would report every option
+            // visible however narrow the filter is — the exact thing the tests
+            // are there to measure.
+            const rows = [];
             const optRe = /<input type="checkbox" data-afms-opt="([^"]*)"( checked)?[^>]*>\s*<span class="afms-name" data-afms-only="[^"]*"[^>]*>([^<]*)</g;
             let o;
             while ((o = optRe.exec(inner))) {
-                boxes.push(mkEl({ afmsOpt: o[1] }, { checked: !!o[2], label: o[3].trim() }));
+                const label = o[3].trim();
+                const row = mkEl({}, { hidden: false, textContent: label, className: 'afms-item' });
+                const box = mkEl({ afmsOpt: o[1] }, {
+                    checked: !!o[2], label, parentNode: row,
+                    getAttribute: a => (a === 'aria-label' ? 'Toggle ' + label : null)
+                });
+                row.box = box;
+                row.querySelector = sel => (sel.indexOf('afms-opt') >= 0 ? box : null);
+                rows.push(row);
+                boxes.push(box);
                 names.push(mkEl({ afmsOnly: o[1] }));
             }
+            // U-92 — the menu's own find box and the line it shows when nothing
+            // matches. A picker short enough not to draw one has neither.
+            const findM = /<input type="text" class="afms-find" data-afms-find="([^"]*)"[^>]*value="([^"]*)"/.exec(inner);
+            const find = findM ? mkEl({ afmsFind: findM[1] }, { value: unesc(findM[2]), hidden: false }) : null;
+            const nofind = /class="afms-nofind/.test(inner)
+                ? mkEl({}, { hidden: /class="afms-nofind[^"]*"[^>]*\shidden/.test(inner) })
+                : null;
             const tools = { all: mkEl({ afmsAct: 'all' }), none: mkEl({ afmsAct: 'none' }) };
             // named subsets ("Dialog"), whatever the page declared
             const presets = {};
@@ -64,12 +87,15 @@ module.exports = function createAfmsDom(getHtml) {
             const menu = mkEl({ afmsMenu: id }, {
                 hidden: !!(menuTag && / hidden>/.test(menuTag[0])),
                 querySelectorAll: sel => (sel.indexOf('afms-opt') >= 0 ? boxes
-                    : sel.indexOf('afms-only') >= 0 ? names : []),
+                    : sel.indexOf('afms-only') >= 0 ? names
+                        : sel.indexOf('afms-item') >= 0 ? rows : []),
                 querySelector: sel => {
                     const a = /data-afms-act="([a-z]+)"/.exec(sel);
                     if (a) { return tools[a[1]] || null; }
                     const p = /data-afms-preset="([^"]+)"/.exec(sel);
                     if (p) { return presets[unesc(p[1])] || null; }
+                    if (sel.indexOf('afms-find') >= 0) { return find; }
+                    if (sel.indexOf('afms-nofind') >= 0) { return nofind; }
                     return null;
                 }
             });
@@ -85,7 +111,7 @@ module.exports = function createAfmsDom(getHtml) {
                 },
                 classes
             });
-            next[id] = { id, inner, btn, menu, boxes, names, tools, presets, wrap };
+            next[id] = { id, inner, btn, menu, boxes, names, rows, tools, presets, wrap, find, nofind };
         }
         pickers = next;
         return pickers;
@@ -109,6 +135,25 @@ module.exports = function createAfmsDom(getHtml) {
             m = /\[data-afms-wrap="([^"]+)"\]/.exec(sel);
             if (m) { return (all[unesc(m[1])] || {}).wrap || null; }
             return null;
+        },
+        /**
+         * The document-wide sweep `closeMenus()` runs. Chain it after the
+         * page's own querySelectorAll — a stub that answered [] to everything
+         * let a menu "close" while its find box kept its text and its rows kept
+         * their `hidden`, which is a state no browser would leave behind.
+         */
+        querySelectorAll(sel) {
+            const all = parse();
+            const each = get => Object.keys(all).map(id => get(all[id])).filter(Boolean);
+            if (/\[data-afms-menu\]/.test(sel)) { return each(p => p.menu); }
+            if (/afms-on/.test(sel)) { return each(p => (p.wrap.classes.has('afms-on') ? p.wrap : null)); }
+            if (/afms-nofind/.test(sel)) { return each(p => p.nofind); }
+            if (/afms-find/.test(sel)) { return each(p => p.find); }
+            if (/afms-item/.test(sel)) {
+                return Object.keys(all).reduce((acc, id) => acc.concat(all[id].rows), []);
+            }
+            if (/data-afms-act="all"/.test(sel)) { return each(p => p.tools.all); }
+            return [];
         },
         ids: () => Object.keys(parse()),
         has: id => !!parse()[id],
@@ -148,6 +193,30 @@ module.exports = function createAfmsDom(getHtml) {
             fire(el, 'click');
         },
         selectAll: id => { fire(pick(id).tools.all, 'click'); },
-        clear: id => { fire(pick(id).tools.none, 'click'); }
+        clear: id => { fire(pick(id).tools.none, 'click'); },
+        // ---- U-92: the find box a long menu draws for itself ---------------
+        /** Does this picker carry one at all? A short list must not. */
+        hasFind: id => !!pick(id).find,
+        /** What it currently holds — it survives the re-render a tick causes. */
+        findText: id => (pick(id).find || { value: null }).value,
+        /** Type into it (the component filters as you type). */
+        find(id, text) {
+            const f = pick(id).find;
+            if (!f) { throw new Error('picker "' + id + '" has no find box'); }
+            f.value = String(text);
+            fire(f, 'input');
+        },
+        /** Escape empties it rather than closing the menu under the hand. */
+        findEscape(id) {
+            const f = pick(id).find;
+            if (!f) { throw new Error('picker "' + id + '" has no find box'); }
+            fire(f, 'keydown', { key: 'Escape', stopPropagation() { } });
+        },
+        /** The options still on screen after a find — in the menu's order. */
+        shown: id => pick(id).rows.filter(r => r.hidden !== true).map(r => r.box.dataset.afmsOpt),
+        /** Is the "nothing matches that" line showing? */
+        noMatch: id => !!pick(id).nofind && pick(id).nofind.hidden === false,
+        /** The Select all link's own words — it says what it will act on. */
+        allLabel: id => pick(id).tools.all.textContent
     };
 };

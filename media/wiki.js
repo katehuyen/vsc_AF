@@ -20,8 +20,22 @@
     let LINT = null;                 // the last shape check, drawn under the table
 
     const selected = new Set();      // ticked row ids
-    let editing = null;              // id of the row whose topics are open
+    let editing = null;              // id of the row whose editor is open
     let refocus = null;              // 'search' | 'topics' — what to put the caret back in
+    /**
+     * ‼️ U-92 — WHAT THE ROW EDITOR IS EDITING, HELD HERE.
+     *
+     * It used to be a comma-separated text box in one cell, which asked the
+     * reader to spell a taxonomy from memory — the exact thing U-90 built a
+     * picker to stop, still standing on the one surface whose whole job is
+     * fixing a mark. So the editor is the same `AFCombo`, and while it is open
+     * it also carries the two other things a mark is wrong about: the note, and
+     * which turns of the scope to leave out (X-58).
+     *
+     * AFCombo is a contract, not a widget (media/afCombo.js): the OWNER holds
+     * `picked`/`query`/`open`/`active` and repaints, so they live here.
+     */
+    let edit = null;
 
     const DEF = { fTopic: null, fState: ['pending', 'compiled'], query: '' };
     const saved = (vscode.getState && vscode.getState()) || {};
@@ -33,6 +47,21 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
         if (ev.data.type === 'lint') { LINT = ev.data.data; render(); }
+        // ‼️ U-91/U-92 — the host made the folder and says what it REALLY made.
+        // Typing `ajanlar` beside an existing `Ajanlar` files the mark under
+        // `Ajanlar` and the editor takes that spelling, not the typed one.
+        if (ev.data.type === 'category' && edit && edit.id === ev.data.id) {
+            const name = ev.data.name;
+            if (name && !edit.picked.some(p => window.AFCombo.fold(p) === window.AFCombo.fold(name))) {
+                edit.picked.push(name);
+            }
+            edit.query = ''; edit.open = false; edit.active = 0;
+            edit.made = ev.data.existed
+                ? `“${name}” already existed — this mark is filed under that one.`
+                : `“${name}” started in the wiki.`;
+            refocus = 'topics';
+            render();
+        }
     });
 
     const esc = s => C.esc(String(s == null ? '' : s));
@@ -103,6 +132,19 @@
             ]), 'wk-tipw');
         };
         const ok = v.exists && v.rulesFound;
+        /**
+         * ‼️ U-92 — A STRIP THAT SAYS "THIS IS BROKEN" AND OFFERS NOTHING IS A
+         * DEAD END. It named the missing file correctly and left the reader to
+         * work out that the fix is in Settings, or in Obsidian, or somewhere.
+         * The two ways out stand next to the sentence: choose the folder, or
+         * write the three files into the one already chosen (X-57's `wiki.init`,
+         * which only ever creates).
+         */
+        const ways = ok ? '' : `<span class="wk-vsep">·</span>
+            <button class="mini wk-fix" id="wk-vinit"
+                title="Create the folder if it is not there and write whatever of -WIKI-ANAYASA-.md, index.md and log.md is missing. It only CREATES: a file already on disk is left exactly as it is, because the law is yours.">🛠 Start the wiki here</button>
+            <button class="mini wk-fix secondary" id="wk-vsettings"
+                title="Open Settings ▸ Wiki & Knowledge Base — choose the folder, and see which files it holds">⚙ Choose the folder</button>`;
         return `<div class="wk-vault ${ok ? '' : 'bad'}">
             <span class="wk-vlabel">${ok ? '📚' : '⚠'} wiki</span>
             ${T.wrap(`<code class="${v.exists ? '' : 'bad'}">${esc(v.root || '—')}</code>`, 'Wiki root',
@@ -115,34 +157,72 @@
             ${file('log', 'log.md', !!v.logFound, v.log)}
             <span class="wk-vsep">·</span>
             <span class="muted small">${esc(v.procedure || '_REF/wiki.md')}</span>
+            ${ways}
         </div>`;
     }
 
     // ------------------------------------------------------------ the filters
+    /**
+     * ‼️ U-92 — THE FILTER OFFERS THE UNION, LIKE THE PICKER DOES (U-90).
+     *
+     * The list used to be the pool's topics alone, which means a category the
+     * user made in Obsidian this morning was not offered until something had
+     * been marked under it — the one surface still disagreeing with the tagger.
+     * So it is the same union: the wiki's own folders AND the pool's topics,
+     * one row per name however it is spelled, with the figure that tells them
+     * apart on the row's own hover (pages on disk · marks waiting).
+     *
+     * The row's LABEL carries the waiting count and nothing else, because that
+     * is the number you filter by; twelve rows in and the menu draws its own
+     * find box, which is what the whole item was about.
+     */
     function topicOptions() {
-        return (pool().topics || []).map(t => ({
-            v: t.topic,
-            t: t.pending ? `${t.topic} (${t.pending})` : t.topic
-        }));
+        const byKey = new Map();
+        const put = (name, patch) => {
+            const k = String(name).toLocaleLowerCase('tr');
+            const e = byKey.get(k) || { name, pages: 0, pending: 0, total: 0 };
+            byKey.set(k, Object.assign(e, patch, { name: e.name }));
+        };
+        (DATA.folders || []).forEach(f => put(f.name, { pages: f.pages || 0 }));
+        (pool().topics || []).forEach(t => put(t.topic, { pending: t.pending || 0, total: t.total || 0 }));
+        return [...byKey.values()]
+            .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+            .map(e => ({
+                v: e.name,
+                t: e.pending ? `${e.name} (${e.pending})` : e.name,
+                hint: [
+                    e.name,
+                    `${e.pending} waiting · ${e.total} mark(s) in the pool`,
+                    e.pages ? `${e.pages} page(s) on disk` : 'no page written yet',
+                    !e.total ? 'a folder in the wiki — nothing is marked under it yet' : ''
+                ].filter(Boolean).join(' · ')
+            }));
     }
 
     function filterBar() {
+        const p = pool();
+        // ‼️ U-92 — the state buttons carry their own counts. "Waiting" with no
+        // number is a button you press to find out; with one it is an answer
+        // you already have, and the press is only ever to narrow.
         const states = [
-            { id: 'pending', label: '⏳ Waiting' },
-            { id: 'compiled', label: '✅ Compiled' },
-            { id: 'dropped', label: '🚫 Dropped' }
+            { id: 'pending', label: '⏳ Waiting', n: p.pending || 0 },
+            { id: 'compiled', label: '✅ Compiled', n: p.compiled || 0 },
+            { id: 'dropped', label: '🚫 Dropped', n: p.dropped || 0 }
         ];
         const all = !fState || fState.length === 3;
+        const total = (p.total !== undefined ? p.total : rows().length);
         const seg = `<span class="seg wk-seg">
-            <button data-state="all" class="${all ? 'sel' : ''}" title="Every mark in the pool, whatever became of it">All</button>
+            <button data-state="all" class="${all ? 'sel' : ''}" title="Every mark in the pool, whatever became of it">All ${total}</button>
             ${states.map(s => `<button data-state="${s.id}" class="${!all && fState.indexOf(s.id) >= 0 ? 'sel' : ''}"
-                title="${s.id === 'pending' ? 'Marked and not yet compiled — including the ones a run is out for' : s.id === 'compiled' ? 'A run reported the pages it wrote' : 'Taken out of the queue without being compiled'}">${s.label}</button>`).join('')}
+                title="${s.id === 'pending'
+            ? `${s.n} marked and not yet compiled${p.compiling ? ` — ${p.compiling} with a run already out` : ''}${p.failed ? `, ${p.failed} whose last run produced nothing` : ''}`
+            : s.id === 'compiled' ? `${s.n} that a run reported pages for` : `${s.n} taken out of the queue without being compiled`}">${s.label} ${s.n}</button>`).join('')}
         </span>`;
         return `<div class="wk-bar">
             ${window.AFFilter.multi({
             id: 'wk-topic', label: 'topic', allLabel: 'every topic',
-            options: topicOptions(), selected: fTopic, width: 150,
-            title: 'What the marks are ABOUT — the key the compile files a concept under. The number is how many are still waiting.'
+            options: topicOptions(), selected: fTopic, width: 190,
+            title: 'What the marks are ABOUT — the key the compile files a concept under. The list is the wiki\'s own folders AND the topics the pool already uses; the number beside a name is how many marks are still waiting under it.'
         })}
             ${seg}
             <input type="text" id="wk-q" class="wk-q" placeholder="search topics, prompts, notes, pages…" value="${esc(query)}"
@@ -155,6 +235,20 @@
     /** The zero-click preview: everything the pool knows about this mark, on
      *  the cell that names it. A reader deciding whether to compile a row reads
      *  this instead of opening the transcript. */
+    /** U-92 — what a compile will actually read, as a sentence. */
+    function scopeWords(c) {
+        const n = c.sessionTurns || 0;
+        const ex = c.excludeTurns || [];
+        const whole = c.fromTurn === 0;
+        const span = whole ? n : (c.toTurn - c.fromTurn + 1);
+        const head = whole
+            ? (n ? `Whole session (turns 1–${n})` : 'Whole session')
+            : c.fromTurn === c.toTurn ? `Turn ${c.fromTurn}` : `Turns ${c.fromTurn}–${c.toTurn}`;
+        if (!ex.length) { return head + (span ? ` — ${span} turn(s) to read` : ''); }
+        const kept = Math.max(0, span - ex.length);
+        return `${head} · except ${ex.join(', ')}${span ? ` — ${kept} turn(s) to read` : ''}`;
+    }
+
     function markTip(c) {
         return T.lines([
             c.label || '(no opening line recorded)',
@@ -162,7 +256,7 @@
             `Session ${c.sessionId}`,
             c.agent ? `Agent: ${c.agent}` : '',
             `Engine: ${c.engine || 'claude'}`,
-            `Turns: ${c.turns}`,
+            scopeWords(c),
             c.note ? '' : null,
             c.note ? 'Note: ' + c.note : null,
             '',
@@ -173,11 +267,6 @@
     }
 
     function topicsCell(c) {
-        if (editing === c.id) {
-            return `<td class="wk-topics"><input type="text" class="wk-tedit" data-edit="${esc(c.id)}"
-                value="${esc((c.topics || []).join(', '))}"
-                title="Comma-separated. Enter saves, Escape leaves it as it was."></td>`;
-        }
         // SHORTHAND: the row stays one line tall. Three chips is what fits, and
         // the rest are a count whose meaning is one hover away — the AFTip on
         // this cell already lists every topic.
@@ -241,9 +330,18 @@
                     : ['', 'Only a run reporting back closes a mark.'])
             ]))}
             ${T.cell('wk-sess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
-            `<code>${esc(c.session)}</code> <span class="wk-turns">${esc(c.turns)}</span>`,
+            `<code>${esc(c.session)}</code> <span class="wk-turns${(c.excludeTurns || []).length ? ' cut' : ''}">${esc(c.turns)}</span>`,
             'Where it came from', T.lines([`Session ${c.sessionId}`, c.agent ? 'Agent: ' + c.agent : '',
-                'Engine: ' + (c.engine || 'claude'), 'Turns: ' + c.turns, '', 'Click to open the transcript.']))}
+                'Engine: ' + (c.engine || 'claude'),
+                // ‼️ U-92 — the scope SPELLED OUT rather than abbreviated: how
+                // long the conversation is, which turns the compile will read,
+                // and which were deliberately left out. "whole session" over a
+                // 40-turn conversation and over a 3-turn one are the same three
+                // words and completely different amounts of work.
+                scopeWords(c),
+                (c.excludeTurns || []).length
+                    ? `Excluded: ${c.excludeTurns.join(', ')} — the compile is told in so many words not to read them.` : '',
+                '', 'Click to open the transcript.']))}
             ${topicsCell(c)}
             ${T.cell('wk-label', '', esc(c.label || '—') + (c.note ? ` <span class="wk-note">— ${esc(c.note)}</span>` : ''),
             'What was said', markTip(c))}
@@ -282,7 +380,7 @@
                 <th title="The wiki pages a compile reported writing for this mark">Pages</th>
                 <th></th>
             </tr></thead>
-            <tbody>${list.map(rowHtml).join('')}</tbody>
+            <tbody>${list.map(c => rowHtml(c) + editorRow(c)).join('')}</tbody>
         </table></div>`;
     }
 
@@ -375,11 +473,45 @@
                 tr.wk-failed .wk-st { color:var(--vscode-charts-red,#f14c4c); }
                 .wk-retry { color:var(--vscode-charts-red,#f14c4c); }
                 tr.wk-dropped { opacity:.55; }
+                /* U-92: the row editor. A row of its own under the mark it is
+                   about, because three fields do not fit in one 180px cell —
+                   which is exactly how the comma-separated box happened. */
+                tr.wk-erow > td { border-top:none; padding:0 0 8px; }
+                .wk-editor { display:flex; flex-direction:column; gap:6px; padding:8px 10px;
+                    border-left:2px solid var(--vscode-focusBorder);
+                    background:var(--vscode-editorWidget-background, transparent); border-radius:0 4px 4px 0; }
+                /* ‼️ The editor's own rows are wk-eline, and the name matters:
+                   display:flex on a class the tr also carried turned the table
+                   row into a flex box, collapsed its two cells and pushed every
+                   column of the table sideways. A picture caught it. */
+                .wk-eline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+                .wk-elabel { flex:0 0 46px; font-size:10px; opacity:.55; cursor:help; text-align:right; }
+                .wk-enote { flex:1 1 320px; max-width:520px; padding:2px 6px; font-size:12px; }
+                .wk-emade { font-size:11px; opacity:.7; }
+                .wk-editor .afc { flex:1 1 320px; max-width:420px; position:relative; }
+                /* X-58's strip, in the editor: everything is IN and a press
+                   takes one OUT, struck through so it cannot read as "not
+                   reached yet". */
+                .wk-tns { display:flex; flex-wrap:wrap; gap:3px; max-height:52px; overflow:auto; }
+                .wk-tn { min-width:20px; border:1px solid transparent; border-radius:4px;
+                    padding:1px 4px; font-size:10px; cursor:pointer;
+                    font-family:var(--vscode-editor-font-family);
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                /* ‼️ IN is the quiet state, because in is what fourteen of the
+                   fourteen are. Drawn in the primary button's own blue, the
+                   strip shouted louder than Save two rows under it and said
+                   nothing the reader did not already assume; the outline is
+                   enough to say "this is a thing you press". */
+                .wk-tn.on { border-color:var(--vscode-widget-border,#4444); }
+                .wk-tn.cut { opacity:.5; text-decoration:line-through; background:transparent;
+                    color:var(--vscode-descriptionForeground,#888);
+                    border-color:var(--vscode-widget-border,#4444); }
+                .wk-turns.cut { color:var(--vscode-editorWarning-foreground,#d19a66); }
+                .wk-fix { margin-left:2px; }
                 .wk-sess { white-space:nowrap; width:1%; cursor:pointer; }
                 .wk-sess code { font-size:11px; }
                 .wk-turns { opacity:.7; }
                 .wk-topics { max-width:230px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-                .wk-tedit { width:100%; font-size:11.5px; }
                 .wk-chip { display:inline-block; padding:0 6px; margin:0 3px 0 0; border-radius:9px;
                     font-size:10.5px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
                 .wk-chip:hover { outline:1px solid var(--vscode-focusBorder); }
@@ -433,13 +565,111 @@
     function bind(id, ev, fn) { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } }
     function each(sel, ev, fn) { document.querySelectorAll(sel).forEach(el => el.addEventListener(ev, fn)); }
 
-    function setTopics(id, value) {
-        const topics = String(value || '').split(',').map(s => s.trim()).filter(Boolean);
-        editing = null;
+    // -------------------------------------------------------- the row editor
+    /** The options AFCombo draws: the union U-90 established, in its shape. */
+    function comboOptions() {
+        const byKey = new Map();
+        // ‼️ `pages` is left UNDEFINED for a name that is only a topic — the
+        // component reads its absence as "not a folder yet" and says so, and
+        // writing 0 there would call every unfiled topic an empty folder.
+        const put = (name, patch) => {
+            const k = String(name).toLocaleLowerCase('tr');
+            const e = byKey.get(k) || { name };
+            byKey.set(k, Object.assign(e, patch, { name: e.name }));
+        };
+        (DATA.folders || []).forEach(f => put(f.name, { pages: f.pages || 0 }));
+        (pool().topics || []).forEach(t => put(t.topic, { marks: t.total || 0, pending: t.pending || 0 }));
+        return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    }
+
+    function openEditor(c) {
+        editing = c.id;
+        edit = {
+            id: c.id,
+            picked: (c.topics || []).slice(),
+            query: '', open: false, active: 0,
+            note: c.note || '',
+            exclude: (c.excludeTurns || []).slice(),
+            made: ''
+        };
+        refocus = 'topics';
+    }
+
+    function closeEditor() { editing = null; edit = null; }
+
+    function saveEditor() {
+        if (!edit) { return; }
+        const id = edit.id;
+        const topics = edit.picked.slice();
         // An empty list would leave the mark with nothing to file it under, and
-        // the host refuses it by name — so it is not sent at all.
-        if (!topics.length) { render(); return; }
-        post({ type: 'edit', id, topics });
+        // the host refuses it by name — so the editor stays open and says so
+        // rather than sending a write that will bounce.
+        if (!topics.length) {
+            edit.made = 'A mark needs at least one topic — it is what the compile files the concept under.';
+            render();
+            return;
+        }
+        const note = edit.note;
+        const exclude = edit.exclude.slice().sort((a, b) => a - b);
+        closeEditor();
+        post({ type: 'edit', id, topics, note, excludeTurns: exclude });
+    }
+
+    /**
+     * ‼️ U-92 — THE EDITOR IS A ROW OF ITS OWN, NOT A BOX IN A CELL. Three
+     * fields do not fit in a 180px column, and cramming them there is how the
+     * comma-separated box happened in the first place. It opens under the row it
+     * belongs to, so what is being edited stays on screen above it.
+     */
+    function editorRow(c) {
+        if (!edit || edit.id !== c.id) { return ''; }
+        const n = c.sessionTurns || 0;
+        const from = c.fromTurn === 0 ? 1 : c.fromTurn;
+        const to = c.fromTurn === 0 ? n : c.toTurn;
+        const span = Math.max(0, to - from + 1);
+        const kept = span - edit.exclude.length;
+        let chips = '';
+        if (span > 1) {
+            let out = '';
+            for (let i = from; i <= to; i++) {
+                const off = edit.exclude.indexOf(i) >= 0;
+                out += `<button class="wk-tn${off ? ' cut' : ' on'}" data-ex="${i}"
+                    title="Turn ${i}${n ? ' of ' + n : ''} — ${off ? 'left OUT of the compile; press to put it back' : 'press to leave it out'}">${i}</button>`;
+            }
+            chips = `<div class="wk-eline">
+                <span class="wk-elabel" title="X-58 — the turns inside this mark's scope that the compile must NOT read. Everything is in until you take it out.">turns</span>
+                <span class="wk-tns">${out}</span>
+                <span class="muted small">${edit.exclude.length
+                ? `${kept} of ${span} — except ${edit.exclude.slice().sort((a, b) => a - b).join(', ')}`
+                : `all ${span}`}</span>
+                ${edit.exclude.length ? '<button class="mini secondary" id="wk-exclear" title="Put every turn back">↺</button>' : ''}
+            </div>`;
+        } else if (c.fromTurn === 0 && !n) {
+            chips = '<div class="wk-eline"><span class="muted small">This conversation has left the session index, so its turns cannot be drawn — the mark still compiles from the transcript it kept.</span></div>';
+        }
+        return `<tr class="wk-erow"><td></td><td colspan="7">
+            <div class="wk-editor">
+                <div class="wk-eline">
+                    <span class="wk-elabel" title="The filing key: the compile opens or amends a page per concept under each of these. The list is the wiki's own folders AND the topics the pool already uses.">topics</span>
+                    ${window.AFCombo.html({
+            id: 'wk-cat', options: comboOptions(), picked: edit.picked,
+            query: edit.query, open: edit.open, active: edit.active, create: true,
+            placeholder: edit.picked.length ? 'another…' : 'search the categories…'
+        })}
+                </div>
+                ${chips}
+                <div class="wk-eline">
+                    <span class="wk-elabel" title="Why this was worth keeping. It travels into the compile instruction, so it is the one place to say what the transcript does not.">note</span>
+                    <input type="text" id="wk-enote" class="wk-enote" value="${esc(edit.note)}"
+                        placeholder="why it is worth keeping (optional)">
+                </div>
+                <div class="wk-eline">
+                    <button id="wk-esave" title="Save the topics, the note and the excluded turns">Save</button>
+                    <button class="secondary" id="wk-ecancel" title="Leave it exactly as it was (Esc)">Cancel</button>
+                    ${edit.made ? `<span class="wk-emade">${esc(edit.made)}</span>` : ''}
+                </div>
+            </div>
+        </td></tr>`;
     }
 
     function wire() {
@@ -461,6 +691,11 @@
             fTopic = DEF.fTopic; fState = DEF.fState; query = DEF.query;
             selected.clear(); saveState(); render();
         });
+        // U-92 — the two ways out of a strip that says the wiki is not there.
+        // Neither is this page's own act: one is X-57's scaffold, the other is
+        // the Settings section that reads the folder.
+        bind('wk-vinit', 'click', () => post({ type: 'wikiInit' }));
+        bind('wk-vsettings', 'click', () => post({ type: 'openSettings', focus: 'agentFarm.wikiRoot' }));
 
         // Selection. "All" means every row that could actually be compiled in
         // the current view — a tick that selects rows the button then refuses
@@ -499,14 +734,20 @@
             fTopic = [e.currentTarget.dataset.only]; saveState(); render();
         });
 
+        const rowById = id => rows().filter(c => c.id === id)[0];
         each('[data-topics]', 'click', e => {
             if (e.target.closest('[data-only]')) { return; }
-            editing = e.currentTarget.dataset.topics; refocus = 'topics'; render();
+            const c = rowById(e.currentTarget.dataset.topics);
+            if (c) { openEditor(c); render(); }
         });
         each('[data-act]', 'click', e => {
             const id = e.currentTarget.dataset.id;
             switch (e.currentTarget.dataset.act) {
-                case 'topics': editing = id; refocus = 'topics'; render(); break;
+                case 'topics': {
+                    const c = rowById(id);
+                    if (c) { openEditor(c); render(); }
+                    break;
+                }
                 // X-58 — the mark was never compiled, so this clears a record
                 // rather than undoing work: the reason goes, the claim goes,
                 // and the row is a clean waiting row again.
@@ -516,13 +757,42 @@
                 case 'remove': post({ type: 'remove', ids: [id] }); break;
             }
         });
-        const box = document.querySelector('.wk-tedit');
-        if (box) {
-            box.addEventListener('keydown', ev => {
-                if (ev.key === 'Enter') { setTopics(box.dataset.edit, box.value); }
-                if (ev.key === 'Escape') { editing = null; render(); }
+        // ---- U-92: the row editor. AFCombo holds no state of its own, so the
+        // gestures are bound back onto `edit` and the page repaints itself.
+        if (edit) {
+            const carry = () => {
+                const q = document.getElementById('wk-cat-in');
+                if (q) { edit.query = q.value; }
+                const nt = document.getElementById('wk-enote');
+                if (nt) { edit.note = nt.value; }
+            };
+            window.AFCombo.wire(document, {
+                id: 'wk-cat', options: comboOptions(), create: true, state: edit,
+                render: () => { const nt = document.getElementById('wk-enote'); if (nt) { edit.note = nt.value; } render(); },
+                // U-91 — starting a category is the host's act: it makes a
+                // folder, and an existing one in any spelling is reported
+                // rather than duplicated.
+                onCreate: (name) => { carry(); post({ type: 'category', id: edit.id, name }); },
+                onDone: () => saveEditor()
             });
-            box.addEventListener('blur', () => setTopics(box.dataset.edit, box.value));
+            each('[data-ex]', 'click', e => {
+                carry();
+                const n = Number(e.currentTarget.dataset.ex) || 0;
+                if (!n) { return; }
+                const at = edit.exclude.indexOf(n);
+                if (at >= 0) { edit.exclude.splice(at, 1); } else { edit.exclude.push(n); }
+                render();
+            });
+            bind('wk-exclear', 'click', () => { carry(); edit.exclude = []; render(); });
+            bind('wk-esave', 'click', () => { carry(); saveEditor(); });
+            bind('wk-ecancel', 'click', () => { closeEditor(); render(); });
+            const nt = document.getElementById('wk-enote');
+            if (nt) {
+                nt.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter') { carry(); saveEditor(); }
+                    if (ev.key === 'Escape') { closeEditor(); render(); }
+                });
+            }
         }
 
         // The caret goes back where the reader left it: a page that re-renders
@@ -530,8 +800,10 @@
         if (refocus === 'search') {
             const q = document.getElementById('wk-q');
             if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-        } else if (refocus === 'topics' && box) {
-            box.focus(); box.setSelectionRange(box.value.length, box.value.length);
+        } else if (refocus === 'topics' && edit) {
+            // The picker's own caret restore (U-98): a repaint hands you a NEW
+            // input, and the new one starts at 0.
+            window.AFCombo.focus('wk-cat', (edit.query || '').length);
         }
         refocus = null;
     }

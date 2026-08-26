@@ -202,7 +202,17 @@ mark {
 }
 .afms-menu .afms-tools a { cursor: pointer; }
 .afms-menu .afms-tools a:hover { text-decoration: underline; }
+/* U-92: a long menu filters itself. Sticky, because the point of it is a list
+   you have to scroll — a find box that scrolls away with the rows is a find box
+   you have to scroll back up to. */
+.afms-menu .afms-find {
+    display: block; width: 100%; box-sizing: border-box; margin: 0 0 5px;
+    padding: 2px 5px; font-size: 11px;
+    position: sticky; top: 0; z-index: 1;
+}
+.afms-menu .afms-nofind { display: block; padding: 2px 0; }
 .afms-menu .afms-item { display: block; padding: 2px 0; white-space: nowrap; font-size: 12px; }
+.afms-menu .afms-item[hidden] { display: none; }
 .afms-menu .afms-item input { cursor: pointer; margin-right: 6px; vertical-align: middle; }
 /* The name is its OWN control — "show only this" — so it has to look like one.
    Underlining on hover is the whole affordance: without it the row reads as a

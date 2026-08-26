@@ -232,6 +232,92 @@ ok('opening the menu is not a filter change', renders === before);
     ok('pressing it ticks exactly its values', JSON.stringify(last) === '["user","agent"]');
 }
 
+// ------------------------------------------- U-92: a long menu finds ----
+//
+// ‼️ THE PICKER EARNS ITS FIND BOX BY BEING LONG, AND NOBODY HAS TO REMEMBER
+// TO ASK FOR IT. A list of five is a list you read; the wiki's topics passed
+// thirty and became a list you scroll past the thing you wanted. So the
+// threshold lives in the component: every picker in the extension that grows
+// gets the box on the day it grows, and a list that is deliberately
+// short-and-ordered turns it off by name.
+{
+    const CATS = [
+        'Agent Farm', 'Airtable Motoru', 'Ajanlar', 'Claude Code', 'Felsefe', 'Kota',
+        'LLM Wiki', 'Mimari', 'Oturum Ekonomisi', 'Parity Kapısı', 'Süreç Yönetimi',
+        'Tarım', 'Teknoloji - Tarım', 'Wiki Derleme'
+    ];
+    sandbox.document.querySelectorAll = sel => ms.querySelectorAll(sel);
+
+    rendered = AF.multi({ id: 'short', label: 'Agents', options: AGENTS, selected: null });
+    ok('a short list draws no find box — it would be furniture', !ms.hasFind('short'));
+    rendered = AF.multi({ id: 'long', label: 'topic', options: CATS, selected: null });
+    ok('a long one draws its own, without the page asking', ms.hasFind('long'));
+    rendered = AF.multi({ id: 'off', label: 'topic', options: CATS, selected: null, search: false });
+    ok('…and search:false is how a deliberately ordered list opts out', !ms.hasFind('off'));
+    rendered = AF.multi({ id: 'on', label: 'Agents', options: AGENTS, selected: null, search: true });
+    ok('…search:true forces one onto a short list', ms.hasFind('on'));
+
+    // the page loop, exactly as a real page runs it
+    let sel = null;
+    let paints = 0;
+    const paint = () => {
+        rendered = AF.multi({ id: 'cats', label: 'topic', options: CATS, selected: sel });
+        paints++;
+        AF.wireMulti({ id: 'cats', onChange: s => { sel = s; paint(); } });
+    };
+    paint();
+
+    ms.open('cats');
+    ms.find('cats', 'wiki');
+    ok('typing narrows the menu to what matches',
+        JSON.stringify(ms.shown('cats')) === '["LLM Wiki","Wiki Derleme"]');
+    ok('…and hiding a row is not unticking it — the pick is untouched',
+        sel === null && ms.ticked('cats').length === CATS.length);
+
+    // ‼️ Folded the Turkish way. `TARIM`.toLowerCase() is `tarim`, which does
+    // not find `Tarım` — and the user filters their own categories in their own
+    // language, on a page whose every topic is Turkish.
+    ms.find('cats', 'TARIM');
+    ok('‼️ the fold is Turkish, so TARIM finds Tarım',
+        JSON.stringify(ms.shown('cats')) === '["Tarım","Teknoloji - Tarım"]');
+
+    ms.find('cats', 'zzz');
+    ok('nothing matching says so rather than showing an empty menu',
+        ms.shown('cats').length === 0 && ms.noMatch('cats'));
+
+    // ‼️ Select all acts on WHAT IS SHOWN, because with `wiki` typed that is
+    // unmistakably what the reader means — and with an empty box the two are
+    // the same thing, which is why this is not a second mode to learn.
+    ms.find('cats', 'wiki');
+    ok('the tools row says which it is about to do', /shown/.test(ms.allLabel('cats')));
+    ms.clear('cats');
+    ok('Clear empties only the rows on screen',
+        JSON.stringify(sel).indexOf('Wiki Derleme') < 0 && sel.indexOf('Mimari') >= 0
+        && sel.length === CATS.length - 2);
+    ok('…and the find survives the re-render that answer caused',
+        ms.findText('cats') === 'wiki' && ms.shown('cats').length === 2);
+    ms.selectAll('cats');
+    ok('Select all puts back exactly those rows', sel === null);
+
+    ms.findEscape('cats');
+    ok('Escape empties the box rather than closing the menu under the hand',
+        ms.findText('cats') === '' && ms.shown('cats').length === CATS.length && ms.isOpen('cats'));
+    ok('…and the tools row goes back to plain words', ms.allLabel('cats') === 'Select all');
+
+    // ‼️ A find belongs to the visit that typed it: it must survive the tick's
+    // re-render and must NOT survive the menu closing. Reopening onto a list
+    // silently cut down to `tar` is the invisible-filter trap all over again.
+    ms.find('cats', 'tar');
+    ok('a find is in force while the menu is open', ms.shown('cats').length === 2);
+    AF._closeMenus();
+    ok('closing the menu forgets it — the box, the rows and the tools row',
+        ms.findText('cats') === '' && ms.shown('cats').length === CATS.length
+        && ms.allLabel('cats') === 'Select all' && !ms.noMatch('cats'));
+    ok('…and closing is not a filter change', sel === null);
+
+    sandbox.document.querySelectorAll = () => [];
+}
+
 // ------------------------------------------------------- live typing ----
 {
     // a text box that filters, and a page that re-renders it on every change

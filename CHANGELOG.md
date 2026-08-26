@@ -2,6 +2,56 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.284.0 - U-92: the wiki cockpit filters by one searchable menu instead of a stack of badges, and ✎ opens a picker rather than a comma-separated box (2026-08-26)
+
+**A filter that could only offer what was already marked.**
+The topic filter was built from the pool's topics alone, so a category you made
+in Obsidian this morning was not on the list until something had been filed
+under it — the one surface left disagreeing with the tagger U-90 built. It is
+the same union now: the wiki's own folders AND the topics the pool uses, one row
+per name however either side spells it, the waiting count on the row because
+that is the number you filter by, and the pages on disk one hover away.
+
+**And a long menu finds for itself.** Twelve options is where a list stops being
+something you read and starts being something you scroll past what you wanted,
+so at that length every picker in the extension — not just this one — draws its
+own find box. Typing hides rows and changes nothing about what is ticked, so a
+find typed and cleared leaves the selection exactly as it was; **Select all** and
+**Clear** then act on what is SHOWN and the tools row says so, which with an
+empty box is the same thing it always did. The fold is Turkish: `TARIM` finds
+`Tarım`. Escape empties the box rather than closing the menu under the hand,
+and closing the menu forgets the find — reopening onto a list silently cut down
+to three rows is the invisible-filter trap the box was added to avoid.
+
+**The state buttons carry their counts** (`All 6`, `⏳ Waiting 4`), and the
+waiting hover breaks its own number down: how many have a run already out, how
+many were left by a run that produced nothing.
+
+**✎ was still a comma-separated text box**, on the one surface whose whole job
+is fixing a mark — asking the reader to spell the taxonomy from memory, which is
+precisely what U-90 exists to stop. It is the same picker now, in a row of its
+own under the mark (three fields do not fit in a 180px cell, which is how the
+comma box happened), and while it is open it also edits the two other things a
+mark is wrong about: the note, and X-58's excluded turns as a strip of the
+conversation's own turn numbers — everything is IN, a press takes one OUT and
+strikes it through so it cannot read as "not reached yet". A category typed into
+it is started by the host, single level, and an existing one in any spelling is
+reported rather than duplicated. Emptying the topics keeps the editor open and
+says why instead of sending a write the host would refuse.
+
+**The source cell says what a compile will actually read**: how long the
+conversation is, which turns are in scope and which were deliberately left out.
+"Whole session" over a 40-turn conversation and over a 3-turn one are the same
+three words and completely different amounts of work.
+
+**And the vault strip is no longer a dead end.** It named the missing file and
+offered nothing; **🛠 Start the wiki here** (X-57's scaffold, which only ever
+creates) and **⚙ Choose the folder** now stand next to the sentence.
+
+Also: `test/render_page.js --menu [id]` opens a filter menu in a rendered page,
+so a picker can be photographed at all — everything worth looking at on one is
+on the far side of a press.
+
 ## 3.283.0 - X-57: the wiki root is a section that reads the folder, and a path that survives another machine · X-58: a session no longer swallows the turns inside it, and a crashed compile no longer locks a turn out for ever (2026-08-26)
 
 **X-57 — a path in a box cannot tell you whether the folder is a wiki.**

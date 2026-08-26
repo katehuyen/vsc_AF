@@ -30,6 +30,17 @@
     // ever open, so page-global state is enough and costs nothing.
     let openId = null;
     let openScroll = 0;
+    /**
+     * ‼️ U-92 — WHAT WAS TYPED INTO THE OPEN MENU'S FIND BOX, PER PICKER.
+     *
+     * A list of five is a list you read; a list of thirty categories is a list
+     * you scroll past the thing you wanted. So a long menu carries a find box —
+     * and because every tick re-renders the page that drew the menu, what was
+     * typed has to survive that re-render exactly as the scroll position does.
+     * Keyed by picker id and kept module-wide for the same reason `openId` is:
+     * one menu is open at a time.
+     */
+    const findText = {};
     let focusValue = null;   // which checkbox to re-focus after the re-render
     let docWired = false;
     // What each picker is, written when its HTML is built and read when it is
@@ -54,11 +65,28 @@
             if (o && typeof o === 'object') {
                 const v = o.v !== undefined ? o.v : o.value;
                 const t = o.t !== undefined ? o.t : (o.label !== undefined ? o.label : v);
-                return { v: String(v === undefined || v === null ? '' : v), t: String(t) };
+                return {
+                    v: String(v === undefined || v === null ? '' : v), t: String(t),
+                    // U-92 — a row may carry a figure the short label cannot. It
+                    // is a handful of numbers on a row inside an open menu, so
+                    // it is a native title (docs/CONVENTIONS.md → Hover): an
+                    // AFTip over a dropdown would cover the list it explains.
+                    ...(o.hint ? { hint: String(o.hint) } : {})
+                };
             }
             return { v: String(o), t: String(o) };
         });
     }
+
+    /** How many options it takes before the menu draws its own find box. Five
+     *  is a list you read; thirty is a list you scroll past what you wanted. */
+    const FIND_FROM = 12;
+
+    /** ‼️ Folded the Turkish way, like the wiki picker (media/afCombo.js): a
+     *  plain `toLowerCase()` turns `TARIM` into `tarim`, which does not find
+     *  `Tarım`, and the user filters their own categories in their own
+     *  language. */
+    const fold = s => String(s || '').toLocaleLowerCase('tr').trim();
 
     /**
      * ‼️ A-14 — THE BUTTON'S TEXT IS A READOUT, NOT THE OPTION'S FULL SENTENCE.
@@ -182,11 +210,26 @@
         defs[o.id] = { label: o.label, allLabel: o.allLabel, opts, presets };
         const on = v => sel === null || sel.indexOf(v) >= 0;
         const items = opts.map(x =>
-            `<span class="afms-item">` +
+            `<span class="afms-item"${x.hint ? ` title="${esc(x.hint)}"` : ''}>` +
             `<input type="checkbox" data-afms-opt="${esc(x.v)}"${on(x.v) ? ' checked' : ''}` +
             ` aria-label="Toggle ${esc(x.t)}">` +
             `<span class="afms-name" data-afms-only="${esc(x.v)}"` +
             ` role="button" tabindex="0" aria-label="Show only ${esc(x.t)}">${esc(x.t)}</span></span>`).join('');
+        /**
+         * ‼️ U-92 — A LONG LIST EARNS A FIND BOX, AND IT EARNS IT BY BEING LONG.
+         *
+         * Not a per-caller flag anybody has to remember: a picker with five
+         * options does not need one and a picker with thirty is unusable
+         * without one, and the component knows which it is. `search:false`
+         * turns it off for a list that is deliberately short-and-ordered;
+         * `search:true` forces it on.
+         */
+        const searchable = o.search === true || (o.search !== false && opts.length >= FIND_FROM);
+        const findBox = searchable
+            ? `<input type="text" class="afms-find" data-afms-find="${esc(o.id)}"` +
+                ` placeholder="find…" value="${esc(findText[o.id] || '')}"` +
+                ` aria-label="Filter this list of ${opts.length}">`
+            : '';
         const presetHtml = presets.map(p =>
             ` · <a data-afms-preset="${esc(p.id)}" aria-label="${esc(p.title || p.label || p.id)}">${esc(p.label || p.id)}</a>`).join('');
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
@@ -218,7 +261,9 @@
             trigger +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
             `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +
+            findBox +
             `${items || '<span class="muted small">nothing to filter by</span>'}` +
+            (searchable ? '<span class="afms-nofind muted small" hidden>nothing matches that</span>' : '') +
             `</div></span>`;
     }
 
@@ -232,6 +277,26 @@
         // `tipAttrs` note in multi(). It tracks the menu and nothing else.
         Array.prototype.forEach.call(scope.querySelectorAll('.afms.afms-on'),
             s => { s.classList.remove('afms-on'); });
+        /**
+         * ‼️ U-92 — A FIND BELONGS TO THE VISIT THAT TYPED IT.
+         *
+         * It must survive the re-render every tick causes (that is the whole
+         * reason `findText` exists) and it must NOT survive the menu closing:
+         * reopening a picker onto a list silently cut down to `tar` is exactly
+         * the invisible-filter trap the find box was added to avoid. Closing is
+         * the only path through here, so the state and the boxes drawing it are
+         * both put back the way an untouched menu opens.
+         */
+        Array.prototype.forEach.call(scope.querySelectorAll('.afms-find'), f => {
+            const id = f.getAttribute ? f.getAttribute('data-afms-find') : null;
+            if (id) { delete findText[id]; }
+            f.value = '';
+        });
+        Array.prototype.forEach.call(scope.querySelectorAll('.afms-menu .afms-item'),
+            r => { r.hidden = false; });
+        Array.prototype.forEach.call(scope.querySelectorAll('.afms-nofind'), s => { s.hidden = true; });
+        Array.prototype.forEach.call(scope.querySelectorAll('.afms-menu [data-afms-act="all"]'),
+            a => { a.textContent = 'Select all'; });
     }
 
     function wireDocClose() {
@@ -281,10 +346,57 @@
         boxes().forEach(b => {
             if (b.addEventListener) { b.addEventListener('change', () => emit(read(), b.dataset.afmsOpt)); }
         });
+        /**
+         * ‼️ U-92 — THE FIND BOX, AND WHAT IT DOES TO "Select all".
+         *
+         * Typing hides rows; it changes NOTHING about what is ticked, so a
+         * filter typed and cleared leaves the selection exactly as it was. But
+         * `Select all` and `Clear` then act on what is SHOWN, because with
+         * `Tekno` typed that is unmistakably what the reader means — and with
+         * an empty box the two are the same thing, which is why this is not a
+         * second mode to learn. The tools row says which it is doing.
+         */
+        const find = menu.querySelector(`[data-afms-find="${cssEsc(o.id)}"]`);
+        const rows = () => Array.prototype.slice.call(menu.querySelectorAll('.afms-item'));
+        const nofind = menu.querySelector('.afms-nofind');
+        const allLink = menu.querySelector('[data-afms-act="all"]');
+        const applyFind = () => {
+            if (!find) { return; }
+            const q = String(find.value || '').trim();
+            findText[o.id] = q;
+            const needle = fold(q);
+            let shown = 0;
+            rows().forEach(r => {
+                const box = r.querySelector('[data-afms-opt]');
+                const label = box ? box.getAttribute('aria-label') || '' : '';
+                const hit = !needle || fold(r.textContent || label).indexOf(needle) >= 0;
+                r.hidden = !hit;
+                if (hit) { shown++; }
+            });
+            if (nofind) { nofind.hidden = shown > 0; }
+            if (allLink) {
+                allLink.textContent = needle ? `Select all ${shown} shown` : 'Select all';
+            }
+        };
+        if (find && find.addEventListener) {
+            find.addEventListener('input', () => applyFind());
+            find.addEventListener('click', stop);
+            // Escape empties the box rather than closing the menu under the
+            // hand that is still narrowing it.
+            find.addEventListener('keydown', ev => {
+                if (ev.key === 'Escape') { stop(ev); find.value = ''; applyFind(); }
+            });
+        }
+        applyFind();
+
+        const visible = () => boxes().filter(b => {
+            const row = b.parentNode;
+            return !row || row.hidden !== true;
+        });
         const act = (name, fn) => {
             const a = menu.querySelector(`[data-afms-act="${name}"]`);
             if (a && a.addEventListener) {
-                a.addEventListener('click', ev => { stop(ev); boxes().forEach(fn); emit(read()); });
+                a.addEventListener('click', ev => { stop(ev); visible().forEach(fn); emit(read()); });
             }
         };
         act('all', b => { b.checked = true; });

@@ -300,6 +300,34 @@ function main() {
         return out + sections.slice(last);
     })();
 
+    /**
+     * ‼️ AND A FILTER MENU HAS TO BE PHOTOGRAPHABLE FOR THE SAME REASON (U-92).
+     *
+     * A picker is a button until it is pressed, and everything worth looking at
+     * — the width of the menu, whether it is long enough to draw its own find
+     * box, whether twenty categories read as a list or as a wall — is on the
+     * other side of that press. The page shim does not wire the component (its
+     * stub menus have no querySelectorAll), so `act` cannot open one: the only
+     * thing standing between the markup and the picture is the `hidden`
+     * attribute the component writes, and this takes it off.
+     *
+     *   --menu            every picker on the page
+     *   --menu wk-topic   just that one
+     */
+    const mIdx = args.indexOf('--menu');
+    const menuId = mIdx >= 0 ? String(args[mIdx + 1] || '').replace(/^--.*/, '') : '';
+    const withMenus = mIdx < 0 ? opened : (() => {
+        let n = 0;
+        const out = opened.replace(/<div class="(afms-menu[^"]*)" data-afms-menu="([^"]*)"([^>]*?) hidden>/g,
+            (whole, cls, id, rest) => {
+                if (menuId && id !== menuId) { return whole; }
+                n++;
+                return `<div class="${cls}" data-afms-menu="${id}"${rest}>`;
+            });
+        console.log(`--menu${menuId ? ' ' + menuId : ''}: ${n} menu(s) opened`);
+        return out;
+    })();
+
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} — ${theme}</title>
 <style>
@@ -326,7 +354,7 @@ body { margin: 0; padding: 0 0 60px;
 .rndr-page .af-head, .rndr-page [class*="sticky"] { position: static !important; }
 </style></head>
 <body>
-${opened}
+${withMenus}
 </body></html>`;
 
     fs.mkdirSync(OUT, { recursive: true });

@@ -6670,6 +6670,34 @@
       ]
     },
     {
+      "capability": "wikiPanel.ts#wikiInit",
+      "ui": [
+        "page:wikiPanel.ts#wikiInit"
+      ],
+      "ops": [
+        "wiki.init"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#category",
+      "ui": [
+        "page:wikiPanel.ts#category"
+      ],
+      "ops": [
+        "wiki.category.add"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#openSettings",
+      "ui": [
+        "page:wikiPanel.ts#openSettings"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens Settings on the wiki root. It moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "wikiPanel.ts#openPage",
       "ui": [
         "page:wikiPanel.ts#openPage"

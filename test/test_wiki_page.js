@@ -128,6 +128,62 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('the strip marks the missing files rather than listing them the same way',
         /⚠ -WIKI-ANAYASA-\.md/.test(h) && /⚠ log\.md/.test(h));
     ok('…and what IS there is not marked', />index\.md</.test(h));
+
+    /**
+     * ‼️ U-92 — AND IT IS NOT A DEAD END. The strip named the missing file
+     * correctly and then left the reader to work out that the fix is in
+     * Settings, or in Obsidian, or somewhere. Neither way out is invented on
+     * this page: one is X-57's scaffold (which only ever CREATES — the law on
+     * disk is never rewritten), the other is the Settings section that reads
+     * the folder.
+     */
+    ok('a strip that says the wiki is broken offers the two ways out of it',
+        /id="wk-vinit"/.test(h) && /id="wk-vsettings"/.test(h));
+    r.query('#wk-vinit')[0].fire('click');
+    ok('…“Start the wiki here” asks the host to write the missing files',
+        r.last().type === 'wikiInit');
+    r.query('#wk-vsettings')[0].fire('click');
+    ok('…and the other opens Settings on the wiki root, naming it',
+        r.last().type === 'openSettings' && r.last().focus === 'agentFarm.wikiRoot');
+    ok('‼️ neither is offered once the wiki is sound — a fix with nothing to fix',
+        !/id="wk-vinit"/.test(run().html()));
+}
+
+/**
+ * ‼️ U-92 — WHAT THE FILTER OFFERS IS THE UNION, AND IT COUNTS.
+ *
+ * The list used to be the pool's topics alone: a category the user made in
+ * Obsidian this morning was not offered until something had been marked under
+ * it, which made this the one surface still disagreeing with the tagger. And
+ * the state buttons said `Waiting` with no number, so the press was the only
+ * way to find out how many — a click spent on a fact a label could have
+ * carried.
+ */
+{
+    const r = run();
+    const h = r.html();
+    ok('the topic filter offers a wiki folder nothing is marked under yet',
+        /data-afms-opt="Felsefe"/.test(h) && /data-afms-opt="Mimari"/.test(h));
+    ok('…and a topic the pool uses that has no folder of its own',
+        /data-afms-opt="Wiki Derleme"/.test(h));
+    ok('…once each, however the two lists spell it',
+        (h.match(/data-afms-opt="Agent Farm"/g) || []).length === 1);
+    ok('…with the waiting count on the row, which is the number you filter by',
+        /Wiki Derleme \(2\)/.test(h));
+    ok('…and the pages on disk one hover away, not on the row',
+        /9 page\(s\) on disk/.test(h) && !/9 page\(s\) on disk<\/span>/.test(h));
+    ok('‼️ twenty-odd rows is what the wiki grows to, so the menu finds for itself',
+        /data-afms-find="wk-topic"/.test(h));
+
+    // ‼️ "whole session" over a 40-turn conversation and over a 3-turn one are
+    // the same three words and completely different amounts of work.
+    ok('the source hover spells the scope out — how long, and what is skipped',
+        /Whole session \(turns 1–14\) · except 13, 14 — 12 turn\(s\) to read/.test(h));
+
+    ok('the state buttons carry their own counts', /All 6/.test(h)
+        && /⏳ Waiting 4/.test(h) && /✅ Compiled 1/.test(h) && /🚫 Dropped 1/.test(h));
+    ok('…and the waiting hover breaks that number down',
+        /1 with a run already out/.test(h) && /1 whose last run produced nothing/.test(h));
 }
 
 // ======================================================== filters and search
@@ -181,26 +237,70 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     const m = r.last();
     ok('✕ deletes the mark and says which', m.type === 'remove' && m.ids[0] === 'wc-1');
 }
+/**
+ * ‼️ U-92 — ✎ OPENS A PICKER, NOT A COMMA-SEPARATED BOX.
+ *
+ * The one surface whose whole job is fixing a mark was the one still asking the
+ * reader to spell the taxonomy from memory — which is precisely what U-90 built
+ * a picker to stop. It is the same `AFCombo`, in a row of its own under the mark
+ * (three fields do not fit in a 180px cell), and while it is open it also edits
+ * the note and X-58's excluded turns.
+ */
 {
     const r = run();
     el(r, 'act', 'topics').fire('click');
-    const box = r.query('.wk-tedit')[0];
-    ok('✎ opens the row\'s topics in a box, prefilled', !!box && /Agent Farm, Wiki Derleme/.test(box.value));
-    box.value = 'Agent Farm, Kota';
-    box.fire('keydown', { key: 'Enter' });
+    const h = r.html();
+    ok('✎ opens an editor row under the mark, not a box in the cell',
+        /wk-erow/.test(h) && !/wk-tedit/.test(h));
+    ok('…the topics are the U-90 picker, prefilled with what the mark carries',
+        /wk-cat-in/.test(h) && /afc-chip/.test(h)
+        && h.indexOf('Agent Farm') > 0 && h.indexOf('Wiki Derleme') > 0);
+    ok('…and the note is editable in the same place', /id="wk-enote"/.test(h));
+
+    // Pressing the box asks to see everything (U-90 item 4) — the list is not
+    // down until then, because it is drawn over what is under it.
+    r.query('[data-afc-box]')[0].fire('mousedown');
+    const open = r.html();
+    ok('…the list it offers is the wiki\'s own folders too, not only the pool\'s topics',
+        open.indexOf('data-afc-pick="Felsefe"') > 0 && open.indexOf('data-afc-pick="Mimari"') > 0);
+
+    // Take one off, add another, save.
+    r.query('[data-afc-off]')[0].fire('mousedown');
+    r.query('[data-afc-box]')[0].fire('mousedown');
+    r.query('[data-afc-pick]').filter(e => e.dataset.afcPick === 'Felsefe')[0].fire('mousedown');
+    r.query('#wk-esave')[0].fire('click');
     const m = r.last();
-    ok('Enter sends the new list, split and trimmed',
-        m.type === 'edit' && m.topics.length === 2 && m.topics[1] === 'Kota');
+    ok('Save sends the picked list, the note and the exclusions in one edit',
+        m.type === 'edit' && m.id === 'wc-1'
+        && m.topics.indexOf('Felsefe') >= 0 && m.topics.indexOf('Agent Farm') < 0
+        && m.note !== undefined && Array.isArray(m.excludeTurns));
 }
 {
     const r = run();
     el(r, 'act', 'topics').fire('click');
-    const box = r.query('.wk-tedit')[0];
     const before = r.posted.length;
-    box.value = '   ,  ';
-    box.fire('keydown', { key: 'Enter' });
-    ok('‼️ a mark is never left with no topic — an emptied box sends nothing',
+    r.query('[data-afc-off]').forEach(b => b.fire('mousedown'));
+    r.query('#wk-esave')[0].fire('click');
+    ok('‼️ a mark is never left with no topic — an emptied picker sends nothing',
         r.posted.length === before);
+    ok('…and the editor says why rather than closing on a write that would bounce',
+        /at least one topic/.test(r.html()));
+}
+/** X-58 in the editor: the whole-session mark can drop turns from its scope. */
+{
+    const r = run();
+    r.query('[data-act]').filter(e => e.dataset.act === 'topics' && e.dataset.id === 'wc-6')[0]
+        .fire('click');
+    const h = r.html();
+    ok('a mark that spans turns offers them as something to leave out',
+        /data-ex="1"/.test(h) && /data-ex="14"/.test(h));
+    ok('…the ones already excluded are struck through, not merely unlit',
+        /class="wk-tn cut" data-ex="13"/.test(h) || /wk-tn cut" data-ex="13"/.test(h));
+    r.query('[data-ex]').filter(e => e.dataset.ex === '2')[0].fire('click');
+    r.query('#wk-esave')[0].fire('click');
+    const m = r.last();
+    ok('…and a press adds it to what the compile is told to skip',
+        m.type === 'edit' && m.excludeTurns.join(',') === '2,13,14');
 }
 
 // =========================================== paths are the host\'s to resolve

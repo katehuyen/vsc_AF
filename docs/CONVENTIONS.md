@@ -366,6 +366,16 @@ node test/render_page.js track --only timeline --light
   that is what these pages actually carry.
 - **Check the light theme too** (`--light`). `color-mix` over a dark fallback
   and `color:#fff` on a chip are the two that fail there and only there.
+- **‼️ What only exists after a press has to be photographable, or it ships
+  blind.** A hover panel, a filter menu and a row editor are each a closed
+  button in a picture taken of the page as it loads. Three ways in, in order of
+  preference: a variant's own `act(r)` **presses** what a reader presses (the
+  shim binds the same handlers, so this is the honest one — it is how the wiki's
+  row editor is drawn); `--tip <class>[:n]` opens a hover panel with the
+  component's own stay-open class; and `--menu [id]` takes the `hidden`
+  attribute off a filter menu, which is needed because the page shim does not
+  wire `afFilters` at all (its stub menus have no `querySelectorAll`), so no
+  press can open one.
 
 It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part

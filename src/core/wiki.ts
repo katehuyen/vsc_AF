@@ -1206,7 +1206,11 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             log: path.join(root, WIKI_LOG_REL),
             logFound: fs.existsSync(path.join(root, WIKI_LOG_REL)),
             pages: pages.length,
-            categories: [...new Set(pages.map(p => p.category))].sort(),
+            // ‼️ U-91/U-92 — the FOLDERS, not the categories that happen to hold
+            // a page. A folder somebody made in Obsidian this morning is a
+            // category the moment it exists, and a status that omitted it was
+            // the one surface still disagreeing with the picker.
+            categories: readWikiCategories(root).map(c => c.name),
             misplaced
         }
     };
