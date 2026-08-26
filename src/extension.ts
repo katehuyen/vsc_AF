@@ -342,6 +342,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
+import { registerSuperpowersOps } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
@@ -12102,6 +12103,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         WikiPanel.refreshIfOpen();
     };
     registerWikiOps(bridge, wikiDeps);
+    /**
+     * ‼️ X-55 — THE SKILLS THAT SLEEP. Same rule as the wiki root and for the
+     * same reason: `settings.json` is synced between machines, so a literal
+     * `C:\Users\<name>\…` is a folder that exists on one computer. The
+     * variables are expanded when the folder is OPENED and never written back.
+     */
+    const superpowersRoot = (): string => {
+        const set = (cfg().get<string>('superpowersPath') ?? '').trim();
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        return set
+            ? expandUserPath(set, { workspaceRoot: ws })
+            : path.join('D:', 'zone', 'agent', 'ajanlar', '_SKILLS', 'superpowers');
+    };
+    registerSuperpowersOps(bridge, {
+        root: superpowersRoot,
+        rootSetting: () => (cfg().get<string>('superpowersPath') ?? '').trim()
+    });
     /** U-70 — the cockpit over that same pool. */
     const showWikiPanel = (focus?: string): void => WikiPanel.show({
         extensionUri: context.extensionUri,

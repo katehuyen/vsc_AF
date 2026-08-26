@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.286.0 - X-132: the Superpowers skills sleep on disk, and the extension can produce the one page that wakes them (2026-08-26)
+
+The engineering-discipline library (Obra superpowers v6.3.0 — TDD, systematic
+debugging, planning, brainstorming, verification before completion) is fourteen
+markdown skills. Putting them in front of a model would be a permanent bill on
+every turn AND a procedure in front of work that does not need one, so they stay
+files at **zero tokens** and only the library's own root hook is injected when a
+session is switched on.
+
+`agentFarm.superpowersPath` says where they are (portable variables expanded on
+open, never written back — the wiki root's rule). `src/core/superpowers.ts`
+reads the folder and builds the block: the hook's own words, its frontmatter
+dropped, plus **an index of every skill with its absolute path**.
+
+‼️ The index is the part that is easy to leave out and fatal to leave out. The
+hook says "invoke the relevant skill" because it was written for a harness with
+a skill REGISTRY behind it; here they are plain files, so a model given the hook
+alone is told to invoke something it has no way to find — which looks like the
+feature working right up until it matters. The index is read out of each skill's
+own frontmatter, so a newer release dropped into the folder describes itself.
+
+A folder that cannot supply a hook supplies **nothing**: half a hook sends a
+model looking for skills that are not there. `superpowers.status` and
+`superpowers.hook` are the two ops. Measured on the real folder: 14 skills,
+6,660 characters of block.
+
+Nothing is injected yet — that is the switch, and it is X-133.
+
 ## 3.285.0 - U-95: no compile starts unstated, the ticked rows are acted on together, and a compile that finishes says so (2026-08-26)
 
 **Pressing 📚 started a real model over real transcripts and said nothing about

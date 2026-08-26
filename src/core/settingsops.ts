@@ -207,7 +207,12 @@ const CATEGORY_OF: Record<string, string> = {
      * read the folder and say so — see `wikiSection` in `media/settings.js`.
      */
     wikiRoot: 'wiki', wikiAgent: 'wiki',
-    wikiEngine: 'wiki', wikiModel: 'wiki', wikiEffort: 'wiki'
+    wikiEngine: 'wiki', wikiModel: 'wiki', wikiEffort: 'wiki',
+    // X-55 — where the sleeping engineering-discipline skills are. It is filed
+    // with the agents because it is about how an agent WORKS, not about
+    // anything it produces; it stays a plain path until the switch that turns
+    // it on has a surface of its own to sit on.
+    superpowersPath: 'core'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [
