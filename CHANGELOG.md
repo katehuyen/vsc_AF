@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.280.0 - M-28: a setting VS Code refuses to register is written into settings.json by the extension itself, surgically (2026-08-26)
+
+**M-28 — `agentFarm.budgetsUnlimited` could be read and could not be written.**
+Exactly one of the settings this build contributes is missing from the running
+window's configuration registry: reading it hands back `undefined` instead of the
+declared default, and `update()` refuses it outright with "is not a registered
+configuration". The manifest is not at fault and no extension can put the key
+back from inside. The read side has fallen back to the user's own `settings.json`
+for a while; the write side had nowhere to go and ended in a message telling the
+user which line to paste by hand.
+
+It now writes the line itself, into the same file the reader already falls back
+to — so the value takes effect in that window with no reload.
+
+What made this worth being careful about is the file: `settings.json` is JSONC.
+The obvious completion — parse it, set the key, serialise it back — would have
+handed the user their settings file stripped of every comment they had written
+and reflowed to somebody else's indentation, which is a far bigger loss than the
+switch was worth. So the write is SURGICAL: the text is scanned for that one
+member's value span and only those characters are replaced. Comments, blank
+lines, key order, indent width (spaces, tabs, whatever the file uses), trailing
+commas, CRLF and a BOM are bytes the patcher never touches, and a new key is
+appended in the file's own indentation with the comma placed BEFORE any comment
+trailing the line above rather than inside it. A reset deletes the member and the
+punctuation that was only holding it, and leaves any comment somebody wrote about
+it. The nested `"agentFarm": { … }` spelling is patched where it lives instead of
+being duplicated flat, and a key written twice is patched at the last spelling —
+the one actually in force.
+
+A file the scanner cannot understand is REFUSED rather than guessed at, and the
+old paste-this-line message is what the user gets, now naming the reason. After
+writing, the file is read back through the same door: a patcher that claims a
+write it cannot see would be worse than the refusal it replaced. If the value is
+also set in a workspace file that outranks the user file, that is reported rather
+than reported as applied.
+
+Measured on the 124 settings this build declares: every one of them writes into a
+commented file and reads back, and the comments are still there afterwards.
+
 ## 3.279.0 - U-105: the session column is 250px of content whether or not it is scrolling · U-96: Check now is on every engine that has something to check, and the others say why (2026-08-26)
 
 **U-105 — opening the Resume section at the bottom of the Console's left column

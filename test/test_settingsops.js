@@ -560,8 +560,10 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         /cfgValue<boolean>\('agentFarm\.budgetsUnlimited', false\)/.test(ext));
     ok('…and every value the settings page draws comes through the same door',
         /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw, cfgRefusal\)/.test(ext));
-    ok('a refusal names the file and the line to paste instead of stopping there',
-        /not a registered configuration/i.test(ext) && /vscodeUserSettingsFile\(\)/.test(ext));
+    // M-28: the refusal used to end in a line for the user to paste. The write
+    // side now has the same fallback the read side has (test_jsonc_patch.js).
+    ok('a refusal is answered by writing the file, not by handing the user a line',
+        /not a registered configuration/i.test(ext) && /patchUserSetting\(key, value\)/.test(ext));
     ok('…and 0 in a budgets figure is documented as the second way to lift a cap',
         /A figure of 0 means NO CAP/.test(props['agentFarm.budgets'].description));
 }

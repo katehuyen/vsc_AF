@@ -96,7 +96,7 @@ import {
     buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile
 } from './core/settingsops';
 import {
-    afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, vscodeUserSettingsFile
+    afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, patchUserSetting
 } from './core/settingsDoor';
 import { registerSettingsOps } from './core/settingsBridge';
 import { matchTaskSession } from './core/taskcost';
@@ -15926,15 +15926,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const msg = String((e as Error)?.message ?? e);
                 // ‼️ VS Code can refuse a key this build's own manifest declares
                 // (measured on `agentFarm.budgetsUnlimited`). Reading it works —
-                // the reader falls back to the file — so the honest answer is the
-                // line to paste, not a bare refusal that leaves the user stuck.
+                // the reader falls back to the file — so the write falls back to
+                // the same file rather than handing the user a line to paste.
                 if (/not a registered configuration/i.test(msg)) {
+                    const w = patchUserSetting(key, value);
+                    if (w.ok && !w.shadowedBy) { return; }
+                    if (w.ok) {
+                        throw new Error(`"${key}" was written to ${w.file}, but it is also set in `
+                            + `${w.shadowedBy}, which takes precedence in this window — change it there.`);
+                    }
                     throw new Error(`${msg} This build DOES declare "${key}" — VS Code's `
                         + `configuration registry dropped it in this window and no extension can put it `
-                        + `back from inside. Reloading the window usually restores it. Until then, add `
-                        + `the line by hand to ${vscodeUserSettingsFile()}:  "${key}": `
-                        + `${JSON.stringify(value ?? null)}  — Agent Farm reads that file whenever the `
-                        + `registry hands back nothing, so the value takes effect with no reload.`);
+                        + `back from inside. Agent Farm tried to write the line into ${w.file} itself, `
+                        + `where the reader would have picked it up with no reload, and could not: `
+                        + `${w.error}. Reloading the window usually restores the registry; until then `
+                        + `add the line by hand:  "${key}": ${JSON.stringify(value ?? null)}`);
                 }
                 throw e;
             }

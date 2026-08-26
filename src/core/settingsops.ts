@@ -22,9 +22,10 @@
  *
  * A setting that vanishes is not a setting, so the READER stops trusting the
  * registry alone: when it hands back nothing, the user's own `settings.json` is
- * read for that key and the figure they typed is honoured. The fallback is on
- * the read side only — reading a file cannot corrupt it, and hand-patching a
- * user's JSONC is not a risk worth taking for a switch.
+ * read for that key and the figure they typed is honoured. The WRITE side has
+ * the same fallback and it is surgical — `core/jsoncPatch.ts` replaces the one
+ * member's span and leaves every comment, blank line and indent alone, because
+ * rewriting a user's settings file to set a switch is the cure being worse.
  *
  * `settings.json` is JSONC: comments and trailing commas are legal there, and a
  * `//` inside a string — every Windows path, every URL in that file — has to

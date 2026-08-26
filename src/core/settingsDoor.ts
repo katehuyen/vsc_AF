@@ -21,6 +21,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { patchJsoncSetting } from './jsoncPatch';
 import { readSettingScoped, schemaCheck, SettingsScope, userFolderFromGlobalStorage } from './settingsops';
 
 /** VS Code's own user settings.json — the file its Settings editor writes on a
@@ -126,6 +127,51 @@ export function cfgValueRaw(key: string): unknown {
 export function cfgValue<T>(key: string, fallback: T): T {
     const v = cfgValueRaw(key);
     return v === undefined ? fallback : v as T;
+}
+
+/**
+ * ‼️ M-28 — THE WRITE SIDE OF THE SAME FALLBACK.
+ *
+ * When the registry refuses a key this build declares, `update()` has nowhere
+ * to put it and the value is simply lost. This writes the line into the user's
+ * own `settings.json` — the file the reader above already falls back to, so the
+ * setting takes effect in this window with no reload.
+ *
+ * Two things it will not do. It never TIDIES: `patchJsoncSetting` replaces one
+ * member's span and refuses a file it cannot scan, so comments and formatting
+ * are bytes nobody rewrote. And it never claims a write it cannot see: the file
+ * is read back through the same door afterwards, because a patcher that lies is
+ * worse than the refusal it replaced.
+ */
+export function patchUserSetting(key: string, value: unknown):
+    { ok: true; file: string; changed: boolean; shadowedBy?: string }
+    | { ok: false; file: string; error: string } {
+    const scopes = settingsScopeChain();
+    // `ConfigurationTarget.Global` is the user file, and the chain's last scope
+    // is that file — a workspace is somebody else's to edit.
+    const file = scopes[scopes.length - 1].file;
+    let text = '';
+    try { if (fs.existsSync(file)) { text = fs.readFileSync(file, 'utf8'); } }
+    catch (e) { return { ok: false, file, error: String((e as Error).message) }; }
+
+    const patched = patchJsoncSetting(text, key, value);
+    if (!patched.ok) { return { ok: false, file, error: patched.error }; }
+    if (patched.changed) {
+        try {
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, patched.text, 'utf8');
+        } catch (e) { return { ok: false, file, error: String((e as Error).message) }; }
+        textCache.delete(file);
+        const back = readSettingScoped([{ file }], fileText, key);
+        const wrote = value === undefined
+            ? !back.found
+            : back.found && JSON.stringify(back.value) === JSON.stringify(value);
+        if (!wrote) {
+            return { ok: false, file, error: 'the file was written but the key does not read back' };
+        }
+    }
+    const shadow = scopes.slice(0, -1).find(s => readSettingScoped([s], fileText, key).found);
+    return { ok: true, file, changed: patched.changed, shadowedBy: shadow?.file };
 }
 
 /**
