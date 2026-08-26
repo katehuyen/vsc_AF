@@ -735,6 +735,19 @@ export interface WikiDeps {
     defaultEngine?(): string;
     defaultModel?(): string;
     defaultEffort?(): string;
+    /**
+     * ‼️ U-95 — A COMPILE THAT FINISHED IS NEWS, AND THIS IS THE ONLY MOMENT
+     * ANYBODY CAN KNOW IT DID.
+     *
+     * A run reports back one `wiki.candidates.edit {state:"compiled"}` at a
+     * time, hours after the button was pressed and usually into a window nobody
+     * is looking at. Nothing else in the system observes that moment: the task
+     * ends, the row turns green, and unless the cockpit happens to be open the
+     * user finds out by going and looking. So the host is handed the moment and
+     * puts it on Notices — coalesced there, because a run that closes five
+     * marks has done ONE thing worth telling.
+     */
+    announce?(a: { id: string; label: string; topics: string[]; pages: string[] }): void;
 }
 
 /** What a compile is handed — the same object whether a person reads it or a
@@ -1370,7 +1383,26 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         {
             op: 'wiki.candidates.edit',
             describe: 'Change a candidate. args: id, then any of topics? (replaces the list), addTopics? (adds to it), note?, excludeTurns? (X-58 — turn numbers inside the scope to leave out; pass [] to take the exclusions off), state? (pending|compiled|dropped), pages? (the wiki files a compile wrote for it — provenance read backwards), retry? (true = clear the reason the last compile failed and release any claim, so the mark is a clean pending row again). Setting state=compiled stamps the time; this is how a compile reports back (_REF/wiki.md §8 step 6).',
-            handler: (args) => editCandidate(S(), args)
+            handler: (args) => {
+                // ‼️ U-95 — the transition, read on both sides of the write. A
+                // mark that was already `compiled` and is edited again (its
+                // pages corrected, a topic fixed) is not a compile finishing,
+                // and announcing it would be the farm telling the user
+                // something they just did.
+                const id = optStr(args, 'id');
+                const was = id ? S().get(id)?.state : undefined;
+                const out = editCandidate(S(), args);
+                const now = id ? S().get(id) : undefined;
+                if (deps.announce && was !== 'compiled' && now && now.state === 'compiled') {
+                    try {
+                        deps.announce({
+                            id: now.id, label: now.label || '',
+                            topics: [...now.topics], pages: [...(now.pages ?? [])]
+                        });
+                    } catch { /* news is never worth failing a write over */ }
+                }
+                return out;
+            }
         },
         {
             op: 'wiki.candidates.remove',

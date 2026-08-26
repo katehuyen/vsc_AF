@@ -36,8 +36,24 @@
      * `picked`/`query`/`open`/`active` and repaints, so they live here.
      */
     let edit = null;
+    /**
+     * ‼️ U-95 — WHAT A COMPILE IS ABOUT TO SPEND, BEFORE IT SPENDS IT.
+     *
+     * A compile is a headless run of a real model over real transcripts: it
+     * costs quota and it writes into the vault. Which model, at what effort and
+     * under whose name are three settings the reader cannot see from this page,
+     * and pressing 📚 used to start the run with all three unstated. So every
+     * compile button now opens the same strip — what it will read, what it will
+     * run with, and one press to start it or to go and change it.
+     *
+     * `{ ids, what }` — ids [] means "every waiting mark", which the op resolves
+     * itself at the moment it runs (a page that sent a snapshot would compile a
+     * list that had already moved).
+     */
+    let ask = null;
+    let escWired = false;
 
-    const DEF = { fTopic: null, fState: ['pending', 'compiled'], query: '' };
+    const DEF ={ fTopic: null, fState: ['pending', 'compiled'], query: '' };
     const saved = (vscode.getState && vscode.getState()) || {};
     let fTopic = saved.fTopic === undefined ? DEF.fTopic : saved.fTopic;
     let fState = saved.fState === undefined ? DEF.fState : saved.fState;
@@ -228,10 +244,73 @@
             <input type="text" id="wk-q" class="wk-q" placeholder="search topics, prompts, notes, pages…" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip('Searched against a mark\'s topics, its opening prompt, its note, its session and the pages a compile wrote for it.'))}">
             <button class="secondary" id="wk-reset" title="Clear the topic filter, the state toggles and the search">↺ Reset</button>
+            ${filteredCompile()}
         </div>`;
     }
 
+    /**
+     * ‼️ U-95 — "COMPILE WHAT I AM LOOKING AT", where the looking is done.
+     *
+     * A reader who has just narrowed the pool to `Felsefe` wants that compiled,
+     * and the two presses that already did it (tick the header box, then
+     * Compile Selected) are two presses about a set the filter has already
+     * expressed. It appears only when the view IS narrowed — on the unfiltered
+     * pool it would be a second, differently-worded Compile All Pending.
+     */
+    function filteredCompile() {
+        const pick = compilable(shown());
+        // ‼️ It appears when it would compile a DIFFERENT set from Compile All
+        // Pending — which is the honest test, and the one that does not have to
+        // guess what "a filter is applied" means. The default view already
+        // hides the dropped marks, and dropped marks were never compilable, so
+        // on an untouched page the two sets are the same and this stays away.
+        if (!pick.length || pick.length === compilable(rows()).length) { return ''; }
+        const v = vault();
+        const blocked = !v.exists || !v.rulesFound;
+        return `<button class="secondary" id="wk-cfilt"${blocked ? ' disabled' : ''}
+            title="${blocked ? 'The wiki is not compilable — see the strip above.'
+            : `Start one run over the ${pick.length} waiting mark(s) these filters leave. Marks a run is already out for are not among them.`}"
+            >⚡ Compile these ${pick.length}</button>`;
+    }
+
     // --------------------------------------------------------------- the rows
+    // ------------------------------------------------- U-95: before it runs
+    /** Open the confirm strip. `ids: []` means every waiting mark — the op
+     *  resolves that itself, at the moment it runs. */
+    function askCompile(ids, what) {
+        ask = { ids: ids.slice(), what };
+        render();
+    }
+
+    /**
+     * What the run will be: who writes it and with how much of a model. All
+     * four are settings (X-57) and none of them is visible from this page, so
+     * the one press that starts a real run states them — and offers the way to
+     * change them, which is the Settings section that owns them, not a second
+     * copy of it here.
+     */
+    function askStrip() {
+        if (!ask) { return ''; }
+        const w = DATA.compileWith || {};
+        const n = ask.ids.length || compilable(rows()).length;
+        const bit = (label, value, unset) => `<span class="wk-awith" title="${esc(value
+            ? `${label}: ${value}`
+            : `${label} is not set — ${unset}`)}">${value ? esc(value) : `<span class="muted">${esc(label)}: default</span>`}</span>`;
+        return `<div class="wk-ask">
+            <span class="wk-alabel">📚 ${esc(ask.what)}</span>
+            <span class="wk-asep">·</span>
+            <span class="muted small">runs as</span>
+            ${bit('agent', w.agent, 'the farm\'s first agent writes it')}
+            ${bit('engine', w.engine, 'the extension\'s default engine')}
+            ${bit('model', w.model, 'the engine\'s own default model')}
+            ${bit('effort', w.effort, 'the engine\'s own default effort')}
+            <span class="wk-aspace"></span>
+            <button id="wk-ago" title="Start the run now. ${n} mark(s) go into ONE run; nothing is compiled until it reports back with the pages it wrote.">▶ Start</button>
+            <button class="secondary" id="wk-achange" title="Open Settings ▸ Wiki & Knowledge Base, where these four live. Change them there and press Start again — a run started from the cockpit, the palette or the bridge must be the same run.">⚙ Change…</button>
+            <button class="secondary" id="wk-acancel" title="Start nothing (Esc)">Cancel</button>
+        </div>`;
+    }
+
     /** The zero-click preview: everything the pool knows about this mark, on
      *  the cell that names it. A reader deciding whether to compile a row reads
      *  this instead of opening the transcript. */
@@ -350,7 +429,11 @@
                 c.compiledAt ? '' : null, c.compiledAt ? 'Compiled ' + window.AFTime.full(c.compiledAt) : null].filter(x => x !== null)))}
             ${pagesCell(c)}
             <td class="wk-act">
-                <button class="mini" data-act="topics" data-id="${esc(c.id)}" title="Edit this mark's topics">✎</button>
+                ${c.state === 'pending' && !c.compiling
+                ? `<button class="mini wk-go" data-act="compile" data-id="${esc(c.id)}"
+                        title="Compile this one mark on its own, without ticking it first. Same run, one mark in it.">⚡</button>`
+                : ''}
+                <button class="mini" data-act="topics" data-id="${esc(c.id)}" title="Edit this mark's topics, its note and the turns it leaves out">✎</button>
                 ${c.state === 'pending' && c.lastError
                 ? `<button class="mini wk-retry" data-act="retry" data-id="${esc(c.id)}"
                         title="Clear what the last run said and put this mark back in the queue as a clean waiting row. It writes nothing — the mark was never compiled.">↻</button>`
@@ -419,6 +502,23 @@
             ? (!v.exists ? 'The wiki root is not there — a compile cannot start.' : 'The wiki\'s own law (-WIKI-ANAYASA-.md) is missing — a compile is refused without it.')
             : '';
 
+        /**
+         * ‼️ U-95 — WHAT A TICK IS FOR, BESIDES COMPILING. Ticking five rows and
+         * then pressing 🚫 five times, one row at a time, is the same gesture
+         * the tick box was put there to end. The two appear only when something
+         * is ticked: an always-visible `Drop (0)` is a button that does nothing
+         * and a `Remove` sitting permanently beside a compile is a hand slip.
+         */
+        const bulk = pickedIds.length ? `
+            <span class="wk-bulk">
+                <button class="secondary" id="wk-dsel"
+                    title="Take the ${pickedIds.length} selected mark(s) out of the queue without compiling them. Reversible from the row (↺), and it writes nothing to the vault."
+                    >🚫 Drop ${pickedIds.length}</button>
+                <button class="secondary wk-del" id="wk-rsel"
+                    title="Delete the ${pickedIds.length} selected mark(s) from the pool. It undoes nothing in the vault — a page already written stays written."
+                    >✕ Remove ${pickedIds.length}</button>
+            </span>` : '';
+
         const actions = `
             <button id="wk-csel" ${pickedIds.length && !blocked ? '' : 'disabled'}
                 title="${blocked ? esc(why) : `Start ONE run over the ${pickedIds.length} selected mark(s). It writes nothing yet — the run reports back with the pages it wrote, and that is what closes a mark.`}"
@@ -426,6 +526,7 @@
             <button class="secondary" id="wk-call" ${waiting && !blocked ? '' : 'disabled'}
                 title="${blocked ? esc(why) : `Start one run over every waiting mark (${waiting}). Marks a run is already out for are left alone.`}"
                 >⚡ Compile All Pending${waiting ? ` (${waiting})` : ''}</button>
+            ${bulk}
             <button class="secondary" id="wk-lint" title="Check the SHAPE of the wiki — orphans, broken links, pages missing from the index. It reports and never repairs.">🩺 Lint</button>`;
 
         const sub = [
@@ -522,7 +623,33 @@
                 .wk-pages { max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .wk-page { cursor:pointer; color:var(--vscode-textLink-foreground); text-decoration:none; }
                 .wk-page:hover { text-decoration:underline; }
-                .wk-run { color:var(--vscode-charts-blue,#3794ff); }
+                /* ‼️ U-95 — A RUN THAT IS OUT IS THE ONE THING ON THIS PAGE THAT
+                   IS HAPPENING RIGHT NOW, and a still blue word looks exactly
+                   like a state that has been sitting there for a day. It
+                   breathes instead — the same signal the Console uses for a
+                   turn in flight, and off for a reader who asked for less
+                   motion. */
+                .wk-run, tr.wk-compiling .wk-st { color:var(--vscode-charts-blue,#3794ff);
+                    animation:wk-breathe 1.9s ease-in-out infinite; }
+                @keyframes wk-breathe { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+                @media (prefers-reduced-motion: reduce) {
+                    .wk-run, tr.wk-compiling .wk-st { animation:none; }
+                }
+                /* U-95: the bulk group, which only exists while rows are ticked. */
+                .wk-bulk { display:inline-flex; gap:6px; padding-left:8px; margin-left:2px;
+                    border-left:1px solid var(--vscode-widget-border,#4443); }
+                .wk-del:hover { color:var(--vscode-errorForeground,#f14c4c); }
+                /* U-95: the strip that stands between a press and a real run. */
+                .wk-ask { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:11px;
+                    padding:6px 10px; margin:0 0 8px; border-radius:5px;
+                    border:1px solid var(--vscode-focusBorder);
+                    background:var(--vscode-editorWidget-background, transparent); }
+                .wk-alabel { font-size:12px; }
+                .wk-asep { opacity:.4; }
+                .wk-awith { padding:0 6px; border-radius:9px; font-size:10.5px; cursor:help;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .wk-awith .muted { color:inherit; opacity:.7; }
+                .wk-aspace { flex:1 1 auto; }
                 .wk-act { white-space:nowrap; width:1%; text-align:right; }
                 .wk-act .mini { background:none; border:1px solid transparent; color:inherit; cursor:pointer;
                     font-size:11px; padding:1px 5px; border-radius:4px; opacity:.55; }
@@ -552,6 +679,7 @@
         })}
             ${vaultStrip()}
             ${filterBar()}
+            ${askStrip()}
             ${tableHtml(list)}
             ${lintHtml()}
             <p class="footnote">Marking a turn writes nothing to the vault; only a compile does — and a compile is an agent's
@@ -712,11 +840,55 @@
             render();
         });
 
+        // ---- U-95: every compile goes through the same strip, and the strip is
+        // the only thing that posts. One door, so a run started from the row
+        // button cannot quietly differ from one started from the toolbar.
+        const picked = () => [...selected].filter(id => compilable(rows()).some(c => c.id === id));
         bind('wk-csel', 'click', () => {
-            const ids = [...selected].filter(id => compilable(rows()).some(c => c.id === id));
-            if (ids.length) { post({ type: 'compile', ids }); selected.clear(); }
+            const ids = picked();
+            if (ids.length) { askCompile(ids, `Compile ${ids.length} selected mark(s)`); }
         });
-        bind('wk-call', 'click', () => { post({ type: 'compile', ids: [] }); selected.clear(); });
+        bind('wk-call', 'click', () => askCompile([], `Compile every waiting mark (${compilable(rows()).length})`));
+        bind('wk-cfilt', 'click', () => {
+            const ids = compilable(shown()).map(c => c.id);
+            if (ids.length) { askCompile(ids, `Compile the ${ids.length} mark(s) these filters leave`); }
+        });
+        bind('wk-ago', 'click', () => {
+            const ids = ask ? ask.ids.slice() : null;
+            if (!ids) { return; }
+            ask = null;
+            post({ type: 'compile', ids });
+            selected.clear();
+            // The host answers with fresh data in a moment; until it does, the
+            // page must not still be showing a strip about a run that has
+            // already been started.
+            render();
+        });
+        bind('wk-achange', 'click', () => post({ type: 'openSettings', focus: 'agentFarm.wikiEngine' }));
+        bind('wk-acancel', 'click', () => { ask = null; render(); });
+        // Esc gets out of a strip that is about to spend quota, from wherever
+        // the hand is. Wired to the document ONCE — the page rebuilds itself on
+        // every tick and a listener added per render would stack up.
+        if (!escWired && document.addEventListener) {
+            escWired = true;
+            document.addEventListener('keydown', ev => {
+                if (ev.key === 'Escape' && ask) { ask = null; render(); }
+            });
+        }
+
+        // ---- U-95: the ticked rows, acted on together.
+        bind('wk-dsel', 'click', () => {
+            const ids = picked();
+            if (!ids.length) { return; }
+            post({ type: 'edit', ids, state: 'dropped' });
+            selected.clear(); render();
+        });
+        bind('wk-rsel', 'click', () => {
+            const ids = picked();
+            if (!ids.length) { return; }
+            post({ type: 'remove', ids });
+            selected.clear(); render();
+        });
         bind('wk-lint', 'click', () => post({ type: 'lint' }));
         bind('wk-lclose', 'click', () => { LINT = null; render(); });
 
@@ -751,6 +923,13 @@
                 // X-58 — the mark was never compiled, so this clears a record
                 // rather than undoing work: the reason goes, the claim goes,
                 // and the row is a clean waiting row again.
+                // U-95 — one mark, on its own, through the same strip every
+                // other compile goes through.
+                case 'compile': {
+                    const c = rowById(id);
+                    askCompile([id], `Compile this one mark${c && c.topics && c.topics.length ? ` — ${c.topics.join(', ')}` : ''}`);
+                    break;
+                }
                 case 'retry': post({ type: 'edit', id, retry: true }); break;
                 case 'drop': post({ type: 'edit', id, state: 'dropped' }); break;
                 case 'reopen': post({ type: 'edit', id, state: 'pending' }); break;

@@ -98,22 +98,102 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
 }
 
 // ================================================== the two compile selectors
+/**
+ * ‼️ U-95 — NO COMPILE BUTTON STARTS A RUN. They all open the same strip.
+ *
+ * A compile is a headless run of a real model over real transcripts: it spends
+ * quota and it writes into the vault, and which agent, engine, model and effort
+ * it uses are four settings the reader cannot see from this page. So the press
+ * says what it is about to spend, and one more press spends it.
+ */
+{
+    const r = run();
+    const cb = el(r, 'cb', 'wc-1');
+    cb.checked = true; cb.fire('change');
+    const before = r.posted.length;
+    r.query('#wk-csel')[0].fire('click');
+    ok('pressing Compile Selected starts nothing yet', r.posted.length === before);
+    const h = r.html();
+    ok('…it says what it is about to read', /Compile 1 selected mark/.test(h));
+    ok('…and what it will run with, from the settings that resolve the run',
+        /developer/.test(h) && /claude/.test(h) && /sonnet/.test(h));
+    ok('…a setting nobody set says so rather than reading as a choice',
+        /effort: default/.test(h));
+    r.query('#wk-ago')[0].fire('click');
+    const m = r.last();
+    ok('Start sends the ticked ids', m.type === 'compile' && m.ids.length === 1 && m.ids[0] === 'wc-1');
+    ok('…and the strip is gone once it has been spent', !r.query('#wk-ago').length);
+}
 {
     const r = run();
     const cb = el(r, 'cb', 'wc-1');
     cb.checked = true; cb.fire('change');
     r.query('#wk-csel')[0].fire('click');
-    const m = r.last();
-    ok('Compile Selected sends the ticked ids', m.type === 'compile' && m.ids.length === 1 && m.ids[0] === 'wc-1');
+    ok('Cancel is a real way out', !!r.query('#wk-ago').length);
+    const before = r.posted.length;
+    r.query('#wk-acancel')[0].fire('click');
+    ok('…it starts nothing and takes the strip away',
+        r.posted.length === before && !r.query('#wk-ago').length);
 }
 {
     const r = run();
     r.query('#wk-call')[0].fire('click');
+    r.query('#wk-ago')[0].fire('click');
     const m = r.last();
     // ‼️ NO IDS. `all:true` is resolved by the op at the moment it runs; a page
     // that sent a snapshot would compile a list that had already moved.
     ok('‼️ Compile All Pending sends no ids at all — the op resolves "all" itself',
         m.type === 'compile' && Array.isArray(m.ids) && m.ids.length === 0);
+}
+/** U-95 — one row, on its own, without ticking anything first. */
+{
+    const r = run();
+    r.query('[data-act]').filter(e => e.dataset.act === 'compile' && e.dataset.id === 'wc-4')[0]
+        .fire('click');
+    r.query('#wk-ago')[0].fire('click');
+    const m = r.last();
+    ok('a waiting row compiles itself, alone',
+        m.type === 'compile' && m.ids.length === 1 && m.ids[0] === 'wc-4');
+    ok('‼️ …and a row a run is already out for is not offered one',
+        !r.query('[data-act]').some(e => e.dataset.act === 'compile' && e.dataset.id === 'wc-2'));
+}
+/** U-95 — "compile what I am looking at", where the looking is done. */
+{
+    const r = run();
+    ok('the unfiltered pool offers no "compile these" — it would be Compile All twice',
+        !r.query('#wk-cfilt').length);
+    const q = r.query('#wk-q')[0];
+    q.value = 'kota'; q.fire('input');
+    ok('narrowing the view offers it, counted', /⚡ Compile these 2/.test(r.html()));
+    r.query('#wk-cfilt')[0].fire('click');
+    r.query('#wk-ago')[0].fire('click');
+    const m = r.last();
+    ok('…and it compiles exactly the waiting rows the filters leave',
+        m.type === 'compile' && m.ids.length === 2
+        && m.ids.indexOf('wc-4') >= 0 && m.ids.indexOf('wc-6') >= 0);
+}
+/**
+ * ‼️ U-95 — WHAT A TICK IS FOR BESIDES COMPILING. Ticking five rows and then
+ * pressing 🚫 on each one is the gesture the tick box was put there to end.
+ */
+{
+    const r = run();
+    ok('with nothing ticked there is no bulk group to slip on', !r.query('#wk-dsel').length);
+    ['wc-1', 'wc-4'].forEach(id => { const cb = el(r, 'cb', id); cb.checked = true; cb.fire('change'); });
+    ok('ticking brings it, counted', /🚫 Drop 2/.test(r.html()) && /✕ Remove 2/.test(r.html()));
+    r.query('#wk-dsel')[0].fire('click');
+    const m = r.last();
+    ok('Drop takes the ticked ones out of the queue in one write',
+        m.type === 'edit' && m.state === 'dropped' && m.ids.length === 2);
+    ok('…and the selection is spent with it', !/🚫 Drop 2/.test(r.html()));
+}
+{
+    const r = run();
+    ['wc-1', 'wc-4'].forEach(id => { const cb = el(r, 'cb', id); cb.checked = true; cb.fire('change'); });
+    r.query('#wk-rsel')[0].fire('click');
+    const m = r.last();
+    ok('Remove deletes the ticked ones, and nothing else',
+        m.type === 'remove' && m.ids.length === 2 && m.ids.indexOf('wc-2') < 0);
 }
 
 // ====================================== no law, no compile — and it says why

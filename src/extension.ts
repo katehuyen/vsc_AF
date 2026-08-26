@@ -342,7 +342,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
-import { normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
+import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
     playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
@@ -12035,7 +12035,71 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             const started = a.start !== false ? taskManager.startTask(task) : false;
             return { taskId: task.id, agent: agent!.name, started };
+        },
+        /**
+         * ‼️ U-95 — ONE PIECE OF NEWS PER COMPILE, NOT ONE PER MARK.
+         *
+         * The run closes its marks one `wiki.candidates.edit` at a time, and a
+         * notice per mark would be five bells for one job — the thing Notices
+         * says in so many words not to do. So the closings are collected and
+         * one notice is posted a few seconds after the last of them, which is
+         * also the only honest moment to run the shape check: `wiki.lint` over
+         * a half-written wiki reports breakage the run was about to fix.
+         */
+        announce: (a) => {
+            wikiNews.marks++;
+            for (const p of a.pages) { wikiNews.pages.add(p); }
+            for (const t of a.topics) { wikiNews.topics.add(t); }
+            if (wikiNewsTimer) { clearTimeout(wikiNewsTimer); }
+            wikiNewsTimer = setTimeout(flushWikiNews, WIKI_NEWS_QUIET_MS);
         }
+    };
+    /** The compile news being collected, and what settles it. */
+    const wikiNews = { marks: 0, pages: new Set<string>(), topics: new Set<string>() };
+    let wikiNewsTimer: ReturnType<typeof setTimeout> | undefined;
+    /** How long after the LAST mark closes the notice is posted. A compile
+     *  reports its marks back in a burst; this is long enough to catch the
+     *  burst and short enough that the news is still news. */
+    const WIKI_NEWS_QUIET_MS = 8000;
+    const flushWikiNews = (): void => {
+        wikiNewsTimer = undefined;
+        const marks = wikiNews.marks;
+        const pages = [...wikiNews.pages];
+        const topics = [...wikiNews.topics];
+        wikiNews.marks = 0; wikiNews.pages.clear(); wikiNews.topics.clear();
+        if (!marks) { return; }
+        const root = wikiRoot();
+        const short = (p: string): string => {
+            const rel = p.startsWith(root) ? p.slice(root.length).replace(/^[\\/]+/, '') : p;
+            return rel.replace(/\.md$/i, '').replace(/\\/g, ' / ').replace(/\//g, ' / ');
+        };
+        // ‼️ The shape check runs HERE and nowhere else on this path: after the
+        // pages exist. It reports and never repairs (_REF/wiki.md), so what it
+        // finds is a line in the notice, not an action taken behind the user.
+        let health = '';
+        try {
+            const lint = lintWiki(root);
+            const n = lint.orphans.length + lint.unindexed.length
+                + lint.brokenLinks.length + lint.misplaced.length
+                + (lint.indexMissing ? 1 : 0) + (lint.logMissing ? 1 : 0);
+            health = n
+                ? `\n\nThe shape check found **${n}** thing(s) to look at — open the cockpit and press 🩺 Lint.`
+                : '\n\nThe shape check found nothing wrong with the index or the links.';
+        } catch { /* the wiki is unreadable — the compile news still stands */ }
+        noticesStore.add({
+            agentName: 'agent-farm',
+            type: 'result',
+            level: 1,
+            title: `📚 Wiki compiled — ${pages.length || 'no'} page(s) from ${marks} mark(s)`,
+            body: (pages.length
+                ? pages.map(p => `- \`${short(p)}\``).join('\n')
+                : '_The run closed the mark(s) without naming a page._')
+                + (topics.length ? `\n\nFiled under: ${topics.join(', ')}.` : '')
+                + health
+        });
+        updateNoticesBadge();
+        NoticesPanel.refreshIfOpen();
+        WikiPanel.refreshIfOpen();
     };
     registerWikiOps(bridge, wikiDeps);
     /** U-70 — the cockpit over that same pool. */

@@ -151,6 +151,13 @@ const data = (over) => Object.assign({
     folders: folders(),
     status: status(),
     agent: 'developer',
+    /**
+     * U-95 — what a compile will actually run with. `effort` is deliberately
+     * UNSET: three of the four settings answered and one silent is the real
+     * shape of this page, and the strip has to read as "the engine's own
+     * default" rather than as a choice somebody made.
+     */
+    compileWith: { agent: 'developer', engine: 'claude', model: 'sonnet', effort: '' },
     docOpen: { mode: 'obsidian', hasCustom: true },
     focus: null
 }, over || {});
@@ -213,6 +220,26 @@ module.exports = {
          * which takes off the one attribute that hides it.
          */
         { id: 'topics', label: 'Wiki — the topic filter: one searchable menu instead of a stack of badges', data: data() },
+        /**
+         * ‼️ U-95 — WHAT TICKING ROWS BRINGS, AND WHAT A COMPILE SAYS BEFORE IT
+         * SPENDS ANYTHING. Both only exist after a press, and both are about
+         * cost: the bulk group is there so five marks are dropped once rather
+         * than five times, and the strip is there because a compile is a real
+         * model over real transcripts and the four settings that decide how
+         * expensive that is are invisible from this page.
+         */
+        {
+            id: 'ops', label: 'Wiki — the ticked rows, and what a compile is about to run with',
+            data: data(),
+            act: r => {
+                for (const id of ['wc-1', 'wc-4']) {
+                    // Re-queried each time: the page rebuilds itself on every tick.
+                    const cb = r.query('[data-cb]').filter(e => e.dataset.cb === id)[0];
+                    cb.checked = true; cb.fire('change');
+                }
+                r.query('#wk-csel')[0].fire('click');
+            }
+        },
         // An empty pool is the first thing a new user sees, and it has to say
         // where marks come from rather than just "nothing here".
         {

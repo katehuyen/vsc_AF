@@ -394,6 +394,50 @@ let briefIds = [];
             (await b2.dispatch('wiki.compile', { all: true })).error || ''));
 }
 
+/**
+ * ‼️ U-95 — A COMPILE THAT FINISHED IS NEWS, AND THIS IS THE ONLY MOMENT
+ * ANYBODY CAN KNOW IT DID.
+ *
+ * The run reports back one `wiki.candidates.edit {state:"compiled"}` at a time,
+ * hours after the button was pressed and usually into a window nobody is
+ * looking at. Nothing else in the system observes that moment — so the op hands
+ * it to the host, which is what puts it on Notices. What is pinned here is the
+ * two ways it could be wrong: staying silent when a mark closes, and speaking
+ * up when nothing did.
+ */
+{
+    const heard = [];
+    const b4 = new BridgeRegistry();
+    W.registerWikiOps(b4, {
+        store: () => store, root: () => wikiRoot, sessions: () => SESSIONS,
+        announce: a => heard.push(a)
+    });
+    const made = await b4.dispatch('wiki.candidates.add',
+        { session: 'bb16dc64', turn: 5, topics: 'Duyuru' });
+    const id = made.result.id;
+
+    await b4.dispatch('wiki.candidates.edit', { id, note: 'still waiting' });
+    ok('editing a waiting mark announces nothing', heard.length === 0);
+
+    await b4.dispatch('wiki.candidates.edit',
+        { id, state: 'compiled', pages: ['System/Duyuru.md'] });
+    ok('a mark closing is announced once', heard.length === 1);
+    ok('…with what was written and what it was filed under',
+        heard[0].pages.join() === 'System/Duyuru.md' && heard[0].topics.join() === 'Duyuru');
+
+    await b4.dispatch('wiki.candidates.edit', { id, pages: ['System/Duyuru.md', 'System/Ek.md'] });
+    ok('‼️ correcting an already-compiled mark is not a compile finishing',
+        heard.length === 1);
+
+    // …and a mark that goes back to waiting and closes again IS news again:
+    // that is a second run, and it wrote a page.
+    await b4.dispatch('wiki.candidates.edit', { id, state: 'pending' });
+    await b4.dispatch('wiki.candidates.edit', { id, state: 'compiled', pages: ['System/Ek.md'] });
+    ok('…but a second run over it is', heard.length === 2);
+
+    await b4.dispatch('wiki.candidates.remove', { id });
+}
+
 })().then(() => {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* windows */ }
     console.log(`test_wiki_candidates: ${pass} passed, ${fail} failed`);

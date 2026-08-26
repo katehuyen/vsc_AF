@@ -87,6 +87,23 @@ function buildData(deps: WikiPanelDeps, focus?: string): Record<string, unknown>
             try { return readWikiCategories(w.root()); } catch { return []; }
         })(),
         agent: w.defaultAgent ? w.defaultAgent() : '',
+        /**
+         * ‼️ U-95 — WHAT A COMPILE WILL ACTUALLY RUN WITH, before it runs.
+         *
+         * A compile is a headless run of a real model over real transcripts: it
+         * spends quota and it writes into the vault. All four of these are
+         * settings (X-57) and none of them is visible from the cockpit, so the
+         * page could only offer a button that started an unstated run. Read
+         * through the SAME deps `startCompileRun` resolves from — a strip that
+         * named a different model from the one the run uses would be worse than
+         * saying nothing.
+         */
+        compileWith: {
+            agent: w.defaultAgent ? w.defaultAgent() : '',
+            engine: w.defaultEngine ? w.defaultEngine() : '',
+            model: w.defaultModel ? w.defaultModel() : '',
+            effort: w.defaultEffort ? w.defaultEffort() : ''
+        },
         docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
         focus: focus ?? null
     };
@@ -166,19 +183,32 @@ export class WikiPanel {
                 break;
             case 'edit':
                 this.guard(() => {
-                    if (typeof msg.id !== 'string' || !msg.id) { return; }
-                    editCandidate(this.deps.store(), {
-                        id: msg.id,
-                        ...(msg.topics !== undefined ? { topics: msg.topics } : {}),
-                        ...(msg.note !== undefined ? { note: msg.note } : {}),
-                        ...(msg.state !== undefined ? { state: msg.state } : {}),
-                        // X-58 — the row's ↻ and its exclusions. Both go through
-                        // `editCandidate`, which is the same body `wiki.candidates.edit`
-                        // calls: a second implementation of "what clears a
-                        // failure" is a second set of rules (U-70).
-                        ...(msg.excludeTurns !== undefined ? { excludeTurns: msg.excludeTurns } : {}),
-                        ...(msg.retry === true ? { retry: true } : {})
-                    });
+                    /**
+                     * ‼️ U-95 — ONE MARK OR THE TICKED ONES, through the same
+                     * body. The bulk act on the toolbar is not a second kind of
+                     * edit: it is this one, applied to each id, so "what
+                     * dropping a mark does" cannot come to mean two things.
+                     * Every id is applied — a failure on one throws and the
+                     * guard reports it rather than half-finishing in silence.
+                     */
+                    const ids = Array.isArray(msg.ids)
+                        ? msg.ids.map(String).filter(Boolean)
+                        : (typeof msg.id === 'string' && msg.id ? [msg.id] : []);
+                    if (!ids.length) { return; }
+                    for (const id of ids) {
+                        editCandidate(this.deps.store(), {
+                            id,
+                            ...(msg.topics !== undefined ? { topics: msg.topics } : {}),
+                            ...(msg.note !== undefined ? { note: msg.note } : {}),
+                            ...(msg.state !== undefined ? { state: msg.state } : {}),
+                            // X-58 — the row's ↻ and its exclusions. Both go through
+                            // `editCandidate`, which is the same body `wiki.candidates.edit`
+                            // calls: a second implementation of "what clears a
+                            // failure" is a second set of rules (U-70).
+                            ...(msg.excludeTurns !== undefined ? { excludeTurns: msg.excludeTurns } : {}),
+                            ...(msg.retry === true ? { retry: true } : {})
+                        });
+                    }
                     this.mutated();
                 });
                 break;

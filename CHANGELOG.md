@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.285.0 - U-95: no compile starts unstated, the ticked rows are acted on together, and a compile that finishes says so (2026-08-26)
+
+**Pressing 📚 started a real model over real transcripts and said nothing about
+it.** Which agent writes the wiki, on which engine, with which model and at what
+effort are four settings, none of them visible from the cockpit — so the one
+button that spends quota and writes into the vault spent it unstated. Every
+compile button now opens the same strip first: what it is about to read, what it
+will run with (a setting nobody set reads as *default*, not as a choice), and
+one press to start it. **⚙ Change…** goes to the Settings section that owns
+those four rather than offering a second copy of them here; **Cancel** and Esc
+start nothing.
+
+**Three more ways to say which marks.** A waiting row compiles itself with **⚡**
+without being ticked first. With the pool narrowed, **⚡ Compile these N** takes
+exactly what the filters leave — it appears only when that is a different set
+from *Compile All Pending*, so it is never the same button twice. And ticking
+rows now brings **🚫 Drop** and **✕ Remove** for the selection, because ticking
+five rows and then pressing 🚫 five times is the gesture the tick box was put
+there to end. All of it goes through the bodies that already existed:
+`wiki.candidates.edit` per id, `wiki.candidates.remove`, one
+`wiki.compile.run`.
+
+**A run that is out now looks like something happening.** `compiling` breathes
+rather than sitting there in the same still blue as a state from yesterday —
+off for a reader who asked for less motion.
+
+**And a compile that finishes announces itself.** The run reports its marks back
+one at a time, hours after the button was pressed and usually into a window
+nobody is looking at; nothing else in the system observed that moment, so unless
+the cockpit happened to be open you found out by going and looking. The marks
+that close are collected and **one** notice is posted a few seconds after the
+last of them — the pages written, what they were filed under, and the shape
+check run at the only honest moment for it: after the pages exist. A mark whose
+pages are corrected later is not a compile finishing and is not announced again.
+
 ## 3.284.0 - U-92: the wiki cockpit filters by one searchable menu instead of a stack of badges, and ✎ opens a picker rather than a comma-separated box (2026-08-26)
 
 **A filter that could only offer what was already marked.**
