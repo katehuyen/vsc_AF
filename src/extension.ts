@@ -10107,6 +10107,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 void text;
                 projectDocWritten(project.id);
+                // ‼️ X-135 — THE ITEM'S OWN BIRTH IS AN EVENT. Without it a
+                // brand-new item is a code the ledger has never heard of, so
+                // both time orderings sink it below work last touched months
+                // ago — the newest thing in the file, drawn as the oldest.
+                // An uncoded capture has no handle to track by; it gets its
+                // record when it is classified (projects.backlog.code).
+                if (code) { trackOpened(project.id, folder, code, 'agent'); }
                 return {
                     project: project.name, file: relDoc(folder, out.file),
                     code: code ?? null, added: body,
@@ -10245,6 +10252,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return res;
                 });
                 projectDocWritten(project.id);
+                // X-135 — an uncoded capture has no handle to track by, so THIS
+                // is the moment it becomes an item the ledger can hold. Written
+                // here rather than at the add, because that is the truth.
+                if (code) { trackOpened(project.id, folder, code, 'agent'); }
                 return { project: project.name, file: relDoc(folder, out.file), code };
             }
         },
@@ -10481,7 +10492,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.track',
-            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. ‼️ `note` is REQUIRED — and checked — when the event CLOSES the item (done or cancelled), exactly as projects.backlog.check requires it: the rule lives on the ledger, so no door into it can close an item without saying what was done. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished; required to close), session? (only if you know your own id)',
+            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. ‼️ `note` is REQUIRED — and checked — when the event CLOSES the item (done or cancelled), exactly as projects.backlog.check requires it: the rule lives on the ledger, so no door into it can close an item without saying what was done. ‼️ `opened` is written FOR YOU by whichever door creates the coded line (X-135), so an item added through projects.backlog.add is already dated at both ends and sorts as the newest thing on `sort:"opened"` and `sort:"touched"` — pass it by hand only to date an item that was written down before any of this was recorded. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (opened|touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished; required to close), session? (only if you know your own id)',
             handler: (args) => {
                 const { project, folder } = projectDocsFor(argStr(args, 'project'));
                 const code = argStr(args, 'code').toUpperCase();
@@ -20047,6 +20058,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ X-135 — THE OPENING RECORD, WRITTEN BY WHICHEVER DOOR CREATES THE CODE.
+     *
+     * Every other event happens to an item that already exists; nothing recorded
+     * one coming into existence. The cost was visible on the page: a
+     * newly-written item had no record at all, so `openedAt` and `touchedAt`
+     * were both null and both time orderings put the newest thing in the file
+     * BELOW work last touched months ago. Measured on this project — 43 open
+     * items, 5 with any history — "last touched" answered `X-97` every time.
+     *
+     * Two rules it obeys, and they are the reason it is a function rather than
+     * three call sites:
+     *
+     * 1. **Once.** An item that already has any history is not re-opened by a
+     *    door being called twice (an add that is re-run, a capture classified
+     *    and re-classified). The first record of a code IS `openedAt`, and
+     *    writing a second one would move it forward — the opposite of the
+     *    point.
+     * 2. **Never fatal.** The ledger is a record OF the write, not part of it.
+     *    An item that reached the user's file and then failed to be stamped is
+     *    an item; an add refused because a JSONL append failed is a lost
+     *    thought.
+     */
+    const trackOpened = (
+        projectId: string, folder: string, code: string, by: TrackSource
+    ): void => {
+        const want = String(code ?? '').trim().toUpperCase();
+        if (!projectId || !folder || !want) { return; }
+        try {
+            if (readTracks(folder).some(r => r.code === want)) { return; }
+            recordTrack({ projectId, folder, code: want, event: 'opened', by });
+        } catch { /* the item is written; the stamp is the convenience */ }
+    };
+
+    /**
      * Reconstruct the history of items that were closed before any of this
      * existed — the shared body of `projects.tracks.backfill` and the Track
      * tab's ⚕ button.
@@ -20879,6 +20924,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         placed = `queued at ${Math.max(1, Math.min(q.queue.length, at))}`;
                         return { ok: true, text: q.text as string };
                     }, true);
+                    // X-135 — the same opening record the bridge door writes.
+                    // A user typing an item into the panel is exactly as much
+                    // an opening as an agent filing one.
+                    if (code && !res.error) {
+                        trackOpened(id, (projectStore.get(id)?.folder ?? '').trim(), code, 'panel');
+                    }
                     return {
                         ...res, ...(code ? { code } : {}),
                         ...(placed ? { note: [res.note, placed].filter(Boolean).join(' · ') } : {})
@@ -20984,6 +21035,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (r.code) { code = r.code; }
                         return r;
                     });
+                    // X-135 — classifying a capture is the moment it gets a
+                    // handle the ledger can hold; same record, same rule.
+                    if (code && !res.error) {
+                        trackOpened(id, (projectStore.get(id)?.folder ?? '').trim(), code, 'panel');
+                    }
                     return { ...res, ...(code ? { code } : {}) };
                 },
                 backlogArchive: (id: string, olderThanDays?: number) => {

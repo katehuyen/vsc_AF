@@ -797,6 +797,17 @@ export function parseBacklog(text: string): BacklogSummary {
     // answered once every line has been read.
     const seen = new Set<string>();
     for (const it of items) {
+        // ‼️ X-134 — LIVE WORK UNDER THE ARCHIVE HEADING IS A DIAGNOSIS, NOT A
+        // STATE. The archive is history: an open or doing line down there is
+        // invisible in every default view (the page hides the archive, the
+        // queue reads file order from the top) while still counting as open, so
+        // it is work nobody will ever be shown. Said on the line itself,
+        // because that is where somebody can act on it — and `tidy` carries it
+        // home for them.
+        if (it.archived && isLive(it.state)) {
+            warnOn(it, 'this line is under the archive heading but is still '
+                + `${it.state} — the archive is history, so it is hidden from the list it belongs in (tidy carries it home)`);
+        }
         if (!it.code) { continue; }
         if (seen.has(it.code)) { warnOn(it, `code ${it.code} is used more than once`); }
         seen.add(it.code);
@@ -1502,7 +1513,18 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     // Where to put it.
     let after = -1;                                    // insert AFTER this line
     if (area) {
-        const inArea = parsed.items.filter(i => i.area === area);
+        // ‼️ X-134 — NEVER LAND IN THE ARCHIVE. The seat is "after this area's
+        // last item", and once an area's items have been archived its last one
+        // is at the BOTTOM OF THE FILE, under 🗄 — so a brand-new item was
+        // written into the history section and was open, coded and invisible
+        // from the moment it was created. Measured: B-16..B-21 and X-132..X-133
+        // all landed there. Archived lines are not seats.
+        //
+        // The test is the HEADING the line sits under (U-106's `archived`), not
+        // "below the archive line": a `## X — …` heading written after the
+        // archive opens a section that is not the archive, and its items are
+        // perfectly good seats.
+        const inArea = parsed.items.filter(i => i.area === area && !i.archived);
         if (inArea.length) {
             after = inArea[inArea.length - 1].line;
         } else {
@@ -2017,10 +2039,10 @@ export interface TidyResult extends BacklogEditResult {
     moved: number;
     /** Sections left alone, and why — see the prose rule below. */
     skipped: string[];
-    /** Codes that were sitting under somebody else's heading and were carried
-     *  back to their own section. Named rather than counted: this one is worth
-     *  reading, because a line in the wrong place is a line its owner cannot
-     *  find in Obsidian. */
+    /** Codes that were sitting under somebody else's heading — or still OPEN
+     *  under 🗄 Archive (X-134) — and were carried back to their own section.
+     *  Named rather than counted: this one is worth reading, because a line in
+     *  the wrong place is a line its owner cannot find in Obsidian. */
     reseated: string[];
 }
 
@@ -2040,9 +2062,16 @@ export interface TidyResult extends BacklogEditResult {
  * on every tidy — what stops it accumulating again.
  *
  * An item goes home only if its area HAS a heading here: inventing one would be
- * restructuring somebody's document rather than repairing it. Anything under an
- * archive heading is left where it is — the archive is a record of what was, not
- * a section to sort. Uncoded captures have no home to go to and never move.
+ * restructuring somebody's document rather than repairing it.
+ *
+ * ‼️ X-134 — AND THE ARCHIVE IS NOT A PLACE OPEN WORK CAN HIDE. A CLOSED line
+ * under 🗄 is left exactly where it is: the archive is a record of what was, not
+ * a section to sort. But an OPEN or DOING line down there is not a record of
+ * anything — it is live work that every default view hides (the page folds the
+ * archive away, the queue reads the file from the top) while it still counts as
+ * open. That is the worst of both: not shown, and not finished. So it is
+ * carried back to its own area, exactly as a mis-filed line is, and named in
+ * `reseated` so somebody can see it happened. Uncoded captures have no home to go to and never move.
  *
  * One item per pass, re-parsing between: an insertion renumbers every line under
  * it, and the cost of getting that arithmetic wrong is a line deleted from the
@@ -2056,17 +2085,23 @@ function reseatMisfiled(src: string): { text: string; moved: string[] } {
         const parsed = parseBacklog(text);
         const home = new Map<string, number>();
         for (const a of parsed.areas) { home.set(a.code, a.line); }
-        const stray = parsed.items.find(i =>
-            !!i.code && !!i.area && home.has(i.area)
-            && i.sectionArea !== i.area
-            && !ARCHIVE_HEADING.test(i.section));
+        const stray = parsed.items.find(i => {
+            if (!i.code || !i.area || !home.has(i.area)) { return false; }
+            // Under the archive: rescued only while it is still live. A closed
+            // one belongs there and moving it would undo an archiving somebody
+            // asked for.
+            if (ARCHIVE_HEADING.test(i.section)) { return isLive(i.state); }
+            return i.sectionArea !== i.area;
+        });
         if (!stray) { break; }
 
         const area = stray.area as string;
         // Land after the last item ALREADY seated correctly, so a run of strays
         // arrives in the order it left; with none seated yet, straight under the
-        // heading.
-        const seated = parsed.items.filter(i => i.area === area && i.sectionArea === area);
+        // heading. An archived line is never a landing point — it is the place
+        // being rescued FROM.
+        const seated = parsed.items.filter(i =>
+            i.area === area && i.sectionArea === area && !i.archived);
         const after = seated.length ? seated[seated.length - 1].line : (home.get(area) as number);
         const cut = removeLine(text, stray.line, stray.raw);
         if (!cut) { break; }
@@ -2218,9 +2253,16 @@ export interface ArchiveOptions {
 export function archiveBacklogDone(text: string, opts: ArchiveOptions = {}): ArchiveResult {
     const src = String(text ?? '');
     const parsed = parseBacklog(src);
+    // ‼️ X-134 — ONLY `[x]` AND `[-]` EVER MOVE, and the rule is stated as the
+    // filter rather than trusted to the caller: an open line swept into the
+    // archive is work that is still live and can no longer be seen, which is
+    // the exact damage the rescue in `reseatMisfiled` exists to undo. Lines
+    // already under 🗄 are excluded by the HEADING they sit under, not by being
+    // below its line number — a `## X — …` heading written after the archive
+    // opens a section that is not the archive.
     const closed = parsed.items.filter(i =>
         (i.state === 'done' || (opts.cancelled !== false && i.state === 'cancelled'))
-        && !(parsed.archiveLine !== undefined && i.line > parsed.archiveLine));
+        && !i.archived);
     const hasAge = opts.olderThanDays !== undefined;
     const days = Number(opts.olderThanDays);
     if (hasAge && (!Number.isInteger(days) || days < 0)) {

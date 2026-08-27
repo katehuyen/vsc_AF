@@ -47,9 +47,19 @@ import { localDay, localStamp } from './projectDocs';
  * sessions of digging that ended in "still not found" is exactly the history a
  * person needs three months later, and a log that only records endings throws
  * it away.
+ *
+ * ‼️ X-135 — `opened` IS THE EVENT THE LEDGER WAS MISSING, AND ITS ABSENCE HAD
+ * A VISIBLE COST. Every other event is something that happens to an item that
+ * already exists; nothing recorded the item COMING INTO EXISTENCE. So a
+ * freshly written item had no record at all — `openedAt` and `touchedAt` were
+ * both null, and both time orderings sank it to the bottom, under items last
+ * worked on months ago. Measured: 43 open items, 5 with any record, so "last
+ * touched" answered `X-97` every single time it was asked. It is written by
+ * whichever door creates the coded line, so "when did this appear" stops being
+ * a question only the git history of somebody's vault can answer.
  */
-export type TrackEvent = 'touch' | 'doing' | 'done' | 'cancelled' | 'reopen';
-export const TRACK_EVENTS: TrackEvent[] = ['touch', 'doing', 'done', 'cancelled', 'reopen'];
+export type TrackEvent = 'opened' | 'touch' | 'doing' | 'done' | 'cancelled' | 'reopen';
+export const TRACK_EVENTS: TrackEvent[] = ['opened', 'touch', 'doing', 'done', 'cancelled', 'reopen'];
 
 /** Where the record came from — which is a statement about how much to trust
  *  its session and turn, not about what kind of work it was. */
@@ -444,6 +454,10 @@ export interface TrackSummary {
 
 const CLOSING: TrackEvent[] = ['done', 'cancelled'];
 
+/** Sources whose record was NOTICED afterwards rather than watched happening —
+ *  the two whose timestamp is "when we found out" (X-135, see `timed` below). */
+const NOTICED: TrackSource[] = ['outside', 'backfill'];
+
 /** The state an event implies, or undefined for `touch` (which says nothing
  *  about state — that is the point of it). */
 export function stateOfEvent(event: TrackEvent): BacklogState | undefined {
@@ -525,7 +539,23 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     // ‼️ A record stamped `none` carries the moment we NOTICED, not the moment
     // anything happened — letting it set `first` would print a date that reads
     // like "this is when the work started" and is nothing of the kind.
-    const timed = mine.filter(r => r.uncertain !== 'none');
+    //
+    // ‼️ X-135 — AND THAT IS TRUE OF A RECORD THAT WAS NOTICED, NOT OF EVERY
+    // RECORD WEARING THE STAMP. `none` is a statement about the SESSION ("no
+    // session could be named at all"), and it is written in two very different
+    // situations. `outside` stamps it when a box was ticked in Obsidian and we
+    // found out later: the time really is the noticing, and the exclusion is
+    // right. But a first-hand write — an agent calling the bridge mid-turn, a
+    // person pressing a button — is stamped `none` whenever no live session
+    // could be matched to it, which happens routinely for a session Agent Farm
+    // did not spawn. Its `ts` is exact; only its authorship is unknown.
+    //
+    // Excluding those was invisible until an item's ONLY record was one of
+    // them: `firstTs`/`lastTs` came back 0, `openedAt`/`touchedAt` came back
+    // null, and the item sorted as though nobody had ever recorded it — which
+    // is precisely the hole `opened` was added to close. So the exclusion is
+    // narrowed to what its own reason describes: records that were NOTICED.
+    const timed = mine.filter(r => !(r.uncertain === 'none' && NOTICED.includes(r.by)));
     return {
         code,
         runs, loose,

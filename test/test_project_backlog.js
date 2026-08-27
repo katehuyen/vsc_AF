@@ -786,6 +786,111 @@ const FAMILY = [
         && byHand.items.find(i => i.code === 'K-1').archived === undefined);
 }
 
+// ---------- ‼️ X-134: the archive is not a place new work can land in ----------
+//
+// ‼️ THE BUG, AND WHY IT WAS INVISIBLE FOR MONTHS. A new item is seated "after
+// this area's last item". Once an area's items have been archived, its last one
+// is at the BOTTOM OF THE FILE under 🗄 — so every new item in that area was
+// written into the history section: coded, open, queued by nobody, and hidden
+// from every default view. Measured on the real vault: B-16..B-21 and
+// X-132..X-133 all landed there and nobody noticed until the list came up short.
+//
+// And the repair was blocked by the rule that protects the archive. `tidy` left
+// anything under 🗄 alone — correct for a CLOSED line, which is a record, and
+// exactly wrong for an OPEN one, which is live work that cannot be seen.
+{
+    const withArchive = [
+        '## K — Console',
+        '- [ ] K-1 open one',
+        '- [ ] K-2 open two',
+        '',
+        '## 🗄 Archive',
+        '- [x] K-3 done long ago',
+        ''
+    ].join('\n');
+
+    const added = B.addBacklogItem(withArchive, { area: 'K', text: 'brand new' });
+    const seatedAt = B.parseBacklog(added.text).items.find(i => i.code === 'K-4');
+    ok('‼️ X-134: a new item lands in its AREA, never after the archived line',
+        added.ok && added.code === 'K-4' && !seatedAt.archived
+        && added.text.indexOf('brand new') < added.text.indexOf('## 🗄 Archive'));
+    ok('…directly after the last live item of that area, where a reader expects it',
+        /- \[ \] K-2 open two\r?\n- \[ \] K-4 brand new/.test(added.text));
+
+    // Every item of the area archived: there is no live line to sit after, and
+    // the area's own heading is the seat — still above the archive.
+    const allGone = [
+        '## K — Console', '', '## 🗄 Archive', '- [x] K-1 done', ''
+    ].join('\n');
+    const first = B.addBacklogItem(allGone, { area: 'K', text: 'the only live one' });
+    ok('…and with EVERY line of the area archived it goes under the heading, not the 🗄',
+        first.ok && first.text.indexOf('the only live one') < first.text.indexOf('## 🗄 Archive'));
+
+    // A heading written AFTER the archive opens a section that is not the
+    // archive — the flag follows the heading, so its items are ordinary seats.
+    const afterArchive = [
+        '## 🗄 Archive', '- [x] K-1 done', '', '## K — Console', '- [ ] K-2 open', ''
+    ].join('\n');
+    const later = B.addBacklogItem(afterArchive, { area: 'K', text: 'late arrival' });
+    ok('‼️ …and "below the archive line" is not the test — the HEADING is',
+        later.ok && /- \[ \] K-2 open\r?\n- \[ \] K-3 late arrival/.test(later.text));
+
+    // ---- the rescue ----
+    const stranded = [
+        '## K — Console',
+        '- [ ] K-1 open one',
+        '',
+        '## 🗄 Archive',
+        '- [x] K-2 done and belongs here',
+        '- [ ] K-3 open and does NOT',
+        '- [/] K-4 doing and does NOT',
+        '- [-] K-5 cancelled and belongs here',
+        ''
+    ].join('\n');
+    const diag = B.parseBacklog(stranded);
+    const warnOf = code => (diag.items.find(i => i.code === code) || {}).warn || '';
+    ok('‼️ X-134(c): an open line under 🗄 is DIAGNOSED on its own line',
+        /under the archive heading but is still open/.test(warnOf('K-3'))
+        && /still doing/.test(warnOf('K-4')));
+    ok('…and a closed one is not — it is exactly where it belongs',
+        !warnOf('K-2') && !warnOf('K-5'));
+
+    const tidied = B.tidyBacklogFile(stranded);
+    ok('‼️ X-134(b): tidy carries the live lines home and NAMES them',
+        tidied.ok && tidied.reseated.includes('K-3') && tidied.reseated.includes('K-4'));
+    ok('…they land under their own area heading, above the archive',
+        tidied.text.indexOf('K-3 open') < tidied.text.indexOf('## 🗄 Archive')
+        && tidied.text.indexOf('K-4 doing') < tidied.text.indexOf('## 🗄 Archive'));
+    ok('‼️ …while the CLOSED ones are left exactly where they are — the archive is a record',
+        tidied.text.indexOf('K-2 done') > tidied.text.indexOf('## 🗄 Archive')
+        && tidied.text.indexOf('K-5 cancelled') > tidied.text.indexOf('## 🗄 Archive'));
+    ok('…the rescued lines are word-for-word what they were, states included',
+        /- \[ \] K-3 open and does NOT/.test(tidied.text)
+        && /- \[\/\] K-4 doing and does NOT/.test(tidied.text));
+    ok('…and nothing is left to diagnose afterwards',
+        B.parseBacklog(tidied.text).items.every(i => !/under the archive heading/.test(i.warn || '')));
+    ok('a second tidy moves nothing — the repair settles', B.tidyBacklogFile(tidied.text).reseated.length === 0);
+
+    // An area with no heading has no home to be carried to; inventing one would
+    // be restructuring the document rather than repairing it. The line stays,
+    // and the warning is what says so.
+    const homeless = '## 🗄 Archive\n- [ ] Z-1 open, and Z has no heading\n';
+    ok('‼️ …but an item whose area has no heading is left alone, warned rather than relocated',
+        B.tidyBacklogFile(homeless).reseated.length === 0
+        && /under the archive heading/.test(B.parseBacklog(homeless).items[0].warn || ''));
+
+    // ---- (d) only [x] and [-] ever move ----
+    const mixed = '## K — Console\n- [ ] K-1 open\n- [/] K-2 doing\n- [x] K-3 done\n- [-] K-4 cancelled\n';
+    const swept2 = B.archiveBacklogDone(mixed);
+    ok('‼️ X-134(d): only done and cancelled are ever swept into the archive',
+        swept2.moved === 2
+        && swept2.text.indexOf('K-1 open') < swept2.text.indexOf('## 🗄 Archive')
+        && swept2.text.indexOf('K-2 doing') < swept2.text.indexOf('## 🗄 Archive')
+        && swept2.text.indexOf('K-3 done') > swept2.text.indexOf('## 🗄 Archive'));
+    ok('…and a sweep over a file with a live line already stranded does not adopt it',
+        B.archiveBacklogDone(stranded).moved === 0);
+}
+
 // ---------- finding an item without touching it ----------
 //
 // The read-only half of the same resolution every write uses — because "open K-8

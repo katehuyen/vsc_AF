@@ -643,5 +643,81 @@ const RECORDS = [
         /skip\.has\(folder\)/.test(fn));
 }
 
+// ---------- ‼️ X-135: an item's own birth is an event ----------
+//
+// ‼️ THE HOLE, AND THE VISIBLE COST. Every event this ledger had was something
+// that happens to an item that ALREADY EXISTS; nothing recorded one coming into
+// existence. So a freshly written item was a code the ledger had never heard of
+// — `openedAt` and `touchedAt` both null — and both time orderings put the
+// newest thing in the file BELOW work last touched months ago. Measured on this
+// project: 43 open items, 5 with any history, so "last touched" answered the
+// same code (`X-97`) every single time it was asked, for months.
+{
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ X-135: `opened` is an event the ledger knows, and it comes first',
+        T.TRACK_EVENTS[0] === 'opened' && T.TRACK_EVENTS.length === 6);
+
+    // It is not a closing, so it carries no note requirement — an opening has
+    // nothing to report yet, and demanding one would block the write.
+    ok('…and it is not a closing, so no closing note is demanded of it',
+        !T.closingNoteRefusal({ by: 'agent', event: 'opened', note: '' }));
+
+    // ONE record is enough to date an item at both ends: `touchedAt` falls back
+    // to the opening (`lastTs || firstTs`), so a brand-new item sorts as new on
+    // BOTH axes rather than sinking to the bottom of both.
+    const born = T.summarizeCode('K-1', [
+        { code: 'K-1', event: 'opened', ts: T0, by: 'agent', session: 's1', turn: 1 }
+    ]);
+    ok('‼️ …and one opening record dates the item at BOTH ends — touched falls back to it',
+        born.firstTs === T0 && born.lastTs === T0);
+    const worked = T.summarizeCode('K-1', [
+        { code: 'K-1', event: 'opened', ts: T0, by: 'agent', session: 's1', turn: 1 },
+        { code: 'K-1', event: 'touch', ts: T0 + DAY, by: 'agent', session: 's2', turn: 3 }
+    ]);
+    ok('…while real work still moves "touched" and leaves "opened" where it was',
+        worked.firstTs === T0 && worked.lastTs === T0 + DAY);
+
+    // ‼️ X-135 — AND THE STAMP THAT WAS QUIETLY THROWING THE DATE AWAY.
+    // `uncertain: 'none'` says "no session could be named", which is a fact
+    // about AUTHORSHIP. It was read as a fact about TIME and every record
+    // wearing it was dropped from firstTs/lastTs — so a first-hand write from a
+    // session Agent Farm did not spawn (routine: a terminal, an external CLI)
+    // produced an item the ledger held a record of and still reported as never
+    // recorded. Narrowed to what the reason describes: records NOTICED
+    // afterwards.
+    const unattributed = T.summarizeCode('K-2', [
+        { code: 'K-2', event: 'opened', ts: T0, by: 'agent', uncertain: 'none' }
+    ]);
+    ok('‼️ X-135: a first-hand write with no session still has an exact TIME',
+        unattributed.firstTs === T0 && unattributed.lastTs === T0);
+    const noticed = T.summarizeCode('K-3', [
+        { code: 'K-3', event: 'done', ts: T0, by: 'outside', uncertain: 'none' }
+    ]);
+    ok('‼️ …while a box ticked in Obsidian and found out about later still does NOT — '
+        + 'that time is the noticing, and printing it as "when the work started" is a lie',
+        noticed.firstTs === 0 && noticed.lastTs === 0);
+
+    // The wiring lives inside activate() and has no seam a unit test can reach,
+    // so the facts asserted are exact: every door that CREATES a code writes the
+    // record, it is written once, and it never breaks the write it follows.
+    ok('‼️ the bridge add writes the opening record',
+        /if \(code\) \{ trackOpened\(project\.id, folder, code, 'agent'\); \}/.test(src));
+    ok('‼️ …and so does the panel add — a person typing an item is an opening too',
+        /trackOpened\(id, \(projectStore\.get\(id\)\?\.folder \?\? ''\)\.trim\(\), code, 'panel'\)/.test(src));
+    const fnOpen = src.slice(src.indexOf('const trackOpened = ('),
+        src.indexOf('Reconstruct the history of items that were closed'));
+    ok('‼️ …ONCE: a code that already has any history is not re-opened by a second call',
+        /readTracks\(folder\)\.some\(r => r\.code === want\)/.test(fnOpen));
+    ok('‼️ …and never fatally: an item that reached the file is an item, stamped or not',
+        /catch \{ \/\* the item is written; the stamp is the convenience \*\/ \}/.test(fnOpen));
+
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'projects.js'), 'utf8');
+    ok('the Track page draws the new event rather than showing a blank chip',
+        /\{ id: 'opened', icon: '🌱'/.test(page));
+    ok('‼️ …and all three time orderings widen the state axis, not just "closed"',
+        /if \(BL_TIME_SORTS\[blSort\]\) \{/.test(page));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

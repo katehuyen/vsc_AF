@@ -1073,11 +1073,21 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('‼️ X-48: the last thing written down is at the top',
         codesIn(r.html()).slice(0, 3).join() === 'P-2,K-1,P-1');
     ok('…and an item the ledger never recorded is at the back, not at the front',
-        codesIn(r.html()).slice(3).join() === 'K-2');
+        codesIn(r.html()).slice(3)[0] === 'K-2');
+    // ‼️ X-135 — AND THE CLOSED ONES ARE IN VIEW, which is why the tail is
+    // longer than it used to be. "What did I write down last" over a list that
+    // hides finished work skips exactly the items the last few sessions closed.
+    ok('‼️ X-135: choosing "opened" widens the state axis, as "closed" already did',
+        codesIn(r.html()).join() === 'P-2,K-1,P-1,K-2,U-1,U-2,U-3');
+    ok('…and the page SAYS it did it, so the filter is one the reader can undo',
+        /state filter now includes done and cancelled/.test(r.html())
+        && /would skip whatever you already finished/.test(r.html()));
 
     sort('touched');
     ok('‼️ X-48: last WORKED ON is a different order from last written down',
         codesIn(r.html()).slice(0, 3).join() === 'P-1,P-2,K-1');
+    ok('‼️ X-135: …and it widens too — the sessions that finished something are the point',
+        codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2,U-1,U-2,U-3');
 
     // The date deciding the order is drawn, and only that one.
     ok('the row carries the time that is deciding the order',
@@ -1094,7 +1104,15 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('the arrow turns the dated ones round…',
         codesIn(r.html()).slice(0, 3).join() === 'P-1,K-1,P-2');
     ok('‼️ …and never drags the undated to the front: they are not old openings',
-        codesIn(r.html()).slice(3).join() === 'K-2');
+        codesIn(r.html()).slice(3)[0] === 'K-2'
+        && codesIn(r.html()).slice(0, 3).join() === 'P-1,K-1,P-2');
+
+    // ‼️ X-135 — THE WAY BACK COVERS ALL THREE TIME AXES, not just "closed".
+    // A widening with no way back is a filter the reader is left holding.
+    sort('file');
+    ok('‼️ X-135: queue order takes the state filter back to Active from ANY time sort',
+        codesIn(r.html()).join() === 'P-1,K-2,K-1,P-2'
+        && /back to Active/.test(r.html()));
 }
 
 // ---------- ‼️ X-48: the widening that "closed" does has a way back ----------

@@ -114,7 +114,12 @@ function rows() {
             text: 'CONSOLE YALNIZ CLAUDE BAŞLATIYOR (X-3 faz 3)', state: 'open',
             kinds: ['feat'], effort: 'L', parent: 'X-3', turns: 0,
             firstTs: T - 2 * H, lastTs: T - 2 * H,
-            loose: [{ code: 'X-15', event: 'touch', ts: T - 2 * H, at: '', session: null, short: null, turn: null, agent: null, by: 'outside', uncertain: 'none', note: 'kalem olarak açıldı' }]
+            // ‼️ X-135 — the opening record, which is what a brand-new item's
+            // whole history looks like: one row, no session (it was typed into
+            // the panel, not written mid-turn), and it is what dates the item
+            // at BOTH ends. Before there was such an event this row was a
+            // `touch` with a note explaining itself.
+            loose: [{ code: 'X-15', event: 'opened', ts: T - 2 * H, at: '', session: null, short: null, turn: null, agent: null, by: 'panel', uncertain: null, note: 'kalem olarak açıldı' }]
         }),
         ITEM('P-11', {
             text: 'Backlog kuyruğunun ilk üçü', state: 'done', turns: 12, stamp: '923890e1#4',

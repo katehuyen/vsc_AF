@@ -1700,6 +1700,13 @@
                 .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
                     border-color:transparent; opacity:1; }
                 .pj-trk-ev.e-touch { opacity:.6; }
+                /* X-135 — the birth of the item. Drawn in the same family as
+                   done, because both are settled facts rather than states of
+                   work, but outlined rather than filled: it is the quietest
+                   thing that can be true of a code, and every item has exactly
+                   one of them. */
+                .pj-trk-ev.e-opened { opacity:1; color:var(--vscode-charts-green,#3fb950);
+                    border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 40%, transparent); }
                 /* The work TYPE, in the backlog's own hues — the one place the
                    two pages deliberately share a palette, because a #bug is
                    the same red wherever it is drawn and a reader who has learnt
@@ -1757,6 +1764,7 @@
                 .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 55%, transparent); }
                 .pj-trk-tl.e-doing { --stc:var(--vscode-charts-blue,#3794ff); }
                 .pj-trk-tl.e-reopen { --stc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-trk-tl.e-opened { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 35%, transparent); }
                 .pj-trk-tl:hover { background:var(--vscode-list-hoverBackground); }
                 /* ‼️ A COLUMN IS AS WIDE AS ITS OWN WIDEST VALUE, AND NOT A PIXEL
                    MORE. Every width here used to be a round number typed by
@@ -4897,6 +4905,7 @@
     ];
 
     const TRK_EVENTS = [
+        { id: 'opened', icon: '🌱', tip: 'The item came into existence — the line was written and given its code. X-135: without this the newest thing in the file had no record at all, so both time orderings drew it as the oldest.' },
         { id: 'touch', icon: '·', tip: '"Worked on, not finished" — the attempts. A log of endings alone throws away exactly the part somebody needs three months later.' },
         { id: 'doing', icon: '▶', tip: 'Started — the line in the backlog went from [ ] to [/].' },
         { id: 'done', icon: '✓', tip: 'Closed as finished.' },
@@ -7190,12 +7199,27 @@
                 // state axis is widened to include the closed states and the
                 // page SAYS so — the chip shows the change, so this is a filter
                 // the reader can see and undo, not one applied behind them.
-                if (blSort === 'closed') {
+                //
+                // ‼️ X-135 — AND THE SAME IS TRUE OF THE OTHER TWO TIME AXES.
+                // "What did I write down last" and "what did I work on last"
+                // are questions about the WHOLE record, and the last few
+                // sessions' work is the part most likely to have been finished
+                // — so answering them over Active hides exactly the rows that
+                // prompted the question. All three widen; only the reason
+                // sentence differs, because the reader should be told which
+                // question they just asked.
+                if (BL_TIME_SORTS[blSort]) {
                     const want = ['open', 'doing', 'done', 'cancelled'];
                     const have = blFilter.states || want;
                     if (!have.includes('done') || !have.includes('cancelled')) {
                         blFilter.states = want.filter(s => have.includes(s) || s === 'done' || s === 'cancelled');
-                        flash = { ok: 'Closed items brought into view — the state filter now includes done and cancelled.' };
+                        flash = {
+                            ok: {
+                                closed: 'Closed items brought into view — the state filter now includes done and cancelled.',
+                                opened: 'Everything you have written down is in view — the state filter now includes done and cancelled, or "opened" would skip whatever you already finished.',
+                                touched: 'Everything you have worked on is in view — the state filter now includes done and cancelled, or "last touched" would hide the sessions that finished something.'
+                            }[blSort]
+                        };
                     }
                 }
                 // ‼️ X-48 — AND THE WAY BACK IS THE SAME GESTURE, or the widening

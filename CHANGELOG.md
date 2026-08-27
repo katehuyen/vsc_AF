@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.290.0 - X-134 / X-135: new items stop landing in the archive, and stop being born undated (2026-08-27)
+
+**A new item was being written into the history section, and nobody could see
+it.** An item is seated "after this area's last item". Once an area's items have
+been archived, its last one is at the BOTTOM OF THE FILE under 🗄 — so every new
+item in that area went into the archive: coded, open, queued by nobody, and
+hidden from every default view. Measured on this project: `B-16`..`B-21` and
+`X-132`..`X-133` all landed there and it was only noticed when the list came up
+short. The seat now skips archived lines, and the test is the HEADING the line
+sits under, not "below the archive line" — a `## X — …` heading written after
+the archive opens a section that is not the archive.
+
+**And the repair was blocked by the rule that protects the archive.** `tidy` left
+anything under 🗄 alone — right for a CLOSED line, which is a record, and exactly
+wrong for an OPEN one, which is live work nothing will ever show you. An open or
+doing line under the archive is now diagnosed on its own line by the parser and
+carried back to its own area by `tidy`, named in `reseated`; closed lines are
+left where they are, and the sweep still only ever moves `[x]` and `[-]`.
+
+**Second: an item was born with no date, so the newest thing in the file drew as
+the oldest.** Every event the track ledger had was something that happens to an
+item that already exists; nothing recorded one coming into existence. So a
+freshly written item was a code the ledger had never heard of — `openedAt` and
+`touchedAt` both null — and both time orderings sank it below work last touched
+months ago. Measured: 43 open items, 5 with any history, so **"last touched"
+answered the same code every single time it was asked, for months.**
+
+`opened` is now an event, written by whichever door creates the coded line (the
+bridge add, the panel add, and classifying an inbox capture — that last one is
+where an uncoded thought first gets a handle the ledger can hold). Written once,
+and never fatally: an item that reached your file is an item, stamped or not.
+
+**And a stamp was quietly throwing exact dates away.** `uncertain: 'none'` says
+"no session could be named", which is a fact about AUTHORSHIP — it was read as a
+fact about TIME and every record wearing it was dropped from the item's dates.
+That is right for a box ticked in Obsidian and found out about later; it is
+wrong for a first-hand write from a session Agent Farm did not spawn, which is
+routine. Narrowed to what its own reason describes.
+
+**Finally, all three time orderings widen the state filter, not just "closed".**
+"What did I write down last" and "what did I work on last" are questions about
+the whole record, and the last few sessions' work is the part most likely to
+have been finished — so answering them over *Active* hid exactly the rows that
+prompted the question. Queue order still puts the filter back to *Active*, and
+every change says so on the page.
+
 ## 3.289.0 - X-136: the discipline gets a cockpit, and the empty setting stops naming one computer (2026-08-27)
 
 **Two boxes, and neither could answer the question a person actually has.**
