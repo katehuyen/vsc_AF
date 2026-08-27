@@ -534,20 +534,29 @@ function warnOn(item: BacklogItem, what: string): void {
  *   - the chain loops (A → B → A), which no reader spots by eye and which every
  *     walk over the tree must survive.
  */
-function linkParents(items: BacklogItem[]): void {
+function linkParents(items: BacklogItem[], only?: BacklogItem): void {
     const byCode = new Map<string, BacklogItem>();
     for (const it of items) { if (it.code && !byCode.has(it.code)) { byCode.set(it.code, it); } }
-    for (const it of items) {
+    // ‼️ X-130 — THE SAME THREE SENTENCES, SAID ABOUT ONE ITEM. A mutation that
+    // rewrote a single line re-reads only that line, and the link warnings are
+    // the one thing on an item that its own line cannot decide. So the fresh
+    // item is annotated against the file as it stands, `items` is NOT touched
+    // (it is the caller's, and a line rewrite changes no other row's children),
+    // and there is still exactly one implementation of what is wrong with a
+    // link — two would start disagreeing on the day one of them was edited.
+    if (only?.code) { byCode.set(only.code, only); }
+    const targets = only ? [only] : items;
+    for (const it of targets) {
         const p = it.parent;
         if (!p) { continue; }
         if (it.code && p === it.code) { warnOn(it, `${it.code} is its own parent`); continue; }
         const up = byCode.get(p);
         if (!up) { warnOn(it, `parent ${p} is not in this backlog`); continue; }
-        if (it.code) { up.children.push(it.code); }
+        if (!only && it.code) { up.children.push(it.code); }
     }
     // The loop check walks UP from every item; `seen` is per walk, so a chain
     // that rejoins a healthy branch is not mistaken for a cycle.
-    for (const it of items) {
+    for (const it of targets) {
         if (!it.parent || !it.code) { continue; }
         const seen = new Set<string>([it.code]);
         let at: BacklogItem | undefined = byCode.get(it.parent);
@@ -649,6 +658,142 @@ const ARCHIVE_HEADING = /(?:🗄|\b(?:archive|ar[şs]iv)\b)/iu;
  * fenced code is skipped — a `- [ ]` inside a fence is documentation, and
  * ticking it would edit somebody's example.
  */
+/**
+ * ‼️ X-130 — ONE LINE, READ ON ITS OWN. Everything an item says about itself is
+ * ON its line; the only facts that need the whole document are which HEADING it
+ * sits under (its section and area) and the links between items. So the two are
+ * separated here: this reads a line given its heading context, `parseBacklog`
+ * walks the file and supplies that context, and a mutation that changed ONE
+ * line re-reads only that line (`rereadItem`).
+ *
+ * Returns undefined for a line that is not an item, which is most of them.
+ */
+function parseItemLine(
+    line: string, at: number, section: string, area: string | undefined
+): BacklogItem | undefined {
+    const m = TASK_LINE.exec(line);
+    if (!m) { return undefined; }
+    const body = m[3] ?? '';
+    const state = stateOf(m[2]);
+    const code = LEADING_CODE.exec(body)?.[1];
+    // Derived from the heading exactly as the walk derives them, so a line read
+    // on its own and the same line read in a full pass cannot disagree.
+    const inInbox = INBOX_HEADING.test(section);
+    const inArchive = ARCHIVE_HEADING.test(section);
+
+    const blockedBy: string[] = [];
+    BLOCKED.lastIndex = 0;
+    for (let b = BLOCKED.exec(line); b; b = BLOCKED.exec(line)) {
+        for (const one of b[1].split(',')) { blockedBy.push(one.trim()); }
+    }
+    const kinds: string[] = [];
+    TAG.lastIndex = 0;
+    for (let t = TAG.exec(body); t; t = TAG.exec(body)) { kinds.push(canonKind(t[1])); }
+
+    let priority: BacklogPriority = 'normal';
+    for (const [icon, p] of Object.entries(ICON_PRIORITY)) {
+        if (line.includes(icon)) { priority = p; break; }
+    }
+    const effortRaw = F_EFFORT.exec(body)?.[1]?.trim().toUpperCase();
+    const effort = BACKLOG_EFFORTS.includes(effortRaw as BacklogEffort)
+        ? effortRaw as BacklogEffort : undefined;
+    // Read in whatever case it was typed and held in ONE case, because
+    // everything downstream compares codes as strings — `[parent:: p-4]`
+    // typed in Obsidian must be the same link as `[parent:: P-4]`.
+    const parentRaw = F_PARENT.exec(body)?.[1]?.trim().toUpperCase();
+    const parent = parentRaw && BACKLOG_CODE.test(parentRaw) ? parentRaw : undefined;
+
+    return {
+        line: at,
+        raw: line,
+        text: displayText(body),
+        state,
+        ...(code ? { code } : {}),
+        ...(code ? { area: code.split('-')[0] } : (area ? { area } : {})),
+        section,
+        ...(area ? { sectionArea: area } : {}),
+        inbox: inInbox || !code,
+        kinds,
+        priority,
+        ...(effort ? { effort } : {}),
+        blockedBy,
+        ...(HOLD.test(line) ? { onHold: true } : {}),
+        ...(/🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1]
+            ? { taskId: /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1] as string } : {}),
+        ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
+        ...(parent ? { parent } : {}),
+        // ‼️ A field that is THERE but is not a code is reported, not
+        // swallowed. Somebody typed `[parent:: the big one]` in Obsidian and
+        // meant something by it; a parser that silently read nothing would
+        // leave them with a line that looks linked and is not.
+        ...(parentRaw && !parent ? { warn: `"${parentRaw}" is not a backlog code, so the parent link does nothing` } : {}),
+        children: [],
+        ...(F_FROM.exec(body)?.[1] ? { from: F_FROM.exec(body)?.[1]?.trim() as string } : {}),
+        ...(F_WAS.exec(body)?.[1] ? { was: F_WAS.exec(body)?.[1]?.trim() as string } : {}),
+        ...(F_CLOSED.exec(body)?.[1] ? { closed: F_CLOSED.exec(body)?.[1]?.trim() as string } : {}),
+        ...(dateAfter(line, '📅') ? { due: dateAfter(line, '📅') as string } : {}),
+        ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
+        score: PRIORITY_WEIGHT[priority] /
+            (effort ? EFFORT_WEIGHT[effort] : UNKNOWN_EFFORT_WEIGHT),
+        // ‼️ U-106 — AND WHETHER IT IS UNDER THE ARCHIVE HEADING, which the
+        // parser has known all along and was throwing away on this line.
+        // "Closed" and "archived" are two different things about an item: one
+        // is finished work still sitting in the list, the other is a
+        // historical record that has been moved out of the way — and drawn
+        // identically (grey, struck through) there was no way to tell them
+        // apart on the page. Kept only when true, so nothing about an
+        // ordinary line changes shape.
+        ...(inArchive ? { archived: true } : {})
+    };
+}
+
+/**
+ * ‼️ X-130 — RE-READ THE ONE LINE A MUTATION TOUCHED, NOT THE WHOLE FILE.
+ *
+ * Every mutation here parsed the document to find its target and then parsed
+ * the WHOLE DOCUMENT AGAIN, to hand back the one line it had just written.
+ * `Backlog.md` never shrinks over a project's life — measured on this one at
+ * 473 KB / 376 items, a single parse is 42 ms and every tick of a checkbox cost
+ * two of them. At four times the items that is most of a second to change one
+ * character.
+ *
+ * The second read is not thrown away, because it is the honest answer to "what
+ * does that line say NOW" — it is made cheap instead: the line is sliced out by
+ * offset and read on its own, with the heading context taken from the item that
+ * was there a moment ago. A mutation replaces a line in place, so its section,
+ * its area heading and its position are exactly what they were.
+ *
+ * ‼️ WHAT A SINGLE-LINE READ CANNOT DECIDE is what comes from the whole file:
+ * an item's PARTS, and whether its `parent` names anything real. The parts did
+ * not change (replacing a line moves nothing), so they are carried across from
+ * the item that was there; the link warnings ARE re-decided, against the file
+ * the caller already has in its hands — and by the same function that decides
+ * them in a full pass, so the two cannot drift apart. `setBacklogFields`
+ * rewrites the parent field, and a link that quietly stopped being checked on
+ * the one path that edits it is the worst possible place to save a millisecond.
+ */
+function addedLine(
+    line: string, neighbour: BacklogItem, items: BacklogItem[]
+): BacklogItem | undefined {
+    const item = parseItemLine(line, neighbour.line + 1, neighbour.section, neighbour.sectionArea);
+    if (item) { linkParents(items, item); }
+    return item;
+}
+
+function rereadItem(
+    nextText: string, was: BacklogItem, items: BacklogItem[]
+): BacklogItem | undefined {
+    const start = lineStartOffset(nextText, was.line);
+    if (start < 0) { return undefined; }
+    let end = nextText.indexOf('\n', start);
+    if (end < 0) { end = nextText.length; } else if (nextText[end - 1] === '\r') { end--; }
+    const item = parseItemLine(nextText.slice(start, end), was.line, was.section, was.sectionArea);
+    if (!item) { return undefined; }
+    if (was.children.length) { item.children = [...was.children]; }
+    linkParents(items, item);
+    return item;
+}
+
 export function parseBacklog(text: string): BacklogSummary {
     const lines = String(text ?? '').split(/\r?\n/);
     const items: BacklogItem[] = [];
@@ -721,76 +866,8 @@ export function parseBacklog(text: string): BacklogSummary {
             if (q && !queue.includes(q[1])) { queue.push(q[1]); }
         }
 
-        const m = TASK_LINE.exec(line);
-        if (!m) { continue; }
-        const body = m[3] ?? '';
-        const state = stateOf(m[2]);
-        const code = LEADING_CODE.exec(body)?.[1];
-
-        const blockedBy: string[] = [];
-        BLOCKED.lastIndex = 0;
-        for (let b = BLOCKED.exec(line); b; b = BLOCKED.exec(line)) {
-            for (const one of b[1].split(',')) { blockedBy.push(one.trim()); }
-        }
-        const kinds: string[] = [];
-        TAG.lastIndex = 0;
-        for (let t = TAG.exec(body); t; t = TAG.exec(body)) { kinds.push(canonKind(t[1])); }
-
-        let priority: BacklogPriority = 'normal';
-        for (const [icon, p] of Object.entries(ICON_PRIORITY)) {
-            if (line.includes(icon)) { priority = p; break; }
-        }
-        const effortRaw = F_EFFORT.exec(body)?.[1]?.trim().toUpperCase();
-        const effort = BACKLOG_EFFORTS.includes(effortRaw as BacklogEffort)
-            ? effortRaw as BacklogEffort : undefined;
-        // Read in whatever case it was typed and held in ONE case, because
-        // everything downstream compares codes as strings — `[parent:: p-4]`
-        // typed in Obsidian must be the same link as `[parent:: P-4]`.
-        const parentRaw = F_PARENT.exec(body)?.[1]?.trim().toUpperCase();
-        const parent = parentRaw && BACKLOG_CODE.test(parentRaw) ? parentRaw : undefined;
-
-        items.push({
-            line: i,
-            raw: line,
-            text: displayText(body),
-            state,
-            ...(code ? { code } : {}),
-            ...(code ? { area: code.split('-')[0] } : (area ? { area } : {})),
-            section,
-            ...(area ? { sectionArea: area } : {}),
-            inbox: inInbox || !code,
-            kinds,
-            priority,
-            ...(effort ? { effort } : {}),
-            blockedBy,
-            ...(HOLD.test(line) ? { onHold: true } : {}),
-            ...(/🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1]
-                ? { taskId: /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1] as string } : {}),
-            ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
-            ...(parent ? { parent } : {}),
-            // ‼️ A field that is THERE but is not a code is reported, not
-            // swallowed. Somebody typed `[parent:: the big one]` in Obsidian and
-            // meant something by it; a parser that silently read nothing would
-            // leave them with a line that looks linked and is not.
-            ...(parentRaw && !parent ? { warn: `"${parentRaw}" is not a backlog code, so the parent link does nothing` } : {}),
-            children: [],
-            ...(F_FROM.exec(body)?.[1] ? { from: F_FROM.exec(body)?.[1]?.trim() as string } : {}),
-            ...(F_WAS.exec(body)?.[1] ? { was: F_WAS.exec(body)?.[1]?.trim() as string } : {}),
-            ...(F_CLOSED.exec(body)?.[1] ? { closed: F_CLOSED.exec(body)?.[1]?.trim() as string } : {}),
-            ...(dateAfter(line, '📅') ? { due: dateAfter(line, '📅') as string } : {}),
-            ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
-            score: PRIORITY_WEIGHT[priority] /
-                (effort ? EFFORT_WEIGHT[effort] : UNKNOWN_EFFORT_WEIGHT),
-            // ‼️ U-106 — AND WHETHER IT IS UNDER THE ARCHIVE HEADING, which the
-            // parser has known all along and was throwing away on this line.
-            // "Closed" and "archived" are two different things about an item: one
-            // is finished work still sitting in the list, the other is a
-            // historical record that has been moved out of the way — and drawn
-            // identically (grey, struck through) there was no way to tell them
-            // apart on the page. Kept only when true, so nothing about an
-            // ordinary line changes shape.
-            ...(inArchive ? { archived: true } : {})
-        });
+        const it = parseItemLine(line, i, section, area);
+        if (it) { items.push(it); }
     }
 
     // A second pass, because "is this code on another line too" can only be
@@ -1206,7 +1283,7 @@ export function setBacklogHold(
         : item.raw.replace(HOLD_CUT, '').replace(/\s{2,}/g, ' ').trimEnd();
     const nextText = replaceLine(src, item.line, line);
     if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
-    const rebuilt = parseBacklog(nextText).items.find(i => i.line === item.line);
+    const rebuilt = rereadItem(nextText, item, items);
     /** A hold on something already blocked is a real thing to do and says
      *  something the ⛔ codes do not — but it is worth saying out loud, because
      *  the row now carries two reasons it will not be handed out and taking one
@@ -1303,7 +1380,7 @@ export function stampBacklogClosed(
     }
     const nextText = replaceLine(src, item.line, line);
     if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
-    const rebuilt = parseBacklog(nextText).items.find(i => i.line === item.line);
+    const rebuilt = rereadItem(nextText, item, items);
     return { ok: true, text: nextText, ...(rebuilt ? { item: rebuilt } : {}) };
 }
 
@@ -1409,7 +1486,7 @@ export function setBacklogFields(
     const line = parts.join(' ');
     const nextText = replaceLine(src, item.line, line);
     if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
-    const rebuilt = parseBacklog(nextText).items.find(i => i.line === item.line);
+    const rebuilt = rereadItem(nextText, item, items);
     return { ok: true, text: nextText, ...(rebuilt ? { item: rebuilt } : {}) };
 }
 
@@ -1512,6 +1589,10 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
 
     // Where to put it.
     let after = -1;                                    // insert AFTER this line
+    /** The line we sat after, when it was an ITEM — its heading context is the
+     *  new line's too, and that is what lets the new item be read back without
+     *  a second pass over the file (X-130). */
+    let neighbour: BacklogItem | undefined;
     if (area) {
         // ‼️ X-134 — NEVER LAND IN THE ARCHIVE. The seat is "after this area's
         // last item", and once an area's items have been archived its last one
@@ -1526,7 +1607,8 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
         // perfectly good seats.
         const inArea = parsed.items.filter(i => i.area === area && !i.archived);
         if (inArea.length) {
-            after = inArea[inArea.length - 1].line;
+            neighbour = inArea[inArea.length - 1];
+            after = neighbour.line;
         } else {
             const heading = parsed.areas.find(x => x.code === area);
             if (heading) { after = heading.line; }
@@ -1537,6 +1619,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
         const nextHeading = src.split(/\r?\n/)
             .findIndex((l, n) => n > (parsed.inboxLine as number) && /^#{1,6}\s/.test(l));
         const mine = inInbox.filter(i => nextHeading < 0 || i.line < nextHeading);
+        if (mine.length) { neighbour = mine[mine.length - 1]; }
         after = mine.length ? mine[mine.length - 1].line : (parsed.inboxLine as number);
     }
 
@@ -1563,7 +1646,15 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     } else {
         nextText = src + (!src || src.endsWith('\n') ? '' : eol) + line + eol;
     }
-    const added = parseBacklog(nextText).items.find(i => i.raw === line);
+    // ‼️ X-130 — read the ONE line just written, when its heading context is
+    // already known: it went directly under an item, so it shares that item's
+    // section and area heading. Seated under a bare heading (the first item of
+    // an area, or an empty inbox) there is no neighbour to take the context
+    // from, and the file is read again — which is the rare case and the one
+    // where the file is smallest.
+    const added = neighbour
+        ? addedLine(line, neighbour, parsed.items)
+        : parseBacklog(nextText).items.find(i => i.raw === line);
     return {
         ok: true, text: nextText,
         ...(code ? { code } : {}),

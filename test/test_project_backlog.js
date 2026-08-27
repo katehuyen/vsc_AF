@@ -786,6 +786,69 @@ const FAMILY = [
         && byHand.items.find(i => i.code === 'K-1').archived === undefined);
 }
 
+// ---------- ‼️ X-130: the mutation reads back ONE line, not the whole file ----------
+//
+// ‼️ EVERY MUTATION PARSED THE DOCUMENT TWICE. Once to find its target, and
+// then the WHOLE FILE AGAIN to hand back the one line it had just written.
+// `Backlog.md` never shrinks over a project's life — measured on this project's
+// real file at 495 KB / 396 items, a parse is 34 ms and a mutation was 67. The
+// second read is not wrong (it is the honest answer to "what does that line say
+// now"), so it was made cheap rather than removed: the line is sliced out by
+// offset and read on its own.
+//
+// The whole risk of that is DIVERGENCE — a line read on its own saying something
+// different from the same line read in a full pass — so that is what is pinned
+// here, field for field, on every door that rewrites a line.
+{
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const full = (text, line) => B.parseBacklog(text).items.find(i => i.line === line);
+
+    const src = [
+        '# B', '',
+        '## U — Interface', '',
+        '- [ ] U-1 the whole thing #feat ⏫ [effort:: M]',
+        '- [ ] U-2 a part of it [parent:: U-1] [effort:: S] 📅 2026-09-01',
+        '- [ ] U-3 dangling [parent:: Z-9]', '',
+        '## 📥 Inbox', '',
+        '- [ ] a thought', ''
+    ].join('\n');
+
+    const held = B.setBacklogHold(src, { code: 'U-2' }, true);
+    ok('‼️ X-130: a hold read back off its own line is the full parse, field for field',
+        held.ok && same(held.item, full(held.text, held.item.line)));
+    const fields = B.setBacklogFields(src, { code: 'U-2' }, { effort: 'L', priority: 'highest' });
+    ok('…and so is a rebuilt line, which is the one that changes the most',
+        fields.ok && same(fields.item, full(fields.text, fields.item.line)));
+    const stamped = B.stampBacklogClosed(src, { code: 'U-2' }, 'sess#4');
+    ok('…and so is a closing stamp',
+        stamped.ok && same(stamped.item, full(stamped.text, stamped.item.line)));
+    const added = B.addBacklogItem(src, { area: 'U', text: 'a new one', parent: 'U-1' });
+    ok('…and a NEW line, seated after a neighbour whose heading it shares',
+        added.ok && same(added.item, full(added.text, added.item.line)));
+
+    // ‼️ THE PART A SINGLE LINE CANNOT DECIDE. An item's PARTS and whether its
+    // `parent` names anything real come from the whole file — and
+    // setBacklogFields is the one door that rewrites the parent field, so a
+    // link that quietly stopped being checked there is the worst possible place
+    // to have saved a millisecond.
+    ok('‼️ …the parts of a whole survive a rewrite of its own line',
+        B.setBacklogFields(src, { code: 'U-1' }, { effort: 'L' }).item.children.join() === 'U-2');
+    ok('‼️ …and a broken link is still REPORTED, by the same rule a full pass uses',
+        /Z-9 is not in this backlog/.test(B.setBacklogHold(src, { code: 'U-3' }, true).item.warn || ''));
+    ok('…a link pointed at something real by the very edit being made is not warned about',
+        !B.setBacklogFields(src, { code: 'U-3' }, { parent: 'U-1' }).item.warn);
+    ok('…while a link that would name the item itself never reaches the line at all — '
+        + 'it is refused before anything is written',
+        !B.setBacklogFields(src, { code: 'U-3' }, { parent: 'U-3' }).ok);
+    // Annotating one item must not write on the caller's copy of the file: the
+    // list handed in is the document as it was, and it is not the mutation's.
+    const before = B.parseBacklog(src);
+    const kids = before.items.find(i => i.code === 'U-1').children.slice();
+    B.setBacklogHold(src, { code: 'U-2' }, true);
+    ok('…and reading one line back leaves the file it was checked against untouched',
+        before.items.find(i => i.code === 'U-1').children.join() === kids.join());
+}
+
 // ---------- ‼️ X-134: the archive is not a place new work can land in ----------
 //
 // ‼️ THE BUG, AND WHY IT WAS INVISIBLE FOR MONTHS. A new item is seated "after
