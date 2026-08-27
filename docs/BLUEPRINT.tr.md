@@ -328,6 +328,20 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 **Console'daki bir oturumu terminale taşımak (3.30.3).** Console'da çalışan bir oturum için "Resume in Terminal" dediğinde artık "olmaz" duvarı yok: bir oturum bir sürece aittir, ama o süreç **bizim** — Agent Farm **"End it in the Console and continue here"** diye sorar, Console'daki oturumu kapatır, **pid gerçekten ölene kadar bekler** (aksi hâlde aynı transkript üstünde ikinci süreç doğardı) ve terminali aynı oturumla açar. Diğer seçenek oturumu çalıştığı yerde gösterir. Başkasının terminalindeki bir oturum için eski uyarı aynen geçerlidir — o süreç bizim değildir.
 
+
+### ⚡ Superpowers Mühendislik Disiplini — Diskte Uyuyan Yetenekler ve Kompozitör Anahtarı (3.287.0 — X-55, X-132, X-133) {#superpowers}
+
+*(3.286.0 - 3.287.0)* Yazılım mühendisliği disiplinlerini (Test Güdümlü Geliştirme - TDD, Sistematik Kök Neden Hata Ayıklama, Adım Adım Planlama, Beyin Fırtınası, Doğrulama ve Kod İncelemesi vb.) içeren **Obra Superpowers (v6.3.0)** kütüphanesi Agent Farm'a entegre edilmiştir.
+
+- **Felsefe (Diskte 0 Token ile Uyuma):** 14 adet derin disiplin dosyasını her oturumda baştan prompt'a yüklemek hem devasa token maliyeti yaratır hem de mühendislik gerektirmeyen işleri hantallaştırır. Yetenekler diskte `D:\zone\agent\ajanlar\_SKILLS\superpowers` (veya `agentFarm.superpowersPath` ayarındaki yolda) **0 token maliyetle uyur**.
+- **Kompozitör Anahtarı (`[⚡ Superpowers]` Toggle):** Console yazma kutusunun üst şeridinde, Proje çipinin hemen yanında yer alır. Üzerine gelindiğinde (AFTip hover) oturuma enjekte edilecek Kök Kanca metnini ve 14 yeteneğin fihristini **birebir** gösterir.
+- **Kök Kanca Enjeksiyonu (`systemPromptFileFor`):** `--append-system-prompt-file` bayrağı tek bir dosya aldığı için, proje brief'i ile Superpowers kancası tek bir metinde birleştirilerek oturumun sistem promptuna verilir. Modele sadece ~2.5 KB'lık bir Kök Kanca (`using-superpowers/SKILL.md`) ve diskteki 14 dosyanın mutlak yol fihristi gider.
+- **Talep Anında Okuma (On-Demand Reading):** Model bir hata ayıklarken veya kod yazarken fihriste bakar; kendi dosya okuma aracıyla yalnızca o an ihtiyaç duyduğu `SKILL.md` dosyasını diskten okur ve disipline girer.
+- **Ajan Bazlı Varsayılanlar:** `developer` ajanı için bu anahtar **otomatik olarak AÇIK** başlar; diğer genel ajanlar için kapalıdır (`agentFarm.superpowersDefaults`).
+- **Köprü:** `superpowers.status` (klasör sağlığı, yetenek sayısı ve ajan varsayılanları), `superpowers.set { agent, on }` (ajan varsayılanını değiştirme), `superpowers.hook` (enjekte edilen güncel kanca metni).
+- **Ayrıntılı Kılavuz:** Mimari, dosya yapısı, yardımcı kod şablonları ve taşınabilirlik kuralları için: [`docs/SUPERPOWERS-MIMARISI.tr.md`](SUPERPOWERS-MIMARISI.tr.md).
+
+
 ### Kompozitör
 
 Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir. **Oturum çalışırken üç ayar boyutu da canlı kalır (3.44.0)** — süreç açıldıktan sonra gerçekten sabit olan tek şey klasördür (ajan); model, efor ve izin modu üçü de CLI'ın konuşma ortasında kabul ettiği kontrol istekleri olarak gider (`/model`, `/effort`, `set_permission_mode`), yani bir ajan satırından açılan oturum, kompozitörden açılanla tam olarak aynı kadar değiştirilebilir.
@@ -1032,6 +1046,20 @@ Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağr�
 - Hata dönen bir çağrı **failed — not applied** diye işaretlenir ve hiçbir sayıya girmez.
 - Sessions tablolarında **Files** kolonu: indeksin zaten yaptığı tek geçişte sayıldığı için ek maliyeti yok.
 - **Köprü:** `sessions.files` (`detail:true` hunk'ları da döner).
+
+### Backlog — Görev Havuzu, Arşiv Ayrımı ve Filtreleme (3.288.0 — U-106, U-107) {#projeler-backlog}
+
+*(3.288.0 — U-106 / U-107)* Proje klasöründeki `Backlog.md` dosyasını (`af-role: backlog`) okuyan, sıralayan ve yöneten arayüz.
+
+- **Tamamlanmış (`done`) ile Arşivlenmiş (`archived`) Ayrımı (U-106):** Dosyada `## 🗄 Archive` başlığı altına taşınan eski tarihsel işler ile bu hafta tamamlanan işler eskiden aynı gri çizili şekilde çiziliyordu. Artık arşivlenmiş her satırın kodunun yanında **çerçeveli küçük bir 🗄 rozeti** belirir ve satırın tarihsel olduğunu, kodunun bir daha yeniden verilemeyeceğini söyler.
+- **3 Durumlu Arşiv Filtreleme Çipi (U-107):** Filtre şeridindeki `🗄 archive N` çipi tek tuşla 3 modu dolaşır:
+  1. *Listede göster* (arşivlenmişler açık işlerin altında yer alır),
+  2. *Gizle* (arşiv tamamen gizlenir, sadece güncel işler kalır),
+  3. *Yalnızca arşivi göster* (tarihsel kayıt aramaları için sadece arşiv gösterilir).
+  Dosyada arşiv başlığı yoksa bu çip çizilmez.
+- **Sıralamalar ve Zaman Eksenleri (X-48, 3.174.0):** `Queue order` (dosyadaki doğal sıra), `family` (ana-alt iş hiyerarşisi), `opened` (açılış zamanı), `last touched` (son çalışma zamanı — `backlog-track.jsonl` defterinden okunur) ve `closed` (kapanış zamanı).
+
+
 
 ## Dışarıdan Erişim — Web Görünümü ve Sohbet Kanalı {#disaridan-erisim}
 
@@ -2275,6 +2303,19 @@ Havuza **yazan** dört kapı vardı (🔖 rozeti, oturum sağ tıkı, köprü, k
 - **`wiki.lint`:** Kasa wiki'sinin yapısal sağlığını denetler (yetim sayfalar, kırık `[[link]]` bağlantıları, indekssiz sayfalar).
 - **Ayarlar:** `agentFarm.wikiRoot` (Obsidian wiki klasör yolu, örn. `00_AGENT_AREA/00_WIKI`), `agentFarm.wikiAgent` (derlemeyi yürütecek ajan).
 
+
+### Wiki Faz 2 — Derleme Onay Şeridi, Gelişmiş Arama ve Ayarlar (3.285.0 — X-56, U-90..U-95, X-57..X-58) {#wiki-faz2}
+
+*(3.281.0 - 3.285.0)* Wiki aday havuzu ve kokpiti Faz 2 geliştirmeleriyle tam bir profesyonel bilgi derleme merkezine dönüştürülmüştür:
+
+- **Derleme Onay Şeridi (3.285.0 — U-95):** 📚 Derleme butonuna basıldığında doğrudan arka planda token harcamak yerine, üstte bir onay şeridi açılır: hangi ajanın (`agentFarm.wikiAgent`), hangi motorla, hangi modelle ve hangi eforla çalışacağını açıkça belirtir. **⚙ Change…** butonu Ayarlar sayfasına yönlendirir.
+- **Toplu İşlemler ve Canlı Durum (U-95):** Seçili satırlar için **⚡ Compile these N**, **🚫 Drop** ve **✕ Remove** toplu aksiyonları sunulur. Derleme çalışırken `compiling` rozeti nefes alan canlı bir animasyona kavuşur; biten derleme tek bir sessiz bildirimle kasadaki yeni sayfaları duyurur.
+- **Gelişmiş Arama ve Satır İçi Düzenleyici (3.284.0 — U-92):** 12'den fazla kategori olduğunda otomatik çıkan Türkçe duyarlı arama kutusu (`TARIM` $\rightarrow$ `Tarım`). ✎ butonu satır altında adanmış bir kategori/not ve hariç tutulan tur (`excluded turns`) düzenleyicisi açar.
+- **Kasa Ayarları ve Sağlık Paneli (3.283.0 — X-57, X-58):** Farm Settings altında `agentFarm.wikiRoot` adanmış bölümü: 3 zorunlu dosyanın sağlığı (`_KURALLAR_/-WIKI-ANAYASA-.md`, `index.md`, `log.md`), kategori derinlikleri ve **🛠 Start the wiki here** şablon başlatıcısı. Çöken veya kaza yapan bir derleme oturumunun turları kilitlemesi engellenmiştir.
+- **Tur İçi Arama ve Yerinde Kategori Başlatma (3.282.0 — U-90, U-91):** Konuşma içindeki 🔖 Wiki rozeti, doğrudan Obsidian klasör yapısını tarayan açılır menü sunar; Obsidian'a gitmeden yerinde `+ Start category` ile yeni konu başlatılabilir.
+- **Tur Aralığı Seçim Şeridi (3.281.0 — U-93, U-94):** Hangi turların derlemeye gireceği görsel turn-strip üzerinden seçilir; `Whole session` butonu tüm konuşmayı tek tıkla işaretler.
+
+
 ## Filo Raporu
 
 `Agent Farm: Export Fleet Report (Markdown)` — filonun karşılaştırmalı karnesini Markdown dosyası olarak üretir (7/30/90 gün). Obsidian vault'una kaydetmek için biçilmiş kaftandır.
@@ -3094,6 +3135,47 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.288.0 — U-106 / U-107: Backlog Arşiv Ayrımı ve 3 Durumlu Filtre Çipi (2026-08-26)
+
+- **Tamamlanmış ile Arşivlenmiş Satır Ayrımı (U-106):** `## 🗄 Archive` altındaki satırlar ile yeni bitirilenler ayırt ediliyor. Arşivlenmiş satırın yanına çerçeveli 🗄 rozeti eklendi.
+- **3 Durumlu `🗄 archive N` Filtre Çipi (U-107):** Filtre şeridinde tek basışla listede göster · gizle · yalnızca arşiv durumları arasında geçiş yapar.
+
+### 3.287.0 — X-133: Superpowers Kompozitör Anahtarı ve Sistem Promptu Enjeksiyonu (2026-08-26)
+
+- **Tek Sistem Promptu Dosyası (`systemPromptFileFor`):** `--append-system-prompt-file` tek dosya aldığı için proje brief'i ile Superpowers kancası birleştirildi. Projesiz oturumlarda da çalışır.
+- **Kompozitörde `[⚡ Superpowers]` Çipi:** Üzerine gelindiğinde modele verilecek kanca metnini birebir gösterir.
+- **Ajan Bazlı Varsayılanlar (`agentFarm.superpowersDefaults`):** `developer` açık başlar. Köprüye `superpowers.set` eklendi.
+
+### 3.286.0 — X-132: Diskte Uyuyan Superpowers Yetenekleri ve Kök Kanca Fihristi (2026-08-26)
+
+- **14 Mühendislik Yeteneği (`_SKILLS/superpowers`):** TDD, sistematik hata ayıklama, planlama ve doğrulama yetenekleri diskte 0 token ile tutulur.
+- **Kök Kanca ve Yol Fihristi:** `src/core/superpowers.ts` klasörü tarar, her yeteneğin ad, açıklama ve mutlak yolunu kanca bloğuna (`superpowersBlock`) dönüştürür. Köprü op'ları: `superpowers.status`, `superpowers.hook`.
+
+### 3.285.0 — U-95: Wiki Derleme Onay Şeridi ve Toplu Aksiyonlar (2026-08-26)
+
+- **Derleme Onay Şeridi:** 📚 butonu doğrudan model başlatmaz; hangi ajan, motor, model ve eforla koşacağını gösteren şerit açar.
+- **Toplu Seçim Aksiyonları:** **⚡ Compile these N**, **🚫 Drop** ve **✕ Remove** toplu butonları; canlı nefes alan compiling animasyonu ve tek bildirimli kapanış.
+
+### 3.284.0 — U-92: Wiki Kokpiti Aranabilir Kategori Menüsü ve Satır İçi Düzenleyici (2026-08-26)
+
+- **Aranabilir Kategori Menüsü:** 12+ seçenekte Türkçe duyarlı arama kutusu.
+- **Gelişmiş Satır İçi Düzenleyici:** ✎ butonu kategori, not ve hariç tutulan turları (`excluded turns`) düzenler.
+
+### 3.283.0 — X-57 / X-58: Wiki Ayarları ve Tur Kurtarma (2026-08-26)
+
+- **Farm Settings Wiki Bölümü (X-57):** `agentFarm.wikiRoot` adanmış ayar kartı, 3 zorunlu dosyanın varlık denetimi ve `🛠 Start the wiki here` şablon oluşturucu.
+- **Kaza Yapan Derlemeyi Kurtarma (X-58):** Çöken derlemelerin turları sonsuza kadar kilitlemesi engellendi.
+
+### 3.277.0 — X-32: Adaptif Misyon Kabul Matrisi ve Doğrulama (2026-08-26)
+
+- Çok-ajanlı adaptif misyonların uçtan uca kabul matrisi ve un-pause düzeltmeleri tamamlandı.
+
+### 3.271.0 - 3.274.0 — X-32: Adaptif Misyon Kompozitörü ve Oturum Yalıtımı (2026-08-23 - 2026-08-24)
+
+- **Misyon Kompozitörü:** Planlayıcının ne yapacağını önceden söyleyen şerit ve adım bazlı planlama.
+- **Oturum Yalıtımı:** Misyon delegasyonlarının ana oturumlardan tamamen izole çalışması ve transkript güvenliği.
+
 
 ### 3.209.0 — X-54: Ürüne Giden Örnek Özel Not Değildir, ve Askıya Alınamayan Tavan (2026-08-21)
 

@@ -2229,6 +2229,18 @@ Four doors WROTE to the pool (the 🔖 badge, a session's right-click, the bridg
 - **`wiki.lint`:** Audits vault wiki integrity (orphan pages, broken `[[wikilinks]]`, unindexed documents).
 - **Settings:** `agentFarm.wikiRoot` (Obsidian wiki path, e.g. `00_AGENT_AREA/00_WIKI`), `agentFarm.wikiAgent` (agent responsible for wiki compilation).
 
+
+### Wiki Phase 2 — Compile Approval Strip, Searchable Taxonomy and Settings (3.285.0 — X-56, U-90..U-95, X-57..X-58) {#wiki-phase2}
+
+*(3.281.0 - 3.285.0)* Wiki pool and cockpit Phase 2 enhancements:
+- **Compile Confirmation Strip (3.285.0 — U-95):** Shows agent, engine, model, and effort before running.
+- **Batch Actions:** **⚡ Compile these N**, **🚫 Drop**, **✕ Remove**; breathing animation for compiling state.
+- **Searchable Menu & Editor (3.284.0 — U-92):** Search box for 12+ categories; ✎ inline editor for topic, note, and excluded turns.
+- **Settings & Vault Health (3.283.0 — X-57, X-58):** `agentFarm.wikiRoot` section, 3-file health check, `🛠 Start the wiki here`.
+- **In-Turn Tagger (3.282.0 — U-90, U-91):** Searchable menu from 🔖 badge with `+ Start category`.
+- **Turn Scope Strip (3.281.0 — U-93, U-94):** Visual turn-strip selector and `Whole session` button.
+
+
 ## Fleet Report
 
 `Agent Farm: Export Fleet Report (Markdown)` — produces the fleet's comparative scorecard as a Markdown file (7/30/90 days). Tailor-made for saving into your Obsidian vault.
