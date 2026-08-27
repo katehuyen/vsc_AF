@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.289.0 - X-136: the discipline gets a cockpit, and the empty setting stops naming one computer (2026-08-27)
+
+**Two boxes, and neither could answer the question a person actually has.**
+X-132 built the skills page and X-133 the switch; what was left was a text field
+for the folder and a raw `Record<string, boolean>` for who starts with it on.
+The folder box could not say the one thing that decides everything — without
+`using-superpowers/SKILL.md` a switched-on session is handed **nothing at all**,
+which from outside looks exactly like the switch being off. The defaults box was
+keyed by an agent's NAME with no way of knowing which names exist, so a
+misspelling was a default that never fired and never complained.
+
+Settings now opens **Superpowers & Engineering Discipline** as its own section:
+the resolved folder with what was typed above it when the two differ, the hook
+drawn as a found/missing checklist row, every skill behind an AFTip with the
+line saying when it applies, and **a box per discovered agent** — real names,
+read off the agent roots, with the answer each one would actually get. A row
+nobody wrote down is drawn as a *default* rather than as a choice, because it is
+ticked by the built-in list and that list can change under it.
+
+**And the empty setting no longer falls through to a folder on one computer.**
+It resolved to a literal `D:\…` path — the same portability rule `agentRoots`
+and the wiki root already obey, broken in the one place nobody would look. Empty
+now means `_SKILLS/superpowers` **next to your agents**: under each agent root,
+or beside it when a root names a single agent, first one holding the hook.
+
 ## 3.288.0 - U-106 / U-107: closed is not archived — the backlog says which, and hides the archive in one press (2026-08-26)
 
 **Two rows, drawn identically, meaning completely different things.** An item

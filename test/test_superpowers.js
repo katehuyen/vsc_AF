@@ -246,6 +246,88 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
     ok('the answer the page resolves is what start carries',
         /superpowers: superpowersState\(\)\.on,/.test(page));
 
+    // ------------------------------- X-136 · the cockpit, and the portable root
+    //
+    // ‼️ THE TWO FAILURES THIS HALF IS ABOUT ARE BOTH SILENT.
+    //
+    // 1. The empty setting fell through to ONE literal path — a folder that
+    //    exists on exactly one computer. On any other machine the feature is
+    //    on, the folder is not there, and a switched-on session is given
+    //    nothing at all, which looks exactly like the switch being off.
+    // 2. `superpowersDefaults` is keyed by an agent's NAME, and a JSON box
+    //    cannot say which names exist. A misspelling is a default that never
+    //    fires and never complains.
+    {
+        // The fallback resolves against the AGENTS, not against this machine.
+        const nest = path.join(tmp, 'nest');
+        const agentDir = path.join(nest, 'developer');
+        fs.mkdirSync(agentDir, { recursive: true });
+        const lib = path.join(nest, '_SKILLS', 'superpowers');
+        fs.mkdirSync(path.join(lib, 'using-superpowers'), { recursive: true });
+        fs.writeFileSync(path.join(lib, 'using-superpowers', 'SKILL.md'),
+            FM('using-superpowers', 'Use when starting any conversation') + '# hook\n', 'utf8');
+
+        ok('‼️ an empty setting resolves to _SKILLS/superpowers under the agent nest',
+            S.superpowersFallbackRoot([nest]) === lib);
+        ok('‼️ …and a root that names ONE agent finds the library BESIDE it, not under it',
+            S.superpowersFallbackRoot([agentDir]) === lib);
+        ok('the candidate that actually holds the hook wins over one that merely exists',
+            S.superpowersFallbackRoot([path.join(tmp, 'nohook'), nest]) === lib);
+        ok('…and with no hook anywhere, a folder that EXISTS is still named',
+            S.superpowersFallbackRoot([path.join(tmp, 'nowhere')]).startsWith(path.join(tmp, 'nowhere')));
+        ok('‼️ no roots at all is the one honest empty answer — there is nothing to resolve against',
+            S.superpowersFallbackRoot([]) === '' && S.superpowersFallbackRoot(['', '  ']) === '');
+        ok('a root repeated, or two roots sharing a parent, is looked at once',
+            S.superpowersFallbackRoot([nest, nest, agentDir]) === lib);
+        ok('‼️ and the literal machine path is gone from the fallback',
+            !/'_SKILLS', 'superpowers'/.test(ext));
+        ok('…the extension expands the roots before handing them over, because expansion needs the workspace',
+            /superpowersFallbackRoot\(\s*\n\s*cfg\(\)\.get<string\[\]>\('agentRoots', \[\]\)/.test(ext));
+
+        // One rule for writing the map, shared rather than copied — two writers
+        // of one setting is exactly how a second row for one agent appears.
+        const store = { Developer: true, asistan: false };
+        ok('‼️ a differently-spelled name writes onto the row that is already there',
+            S.superpowersDefaultsKey('developer', store) === 'Developer'
+            && S.superpowersDefaultsKey('DEVELOPER', store) === 'Developer');
+        ok('…and a name nobody has written yet gets a row of its own',
+            S.superpowersDefaultsKey('psikolog', store) === 'psikolog');
+        ok('…which is what superpowersDefaultFor reads back, so the two cannot disagree',
+            S.superpowersDefaultFor('DEVELOPER', store) === true
+            && S.superpowersDefaultFor('Asistan', store) === false);
+
+        const set = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+        ok('the section is drawn for its own category, as the wiki one is',
+            /c\.id === 'superpowers' \? superpowersSection\(c\)/.test(set));
+        ok('‼️ the page says the one thing a text box cannot: without the hook a session gets NOTHING',
+            /given nothing at all from here/.test(set));
+        ok('the hook is drawn as a checklist row, found or not',
+            /using-superpowers\/SKILL\.md/.test(set) && /sp\.hookFound \? '✓' : '✗'/.test(set));
+        ok('‼️ every discovered agent gets a box — the setting is keyed by a NAME',
+            /data-spagent="\$\{C\.esc\(a\.name\)\}"/.test(set));
+        ok('…and a row nobody wrote down is drawn as a DEFAULT, not as a choice',
+            /a\.explicit \? '' : ' spdef'/.test(set) && /' · default'/.test(set));
+        ok('all three gestures are wired',
+            ['spDefault', 'spRescan', 'spReveal'].every(g => set.includes(`'${g}'`)));
+        ok('…and the reset is the ordinary one, so it cannot drift from the schema default',
+            /data-reset="agentFarm\.superpowersPath"/.test(set));
+
+        const sp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+        ok('the host reads the folder on every draw — it is edited by hand while the page is open',
+            /superpowers: this\.deps\.superpowers\?\.\(\) \?\? null/.test(sp));
+        ok('‼️ the box writes through the SHARED key rule, not its own',
+            /superpowersDefaultsKey\(agent, store\)/.test(ext));
+
+        const ops = fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.js').replace('.js', '.ts'), 'utf8');
+        ok('both settings are filed under the section that can answer for them',
+            /superpowersPath: 'superpowers'/.test(ops) && /superpowersDefaults: 'superpowers'/.test(ops));
+
+        const par = JSON.parse(fs.readFileSync(path.join(ROOT, 'parity.manifest.json'), 'utf8'));
+        const row = par.entries.find(e => e.capability === 'settingsPanel.ts#spDefault');
+        ok('the box that writes a setting is bound to its op, not exempted',
+            !!row && (row.ops || []).includes('superpowers.set'));
+    }
+
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* windows */ }
     console.log(`\ntest_superpowers: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

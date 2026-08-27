@@ -5416,6 +5416,35 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#spDefault",
+      "ui": [
+        "page:settingsPanel.ts#spDefault"
+      ],
+      "ops": [
+        "superpowers.set"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#spRescan",
+      "ui": [
+        "page:settingsPanel.ts#spRescan"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reads the skills folder again and repaints. It writes nothing, and superpowers.status returns the same answer to an agent."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#spReveal",
+      "ui": [
+        "page:settingsPanel.ts#spReveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "settingsPanel.ts#saveProfile",
       "ui": [
         "page:settingsPanel.ts#saveProfile"

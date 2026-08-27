@@ -208,15 +208,20 @@ const CATEGORY_OF: Record<string, string> = {
      */
     wikiRoot: 'wiki', wikiAgent: 'wiki',
     wikiEngine: 'wiki', wikiModel: 'wiki', wikiEffort: 'wiki',
-    // X-55 — where the sleeping engineering-discipline skills are. It is filed
-    // with the agents because it is about how an agent WORKS, not about
-    // anything it produces; it stays a plain path until the switch that turns
-    // it on has a surface of its own to sit on.
-    superpowersPath: 'core',
-    // X-133 — …and which agents open with the switch already on. It is filed
-    // beside the path because the two are one question: where the discipline
-    // lives, and who works to it without being asked.
-    superpowersDefaults: 'core'
+    /**
+     * ‼️ X-136 — SUPERPOWERS GETS ITS OWN SECTION, FOR THE WIKI'S REASON.
+     *
+     * The path and the per-agent map sat under Core & Agents as two ordinary
+     * boxes, and one of them was a `Record<string, boolean>` — a JSON box with
+     * no way of knowing which names are legal, so the answer to "is the
+     * discipline on for this agent?" was to guess a spelling and hope. Neither
+     * box could say the thing that matters either: whether the folder holds the
+     * root hook, without which every session is given nothing at all. A section
+     * reads the folder and lists the agents by name — see `superpowersSection`
+     * in `media/settings.js`.
+     */
+    superpowersPath: 'superpowers',
+    superpowersDefaults: 'superpowers'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [
@@ -232,6 +237,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['health', 'Health & Insights'],
     ['reports', 'Reports & Digest'],
     ['wiki', 'Wiki & Knowledge Base'],
+    ['superpowers', 'Superpowers & Engineering Discipline'],
     ['queue', 'Work Queue'],
     ['access', 'Access (web view · messaging)'],
     ['other', 'Other']

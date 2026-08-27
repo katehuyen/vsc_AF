@@ -29,7 +29,8 @@
         // type looking for it — its own key and description say "snippets file"
         // and nothing about right-clicking Send (see PROMPT_TERMS).
         const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS
-            : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS : '';
+            : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS
+                : /^agentFarm\.superpowers/.test(it.key) ? ' ' + SP_TERMS : '';
         return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
@@ -684,6 +685,111 @@
             ${boxes}`;
     }
 
+    /**
+     * ‼️ X-136 — THE SUPERPOWERS SECTION ANSWERS "WILL A SESSION ACTUALLY GET
+     * ANYTHING, AND WHO?" — NOT "WHAT DID YOU TYPE?".
+     *
+     * Two boxes stood here before, and both were unanswerable from a text
+     * field. The path: a folder without `using-superpowers/SKILL.md` gives a
+     * switched-on session NOTHING, and nothing is exactly what a working
+     * feature looks like from outside. The defaults: a
+     * `Record<string, boolean>` keyed by an agent's NAME, so a misspelling is a
+     * switch that never fires and never complains. So the card reads the
+     * resolved folder, says how many skills are behind the hook, and lists the
+     * discovered agents with a box each.
+     *
+     * ‼️ AND IT DISTINGUISHES SAID FROM ASSUMED. An agent nobody named falls
+     * back to the built-in list; that agent's box is ticked for a reason that
+     * can change under it, so it is drawn as a default rather than as a choice
+     * and the row says which it is.
+     */
+    const SP_TERMS = 'superpowers skills discipline tdd debugging brainstorming plan hook '
+        + 'SKILL.md using-superpowers engineering agent default portable path root';
+
+    function superpowersSection(cat) {
+        const sp = DATA.superpowers;
+        const items = (cat && cat.items) || [];
+        const boxes = items.map(itemHtml).join('');
+        if (!sp) { return boxes; }
+
+        const skills = sp.skills || [];
+        const badge = sp.usable
+            ? `<span class="rootbadge">${skills.length} skill${skills.length === 1 ? '' : 's'} behind the hook</span>`
+            : `<span class="rootbadge warn">${sp.exists ? 'no hook' : 'folder does not exist'}</span>`;
+        // The rule on the left is the state, as everywhere else on this page:
+        // green can supply a session, yellow is a folder that cannot, grey is
+        // not there at all.
+        const cls = !sp.exists ? 'eng-off' : sp.usable ? 'eng-ok' : 'eng-warn';
+
+        const why = sp.usable ? '' : `<div class="seterr">⚠ ${C.esc(sp.why || 'this folder cannot supply a session')}
+            <br><b>A session with the switch on is given nothing at all from here</b> — which looks exactly like the switch being off.
+            ${sp.exists ? '' : '<br>Choose the folder below, or empty the box and it is looked for next to your agents (<code>_SKILLS/superpowers</code> under an agent root).'}</div>`;
+
+        const typed = String(sp.setting || '');
+        const differs = typed && typed.replace(/[\\/]+$/, '').toLowerCase() !== String(sp.root || '').replace(/[\\/]+$/, '').toLowerCase();
+
+        const skillList = skills.length
+            ? window.AFTip.wrap(
+                `<div class="setdesc">Skills: <b>${skills.length}</b> · ${C.esc(skills.slice(0, 6).map(s => s.name).join(' · '))}${skills.length > 6 ? ` +${skills.length - 6}` : ''}</div>`,
+                `${skills.length} skill${skills.length === 1 ? '' : 's'} · read one at a time, when one applies`,
+                skills.map(s => `${s.name} — ${s.description || 'no description in its frontmatter'}`).join('\n')
+                + '\n\nNone of these is loaded into a session. Only the root hook plus this index\nrides on the system prompt; a model fetches the one skill it needs with its\nown file tool, at the moment it needs it.')
+            : '';
+
+        // ‼️ THE MATRIX. A row per discovered agent, because the setting is
+        // keyed by a NAME and this is the only place that knows which names
+        // exist. `on` is the answer the agent would actually get; `explicit`
+        // says whether anybody wrote it down.
+        const agentRow = a => window.AFTip.wrap(
+            `<label class="sprow${a.explicit ? '' : ' spdef'}">
+                <input type="checkbox" data-spagent="${C.esc(a.name)}" ${a.on ? 'checked' : ''}>
+                <span class="spname">${C.esc(a.name)}</span>
+                <span class="spstate">${a.on ? 'on' : 'off'}${a.explicit ? '' : ' · default'}</span>
+            </label>`,
+            `${a.name} — Superpowers ${a.on ? 'ON' : 'OFF'} by default`,
+            (a.explicit
+                ? 'Written down in agentFarm.superpowersDefaults, so it stays whatever you set.'
+                : `Nobody has said, so it falls back to the built-in list (${(sp.defaultAgents || []).join(', ') || 'nothing'} on, everything else off). Tick or untick to write it down.`)
+            + '\n\nThis is the DEFAULT a new session opens with — the switch itself is per session and sits beside the project chip above the composer. A session already running keeps what it was started with: its system prompt was written at spawn and cannot be rewritten under it.');
+
+        const matrix = (sp.agents || []).length
+            ? `<div class="spgrid">${(sp.agents || []).map(agentRow).join('')}</div>`
+            : `<div class="setdesc">No agents discovered — add a folder under <b>Agent folders</b> above and they appear here.</div>`;
+
+        return `
+            <p class="muted small" style="max-width:760px">A library of engineering procedures — TDD,
+            root-cause debugging, planning, verification before completion — that <b>sleeps on disk at zero
+            tokens</b>. Switched on, a session's system prompt carries only the library's own hook plus an
+            index of where the skills are; the model reads the one it needs when it needs it. Switched off,
+            nothing is added at all.</p>
+            <div class="setitem eng ${cls}" data-item="agentFarm.superpowersPath">
+                <div class="sethead"><span class="setname">⚡ Superpowers</span> ${badge}</div>
+                ${differs ? `<div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(typed)}</div>` : ''}
+                <div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(sp.root || '—')}${differs ? ' <span class="muted">← what it opens</span>' : ''}${typed ? '' : ' <span class="muted">← found next to your agents</span>'}</div>
+                <div class="wikifile">
+                    <span class="wikimark ${sp.hookFound ? 'ok' : 'no'}">${sp.hookFound ? '✓' : '✗'}</span>
+                    <span class="wikirel">using-superpowers/SKILL.md</span>
+                    <span class="wikipath">${C.esc(sp.hook || '')}</span>
+                </div>
+                ${why}
+                ${skillList}
+                <div class="setdesc" style="margin-top:8px">Which agents open a session with the discipline
+                    already on — the default, before anybody touches the switch. This is also the only
+                    answer a session started <b>outside</b> the panel has (an unattended task, a terminal, a
+                    resume).</div>
+                ${matrix}
+                <div class="btnrow">
+                    <button class="secondary" data-browse="agentFarm.superpowersPath" data-browsekind="folder"
+                        title="Pick the folder — the path is written into the box below and saved">📁 Choose the folder…</button>
+                    <button class="secondary" data-reset="agentFarm.superpowersPath"
+                        title="Empty the setting. The folder is then looked for next to your agents — _SKILLS/superpowers under an agent root, or beside it when a root names a single agent.">↺ Reset to default</button>
+                    <button class="secondary" id="sprescan" title="Read the folder again. It is a folder you edit by hand, so a skill you just added shows up here without a reload.">↻ Re-scan</button>
+                    <button class="secondary" id="spreveal" ${sp.exists ? '' : 'disabled'} title="Open the folder in the file manager">📂 Reveal</button>
+                </div>
+            </div>
+            ${boxes}`;
+    }
+
     function render() {
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
@@ -780,6 +886,18 @@
                 .wikirel { flex:0 0 210px; font-family:var(--vscode-editor-font-family); }
                 .wikipath { flex:1 1 auto; opacity:.5; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-family:var(--vscode-editor-font-family); }
+                /* superpowers — one row per discovered agent. A row that was
+                   never written down is dimmed: it is ticked because the
+                   built-in list says so, not because anybody chose it. */
+                .spgrid { display:flex; flex-wrap:wrap; gap:4px 14px; margin:4px 0 8px; }
+                .sprow { display:flex; gap:6px; align-items:baseline; font-size:11px;
+                    padding:2px 8px 2px 4px; border-radius:4px; cursor:pointer;
+                    border:1px solid var(--vscode-widget-border, #3333); }
+                .sprow:hover { border-color:var(--vscode-focusBorder, #007fd4); }
+                .sprow input { margin:0; }
+                .spname { font-family:var(--vscode-editor-font-family); }
+                .spstate { font-size:10px; opacity:.5; }
+                .sprow.spdef .spname { opacity:.7; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -800,7 +918,8 @@
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.id === 'prompts' ? promptsSection(c)
                     : c.id === 'wiki' ? wikiSection(c)
-                        : c.items.map(itemHtml).join('')}`).join('')
+                        : c.id === 'superpowers' ? superpowersSection(c)
+                            : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
@@ -849,6 +968,16 @@
         onClick('wikirescan', 'wikiRescan');
         onClick('wikireveal', 'wikiReveal');
         onClick('wikiopen', 'wikiOpen');
+        // X-136 — the folder gestures, and the per-agent default. The box
+        // writes ONE agent's row; the host normalises the key onto whatever
+        // spelling is already in the setting, so ticking `Developer` beside an
+        // existing `developer` cannot leave two rows for one agent.
+        onClick('sprescan', 'spRescan');
+        onClick('spreveal', 'spReveal');
+        document.querySelectorAll('[data-spagent]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'spDefault', agent: el.dataset.spagent, on: el.checked
+            })));
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             // the box is a QUERY, not a substring — media/afQuery.js. Kept as

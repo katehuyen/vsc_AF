@@ -102,7 +102,25 @@ veya
 `"agentFarm.superpowersPath": "${workspaceRoot}/ajanlar/_SKILLS/superpowers"`
 
 ### B) Dinamik Ajan Kökü Fallback'i
-Eğer kullanıcı hiçbir ayar girmezse (`superpowersPath: ""`), sistem sabit bir `D:\...` yoluna düşmek yerine eklentinin o an keşfettiği aktif `ajanlar` klasörünün altındaki `_SKILLS/superpowers` dizinine bağlanır. Böylece `ajanlar` klasörü nereye taşınırsa Superpowers da otomatik olarak oradan çalışır.
+Eğer kullanıcı hiçbir ayar girmezse (`superpowersPath: ""`), sistem sabit bir `D:\...` yoluna düşmez; kütüphaneyi **ajanların yanında** arar. Kural (`superpowersFallbackRoot`, `src/core/superpowers.ts`):
+
+1. `agentFarm.agentRoots` içindeki her kök sırayla ele alınır (değişkenleri genişletilmiş hâliyle).
+2. Her kök için iki aday üretilir: `<kök>/_SKILLS/superpowers` ve `<kökün üst klasörü>/_SKILLS/superpowers` — ikincisi, bir kökün ajan yuvası değil de tek bir ajanı gösterdiği durum içindir (kütüphane o ajanın altında değil, yanındadır).
+3. **Kancayı gerçekten barındıran ilk aday kazanır** (`using-superpowers/SKILL.md`). "Klasör var" ile "oturuma bir şey verilebilir" farklı sorulardır ve yalnız ikincisi önemlidir.
+4. Hiçbirinde kanca yoksa var olan ilk klasör, o da yoksa ilk aday döner — sağlık raporunun okunabilir bir yol adı vermesi gerekir. Hiç kök tanımlı değilse dönen boş dizedir; ortada çözümlenecek bir şey yoktur.
+
+Böylece `ajanlar` klasörü nereye taşınırsa Superpowers da otomatik olarak oradan çalışır.
+
+---
+
+## 4.5. Ayarlar Sayfası Kokpiti
+
+`Farm Settings` içinde **Superpowers & Engineering Discipline** kendi bölümüdür (`superpowersSection`, `media/settings.js`). İki ayar kutusu iki soruyu cevaplayamıyordu, bölüm onları cevaplıyor:
+
+- **Klasör gerçekten bir kütüphane mi?** Çözülen yol (yazılan yol farklıysa üstünde), kanca için ✓/✗ satırı ve kaç yeteneğin arkasında durduğu. Kanca yoksa **anahtarı açık bir oturuma hiçbir şey verilmez** — bu, anahtarın kapalı olmasıyla dışarıdan birebir aynı görünür, o yüzden kart bunu en yüksek sesle söyler.
+- **Hangi ajanda varsayılan açık?** Ayar ajan **adıyla** anahtarlanmış bir `Record<string, boolean>`'dır; hangi adların var olduğunu yalnız bu sayfa bilir. Keşfedilen her ajan için bir onay kutusu çizilir. Kimsenin yazmadığı satır **"default"** olarak soluk çizilir: yerleşik listeden geldiği için altından değişebilir.
+
+Kutu `superpowers.set` op'unun yazdığı satırın aynısına yazar (`superpowersDefaultsKey` ikisinde de ortaktır), böylece `Developer` işaretlemek mevcut `developer` satırının yanına ikinci bir satır açamaz.
 
 ---
 

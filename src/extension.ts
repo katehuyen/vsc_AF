@@ -343,7 +343,9 @@ import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
 import {
-    registerSuperpowersOps, superpowersBlock, superpowersDefaultFor, superpowersHealth
+    registerSuperpowersOps, superpowersBlock, superpowersDefaultFor,
+    superpowersDefaultsKey, superpowersFallbackRoot, superpowersHealth,
+    SUPERPOWERS_DEFAULT_AGENTS
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
@@ -1754,9 +1756,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const superpowersRoot = (): string => {
         const set = (cfg().get<string>('superpowersPath') ?? '').trim();
         const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        return set
-            ? expandUserPath(set, { workspaceRoot: ws })
-            : path.join('D:', 'zone', 'agent', 'ajanlar', '_SKILLS', 'superpowers');
+        if (set) { return expandUserPath(set, { workspaceRoot: ws }); }
+        // ‼️ X-136 — empty means "wherever the agents are", never a literal
+        // path off this machine. The roots are expanded here because expansion
+        // needs the workspace; the resolution itself stays pure in the module.
+        return superpowersFallbackRoot(
+            cfg().get<string[]>('agentRoots', [])
+                .map(r => expandUserPath(String(r ?? ''), { workspaceRoot: ws })));
     };
     /** Which agents start with the switch on — the setting, with the module's
      *  own list as the fallback for an agent it does not name. */
@@ -24964,6 +24970,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             : { ok: false, error: r.error };
                     },
                     openWiki: () => showWikiPanel(),
+                    // ‼️ X-136 — the same health the `superpowers.status` op
+                    // answers, plus the DISCOVERED agents so the per-agent map
+                    // is a list of real names rather than a JSON box somebody
+                    // has to spell into. One implementation, two doors.
+                    superpowers: () => {
+                        const store = superpowersDefaults();
+                        return {
+                            ...superpowersHealth(superpowersRoot(),
+                                cfg().get<string>('superpowersPath')?.trim() || ''),
+                            defaults: store,
+                            defaultAgents: [...SUPERPOWERS_DEFAULT_AGENTS],
+                            agents: agents.map(a => ({
+                                id: a.id, name: a.name,
+                                on: superpowersDefaultFor(a.name, store),
+                                // Whether the answer was SAID or merely fallen
+                                // back to — the two look the same on a checkbox
+                                // and mean different things when the built-in
+                                // list changes under it.
+                                explicit: Object.keys(store)
+                                    .some(k => k.trim().toLowerCase() === a.name.trim().toLowerCase())
+                            }))
+                        };
+                    },
+                    superpowersSet: async (agent, on) => {
+                        const store = superpowersDefaults();
+                        await cfg().update('superpowersDefaults',
+                            { ...store, [superpowersDefaultsKey(agent, store)]: on },
+                            vscode.ConfigurationTarget.Global);
+                    },
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),

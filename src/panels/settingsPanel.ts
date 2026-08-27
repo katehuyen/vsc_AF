@@ -18,6 +18,7 @@ import { EngineModels } from '../core/models';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
 import { WikiHealth } from '../core/wiki';
+import { SuperpowersHealth } from '../core/superpowers';
 import { handleAfNav, htmlShell } from './base';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
@@ -99,6 +100,33 @@ export interface FarmSettingsDeps {
     /** Open the cockpit over the candidate pool — the page this section
      *  configures, so the reader can go and use what they just set up. */
     openWiki?(): void;
+    /**
+     * ‼️ X-136 — THE DISCIPLINE, READ RATHER THAN TYPED.
+     *
+     * Same lesson as the wiki root one section up. `superpowersDefaults` is a
+     * `Record<string, boolean>` keyed by an agent's NAME: a JSON box cannot say
+     * which names exist, so a misspelling is a switch that silently never
+     * fires. And the folder has one file that decides everything — without
+     * `using-superpowers/SKILL.md` a switched-on session is given nothing at
+     * all, which reads as the feature working. So the section is handed the
+     * health of the resolved folder AND every discovered agent with its
+     * resolved answer, and the box is only the escape hatch.
+     */
+    superpowers?(): SuperpowersPage | null;
+    /** Write one agent's default back. The host owns the write because the
+     *  normalisation (onto the row already there) is shared with the bridge. */
+    superpowersSet?(agent: string, on: boolean): Promise<void>;
+}
+
+/** What the Superpowers section draws: the folder's own health, plus who
+ *  starts with the switch on and whether anybody said so explicitly. */
+export interface SuperpowersPage extends SuperpowersHealth {
+    /** The setting as it stands — the escape hatch's current contents. */
+    defaults: Record<string, boolean>;
+    /** The built-in list an agent nobody named falls back to. */
+    defaultAgents: string[];
+    /** Every discovered agent, with the answer it would actually get. */
+    agents: { id: string; name: string; on: boolean; explicit: boolean }[];
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -300,6 +328,10 @@ export class FarmSettingsPanel {
             // one somebody edits in Obsidian while this page is open, and a
             // cached "index.md is missing" would be a lie thirty seconds later.
             wiki: this.deps.wikiHealth?.() ?? null,
+            // X-136 — read on every draw for the wiki's reason above: the
+            // skills folder is one somebody edits by hand, and an agent added
+            // to a root five minutes ago belongs in the matrix.
+            superpowers: this.deps.superpowers?.() ?? null,
             // X-3 — which agent CLIs this machine can run and how each is paid
             // for. Read on every build rather than cached: a sign-in that
             // happened in the terminal thirty seconds ago is exactly the change
@@ -615,6 +647,29 @@ export class FarmSettingsPanel {
             case 'wikiOpen':
                 this.deps.openWiki?.();
                 break;
+            /**
+             * X-136 — the three gestures of the Superpowers section. The path
+             * itself is the ordinary text box and the ordinary Browse…, and
+             * [Reset to default] is the ordinary reset — the only thing this
+             * section had to add is the per-agent answer, which had no surface
+             * at all before, plus the re-read and the reveal a folder edited by
+             * hand needs.
+             */
+            case 'spDefault': {
+                const agent = String(msg.agent ?? '').trim();
+                if (!agent) { break; }
+                await this.deps.superpowersSet?.(agent, msg.on !== false);
+                this.refresh();
+                break;
+            }
+            case 'spRescan':
+                this.refresh();
+                break;
+            case 'spReveal': {
+                const root = this.deps.superpowers?.()?.root ?? '';
+                if (root) { void revealPath(root); }
+                break;
+            }
             case 'rootCleanDupes': {
                 const cfg = vscode.workspace.getConfiguration();
                 const roots = cfg.get<string[]>('agentFarm.agentRoots', []);

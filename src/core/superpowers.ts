@@ -29,6 +29,59 @@ import { BridgeRegistry } from './bridge';
 /** The library's own root hook, relative to the skills folder. */
 export const SUPERPOWERS_HOOK_REL = path.join('using-superpowers', 'SKILL.md');
 
+/** Where the library sits inside an agent nest when nobody has said otherwise. */
+export const SUPERPOWERS_NEST_REL = path.join('_SKILLS', 'superpowers');
+
+/**
+ * ‼️ X-136 — THE EMPTY SETTING RESOLVES AGAINST THE AGENTS, NOT AGAINST THIS
+ * MACHINE.
+ *
+ * The fallback used to be one literal path, which is a folder that exists on
+ * exactly one computer: the same portability rule `agentRoots` and the wiki
+ * root already obey, broken in the one place nobody would look. The library
+ * lives WITH the agents (`<nest>/_SKILLS/superpowers`), so the agent roots
+ * already say where it is — and a root that names a single agent rather than a
+ * nest has it one level up, which is why the parent is tried too.
+ *
+ * The first candidate that actually holds the hook wins, because "a folder is
+ * there" and "a session can be given something" are different questions and
+ * only the second one matters. With nothing found, the FIRST candidate is
+ * returned anyway rather than '': the health report has to name a path a person
+ * can read, and "the skills folder is not there: …" is an answer, while an
+ * empty string is a shrug. No roots at all is the one honest '' — there is
+ * nothing to resolve against.
+ *
+ * Roots arrive already expanded (`%USERPROFILE%`, `~`, `${workspaceRoot}`):
+ * expansion is the caller's, so this stays pure.
+ */
+export function superpowersFallbackRoot(roots: string[]): string {
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+    for (const raw of roots) {
+        const root = String(raw ?? '').trim();
+        if (!root) { continue; }
+        // The nest itself, then the folder holding it — a root pointed straight
+        // at one agent has the library beside that agent, not under it.
+        for (const base of [root, path.dirname(root)]) {
+            if (!base || base === path.dirname(base)) { continue; }
+            const cand = path.join(base, SUPERPOWERS_NEST_REL);
+            const key = cand.replace(/[\\/]+$/, '').toLowerCase();
+            if (seen.has(key)) { continue; }
+            seen.add(key);
+            candidates.push(cand);
+        }
+    }
+    if (!candidates.length) { return ''; }
+    const withHook = candidates.find(c => {
+        try { return fs.statSync(path.join(c, SUPERPOWERS_HOOK_REL)).isFile(); } catch { return false; }
+    });
+    if (withHook) { return withHook; }
+    const exists = candidates.find(c => {
+        try { return fs.statSync(c).isDirectory(); } catch { return false; }
+    });
+    return exists ?? candidates[0];
+}
+
 /**
  * How much of the hook is allowed into a system prompt.
  *
@@ -211,6 +264,25 @@ export function superpowersDefaultFor(
     return SUPERPOWERS_DEFAULT_AGENTS.includes(key);
 }
 
+/**
+ * ‼️ ONTO THE ROW THAT IS ALREADY THERE — the one rule every writer of this
+ * setting has to obey, so it is written once.
+ *
+ * The map is keyed by a name a person typed and `superpowersDefaultFor` reads
+ * it case-insensitively, so writing `DEVELOPER` beside an existing `developer`
+ * would leave two rows for one agent and whichever `Object.keys` reached first
+ * would decide. Shared by the bridge op and the settings page rather than
+ * copied into each: two writers of one setting is exactly how the second row
+ * appears.
+ */
+export function superpowersDefaultsKey(
+    agent: string, store?: Record<string, boolean>
+): string {
+    const name = String(agent ?? '').trim();
+    return Object.keys(store ?? {})
+        .find(k => k.trim().toLowerCase() === name.toLowerCase()) ?? name;
+}
+
 export interface SuperpowersDeps {
     /** The skills folder — the setting, resolved. */
     root(): string;
@@ -242,16 +314,9 @@ export function registerSuperpowersOps(bridge: BridgeRegistry, deps: Superpowers
                 if (!agent) { throw new Error('which agent? — pass agent:"<name>"'); }
                 if (!deps.setDefault) { throw new Error('the defaults are read-only here'); }
                 const on = (args as Record<string, unknown>).on !== false;
-                // ‼️ ONTO THE ROW THAT IS ALREADY THERE. The map is keyed by a
-                // name a person typed, and `superpowersDefaultFor` reads it
-                // case-insensitively — so writing `DEVELOPER` beside an existing
-                // `developer` would leave two rows for one agent and whichever
-                // `Object.keys` reached first would decide. Resolved here rather
-                // than in each host, because every host would have to get it
-                // right and one of them would not.
-                const current = deps.defaults ? deps.defaults() : {};
-                const key = Object.keys(current)
-                    .find(k => k.trim().toLowerCase() === agent.toLowerCase()) ?? agent;
+                // Onto the row that is already there — the shared rule, so the
+                // settings page and this op cannot disagree about the key.
+                const key = superpowersDefaultsKey(agent, deps.defaults ? deps.defaults() : {});
                 await deps.setDefault(key, on);
                 return {
                     agent: key, on,
