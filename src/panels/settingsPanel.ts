@@ -380,6 +380,40 @@ export class FarmSettingsPanel {
              * old one was in, and starting at the last-used directory instead
              * would cost that walk every time.
              */
+            /**
+             * ‼️ U-108 — THE SAME DIALOG FOR ONE ROW OF A LIST, and the
+             * answer goes BACK TO THE PAGE instead of into the setting.
+             *
+             * `browse` above writes what was picked straight through, because
+             * on a scalar path setting the picked path IS the whole value. A
+             * row is not: the list around it is still being edited, and
+             * saving here would commit every other row at the same moment —
+             * including the ones the user was in the middle of removing.
+             *
+             * The dialog opens where THAT ROW already points, so replacing
+             * one root does not start the walk from the top again.
+             */
+            case 'browseRow': {
+                const key = String(msg.key ?? '');
+                const index = Number(msg.index);
+                const folders = String(msg.kind ?? 'folder') === 'folder';
+                const current = (() => {
+                    const v = vscode.workspace.getConfiguration().get(key);
+                    const row = Array.isArray(v) ? v[index] : undefined;
+                    return String(row ?? '').trim();
+                })();
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFolders: folders, canSelectFiles: !folders, canSelectMany: false,
+                    openLabel: folders ? 'Use this folder' : 'Use this file',
+                    ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
+                });
+                const file = picked?.[0]?.fsPath;
+                if (!file) { break; }
+                void this.panel.webview.postMessage({
+                    type: 'browsedRow', key, index, path: file
+                });
+                break;
+            }
             case 'browse': {
                 const key = String(msg.key ?? '');
                 const folders = String(msg.kind ?? 'file') === 'folder';

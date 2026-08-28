@@ -12,6 +12,8 @@
  * Four rows, one of each shape the derivation has to get right:
  *   · `cliProfiles`      — a list of ENTRIES with declared, described fields.
  *   · `browserAllowHosts`— a plain list of strings: no JSON to get right at all.
+ *   · `agentRoots`        — the same, but of PATHS, so every row gets a Browse
+ *                          (U-108). Which lists do is a fact of the schema.
  *   · `taskRetry`        — one object, sixteen described fields, the widest
  *                          panel on the page and the one that has to scroll.
  *   · `budgets`          — a free-form map: nothing can list the keys, so the
@@ -24,6 +26,7 @@ const manifest = require(path.join(__dirname, '..', '..', 'package.json'));
 const SHOWN = [
     'agentFarm.cliProfiles',
     'agentFarm.browserAllowHosts',
+    'agentFarm.agentRoots',
     'agentFarm.taskRetry',
     'agentFarm.budgets'
 ];
@@ -35,6 +38,7 @@ const VALUES = {
         { name: 'gece-tarayici', command: 'my-cli --headless "{prompt}"' }
     ],
     'agentFarm.browserAllowHosts': ['docs.anthropic.com', 'code.visualstudio.com'],
+    'agentFarm.agentRoots': ['D:/zone/agent/ajanlar', 'D:/zone/dev/git/miropharm'],
     'agentFarm.taskRetry': { max: 3, delayMin: 30, when: 'limit' },
     'agentFarm.budgets': {}
 };
@@ -69,7 +73,7 @@ const data = () => ({
 const variants = () => ([
     {
         id: 'jsonsettings',
-        label: 'Settings — a JSON box now says what goes in it, and can write one',
+        label: 'Settings — a plain list is a list of boxes, not a JSON document (U-108)',
         data: data()
     },
     {

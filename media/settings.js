@@ -8,12 +8,35 @@
     let filter = '';
     let saveOpen = false;          // "Save current as…" inline input visibility
     const errors = {};             // key -> validation error from the host
+    /**
+     * ‼️ U-108 — THE LIST BEING EDITED, and whether the user asked for the
+     * raw JSON instead.
+     *
+     * Nine settings are a plain list of strings or numbers — root folders,
+     * excluded folders, model names, chat ids, hosts. There is no JSON to
+     * get right in ANY of them, and the page asked for it anyway: a
+     * textarea, a pair of brackets, and a comma the user had to remember.
+     *
+     * The draft is the page's, not the store's, for the reason every draft
+     * in this extension is: adding and removing a row must not save
+     * anything, so a list half-edited and abandoned leaves the setting
+     * exactly as it was. It is dropped on Apply, and the refresh that
+     * follows redraws from what was really stored.
+     */
+    const listDraft = {};          // key -> the rows being edited
+    const jsonMode = {};           // key -> the user asked for the raw box
     // While the user is typing in a field, background refreshes must not wipe
     // the edit — hold the data and apply it when focus leaves (2.47.0 lesson).
     let editing = false;
     let pendingData = null;
 
     function shortKey(k) { return k.replace(/^agentFarm\./, ''); }
+
+    /** Every setting on the page, flat. Two controls ask "which item is this
+     *  key?" and both used to walk the categories themselves. */
+    function allItems() {
+        return (DATA.categories || []).reduce((a, c) => a.concat(c.items || []), []);
+    }
 
     function fmtDefault(v) {
         if (v === undefined) { return '(none)'; }
@@ -54,7 +77,7 @@
      * carries the one-line summary, because the fact that decides whether you
      * open anything at all should not cost a hover.
      */
-    function shapeHtml(it) {
+    function shapeHtml(it, noExample) {
         const s = it.shape;
         if (!s) { return ''; }
         const KIND = {
@@ -88,7 +111,7 @@
             // could only ever be seen closed is a field table nobody checked
             // the width of.
             'tip-shape')}
-            ${s.example !== undefined
+            ${s.example !== undefined && !noExample
                 ? `<button class="secondary small" data-example="${C.esc(it.key)}"
                     title="Write a valid entry into the box above. It replaces what is there — nothing is saved until you press Apply JSON.">Example</button>`
                 : ''}`;
@@ -97,6 +120,94 @@
     /** The example, formatted the way the box formats its value. */
     function exampleText(s) {
         try { return JSON.stringify(s.example, null, 2); } catch { return ''; }
+    }
+
+    /** The rows this key is showing: what is being edited, or what is stored. */
+    function listRows(it) {
+        if (Array.isArray(listDraft[it.key])) { return listDraft[it.key]; }
+        return Array.isArray(it.value) ? it.value.map(v => String(v ?? '')) : [];
+    }
+
+    /**
+     * ‼️ U-108 — READ THE BOXES BEFORE ANYTHING STRUCTURAL HAPPENS.
+     *
+     * Adding, removing or applying redraws the list, and a row typed into but
+     * not yet committed lives only in the DOM until this runs. Without it,
+     * typing a path and then pressing + on the row above throws the path away
+     * — the same lesson the task composer's rounds learned.
+     */
+    function readList(key) {
+        const rows = [];
+        for (let i = 0; ; i++) {
+            const box = document.getElementById('l-' + shortKey(key) + '-' + i);
+            if (!box) { break; }
+            rows.push(String(box.value));
+        }
+        listDraft[key] = rows;
+        return rows;
+    }
+
+    /**
+     * ‼️ U-108 — A LIST IS A LIST, NOT A JSON DOCUMENT.
+     *
+     * The schema says `items.type: string` (or `number`) and nothing else: there
+     * is no structure to get right, so asking for brackets, quotes and commas
+     * was asking the user to hand-assemble a value the page could have taken
+     * one line at a time. One box per entry, a ✕ to drop one, one button to add
+     * one — and, where the schema says the entries are PATHS, a Browse beside
+     * each row, because a list of roots is where a person types the most
+     * Windows paths by hand and a typo there makes the fleet look empty.
+     *
+     * ‼️ WHICH SETTINGS GET THIS IS NOT LISTED ANYWHERE. `shape.kind` decides,
+     * `shape.itemBrowse` decides the picker and `shape.itemAllowed` turns a row
+     * into a dropdown — all three read off the manifest (core/settingShape),
+     * so a list added tomorrow gets the editor with nobody touching this file.
+     *
+     * ‼️ AND THE JSON BOX DOES NOT GO AWAY. A value the schema cannot describe
+     * is always possible, and a page that removed the escape hatch would be a
+     * worse trap than the one it replaced. "Edit as JSON" is one click, and it
+     * comes back.
+     */
+    function listHtml(it) {
+        const id = shortKey(it.key);
+        const rows = listRows(it);
+        const s = it.shape;
+        const numeric = s.itemType === 'number' || s.itemType === 'integer';
+        const one = (v, i) => {
+            const box = s.itemAllowed && s.itemAllowed.length
+                ? `<select id="l-${id}-${i}" data-lrow="${C.esc(it.key)}">${
+                    (s.itemAllowed.indexOf(v) < 0 && v ? [v] : []).concat(s.itemAllowed).map(o =>
+                        `<option value="${C.esc(o)}"${o === v ? ' selected' : ''}>${C.esc(o)}</option>`).join('')
+                }</select>`
+                : `<input type="${numeric ? 'number' : 'text'}" id="l-${id}-${i}"
+                        data-lrow="${C.esc(it.key)}" value="${C.esc(v)}"
+                        placeholder="${C.esc(numeric ? 'a number' : 'one entry')}">`;
+            return `<div class="setlrow">${box}${s.itemBrowse
+                ? `<button class="secondary small" data-lbrowse="${C.esc(it.key)}" data-li="${i}"
+                        data-lkind="${C.esc(s.itemBrowse)}"
+                        title="Pick ${s.itemBrowse === 'folder' ? 'a folder' : 'a file'} — it is written into THIS row. Nothing is saved until you press Save the list.">Browse…</button>`
+                : ''}<button class="mini secondary" data-ldel="${C.esc(it.key)}" data-li="${i}"
+                    title="Remove this entry. Nothing is saved until you press Save the list.">✕</button></div>`;
+        };
+        return `<div class="setlist">
+            ${rows.length ? rows.map(one).join('')
+                : `<div class="muted small">Empty — ${C.esc(String(it.default ?? []).length
+                    ? 'the default applies' : 'nothing is set')}. Add an entry below.</div>`}
+            <div class="setjrow">
+                <button class="secondary small" data-ladd="${C.esc(it.key)}"
+                    title="Add one more entry to this list.">+ add</button>
+                <button class="secondary small" data-lapply="${C.esc(it.key)}"
+                    title="Save this list. Until you press it, nothing here has changed the setting.">Save the list</button>
+                <a href="#" class="setljson" data-ljson="${C.esc(it.key)}"
+                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
+                ${/* ‼️ NO Example HERE. It writes into the JSON textarea, and in this
+                      view there is no textarea to write into — the button would look
+                      live and do nothing, which is the dead control this whole
+                      change exists to remove. The empty row already says what one
+                      entry is, which is all the example was for. */
+            shapeHtml(it, true)}
+            </div>
+        </div>`;
     }
 
     function controlHtml(it) {
@@ -111,6 +222,12 @@
         if (it.type === 'number') {
             return `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:110px">`;
         }
+        // ‼️ U-108 — a plain list gets a list editor rather than a JSON box,
+        // unless the user asked for the box. Derived from the shape, never
+        // from a list of keys (see listHtml).
+        if (it.shape && it.shape.kind === 'list' && !jsonMode[it.key]) {
+            return listHtml(it);
+        }
         if (it.type === 'array' || it.type === 'object') {
             let text = '';
             try { text = JSON.stringify(it.value ?? (it.type === 'array' ? [] : {}), null, 2); } catch { text = ''; }
@@ -119,6 +236,10 @@
                 style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>
                 <div class="setjrow">
                     <button class="secondary small" data-apply="${C.esc(it.key)}">Apply JSON</button>
+                    ${it.shape && it.shape.kind === 'list'
+            ? `<a href="#" class="setljson" data-llist="${C.esc(it.key)}"
+                            title="Back to one box per entry. Nothing here is saved either way until you press a button.">Back to the list</a>`
+            : ''}
                     ${shapeHtml(it)}
                 </div>`;
         }
@@ -901,6 +1022,15 @@
                    summary is a CHIP and not a hover, because whether the reader
                    opens anything at all is decided by that one line. */
                 .setjrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+                /* ‼️ U-108 — one row per entry, and the row is read left to
+                   right: the value, the picker that fills it, the ✕ that drops
+                   it. The box takes every pixel the two buttons do not need —
+                   flex:1 with min-width:0, because an input in a flex row
+                   otherwise keeps its default width and squeezes the row. */
+                .setlist { display:flex; flex-direction:column; gap:5px; }
+                .setlrow { display:flex; align-items:center; gap:6px; }
+                .setlrow input, .setlrow select { flex:1 1 auto; min-width:0; }
+                .setljson { font-size:11px; opacity:.85; }
                 .setshape {
                     font-size:10px; padding:1px 7px; border-radius:9px; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4444);
@@ -1080,6 +1210,104 @@
                 const value = el.type === 'checkbox' ? el.checked : el.value;
                 vscode.postMessage({ type: 'set', key: el.dataset.set, value });
             }));
+        /**
+         * ‼️ U-108 — THE LIST EDITOR. Every one of these reads the boxes
+         * FIRST (`readList`), because a redraw throws away a row that has
+         * been typed into and not yet committed — type a path, press + on
+         * the row above, and without this the path is gone.
+         *
+         * Nothing here saves except `Save the list`. Adding and removing
+         * act on the draft, so a list half-edited and abandoned leaves the
+         * setting exactly as it was.
+         */
+        document.querySelectorAll('[data-lrow]').forEach(el =>
+            el.addEventListener('change', () => readList(el.dataset.lrow)));
+        document.querySelectorAll('[data-ladd]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.ladd;
+                readList(key).push('');
+                render();
+            }));
+        document.querySelectorAll('[data-ldel]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.ldel;
+                const i = Number(btn.dataset.li);
+                const rows = readList(key);
+                if (i >= 0 && i < rows.length) { rows.splice(i, 1); }
+                render();
+            }));
+        document.querySelectorAll('[data-lapply]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.lapply;
+                delete errors[key];
+                // ‼️ Sent as a REAL ARRAY and not as text. The host takes a
+                // structured value as-is (settingsops.sanitizeValue), so a list
+                // assembled here cannot fail to parse — which is the whole
+                // point of not making the user write the brackets.
+                const item = allItems().find(i => i.key === key);
+                const numeric = item && item.shape
+                    && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
+                const rows = readList(key)
+                    .map(v => String(v).trim()).filter(v => v !== '')
+                    .map(v => (numeric ? Number(v) : v));
+                // A number box that was typed into with words is a refusal the
+                // user can see, not a NaN quietly written into their settings.
+                if (numeric && rows.some(v => !Number.isFinite(v))) {
+                    errors[key] = 'every entry has to be a number';
+                    render();
+                    return;
+                }
+                delete listDraft[key];
+                vscode.postMessage({ type: 'set', key, value: rows });
+            }));
+        document.querySelectorAll('[data-ljson]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                // What is on screen goes INTO the JSON box: switching view is
+                // not a reason to lose what was typed.
+                readList(el.dataset.ljson);
+                jsonMode[el.dataset.ljson] = true;
+                render();
+            }));
+        document.querySelectorAll('[data-llist]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.llist;
+                // …and back the same way: the box is parsed into rows when it
+                // can be, and left alone when it cannot, so a half-typed JSON
+                // is not silently turned into one row containing a brace.
+                const ta = document.getElementById('c-' + shortKey(key));
+                if (ta) {
+                    try {
+                        const v = JSON.parse(String(ta.value || '[]'));
+                        if (Array.isArray(v)) {
+                            listDraft[key] = v.map(x => String(x ?? ''));
+                            delete errors[key];
+                        } else {
+                            errors[key] = 'that is not a list — the JSON box is still here';
+                            render();
+                            return;
+                        }
+                    } catch {
+                        errors[key] = 'the JSON in the box does not parse, so it cannot be shown as rows';
+                        render();
+                        return;
+                    }
+                }
+                delete jsonMode[key];
+                render();
+            }));
+        // ‼️ The picker fills ONE ROW and saves nothing — unlike the scalar
+        // Browse beside a single path box, which IS the whole value. The host
+        // opens the dialog and posts the path back; the draft takes it.
+        document.querySelectorAll('[data-lbrowse]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.lbrowse;
+                readList(key);
+                vscode.postMessage({
+                    type: 'browseRow', key, index: Number(btn.dataset.li), kind: btn.dataset.lkind
+                });
+            }));
         document.querySelectorAll('[data-apply]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.apply;
@@ -1094,9 +1322,7 @@
         document.querySelectorAll('[data-example]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.example;
-                const item = (DATA.categories || [])
-                    .reduce((a, c) => a.concat(c.items || []), [])
-                    .find(i => i.key === key);
+                const item = allItems().find(i => i.key === key);
                 const ta = document.getElementById('c-' + shortKey(key));
                 if (!item || !item.shape || !ta) { return; }
                 ta.value = exampleText(item.shape);
@@ -1297,6 +1523,22 @@
             errors['cc:' + ev.data.id] = ev.data.error;
             render();
             focusKey('cc:' + ev.data.id);
+            return;
+        }
+        // ‼️ U-108 — the folder the user picked for ONE ROW of a list.
+        // It goes into the draft and nothing is saved: the scalar Browse writes
+        // straight through because the path IS the whole value, and a row is
+        // not — the list around it is still being edited.
+        if (ev.data.type === 'browsedRow') {
+            const rows = listDraft[ev.data.key]
+                || (allItems().find(i => i.key === ev.data.key) || {}).value || [];
+            const list = Array.isArray(rows) ? rows.slice() : [];
+            const i = Number(ev.data.index);
+            if (i >= 0 && i < list.length) { list[i] = String(ev.data.path); }
+            else { list.push(String(ev.data.path)); }
+            listDraft[ev.data.key] = list.map(v => String(v));
+            delete errors[ev.data.key];
+            render();
             return;
         }
         if (ev.data.type === 'focus') { focusKey(ev.data.key); }

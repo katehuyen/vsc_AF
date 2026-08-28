@@ -75,6 +75,24 @@ export interface SettingShape {
     summary: string;
     /** For `list`: the type of one entry. For `rows`/`form`: the fields. */
     itemType?: string;
+    /**
+     * ‼️ U-108 — for a `list` of paths: the picker one ROW gets.
+     *
+     * Declared on the schema's `items` (`x-af-browse`), exactly as a scalar
+     * path setting declares it on itself — so which lists offer Browse is a
+     * fact of the manifest and not a list of keys somebody has to remember
+     * to extend. Typing a Windows path by hand is where the typo that
+     * makes a feature look broken comes from, and a list of roots is the
+     * place a user types the most of them.
+     */
+    itemBrowse?: 'file' | 'folder';
+    /**
+     * ‼️ U-108 — for a `list` whose entries are a closed set: the values.
+     * A row is then a PICKER rather than a text box, which is the whole
+     * difference between "which categories can I delegate?" being
+     * answerable on the page and being answerable only in the guide.
+     */
+    itemAllowed?: string[];
     fields: ShapeField[];
     /** A complete, valid value with one entry in it. `undefined` when the
      *  schema says too little to build one honestly — see `free`. */
@@ -178,11 +196,19 @@ export function shapeOf(node: SchemaNode | undefined): SettingShape | undefined 
             };
         }
         if (itemType && itemType !== 'object') {
+            // ‼️ U-108 — READ OFF THE ITEMS, so the page can stop being a JSON
+            // box for these. Both are schema facts and neither is a key list:
+            // a setting that declares a path item gets Browse on every row, and
+            // one that declares an enum gets a picker, the day it is added.
+            const browse = (items as { 'x-af-browse'?: unknown } | undefined)?.['x-af-browse'];
             return {
                 kind: 'list',
                 summary: `A plain list of ${itemType}s — one per entry. There is no structure to `
                     + 'get right here; it is the list itself.',
                 itemType,
+                ...(browse === 'file' || browse === 'folder' ? { itemBrowse: browse } : {}),
+                ...(Array.isArray(items?.enum) && items.enum.length
+                    ? { itemAllowed: items.enum.map(String) } : {}),
                 fields: [],
                 example: [exampleOf(items)]
             };

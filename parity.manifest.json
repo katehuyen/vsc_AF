@@ -5133,6 +5133,16 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#browseRow",
+      "ui": [
+        "page:settingsPanel.ts#browseRow"
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The same dialog for ONE ROW of a list setting (U-108). It saves nothing at all — the path is posted back to the page, which puts it in the row being edited; the list is written by settings.set like any other value. There is no capability here to put on the bridge: an agent setting agentRoots states the paths."
+      }
+    },
+    {
       "capability": "settingsPanel.ts#ccClear",
       "ui": [
         "page:settingsPanel.ts#ccClear"

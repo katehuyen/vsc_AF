@@ -176,5 +176,87 @@ const PROPS = manifest.contributes.configuration.properties;
         && !/postMessage\(\{ type: 'set', key, value: exampleText/.test(page));
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ U-108 — A PLAIN LIST IS NOT A JSON DOCUMENT
+//
+// Nine settings are an array of strings or numbers — root folders, excluded
+// folders, model names, chat ids, hosts. `items.type` is `string` or `number`
+// and there is no structure to get right in any of them, so asking the user for
+// brackets, quotes and commas was asking them to hand-assemble a value the page
+// could take one line at a time.
+//
+// These assertions are asked of the REAL manifest on purpose (see the head of
+// this file): a claim about which settings are lists, proved against invented
+// data, proves nothing about the page a person opens.
+// ---------------------------------------------------------------------------
+{
+    const fs2 = require('fs');
+    const lists = Object.entries(PROPS)
+        .map(([k, p]) => [k, S.shapeOf(p)])
+        .filter(([, sh]) => sh && sh.kind === 'list');
+    ok('‼️ the manifest really does have plain lists, and this test is about them',
+        lists.length >= 8);
+    ok('…every one of them names the type of ONE entry, which is what a row is',
+        lists.every(([, sh]) => sh.itemType === 'string' || sh.itemType === 'number'));
+
+    const shapeOfKey = (k) => S.shapeOf(PROPS[k]);
+    ok('‼️ A LIST OF PATHS OFFERS A PICKER PER ROW, and which lists those are is a'
+        + ' fact of the SCHEMA (items.x-af-browse) rather than a list of keys'
+        + ' somebody has to remember to extend',
+        shapeOfKey('agentFarm.agentRoots').itemBrowse === 'folder'
+        && shapeOfKey('agentFarm.excludeAgentDirs').itemBrowse === 'folder');
+    ok('…and a list that is not paths does not pretend to be',
+        shapeOfKey('agentFarm.modelAliases').itemBrowse === undefined
+        && shapeOfKey('agentFarm.telegram.allowedChats').itemBrowse === undefined);
+    ok('…a list whose entries are a closed set says so, so the row can be a picker'
+        + ' instead of a text box',
+        lists.every(([, sh]) => sh.itemAllowed === undefined
+            || (Array.isArray(sh.itemAllowed) && sh.itemAllowed.length > 0)));
+
+    const page = fs2.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    ok('‼️ the page chooses the editor from the SHAPE, never from a key list — a'
+        + ' setting added tomorrow gets it with nobody touching that file',
+        /it\.shape && it\.shape\.kind === 'list' && !jsonMode\[it\.key\]/.test(page)
+        && !/agentRoots/.test(page.slice(page.indexOf('function listHtml'),
+            page.indexOf('function controlHtml'))));
+    ok('…one box per entry, a ✕ to drop one and a button to add one',
+        /data-lrow=/.test(page) && /data-ldel=/.test(page) && /data-ladd=/.test(page));
+    ok('…with the Browse button drawn only where the schema said the entries are paths, and nowhere else',
+        /data-lbrowse=/.test(page)
+        && /\$\{s\.itemBrowse[\s\S]{0,120}data-lbrowse/.test(page.replace(/\r/g, '')));
+    ok('…and a closed set drawn as a select rather than a box that accepts anything',
+        /s\.itemAllowed && s\.itemAllowed\.length/.test(page));
+
+    ok('‼️ ADDING AND REMOVING ACT ON A DRAFT, so a list half-edited and abandoned'
+        + ' leaves the setting exactly as it was',
+        /const listDraft = \{\}/.test(page) && /delete listDraft\[key\]/.test(page));
+    ok('‼️ …and every structural gesture READS THE BOXES FIRST: type a path, press +'
+        + ' on the row above, and without this the path is gone',
+        /readList\(key\)\.push\(''\)/.test(page) && /const rows = readList\(key\)/.test(page));
+    ok('‼️ …and the list is sent as a REAL ARRAY, which is the whole point of not'
+        + ' making the user write the brackets',
+        /vscode\.postMessage\(\{ type: 'set', key, value: rows \}\)/.test(page));
+    ok('…with a number list refused in words rather than written as NaN',
+        /every entry has to be a number/.test(page));
+
+    ok('‼️ THE JSON BOX DOES NOT GO AWAY. A value the schema cannot describe is'
+        + ' always possible, and removing the escape hatch would be a worse trap'
+        + ' than the one this replaced',
+        /data-ljson=/.test(page) && /data-llist=/.test(page));
+    ok('…and switching either way keeps what was typed, or says why it cannot',
+        /listDraft\[key\] = v\.map/.test(page)
+        && /does not parse, so it cannot be shown as rows/.test(page));
+
+    const panel = fs2.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const row = panel.slice(panel.indexOf("case 'browseRow'"), panel.indexOf("case 'browse': {"));
+    ok('‼️ the row picker SAVES NOTHING — it posts the path back to the page,'
+        + ' because the list around that row is still being edited and saving here'
+        + ' would commit every other row at the same moment',
+        /postMessage\(\{/.test(row) && /'browsedRow'/.test(row)
+        && !/setValue\(/.test(row) && !/\.update\(/.test(row));
+    ok('…and it opens where THAT ROW already points, not at the top of the disk',
+        /Array\.isArray\(v\) \? v\[index\]/.test(row));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

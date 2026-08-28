@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.296.0 - U-108: a plain list is a list of boxes, not a JSON document (2026-08-28)
+
+**Nine settings are an array of strings or numbers** — root folders, excluded
+folders, model names, Telegram chat ids, queue targets, webhook events, allowed
+hosts, pack gallery sources, insight categories. The schema says
+`items.type: "string"` and nothing more: there is no structure to get right in
+any of them. The page asked for JSON anyway — a textarea, a pair of brackets,
+and a comma the user had to remember — which is the report U-89 was opened
+about.
+
+One box per entry now, a ✕ to drop one, one button to add one, and **Save the
+list** to commit them. Adding and removing act on a DRAFT, so a list
+half-edited and abandoned leaves the setting exactly as it was, and every
+structural gesture reads the boxes first — type a path, press + on the row
+above, and without that the path is gone. The value is sent as a **real array**,
+which is the whole point of not making the user write the brackets: it cannot
+fail to parse.
+
+**Where the schema says the entries are PATHS, every row gets a Browse.**
+Declared as `x-af-browse` on `items`, exactly as a scalar path setting declares
+it on itself — so `agentRoots` and `excludeAgentDirs` get the picker as a fact
+of the manifest, and the next list of paths gets it by one line there rather
+than by editing the page. The row picker **saves nothing**: it posts the path
+back and the draft takes it, because the list around that row is still being
+edited and saving would commit every other row at the same moment.
+
+**Which settings get any of this is nowhere written down.** `shape.kind`
+chooses the editor, `shape.itemBrowse` the picker and `shape.itemAllowed` turns
+a row into a dropdown — all three read off the manifest
+(`core/settingShape.ts`), so a list added tomorrow gets the editor with nobody
+touching the page. **And the JSON box does not go away:** a value the schema
+cannot describe is always possible, so "Edit as JSON" is one click and comes
+back, carrying what was typed either way.
+
+One dead control removed on the way: **Example** writes into the JSON textarea,
+and in the list view there is no textarea — it looked live and did nothing.
+
 ## 3.295.0 - M-27 (V2): the rounds a schedule could not keep, and the round that never opened (2026-08-28)
 
 **M-27 shipped and did not work.** Three separate faults, each of which alone
