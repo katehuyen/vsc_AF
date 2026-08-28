@@ -214,16 +214,46 @@ function fakeState(seed) {
         // so a folder called `C:\my "stuff"; rm` is not a code question at all.
         const evil = 'C:\\a b\\"; calc.exe & \\turn.wav';
         const win = T.soundCandidates('win32', evil);
-        ok('windows uses one PowerShell backend', win.length === 1);
-        ok('the path is NOT interpolated into the command',
-            win[0].args.every(a => a.indexOf(evil) < 0));
-        ok('it is handed over as an environment variable', win[0].env.AF_TURN_SOUND === evil);
-        ok('and the player is a real one, not Console.Beep',
-            /SoundPlayer/.test(win[0].args.join(' ')) && !/beep/i.test(win[0].args.join(' ')));
+        // ‼️ A-18 — MediaPlayer FIRST, because SoundPlayer plays only `.wav`.
+        // The user may point an alert at a file of their own, and an `.mp3`
+        // handed to SoundPlayer throws: the alert becomes silence with no error
+        // anywhere. SoundPlayer stays BEHIND it, because MediaPlayer lives in
+        // PresentationCore and a Windows without WPF would otherwise lose the
+        // alert it has today.
+        eq('windows tries MediaPlayer, then SoundPlayer as the .wav fallback',
+            win.map(c => c.backend), ['powershell:MediaPlayer', 'powershell:SoundPlayer']);
+        ok('‼️ the path is NOT interpolated into EITHER command',
+            win.every(c => c.args.every(a => a.indexOf(evil) < 0)));
+        ok('…and both hand it over as an environment variable',
+            win.every(c => c.env.AF_TURN_SOUND === evil));
+        ok('and the players are real ones, not Console.Beep',
+            /MediaPlayer/.test(win[0].args.join(' '))
+            && /SoundPlayer/.test(win[1].args.join(' '))
+            && win.every(c => !/beep/i.test(c.args.join(' '))));
+        // ‼️ AND IT DOES NOT BLOCK. MediaPlayer.Play() returns at once, so the
+        // script waits on the player's own events with a ceiling — a sound that
+        // never ends must not hold a process for ever, and `PlaySync` would
+        // have held the whole call for the length of the sound.
+        ok('‼️ the MediaPlayer call is asynchronous and bounded',
+            /MediaEnded/.test(win[0].args.join(' '))
+            && /MediaFailed/.test(win[0].args.join(' '))
+            && !/PlaySync/.test(win[0].args.join(' ')));
         ok('macOS uses afplay with the path as an ARGUMENT',
             T.soundCandidates('darwin', evil)[0].args[0] === evil);
-        eq('linux tries pulse then alsa',
-            T.soundCandidates('linux', 'x').map(c => c.backend), ['paplay', 'aplay']);
+        eq('linux tries pulse, then ffmpeg’s player, then alsa',
+            T.soundCandidates('linux', 'x').map(c => c.backend), ['paplay', 'ffplay', 'aplay']);
+
+        // ‼️ EVERY BACKEND DECLARES WHAT IT CAN OPEN, beside itself. The trap is
+        // a page that accepts an `.mp3` over a player that only knows `.wav`:
+        // the row says playable and the alert is silence. `alertVoices.playableOn`
+        // answers from THIS list, so the promise and the player cannot disagree.
+        for (const p of ['win32', 'darwin', 'linux']) {
+            ok(`${p} declares the formats of every backend it offers`,
+                T.soundCandidates(p, 'x').every(c =>
+                    Array.isArray(c.formats) && c.formats.length && c.formats.indexOf('wav') >= 0));
+        }
+        ok('…and the wav-only backend says so, rather than claiming everything',
+            win[1].formats.join(',') === 'wav');
     }
 
     /** An execFile stand-in driven by a script of outcomes, one per call. */
@@ -255,7 +285,7 @@ function fakeState(seed) {
         const r = await T.playTurnSound('C:\\turn.wav',
             { platform: 'win32', exists, execFile: ex });
         ok('a clean run reports ok with exit 0',
-            r.ok && r.exitCode === 0 && r.backend === 'powershell:SoundPlayer');
+            r.ok && r.exitCode === 0 && r.backend === 'powershell:MediaPlayer');
         ok('the child is hidden and bounded by a timeout',
             ex.calls[0].opts.windowsHide === true && ex.calls[0].opts.timeout > 0);
         ok('the asset is in the child environment',
@@ -264,7 +294,13 @@ function fakeState(seed) {
     {
         const err = Object.assign(new Error('exited'), { code: 3 });
         const r = await T.playTurnSound('C:\\turn.wav', {
-            platform: 'win32', exists, execFile: execScript([{ err, stderr: 'no audio device' }])
+            platform: 'win32', exists,
+            // ‼️ BOTH windows backends have to fail here, or the fallback
+            // rescues the run — which is exactly what having one is for, and
+            // not what this assertion is about.
+            execFile: execScript([
+                { err, stderr: 'no audio device' }, { err, stderr: 'no audio device' }
+            ])
         });
         ok('a non-zero exit is a failure with its code',
             !r.ok && r.exitCode === 3 && /no audio device/.test(r.stderr));
@@ -272,7 +308,7 @@ function fakeState(seed) {
     {
         const err = Object.assign(new Error('killed'), { killed: true });
         const r = await T.playTurnSound('C:\\turn.wav',
-            { platform: 'win32', exists, execFile: execScript([{ err }]), timeoutMs: 1234 });
+            { platform: 'win32', exists, execFile: execScript([{ err }, { err }]), timeoutMs: 1234 });
         ok('a timeout is reported as one', !r.ok && r.timedOut && /1234/.test(r.error));
     }
     {
@@ -282,11 +318,12 @@ function fakeState(seed) {
         const ex = execScript([{ err: enoent }, {}]);
         const r = await T.playTurnSound('/tmp/turn.wav',
             { platform: 'linux', exists, execFile: ex });
-        ok('linux falls through to the second backend', r.ok && r.backend === 'aplay');
+        ok('linux falls through to the second backend', r.ok && r.backend === 'ffplay');
         ok('both were really tried', ex.calls.length === 2);
     }
     {
-        const boom = execScript([{ throw: new Error('spawn exploded') }, { throw: new Error('again') }]);
+        const boom = execScript([{ throw: new Error('spawn exploded') },
+            { throw: new Error('again') }, { throw: new Error('and again') }]);
         const r = await T.playTurnSound('/tmp/turn.wav',
             { platform: 'linux', exists, execFile: boom });
         ok('a synchronous spawn failure is caught and reported',

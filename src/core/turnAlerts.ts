@@ -373,6 +373,17 @@ export interface SoundCandidate {
     args: string[];
     /** Passed to the child as env rather than pasted into a command string. */
     env?: Record<string, string>;
+    /**
+     * ‼️ A-18 — WHAT THIS BACKEND CAN ACTUALLY OPEN, declared beside it.
+     *
+     * The user may point an alert at a file of their own, and the trap is a
+     * page that accepts an `.mp3` over a player that only knows `.wav`: the
+     * row says playable, the alert is silence, and nothing anywhere reports an
+     * error. `alertVoices.playableOn` answers that question from THIS list, so
+     * the promise and the player can never disagree — change one and the other
+     * follows.
+     */
+    formats: readonly string[];
 }
 
 /**
@@ -385,22 +396,60 @@ export interface SoundCandidate {
  */
 export function soundCandidates(platform: string, asset: string): SoundCandidate[] {
     if (platform === 'win32') {
-        return [{
-            backend: 'powershell:SoundPlayer',
-            file: 'powershell',
-            args: [
-                '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                '-Command', '(New-Object System.Media.SoundPlayer $env:AF_TURN_SOUND).PlaySync()'
-            ],
-            env: { AF_TURN_SOUND: asset }
-        }];
+        return [
+            /**
+             * ‼️ A-18 — MediaPlayer FIRST, because SoundPlayer PLAYS ONLY WAV.
+             *
+             * `SoundPlayer.PlaySync()` was the right answer while there was one
+             * asset and it was a `.wav`. It is the wrong one the moment the
+             * user points an alert at a file of their own: an `.mp3` handed to
+             * it throws, and the alert is silence. `MediaPlayer` is the same
+             * Windows install, opens mp3/m4a/wma/wav, and is asynchronous — so
+             * this waits on its own `Opened`/`Failed` events rather than
+             * blocking, which is what keeps a long sound off the event loop.
+             *
+             * SoundPlayer stays BEHIND it. `MediaPlayer` lives in
+             * PresentationCore, and a stripped or server Windows without WPF
+             * would otherwise lose the alert it has today — the fallback costs
+             * a failed process and keeps `.wav` working everywhere.
+             */
+            {
+                backend: 'powershell:MediaPlayer',
+                file: 'powershell',
+                args: [
+                    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                    '-Command',
+                    'Add-Type -AssemblyName PresentationCore;'
+                    + '$p = New-Object System.Windows.Media.MediaPlayer;'
+                    + '$done = $false;'
+                    + 'Register-ObjectEvent $p MediaEnded -Action { $global:done = $true } | Out-Null;'
+                    + 'Register-ObjectEvent $p MediaFailed -Action { $global:done = $true } | Out-Null;'
+                    + '$p.Open([Uri]$env:AF_TURN_SOUND); $p.Play();'
+                    + '$t = 0; while (-not $global:done -and $t -lt 100) { Start-Sleep -m 100; $t++ };'
+                    + '$p.Close()'
+                ],
+                env: { AF_TURN_SOUND: asset },
+                formats: ['wav', 'mp3', 'm4a', 'wma']
+            },
+            {
+                backend: 'powershell:SoundPlayer',
+                file: 'powershell',
+                args: [
+                    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                    '-Command', '(New-Object System.Media.SoundPlayer $env:AF_TURN_SOUND).PlaySync()'
+                ],
+                env: { AF_TURN_SOUND: asset },
+                formats: ['wav']
+            }
+        ];
     }
     if (platform === 'darwin') {
-        return [{ backend: 'afplay', file: 'afplay', args: [asset] }];
+        return [{ backend: 'afplay', file: 'afplay', args: [asset], formats: ['wav', 'mp3', 'm4a', 'aiff', 'aif'] }];
     }
     return [
-        { backend: 'paplay', file: 'paplay', args: [asset] },
-        { backend: 'aplay', file: 'aplay', args: ['-q', asset] }
+        { backend: 'paplay', file: 'paplay', args: [asset], formats: ['wav', 'ogg', 'flac'] },
+        { backend: 'ffplay', file: 'ffplay', args: ['-nodisp', '-autoexit', '-loglevel', 'quiet', asset], formats: ['wav', 'mp3', 'm4a', 'ogg', 'flac'] },
+        { backend: 'aplay', file: 'aplay', args: ['-q', asset], formats: ['wav'] }
     ];
 }
 

@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.299.0 - A-20 (step 1): ten alert voices, and which one plays (2026-08-28)
+
+**The first step of the auditory cockpit (A-18), and nothing is wired to it
+yet** — this is the core plus its assets, in the build order the design note
+lays out. The farm could make exactly one noise, on the one edge where a turn
+finished. Away from the screen, "your turn" and "it is asking you something"
+were the same beep, so the only way to tell them apart was to walk back and
+look — which is the whole thing the sound was for.
+
+**Ten voices, generated rather than sourced** (`tools/make_alert_sounds.js`).
+The obvious way to get ten alert sounds is to download them, and then the
+extension ships ten files whose licence nobody can state; these are written from
+arithmetic, cost 340 kB together, and each one's character is a line of code
+somebody can read and argue with. All are ≤1.2 s, 44.1 kHz mono, normalised to
+−3 dBFS. **`chime-soft` is `turn-ready.wav` and is not regenerated** — it is the
+sound every current install already makes, and a "nicer" replacement would have
+changed it silently.
+
+**`src/core/alertVoices.ts` — one place answers "which sound, and why".**
+Session beats agent beats settings beats the built-in default, and the answer
+says which step gave it, because "why did it play that?" has to be answerable on
+the page. **A voice whose file is gone falls through rather than silencing the
+alert**, and the step it passed over is reported with the reason: silence is
+indistinguishable from an alert that never fired. Out of the box "your turn" and
+"asking you" are different sounds — one settled chime, one rising double knock.
+
+**Windows now plays through `MediaPlayer`, with `SoundPlayer` behind it.**
+`SoundPlayer.PlaySync()` opens `.wav` only and blocks for the length of the
+sound; the moment a user points an alert at a file of their own, an `.mp3`
+handed to it throws and the alert becomes silence with no error anywhere.
+MediaPlayer is the same Windows install, opens mp3/m4a/wma/wav and is
+asynchronous. SoundPlayer stays as the fallback, because MediaPlayer lives in
+PresentationCore and a Windows without WPF would otherwise lose the alert it has
+today. Linux gains `ffplay` between `paplay` and `aplay`.
+
+**Every backend now declares what it can open**, and `playableOn` reads that
+table — so a page cannot promise an `.mp3` that the player cannot play, which
+would be a row saying "playable" over an alert that makes no sound.
+
 ## 3.298.0 - U-110: a set of name → value pairs is a row editor (2026-08-28)
 
 **Three settings are a free-form object** — `budgets`, `superpowersDefaults`,
