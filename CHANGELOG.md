@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.304.0 - X-142: reopening something archived takes it out of the archive (2026-08-28)
+
+Ticking an archived item back open changed one character and left the line
+hanging under `## 🗄 Archive`. That is the worst of both states: the item counted
+as open, and every default view hides the archive — the page folds it away and
+`backlog.next` reads the file from the top — so the work was neither shown nor
+finished, and nothing anywhere said why it had vanished.
+
+X-134 already diagnosed exactly this shape and built the carry-home. It only
+ever ran on a deliberate `projects.backlog.tidy`, so the file stayed wrong until
+somebody happened to run one. **The reopen is the moment the line becomes live
+work, so it is the moment it goes home** — same machinery, called at the moment
+that creates the problem instead of at some later moment that happens to notice
+it.
+
+**The line's text is not touched.** It is lifted and re-inserted verbatim; what
+changes is where it sits. `setBacklogState`'s promise has always been that it
+never REBUILDS somebody's line out of parsed pieces, and that still holds.
+
+**Only that one item moves.** The full sweep is still a deliberate act: quietly
+relocating four other mis-filed lines because somebody unticked a box would be
+an edit they did not ask for, in a file they read by eye.
+
+**One way.** A closed line under 🗄 belongs there and is never dragged out, and
+nothing is ever auto-archived. If the item's area has no heading to go home to,
+it stays where it is and the note says so — inventing a heading would be
+restructuring somebody's document rather than repairing it.
+
+Reported as a fact and not only in prose: `projects.backlog.check` answers with
+`reseated: true`, because the line number a caller was holding is now the wrong
+one. And the ⛔ that comes off when an item is started now comes off the line
+that MOVED — it was named by a line number the reseat had just invalidated,
+which would have left the hold silently on, on the one path where the item had
+just been rescued.
+
 ## 3.303.0 - A-23: a conversation can have a tone of its own, and the row says which (2026-08-28)
 
 Fifth step of A-18, and it closes a hole that had been open since the first one.

@@ -10660,7 +10660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.check',
-            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. ‼️ `note` is REQUIRED when you close one (state done or cancelled) and it is checked, not merely asked for: say what was done, how it was closed and anything a reader should watch out for later. That is the closing note a person reads three months from now, it has room to be a real one, and every surface that shows a closure shows it — a closure with no note is the one thing nothing else can reconstruct, so it is refused here. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. ‼️ `note` is REQUIRED when you close one (state done or cancelled) and it is checked, not merely asked for: say what was done, how it was closed and anything a reader should watch out for later. That is the closing note a person reads three months from now, it has room to be a real one, and every surface that shows a closure shows it — a closure with no note is the one thing nothing else can reconstruct, so it is refused here. ‼️ X-142 — REOPENING SOMETHING THAT WAS ARCHIVED ALSO TAKES IT OUT OF THE ARCHIVE. A line left hanging under `## 🗄 Archive` with an open box is the worst of both states: it counts as open and every default view hides it (the page folds the archive away, `backlog.next` reads the file from the top), so the work is neither shown nor finished. So the line is carried back under its own area heading in the SAME write, verbatim — nothing about its text changes — and `reseated: true` comes back saying so. ONLY that item moves; the full sweep is still the deliberate `projects.backlog.tidy`. It is one-way: a CLOSED line under 🗄 belongs there and is never dragged out, and nothing is ever auto-archived. If the item\'s area has no heading to go home to, it stays put and the note says so rather than pretending. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -10694,9 +10694,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 need(!refusal, refusal ?? '');
                 let touched = ''; let code: string | null = null;
+                // ‼️ X-142 — reported as a FACT rather than only in the prose:
+                // the line moved, so a caller holding its number now holds the
+                // wrong one, and "did anything else change?" has to be
+                // answerable without reading English.
+                let reseated = false;
                 const out = editProjectDoc(folder, file, src => {
                     const res = moveBacklogState(src, target, state);
                     if (res.item) { touched = res.item.text; code = res.item.code ?? null; }
+                    if (res.reseatedFromArchive) { reseated = true; }
                     return res;
                 });
                 // An uncoded capture cannot be tracked: the code is the only
@@ -10711,6 +10717,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     project: project.name, file: relDoc(folder, out.file),
                     code, item: touched, state, note: out.note ?? null,
+                    reseated,
                     track: tracked ? trackOut(tracked) : null
                 };
             }

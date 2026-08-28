@@ -1123,6 +1123,12 @@ export interface BacklogEditResult {
     error?: string;
     item?: BacklogItem;
     note?: string;
+    /** ‼️ X-142 — the line was carried out of 🗄 Archive and back under its own
+     *  area heading, because reopening it made it live work again. Named rather
+     *  than left in the prose: a caller that draws the item has to know its line
+     *  moved, and "did anything else change?" must be answerable without
+     *  reading English. */
+    reseatedFromArchive?: boolean;
 }
 
 function locate(items: BacklogItem[], target: BacklogTarget): { item?: BacklogItem; error?: string } {
@@ -1230,6 +1236,40 @@ export function setBacklogState(
         const kid = items.find(i => i.code === c);
         return kid ? isLive(kid.state) : false;
     });
+    /**
+     * ‼️ X-142 — REOPENING SOMETHING ARCHIVED TAKES IT OUT OF THE ARCHIVE.
+     *
+     * Flipping the box alone left the line hanging under 🗄, which is the worst
+     * of both states: every default view hides the archive (the page folds it
+     * away, `next` reads the file from the top), so the item was open, counted
+     * as open, and appeared nowhere. X-134 already diagnosed that shape and
+     * built the carry-home; it only ran on a deliberate `tidy`, so the file
+     * stayed wrong until somebody happened to run one. The reopen IS the moment
+     * it becomes live work, so it is the moment it goes home.
+     *
+     * ‼️ THE LINE'S TEXT IS NOT TOUCHED — it is lifted and re-inserted verbatim.
+     * The one-character promise above is about never REBUILDING somebody's line
+     * from parsed pieces, and that still holds: what changes is where the line
+     * sits, which is precisely what was asked for.
+     *
+     * Only ever on the way OUT. A closed line under 🗄 belongs there, and
+     * archiving stays a deliberate act in the other direction (`archive`) —
+     * auto-filing on every tick would move work somebody was still looking at.
+     */
+    let outText = nextText;
+    let out: BacklogItem = { ...item, state, raw };
+    let reseatedFromArchive = false;
+    if (item.archived && isLive(state) && item.code) {
+        const r = reseatMisfiled(nextText, item.code);
+        if (r.moved.length) {
+            outText = r.text;
+            reseatedFromArchive = true;
+            // The line number changed, so the item has to be found again by the
+            // one identity that survived the move.
+            const again = locate(parseBacklog(outText).items, { code: item.code });
+            if (again.item) { out = again.item; }
+        }
+    }
     const notes = [
         state !== 'done' && item.doneOn
             ? `the line still carries its ✅ ${item.doneOn} — Agent Farm does not remove metadata it did not write`
@@ -1237,10 +1277,21 @@ export function setBacklogState(
         strays.length
             ? `${strays.join(', ')} ${strays.length === 1 ? 'is' : 'are'} still open under ${item.code}`
             + ' — closing a parent does not close its children, and they stay in the queue'
+            : '',
+        reseatedFromArchive
+            ? `it was under 🗄 Archive and came back to ${item.area} — open work cannot live in the archive,`
+            + ' where every default view hides it'
+            : '',
+        // Said, never silently accepted: the item is live under the archive and
+        // there is no heading to carry it to, so it stays invisible.
+        !reseatedFromArchive && item.archived && isLive(state)
+            ? '⚠ this line is under 🗄 Archive and there is no heading for its area to carry it back to —'
+            + ' it is open but hidden from every default view'
             : ''
     ].filter(Boolean);
     return {
-        ok: true, text: nextText, item: { ...item, state, raw },
+        ok: true, text: outText, item: out,
+        ...(reseatedFromArchive ? { reseatedFromArchive: true } : {}),
         ...(notes.length ? { note: notes.join(' · ') } : {})
     };
 }
@@ -1322,7 +1373,13 @@ export function moveBacklogState(
 ): BacklogEditResult {
     const moved = setBacklogState(text, target, state);
     if (!moved.ok || state === 'open' || !moved.item?.onHold) { return moved; }
-    const free = setBacklogHold(moved.text as string, target, false);
+    // ‼️ X-142 — a reseat renumbers the line, so a `{line}` target no longer
+    // names it. The code survived the move and is the only identity that did;
+    // without this the hold silently stayed on, on the one path where the item
+    // had just been rescued from the archive.
+    const at: BacklogTarget = moved.reseatedFromArchive && moved.item?.code
+        ? { code: moved.item.code } : target;
+    const free = setBacklogHold(moved.text as string, at, false);
     if (!free.ok) { return moved; }
     const item = free.item ?? moved.item;
     return {
@@ -2168,16 +2225,23 @@ export interface TidyResult extends BacklogEditResult {
  * it, and the cost of getting that arithmetic wrong is a line deleted from the
  * user's vault. A backlog is hundreds of lines, so re-reading it is free.
  */
-function reseatMisfiled(src: string): { text: string; moved: string[] } {
+function reseatMisfiled(src: string, only?: string): { text: string; moved: string[] } {
     const eol = eolOf(src);
     let text = String(src ?? '');
     const moved: string[] = [];
+    // ‼️ X-142 — `only` narrows this to ONE code, for the reopen path. A tick on
+    // an archived item must carry THAT item home and touch nothing else: the
+    // full sweep is a deliberate act (`projects.backlog.tidy`), and quietly
+    // relocating four other mis-filed lines because somebody unticked a box
+    // would be an edit they did not ask for, in a file they read by eye.
+    const want = String(only ?? '').trim().toUpperCase();
     for (let guard = 0; guard < 400; guard++) {
         const parsed = parseBacklog(text);
         const home = new Map<string, number>();
         for (const a of parsed.areas) { home.set(a.code, a.line); }
         const stray = parsed.items.find(i => {
             if (!i.code || !i.area || !home.has(i.area)) { return false; }
+            if (want && i.code !== want) { return false; }
             // Under the archive: rescued only while it is still live. A closed
             // one belongs there and moving it would undo an archiving somebody
             // asked for.

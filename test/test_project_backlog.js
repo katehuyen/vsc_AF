@@ -954,6 +954,88 @@ const FAMILY = [
         B.archiveBacklogDone(stranded).moved === 0);
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ X-142: REOPENING SOMETHING ARCHIVED TAKES IT OUT OF THE ARCHIVE.
+//
+// X-134 built the carry-home but only ran it on a deliberate `tidy`, so an
+// item reopened from the archive sat under 🗄 with an open box until somebody
+// happened to tidy — open, counted as open, and hidden from every default view.
+// The reopen IS the moment it becomes live work, so it is the moment it moves.
+// ---------------------------------------------------------------------------
+{
+    const filed = [
+        '## K — Console',
+        '- [ ] K-1 open one',
+        '',
+        '## S — Sessions',
+        '- [ ] S-1 open one',
+        '',
+        '## 🗄 Archive',
+        '- [x] K-2 the one being reopened',
+        '- [x] K-3 still done, still archived',
+        '- [ ] S-9 already stranded, nobody touched it',
+        ''
+    ].join('\n');
+
+    const back = B.moveBacklogState(filed, { code: 'K-2' }, 'open');
+    ok('‼️ X-142: reopening an archived item carries it out of the archive',
+        back.ok && back.reseatedFromArchive === true);
+    ok('…it lands under its OWN area heading, above the archive',
+        back.text.indexOf('K-2 the one being reopened') < back.text.indexOf('## 🗄 Archive')
+        && back.text.indexOf('## K — Console') < back.text.indexOf('K-2 the one being reopened'));
+    ok('…after the area\'s last seated item, so a run arrives in order',
+        back.text.indexOf('K-1 open one') < back.text.indexOf('K-2 the one being reopened'));
+    ok('…the line is word-for-word what it was, box aside',
+        /- \[ \] K-2 the one being reopened/.test(back.text));
+    ok('…and the move is SAID, not merely done',
+        /under 🗄 Archive and came back to K/.test(back.note || ''));
+
+    // ‼️ ONE ITEM MOVES. The full sweep is a deliberate act; a tick must not
+    // quietly relocate lines somebody did not touch.
+    ok('‼️ X-142: nothing else is reseated by a tick',
+        back.text.indexOf('S-9 already stranded') > back.text.indexOf('## 🗄 Archive'));
+    ok('…and the closed neighbour stays archived — the archive is a record',
+        back.text.indexOf('K-3 still done') > back.text.indexOf('## 🗄 Archive'));
+    ok('…so the parse has one diagnosis left, not none and not three',
+        B.parseBacklog(back.text).items
+            .filter(i => /under the archive heading/.test(i.warn || ''))
+            .map(i => i.code).join() === 'S-9');
+
+    // The returned item has to describe where the line IS now, or a caller that
+    // opens it at `line` opens the wrong one.
+    ok('‼️ the returned item carries its NEW line and section',
+        back.item && back.item.code === 'K-2' && !back.item.archived
+        && back.item.line === B.parseBacklog(back.text).items
+            .find(i => i.code === 'K-2').line);
+
+    // One way only: the archive is a record of what was.
+    const closed = B.moveBacklogState(back.text, { code: 'K-2' }, 'done');
+    ok('‼️ X-142 is ONE-WAY: closing does not file it back into the archive',
+        closed.ok && !closed.reseatedFromArchive
+        && closed.text.indexOf('K-2 the one being reopened') < closed.text.indexOf('## 🗄 Archive'));
+    ok('…and reopening something that was never archived moves nothing',
+        !B.moveBacklogState(filed, { code: 'K-1' }, 'doing').reseatedFromArchive);
+
+    // No heading to go home to: say so rather than pretend, exactly as tidy does.
+    const homeless = '## 🗄 Archive\n- [x] Z-1 done, and Z has no heading\n';
+    const stuck = B.moveBacklogState(homeless, { code: 'Z-1' }, 'open');
+    ok('‼️ an item whose area has no heading is left where it is AND warned about',
+        stuck.ok && !stuck.reseatedFromArchive
+        && /no heading for its area/.test(stuck.note || ''));
+
+    // ‼️ THE HOLD COMES OFF THE LINE THAT MOVED. `moveBacklogState` clears a ⛔
+    // when an item is started, and it names the item by the same target it was
+    // given — a line number that the reseat has just invalidated.
+    const held = [
+        '## K — Console', '- [ ] K-1 open one', '',
+        '## 🗄 Archive', '- [x] K-7 parked and archived ⛔', ''
+    ].join('\n');
+    const started = B.moveBacklogState(held, { line: 4 }, 'doing');
+    ok('‼️ X-142: a reseat does not lose the hold that should have come off',
+        started.ok && started.reseatedFromArchive
+        && !/⛔/.test(started.text) && /the ⛔ hold came off/.test(started.note || ''));
+}
+
 // ---------- finding an item without touching it ----------
 //
 // The read-only half of the same resolution every write uses — because "open K-8
