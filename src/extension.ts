@@ -359,8 +359,9 @@ import {
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
 } from './core/turnAlerts';
 import {
-    AlertEvent, ALERT_EVENTS, builtinVoices, CustomVoice, playableOn, ResolveDeps,
-    ResolvedVoice, resolveVoice
+    addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
+    CUSTOM_LIMIT, DEFAULT_VOICE, playableOn, removeCustomVoice, renameCustomVoice,
+    ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
@@ -1249,6 +1250,164 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  event" switch, every entry off out of the box. */
     const alertsOn = (): Partial<Record<AlertEvent, boolean>> =>
         cfg().get<Partial<Record<AlertEvent, boolean>>>('alerts.on', {}) ?? {};
+    /**
+     * ‼️ A-21 — ONE SET OF FUNCTIONS, TWO DOORS.
+     *
+     * The Settings card and the `alerts.*` bridge ops are the same acts through
+     * different doors, so they go through the SAME functions here. A page that
+     * wrote `globalState` itself would be a second place that knows the ten
+     * reserved ids and the limit of ten, and the two would drift on the first
+     * change — which is the exact failure `resolveVoice` exists to prevent one
+     * layer down.
+     */
+    const customVoices = (): CustomVoice[] =>
+        context.globalState.get<CustomVoice[]>(ALERT_VOICES_KEY, []);
+    const setCustomVoices = (list: CustomVoice[]): Thenable<void> =>
+        context.globalState.update(ALERT_VOICES_KEY, list);
+    /** The folder Settings offers to put sounds in. Only a SUGGESTION: the
+     *  picker takes a file from anywhere, which is what the item asked for. */
+    const alertSoundsFolder = (): string =>
+        vscode.Uri.joinPath(context.globalStorageUri, 'sounds').fsPath;
+    /** Every voice this install knows, each with the two facts a picker has to
+     *  show: is the file still there, and can anything here open it. */
+    const alertVoiceRows = (): (AlertVoice & {
+        exists: boolean; playable: boolean; backend: string | null; addedAt?: number;
+    })[] => {
+        const deps = voiceDeps();
+        return builtinVoices(deps.soundsDir)
+            .concat((deps.custom ?? []).map(v => ({ ...v, builtin: false })))
+            .map(v => {
+                const play = playableOn(deps, v.file);
+                const exists = deps.exists(v.file);
+                return {
+                    ...v, exists, playable: play.ok && exists,
+                    backend: play.backend || null
+                };
+            });
+    };
+    const alertsSetOn = async (event: AlertEvent, enabled: boolean): Promise<void> => {
+        await cfg().update('alerts.on', { ...alertsOn(), [event]: enabled },
+            vscode.ConfigurationTarget.Global);
+    };
+    /** Write the `settings` step of the chain. An empty voice CLEARS it — the
+     *  event falls back to its built-in default, never to silence. */
+    const alertsSetVoice = async (event: AlertEvent, voice: string): Promise<void> => {
+        const want = String(voice || '').trim();
+        if (want) {
+            const hit = alertVoiceRows().find(v => v.id === want);
+            if (!hit) { throw new Error(`there is no sound called "${want}" — try alerts.voices`); }
+            if (!hit.exists) { throw new Error(`${want} has no file at ${hit.file}`); }
+            if (!hit.playable) { throw new Error(`nothing on this machine plays ${hit.file}`); }
+        }
+        const now = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
+        if (want) { now[event] = want; } else { delete now[event]; }
+        await cfg().update('alerts.voices', now, vscode.ConfigurationTarget.Global);
+    };
+    const alertsVoiceAdd = async (label: string, file: string): Promise<CustomVoice> => {
+        const r = addCustomVoice(customVoices(), { label, file }, voiceDeps());
+        if (!r.ok) { throw new Error(r.error); }
+        await setCustomVoices(r.list);
+        return r.voice;
+    };
+    /**
+     * ‼️ REMOVING A VOICE DOES NOT LEAVE AN EVENT SILENT. Anything pointing at
+     * it is cleared here rather than left dangling: `resolveVoice` would fall
+     * through the dead step anyway, but the Settings row would go on showing a
+     * name that no longer exists, and "it says ask-mine and plays a chime" is
+     * the same unfindable bug in a different coat.
+     */
+    const alertsVoiceRemove = async (id: string): Promise<void> => {
+        const r = removeCustomVoice(customVoices(), id);
+        if (!r.ok) { throw new Error(r.error); }
+        await setCustomVoices(r.list);
+        const picked = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
+        const orphaned = Object.keys(picked).filter(e => picked[e] === id);
+        if (orphaned.length) {
+            for (const e of orphaned) { delete picked[e]; }
+            await cfg().update('alerts.voices', picked, vscode.ConfigurationTarget.Global);
+        }
+    };
+    const alertsVoiceRename = async (id: string, label: string): Promise<CustomVoice> => {
+        const r = renameCustomVoice(customVoices(), id, label);
+        if (!r.ok) { throw new Error(r.error); }
+        await setCustomVoices(r.list);
+        return r.voice;
+    };
+    /** Play one voice, right now, by name — the ▶ next to a row. Nothing about
+     *  the chain: this is "what does THIS one sound like". */
+    const alertsPlayVoice = async (id: string): Promise<SoundResult & { voice: string }> => {
+        const hit = alertVoiceRows().find(v => v.id === id);
+        if (!hit) { throw new Error(`there is no sound called "${id}" — try alerts.voices`); }
+        if (!hit.exists) { throw new Error(`${id} has no file at ${hit.file}`); }
+        if (!hit.playable) { throw new Error(`nothing on this machine plays ${hit.file}`); }
+        return { ...(await playTurnSound(hit.file)), voice: hit.id };
+    };
+    /**
+     * The picker, then the name — in that order on purpose. The file is the
+     * thing that can fail (a format nothing here plays, a path that has gone),
+     * and asking for a name first would throw the typing away on a refusal. The
+     * name is seeded with the file's own stem, so Enter is enough.
+     *
+     * It lives here beside the other `alerts*` functions rather than inside the
+     * Settings command, where it would read to `test_dialog_sweep` as a command
+     * that interviews the user — it is one page button's file picker.
+     */
+    const alertsPickVoice = async (): Promise<CustomVoice | null> => {
+        const formats = [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort();
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false, openLabel: 'Use this sound',
+            defaultUri: fs.existsSync(alertSoundsFolder())
+                ? vscode.Uri.file(alertSoundsFolder()) : undefined,
+            filters: { 'Sound files': formats }
+        });
+        const file = picked?.[0]?.fsPath;
+        if (!file) { return null; }
+        const label = await vscode.window.showInputBox({
+            prompt: 'What is this sound called? This is what the picker shows.',
+            value: path.basename(file, path.extname(file)),
+            validateInput: v => v.trim() ? null : 'it needs a name'
+        });
+        if (label === undefined) { return null; }
+        return alertsVoiceAdd(label, file);
+    };
+    /**
+     * ‼️ A-21 — WHAT THE SETTINGS CARD IS HANDED, and it is the RESOLVED state
+     * rather than the two raw objects behind it.
+     *
+     * `agentFarm.alerts.voices` is a `Record<event, id>` that is empty out of
+     * the box, so a page drawing the setting would show five blanks for a
+     * feature that already has five different sounds — the same "a path in a
+     * box tells you nothing" lesson the wiki and Superpowers sections were
+     * built on. So every row arrives with the sound it would ACTUALLY play,
+     * which step chose it, and whether that file can be opened here.
+     */
+    const alertsPage = () => {
+        const on = alertsOn();
+        const picked = cfg().get<Record<string, string>>('alerts.voices', {}) ?? {};
+        return {
+            folder: alertSoundsFolder(),
+            limit: CUSTOM_LIMIT,
+            formats: [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort(),
+            sessionEvents: [...SESSION_ALERT_EVENTS],
+            voices: alertVoiceRows().map(v => ({
+                id: v.id, label: v.label, file: v.file, builtin: v.builtin,
+                exists: v.exists, playable: v.playable, backend: v.backend
+            })),
+            events: ALERT_EVENTS.map(event => {
+                const r = resolveAlertVoice(event);
+                return {
+                    event,
+                    on: on[event] === true,
+                    // What the user typed for everybody — '' when nobody has,
+                    // which is NOT the same as the sound that will play.
+                    chosen: String(picked[event] || ''),
+                    fallback: DEFAULT_VOICE[event],
+                    voice: r.voice, origin: r.origin, file: r.file,
+                    playable: r.playable, skipped: r.skipped
+                };
+            })
+        };
+    };
     /** An event named by a caller — refused BY NAME rather than quietly
      *  answered about `turn-ready`, which would look like the call worked. */
     const wantEvent = (args: Record<string, unknown>): AlertEvent => {
@@ -8714,23 +8873,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: '‼️ THE SOUNDS THIS INSTALL CAN MAKE, and which of them this machine can actually play. Ten built-in tones plus whatever the user added, each with its id, label, file and `playable` — and `playable` is answered from the PLAYER\'S OWN format table, not a list kept beside it, so a row can never promise an .mp3 that the backend cannot open. `backends` names the players that would be tried here, in order. ‼️ A voice whose file is missing is reported `exists: false` rather than dropped: a sound that vanished is a thing to fix, and a list that quietly omits it says nothing happened. args: none',
             handler: () => {
                 const deps = voiceDeps();
-                const rows = builtinVoices(deps.soundsDir)
-                    .concat((deps.custom ?? []).map(v => ({ ...v, builtin: false })))
-                    .map(v => {
-                        const play = playableOn(deps, v.file);
-                        return {
-                            id: v.id, label: v.label, file: v.file, builtin: v.builtin,
-                            exists: deps.exists(v.file),
-                            playable: play.ok && deps.exists(v.file),
-                            backend: play.backend || null
-                        };
-                    });
                 return {
                     events: [...ALERT_EVENTS],
-                    voices: rows,
+                    voices: alertVoiceRows().map(v => ({
+                        id: v.id, label: v.label, file: v.file, builtin: v.builtin,
+                        exists: v.exists, playable: v.playable, backend: v.backend
+                    })),
+                    // ‼️ WHERE A NEW ONE SHOULD GO, said next to the list — the
+                    // folder Settings offers. It is a suggestion and not a
+                    // rule: `alerts.voice.add` takes a file from anywhere.
+                    folder: alertSoundsFolder(),
+                    room: CUSTOM_LIMIT - (deps.custom ?? []).length,
                     backends: deps.backends.map(b => ({ backend: b.backend, formats: [...b.formats] }))
                 };
             }
+        },
+        {
+            op: 'alerts.voice.add',
+            describe: '‼️ ADD ONE OF YOUR OWN SOUNDS (up to ' + CUSTOM_LIMIT + ') — a `label` and a `file`, and the file stays where it is. THE FILE IS NOT COPIED: "wherever I like" was the ask, and a copy would mean the sound edited tomorrow is not the sound that plays. Every refusal is a sentence naming what to fix — no name, no file, nothing at that path, a format no player here can open, a file already in the list, or the list being full. The new id is `u-` + a slug of the label, so it can never collide with a built-in one, today\'s or a later version\'s. args: label (required — what the picker shows), file (required, absolute path)',
+            handler: async (args) => {
+                const voice = await alertsVoiceAdd(argStr(args, 'label'), argStr(args, 'file'));
+                FarmSettingsPanel.refreshIfOpen();
+                return { added: voice, room: CUSTOM_LIMIT - customVoices().length };
+            }
+        },
+        {
+            op: 'alerts.voice.remove',
+            describe: '‼️ DROP ONE OF YOUR OWN SOUNDS — by id, and a built-in id is refused by name (the ten are the floor this feature stands on). ‼️ ANY EVENT POINTING AT IT IS CLEARED IN THE SAME BREATH, so the event falls back to its built-in default rather than to a name nothing answers: a Settings row still showing a deleted sound while a chime plays is the same unfindable bug the resolution chain exists to prevent. The FILE IS NOT DELETED — it was never ours. args: id (required, a `u-…`)',
+            handler: async (args) => {
+                const id = argStr(args, 'id').trim();
+                await alertsVoiceRemove(id);
+                FarmSettingsPanel.refreshIfOpen();
+                return { removed: id, room: CUSTOM_LIMIT - customVoices().length };
+            }
+        },
+        {
+            op: 'alerts.voice.rename',
+            describe: '‼️ RENAME ONE OF YOUR OWN SOUNDS — the label changes, THE ID DOES NOT. The id was derived from the first label, but by now it is written into `agentFarm.alerts.voices` and into any session that picked it; regenerating it would silently unpick the sound everywhere it was chosen. A built-in id is refused by name. args: id (required, a `u-…`), label (required)',
+            handler: async (args) => {
+                const voice = await alertsVoiceRename(argStr(args, 'id').trim(), argStr(args, 'label'));
+                FarmSettingsPanel.refreshIfOpen();
+                return { renamed: voice };
+            }
+        },
+        {
+            op: 'alerts.play',
+            describe: '‼️ WHAT DOES THIS ONE SOUND LIKE — plays a voice by id, right now, and says nothing about the chain. That is the difference from `alerts.test`, which fires a SESSION\'S configured alert with all its branches: this is the ▶ next to a row in Settings, for choosing between ten tones. A voice with no file, or one no backend here can open, is refused by name rather than played as silence. args: voice (required — a built-in id or a `u-…`)',
+            handler: (args) => alertsPlayVoice(argStr(args, 'voice').trim())
         },
         {
             op: 'alerts.resolve',
@@ -8762,12 +8951,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ALERT_EVENTS.join('|') + '), enabled? (default true)',
             handler: async (args) => {
                 const raw = optStr(args, 'event')?.trim();
-                const now = { ...alertsOn() };
                 if (raw) {
-                    const event = wantEvent(args);
-                    now[event] = (args as { enabled?: unknown }).enabled === undefined
-                        ? true : !!(args as { enabled?: unknown }).enabled;
-                    await cfg().update('alerts.on', now, vscode.ConfigurationTarget.Global);
+                    await alertsSetOn(wantEvent(args),
+                        (args as { enabled?: unknown }).enabled === undefined
+                            ? true : !!(args as { enabled?: unknown }).enabled);
+                    FarmSettingsPanel.refreshIfOpen();
                 }
                 const on = alertsOn();
                 return {
@@ -8791,20 +8979,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         + `"${scope}" is set from that session's own ♪ control`);
                 }
                 const voice = argStr(args, 'voice').trim();
-                const deps = voiceDeps();
-                if (voice) {
-                    const all = builtinVoices(deps.soundsDir)
-                        .concat((deps.custom ?? []).map(v => ({ ...v, builtin: false })));
-                    const hit = all.find(v => v.id === voice);
-                    if (!hit) { throw new Error(`there is no sound called "${voice}" — try alerts.voices`); }
-                    if (!deps.exists(hit.file)) { throw new Error(`${voice} has no file at ${hit.file}`); }
-                    if (!playableOn(deps, hit.file).ok) {
-                        throw new Error(`nothing on this machine plays ${hit.file}`);
-                    }
-                }
-                const now = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
-                if (voice) { now[event] = voice; } else { delete now[event]; }
-                await cfg().update('alerts.voices', now, vscode.ConfigurationTarget.Global);
+                await alertsSetVoice(event, voice);
+                FarmSettingsPanel.refreshIfOpen();
                 return { event, scope, voice: voice || null, resolved: resolveAlertVoice(event) };
             }
         },
@@ -25515,6 +25691,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         await cfg().update('superpowersDefaults',
                             { ...store, [superpowersDefaultsKey(agent, store)]: on },
                             vscode.ConfigurationTarget.Global);
+                    },
+                    /**
+                     * ‼️ A-21 — THE ALERT SOUNDS CARD, THROUGH THE SAME
+                     * FUNCTIONS THE BRIDGE OPS USE. Not one rule about ids,
+                     * limits or formats is restated here: the page asks for an
+                     * act and the act is `alertsSetVoice` / `alertsVoiceAdd` /
+                     * `alertsVoiceRemove`, exactly as `alerts.voice.set` /
+                     * `.add` / `.remove` do.
+                     */
+                    alerts: () => alertsPage(),
+                    alertsSetOn: (event, on) => alertsSetOn(event as AlertEvent, on),
+                    alertsSetVoice: (event, voice) => alertsSetVoice(event as AlertEvent, voice),
+                    alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
+                    alertsVoiceAdd: async () => { await alertsPickVoice(); },
+                    alertsVoiceRename: async (id, label) => { await alertsVoiceRename(id, label); },
+                    alertsVoiceRemove: (id) => alertsVoiceRemove(id),
+                    /** Create it on the way — the folder is only a suggestion,
+                     *  so it does not exist until somebody first asks for it. */
+                    alertsOpenFolder: async () => {
+                        const dir = alertSoundsFolder();
+                        try { fs.mkdirSync(dir, { recursive: true }); }
+                        catch (e) { throw new Error(`could not create ${dir}: ${(e as Error).message}`); }
+                        await revealPath(dir);
                     },
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.

@@ -188,6 +188,31 @@ export function removeCustomVoice(
     return { ok: true, list: list.filter(v => v.id !== id) };
 }
 
+/**
+ * Rename one of the user's own sounds.
+ *
+ * ‼️ THE ID DOES NOT MOVE. It was derived from the first label, but by now it
+ * is written into `agentFarm.alerts.voices` and into any session that picked
+ * it; regenerating it here would silently unpick the sound everywhere it was
+ * chosen and fall the chain back to a default nobody asked for. The label is
+ * what the picker shows and the label is all that changes.
+ */
+export function renameCustomVoice(
+    list: readonly CustomVoice[], id: string, label: string
+): { ok: true; voice: CustomVoice; list: CustomVoice[] } | { ok: false; error: string } {
+    if (BUILTIN_IDS.indexOf(id) >= 0) {
+        return { ok: false, error: `${id} is one of the built-in sounds — it cannot be renamed` };
+    }
+    const at = list.findIndex(v => v.id === id);
+    if (at < 0) { return { ok: false, error: `there is no sound called ${id}` }; }
+    const name = String(label || '').trim();
+    if (!name) { return { ok: false, error: 'a sound needs a name — it is what the picker shows' }; }
+    const voice: CustomVoice = { ...list[at], label: name };
+    const out = list.slice();
+    out[at] = voice;
+    return { ok: true, voice, list: out };
+}
+
 // ---------------------------------------------------------------------------
 // the resolution chain
 // ---------------------------------------------------------------------------

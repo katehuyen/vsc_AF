@@ -2358,15 +2358,6 @@
       ]
     },
     {
-      "capability": "missionsPanel.ts#guide",
-      "ui": [
-        "page:missionsPanel.ts#guide"
-      ],
-      "ops": [
-        "missions.guide"
-      ]
-    },
-    {
       "capability": "missionsPanel.ts#approve",
       "ui": [
         "page:missionsPanel.ts#approve"
@@ -2405,15 +2396,6 @@
       ]
     },
     {
-      "capability": "missionsPanel.ts#preview",
-      "ui": [
-        "page:missionsPanel.ts#preview"
-      ],
-      "ops": [
-        "missions.preview"
-      ]
-    },
-    {
       "capability": "missionsPanel.ts#delete",
       "ui": [
         "page:missionsPanel.ts#delete"
@@ -2421,6 +2403,15 @@
       "gap": {
         "why": "missions.run.delete exists, but the page deletes through its own deps callback rather than the op's core path."
       }
+    },
+    {
+      "capability": "missionsPanel.ts#guide",
+      "ui": [
+        "page:missionsPanel.ts#guide"
+      ],
+      "ops": [
+        "missions.guide"
+      ]
     },
     {
       "capability": "missionsPanel.ts#missionSessions",
@@ -2480,6 +2471,15 @@
         "kind": "file-picker",
         "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
       }
+    },
+    {
+      "capability": "missionsPanel.ts#preview",
+      "ui": [
+        "page:missionsPanel.ts#preview"
+      ],
+      "ops": [
+        "missions.preview"
+      ]
     },
     {
       "capability": "missionsPanel.ts#refresh",
@@ -5114,6 +5114,70 @@
       ]
     },
     {
+      "capability": "settingsPanel.ts#alertFolder",
+      "ui": [
+        "page:settingsPanel.ts#alertFolder"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the folder the card SUGGESTS sounds go in, in the file manager (creating it on the way, because it is only a suggestion and does not exist until somebody first asks for it). It reveals a path and changes no setting, no sound and no choice."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#alertOn",
+      "ui": [
+        "page:settingsPanel.ts#alertOn"
+      ],
+      "ops": [
+        "alerts.on"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertPlay",
+      "ui": [
+        "page:settingsPanel.ts#alertPlay"
+      ],
+      "ops": [
+        "alerts.play"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertVoice",
+      "ui": [
+        "page:settingsPanel.ts#alertVoice"
+      ],
+      "ops": [
+        "alerts.voice.set"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertVoiceAdd",
+      "ui": [
+        "page:settingsPanel.ts#alertVoiceAdd"
+      ],
+      "ops": [
+        "alerts.voice.add"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertVoiceRemove",
+      "ui": [
+        "page:settingsPanel.ts#alertVoiceRemove"
+      ],
+      "ops": [
+        "alerts.voice.remove"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertVoiceRename",
+      "ui": [
+        "page:settingsPanel.ts#alertVoiceRename"
+      ],
+      "ops": [
+        "alerts.voice.rename"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#applyProfile",
       "ui": [
         "page:settingsPanel.ts#applyProfile"
@@ -5387,43 +5451,24 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#wikiInit",
+      "capability": "settingsPanel.ts#saveProfile",
       "ui": [
-        "page:settingsPanel.ts#wikiInit"
+        "page:settingsPanel.ts#saveProfile"
       ],
       "ops": [
-        "wiki.init"
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
       ]
     },
     {
-      "capability": "settingsPanel.ts#wikiRescan",
+      "capability": "settingsPanel.ts#set",
       "ui": [
-        "page:settingsPanel.ts#wikiRescan"
+        "page:settingsPanel.ts#set"
       ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reads the wiki folder again and repaints. It writes nothing, and wiki.health returns the same answer to an agent."
-      }
-    },
-    {
-      "capability": "settingsPanel.ts#wikiReveal",
-      "ui": [
-        "page:settingsPanel.ts#wikiReveal"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "settingsPanel.ts#wikiOpen",
-      "ui": [
-        "page:settingsPanel.ts#wikiOpen"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens the Wiki cockpit. It moves the eye and changes nothing."
-      }
+      "ops": [
+        "settings.set"
+      ]
     },
     {
       "capability": "settingsPanel.ts#spDefault",
@@ -5455,24 +5500,43 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#saveProfile",
+      "capability": "settingsPanel.ts#wikiInit",
       "ui": [
-        "page:settingsPanel.ts#saveProfile"
+        "page:settingsPanel.ts#wikiInit"
       ],
       "ops": [
-        "settings.sets.delete",
-        "settings.sets.import",
-        "settings.sets.save"
+        "wiki.init"
       ]
     },
     {
-      "capability": "settingsPanel.ts#set",
+      "capability": "settingsPanel.ts#wikiOpen",
       "ui": [
-        "page:settingsPanel.ts#set"
+        "page:settingsPanel.ts#wikiOpen"
       ],
-      "ops": [
-        "settings.set"
-      ]
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the Wiki cockpit. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#wikiRescan",
+      "ui": [
+        "page:settingsPanel.ts#wikiRescan"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reads the wiki folder again and repaints. It writes nothing, and wiki.health returns the same answer to an agent."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#wikiReveal",
+      "ui": [
+        "page:settingsPanel.ts#wikiReveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "setupExample",
@@ -6692,6 +6756,15 @@
       }
     },
     {
+      "capability": "wikiPanel.ts#category",
+      "ui": [
+        "page:wikiPanel.ts#category"
+      ],
+      "ops": [
+        "wiki.category.add"
+      ]
+    },
+    {
       "capability": "wikiPanel.ts#compile",
       "ui": [
         "page:wikiPanel.ts#compile"
@@ -6719,34 +6792,6 @@
       ]
     },
     {
-      "capability": "wikiPanel.ts#wikiInit",
-      "ui": [
-        "page:wikiPanel.ts#wikiInit"
-      ],
-      "ops": [
-        "wiki.init"
-      ]
-    },
-    {
-      "capability": "wikiPanel.ts#category",
-      "ui": [
-        "page:wikiPanel.ts#category"
-      ],
-      "ops": [
-        "wiki.category.add"
-      ]
-    },
-    {
-      "capability": "wikiPanel.ts#openSettings",
-      "ui": [
-        "page:wikiPanel.ts#openSettings"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens Settings on the wiki root. It moves the eye and changes nothing."
-      }
-    },
-    {
       "capability": "wikiPanel.ts#openPage",
       "ui": [
         "page:wikiPanel.ts#openPage"
@@ -6764,6 +6809,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "wikiPanel.ts#openSettings",
+      "ui": [
+        "page:wikiPanel.ts#openSettings"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens Settings on the wiki root. It moves the eye and changes nothing."
       }
     },
     {
@@ -6793,6 +6848,15 @@
       ],
       "ops": [
         "wiki.candidates.remove"
+      ]
+    },
+    {
+      "capability": "wikiPanel.ts#wikiInit",
+      "ui": [
+        "page:wikiPanel.ts#wikiInit"
+      ],
+      "ops": [
+        "wiki.init"
       ]
     },
     {

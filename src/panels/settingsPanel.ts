@@ -116,6 +116,63 @@ export interface FarmSettingsDeps {
     /** Write one agent's default back. The host owns the write because the
      *  normalisation (onto the row already there) is shared with the bridge. */
     superpowersSet?(agent: string, on: boolean): Promise<void>;
+    /**
+     * ‼️ A-21 — THE ALERT SOUNDS, RESOLVED RATHER THAN PRINTED.
+     *
+     * Third time for the lesson the wiki root and the Superpowers folder each
+     * cost a week: `agentFarm.alerts.voices` is an object that is EMPTY out of
+     * the box, so the two JSON boxes this card replaces showed `{}` for a
+     * feature that already plays five different sounds. What a person wants
+     * from this page is "which sound will I hear, and why that one" — which
+     * only the resolution chain can answer, so the host hands the answer over
+     * and the boxes are gone rather than merely decorated.
+     */
+    alerts?(): AlertsPage | null;
+    /** Every write and every ▶ goes back to the host, because each one is the
+     *  same act as an `alerts.*` bridge op and they share the function. */
+    alertsSetOn?(event: string, on: boolean): Promise<void>;
+    alertsSetVoice?(event: string, voice: string): Promise<void>;
+    /** Play one voice by id — "what does this one sound like". Named after the
+     *  host function it is wired to, so the parity gate can SEE that the ▶ and
+     *  `alerts.play` are the same act rather than two implementations. */
+    alertsPlayVoice?(voice: string): Promise<void>;
+    /** Add / rename / drop one of the user's own sounds. `add` opens the file
+     *  picker itself: the host owns the dialog, the page owns the gesture. */
+    alertsVoiceAdd?(): Promise<void>;
+    alertsVoiceRename?(id: string, label: string): Promise<void>;
+    alertsVoiceRemove?(id: string): Promise<void>;
+    /** Open (creating if need be) the folder the card suggests sounds go in. */
+    alertsOpenFolder?(): Promise<void>;
+}
+
+/** One event's row on the Alert sounds card: what is armed, what was chosen,
+ *  and what would ACTUALLY play — the three are not the same thing. */
+export interface AlertEventRow {
+    event: string;
+    on: boolean;
+    /** what the user picked for everybody; '' when nobody has picked */
+    chosen: string;
+    /** the built-in answer behind that blank */
+    fallback: string;
+    voice: string;
+    origin: string;
+    file: string;
+    playable: boolean;
+    skipped: { origin: string; voice: string; why: string }[];
+}
+
+export interface AlertsPage {
+    folder: string;
+    limit: number;
+    /** extensions any player on THIS machine can open */
+    formats: string[];
+    /** the events a Timeline row's own ♪ can arm without this page */
+    sessionEvents: string[];
+    voices: {
+        id: string; label: string; file: string; builtin: boolean;
+        exists: boolean; playable: boolean; backend: string | null;
+    }[];
+    events: AlertEventRow[];
 }
 
 /** What the Superpowers section draws: the folder's own health, plus who
@@ -332,6 +389,11 @@ export class FarmSettingsPanel {
             // skills folder is one somebody edits by hand, and an agent added
             // to a root five minutes ago belongs in the matrix.
             superpowers: this.deps.superpowers?.() ?? null,
+            // A-21 — read on every draw for the two folders' reason above: a
+            // sound file the user moved or deleted in Explorer is exactly the
+            // change this card exists to make visible, and a cached "playable"
+            // would be a lie the next time the alert fires.
+            alerts: this.deps.alerts?.() ?? null,
             // X-3 — which agent CLIs this machine can run and how each is paid
             // for. Read on every build rather than cached: a sign-in that
             // happened in the terminal thirty seconds ago is exactly the change
@@ -342,6 +404,24 @@ export class FarmSettingsPanel {
 
     private refresh(): void {
         void this.panel.webview.postMessage({ type: 'data', data: this.buildData() });
+    }
+
+    /** ‼️ A-21 — A REFUSED SOUND IS SHOWN, NOT SWALLOWED. Every rule the host
+     *  enforces (a built-in id, the limit of ten, a format no player here
+     *  opens) comes back as a sentence the user can act on; silence would be
+     *  indistinguishable from the alert simply being off. */
+    private alertError(error: string): void {
+        void this.panel.webview.postMessage({
+            type: 'error', key: 'agentFarm.alerts.voices', error: error.slice(0, 300)
+        });
+    }
+
+    /** Run one of the card's gestures and redraw — the row's resolved sound
+     *  changes with every write, so the card is never left showing the state
+     *  before the click. */
+    private async alertAct(run: () => Promise<void> | undefined): Promise<void> {
+        try { await run(); this.refresh(); }
+        catch (e) { this.alertError(String((e as Error).message)); }
     }
 
     private async setValue(key: string, value: unknown): Promise<string> {
@@ -704,6 +784,51 @@ export class FarmSettingsPanel {
                 if (root) { void revealPath(root); }
                 break;
             }
+            /**
+             * ‼️ A-21 — THE ALERT SOUNDS CARD. Every one of these is the same
+             * act as an `alerts.*` bridge op and goes through the same host
+             * function; the page holds no rule of its own about reserved ids,
+             * the limit of ten, or which formats play.
+             *
+             * Every refusal is SHOWN, on the card, against the control that
+             * caused it — a sound feature that fails silently is
+             * indistinguishable from one that is merely switched off, which is
+             * the whole failure mode A-18 was opened for.
+             */
+            case 'alertOn':
+                await this.alertAct(() =>
+                    this.deps.alertsSetOn?.(String(msg.event ?? ''), msg.on !== false));
+                break;
+            case 'alertVoice':
+                await this.alertAct(() =>
+                    this.deps.alertsSetVoice?.(String(msg.event ?? ''), String(msg.voice ?? '')));
+                break;
+            // ▶ — plays and changes nothing, so the page is NOT redrawn: a
+            // redraw under the hand would close the picker the reader just
+            // opened to compare two tones.
+            case 'alertPlay':
+                try { await this.deps.alertsPlayVoice?.(String(msg.voice ?? '')); }
+                catch (e) { this.alertError(String((e as Error).message)); }
+                break;
+            case 'alertVoiceAdd':
+                await this.alertAct(() => this.deps.alertsVoiceAdd?.());
+                break;
+            case 'alertVoiceRename': {
+                const id = String(msg.id ?? '').trim();
+                const label = String(msg.label ?? '').trim();
+                if (!id || !label) { break; }
+                await this.alertAct(() => this.deps.alertsVoiceRename?.(id, label));
+                break;
+            }
+            case 'alertVoiceRemove': {
+                const id = String(msg.id ?? '').trim();
+                if (!id) { break; }
+                await this.alertAct(() => this.deps.alertsVoiceRemove?.(id));
+                break;
+            }
+            case 'alertFolder':
+                await this.alertAct(() => this.deps.alertsOpenFolder?.());
+                break;
             case 'rootCleanDupes': {
                 const cfg = vscode.workspace.getConfiguration();
                 const roots = cfg.get<string[]>('agentFarm.agentRoots', []);

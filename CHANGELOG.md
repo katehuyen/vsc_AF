@@ -2,6 +2,60 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.302.0 - A-21: the alert sounds get a card that says which one will play (2026-08-28)
+
+Fourth step of A-18. `agentFarm.alerts.on` and `agentFarm.alerts.voices` were
+two JSON boxes on the settings page, and **both are empty objects out of the
+box** — so the page showed `{}` twice for a feature that already plays five
+different tones, and the one question a person opens that page with ("which
+sound will I hear, and why that one?") had no answer anywhere on it. Only the
+resolution chain can answer it, so the host now hands the **resolved** rows over
+and the boxes are gone rather than decorated. Same lesson the wiki root (X-57)
+and the Superpowers folder (X-136) each cost a week.
+
+### The card
+
+One row per event: the tick that arms it for every session, the sound picked for
+everybody, **what would actually play and which step of the chain chose it**, and
+a ▶ that plays it. The picker offers the default as a named option rather than a
+blank, because "use whatever the default is" and "pin it to chime-soft" are
+different answers and only one of them survives a version that changes the
+default.
+
+A chosen sound and a playing sound are drawn as different things, and they differ
+exactly when something is wrong — a file deleted in Explorer, a format no player
+here opens. The chain **falls through to the step below rather than going
+silent**, so the alert still rings; the row says what it landed on and the hover
+lists every step it passed over with the reason. An armed event that has run out
+of steps entirely — a partial update that took `error-buzz` with it — is called
+out on the card’s badge, because that is the one state where the sound really
+would be silence, and silence is indistinguishable from the switch being off.
+
+It sits **beside the notification switches on purpose**: those open a VS Code
+notification, these make a noise, and "I turned the sound off and a notification
+still arrives" is the confusion that keeping them apart-but-adjacent prevents.
+
+### Your own sounds
+
+Up to ten, any format a player on this machine can open. **The file is not
+copied** — "wherever I like" was the ask, and a copy would mean the sound edited
+tomorrow is not the sound that plays. The name is an editable box on the row
+rather than a ✎ that opens a prompt (a webview has no `window.prompt`, so a
+button wired to one does nothing at all), and renaming **never moves the id**: it
+is written into the settings and into any session that picked it, so
+regenerating it would silently unpick the sound everywhere it was chosen.
+
+Removing a sound **clears whatever pointed at it** in the same breath, so no row
+is left naming a sound nothing answers.
+
+### On the bridge, in the same commit
+
+`alerts.voice.add` · `alerts.voice.remove` · `alerts.voice.rename` ·
+`alerts.play`. Every gesture on the card runs the same host function its
+matching op runs — the page holds no rule of its own about reserved ids, the
+limit of ten, or which formats play, so the two cannot drift. `alerts.voices`
+now also says where a new sound is suggested to go and how much room is left.
+
 ## 3.301.0 - K-22 · U-118 · U-119: a blocked session stops being a dead end (2026-08-28)
 
 Three items around one failure, reported the same morning: a session asked for

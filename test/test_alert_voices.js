@@ -229,6 +229,26 @@ const base = (over) => Object.assign({
         V.removeCustomVoice(list, 'chime-soft').ok === false);
     ok('…and removing something that is not there says so rather than passing',
         V.removeCustomVoice(list, 'u-nope').ok === false);
+
+    // ----------------------------------------------------------------- A-21
+    // Renaming. The one thing this must not do is move the id.
+    const named = V.addCustomVoice([], { label: 'Kapı zili', file: 'D:/s/k.mp3' }, deps, 200);
+    const ren = V.renameCustomVoice(named.list, named.voice.id, 'Ön kapı');
+    ok('one of your own can be renamed', ren.ok && ren.voice.label === 'Ön kapı');
+    ok('‼️ THE ID DOES NOT MOVE — it is written into the settings and into any'
+        + ' session that picked it, so regenerating it would silently unpick the'
+        + ' sound everywhere it was chosen',
+        ren.ok && ren.voice.id === named.voice.id && ren.list.length === 1);
+    ok('…and the file it points at is untouched',
+        ren.ok && ren.voice.file === 'D:/s/k.mp3');
+    ok('a built-in cannot be renamed either',
+        V.renameCustomVoice(named.list, 'chime-soft', 'Mine now').ok === false);
+    ok('renaming something that is not there says so',
+        V.renameCustomVoice(named.list, 'u-nope', 'X').ok === false);
+    ok('an empty name is refused — it is what every picker shows',
+        V.renameCustomVoice(named.list, named.voice.id, '   ').ok === false);
+    ok('the list it was handed is not mutated',
+        named.list[0].label === 'Kapı zili');
 }
 
 // ---------------------------------------------------------------------------

@@ -1537,6 +1537,181 @@
             ${boxes}`;
     }
 
+    /**
+     * ‼️ A-21 — WHAT WILL I HEAR, AND WHY THAT SOUND.
+     *
+     * `agentFarm.alerts.on` and `agentFarm.alerts.voices` were two JSON boxes,
+     * and both are EMPTY out of the box — so the page showed `{}` twice for a
+     * feature that already plays five different tones, and the one question a
+     * person opens this page with ("which sound, and why that one?") had no
+     * answer anywhere. Only the resolution chain can answer it, so the host
+     * hands over the resolved rows and the boxes are replaced rather than
+     * decorated (the wiki root and the Superpowers folder cost the same week
+     * each, for the same reason).
+     *
+     * The card sits exactly where `alerts.on` would have been — beside the
+     * notification switches ON PURPOSE. Those open a VS Code notification,
+     * these make a noise, and "I turned the sound off and a notification still
+     * arrives" is the confusion that keeping them apart-but-adjacent prevents.
+     */
+    const ALERT_EVENT_TEXT = {
+        'turn-ready': ['Turn finished',
+            'The turn ended and control is back with you — the agent said its piece and stopped.'],
+        question: ['Asking you',
+            'The agent stopped mid-turn to ask something: a tool waiting for permission, or a question it needs answered. The turn is still open, so this is the one worth hearing from another room.'],
+        stalled: ['Stalled',
+            'The session was working and has said nothing for longer than stuckThresholdSeconds.'],
+        ended: ['Session ended', 'The session closed.'],
+        error: ['Error',
+            'A critical error. Nothing emits this edge yet — the voice is settable so it is ready when something does.']
+    };
+    const ALERT_ORIGIN_TEXT = {
+        session: 'this conversation\'s own ♪ choice',
+        agent: 'this agent\'s choice',
+        settings: 'your choice here',
+        default: 'the built-in default'
+    };
+
+    function alertVoiceName(al, id) {
+        const v = (al.voices || []).find(x => x.id === id);
+        return v ? v.label : id;
+    }
+
+    /** The picker for one event. Empty value = "whatever the default is", which
+     *  is NOT the same as silence and must never read as it. */
+    function alertVoiceSelect(al, row) {
+        const opt = v => `<option value="${C.esc(v.id)}"${v.id === row.chosen ? ' selected' : ''}${v.playable ? '' : ' disabled'}>${C.esc(v.label)}${v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')}</option>`;
+        const builtin = (al.voices || []).filter(v => v.builtin);
+        const mine = (al.voices || []).filter(v => !v.builtin);
+        // MIRROR — the box is narrow enough to cut its own text, so its
+        // tooltip opens with what it is set to right now.
+        const tip = window.AFQuery.tip(
+            (row.chosen ? `Set to: ${alertVoiceName(al, row.chosen)}` : `Not set — falls back to ${alertVoiceName(al, row.fallback)}`)
+            + `\n\nWhich sound this event plays for every session. Clearing it does not mute the event: it falls back to the built-in default.`);
+        return `<select data-alertvoice="${C.esc(row.event)}" title="${C.esc(tip)}">
+            <option value=""${row.chosen ? '' : ' selected'}>Default — ${C.esc(alertVoiceName(al, row.fallback))}</option>
+            <optgroup label="Built in">${builtin.map(opt).join('')}</optgroup>
+            ${mine.length ? `<optgroup label="Your own">${mine.map(opt).join('')}</optgroup>` : ''}
+        </select>`;
+    }
+
+    function alertEventRow(al, row) {
+        const text = ALERT_EVENT_TEXT[row.event] || [row.event, ''];
+        const armed = al.sessionEvents.indexOf(row.event) >= 0;
+        const name = window.AFTip.wrap(
+            `<span class="alertev">${C.esc(text[0])}</span>`,
+            `${text[0]} — sound is ${row.on ? 'ON for every session' : 'off'}`,
+            text[1] + '\n\n' + (row.on
+                ? 'The tick plays this sound on every session, whatever each one has selected for itself.'
+                : armed
+                    ? 'Untitled here, but a single session can still arm it on its own from the ♪ in its Live Timeline row — the two ADD, they do not gate each other.'
+                    : 'Nothing plays this one. It has no per-session control either, so this tick is the only way to hear it.'));
+        // ‼️ WHAT WILL ACTUALLY PLAY, on the row, in words. `chosen` is what the
+        // user typed and `voice` is what the chain answered, and the two differ
+        // exactly when something is wrong — a deleted file, a renamed sound.
+        const wrong = row.chosen && row.chosen !== row.voice;
+        const plays = window.AFTip.wrap(
+            `<span class="alertplays${wrong ? ' bad' : ''}">${C.esc(alertVoiceName(al, row.voice))}<span class="alertorigin"> · ${C.esc(ALERT_ORIGIN_TEXT[row.origin] || row.origin)}</span></span>`,
+            `${text[0]} plays ${alertVoiceName(al, row.voice)}`,
+            `Chosen by ${ALERT_ORIGIN_TEXT[row.origin] || row.origin}.\n${row.file || '(no file)'}`
+            + (row.playable ? '' : '\n\n⚠ Nothing on this machine can play that file — this event would be silent.')
+            + ((row.skipped || []).length
+                ? '\n\nPassed over on the way:\n' + row.skipped.map(s => `· ${s.voice} (${ALERT_ORIGIN_TEXT[s.origin] || s.origin}) — ${s.why}`).join('\n')
+                : ''));
+        return `<tr>
+            <td><label class="alertonlbl"><input type="checkbox" data-alerton="${C.esc(row.event)}" ${row.on ? 'checked' : ''}>${name}</label></td>
+            <td>${alertVoiceSelect(al, row)}</td>
+            <td>${plays}</td>
+            <td class="alertbtn"><button class="secondary small" data-alertplay="${C.esc(row.voice)}" ${row.playable ? '' : 'disabled'} title="Play it now — this is what this event sounds like">▶</button></td>
+        </tr>`;
+    }
+
+    function alertCustomRow(al, v) {
+        const state = v.playable ? '' : (v.exists ? ' — nothing here plays it' : ' — the file is gone');
+        // ‼️ THE NAME IS THE ROW'S OWN BOX, not a ✎ that opens something. A
+        // webview has no `window.prompt` (it is blocked, and a button wired to
+        // one is a button that does nothing), and the row editor is the shape
+        // this page already uses for lists — U-108 / U-110.
+        return `<div class="wikifile alertmine">
+            <span class="wikimark ${v.playable ? 'ok' : 'no'}">${v.playable ? '♪' : '✗'}</span>
+            <input class="wikirel alertname" type="text" value="${C.esc(v.label)}"
+                data-alertrename="${C.esc(v.id)}" data-alertlabel="${C.esc(v.label)}"
+                title="${C.esc(window.AFQuery.tip(`Named: ${v.label}\n\nWhat every picker shows. The id it was given (${v.id}) never moves, so renaming cannot unpick this sound anywhere it was chosen.`))}">
+            ${window.AFTip.wrap(`<span class="wikipath">${C.esc(v.file)}${C.esc(state)}</span>`,
+                `${v.label} — ${v.id}`,
+                v.file + (v.playable
+                    ? `\n\nPlayed by: ${v.backend || 'this platform'}.`
+                    : v.exists
+                        ? '\n\n⚠ Nothing on this machine can open this format. Any event set to it falls through to the step below rather than going silent.'
+                        : '\n\n⚠ There is no file at that path any more. The sound is still listed so it can be fixed; an event set to it falls through to the step below.')
+                + '\n\nThe file was never copied — it plays from where it lives, so editing it there changes the sound.')}
+            <button class="secondary small" data-alertplay="${C.esc(v.id)}" ${v.playable ? '' : 'disabled'} title="Play it now">▶</button>
+            <button class="secondary small" data-alertremove="${C.esc(v.id)}" title="Drop it from the list. The FILE is not deleted — it was never ours. Any event set to this sound is cleared at the same time and falls back to its built-in default.">✕</button>
+        </div>`;
+    }
+
+    function alertsCard(al) {
+        const mine = (al.voices || []).filter(v => !v.builtin);
+        const on = (al.events || []).filter(e => e.on).length;
+        const broken = (al.events || []).filter(e => e.on && !e.playable).length;
+        const cls = broken ? 'eng-warn' : on ? 'eng-ok' : 'eng-off';
+        const badge = broken
+            ? `<span class="rootbadge warn">${broken} armed event${broken === 1 ? '' : 's'} cannot be played</span>`
+            : `<span class="rootbadge">${on ? `${on} of ${al.events.length} events armed` : 'nothing armed — every event is off'}</span>`;
+        const err = errors['agentFarm.alerts.voices']
+            ? `<div class="seterr">⚠ ${C.esc(errors['agentFarm.alerts.voices'])}</div>` : '';
+        const full = mine.length >= al.limit;
+        return `<div class="setitem eng ${cls}" data-item="agentFarm.alerts.voices">
+            <div class="sethead"><span class="setname">🔔 Alert sounds</span> ${badge}</div>
+            <div class="setdesc">A sound so you can leave the room. Every event is off out of the box;
+                ticking one plays its sound on <b>every</b> session. Two of them
+                (${al.sessionEvents.map(e => `<code>${C.esc(e)}</code>`).join(' · ')}) can also be armed for a
+                single session from the ♪ in its Live Timeline row — the two <b>add up</b> rather than
+                overriding each other, so unticking here never silences a session that armed itself.</div>
+            ${err}
+            <table class="settbl alerttbl">
+                <thead><tr>
+                    <th class="setth" title="${C.esc(window.AFQuery.tip('What happened. Tick one and its sound plays on every session in the fleet.'))}">Event</th>
+                    <th class="setth" title="${C.esc(window.AFQuery.tip('Your choice for everybody. Leave it on Default and the built-in answer stands — turn-ready and question deliberately differ, so the two can be told apart from another room without configuring anything.'))}">Sound</th>
+                    <th class="setth" title="${C.esc(window.AFQuery.tip('What would ACTUALLY play, and which step of the chain chose it: this session > this agent > your choice here > the built-in default. A sound whose file has gone falls through to the next step rather than going silent.'))}">Plays</th>
+                    <th class="setthx"></th>
+                </tr></thead>
+                <tbody>${(al.events || []).map(e => alertEventRow(al, e)).join('')}</tbody>
+            </table>
+            <div class="setdesc" style="margin-top:10px">Your own sounds — <b>${mine.length}</b> of ${al.limit}.
+                Any file this machine can play: ${C.esc((al.formats || []).map(f => '.' + f).join(' · ') || 'nothing — no player was found')}.
+                The file is <b>not copied</b>; it plays from where it lives.</div>
+            ${mine.length ? `<div class="wikifiles">${mine.map(v => alertCustomRow(al, v)).join('')}</div>` : ''}
+            <div class="btnrow">
+                <button class="secondary" id="alertadd" ${full ? 'disabled' : ''}
+                    title="${C.esc(full ? `There is room for ${al.limit} of your own sounds — remove one first.` : 'Pick a sound file from anywhere on this machine, then give it a name. The file stays where it is.')}">+ Add a sound…</button>
+                <button class="secondary" id="alertfolder"
+                    title="${C.esc('Open ' + al.folder + '\n\nOnly a suggestion — somewhere of Agent Farm\'s own that survives updates. The picker takes a file from anywhere.')}">📂 Suggested folder</button>
+            </div>
+        </div>`;
+    }
+
+    /** The Live category, with the two alert-sound boxes replaced by the card
+     *  IN THEIR OWN PLACE — beside the notification switches, where the reader
+     *  who confused the two will be looking. */
+    function alertsSection(cat) {
+        const al = DATA.alerts;
+        const items = (cat && cat.items) || [];
+        if (!al) { return items.map(itemHtml).join(''); }
+        // Whichever of the two the filter leaves standing draws the card, once.
+        // Keyed on `alerts.on` alone, a search for "voice" would file the card
+        // away with the box it replaced.
+        let drawn = false;
+        return items.map(it => {
+            if (it.key !== 'agentFarm.alerts.on' && it.key !== 'agentFarm.alerts.voices') {
+                return itemHtml(it);
+            }
+            if (drawn) { return ''; }
+            drawn = true;
+            return alertsCard(al);
+        }).join('');
+    }
+
     function render() {
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
@@ -1696,6 +1871,32 @@
                 .spname { font-family:var(--vscode-editor-font-family); }
                 .spstate { font-size:10px; opacity:.5; }
                 .sprow.spdef .spname { opacity:.7; }
+                /* A-21 — the alert table. Four columns and only one of them is
+                   free-width: what would actually play, which is the sentence
+                   the reader came for. The ▶ column carries one button and must
+                   not take an equal share of a fixed layout. */
+                .alerttbl { max-width:860px; margin-top:6px; }
+                .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:170px; }
+                .alerttbl th:nth-child(2), .alerttbl td:nth-child(2) { width:210px; }
+                .alerttbl th.setthx, .alerttbl td.alertbtn { width:34px; padding-right:0; }
+                .alerttbl td.alertbtn button { width:100%; padding:0 4px; }
+                .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
+                    overflow:hidden; }
+                /* ‼️ .settbl input is width:100% — right for a text cell and
+                   ruinous for a tick, which then takes the whole column and
+                   shoves the event's name into the picker beside it. */
+                .alertonlbl input[type=checkbox] { margin:0; flex:none; width:auto; }
+                /* The event name is a label and never a paragraph — wrapped, it
+                   pushes the row two lines tall and the table stops being read
+                   across. */
+                .alertev { white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+                    border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                .alertplays { font-family:var(--vscode-editor-font-family); }
+                .alertplays.bad { color:var(--vscode-charts-yellow, #d7ba7d); }
+                .alertorigin { font-family:var(--vscode-font-family); opacity:.55; font-size:10px; }
+                .alertmine .wikimark.ok { color:var(--vscode-textLink-foreground); }
+                .alertmine .wikirel { flex:0 0 180px; }
+                .alertmine button { flex:none; margin-left:2px; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -1717,7 +1918,8 @@
                 ${c.id === 'prompts' ? promptsSection(c)
                     : c.id === 'wiki' ? wikiSection(c)
                         : c.id === 'superpowers' ? superpowersSection(c)
-                            : c.items.map(itemHtml).join('')}`).join('')
+                            : c.id === 'live' ? alertsSection(c)
+                                : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
@@ -1775,6 +1977,43 @@
         document.querySelectorAll('[data-spagent]').forEach(el =>
             el.addEventListener('change', () => vscode.postMessage({
                 type: 'spDefault', agent: el.dataset.spagent, on: el.checked
+            })));
+        // A-21 — the alert sounds card. Every gesture goes to the host, which
+        // runs the same function the matching `alerts.*` bridge op runs; the
+        // page holds no rule of its own about reserved ids or the limit.
+        onClick('alertadd', 'alertVoiceAdd');
+        onClick('alertfolder', 'alertFolder');
+        document.querySelectorAll('[data-alerton]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'alertOn', event: el.dataset.alerton, on: el.checked
+            })));
+        document.querySelectorAll('[data-alertvoice]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'alertVoice', event: el.dataset.alertvoice, voice: el.value
+            })));
+        document.querySelectorAll('[data-alertplay]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({
+                type: 'alertPlay', voice: el.dataset.alertplay
+            })));
+        document.querySelectorAll('[data-alertrename]').forEach(el => {
+            // Enter LETS GO of the box. The page's own `focusin`/`focusout`
+            // guard holds a background refresh while a field has focus, so an
+            // Enter that kept focus would leave the row showing the old name
+            // until the reader clicked somewhere else.
+            el.addEventListener('keydown', e => { if (e.key === 'Enter') { el.blur(); } });
+            el.addEventListener('change', () => {
+                const next = el.value.trim();
+                // Unchanged, or emptied: put the name back rather than sending
+                // a refusal the reader has to read to learn nothing happened.
+                if (!next || next === el.dataset.alertlabel) { el.value = el.dataset.alertlabel; return; }
+                vscode.postMessage({
+                    type: 'alertVoiceRename', id: el.dataset.alertrename, label: next
+                });
+            });
+        });
+        document.querySelectorAll('[data-alertremove]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({
+                type: 'alertVoiceRemove', id: el.dataset.alertremove
             })));
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
