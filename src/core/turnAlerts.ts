@@ -29,7 +29,7 @@
  *   session, so the same turn is one alert however many events announce it.
  */
 
-import type { AlertEvent } from './alertVoices';
+import { ALERT_EVENTS, type AlertEvent } from './alertVoices';
 
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
@@ -54,6 +54,27 @@ export function normalizeActions(v: unknown): TurnAlertAction[] {
 }
 
 /**
+ * The canonical form of a session's own voice picks (A-23).
+ *
+ * ‼️ ONLY THE KEYS ARE CHECKED HERE, NEVER THE VALUE. Whether `chime-bright`
+ * still exists, still has a file and can still be played on this machine is
+ * `alertVoices.resolveVoice`'s question and is asked at RESOLUTION time — a
+ * second opinion stored here would go stale the moment the user deletes the
+ * file, and the two would then disagree about what will be heard. An id nothing
+ * answers is skipped by the chain, with the reason, and the step below is used.
+ */
+export function normalizeVoices(v: unknown): Partial<Record<AlertEvent, string>> {
+    const out: Partial<Record<AlertEvent, string>> = {};
+    if (!v || typeof v !== 'object') { return out; }
+    const raw = v as Record<string, unknown>;
+    for (const event of ALERT_EVENTS) {
+        const id = typeof raw[event] === 'string' ? (raw[event] as string).trim() : '';
+        if (id) { out[event] = id; }
+    }
+    return out;
+}
+
+/**
  * What one session wants when it reaches YOUR TURN.
  *
  * `lastSeenAt` is when the live monitor last had this session on its list —
@@ -64,6 +85,23 @@ export function normalizeActions(v: unknown): TurnAlertAction[] {
 export interface SessionAlertPrefs {
     sessionId: string;
     actions: TurnAlertAction[];
+    /**
+     * ‼️ A-23 — THE `session` STEP OF THE RESOLUTION CHAIN, AND IT LIVES HERE
+     * BECAUSE THE SESSION'S LIFECYCLE ALREADY DOES.
+     *
+     * `alertVoices.resolveVoice` has read this step since A-18 and nothing ever
+     * wrote it: the hook was left unbound, so "this conversation uses that
+     * tone" fell through on every resolution. It could have had a store of its
+     * own — and that store would have needed its own rekey (a terminal lane is
+     * renamed the moment the engine names its conversation), its own TTL, its
+     * own ceiling and its own forget, all of which are already right here and
+     * all of which would have drifted the first time one of them changed.
+     *
+     * ONE EVENT, ONE VOICE ID. Absent means "this session has no opinion", which
+     * is NOT the same as silence — the chain falls to the agent, the settings
+     * and finally the built-in default, and something is always heard.
+     */
+    voices?: Partial<Record<AlertEvent, string>>;
     updatedAt: number;
     lastSeenAt: number;
 }
@@ -124,11 +162,18 @@ export class TurnAlertStore {
         if (!sessionId || !v || typeof v !== 'object') { return undefined; }
         const o = v as Partial<SessionAlertPrefs>;
         const actions = normalizeActions(o.actions);
-        if (!actions.length) { return undefined; }
+        const voices = normalizeVoices(o.voices);
+        // ‼️ A-23 — A RECORD IS WORTH KEEPING IF IT SAYS ANYTHING AT ALL. It used
+        // to be "has actions", which after A-23 would throw away a session that
+        // had only picked a tone: nothing is armed on it from here yet, but the
+        // global `alerts.on` switch can still ring it, and the choice has to
+        // survive the reload that follows making it.
+        if (!actions.length && !Object.keys(voices).length) { return undefined; }
         const t = this.now();
         return {
             sessionId,
             actions,
+            ...(Object.keys(voices).length ? { voices } : {}),
             updatedAt: typeof o.updatedAt === 'number' && o.updatedAt > 0 ? o.updatedAt : t,
             lastSeenAt: typeof o.lastSeenAt === 'number' && o.lastSeenAt > 0 ? o.lastSeenAt : t
         };
@@ -137,7 +182,12 @@ export class TurnAlertStore {
     /** Everything, as a plain object — what the page and the bridge are given. */
     all(): Record<string, SessionAlertPrefs> {
         const out: Record<string, SessionAlertPrefs> = {};
-        for (const [id, p] of this.map) { out[id] = { ...p, actions: [...p.actions] }; }
+        for (const [id, p] of this.map) {
+            out[id] = {
+                ...p, actions: [...p.actions],
+                ...(p.voices ? { voices: { ...p.voices } } : {})
+            };
+        }
         return out;
     }
 
@@ -146,6 +196,63 @@ export class TurnAlertStore {
      *  agent-wide leak straight back. */
     actionsFor(sessionId: string): TurnAlertAction[] {
         return [...(this.map.get(String(sessionId ?? '').trim())?.actions ?? [])];
+    }
+
+    /** ‼️ A-23 — WHAT `resolveVoice`'s TOP STEP READS. Same shape of answer as
+     *  `actionsFor`: a session with no opinion returns an empty object, and the
+     *  chain falls through it rather than going quiet. */
+    voicesFor(sessionId: string): Partial<Record<AlertEvent, string>> {
+        return { ...(this.map.get(String(sessionId ?? '').trim())?.voices ?? {}) };
+    }
+
+    /**
+     * Pick (or clear) the tone ONE session plays for ONE event — the right-click
+     * "Sound for this session…" and the `session` scope of `alerts.voice.set`.
+     *
+     * ‼️ AN EMPTY `voice` CLEARS THE STEP, IT DOES NOT MUTE IT. There is no such
+     * thing as "this session is silent" in the chain: clearing hands the answer
+     * back to the agent, the settings and the built-in default, exactly as a
+     * session that never chose. Muting is a `sound` action nobody armed, which
+     * is the ♪ box beside it and a different question.
+     */
+    setVoice(sessionId: string, event: unknown, voice: unknown): AlertSetResult {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return { ok: false, error: 'sessionId is required' }; }
+        if (typeof event !== 'string' || !(ALERT_EVENTS as readonly string[]).includes(event)) {
+            return {
+                ok: false,
+                error: `unknown event ${JSON.stringify(event)} — one of ${ALERT_EVENTS.join('|')}`
+            };
+        }
+        const want = typeof voice === 'string' ? voice.trim() : '';
+        const prev = this.map.get(id);
+        const draft = { ...(prev?.voices ?? {}) };
+        if (want) { draft[event as AlertEvent] = want; } else { delete draft[event as AlertEvent]; }
+        // Canonical order, like `normalizeActions` — two identical selections
+        // are then the same object however they were arrived at, which is what
+        // makes "did this actually change?" answerable at all.
+        const voices = normalizeVoices(draft);
+        const t = this.now();
+        const actions = prev ? [...prev.actions] : [];
+        if (!actions.length && !Object.keys(voices).length) {
+            // Nothing left to say about this session — the same "absence, not a
+            // record saying nothing" rule `replace` follows.
+            if (prev) { this.map.delete(id); this.persist(); }
+            return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
+        }
+        const prefs: SessionAlertPrefs = {
+            sessionId: id,
+            actions,
+            ...(Object.keys(voices).length ? { voices } : {}),
+            updatedAt: t,
+            lastSeenAt: prev?.lastSeenAt ?? t
+        };
+        this.map.set(id, prefs);
+        this.persist();
+        return {
+            ok: true,
+            prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
+        };
     }
 
     /** Toggle ONE action on ONE session — the message the gutter sends. */
@@ -181,7 +288,9 @@ export class TurnAlertStore {
         }
         const next = normalizeActions(actions);
         const t = this.now();
-        if (!next.length) {
+        const prev = this.map.get(id);
+        const voices = { ...(prev?.voices ?? {}) };
+        if (!next.length && !Object.keys(voices).length) {
             // An empty selection carries no information now that there is
             // nothing to be silent ABOUT — so it is the absence of a record,
             // not a record saying "muted".
@@ -189,16 +298,23 @@ export class TurnAlertStore {
             this.persist();
             return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
         }
-        const prev = this.map.get(id);
         const prefs: SessionAlertPrefs = {
             sessionId: id,
             actions: next,
+            // ‼️ A-23 — CLEARING THE FOUR BOXES IS NOT UNPICKING THE TONE. They
+            // answer different questions ("alert me about this one" vs "in this
+            // voice"), and dropping the tone here would silently undo a choice
+            // the user made in another surface entirely.
+            ...(Object.keys(voices).length ? { voices } : {}),
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
         this.map.set(id, prefs);
         this.persist();
-        return { ok: true, prefs: { ...prefs, actions: [...prefs.actions] } };
+        return {
+            ok: true,
+            prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
+        };
     }
 
     /**

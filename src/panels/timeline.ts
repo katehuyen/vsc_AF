@@ -4,8 +4,9 @@ import { totalTokens } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { TaskManager } from '../core/tasks';
 import {
-    SessionAlertPrefs, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
+    SessionAlertPrefs, SESSION_ALERT_EVENTS, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
 } from '../core/turnAlerts';
+import { AlertEvent, ALERT_EVENTS, EVENT_LABEL, VoiceOrigin } from '../core/alertVoices';
 import { handleAfNav, htmlShell } from './base';
 
 export interface TimelineDeps {
@@ -38,10 +39,24 @@ export interface TimelineDeps {
     getSessionAlerts: () => Record<string, SessionAlertPrefs>;
     setSessionAlert: (sessionId: string, action: string, enabled: boolean)
         => { ok: boolean; error?: string; prefs?: SessionAlertPrefs };
-    /** Run one session's selected alerts on purpose, after a countdown. */
-    testSessionAlert: (sessionId: string, delayMs: number) => Promise<{
+    /**
+     * ‼️ A-23 — WHICH TONE THIS SESSION WOULD PLAY, and which step of the chain
+     * decided. The page never works this out: `resolveVoice` is the one place
+     * that answers it (session → agent → settings → default), and a second
+     * opinion drawn on a row is how "I set the sound and the old one played"
+     * becomes a bug nobody can locate.
+     */
+    resolveSessionVoice: (event: AlertEvent, sessionId: string) => {
+        voice: string; label: string; origin: VoiceOrigin; originLabel: string;
+        playable: boolean; chosen: string;
+        skipped: { origin: VoiceOrigin; voice: string; why: string }[];
+    };
+    /** Run one session's selected alerts on purpose, after a countdown — for
+     *  the event the page asked for (A-23), `turn-ready` when it names none. */
+    testSessionAlert: (sessionId: string, delayMs: number, event?: AlertEvent) => Promise<{
         ok: boolean; error?: string; sessionId: string; label?: string;
         actions?: TurnAlertAction[]; at?: number; branches?: TurnAlertBranch[];
+        event?: AlertEvent; voice?: { voice: string; origin: VoiceOrigin; playable: boolean };
     }>;
 }
 
@@ -155,7 +170,37 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         // alerts on nothing; there is no agent-level default underneath it.
         sessionAlerts: Object.fromEntries(
             Object.entries(deps.getSessionAlerts()).map(([id, p]) => [id, p.actions])),
-        alertActions: [...TURN_ALERT_ACTIONS]
+        alertActions: [...TURN_ALERT_ACTIONS],
+        /**
+         * ‼️ A-23 — WHAT THE ♪ BOX WILL ACTUALLY PLAY, PER ROW (MIRROR).
+         *
+         * A checkbox glyph can say "armed" and nothing more, and "armed" was
+         * never the question somebody hovers it with — five tones exist
+         * precisely so that two rows finishing in the next room can be told
+         * apart. So the RESOLVED answer travels with the row: the tone, which
+         * step of the chain chose it, and whatever was passed over on the way.
+         *
+         * Only the two events a session can arm ITSELF on are resolved here.
+         * The other three ring from the fleet-wide switch and belong to the
+         * Settings card; resolving them on every refresh would be five disk
+         * checks per lane for a fact this page does not draw.
+         */
+        sessionVoices: Object.fromEntries(deps.live.sessions().map(s => [
+            s.sessionId,
+            Object.fromEntries(SESSION_ALERT_EVENTS.map(event => {
+                const r = deps.resolveSessionVoice(event, s.sessionId);
+                return [event, {
+                    voice: r.voice, label: r.label, origin: r.origin,
+                    originLabel: r.originLabel, playable: r.playable,
+                    // What THIS session picked for itself, '' when it has no
+                    // opinion — which is not the same as the tone it plays.
+                    chosen: r.chosen,
+                    skipped: r.skipped
+                }];
+            }))
+        ])),
+        alertEvents: ALERT_EVENTS.map(e => ({ event: e, label: EVENT_LABEL[e] })),
+        sessionAlertEvents: [...SESSION_ALERT_EVENTS]
     };
 }
 
@@ -309,9 +354,19 @@ export class TimelinePanel {
             case 'testTurnAlert': {
                 const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
                 const delayMs = typeof msg.delayMs === 'number' ? msg.delayMs : 3000;
+                // ‼️ A-23 — WHICH EDGE IS BEING REHEARSED. The four branches are
+                // the same either way, but the SOUND is not: `turn-ready` and
+                // `question` deliberately differ, and a test that could only
+                // ever play the first could not answer "will I be able to tell
+                // them apart from the kitchen?". An unknown name is dropped
+                // rather than passed on — the host refuses it by name, and a
+                // stale webview must not turn a test into an error dialog.
+                const raw = typeof msg.event === 'string' ? msg.event : '';
+                const event = (ALERT_EVENTS as readonly string[]).includes(raw)
+                    ? raw as AlertEvent : undefined;
                 // The countdown runs in the HOST, so the user can leave this
                 // window entirely and still see whether focus really came back.
-                void this.deps.testSessionAlert(sessionId, delayMs).then(result => {
+                void this.deps.testSessionAlert(sessionId, delayMs, event).then(result => {
                     void this.panel.webview.postMessage({ type: 'alertTest', result });
                 });
                 break;

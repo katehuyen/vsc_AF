@@ -79,6 +79,20 @@ const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
 const TIMELINE_SESSION = "webviewSection == 'afTimelineSession'";
 
+/**
+ * ‼️ A-23 — WHERE A **LIVE** SESSION IS THE SUBJECT, which is a smaller family
+ * than `SESSION_ROW`.
+ *
+ * An alert sound is keyed by session and travels with that session's own
+ * lifetime — its rekey, its TTL, its forget. Offered on a search hit or a Turns
+ * row it would be an item that refuses on nearly every click, because those
+ * surfaces list conversations that are mostly over. So it is drawn only where
+ * the row IS something still running: a Timeline lane, a Timeline card, the
+ * Console's live card.
+ */
+const LIVE_SESSION_ROW =
+    'webviewSection =~ /^(afTimelineAgent|afTimelineSession|afConsoleSession)$/';
+
 /** The Projects page's own objects. */
 const BACKLOG_ROW = "webviewSection == 'afBacklogRow'";
 /** A row on the Track tab: an item's history, not the item. What it can offer
@@ -267,6 +281,10 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.sessionToWiki', when: SESSION_ROW, group: '2_mark@5' },
     { command: 'agentfarm.copySessionPath', when: SESSION_ROW, group: '5_copy@1' },
     { command: 'agentfarm.copySessionCwd', when: `${SESSION_ROW} && cwd`, group: '5_copy@2' },
+    // ‼️ A-23 — the `session` step of the sound chain, from the row it belongs
+    // to. It sits with the MARKS because that is what it is: a property put on
+    // one conversation, not something done to it.
+    { command: 'agentfarm.setSessionAlertVoice', when: LIVE_SESSION_ROW, group: '2_mark@6' },
 
     // ---------------------------------------------------------------------
     // The Console's cards. A resumable row can be joined; a live card can be

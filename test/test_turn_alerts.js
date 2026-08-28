@@ -86,6 +86,87 @@ function fakeState(seed) {
     eq('an empty selection clears the record', Object.keys(s.all()), []);
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ A-23 — THE `session` STEP OF THE SOUND CHAIN, WHICH NOTHING WROTE.
+//
+// `alertVoices.resolveVoice` has read this step since A-18 and its hook was
+// never bound, so "this conversation in this tone" fell through on every
+// resolution. It lives in THIS store rather than one of its own because the
+// rekey, the TTL, the ceiling and the forget a session preference needs are
+// already here, and a second copy of them would drift on the first change.
+// ---------------------------------------------------------------------------
+{
+    const st = fakeState();
+    const s = new T.TurnAlertStore(st.deps());
+    eq('a session with no opinion answers with nothing', s.voicesFor('S1'), {});
+    ok('an unknown event is refused BY NAME',
+        !s.setVoice('S1', 'turn-finished', 'bell-far').ok
+        && /turn-finished/.test(s.setVoice('S1', 'turn-finished', 'x').error));
+    ok('an empty sessionId is refused', !s.setVoice('', 'question', 'bell-far').ok);
+    s.setVoice('S1', 'question', 'bell-far');
+    eq('a pick is kept per EVENT, not per session',
+        s.voicesFor('S1'), { question: 'bell-far' });
+    s.setVoice('S1', 'turn-ready', 'chime-bright');
+    eq('two events, two tones, one session',
+        s.voicesFor('S1'), { 'turn-ready': 'chime-bright', question: 'bell-far' });
+    eq('and nobody else caught it', s.voicesFor('S2'), {});
+
+    // ‼️ THE TWO QUESTIONS ARE SEPARATE. "Alert me about this one" and "in this
+    // voice" are different, and clearing the boxes must not silently unpick a
+    // tone chosen from another surface entirely.
+    s.set('S1', 'sound', true);
+    s.replace('S1', []);
+    eq('clearing the four boxes leaves the tone alone',
+        s.voicesFor('S1'), { 'turn-ready': 'chime-bright', question: 'bell-far' });
+    eq('…and the record survives to carry it', Object.keys(s.all()), ['S1']);
+
+    // ‼️ CLEARING IS NOT MUTING. An empty voice hands the answer back to the
+    // step below; there is no "this session is silent" in the chain.
+    s.setVoice('S1', 'turn-ready', '');
+    eq('an empty voice clears that step only', s.voicesFor('S1'), { question: 'bell-far' });
+    s.setVoice('S1', 'question', '');
+    eq('with nothing left to say, the record goes', Object.keys(s.all()), []);
+
+    // The value is NOT checked here on purpose: whether a tone still exists,
+    // still has a file and can still be played is asked at RESOLUTION time, by
+    // the one function that can answer it. A second opinion stored here would
+    // go stale the moment the user deletes the file.
+    ok('an id nothing answers is still stored — the chain skips it later',
+        s.setVoice('S9', 'error', 'u-deleted-yesterday').ok
+        && s.voicesFor('S9').error === 'u-deleted-yesterday');
+}
+
+// A tone travels with its session through the rename and back off disk.
+(async () => {
+    const st = fakeState();
+    const s = new T.TurnAlertStore(st.deps());
+    s.setVoice('cli:codex:dev:1', 'question', 'ask-rise');
+    s.rekey('cli:codex:dev:1', '019ff43f-real');
+    eq('‼️ the tone follows the session under its real name',
+        s.voicesFor('019ff43f-real'), { question: 'ask-rise' });
+    eq('nothing is left under the synthetic id', s.voicesFor('cli:codex:dev:1'), {});
+    await s.flush();
+    const again = new T.TurnAlertStore(st.deps());
+    eq('and it survives a reload', again.voicesFor('019ff43f-real'), { question: 'ask-rise' });
+})();
+
+// Garbage in the voices field is dropped without taking the record with it.
+{
+    const st = fakeState({
+        A: { sessionId: 'A', actions: ['sound'], voices: { question: 'ask-rise', nonsense: 'x', ended: 7 }, updatedAt: 1, lastSeenAt: 1 },
+        B: { sessionId: 'B', actions: [], voices: { ended: 'close-fall' }, updatedAt: 1, lastSeenAt: 1 },
+        C: { sessionId: 'C', actions: [], voices: { nope: 'x' }, updatedAt: 1, lastSeenAt: 1 }
+    });
+    const s = new T.TurnAlertStore(st.deps());
+    eq('an unknown event key is dropped, the good one kept',
+        s.voicesFor('A'), { question: 'ask-rise' });
+    eq('a non-string tone is dropped too', s.voicesFor('A').ended, undefined);
+    eq('‼️ a record with only a TONE survives — it used to need actions',
+        s.voicesFor('B'), { ended: 'close-fall' });
+    eq('a record left with nothing readable at all is dropped',
+        Object.keys(s.all()).sort(), ['A', 'B']);
+}
+
 // Persistence across a reload, and writes that land in order.
 (async () => {
     const st = fakeState();

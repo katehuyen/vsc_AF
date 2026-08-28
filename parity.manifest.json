@@ -5056,6 +5056,7 @@
         "why": "Handler only opens a page card — it moves the eye and changes nothing."
       }
     },
+    {"capability":"setSessionAlertVoice","ui":["cmd:agentfarm.setSessionAlertVoice","ctx:agentfarm.setSessionAlertVoice"],"ops":["alerts.voice.set"]},
     {
       "capability": "settingsPanel.ts#afnav",
       "ui": [

@@ -128,7 +128,14 @@ const KEPT_ON_PURPOSE = [
     // steered, so the picker is the list of runs this can work on (which is
     // also how the reader learns a classic mission has no strategy to steer),
     // and the text is one free sentence. No form, nothing to fill in twice.
-    'agentfarm.missionGuide'
+    'agentfarm.missionGuide',
+    // A-23 — pick an EVENT, then a TONE. Both lists exist already (five edges,
+    // ten built-in sounds plus the user's own) and nothing is being made: the
+    // command writes one id onto one session. A page form would be a builder in
+    // front of a two-click choice, and the tone list has to be a picker anyway
+    // because each row plays itself — ten names like `chime-bright` and
+    // `ask-rise` are unchooseable from the words.
+    'agentfarm.setSessionAlertVoice'
 ];
 KEPT_ON_PURPOSE.forEach(cmd => {
     ok(`${cmd} is still there (it is a picker or one question, not a builder)`,
@@ -140,11 +147,12 @@ KEPT_ON_PURPOSE.forEach(cmd => {
     // number in docs/CONVENTIONS.md is wrong and this says so.
     const m = measure();
     // ‼️ THE CEILING ONLY MOVES WITH A NAME. It went 30 → 31 for
-    // `agentfarm.compileWiki` (M-23) and 31 → 32 for `agentfarm.missionGuide`
-    // (M-16); both are in KEPT_ON_PURPOSE above with the reason. A raise with
-    // nothing added to that list is the sweep undoing itself, and the next
-    // reader would have no way to tell the two apart.
-    ok(`no more than 32 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 32);
+    // `agentfarm.compileWiki` (M-23), 31 → 32 for `agentfarm.missionGuide`
+    // (M-16) and 32 → 33 for `agentfarm.setSessionAlertVoice` (A-23); all three
+    // are in KEPT_ON_PURPOSE above with the reason. A raise with nothing added
+    // to that list is the sweep undoing itself, and the next reader would have
+    // no way to tell the two apart.
+    ok(`no more than 33 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 33);
     ok(`no more than 4 are chains of two or more (measured ${m.chains})`, m.chains <= 4);
     ok('‼️ the scan is not fooled by the last command in a push() block',
         (BODIES['agentfarm.missionStepOutput'] || '').split('\n').length < 8);

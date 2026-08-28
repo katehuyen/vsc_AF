@@ -30,9 +30,67 @@
     function actionsFor(sessionId) {
         return (DATA.sessionAlerts && DATA.sessionAlerts[sessionId]) || [];
     }
+    /** A-23 — the resolved tone for one session and one event, or null when the
+     *  host has not resolved that lane (a row with no live session). */
+    function voiceFor(sessionId, event) {
+        const row = DATA.sessionVoices && DATA.sessionVoices[sessionId];
+        return (row && row[event]) || null;
+    }
+    /** The short name of an event. The host owns the spelling (core/alertVoices)
+     *  so the picker, the row and Settings cannot call the same edge three
+     *  different things; the id is the fallback, never a second name. */
+    function eventName(e) {
+        return (DATA.alertEvents || []).reduce((a, x) => x.event === e ? x.label : a, e);
+    }
+    /**
+     * ‼️ A-23 — MIRROR: WHAT THIS ROW WILL ACTUALLY PLAY, on the first line.
+     *
+     * The ♪ box is a checkbox, and a checkbox can only ever say "armed". That
+     * was never the question somebody hovers it with: five tones exist so the
+     * turn ending and the agent asking can be told apart from another room, and
+     * "armed" does not say which of them this row is about to make. So the
+     * panel opens with the tone and the step of the chain that chose it, then
+     * the second event, then whatever was passed over on the way — and only
+     * then what the control does.
+     */
+    function soundTip(sid, on) {
+        const events = DATA.sessionAlertEvents || ['turn-ready', 'question'];
+        const name = eventName;
+        const said = [];
+        const skipped = [];
+        events.forEach(e => {
+            const v = voiceFor(sid, e);
+            if (!v) { return; }
+            said.push(`${name(e)}: ${v.label} — ${v.originLabel}`
+                + (v.playable ? '' : '   ⚠ nothing here plays that file, so this one would be SILENT'));
+            (v.skipped || []).forEach(s =>
+                skipped.push(`${name(e)}: ${s.voice} (${s.origin}) — ${s.why}`));
+        });
+        if (!said.length) { return ''; }
+        return window.AFTip.lines([
+            said.join('\n'),
+            on
+                ? '\nThis row is armed: the tone above plays when this session reaches that edge.'
+                : '\nThe box is OFF, so nothing plays from here — the tone above is what it WOULD '
+                    + 'play. A fleet-wide switch (Settings ▸ Alert sounds) can still ring it.',
+            '\nRight-click this row → Sound for this session… to give this conversation a tone of '
+                + 'its own. Clearing that is not silence: it hands the answer back to your setting '
+                + 'for everybody, and then to the built-in default.',
+            skipped.length ? '\nPassed over on the way:\n' + skipped.join('\n') : ''
+        ]);
+    }
     /** The last "test in 3 seconds" run, per session — countdown then result. */
     const ALERT_TESTS = new Map();   // sessionId -> {state,'counting'|'done', until, result}
     let alertTick = null;
+    /**
+     * ‼️ A-23 — WHICH EDGE THE ⏱ REHEARSES. `turn-ready` by default, because
+     * that is the edge every install already had and a test that changed its
+     * own subject on upgrade would be a different test. The point of making it
+     * choosable is the one thing the sound feature exists for: the turn ending
+     * and the agent asking are DIFFERENT tones on purpose, and until this the
+     * only way to hear the second one was to wait for an agent to ask.
+     */
+    let testEvent = 'turn-ready';
 
     const STYLE = `<style>
         .sid { font-weight:400; opacity:.6; font-size:11px; }
@@ -60,6 +118,12 @@
             transition:background-color .08s linear; }
         .lane-hot:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.18)); }
         .lane-hotw.lane-dot .lane-hot { border-radius:50%; }
+        /* A-23 — the ⏱'s subject sits INSIDE the sentence that explains the ⏱,
+           so it is sized by that sentence and not by the form controls on other
+           pages: a 13px box with 5px of padding in an 11px line is a button
+           pretending to be a word. */
+        #testevent { font-size:11px; padding:1px 4px; border-radius:3px;
+            vertical-align:baseline; max-width:190px; }
         /* ‼️ U-81 — THE CARD'S TWO TEXT LINES ARE TWO DIFFERENT FACTS AND WERE
            DRAWN IDENTICALLY: the conversation's name above, the last thing asked
            below, same size, same grey, one under the other — so they read as one
@@ -124,6 +188,31 @@
     const BRANCH_GLYPH = { ok: '✓', failed: '✕', skipped: '·' };
 
     /**
+     * ‼️ A-23 — THE ⏱'s SUBJECT, PICKED ONCE FOR THE PAGE RATHER THAN PER ROW.
+     *
+     * A per-row picker would be a fifth control in a gutter that is already four
+     * boxes and a button wide, for a setting nobody changes twice in a sitting.
+     * It sits in the line that EXPLAINS the ⏱ instead — the one place a reader
+     * is already being told what that button does. MIRROR: the box is narrow,
+     * so its tooltip opens with what it is set to.
+     */
+    function testEventSelect() {
+        const evs = DATA.alertEvents || [{ event: 'turn-ready', label: 'Turn finished' }];
+        const armed = DATA.sessionAlertEvents || [];
+        const cur = evs.reduce((a, x) => x.event === testEvent ? x.label : a, testEvent);
+        const tip = `Testing as: ${cur}\n\nWhich edge the ⏱ rehearses. The four branches are the `
+            + `same on every edge; the SOUND is not — turn-ready and question are deliberately `
+            + `different tones, and this is the only way to hear the second one without waiting `
+            + `for an agent to ask something.\n\nThe three that no session can arm itself on `
+            + `(stalled · ended · error) still ring here, so their tone can be judged before the `
+            + `fleet-wide switch is turned on for them.`;
+        return `<select id="testevent" title="${C.esc(tip)}">${evs.map(e =>
+            `<option value="${C.esc(e.event)}"${e.event === testEvent ? ' selected' : ''}>`
+            + `${C.esc(e.label)}${armed.indexOf(e.event) >= 0 ? '' : ' (fleet switch only)'}</option>`
+        ).join('')}</select>`;
+    }
+
+    /**
      * ‼️ WHAT THE TEST ACTUALLY DID — the strip under the lanes.
      *
      * The ⏱ control lives in the row (the row is the session), but its RESULT is
@@ -141,7 +230,8 @@
             if (t.state === 'counting') {
                 const left = Math.max(0, Math.ceil((t.until - Date.now()) / 1000));
                 return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id}` +
-                    ` — testing in ${left}s… <span class="muted">switch to another window now if you want to see focus work</span></div>`;
+                    ` — testing <b>${C.esc(eventName(t.event || 'turn-ready'))}</b> in ${left}s…` +
+                    ` <span class="muted">switch to another window now if you want to see focus work</span></div>`;
             }
             const r = t.result || {};
             if (!r.ok) {
@@ -168,10 +258,18 @@
                 return head + (b.detail ? `\n    ${b.detail}` : '') + snd;
             }));
             const trigger = `<span class="slink">${short}</span>`;
+            // ‼️ A-23 — WHICH EDGE WAS REHEARSED AND WHICH TONE CAME OUT. A
+            // strip that says only "✓✓✓" cannot answer the question the test is
+            // run to answer, now that the same four branches can play five
+            // different sounds: the host resolves the voice as part of the test
+            // and it is reported here, with the step of the chain that chose it.
+            const v = r.voice || null;
+            const said = `${eventName(r.event || 'turn-ready')}${v ? ' · ' + v.voice : ''}`;
             return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id} — ` +
                 window.AFTip.wrap(trigger,
                     `Alert test · ${who} · ${new Date(r.at || Date.now()).toLocaleTimeString()}`,
                     body) +
+                ` <span class="muted">${C.esc(said)}</span>` +
                 ` <span class="muted">${C.esc((r.actions || []).join(' · ') || 'nothing selected')}</span></div>`;
         }).join('');
         return `<div class="card" style="margin-top:6px"><div class="muted small">Alert test</div>${rows}</div>`;
@@ -802,10 +900,17 @@
     function hotHtml(box, tip, o) {
         const attrs = `style="left:${box.left.toFixed(3)}%;width:${box.width.toFixed(3)}%;`
             + `top:${box.top.toFixed(3)}%;height:${box.height.toFixed(3)}%;`
-            + `cursor:${o.file ? 'pointer' : 'default'}"`;
-        const trigger = `<span class="lane-hot mark" data-file="${C.esc(o.file || '')}"`
-            + ` data-ts="${o.ts || 0}" ${o.ctx || ''}`
-            + ` role="button" aria-label="${C.esc(o.label)}"></span>`;
+            + `cursor:${o.cursor || (o.file ? 'pointer' : 'default')}"`;
+        // ‼️ A-23 — A HOT BOX CAN CARRY A CONTROL, not only a hover. The gutter's
+        // ♪ is drawn in SVG and answered in HTML like everything else here
+        // (U-67), and the box that answers for it has to BE the control too:
+        // two elements, one over the other, would sooner or later disagree
+        // about which session was clicked. `trigCls`/`trigAttrs` put the shared
+        // `.af-toggle` handler's own class and data on the box.
+        const trigger = `<span class="lane-hot mark${o.trigCls ? ' ' + o.trigCls : ''}"`
+            + ` data-file="${C.esc(o.file || '')}"`
+            + ` data-ts="${o.ts || 0}" ${o.ctx || ''}${o.trigAttrs ? ' ' + o.trigAttrs : ''}`
+            + ` role="${o.role || 'button'}" aria-label="${C.esc(o.label)}"></span>`;
         return window.AFTip.wrap(trigger, tip.head, tip.body,
             'tip-free lane-hotw' + (o.cls ? ' ' + o.cls : ''), attrs);
     }
@@ -1117,6 +1222,42 @@
                         + `\nCurrently: ${on ? 'ON' : 'off'}.`
                         + `\n\nEvery row on this page is one session and carries its own four choices; nothing here is shared with the agent's other sessions.`
                     : `${a.label} — unavailable.\n\n${why}`;
+                // ‼️ A-23 — THE ♪ IS THE ONE THAT GREW TEXT, so it is the one
+                // that moves to an AFTip (docs/CONVENTIONS.md → the two hover
+                // surfaces). The other three are booleans and a native `title`
+                // is the right size for a boolean; ♪ has to say WHICH TONE and
+                // WHY that one, which is prose and grows. Drawn in SVG,
+                // answered in HTML, exactly as the gutter's label already is —
+                // and the box IS the control, so the two cannot disagree about
+                // which session was clicked.
+                const body = a.id === 'sound' && armable ? soundTip(sid, on) : '';
+                if (body) {
+                    hots.push(hotHtml(
+                        {
+                            left: ((gx - 1) / W) * 100, width: (17 / W) * 100,
+                            top: ((ty - 1) / H) * 100, height: (17 / H) * 100
+                        },
+                        {
+                            head: `${a.label} — ${lane.who || lane.agent} (#${sid.slice(0, 8)}) · ${on ? 'ON' : 'off'}`,
+                            body
+                        },
+                        {
+                            file: '', ts: 0, cursor: 'pointer',
+                            trigCls: 'af-toggle',
+                            // `data-aftipact` marks it PRESSABLE, so the panel
+                            // yields to the hand on the click (U-74) instead of
+                            // sitting over the box that was just toggled.
+                            trigAttrs: `data-session="${C.esc(sid)}" data-action="${a.id}"`
+                                + ' data-aftipact="1" aria-hidden="true"',
+                            // ‼️ THE BOX IS FOR THE POINTER, AND SAYS SO. The
+                            // checkbox a screen reader finds is the `<g>` under
+                            // it, which keeps its role, its state and its click
+                            // handler — announcing one control twice is worse
+                            // than announcing the drawing.
+                            role: 'presentation',
+                            label: ''
+                        }));
+                }
                 out += `<g class="af-toggle" role="checkbox" aria-checked="${on ? 'true' : 'false'}"`
                     + ` aria-label="${C.esc(a.label + ' — ' + (lane.who || lane.agent))}"`
                     + ` data-session="${C.esc(sid)}" data-action="${a.id}"`
@@ -1128,7 +1269,10 @@
                     // behind on some themes and the row then lies about what is
                     // armed, so a checked control also wears a tick of its own.
                     (on ? `<path d="M${gx + 11.2} ${ty + 1.6} l1.5 1.6 l2.6 -2.9" fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"/>` : '') +
-                    `<title>${C.esc(tip)}</title></g>`;
+                    // The AFTip box above answers for ♪; a native title left
+                    // underneath it would be a second, shorter, staler answer to
+                    // the same hover.
+                    (body ? '' : `<title>${C.esc(tip)}</title>`) + '</g>';
             });
             // ‼️ AND A WAY TO PROVE IT WORKS. Four alerts that only ever fire
             // when an agent happens to finish are four alerts nobody can debug:
@@ -1143,6 +1287,8 @@
                     : !selected.length
                         ? 'Test the alerts — nothing is selected on this row yet, so there is nothing to test.'
                         : `Test the alerts of THIS session (${sid.slice(0, 8)}) in 3 seconds: ${selected.join(' · ')}.`
+                            + `\nAs: ${eventName(testEvent)}${(voiceFor(sid, testEvent) || {}).label
+                                ? ' — ' + voiceFor(sid, testEvent).label : ''} (the picker is above the chart).`
                             + '\n\nThe countdown is long enough to switch to another window, which is the only way to see whether focus really came back. The result appears under the chart, branch by branch.';
                 out += `<g class="af-alerttest" data-session="${C.esc(sid)}"`
                     + `${can ? '' : ' data-disabled="1"'}`
@@ -1540,7 +1686,7 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds as ${testEventSelect()}. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}
@@ -1615,6 +1761,15 @@
                     enabled: actionsFor(sid).indexOf(act) === -1
                 });
             }));
+        {
+            const sel = document.getElementById('testevent');
+            // A redraw is the point: every ⏱ tooltip on the page names the tone
+            // it would now play, and a picker that changed only itself would
+            // leave five rows quietly claiming the old one.
+            if (sel) {
+                sel.addEventListener('change', () => { testEvent = sel.value; render(); });
+            }
+        }
         document.querySelectorAll('.af-alerttest').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.disabled) { return; }
@@ -1622,8 +1777,10 @@
                 if (!sid) { return; }
                 // The HOST runs the countdown, so leaving this window (which is
                 // the only way to judge focus) does not cancel the test.
-                ALERT_TESTS.set(sid, { state: 'counting', until: Date.now() + 3000 });
-                vscode.postMessage({ type: 'testTurnAlert', sessionId: sid, delayMs: 3000 });
+                ALERT_TESTS.set(sid, { state: 'counting', until: Date.now() + 3000, event: testEvent });
+                vscode.postMessage({
+                    type: 'testTurnAlert', sessionId: sid, delayMs: 3000, event: testEvent
+                });
                 startAlertTick();
                 render();
             }));

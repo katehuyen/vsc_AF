@@ -360,8 +360,8 @@ import {
 } from './core/turnAlerts';
 import {
     addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
-    CUSTOM_LIMIT, DEFAULT_VOICE, playableOn, removeCustomVoice, renameCustomVoice,
-    ResolveDeps, ResolvedVoice, resolveVoice
+    CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, ORIGIN_LABEL, playableOn, removeCustomVoice,
+    renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
@@ -1186,7 +1186,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             getSessionAlerts: () => turnAlerts.all(),
             setSessionAlert: (sessionId, action, enabled) =>
                 setSessionAlertAction(sessionId, action, enabled),
-            testSessionAlert: (sessionId, delayMs) => testSessionAlert(sessionId, delayMs)
+            // ‼️ A-23 — one call, one answer, from the same `resolveVoice` the
+            // alert itself goes through. The row is drawn from what WILL play.
+            resolveSessionVoice: (event, sessionId) => {
+                const s = live.sessions().find(x => x.sessionId === sessionId);
+                const r = resolveAlertVoice(event, s);
+                return {
+                    voice: r.voice,
+                    label: alertVoiceRows().find(v => v.id === r.voice)?.label ?? r.voice,
+                    origin: r.origin, originLabel: ORIGIN_LABEL[r.origin],
+                    playable: r.playable,
+                    chosen: turnAlerts.voicesFor(sessionId)[event] ?? '',
+                    skipped: r.skipped
+                };
+            },
+            testSessionAlert: (sessionId, delayMs, event) =>
+                testSessionAlert(sessionId, delayMs, event)
         });
     };
     /**
@@ -1219,9 +1234,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         backends: soundCandidates(process.platform, '')
             .map(c => ({ backend: c.backend, formats: c.formats })),
         custom: context.globalState.get<CustomVoice[]>(ALERT_VOICES_KEY, []),
-        // The user's answer for everybody. The session and agent steps above it
-        // arrive with the surfaces that set them (design §10.5); until then the
-        // chain simply falls through them, which is what it is built to do.
+        // ‼️ A-23 — THE TOP STEP, AND IT IS THE SESSION STORE ITSELF. The chain
+        // has read this step since A-18 with nothing bound to it, so "this
+        // conversation uses that tone" fell through on every resolution — the
+        // one surface the item exists for. It reads `TurnAlertStore` rather than
+        // a map of its own, because the rekey/TTL/forget a session preference
+        // needs is already there and a second copy of it would drift.
+        session: sessionId => turnAlerts.voicesFor(sessionId),
+        // The user's answer for everybody. The agent step between them arrives
+        // with the surface that sets it (design §2); until then the chain simply
+        // falls through it, which is what it is built to do.
         settings: () => cfg().get<Record<string, string>>('alerts.voices', {})
     });
     const resolveAlertVoice = (event: AlertEvent, s?: LiveSession): ResolvedVoice =>
@@ -1302,6 +1324,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const now = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
         if (want) { now[event] = want; } else { delete now[event]; }
         await cfg().update('alerts.voices', now, vscode.ConfigurationTarget.Global);
+    };
+    /**
+     * ‼️ A-23 — WRITE THE `session` STEP, THROUGH THE SAME REFUSALS AS THE
+     * `settings` ONE.
+     *
+     * A tone that names nothing, whose file has gone, or that no player here can
+     * open is refused BY NAME rather than stored: the chain would fall through
+     * it at resolution time and the row would go on showing a name that never
+     * plays — "it says ask-mine and a chime comes out", the exact unfindable bug
+     * `resolveVoice` exists to prevent, wearing a per-session coat.
+     */
+    const alertsSetSessionVoice = async (
+        sessionId: string, event: AlertEvent, voice: string
+    ): Promise<{ prefs?: SessionAlertPrefs; resolved: ResolvedVoice }> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        if (!s) {
+            throw new Error(`no live session ${sessionId || '(empty)'} is being watched`);
+        }
+        const want = String(voice || '').trim();
+        if (want) {
+            const hit = alertVoiceRows().find(v => v.id === want);
+            if (!hit) { throw new Error(`there is no sound called "${want}" — try alerts.voices`); }
+            if (!hit.exists) { throw new Error(`${want} has no file at ${hit.file}`); }
+            if (!hit.playable) { throw new Error(`nothing on this machine plays ${hit.file}`); }
+        }
+        const r = turnAlerts.setVoice(sessionId, event, want);
+        if (!r.ok) { throw new Error(r.error ?? 'refused'); }
+        await turnAlerts.flush();
+        TimelinePanel.refreshIfOpen();
+        FarmSettingsPanel.refreshIfOpen();
+        return { prefs: r.prefs, resolved: resolveAlertVoice(event, s) };
     };
     const alertsVoiceAdd = async (label: string, file: string): Promise<CustomVoice> => {
         const r = addCustomVoice(customVoices(), { label, file }, voiceDeps());
@@ -8969,16 +9022,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.voice.set',
-            describe: '‼️ WHICH SOUND AN EVENT PLAYS (`agentFarm.alerts.voices`) — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. Today the only writable step is `settings` (everybody); the session and agent steps above it are set from their own surfaces. An empty `voice` CLEARS the choice and the event falls back to its built-in default rather than to silence. A voice id nothing knows is refused by name, and so is one whose file this machine cannot play — accepting it would promise a sound that never arrives. args: event (required, '
-                + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings, the only one this op writes)',
+            describe: '‼️ WHICH SOUND AN EVENT PLAYS — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. TWO WRITABLE STEPS: `settings` (everybody, `agentFarm.alerts.voices`) and — A-23 — `session`, the top of the chain, "just this conversation, in this tone", which needs a `sessionId` and takes only a session the live monitor is actually watching. The `agent` step between them has no surface yet and is refused by name rather than silently written to the wrong place. An empty `voice` CLEARS that step and the event falls back to the one below it — never to silence, because a session with no opinion is not a muted session (that is the ♪ control, a different question). A voice id nothing knows is refused, and so is one whose file this machine cannot play: accepting it would promise a sound that never arrives. args: event (required, '
+                + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings|session, default settings), sessionId? (required for scope session — full id or 8-char prefix)',
             handler: async (args) => {
                 const event = wantEvent(args);
                 const scope = (optStr(args, 'scope')?.trim() || 'settings');
-                if (scope !== 'settings') {
-                    throw new Error(`this op writes the "settings" step of the chain; `
-                        + `"${scope}" is set from that session's own ♪ control`);
-                }
                 const voice = argStr(args, 'voice').trim();
+                if (scope === 'session') {
+                    const raw = argStr(args, 'sessionId').trim();
+                    const s = live.sessions().find(x =>
+                        x.sessionId === raw || x.sessionId.startsWith(raw));
+                    if (!s) { throw new Error(`no live session matches "${raw}"`); }
+                    const r = await alertsSetSessionVoice(s.sessionId, event, voice);
+                    return {
+                        event, scope, voice: voice || null,
+                        sessionId: s.sessionId, label: live.labelOf(s),
+                        resolved: r.resolved
+                    };
+                }
+                if (scope !== 'settings') {
+                    throw new Error(`this op writes the "settings" or the "session" step of the `
+                        + `chain; "${scope}" is not one of them`);
+                }
                 await alertsSetVoice(event, voice);
                 FarmSettingsPanel.refreshIfOpen();
                 return { event, scope, voice: voice || null, resolved: resolveAlertVoice(event) };
@@ -22795,6 +22860,129 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.window.setStatusBarMessage(
                         `Agent Farm: ${list.length} sessions labelled`, 4000);
                 }
+            }),
+
+        /**
+         * ‼️ A-23 — "SOUND FOR THIS SESSION…", THE SURFACE THE TOP STEP OF THE
+         * CHAIN WAS WAITING FOR.
+         *
+         * `resolveVoice` has consulted the `session` step since A-18 and nothing
+         * ever wrote it, so the item's own headline ability — "hear THIS
+         * conversation in its own tone" — resolved to the settings step every
+         * time. This is the one place that writes it.
+         *
+         * Two picks, both over rows that already exist:
+         *
+         * 1. **Which event.** Each one carries what it plays TODAY and which
+         *    step chose it (MIRROR) — the question is comparative, and a list of
+         *    five bare names cannot be compared. The two the ♪ box can arm are
+         *    marked, because on the other three a tone only ever sounds if the
+         *    fleet-wide `alerts.on` switch is on.
+         * 2. **Which tone**, with ▶ on every row. Ten tones named
+         *    `chime-bright` and `ask-rise` are unchooseable from the words; the
+         *    button plays it where you are standing rather than sending you to
+         *    Settings and back. The first row CLEARS the session's choice — it
+         *    is not "silent", it is "no opinion", and it is spelled out as such
+         *    because muting is the ♪ box beside this and a different question.
+         *
+         * The session must be one the live monitor is watching: the preference
+         * is keyed by session and travels with its rekey and its TTL, so a
+         * choice written for a conversation that is over is a choice nothing
+         * will ever read.
+         */
+        vscode.commands.registerCommand('agentfarm.setSessionAlertVoice',
+            async (arg?: SessionRef | SessionInfo) => {
+                const ref = sessionFromArg(arg);
+                const id = String(ref?.sessionId ?? '').trim();
+                const s = id
+                    ? live.sessions().find(x => x.sessionId === id)
+                    : undefined;
+                if (!s) {
+                    void vscode.window.showWarningMessage(
+                        'Agent Farm: alert sounds are set per SESSION, and this row has no live '
+                        + 'session behind it any more — there is nothing a choice here could ever '
+                        + 'ring. Use Settings ▸ Alert sounds for the fleet-wide tone.');
+                    return;
+                }
+                const who = live.labelOf(s);
+                const mine = turnAlerts.voicesFor(s.sessionId);
+                type EventItem = vscode.QuickPickItem & { event?: AlertEvent };
+                const armable = new Set<string>(SESSION_ALERT_EVENTS);
+                const eventPick = await vscode.window.showQuickPick<EventItem>(
+                    ALERT_EVENTS.map(event => {
+                        const r = resolveAlertVoice(event, s);
+                        const label = alertVoiceRows().find(v => v.id === r.voice)?.label ?? r.voice;
+                        return {
+                            label: `${EVENT_LABEL[event]}`,
+                            description: `${label} · ${ORIGIN_LABEL[r.origin]}`,
+                            detail: (armable.has(event)
+                                ? 'this session can be armed on it from the ♪ box'
+                                : `only rings while agentFarm.alerts.on.${event} is on, for every session`)
+                                + (mine[event] ? ' · this session has already picked a tone' : ''),
+                            event
+                        };
+                    }),
+                    {
+                        title: `Sound for ${who} — which event?`,
+                        placeHolder: 'What each one plays today, and which step chose it',
+                        matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true
+                    });
+                if (!eventPick?.event) { return; }
+                const event = eventPick.event;
+                const play = new vscode.ThemeIcon('play');
+                const playBtn = { iconPath: play, tooltip: 'Play this one now' };
+                type VoiceItem = vscode.QuickPickItem & { voice?: string; clear?: boolean };
+                const rows = alertVoiceRows();
+                const current = mine[event] ?? '';
+                const below = resolveVoice(event, voiceDeps(), { agentName: s.agentName });
+                const items: VoiceItem[] = [
+                    {
+                        label: '$(circle-slash) No choice of its own',
+                        description: `falls back to ${below.voice} · ${ORIGIN_LABEL[below.origin]}`,
+                        detail: 'Clears this session\'s pick. NOT silence — to make a session quiet, '
+                            + 'turn its ♪ box off.',
+                        clear: true,
+                        picked: !current
+                    },
+                    { label: 'Tones', kind: vscode.QuickPickItemKind.Separator },
+                    ...rows.map<VoiceItem>(v => ({
+                        label: v.label,
+                        description: v.id + (v.id === current ? ' · current' : ''),
+                        detail: !v.exists ? `⚠ the file is gone — ${v.file}`
+                            : !v.playable ? `⚠ nothing on this machine plays ${v.file}`
+                                : (v.builtin ? 'built in' : 'yours') + ` · ${v.file}`,
+                        buttons: v.playable ? [playBtn] : [],
+                        voice: v.id
+                    }))
+                ];
+                const qp = vscode.window.createQuickPick<VoiceItem>();
+                qp.items = items;
+                qp.title = `${EVENT_LABEL[event]} — ${who}`;
+                qp.placeholder = '▶ plays a tone where you are standing · Enter picks it for THIS session';
+                qp.matchOnDescription = true;
+                qp.ignoreFocusOut = true;
+                qp.activeItems = items.filter(i => i.voice === current || (!current && i.clear));
+                qp.onDidTriggerItemButton(ev => {
+                    // Deliberately does NOT close: the point is comparing two
+                    // tones, and a picker that shuts on every ▶ makes that four
+                    // gestures instead of two.
+                    if (ev.item.voice) { void alertsPlayVoice(ev.item.voice).catch(() => undefined); }
+                });
+                qp.onDidAccept(() => {
+                    const pick = qp.selectedItems[0];
+                    qp.hide();
+                    if (!pick || (!pick.voice && !pick.clear)) { return; }
+                    void alertsSetSessionVoice(s.sessionId, event, pick.clear ? '' : pick.voice ?? '')
+                        .then(r => {
+                            void vscode.window.setStatusBarMessage(
+                                `Agent Farm: ${who} — ${EVENT_LABEL[event]} now plays `
+                                + `${r.resolved.voice} (${ORIGIN_LABEL[r.resolved.origin]})`, 5000);
+                        })
+                        .catch(e => void vscode.window.showWarningMessage(
+                            `Agent Farm: that sound was refused — ${e instanceof Error ? e.message : String(e)}.`));
+                });
+                qp.onDidHide(() => qp.dispose());
+                qp.show();
             }),
 
         /**

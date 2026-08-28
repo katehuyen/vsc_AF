@@ -83,11 +83,35 @@ const sess = (sessionId, label, extra) => Object.assign({
     startedAt: t0, lastEventTs: Date.now()
 }, extra || {});
 
-const base = (sessions, sessionAlerts, events) => ({
+/** A-23 — the resolved tone the host hands over for one session, per event.
+ *  `voice` is what WILL play; `chosen` is what that session picked for itself,
+ *  and the two differ on every row that has not picked anything. */
+const voices = (over) => Object.assign({
+    'turn-ready': {
+        voice: 'chime-soft', label: 'Chime, soft', origin: 'default',
+        originLabel: 'the built-in default', playable: true, chosen: '', skipped: []
+    },
+    question: {
+        voice: 'ask-double', label: 'Ask — two knocks', origin: 'default',
+        originLabel: 'the built-in default', playable: true, chosen: '', skipped: []
+    }
+}, over || {});
+
+const base = (sessions, sessionAlerts, events, sessionVoices) => ({
     listener: { state: 'listening', port: 1 },
     sessions, events: events || [], workflowRuns: [],
     sessionAlerts: sessionAlerts || {},
-    alertActions: ['sound', 'focus', 'modal', 'toast']
+    alertActions: ['sound', 'focus', 'modal', 'toast'],
+    sessionVoices: sessionVoices
+        || Object.fromEntries(sessions.map(s => [s.sessionId, voices()])),
+    alertEvents: [
+        { event: 'turn-ready', label: 'Turn finished' },
+        { event: 'question', label: 'Asking you' },
+        { event: 'stalled', label: 'Stalled' },
+        { event: 'ended', label: 'Session ended' },
+        { event: 'error', label: 'Error' }
+    ],
+    sessionAlertEvents: ['turn-ready', 'question']
 });
 
 // ---------------------------------------------------------------------------
@@ -223,7 +247,9 @@ ok('testing asks the HOST to run the countdown',
     three.posted.length === 1 && three.posted[0].type === 'testTurnAlert'
     && three.posted[0].sessionId === 'S1aaaaaa-1111' && three.posted[0].delayMs === 3000);
 ok('the countdown is on screen while it runs',
-    /testing in \ds/.test(three.html) && /switch to another window/.test(three.html));
+    /testing <b>[^<]+<\/b> in \ds/.test(three.html) && /switch to another window/.test(three.html));
+ok('‼️ A-23 — and it names the EDGE it is rehearsing, not just "testing"',
+    /testing <b>Turn finished<\/b>/.test(three.html));
 
 // ---- and the result names every branch, sound backend included ----
 three.message({
@@ -259,6 +285,86 @@ three.message({
     result: { ok: false, sessionId: 'S3cccccc-3333', error: 'nothing selected' }
 });
 ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.test(three.html));
+
+// ---------------------------------------------------------------------------
+// ‼️ A-23 — THE ♪ SAYS WHICH TONE, AND THE ⏱ SAYS WHICH EDGE.
+//
+// The bug this half is the measurement of: `resolveVoice` has had a `session`
+// step since A-18 with nothing bound to it, so a row could not say what it
+// would play and there was no way to give it a tone of its own. A checkbox
+// glyph can only ever say "armed", which was never the question.
+// ---------------------------------------------------------------------------
+{
+    const mine = boot(base(
+        [sess('V1aaaaaa-1111', 'dev #1')],
+        { 'V1aaaaaa-1111': ['sound'] },
+        [{ ts: t0, sessionId: 'V1aaaaaa-1111', agentName: 'dev', kind: 'prompt' }],
+        {
+            'V1aaaaaa-1111': voices({
+                'turn-ready': {
+                    voice: 'bell-far', label: 'Bell, distant', origin: 'session',
+                    originLabel: 'this session\'s own choice', playable: true,
+                    chosen: 'bell-far',
+                    skipped: [{ origin: 'settings', voice: 'u-gone', why: 'the file is gone: X.wav' }]
+                }
+            })
+        }
+    ));
+    ok('‼️ MIRROR — the ♪ panel opens with the tone this row will actually play',
+        /Turn finished: Bell, distant — this session&#039;s own choice|Turn finished: Bell, distant — this session's own choice/.test(mine.html));
+    ok('…and with the OTHER session event too, so the two can be compared',
+        /Asking you: Ask — two knocks/.test(mine.html));
+    ok('a step that was passed over is named WITH ITS REASON, not dropped',
+        /Passed over on the way/.test(mine.html) && /the file is gone/.test(mine.html));
+    ok('the panel points at the surface that changes it',
+        /Sound for this session…/.test(mine.html));
+    ok('‼️ the ♪ hover is an AFTip, and the box IS the control',
+        /class="lane-hot mark af-toggle"[^>]*data-session="V1aaaaaa-1111"[^>]*data-action="sound"/.test(mine.html));
+    ok('a press mutes the panel instead of sitting over what was clicked (U-74)',
+        /data-action="sound" data-aftipact="1"/.test(mine.html));
+    ok('‼️ and ♪ no longer carries a second, shorter answer in a native title',
+        !/data-action="sound"[^>]*>[\s\S]{0,400}?<title>Sound \(chime\)/.test(mine.html));
+    ok('the three booleans keep theirs — a native title is the right size for a boolean',
+        /<title>Focus \/ bring forward/.test(mine.html));
+
+    // A row with no live session resolves to nothing, and must not invent one.
+    const cold = boot(base(
+        [sess('C1aaaaaa-1111', 'dev #1')],
+        {},
+        [{ ts: t0, sessionId: 'C1aaaaaa-1111', agentName: 'dev', kind: 'prompt' }],
+        {}
+    ));
+    ok('a lane the host resolved no tone for draws no sound panel',
+        !/Turn finished: /.test(cold.html));
+    ok('…and falls back to the native title rather than losing its hover',
+        /<title>Sound \(chime\)/.test(cold.html));
+
+    // ---- the ⏱'s subject ----
+    ok('every event is offered, the id never shown as a second name',
+        /<select id="testevent"/.test(mine.html)
+        && /value="turn-ready" selected>Turn finished/.test(mine.html)
+        && /value="question">Asking you/.test(mine.html)
+        && /value="error">Error \(fleet switch only\)/.test(mine.html));
+    ok('MIRROR — the picker\'s own tooltip opens with what it is set to',
+        /Testing as: Turn finished/.test(mine.html));
+    mine.posted.length = 0;
+    mine.tests()[0]._click();
+    ok('‼️ the ⏱ carries the edge to the host, defaulting to the one that always existed',
+        mine.posted.length === 1 && mine.posted[0].event === 'turn-ready');
+
+    // ---- and the result says which edge, and which tone came out of it ----
+    mine.message({
+        type: 'alertTest',
+        result: {
+            ok: true, sessionId: 'V1aaaaaa-1111', label: 'dev #1', at: Date.now(),
+            actions: ['sound'], event: 'question',
+            voice: { voice: 'ask-double', origin: 'default', playable: true },
+            branches: [{ action: 'sound', status: 'ok', ms: 40 }]
+        }
+    });
+    ok('‼️ the result names the edge AND the tone — "✓" alone answers nothing now',
+        /Asking you · ask-double/.test(mine.html));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

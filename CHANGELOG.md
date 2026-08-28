@@ -2,6 +2,75 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.303.0 - A-23: a conversation can have a tone of its own, and the row says which (2026-08-28)
+
+Fifth step of A-18, and it closes a hole that had been open since the first one.
+`resolveVoice` has always answered "which sound?" in four steps — **session,
+agent, settings, default** — and the top step was **never wired to anything**.
+Nothing in the extension could write it, so "give THIS conversation its own
+sound" — the thing the item was opened for — quietly resolved to the fleet-wide
+setting every time. The chain was right; it was reading a store that did not
+exist.
+
+### The `session` step, written at last
+
+It lives in the SESSION preference store (`turnAlerts.ts`) rather than in a map
+of its own, because everything a per-session preference needs is already there:
+the **rekey** when a terminal lane learns the engine's real conversation id, the
+TTL, the ceiling, the forget. A second copy of that machinery would have drifted
+on the first change to either.
+
+The two questions stay separate. Clearing a row's four boxes does **not** unpick
+its tone, and clearing its tone is **not** muting it — an empty choice hands the
+answer back to your setting for everybody and then to the built-in default.
+There is no "this session is silent" in the chain; muting is the ♪ box, which is
+a different question and a different control.
+
+### Sound for This Session…
+
+New right-click item, drawn only where the row IS something still running — a
+Timeline lane, a Timeline card, the Console's live card. Offered on a search hit
+it would be an item that refuses on nearly every click.
+
+Two picks, both over lists that already exist. First the **event**, each one
+carrying what it plays today and which step chose it, because the question is
+comparative and five bare names cannot be compared. Then the **tone**, with ▶ on
+every row: ten sounds called `chime-bright` and `ask-rise` are unchooseable from
+the words, and the button plays one where you are standing instead of sending
+you to Settings and back. It does not close on ▶ — the point is comparing two.
+
+### The ♪ box says what it will play
+
+It was a checkbox with a native tooltip, and a checkbox can only ever say
+"armed" — which was never the question somebody hovers it with, now that five
+tones exist precisely so two rows finishing in the next room can be told apart.
+It is an **AFTip** now (MIRROR): the tone and the step of the chain that chose
+it on the first line, both session events, then every step that was passed over
+**with the reason**, then what the control does. The other three controls keep
+their native tooltip — a boolean is the size a native tooltip is for.
+
+Drawn in SVG and answered in HTML like the rest of this gutter (U-67), and the
+box IS the control, so the two cannot disagree about which session was clicked.
+The group under it keeps its role and its state: announcing one checkbox twice
+is worse than announcing the drawing.
+
+### The ⏱ test picks its edge
+
+`live.alerts.test` has taken an `event` since A-20 and the page had no way to
+name one, so the only rehearsable edge was `turn-ready` — the one thing the
+feature exists to distinguish from `question` could not be heard on purpose. The
+picker sits in the line that explains the ⏱, defaults to `turn-ready`, and
+offers the three fleet-switch-only edges too, so their tone can be judged before
+turning them on. The result strip names the edge and the tone that came out of
+it; a row of ticks alone answers nothing now.
+
+### Bridge
+
+`alerts.voice.set` gains `scope: "session"` (with `sessionId`). It was refusing
+every non-`settings` scope by name; that door is open, and it still says which
+step of the chain it wrote to. The `agent` step has no surface yet and is still
+refused by name rather than silently written to the wrong place.
+
 ## 3.302.0 - A-21: the alert sounds get a card that says which one will play (2026-08-28)
 
 Fourth step of A-18. `agentFarm.alerts.on` and `agentFarm.alerts.voices` were

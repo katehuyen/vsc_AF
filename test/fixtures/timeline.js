@@ -255,7 +255,63 @@ const base = () => ({
         '019ff43f-ff3d-7790-9431-63799a45b1b2': ['focus', 'modal'],
         '5b31d907-84ac-4e21-a7d0-9f5512ab3300': ['toast']
     },
-    alertActions: ['sound', 'focus', 'modal', 'toast']
+    alertActions: ['sound', 'focus', 'modal', 'toast'],
+    // ‼️ A-23 — WHAT EACH ROW WOULD ACTUALLY PLAY, resolved by the host. The
+    // picture to check here is that the three rows DISAGREE about it and each
+    // says which step of the chain decided: `#1` chose a tone for itself, `#2`
+    // inherits the user's fleet-wide setting, `#3` has never been near the
+    // question and gets the built-in default. A page that drew "♪" four times
+    // and nothing else could not show any of that.
+    sessionVoices: {
+        '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60': {
+            'turn-ready': {
+                voice: 'bell-far', label: 'Bell, distant', origin: 'session',
+                originLabel: 'this session\'s own choice', playable: true,
+                chosen: 'bell-far', skipped: []
+            },
+            question: {
+                voice: 'ask-rise', label: 'Ask — rising', origin: 'session',
+                originLabel: 'this session\'s own choice', playable: true,
+                chosen: 'ask-rise', skipped: []
+            }
+        },
+        '019ff43f-ff3d-7790-9431-63799a45b1b2': {
+            'turn-ready': {
+                voice: 'chime-bright', label: 'Chime, bright', origin: 'settings',
+                originLabel: 'your setting for everybody', playable: true,
+                chosen: '', skipped: []
+            },
+            question: {
+                voice: 'ask-double', label: 'Ask — two knocks', origin: 'default',
+                originLabel: 'the built-in default', playable: true,
+                chosen: '',
+                // A step that had an answer and could not be honoured is named
+                // with the reason — the commonest way this feature breaks.
+                skipped: [{
+                    origin: 'settings', voice: 'u-my-gong',
+                    why: 'the file is gone: D:\\sounds\\gong.mp3'
+                }]
+            }
+        },
+        '5b31d907-84ac-4e21-a7d0-9f5512ab3300': {
+            'turn-ready': {
+                voice: 'chime-soft', label: 'Chime, soft', origin: 'default',
+                originLabel: 'the built-in default', playable: true, chosen: '', skipped: []
+            },
+            question: {
+                voice: 'ask-double', label: 'Ask — two knocks', origin: 'default',
+                originLabel: 'the built-in default', playable: true, chosen: '', skipped: []
+            }
+        }
+    },
+    alertEvents: [
+        { event: 'turn-ready', label: 'Turn finished' },
+        { event: 'question', label: 'Asking you' },
+        { event: 'stalled', label: 'Stalled' },
+        { event: 'ended', label: 'Session ended' },
+        { event: 'error', label: 'Error' }
+    ],
+    sessionAlertEvents: ['turn-ready', 'question']
 });
 
 const data = base;

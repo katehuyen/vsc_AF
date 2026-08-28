@@ -771,7 +771,11 @@ object. `quickMenu` (the palette itself), `setupExample`, `worktreeRuns`,
 `dismissInsight`, `installHooks`, the `export*` pickers — all pick, none build.
 And a single box asking a single string about a thing that already exists is not
 a form either: `renameSession`, `tagSession`, `connectTelegram` (a token),
-`testDispatch` (a diagnostic). `test_dialog_sweep.js` lists them by name, so
+`testDispatch` (a diagnostic). A-23's `setSessionAlertVoice` picks twice over
+lists that exist (five edges, then the tones) and each tone row plays itself —
+ten names like `chime-bright` are unchooseable from the words, so the picker is
+not a step in front of the choice, it IS the choice.
+`test_dialog_sweep.js` lists them by name, so
 "finishing the job" by converting them is a decision somebody has to make on
 purpose rather than by momentum.
 

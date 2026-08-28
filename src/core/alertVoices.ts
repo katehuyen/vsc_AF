@@ -25,6 +25,24 @@
 export const ALERT_EVENTS = ['turn-ready', 'question', 'stalled', 'ended', 'error'] as const;
 export type AlertEvent = (typeof ALERT_EVENTS)[number];
 
+/**
+ * ‼️ A-23 — WHAT AN EVENT IS CALLED WHERE THERE IS NO ROOM TO EXPLAIN IT.
+ *
+ * `turn-ready` is the id and it is not a name a person picks from in a menu.
+ * The Settings card spells these out at length beside a paragraph each; a
+ * right-click list and a Timeline tooltip have one line, so the SHORT form
+ * lives here — one spelling, used by every surface that is too narrow for the
+ * paragraph (SHORTHAND: the short form on the control, the long one in the
+ * panel behind it).
+ */
+export const EVENT_LABEL: Record<AlertEvent, string> = {
+    'turn-ready': 'Turn finished',
+    question: 'Asking you',
+    stalled: 'Stalled',
+    ended: 'Session ended',
+    error: 'Error'
+};
+
 export interface AlertVoice {
     id: string;
     /** What it sounds like, in the user's terms — this is what a picker shows. */
@@ -218,6 +236,17 @@ export function renameCustomVoice(
 // ---------------------------------------------------------------------------
 
 export type VoiceOrigin = 'session' | 'agent' | 'settings' | 'default';
+
+/** ‼️ WHICH STEP ANSWERED, IN WORDS. "Why did it play THAT?" is the question
+ *  every surface has to be able to answer, and `origin: 'settings'` is an id,
+ *  not an answer. Kept beside the chain so the phrasing cannot drift from the
+ *  order the steps are actually tried in. */
+export const ORIGIN_LABEL: Record<VoiceOrigin, string> = {
+    session: 'this session\'s own choice',
+    agent: 'this agent\'s choice',
+    settings: 'your setting for everybody',
+    default: 'the built-in default'
+};
 
 export interface ResolveDeps extends AddVoiceDeps {
     soundsDir: string;
