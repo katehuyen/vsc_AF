@@ -70,11 +70,33 @@ because what a prompt accepts belongs to the CLI and has worn more than one
 shape: a hard-coded key a later build stops honouring would make this button do
 nothing, silently.
 
+### A-20 (step 3) — the alert sounds get their settings
+
+`agentFarm.alerts.on` (which events play a sound, for every session) and
+`agentFarm.alerts.voices` (which sound each one plays). Both draw themselves as
+forms on Farm Settings, from the schema, with nobody editing the page.
+
+**‼️ The global switch ADDS to a session's own ♪ selection; it does not gate
+it.** The design asked for all five entries off out of the box, and a gate
+defaulting to off would have silenced the turn-ready sound every install has had
+for months — on upgrade, with nothing on any page saying why. So there are two
+authorities and they add: a session's selection is "alert me about THIS
+conversation, in these ways" (the item's two events), and `alerts.on` is "play
+the sound for this KIND of event, everywhere". The worst an empty setting can do
+is nothing. It arms the SOUND only — nobody turning on a setting called "alert
+sounds" is asking for modal dialogs across the whole fleet.
+
+Bridge: `alerts.on`, `alerts.voice.set` (which names the step of the resolution
+chain it wrote to), and `alerts.resolve` now returns the plan as well as the
+voice — "would this actually ring?" is a different question from "which sound",
+and a resolution that answered only the second reads as "it is armed".
+
 Also: a form field that declares a default now uses it as its placeholder
 instead of repeating the label six pixels to its left.
 
 **Tests:** `test_permission_answer.js` (27), `test_needs_reading.js` (23),
-`test_bypass_contract.js` +13. 231 files · 15 147 assertions.
+`test_bypass_contract.js` +13, `test_alert_voices.js` +15. 231 files ·
+15 147 assertions.
 
 ## 3.300.0 - A-20 (step 2): the farm says WHICH kind of attention it wants (2026-08-28)
 
