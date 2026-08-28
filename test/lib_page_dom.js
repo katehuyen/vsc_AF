@@ -250,7 +250,7 @@ function runPage(scriptFile, DATA, extraWindow) {
                  * like a page that loses only its big boxes. It is not: it was
                  * the shim, and every form fixture in this suite was exposed.
                  */
-                if (tag === 'textarea') { if(raw.includes('nt-prompt')) console.error('DBG textarea branch hit');
+                if (tag === 'textarea') {
                     const doc = html();
                     const at = doc.indexOf(raw);
                     if (at >= 0) {

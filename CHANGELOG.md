@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.295.0 - M-27 (V2): the rounds a schedule could not keep, and the round that never opened (2026-08-28)
+
+**M-27 shipped and did not work.** Three separate faults, each of which alone
+was enough to make a multi-round task impossible; the audit that found them was
+asked for because the feature visibly did nothing.
+
+**1 — the chain died on its ordinary path.** A round is a reply, so it resumes
+the conversation the round before it was answered in. That id was read at the
+moment the run ended — and `opencode run --format json` is the ONLY engine that
+knows it then. Every other engine, Claude included, is bound to a session
+AFTERWARDS, by matching a transcript the index finds on disk (S-31), which lands
+after the process has exited. So the check said "no conversation is bound to
+this run", **dropped the whole chain**, and wrote a note nobody was going to
+read. Round 2 of a Claude task had never once happened.
+
+A round is now a ROW from that moment either way — created, visible,
+cancellable — and HELD (`round:binding`) until the binding arrives.
+`releaseRounds` fills the id in, and it is RE-DERIVED from the store rather
+than driven by the event, so it is right on the first pump after a restart and
+in a window that never saw the binding land. This is M-3's `progress:unknown`
+park, for the same reason and in the same shape. A round whose run has been
+deleted ends and says so instead of waiting for ever.
+
+**2 — an automation could not carry a chain at all, which is the case the item
+was written about.** "Run this every morning, and when it answers ask it the
+next thing" is what an unattended session is FOR. The rounds were read on the
+`task-new` branch only: the form drew the editor on a schedule, the page sent
+what was typed into it, and `savePlan` dropped it on the floor — so a schedule
+set up with three prompts fired a one-prompt run and looked exactly like one
+that had never been given any. `rounds` is now a **RunDimension**, beside the
+model and the retry policy, which is what carries it through `runExtras` to
+schedules, triggers and templates in one move. The plan form saves it and gives
+it back on edit, the row's anatomy says how deep the run goes, and the bridge
+takes it on every op that takes run dimensions (`ROUNDS_NOTE`).
+
+**3 — an interactive run was offered a chain it could never run.** Resuming is
+a headless argument (`launch()` refuses it by name), so the rounds someone
+typed became a row that failed at the spawn with a message they would not
+connect to them. The core refuses it in words, the bridge refuses it rather
+than storing it, and the form disables the block in place with the reason —
+the same treatment the Conversation and retry pickers already had.
+
+**And the test harness was hiding it.** `lib_page_dom` built an element's
+`value` from its `value="…"` attribute, which a `<textarea>` does not have: so
+every textarea came back EMPTY after a repaint, a page reading its own form back
+wrote that emptiness into its draft, and the next repaint really did lose the
+words. Every `<input>` on the same form survived, so the picture looked like a
+page that loses only its big boxes. Fixed in the shim, where it was.
+
 ## 3.294.0 - U-89: the two settings whose panel was half a panel (2026-08-28)
 
 `pricing` and `mediaPricing` declared their fields and described none of them,
