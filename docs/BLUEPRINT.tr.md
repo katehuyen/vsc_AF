@@ -3150,6 +3150,13 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 
 ## Sürüm Notları
 
+### 3.295.0 — M-27 (v2): Çok Turlu Görevler Denetimi ve Onarımı (2026-08-28)
+
+- **Asenkron Oturum Bağlama Koruması (`round:binding`):** Claude ve diğer motorların oturum kimlikleri süreç bittiğinde henüz transcriptte bağlanmamışsa zinciri düşürmek yerine tur `round:binding` ile kuyrukta park edilir; kimlik diske düşünce `releaseRounds()` ile serbest bırakılır.
+- **Otomasyon & Zamanlama Zincirleri (`RunDimensions`):** `rounds` alanı model ve retry gibi bir `RunDimension` oldu; `FarmSchedule`, `FarmTrigger` ve `FarmTemplate` plan formunda kaydedilir, düzenlemede geri yüklenir ve `runExtras` ile göreve aktarılır.
+- **İnteraktif Mod Sınırı:** `--resume` doğası gereği headless olduğundan, interactive modda turların çalışamayacağı formda açıklanarak alan yerinde devre dışı bırakıldı.
+- **DOM Shim Onarımı:** `<textarea>` değerlerinin test shim'inde kaybolması düzeltildi (`test/lib_page_dom.js`).
+
 ### 3.294.0 — U-89: Şema Alan Açıklamaları ve İlk Eşleşen Kural Koruması (2026-08-28)
 
 - **Fiyatlandırma ve Medya Şemaları:** `pricing` ve `mediaPricing` alanlarının her biri net açıklama metinleri ve zorunluluk etiketleriyle donatıldı.

@@ -3072,6 +3072,13 @@ Completed phases (all 2026-07-08):
 
 ## Release Notes
 
+### 3.295.0 — M-27 (v2): Multi-Round Tasks Audit & Defect Fixes (2026-08-28)
+
+- **Asynchronous Session Binding Guard (`round:binding`):** Prevents dropping subsequent rounds when engine sessions are matched asynchronously; rounds are parked as queue rows (`round:binding`) and automatically released (`releaseRounds`) once transcripts land on disk.
+- **Automation & Schedule Chains (`RunDimensions`):** `rounds` is elevated to a full `RunDimension`; `FarmSchedule`, `FarmTrigger`, and `FarmTemplate` preserve round chains across saving, editing, and execution (`runExtras`).
+- **Interactive Mode Exclusion:** Clearly informs users and disables rounds when interactive mode is selected, since conversation resume is strictly a headless operation.
+- **DOM Shim Fix:** Corrects `<textarea>` value property handling in virtual DOM tests (`test/lib_page_dom.js`).
+
 ### 3.294.0 — U-89: Schema Field Descriptions & First-Match Order Guard (2026-08-28)
 
 - **Pricing & Media Pricing Schemas:** Every field in `pricing` and `mediaPricing` receives comprehensive description strings and required property badges.
