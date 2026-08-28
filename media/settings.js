@@ -34,6 +34,71 @@
         return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
+    /**
+     * ‼️ U-89 — WHAT GOES IN THE BOX, BESIDE THE BOX.
+     *
+     * Twenty-seven settings are a raw JSON textarea, and the page used to draw
+     * them with a one-line description and nothing else — while the manifest,
+     * for twelve of them, already declared every field of an entry WITH a
+     * sentence about each. The user's report on that page was exact: a field
+     * they could not use.
+     *
+     * Two controls, and no third: a **shape** panel that says what an entry is,
+     * and **an example** that writes a valid one into the box. Both come out of
+     * the schema (`core/settingShape.ts`), so a setting added tomorrow explains
+     * itself with nobody touching this file.
+     *
+     * The long text is an AFTip, not a `title` (docs/CONVENTIONS.md): a field
+     * table is text, it is as wide as it needs to be, and the reader has to be
+     * able to put the pointer INSIDE it and scroll. The strip beside the button
+     * carries the one-line summary, because the fact that decides whether you
+     * open anything at all should not cost a hover.
+     */
+    function shapeHtml(it) {
+        const s = it.shape;
+        if (!s) { return ''; }
+        const KIND = {
+            list: 'a plain list', rows: 'a list of entries', form: 'one object',
+            map: 'name → value pairs', free: 'free-form JSON'
+        };
+        const lines = [s.summary];
+        if (s.fields && s.fields.length) {
+            lines.push('');
+            lines.push('EACH ENTRY:');
+            for (const f of s.fields) {
+                lines.push(`  ${f.name}  ·  ${f.type}${f.required ? '  ·  required' : ''}`);
+                if (f.allowed && f.allowed.length) { lines.push(`      one of: ${f.allowed.join(' · ')}`); }
+                if (f.description) { lines.push(`      ${f.description}`); }
+            }
+        }
+        if (s.example !== undefined) {
+            lines.push('');
+            lines.push('AN ENTRY THAT VALIDATES:');
+            lines.push(exampleText(s));
+        }
+        const fieldNote = s.fields && s.fields.length
+            ? ` · ${s.fields.length} field(s)`
+            : (s.itemType ? ` of ${s.itemType}` : '');
+        const label = `${KIND[s.kind] || 'JSON'}${fieldNote}`;
+        return `${window.AFTip.wrap(
+            `<span class="setshape">${C.esc(label)}</span>`,
+            'What goes in this box',
+            window.AFTip.lines(lines),
+            // Named so the panel can be PHOTOGRAPHED (U-81): a field table that
+            // could only ever be seen closed is a field table nobody checked
+            // the width of.
+            'tip-shape')}
+            ${s.example !== undefined
+                ? `<button class="secondary small" data-example="${C.esc(it.key)}"
+                    title="Write a valid entry into the box above. It replaces what is there — nothing is saved until you press Apply JSON.">Example</button>`
+                : ''}`;
+    }
+
+    /** The example, formatted the way the box formats its value. */
+    function exampleText(s) {
+        try { return JSON.stringify(s.example, null, 2); } catch { return ''; }
+    }
+
     function controlHtml(it) {
         const id = `c-${shortKey(it.key)}`;
         if (it.type === 'boolean') {
@@ -52,7 +117,10 @@
             const rows = Math.min(10, Math.max(2, text.split('\n').length));
             return `<textarea id="${id}" data-json="${C.esc(it.key)}" rows="${rows}" spellcheck="false"
                 style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>
-                <button class="secondary small" data-apply="${C.esc(it.key)}">Apply JSON</button>`;
+                <div class="setjrow">
+                    <button class="secondary small" data-apply="${C.esc(it.key)}">Apply JSON</button>
+                    ${shapeHtml(it)}
+                </div>`;
         }
         // A path setting gets a picker beside the box — typing a Windows path
         // by hand is where the typo that makes a feature look broken comes
@@ -828,6 +896,16 @@
                 .reset:hover { opacity:1; }
                 .setdesc { font-size:11px; color:var(--vscode-descriptionForeground); margin:3px 0 6px; max-width:720px; }
                 .setctl button.small { font-size:10px; margin-top:4px; }
+                /* U-89 — the row under a JSON box: Apply, then what the schema
+                   says goes in it, then the button that writes a valid one. The
+                   summary is a CHIP and not a hover, because whether the reader
+                   opens anything at all is decided by that one line. */
+                .setjrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+                .setshape {
+                    font-size:10px; padding:1px 7px; border-radius:9px; cursor:help;
+                    border:1px solid var(--vscode-widget-border, #4444);
+                    color:var(--vscode-descriptionForeground);
+                }
                 .seterr { font-size:11px; color:var(--vscode-errorForeground); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 .rootbadge { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
@@ -1008,6 +1086,21 @@
                 delete errors[key];
                 const ta = document.getElementById('c-' + shortKey(key));
                 vscode.postMessage({ type: 'set', key, value: ta ? ta.value : '' });
+            }));
+        // ‼️ U-89 — the example is written into the BOX and nothing is saved.
+        // The user reads it, edits it, and presses Apply themselves: a button
+        // that silently overwrote a live setting with a sample would be the
+        // worst possible reading of "show me what goes here".
+        document.querySelectorAll('[data-example]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.example;
+                const item = (DATA.categories || [])
+                    .reduce((a, c) => a.concat(c.items || []), [])
+                    .find(i => i.key === key);
+                const ta = document.getElementById('c-' + shortKey(key));
+                if (!item || !item.shape || !ta) { return; }
+                ta.value = exampleText(item.shape);
+                ta.focus();
             }));
         document.querySelectorAll('[data-reset]').forEach(btn =>
             btn.addEventListener('click', () => {

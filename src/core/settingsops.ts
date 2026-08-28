@@ -7,6 +7,9 @@
  * home; unknown ones land in "Other". No setting is ever listed here by hand
  * twice: this file only maps keys to groups and validates values.
  */
+import { SchemaNode, SettingShape, shapeOf } from './settingShape';
+export type { SchemaNode, SettingShape, ShapeField, ShapeKind } from './settingShape';
+export { exampleText, shapeOf } from './settingShape';
 
 /**
  * ‼️ MEASURED — VS CODE CAN DROP ONE KEY ITS OWN MANIFEST DECLARES.
@@ -114,6 +117,13 @@ export interface SettingSpec {
 }
 
 export interface SettingItem extends SettingSpec {
+    /**
+     * ‼️ U-89 — WHAT ACTUALLY GOES IN THE BOX, derived from this key's own
+     * schema rather than written down anywhere. Only ever set for an array or
+     * an object, which are the only settings the page draws as raw JSON. See
+     * core/settingShape.ts for why it is derived and not listed.
+     */
+    shape?: SettingShape;
     value: unknown;                   // effective value right now
     modified: boolean;                // differs from default
     /** ‼️ X-84 — set when a value WAS found in a settings file and refused for
@@ -251,10 +261,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Build the category → items model from the live schema + current values. */
 export function buildSettingsModel(
-    properties: Record<string, {
-        type?: unknown; enum?: unknown; default?: unknown;
-        description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
-    }>,
+    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown }>,
     valueOf: (key: string) => unknown,
     refusalOf?: (key: string) => string | undefined
 ): SettingsCategory[] {
@@ -272,6 +279,10 @@ export function buildSettingsModel(
             markdownDescription: p.markdownDescription,
             ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
             ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
+            // ‼️ U-89 — read here, once, for every key. A shape asked for on the
+            // page would be a shape the NEXT surface that lists settings does
+            // without.
+            ...(() => { const s = shapeOf(p); return s ? { shape: s } : {}; })(),
             value,
             modified: !sameValue(value, p.default),
             ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {})

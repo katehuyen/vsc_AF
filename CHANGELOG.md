@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.293.0 - U-89 (first layer): a JSON settings box says what goes in it (2026-08-28)
+
+**Measured on this manifest: 129 settings, 27 of them drawn as a bare JSON
+textarea — and for twelve of those the manifest ALREADY declared every field of
+an entry, with a sentence about each one.** The page threw all of it away. So
+the user was asked to hand-write JSON whose shape was documented six feet away
+in the same file, and their report on that page was exact: a field they could
+not use.
+
+Every JSON box now carries a chip saying what the value **is** — `a list of
+entries · 3 field(s)`, `a plain list of string`, `one object · 16 field(s)`,
+`name → value pairs` — and a panel behind it listing each field, its type,
+whether it is required, the values it accepts, and the sentence the manifest
+already wrote about it. Beside it, **Example** writes a complete entry that
+validates into the box. It saves nothing: the reader edits it and presses Apply
+themselves, because a button that silently overwrote a live setting with a
+sample would be the worst possible reading of "show me what goes here".
+
+All of it is **derived from the schema** (`core/settingShape.ts`), never a list
+of keys — a setting added tomorrow explains itself with nobody editing the page,
+the same rule the Browse button already follows. The example takes the schema's
+own default wherever there is one and a real allowed value from any enum, so it
+is something to start from rather than something to correct first. Where the
+schema genuinely says nothing (`livingChecks`, and that is the only one) the
+panel says so instead of pretending.
+
+Ten of the twenty-seven are a plain list of strings or numbers, where there is
+no JSON to get right at all; three are name → value maps. Giving those their own
+editors instead of a JSON box is the next layer of this item and is queued as
+its own work.
+
 ## 3.292.0 - M-27: a task can go as many rounds as the work needs (2026-08-28)
 
 **A task carried exactly one prompt, and that is not the shape of the work.**
