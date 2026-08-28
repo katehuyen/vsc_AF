@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.294.0 - U-89: the two settings whose panel was half a panel (2026-08-28)
+
+`pricing` and `mediaPricing` declared their fields and described none of them,
+so the new shape panel could only say `match · string` — which answers what to
+type and not what it means. The schema was filled in rather than the page taught
+to apologise: every field now carries its sentence, `match` says the rule a
+reader cannot guess (**the first rule that matches wins, so order matters**),
+and the fields a rule cannot do without are marked required. Every array-of-
+entries and every object setting in the manifest now describes every field it
+declares, and the test asserts that of all of them rather than of these two.
+
 ## 3.293.0 - U-89 (first layer): a JSON settings box says what goes in it (2026-08-28)
 
 **Measured on this manifest: 129 settings, 27 of them drawn as a bare JSON

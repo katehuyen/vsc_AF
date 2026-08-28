@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.293.0",
+  "version": "3.294.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8677,12 +8677,18 @@
           "description": "Estimated media pricing rules (USD): {match, usd, per: request|image|second}. Verify against fal.ai pricing.",
           "items": {
             "type": "object",
+            "required": [
+              "match",
+              "usd"
+            ],
             "properties": {
               "match": {
-                "type": "string"
+                "type": "string",
+                "description": "Regular expression tested against the media model id. The first rule that matches wins, so put the narrow ones above the broad ones."
               },
               "usd": {
-                "type": "number"
+                "type": "number",
+                "description": "Estimated price in USD for one unit of whatever `per` names."
               },
               "per": {
                 "type": "string",
@@ -8690,7 +8696,8 @@
                   "request",
                   "image",
                   "second"
-                ]
+                ],
+                "description": "What one unit is: a whole request, one produced image, or one second of video or audio."
               }
             }
           },
@@ -9076,21 +9083,29 @@
           "description": "Model pricing rules in USD per million tokens. First regex match wins.",
           "items": {
             "type": "object",
+            "required": [
+              "match"
+            ],
             "properties": {
               "match": {
-                "type": "string"
+                "type": "string",
+                "description": "Regular expression tested against the model id. The FIRST rule that matches wins, so put the narrow ones above the broad ones."
               },
               "input": {
-                "type": "number"
+                "type": "number",
+                "description": "USD per million input tokens."
               },
               "output": {
-                "type": "number"
+                "type": "number",
+                "description": "USD per million output tokens."
               },
               "cacheWrite": {
-                "type": "number"
+                "type": "number",
+                "description": "USD per million tokens written to the prompt cache (Anthropic bills this above the input rate)."
               },
               "cacheRead": {
-                "type": "number"
+                "type": "number",
+                "description": "USD per million tokens read back from the prompt cache — the cheapest of the four, and usually the largest count."
               }
             }
           },

@@ -127,6 +127,19 @@ const PROPS = manifest.contributes.configuration.properties;
         + ' pretending — there is exactly one, and it is named here so a second'
         + ' one is a decision somebody makes on purpose',
         free.length === 1 && free[0][0] === 'agentFarm.livingChecks');
+    // ‼️ A PANEL OF NAMES AND TYPES IS HALF A PANEL. Two settings declared their
+    // fields and described none of them, so their panels read "match · string"
+    // and stopped — which answers what to TYPE and not what it MEANS. The
+    // schema was filled in rather than the page taught to apologise.
+    const described = (key) => S.shapeOf(PROPS[key]).fields.every(f => !!f.description);
+    ok('‼️ every row setting describes every field it declares — pricing and'
+        + ' mediaPricing were the two that did not',
+        shaped.filter(([, s]) => s.kind === 'rows' || s.kind === 'form')
+            .every(([k]) => described(k)));
+    ok('…and the ones that decide a match say the rule the reader cannot guess:'
+        + ' first match wins, so order matters',
+        /first rule that matches wins/i.test(S.shapeOf(PROPS['agentFarm.pricing']).fields[0].description)
+        && /first rule that matches wins/i.test(S.shapeOf(PROPS['agentFarm.mediaPricing']).fields[0].description));
     ok('every shape that offers an example offers one that survives a round trip',
         shaped.every(([, s]) => s.example === undefined
             || JSON.stringify(JSON.parse(S.exampleText(s))) === JSON.stringify(s.example)));
