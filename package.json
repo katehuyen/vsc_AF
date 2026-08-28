@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.296.0",
+  "version": "3.297.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9147,7 +9147,42 @@
           "default": [],
           "description": "Living page checks. Each entry is {label, when:{kind,path,except,minCount,hours,recursive}, level:info|warn|alert, hint?}. The precondition is read as \"TRUE = needs attention\" - e.g. kind:fileMissing on today's diary file, or kind:folderHasFiles on an inbox that should be empty. Paths support {today} / {yesterday}.",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "label",
+              "when"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "The loop being checked, in your own words - it is the row's title on the Living page (\"today's diary was written\")."
+              },
+              "when": {
+                "type": "object",
+                "description": "The precondition, read as TRUE = needs attention. {kind, path, except, minCount, hours, recursive}. kind is one of folderHasFiles | fileMissing | pathChangedWithin | queueHasWork; path supports the {today} and {yesterday} tokens; except lists file names that do not count as work; minCount defaults to 1; hours is the window for pathChangedWithin; recursive looks into sub-folders (folderHasFiles)."
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warn",
+                  "alert"
+                ],
+                "description": "How loud the row is when the check hits. Default: warn."
+              },
+              "hint": {
+                "type": "string",
+                "description": "What closes the loop - the one line the reader acts on."
+              },
+              "detail": {
+                "type": "string",
+                "description": "Shown instead of the raw precondition detail when the check hits."
+              },
+              "okDetail": {
+                "type": "string",
+                "description": "Text for the healthy case. Empty = the precondition's own detail."
+              }
+            }
           }
         },
         "agentFarm.superpowersPath": {

@@ -9,13 +9,19 @@
  * `package.json`'s own `agentFarm.*` properties, and what is drawn is what a
  * user sees.
  *
- * Four rows, one of each shape the derivation has to get right:
- *   · `cliProfiles`      — a list of ENTRIES with declared, described fields.
+ * One row of each shape the derivation has to get right:
+ *   · `cliProfiles`      — a list of ENTRIES with declared, described fields:
+ *                          a TABLE, one row per entry (U-109).
  *   · `browserAllowHosts`— a plain list of strings: no JSON to get right at all.
  *   · `agentRoots`        — the same, but of PATHS, so every row gets a Browse
  *                          (U-108). Which lists do is a fact of the schema.
- *   · `taskRetry`        — one object, sixteen described fields, the widest
- *                          panel on the page and the one that has to scroll.
+ *   · `taskRetry`        — one object, sixteen described fields: a FORM, and the
+ *                          tallest control on the page (U-109).
+ *   · `livingChecks`     — the last box the schema refused to describe. Now a
+ *                          table with two REQUIRED columns and one field the
+ *                          schema does not flatten (`when`), which keeps its
+ *                          JSON in a single cell rather than pretending to be
+ *                          a text field.
  *   · `budgets`          — a free-form map: nothing can list the keys, so the
  *                          example is built from the shipped default.
  */
@@ -28,6 +34,7 @@ const SHOWN = [
     'agentFarm.browserAllowHosts',
     'agentFarm.agentRoots',
     'agentFarm.taskRetry',
+    'agentFarm.livingChecks',
     'agentFarm.budgets'
 ];
 
@@ -40,6 +47,19 @@ const VALUES = {
     'agentFarm.browserAllowHosts': ['docs.anthropic.com', 'code.visualstudio.com'],
     'agentFarm.agentRoots': ['D:/zone/agent/ajanlar', 'D:/zone/dev/git/miropharm'],
     'agentFarm.taskRetry': { max: 3, delayMin: 30, when: 'limit' },
+    'agentFarm.livingChecks': [
+        {
+            label: 'bugünün günlüğü yazıldı',
+            when: { kind: 'fileMissing', path: '01_INBOX/{today}.md' },
+            level: 'alert',
+            hint: 'Günlüğü aç ve bugünün satırını yaz.'
+        },
+        {
+            label: 'gelen kutusu boşaltıldı',
+            when: { kind: 'folderHasFiles', path: '01_INBOX/00_GELEN', except: ['_LOG_.md'] },
+            level: 'warn'
+        }
+    ],
     'agentFarm.budgets': {}
 };
 

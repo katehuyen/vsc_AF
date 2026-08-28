@@ -123,10 +123,11 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('…and every one of them a sentence saying what the value IS',
         shaped.every(([, s]) => s.summary.length > 20));
     const free = shaped.filter(([, s]) => s.kind === 'free');
-    ok('…and the ones the schema genuinely does not describe SAY SO rather than'
-        + ' pretending — there is exactly one, and it is named here so a second'
-        + ' one is a decision somebody makes on purpose',
-        free.length === 1 && free[0][0] === 'agentFarm.livingChecks');
+    ok('‼️ U-109 — and there is no longer a single one the schema refuses to'
+        + ' describe. `livingChecks` was the last, and it got its items schema'
+        + ' rather than the page being taught to apologise; a new `free` box is'
+        + ' a decision somebody makes on purpose, and it fails here first',
+        free.length === 0);
     // ‼️ A PANEL OF NAMES AND TYPES IS HALF A PANEL. Two settings declared their
     // fields and described none of them, so their panels read "match · string"
     // and stopped — which answers what to TYPE and not what it MEANS. The
@@ -216,7 +217,8 @@ const PROPS = manifest.contributes.configuration.properties;
     const page = fs2.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
     ok('‼️ the page chooses the editor from the SHAPE, never from a key list — a'
         + ' setting added tomorrow gets it with nobody touching that file',
-        /it\.shape && it\.shape\.kind === 'list' && !jsonMode\[it\.key\]/.test(page)
+        /it\.shape && !jsonMode\[it\.key\]/.test(page)
+        && /it\.shape\.kind === 'list'\) \{ return listHtml\(it\); \}/.test(page)
         && !/agentRoots/.test(page.slice(page.indexOf('function listHtml'),
             page.indexOf('function controlHtml'))));
     ok('…one box per entry, a ✕ to drop one and a button to add one',
@@ -242,7 +244,7 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('‼️ THE JSON BOX DOES NOT GO AWAY. A value the schema cannot describe is'
         + ' always possible, and removing the escape hatch would be a worse trap'
         + ' than the one this replaced',
-        /data-ljson=/.test(page) && /data-llist=/.test(page));
+        /data-ljson=/.test(page) && /list: \['llist',/.test(page));
     ok('…and switching either way keeps what was typed, or says why it cannot',
         /listDraft\[key\] = v\.map/.test(page)
         && /does not parse, so it cannot be shown as rows/.test(page));
@@ -256,6 +258,151 @@ const PROPS = manifest.contributes.configuration.properties;
         && !/setValue\(/.test(row) && !/\.update\(/.test(row));
     ok('…and it opens where THAT ROW already points, not at the top of the disk',
         /Array\.isArray\(v\) \? v\[index\]/.test(row));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ U-109 — THE SETTINGS WHOSE FIELDS THE MANIFEST ALREADY DECLARED.
+//
+// Fifteen settings name every field of their value, type it, say which ones are
+// required and write a sentence about each — and the page drew a JSON textarea
+// over the top of all of it. `taskRetry` declares SIXTEEN fields; the user was
+// asked to hand-write its braces and remember that `backoff` takes one of four
+// words, while typing it into a box that accepts anything.
+//
+// One object with declared fields is a FORM. A list of them is a TABLE. Both
+// are chosen from `shape.kind`, so a setting whose fields are declared tomorrow
+// gets its editor with nobody editing the page.
+// ---------------------------------------------------------------------------
+{
+    const fs3 = require('fs');
+    const page = fs3.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const shaped = Object.entries(PROPS)
+        .map(([k, p]) => [k, S.shapeOf(p)]).filter(([, s]) => !!s);
+    const forms = shaped.filter(([, s]) => s.kind === 'form');
+    const rows = shaped.filter(([, s]) => s.kind === 'rows');
+
+    ok('‼️ the manifest really does declare these, and this test is about all of them',
+        forms.length >= 2 && rows.length >= 13);
+    ok('…every one of them names at least one field — a form with no fields would'
+        + ' be a form with nothing in it',
+        forms.concat(rows).every(([, s]) => s.fields.length > 0));
+    ok('‼️ …and every field it names is one the page can DRAW: a string, a number,'
+        + ' a boolean, a closed set, or something whose JSON goes in one cell.'
+        + ' Nothing here is allowed to be a field with no control at all',
+        forms.concat(rows).every(([, s]) => s.fields.every(f => !!f.type)));
+
+    ok('‼️ livingChecks was the last box the schema refused to describe, and it now'
+        + ' declares its own entry — label and when required, level a closed set',
+        (() => {
+            const s = S.shapeOf(PROPS['agentFarm.livingChecks']);
+            const by = Object.fromEntries(s.fields.map(f => [f.name, f]));
+            return s.kind === 'rows'
+                && by.label && by.label.required && by.when && by.when.required
+                && by.level && Array.isArray(by.level.allowed)
+                && by.level.allowed.join('|') === 'info|warn|alert'
+                && s.fields.every(f => !!f.description);
+        })());
+
+    ok('‼️ the page chooses the form and the table from the SHAPE too — the same'
+        + ' rule the list follows, and for the same reason',
+        /it\.shape\.kind === 'form'\) \{ return formHtml\(it\); \}/.test(page)
+        && /it\.shape\.kind === 'rows'\) \{ return rowsHtml\(it\); \}/.test(page));
+    ok('…and neither of them is a key list: no setting is named in the CODE of'
+        + ' either one. The comments may name the case that made them necessary;'
+        + ' a branch on a key is what would go stale',
+        (() => {
+            const body = page.slice(page.indexOf('function formHtml'),
+                page.indexOf('const BACK'))
+                .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+            return !/taskRetry|launchDefaults|cliProfiles|pricing|livingChecks/.test(body);
+        })());
+
+    // ‼️ A BOOLEAN IS THREE-WAY, and this is the assertion that says why. An
+    // unticked checkbox is indistinguishable from an untouched one, and here
+    // they are OPPOSITE answers: an empty field is left out, so its own default
+    // stays in charge, while `false` overrides it. A checkbox would turn one
+    // edit into an override of every field the user never looked at.
+    ok('‼️ a boolean field is a three-way picker and not a checkbox, because'
+        + ' "not set" and "false" are different answers',
+        /f\.type === 'boolean'/.test(page)
+        && /opt\('', '\(not set\)', text\)\}\$\{opt\('true', 'yes', text\)/.test(page.replace(/\s*\n\s*/g, '')));
+    ok('…a closed set is a picker rather than a box that accepts anything',
+        /f\.allowed && f\.allowed\.length/.test(page));
+    ok('‼️ …and a value already stored that the enum no longer names is KEPT and'
+        + ' shown — dropping it on redraw would delete it without a word',
+        /const known = f\.allowed\.indexOf\(text\) >= 0/.test(page));
+    ok('…a field the schema does not flatten keeps its JSON in one cell rather'
+        + ' than pretending to be a text field (livingChecks.when is the real case)',
+        /f\.type !== 'string'/.test(page) && /as JSON/.test(page));
+
+    ok('‼️ EMPTY IS A REAL ANSWER: a field left empty is LEFT OUT of the object,'
+        + ' so its own default stays in charge',
+        /if \(raw === ''\) \{ return \{ skip: true \}; \}/.test(page)
+        && /if \(r\.skip\)/.test(page));
+    ok('…and a required field left empty is refused IN WORDS, naming the field',
+        /is required — it cannot be left empty/.test(page));
+    ok('…as is a number box typed into with words, rather than a NaN written'
+        + ' quietly into the user’s settings',
+        /has to be a number/.test(page));
+
+    ok('‼️ ADD AND ✕ ACT ON A DRAFT, so a table half-edited and abandoned leaves'
+        + ' the setting exactly as it was',
+        /const formDraft = \{\}/.test(page) && /const rowsDraft = \{\}/.test(page)
+        && /delete formDraft\[key\]/.test(page) && /delete rowsDraft\[key\]/.test(page));
+    ok('‼️ …and every structural gesture READS THE BOXES FIRST: type a price,'
+        + ' press + on the row above, and without this the price is gone',
+        /readRows\(key\)\.push\(\{\}\)/.test(page)
+        && /const rows = readRows\(key\)/.test(page)
+        && /buildEntry\(key, shapeFields\(key\), readForm\(key\), ''\)/.test(page));
+    ok('‼️ …and both are sent STRUCTURED, not as text, so what the user assembled'
+        + ' cannot fail to parse',
+        /vscode\.postMessage\(\{ type: 'set', key, value: obj \}\)/.test(page)
+        && /vscode\.postMessage\(\{ type: 'set', key, value: out \}\)/.test(page));
+
+    // ‼️ THE SILENT LOSS THIS EDITOR COULD HAVE CAUSED. A stored entry may hold
+    // a key this manifest does not declare — an older build wrote it, a newer
+    // one will. Rebuilding the object out of the declared fields alone would
+    // DELETE it without a word, which is worse than the JSON box ever was.
+    ok('‼️ the keys the schema does not name TRAVEL WITH THEIR ENTRY and are'
+        + ' written back on save — a build that does not know about a key must'
+        + ' not be the build that deletes it',
+        /const REST = /.test(page)
+        && /Object\.assign\(out, JSON\.parse\(cells\[REST\]\)\)/.test(page)
+        && /if \(prev\[i\] && prev\[i\]\[REST\]\) \{ cells\[REST\] = prev\[i\]\[REST\]; \}/.test(page));
+    ok('…and an entry that is nothing BUT those keys is not swept away as empty',
+        /if \(!rows\[i\]\[REST\]/.test(page));
+
+    ok('‼️ THE JSON BOX DOES NOT GO AWAY for these either, and the way back is'
+        + ' declared once per shape rather than written out three times',
+        /form: \['fform',/.test(page) && /rows: \['rtable',/.test(page)
+        && /data-fjson=/.test(page) && /data-rjson=/.test(page));
+    ok('…and a JSON that does not parse is refused rather than turned into rows'
+        + ' of braces',
+        /does not parse, so it cannot be shown as fields/.test(page));
+    ok('‼️ a shape with no editor of its own gets NO way back — a "Back to the …"'
+        + ' that led nowhere would be the dead control this change removes',
+        /BACK\[it\.shape\.kind\]/.test(page)
+        && !/map: \[/.test(page) && !/free: \[/.test(page));
+
+    // docs/CONVENTIONS.md — a column is defined once, on its <th>. The same
+    // sentence repeated in twenty cells is not density, it is noise.
+    ok('‼️ a table column is defined ONCE, on its header, as an AFTip carrying the'
+        + ' type, whether it is required, what it accepts and the manifest’s own'
+        + ' sentence',
+        /<th>\$\{window\.AFTip\.wrap\(/.test(page)
+        && /function fieldTip/.test(page)
+        && /one of: \$\{f\.allowed\.join/.test(page));
+    ok('…while the FORM keeps every sentence beside its field, because a form is'
+        + ' read once and carefully rather than across — and carries the whole of'
+        + ' it in the hover, since the line is cut at the edge of the page',
+        /class="setfdesc" title="\$\{C\.esc\(f\.description \|\| ''\)\}">\$\{C\.esc\(f\.description/.test(page));
+    // ‼️ MIRROR (docs/CONVENTIONS.md) — a control narrow enough to cut its own
+    // text puts its CURRENT value on the first line of its tooltip. A `when`
+    // precondition in a sixth of a table is cut every single time.
+    ok('‼️ …and a narrow box mirrors its OWN VALUE first, then what the field is',
+        /const mirror = \[text, f\.description, note\]\.filter\(Boolean\)\.join\('\\n\\n'\)/.test(page));
+    ok('…and a required field is marked where it is asked for, in both',
+        /f\.required \? '<b class="req">\*<\/b>' : ''/.test(page));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

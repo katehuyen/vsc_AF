@@ -24,7 +24,29 @@
      * follows redraws from what was really stored.
      */
     const listDraft = {};          // key -> the rows being edited
+    /**
+     * ‼️ U-109 — and the same draft for the two shapes whose FIELDS the
+     * manifest declares: one object with named fields is a form, a list of
+     * them is a table. Both hold the BOX TEXT rather than typed values, so a
+     * half-typed number survives a redraw exactly as it was typed; the
+     * conversion happens once, on save, where a refusal can be shown.
+     */
+    const formDraft = {};          // key -> { field: text } being edited
+    const rowsDraft = {};          // key -> [ { field: text } ] being edited
     const jsonMode = {};           // key -> the user asked for the raw box
+    /**
+     * ‼️ THE TEXT IN THE JSON BOX, whenever the page has a reason to keep it.
+     *
+     * A defect U-108 shipped and this is the fix: "Edit as JSON" read the rows
+     * carefully into the draft and then drew the textarea from the STORED
+     * value, so everything typed since the last save was silently replaced the
+     * moment the user asked to see it as JSON — the opposite of what that link
+     * promises. It is the same box in both directions, so it is one store:
+     * entering JSON mode fills it from what was on screen, and a document that
+     * REFUSES to parse stays in it, because a box that swallowed the broken
+     * text is a box the user cannot fix.
+     */
+    const jsonDraft = {};          // key -> the text the box is showing
     // While the user is typing in a field, background refreshes must not wipe
     // the edit — hold the data and apply it when focus leaves (2.47.0 lesson).
     let editing = false;
@@ -210,6 +232,408 @@
         </div>`;
     }
 
+    // ---- U-109 — the settings whose FIELDS the manifest already declared ----
+
+    /**
+     * ‼️ U-109 — ONE BOX PER FIELD, and the same box wherever the field is.
+     *
+     * A field of a form and a cell of a table are the same thing: a declared
+     * name with a declared type. Drawing them from one function is what makes
+     * `taskRetry` (16 fields, one object) and `pricing` (5 fields, many rows)
+     * behave alike without either of them being written out by hand.
+     *
+     * The control follows the SCHEMA and nothing else:
+     *   · a field with `enum` is a picker — a text box that silently accepts
+     *     `alrt` is the bug this removes;
+     *   · a boolean is a THREE-way picker, not a checkbox. An unticked box is
+     *     indistinguishable from an untouched one, and here they are opposite
+     *     answers: leaving a field out keeps its own default in charge, while
+     *     writing `false` overrides it. A control that cannot say "not set"
+     *     would silently overwrite the default of every field the user never
+     *     looked at;
+     *   · a number is a number box;
+     *   · anything the schema does NOT flatten (an object, a list) keeps its
+     *     JSON, in one line, in the cell. `livingChecks.when` is the real case,
+     *     and pretending a nested precondition is a text field would be worse
+     *     than showing its JSON honestly.
+     */
+    function fieldBox(f, id, text, dataAttr) {
+        // ‼️ MIRROR (docs/CONVENTIONS.md) — a control narrow enough to cut its
+        // own text puts its CURRENT value on the first line of its tooltip,
+        // then a blank line, then what the field is. A `when` precondition in a
+        // sixth-of-a-table cell is cut every time, and a reader who cannot see
+        // what is in a box cannot tell whether it is the box they meant to fix.
+        const note = (f.type === 'string' || f.type === 'number' || f.type === 'integer'
+            || f.type === 'boolean' || (f.allowed && f.allowed.length)) ? ''
+            : `This field is ${f.type}, which has no single box: write its JSON here.`;
+        const mirror = [text, f.description, note].filter(Boolean).join('\n\n');
+        const a = `id="${id}" ${dataAttr}${mirror ? ` title="${C.esc(mirror)}"` : ''}`;
+        const opt = (v, label, cur) =>
+            `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''}>${C.esc(label)}</option>`;
+        if (f.allowed && f.allowed.length) {
+            // A value already stored that the enum no longer names is kept and
+            // shown — dropping it on redraw would delete it without a word.
+            const known = f.allowed.indexOf(text) >= 0 || text === '';
+            return `<select ${a}>${opt('', '(not set)', text)
+                }${(known ? [] : [text]).concat(f.allowed.filter(v => v !== '')).map(v =>
+                    opt(v, v, text)).join('')}</select>`;
+        }
+        if (f.type === 'boolean') {
+            return `<select ${a}>${opt('', '(not set)', text)}${opt('true', 'yes', text)
+                }${opt('false', 'no', text)}</select>`;
+        }
+        if (f.type === 'number' || f.type === 'integer') {
+            return `<input type="number" ${a} value="${C.esc(text)}" placeholder="a number">`;
+        }
+        if (f.type !== 'string') {
+            return `<input type="text" ${a} value="${C.esc(text)}"
+                placeholder="${C.esc(f.type)} — as JSON">`;
+        }
+        return `<input type="text" ${a} value="${C.esc(text)}" placeholder="${C.esc(f.name)}">`;
+    }
+
+    /** A field's stored value as the text its box shows. */
+    function fieldText(f, v) {
+        if (v === undefined || v === null) { return ''; }
+        if (f.type === 'boolean' && !(f.allowed && f.allowed.length)) {
+            return v === true ? 'true' : v === false ? 'false' : '';
+        }
+        if (f.type === 'string' || f.type === 'number' || f.type === 'integer'
+            || (f.allowed && f.allowed.length)) { return String(v); }
+        try { return JSON.stringify(v); } catch { return ''; }
+    }
+
+    /**
+     * A box's text as the value that goes into the object — or nothing, which
+     * is what an empty field MEANS: leave the key out and its own default stays
+     * in charge. Returns `{ skip }`, `{ v }` or `{ err }`; a refusal the user
+     * can read is the point, rather than a NaN quietly written into settings.
+     */
+    function readField(f, text) {
+        const raw = String(text == null ? '' : text).trim();
+        if (raw === '') { return { skip: true }; }
+        if (f.allowed && f.allowed.length) { return { v: raw }; }
+        if (f.type === 'boolean') { return { v: raw === 'true' }; }
+        if (f.type === 'number' || f.type === 'integer') {
+            const n = Number(raw);
+            return Number.isFinite(n) ? { v: n } : { err: `${f.name} has to be a number` };
+        }
+        if (f.type !== 'string') {
+            try { return { v: JSON.parse(raw) }; }
+            catch { return { err: `${f.name} is ${f.type}, and the JSON in it does not parse` }; }
+        }
+        return { v: raw };
+    }
+
+    /** The one line a column is defined by — its type, whether it is required,
+     *  what it accepts, and the sentence the manifest already wrote. */
+    function fieldTip(f) {
+        const lines = [`${f.name}  ·  ${f.type}${f.required ? '  ·  required' : ''}`];
+        if (f.allowed && f.allowed.length) { lines.push(`one of: ${f.allowed.join(' · ')}`); }
+        if (f.description) { lines.push(''); lines.push(f.description); }
+        if (!f.required) {
+            lines.push('');
+            lines.push('Leave it empty and the field is left out — its own default stays in charge.');
+        }
+        return window.AFTip.lines(lines);
+    }
+
+    /**
+     * ‼️ U-109 — THE KEYS THE SCHEMA DOES NOT NAME TRAVEL WITH THEIR ENTRY.
+     *
+     * A stored entry may hold a key this manifest does not declare — an older
+     * build wrote it, a newer one will, or the user put it there on purpose.
+     * Drawing that entry as a form and saving it would rebuild the object out
+     * of the declared fields alone and DELETE the rest without a word: the
+     * exact silent loss a page like this exists to prevent. So the remainder is
+     * carried, invisibly, on the entry it belongs to — it survives the redraw,
+     * it moves when the row moves, it goes when the row goes, and it is written
+     * back on save.
+     *
+     * The name cannot collide with a field: a JSON schema property is a
+     * readable identifier, and this is a NUL.
+     */
+    const REST = '\u0000rest';
+
+    /** An entry's undeclared keys, as JSON text — or '' when there are none. */
+    function restOf(fields, entry) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) { return ''; }
+        const named = new Set(fields.map(f => f.name));
+        const rest = {};
+        let any = false;
+        for (const k of Object.keys(entry)) {
+            if (!named.has(k)) { rest[k] = entry[k]; any = true; }
+        }
+        if (!any) { return ''; }
+        try { return JSON.stringify(rest); } catch { return ''; }
+    }
+
+    function cellsOf(fields, entry) {
+        const o = (entry && typeof entry === 'object' && !Array.isArray(entry)) ? entry : {};
+        const cells = {};
+        for (const f of fields) { cells[f.name] = fieldText(f, o[f.name]); }
+        const rest = restOf(fields, o);
+        if (rest) { cells[REST] = rest; }
+        return cells;
+    }
+
+    /** What this key is showing: the draft being edited, or what is stored. */
+    function formCells(it) {
+        return formDraft[it.key] || cellsOf(it.shape.fields, it.value);
+    }
+
+    function rowsCells(it) {
+        if (rowsDraft[it.key]) { return rowsDraft[it.key]; }
+        return (Array.isArray(it.value) ? it.value : []).map(e => cellsOf(it.shape.fields, e));
+    }
+
+    /**
+     * The JSON box's contents, parsed, or `undefined` with `errors[key]` set.
+     * A half-typed document is refused rather than silently turned into rows of
+     * braces — the same refusal the list editor makes.
+     */
+    function parseBox(key, want) {
+        const ta = document.getElementById('c-' + shortKey(key));
+        if (!ta) { return want === 'array' ? [] : {}; }
+        // Whatever happens next, the box keeps what is in it. A refusal that
+        // also swallowed the text would leave nothing to fix.
+        jsonDraft[key] = String(ta.value);
+        let v;
+        try { v = JSON.parse(String(ta.value || (want === 'array' ? '[]' : '{}'))); }
+        catch {
+            errors[key] = 'the JSON in the box does not parse, so it cannot be shown as fields';
+            return undefined;
+        }
+        const isArr = Array.isArray(v);
+        if (want === 'array' ? !isArr : (isArr || !v || typeof v !== 'object')) {
+            errors[key] = `that is not ${want === 'array' ? 'a list of entries' : 'an object'} — the JSON box is still here`;
+            return undefined;
+        }
+        return v;
+    }
+
+    /** The shape of a key, for the handlers that only have the key. */
+    function shapeFields(key) {
+        const it = allItems().find(i => i.key === key);
+        return (it && it.shape && it.shape.fields) || [];
+    }
+
+    /**
+     * What is ON SCREEN for a key — the draft when there is one, otherwise what
+     * the stored value implies, which is exactly what was drawn. The handlers
+     * only have a key, and reading the boxes is not enough on its own: an
+     * entry's undeclared keys have no box, so they have to be taken from here.
+     */
+    function shownForm(key) {
+        const it = allItems().find(i => i.key === key);
+        return (it && it.shape) ? formCells(it) : {};
+    }
+
+    function shownRows(key) {
+        const it = allItems().find(i => i.key === key);
+        return (it && it.shape) ? rowsCells(it) : [];
+    }
+
+    /**
+     * ‼️ U-109 — READ THE BOXES BEFORE ANYTHING STRUCTURAL HAPPENS.
+     *
+     * The same lesson `readList` learned: adding a row, removing one or
+     * switching to JSON redraws everything, and a cell typed into but not yet
+     * committed lives only in the DOM until this runs.
+     */
+    function readForm(key) {
+        const id = shortKey(key);
+        const prev = shownForm(key);
+        const cells = {};
+        for (const f of shapeFields(key)) {
+            const el = document.getElementById(`f-${id}-${f.name}`);
+            if (el) { cells[f.name] = String(el.value); }
+        }
+        // The undeclared keys have no box, so they can only come from where
+        // they already were: the draft, or the value the draft was built from.
+        if (prev[REST]) { cells[REST] = prev[REST]; }
+        formDraft[key] = cells;
+        return cells;
+    }
+
+    function readRows(key) {
+        const id = shortKey(key);
+        const fields = shapeFields(key);
+        const prev = shownRows(key);
+        const out = [];
+        for (let i = 0; ; i++) {
+            if (!document.getElementById(`rr-${id}-${i}`)) { break; }
+            const cells = {};
+            for (const f of fields) {
+                const el = document.getElementById(`r-${id}-${i}-${f.name}`);
+                cells[f.name] = el ? String(el.value) : '';
+            }
+            // The rows on screen were drawn from `prev` in this order, so row i
+            // is row i — and because a whole row object is spliced out, an
+            // entry's remainder leaves with the entry rather than sliding onto
+            // its neighbour.
+            if (prev[i] && prev[i][REST]) { cells[REST] = prev[i][REST]; }
+            out.push(cells);
+        }
+        rowsDraft[key] = out;
+        return out;
+    }
+
+    /**
+     * Turn cells into the object that is saved. `undefined` when a required
+     * field is empty or a value refuses to convert — with `errors[key]` set, so
+     * the page says which field and why instead of failing silently.
+     */
+    /**
+     * Cells to a value, LENIENTLY — for filling the JSON box, where a
+     * half-typed number has to appear as what was typed rather than vanish or
+     * refuse. Saving uses `buildEntry`, which is strict on purpose.
+     */
+    function looseEntry(fields, cells) {
+        const out = {};
+        for (const f of fields) {
+            const r = readField(f, cells[f.name]);
+            if (r.skip) { continue; }
+            out[f.name] = r.err ? String(cells[f.name]) : r.v;
+        }
+        if (cells[REST]) {
+            try { Object.assign(out, JSON.parse(cells[REST])); } catch { /* it was ours */ }
+        }
+        return out;
+    }
+
+    /** The text the JSON box opens with when a structured editor hands over. */
+    function boxText(v) {
+        try { return JSON.stringify(v, null, 2); } catch { return ''; }
+    }
+
+    function buildEntry(key, fields, cells, where) {
+        const out = {};
+        for (const f of fields) {
+            const r = readField(f, cells[f.name]);
+            if (r.err) { errors[key] = where + r.err; return undefined; }
+            if (r.skip) {
+                if (f.required) {
+                    errors[key] = `${where}${f.name} is required — it cannot be left empty`;
+                    return undefined;
+                }
+                continue;
+            }
+            out[f.name] = r.v;
+        }
+        // …and the keys this manifest never named go back on, last, so a build
+        // that does not know about them cannot be the build that deletes them.
+        if (cells[REST]) {
+            try { Object.assign(out, JSON.parse(cells[REST])); } catch { /* it was ours */ }
+        }
+        return out;
+    }
+
+    /**
+     * ‼️ U-109 — AN OBJECT WHOSE FIELDS ARE DECLARED IS A FORM.
+     *
+     * `taskRetry` declares SIXTEEN fields, each with a sentence about it, and
+     * the page drew a JSON textarea over the top of all of it. So the user was
+     * asked to hand-write the braces, the quotes and the commas of a value the
+     * manifest describes completely, six feet away in the same file — and to
+     * remember that `backoff` takes one of four words while typing it into a
+     * box that accepts anything.
+     *
+     * ‼️ EMPTY IS A REAL ANSWER, and it is the reason there is no checkbox
+     * here. A field left empty is LEFT OUT of the object, so its own default
+     * stays in charge; a form that wrote every field on every save would turn
+     * one edit into sixteen overrides the user never asked for.
+     *
+     * ‼️ WHICH SETTINGS GET THIS IS NOT LISTED ANYWHERE — `shape.kind` decides
+     * (core/settingShape), so a setting whose fields are declared tomorrow gets
+     * the form with nobody touching this file. And the JSON box stays one click
+     * away, because a value the schema cannot describe is always possible.
+     */
+    function formHtml(it) {
+        const id = shortKey(it.key);
+        const cells = formCells(it);
+        return `<div class="setform">
+            ${it.shape.fields.map(f => `<div class="setfrow">
+                ${window.AFTip.wrap(
+            `<span class="setfname">${C.esc(f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
+            f.name, fieldTip(f), 'tip-field')}
+                ${fieldBox(f, `f-${id}-${f.name}`, cells[f.name] || '', `data-frow="${C.esc(it.key)}"`)}
+                <span class="setfdesc" title="${C.esc(f.description || '')}">${C.esc(f.description || '')}</span>
+            </div>`).join('')}
+            <div class="setjrow">
+                <button class="secondary small" data-fapply="${C.esc(it.key)}"
+                    title="Save this object. Until you press it, nothing here has changed the setting. A field left empty is left out, so its own default keeps applying.">Save the form</button>
+                <a href="#" class="setljson" data-fjson="${C.esc(it.key)}"
+                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
+                ${shapeHtml(it, true)}
+            </div>
+        </div>`;
+    }
+
+    /**
+     * ‼️ U-109 — A LIST OF DECLARED OBJECTS IS A TABLE.
+     *
+     * Twelve settings are a list of entries whose every field the manifest
+     * names, types and describes — `pricing`, `cliProfiles`, `modelPolicy`,
+     * `projectSkeleton` — and every one of them was a JSON textarea. Adding one
+     * model's price meant reproducing a five-key object from memory, inside
+     * brackets, with the comma in the right place, and a missed brace lost the
+     * whole setting rather than the one row.
+     *
+     * ‼️ THE COLUMN IS DEFINED ONCE, ON ITS HEADER (docs/CONVENTIONS.md). The
+     * field's type, whether it is required, what it accepts and the sentence
+     * the manifest wrote all hang off the `<th>` as an AFTip — a definition
+     * repeated in every cell would be the same sentence twenty times.
+     *
+     * ‼️ NOTHING HERE SAVES EXCEPT `Save the table`. Add and ✕ act on the
+     * draft, so a table half-edited and abandoned leaves the setting untouched.
+     */
+    function rowsHtml(it) {
+        const id = shortKey(it.key);
+        const fields = it.shape.fields;
+        const rows = rowsCells(it);
+        const head = fields.map(f => `<th>${window.AFTip.wrap(
+            `<span class="setth">${C.esc(f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
+            f.name, fieldTip(f), 'tip-field')}</th>`).join('');
+        const body = rows.map((cells, i) => `<tr id="rr-${id}-${i}">
+            ${fields.map(f => `<td>${fieldBox(f, `r-${id}-${i}-${f.name}`,
+            cells[f.name] || '', `data-rrow="${C.esc(it.key)}"`)}</td>`).join('')}
+            <td><button class="mini secondary" data-rdel="${C.esc(it.key)}" data-ri="${i}"
+                title="Remove this entry. Nothing is saved until you press Save the table.">✕</button></td>
+        </tr>`).join('');
+        // ‼️ THE TABLE IS AS WIDE AS ITS COLUMNS NEED AND NO WIDER. Left to
+        // itself a three-column table with full-width boxes stretches across
+        // the whole page, and `cliProfiles` became three enormous troughs with
+        // a word in one of them — the opposite of DENSITY. The ceiling is
+        // DERIVED from the column count, so a six-column table still gets the
+        // room it needs without a number per setting anywhere.
+        const wide = fields.length * 200 + 48;
+        return `<div class="setrows">
+            ${rows.length
+                ? `<table class="settbl" style="max-width:${wide}px"><thead><tr>${head}<th class="setthx"></th></tr></thead><tbody>${body}</tbody></table>`
+                : `<div class="muted small">Empty — nothing is set. Add an entry below; hover a column name for what it takes.</div>`}
+            <div class="setjrow">
+                <button class="secondary small" data-radd="${C.esc(it.key)}"
+                    title="Add one more entry to this list.">+ add</button>
+                <button class="secondary small" data-rapply="${C.esc(it.key)}"
+                    title="Save this table. Until you press it, nothing here has changed the setting.">Save the table</button>
+                <a href="#" class="setljson" data-rjson="${C.esc(it.key)}"
+                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
+                ${shapeHtml(it, true)}
+            </div>
+        </div>`;
+    }
+
+    /** The way back out of the JSON box, per shape: [attribute, phrase, noun].
+     *  A shape with no editor of its own (`map`, `free`) has no way back and
+     *  gets no link — a "Back to the …" that led nowhere would be a dead
+     *  control, which is the thing this whole change removes. */
+    const BACK = {
+        list: ['llist', 'one box per entry', 'list'],
+        form: ['fform', 'one box per field', 'form'],
+        rows: ['rtable', 'one row per entry', 'table']
+    };
+
     function controlHtml(it) {
         const id = `c-${shortKey(it.key)}`;
         if (it.type === 'boolean') {
@@ -222,23 +646,31 @@
         if (it.type === 'number') {
             return `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:110px">`;
         }
-        // ‼️ U-108 — a plain list gets a list editor rather than a JSON box,
-        // unless the user asked for the box. Derived from the shape, never
-        // from a list of keys (see listHtml).
-        if (it.shape && it.shape.kind === 'list' && !jsonMode[it.key]) {
-            return listHtml(it);
+        // ‼️ U-108/U-109 — a shape the schema describes gets the editor that
+        // fits it rather than a JSON box, unless the user asked for the box.
+        // Derived from `shape.kind`, never from a list of keys.
+        if (it.shape && !jsonMode[it.key]) {
+            if (it.shape.kind === 'list') { return listHtml(it); }
+            if (it.shape.kind === 'form') { return formHtml(it); }
+            if (it.shape.kind === 'rows') { return rowsHtml(it); }
         }
         if (it.type === 'array' || it.type === 'object') {
             let text = '';
-            try { text = JSON.stringify(it.value ?? (it.type === 'array' ? [] : {}), null, 2); } catch { text = ''; }
+            // What the box is showing beats what is stored: the user got here
+            // from an editor with unsaved work in it, or from a refusal they
+            // are in the middle of fixing.
+            if (jsonDraft[it.key] !== undefined) { text = jsonDraft[it.key]; }
+            else {
+                try { text = JSON.stringify(it.value ?? (it.type === 'array' ? [] : {}), null, 2); } catch { text = ''; }
+            }
             const rows = Math.min(10, Math.max(2, text.split('\n').length));
             return `<textarea id="${id}" data-json="${C.esc(it.key)}" rows="${rows}" spellcheck="false"
                 style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>
                 <div class="setjrow">
                     <button class="secondary small" data-apply="${C.esc(it.key)}">Apply JSON</button>
-                    ${it.shape && it.shape.kind === 'list'
-            ? `<a href="#" class="setljson" data-llist="${C.esc(it.key)}"
-                            title="Back to one box per entry. Nothing here is saved either way until you press a button.">Back to the list</a>`
+                    ${it.shape && BACK[it.shape.kind]
+            ? `<a href="#" class="setljson" data-${BACK[it.shape.kind][0]}="${C.esc(it.key)}"
+                            title="Back to ${BACK[it.shape.kind][1]}. Nothing here is saved either way until you press a button.">Back to the ${BACK[it.shape.kind][2]}</a>`
             : ''}
                     ${shapeHtml(it)}
                 </div>`;
@@ -1031,6 +1463,30 @@
                 .setlrow { display:flex; align-items:center; gap:6px; }
                 .setlrow input, .setlrow select { flex:1 1 auto; min-width:0; }
                 .setljson { font-size:11px; opacity:.85; }
+                /* ‼️ U-109 — the form and the table. The form is read once and
+                   carefully, so every field keeps its own sentence beside it;
+                   the table is read across, so the sentence lives on the column
+                   header instead (docs/CONVENTIONS.md — a column is defined
+                   once, on its <th>) and the cells stay narrow enough to see
+                   six of them at a time. */
+                .setform { display:flex; flex-direction:column; gap:4px; max-width:860px; }
+                .setfrow { display:flex; align-items:center; gap:8px; }
+                .setfname { font-family:var(--vscode-editor-font-family); font-size:11px;
+                    flex:0 0 168px; cursor:help; border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                .setfrow input, .setfrow select { flex:0 0 170px; min-width:0; }
+                .setfdesc { font-size:10px; color:var(--vscode-descriptionForeground);
+                    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .req { color:var(--vscode-errorForeground); font-weight:600; }
+                .setrows { display:flex; flex-direction:column; gap:6px; }
+                .settbl { border-collapse:collapse; font-size:11px; width:100%; table-layout:fixed; }
+                .settbl th { text-align:left; padding:2px 6px 4px 0; font-weight:600;
+                    color:var(--vscode-descriptionForeground); }
+                .setth { cursor:help; border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                .settbl td { padding:2px 6px 2px 0; vertical-align:middle; }
+                /* The ✕ column carries one button and must not take an equal
+                   share of a fixed layout. */
+                .settbl th.setthx, .settbl td:last-child { width:30px; padding-right:0; }
+                .settbl input, .settbl select { width:100%; box-sizing:border-box; }
                 .setshape {
                     font-size:10px; padding:1px 7px; border-radius:9px; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4444);
@@ -1265,8 +1721,14 @@
                 ev.preventDefault();
                 // What is on screen goes INTO the JSON box: switching view is
                 // not a reason to lose what was typed.
-                readList(el.dataset.ljson);
-                jsonMode[el.dataset.ljson] = true;
+                const key = el.dataset.ljson;
+                const item = allItems().find(i => i.key === key);
+                const numeric = item && item.shape
+                    && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
+                jsonDraft[key] = boxText(readList(key)
+                    .map(v => String(v).trim()).filter(v => v !== '')
+                    .map(v => (numeric && Number.isFinite(Number(v)) ? Number(v) : v)));
+                jsonMode[key] = true;
                 render();
             }));
         document.querySelectorAll('[data-llist]').forEach(el =>
@@ -1294,6 +1756,7 @@
                         return;
                     }
                 }
+                delete jsonDraft[key];
                 delete jsonMode[key];
                 render();
             }));
@@ -1308,11 +1771,116 @@
                     type: 'browseRow', key, index: Number(btn.dataset.li), kind: btn.dataset.lkind
                 });
             }));
+        /**
+         * ‼️ U-109 — THE FORM AND THE TABLE, and the same discipline the list
+         * editor above keeps: every handler reads the boxes FIRST, and nothing
+         * saves except the one button that says it saves.
+         */
+        document.querySelectorAll('[data-frow]').forEach(el =>
+            el.addEventListener('change', () => readForm(el.dataset.frow)));
+        document.querySelectorAll('[data-rrow]').forEach(el =>
+            el.addEventListener('change', () => readRows(el.dataset.rrow)));
+        document.querySelectorAll('[data-fapply]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.fapply;
+                delete errors[key];
+                // Sent as a REAL OBJECT and not as text — the host takes a
+                // structured value as-is (settingsops.sanitizeValue), so a form
+                // assembled here cannot fail to parse.
+                const obj = buildEntry(key, shapeFields(key), readForm(key), '');
+                if (!obj) { render(); return; }
+                delete formDraft[key];
+                vscode.postMessage({ type: 'set', key, value: obj });
+            }));
+        document.querySelectorAll('[data-radd]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.radd;
+                readRows(key).push({});
+                render();
+            }));
+        document.querySelectorAll('[data-rdel]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.rdel;
+                const i = Number(btn.dataset.ri);
+                const rows = readRows(key);
+                if (i >= 0 && i < rows.length) { rows.splice(i, 1); }
+                render();
+            }));
+        document.querySelectorAll('[data-rapply]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.rapply;
+                delete errors[key];
+                const fields = shapeFields(key);
+                const out = [];
+                const rows = readRows(key);
+                for (let i = 0; i < rows.length; i++) {
+                    // An entry with nothing in it is what pressing + leaves
+                    // behind; dropping it is kinder than refusing to save.
+                    if (!rows[i][REST]
+                        && fields.every(f => !String(rows[i][f.name] || '').trim())) { continue; }
+                    const entry = buildEntry(key, fields, rows[i], `row ${i + 1}: `);
+                    if (!entry) { render(); return; }
+                    out.push(entry);
+                }
+                delete rowsDraft[key];
+                vscode.postMessage({ type: 'set', key, value: out });
+            }));
+        // Into the JSON box and back, for both shapes. What is on screen goes
+        // WITH it either way: switching view is not a reason to lose a typed
+        // cell, and a JSON that does not parse is refused rather than turned
+        // into rows of braces.
+        document.querySelectorAll('[data-fjson]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.fjson;
+                jsonDraft[key] = boxText(looseEntry(shapeFields(key), readForm(key)));
+                jsonMode[key] = true;
+                render();
+            }));
+        document.querySelectorAll('[data-rjson]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.rjson;
+                const fields = shapeFields(key);
+                jsonDraft[key] = boxText(readRows(key).map(c => looseEntry(fields, c)));
+                jsonMode[key] = true;
+                render();
+            }));
+        document.querySelectorAll('[data-fform]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.fform;
+                const v = parseBox(key, 'object');
+                if (v === undefined) { render(); return; }
+                formDraft[key] = cellsOf(shapeFields(key), v);
+                delete errors[key];
+                delete jsonDraft[key];
+                delete jsonMode[key];
+                render();
+            }));
+        document.querySelectorAll('[data-rtable]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.rtable;
+                const v = parseBox(key, 'array');
+                if (v === undefined) { render(); return; }
+                const fields = shapeFields(key);
+                rowsDraft[key] = v.map(entry => cellsOf(fields, entry));
+                delete errors[key];
+                delete jsonDraft[key];
+                delete jsonMode[key];
+                render();
+            }));
+        document.querySelectorAll('[data-json]').forEach(el =>
+            el.addEventListener('change', () => { jsonDraft[el.dataset.json] = String(el.value); }));
         document.querySelectorAll('[data-apply]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.apply;
                 delete errors[key];
                 const ta = document.getElementById('c-' + shortKey(key));
+                // It has been sent; from here the store is the truth, and the
+                // box redraws from what was really written.
+                delete jsonDraft[key];
                 vscode.postMessage({ type: 'set', key, value: ta ? ta.value : '' });
             }));
         // ‼️ U-89 — the example is written into the BOX and nothing is saved.
@@ -1326,12 +1894,20 @@
                 const ta = document.getElementById('c-' + shortKey(key));
                 if (!item || !item.shape || !ta) { return; }
                 ta.value = exampleText(item.shape);
+                jsonDraft[key] = ta.value;
                 ta.focus();
             }));
         document.querySelectorAll('[data-reset]').forEach(btn =>
             btn.addEventListener('click', () => {
-                delete errors[btn.dataset.reset];
-                vscode.postMessage({ type: 'reset', key: btn.dataset.reset });
+                const key = btn.dataset.reset;
+                delete errors[key];
+                // A reset throws the value away, so it throws every draft of it
+                // away too — a box still showing the old edit would be a lie.
+                delete jsonDraft[key];
+                delete listDraft[key];
+                delete formDraft[key];
+                delete rowsDraft[key];
+                vscode.postMessage({ type: 'reset', key });
             }));
         // The host opens the native dialog and saves what comes back — the page
         // never has to know the path, and the refresh that follows redraws the

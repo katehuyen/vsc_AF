@@ -60,6 +60,11 @@ function runPage(scriptFile, DATA, extraWindow) {
     /** What counts as an element in this markup — named ONCE, because `query`
      *  builds the cache from it and an innerHTML write invalidates it by it. */
     const TAG_RE = /<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2)\b[^>]*>/g;
+    /** Markup back to text. `&amp;` goes LAST, or `&amp;quot;` unescapes twice. */
+    const unesc = (s) => String(s)
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
     function mkEl(tag, dataset, attrs, raw) {
         return {
             tagName: tag.toUpperCase(), dataset, raw,
@@ -216,7 +221,19 @@ function runPage(scriptFile, DATA, extraWindow) {
         const out = [];
         const tags = html().match(/<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2)\b[^>]*>/g) || [];
         for (const raw of tags) {
-            const tag = /^<([a-z]\d?)/.exec(raw)[1];
+            /**
+             * ‼️ THE WHOLE TAG NAME, not its first letter.
+             *
+             * This read `[a-z]\d?`, so every element in this shim was called
+             * `s`, `i`, `d` or `t`. Two things were broken by it and both were
+             * SILENT: `query('select')` (and `label`, `button`, `textarea`…)
+             * matched nothing at all, because the selector's tag name was
+             * compared against one character; and the `tag === 'textarea'`
+             * branch below — written to stop a textarea reading back empty —
+             * could never run. `a` and `h2` happen to be whole names, which is
+             * why the hole never showed.
+             */
+            const tag = /^<([a-z]+\d?)/.exec(raw)[1];
             if (idM && !raw.includes(`id="${idM[1]}"`)) { continue; }
             if (tagM && tag !== tagM[1]) { continue; }
             if (cls && !new RegExp(`class="[^"]*\\b${cls[1]}\\b`).test(raw)) { continue; }
@@ -236,6 +253,13 @@ function runPage(scriptFile, DATA, extraWindow) {
                 let a;
                 const are = /\b(value|type|class|id)="([^"]*)"/g;
                 while ((a = are.exec(raw))) { attrs[a[1]] = a[2]; }
+                // ‼️ AN ATTRIBUTE IS ESCAPED IN THE MARKUP AND NOT IN THE DOM.
+                // A box holding JSON reads back as `{&quot;kind&quot;:…}` here
+                // and as `{"kind":…}` in a browser, so a page that parses its
+                // own cell — U-109's `when` — looked broken in the test and
+                // worked in the product. The textarea branch already did this;
+                // an `<input value="…">` needs it just as much.
+                if (attrs.value) { attrs.value = unesc(attrs.value); }
                 if (/\bchecked\b/.test(raw)) { attrs.checked = true; }
                 /**
                  * ‼️ A TEXTAREA HOLDS ITS VALUE IN ITS CHILD TEXT, NOT IN AN
@@ -256,11 +280,32 @@ function runPage(scriptFile, DATA, extraWindow) {
                     if (at >= 0) {
                         const shut = doc.indexOf('</textarea>', at + raw.length);
                         if (shut > 0) {
-                            attrs.value = doc.slice(at + raw.length, shut)
-                                .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                                .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-                                .replace(/&amp;/g, '&');
+                            attrs.value = unesc(doc.slice(at + raw.length, shut));
                         }
+                    }
+                }
+                /**
+                 * ‼️ AND A SELECT HOLDS ITS VALUE IN ITS SELECTED OPTION — the
+                 * same trap the textarea set, one tag along.
+                 *
+                 * A `<select>` almost never carries `value="…"`, so without this
+                 * every picker on every page read back as "" here: a page that
+                 * reads its own form (U-108's `readList`, U-109's `readForm` and
+                 * `readRows`) would be seen writing "" into its draft on every
+                 * redraw, and a test asserting that a chosen enum SURVIVES the
+                 * redraw could not tell a working page from a broken one. The
+                 * `<option>` markup is right there between the tags; read it.
+                 */
+                if (tag === 'select') {
+                    const doc = html();
+                    const at = doc.indexOf(raw);
+                    if (at >= 0) {
+                        const shut = doc.indexOf('</select>', at + raw.length);
+                        const inner = shut > 0 ? doc.slice(at + raw.length, shut) : '';
+                        // The selected one, or — as a browser does — the first.
+                        const sel = /<option value="([^"]*)"[^>]*\bselected\b/.exec(inner)
+                            || /<option value="([^"]*)"/.exec(inner);
+                        if (sel) { attrs.value = unesc(sel[1]); }
                     }
                 }
                 el = mkEl(tag, dataset, attrs, raw);

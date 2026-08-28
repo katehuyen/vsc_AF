@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.297.0 - U-109: the settings whose fields the manifest already declared (2026-08-28)
+
+**Fifteen settings name every field of their value, type it, say which ones are
+required and write a sentence about each — and the page drew a JSON textarea
+over the top of all of it.** `taskRetry` declares SIXTEEN fields; the user was
+asked to hand-write its braces and to remember that `backoff` takes one of four
+words, while typing it into a box that accepts anything.
+
+**One object with declared fields is now a FORM** (`taskRetry`,
+`launchDefaults`) — one box per field, its own sentence beside it. **A list of
+them is a TABLE** (`cliProfiles`, `launchProfiles`, `pricing`, `mediaPricing`,
+`quotaWeights`, `modelPolicy`, `dispatchRules`, `relayFeeds`, `ingestFolders`,
+`extraClaudeDirs`, `projectSkeleton`, `projectTemplates`, `livingChecks`) — one
+row per entry, `+ add`, a ✕ to drop one, **Save the table** to commit. A closed
+set is a picker rather than a box that accepts anything, a required column is
+marked where it is asked for, and a number typed into with words is refused in
+words rather than written as `NaN`. Both are chosen from `shape.kind`, so a
+setting whose fields are declared tomorrow gets its editor with nobody touching
+the page.
+
+**A boolean field is a three-way picker, not a checkbox.** An unticked box
+cannot say "not set", and here that is the opposite answer to `false`: a field
+left empty is LEFT OUT of the object, so its own default stays in charge. A
+checkbox would have turned one edit into an override of every field the user
+never looked at.
+
+**`livingChecks` got the items schema it never had** — label and precondition
+required, level a closed set, every field described. It was the last box the
+schema refused to describe; there are now none.
+
+**A key the schema does not name survives the round trip.** A stored entry may
+hold a field an older build wrote; rebuilding the object out of the declared
+fields alone would have deleted it without a word. The remainder travels with
+its entry — through a redraw, through a row moving up — and is written back on
+save.
+
+**Fixed, from U-108: "Edit as JSON" threw away what you had typed.** It read the
+rows carefully into the draft and then drew the textarea from the *stored*
+value, so every unsaved edit was silently replaced the moment you asked to see
+it as JSON — the opposite of what the link promises. The box now carries what
+was on screen in both directions, and a document that refuses to parse stays in
+the box where you can fix it.
+
 ## 3.296.0 - U-108: a plain list is a list of boxes, not a JSON document (2026-08-28)
 
 **Nine settings are an array of strings or numbers** — root folders, excluded
