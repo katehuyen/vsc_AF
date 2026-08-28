@@ -1860,6 +1860,12 @@ function pickParent(r, code) {
 {
     const r = run(data());
     ok('the capture box offers the work type', /id="bl-type"/.test(r.html()));
+    ok('the capture box type select carries rich AFTip with 1000ms delay',
+        /data-aftip-open="1000"[\s\S]{0,80}?id="bl-type"/.test(r.html())
+        && /Work type · Canonical #tags/.test(r.html()));
+    ok('row type badge carries rich AFTip with 1000ms delay and description',
+        /class="af-tipw tip-right"[^>]*data-aftip-open="1000"[\s\S]{0,120}?data-bltype/.test(r.html())
+        && /Defect \/ fix/.test(r.html()));
 }
 
 // ---------- ▶ is a switch, and the row says which way it is thrown ----------
@@ -1888,7 +1894,7 @@ function pickParent(r, code) {
     d2.tabData.backlog.counts.doing = 1;
     const r2 = run(d2);
     ok('‼️ a started row SAYS SO, in the badges that are always on screen',
-        /data-key="K-1"[\s\S]{0,2200}?class="pj-bl-m started"[^>]*>▶ started</.test(r2.html()));
+        /data-key="K-1"[\s\S]{0,3200}?class="pj-bl-m started"[^>]*>▶ started</.test(r2.html()));
     ok('…and the row itself is marked', r2.row('K-1').classList.contains('doing'));
     ok('…with a rule that comes after the queue\'s, so being queued cannot paint over it',
         r2.html().indexOf('.pj-bl-row.next {') < r2.html().indexOf('.pj-bl-row.doing {'));

@@ -2282,6 +2282,8 @@
                 .pj-bl-capf { flex:1 1 240px; max-width:340px; display:flex; flex-wrap:wrap;
                     gap:6px; align-content:flex-start; }
                 .pj-bl-capf select { flex:1 1 128px; min-width:112px; }
+                .pj-bl-capf .af-tipw { flex:1 1 128px; min-width:112px; display:inline-flex; }
+                .pj-bl-capf .af-tipw select { width:100%; flex:1 1 auto; min-width:0; }
                 /* ‼️ THE ONE BOX WHOSE OPTIONS ARE THE PROJECT'S OWN ITEMS, so
                    it is the one that needs the whole width: a line reading
                    "P-4 — complete the project system phases" does not fit beside
@@ -3167,17 +3169,29 @@
      * somebody may have typed and an axis you can rely on.
      */
     const BL_TYPES = [
-        { id: 'bug', label: 'bug fix' },
-        { id: 'research', label: 'research / measure' },
-        { id: 'feat', label: 'development' },
-        { id: 'ux', label: 'UI / UX' },
-        { id: 'chore', label: 'chore' },
-        { id: 'debt', label: 'tech debt' },
-        { id: 'doc', label: 'docs' },
-        { id: 'idea', label: 'idea' }
+        { id: 'bug', label: 'bug fix', desc: 'Defect / fix — repairs broken, failing or unintended behaviour' },
+        { id: 'research', label: 'research / measure', desc: 'Research / measure — deliverable is an answer, report or benchmark, not code' },
+        { id: 'feat', label: 'development', desc: 'Development — adds new capability, mechanism or feature' },
+        { id: 'ux', label: 'UI / UX', desc: 'UI / UX — layout, ergonomics, readability, theme and workflow clarity' },
+        { id: 'chore', label: 'chore', desc: 'Chore — routine maintenance, dependency bumps and packaging' },
+        { id: 'debt', label: 'tech debt', desc: 'Tech debt — refactoring, code cleanup and internal simplification' },
+        { id: 'doc', label: 'docs', desc: 'Docs / wiki — documentation, guides and architectural notes' },
+        { id: 'idea', label: 'idea', desc: 'Idea / proposal — uncommitted suggestion or prospective concept' }
     ];
     const BL_TYPE_IDS = BL_TYPES.map(t => t.id);
     const blTypeLabel = id => (BL_TYPES.find(t => t.id === id) || {}).label || id;
+    const BL_TYPES_TIP_BODY = BL_TYPES.map(t => `#${t.id} — ${t.desc}`).join('\n');
+    function blTypeButtonHtml(type, key) {
+        const cur = BL_TYPES.find(t => t.id === type);
+        const head = cur ? `#${cur.id} (${cur.label}) · Work type` : 'Work type · not set';
+        const body = cur
+            ? `${cur.desc}\n\nClick to change type · your own tags are left alone.`
+            : 'Pick one of the 8 canonical types:\n'
+            + BL_TYPES.map(t => `#${t.id} (${t.label})`).join('\n')
+            + '\n\nClick to classify · your own tags are left alone.';
+        const btn = `<button class="pj-bl-kind settable${type ? ' t-' + C.esc(type) : ' none'}" data-bltype>${type ? '#' + C.esc(type) : 'type?'}</button>`;
+        return window.AFTip.wrap(btn, head, body, 'tip-right', 'data-aftip-open="1000"');
+    }
     /** The item's work type: the first canonical tag it carries, or '' for none.
      *  Non-canonical tags are kept and shown; they just are not the axis. */
     const blTypeOf = i => (i.kinds || []).find(k => BL_TYPE_IDS.indexOf(k) >= 0) || '';
@@ -3235,7 +3249,7 @@
             title: { XS: '≈ five minutes', S: '≈ half an hour', M: '≈ half a day', L: '≈ a day', XL: 'should be split before anybody starts it' }[e] || ''
         })));
     const blTypeRows = () => [{ value: '', label: 'no type', glyph: '', title: 'Takes the canonical tag off. Your own tags are never touched.' }]
-        .concat(BL_TYPES.map(t => ({ value: t.id, label: t.label, glyph: '#' + t.id })));
+        .concat(BL_TYPES.map(t => ({ value: t.id, label: t.label, glyph: '#' + t.id, title: t.desc })));
     const blAreaRows = areas => (areas || []).map(a => ({
         value: a.code, label: a.label, glyph: a.code,
         title: `${a.open} open of ${a.total} — it gets the next free ${a.code}- number, and that number is permanent`
@@ -3703,10 +3717,16 @@
                     title="‼️ A backlog item is where a thought is written down WHOLE — the real ones here run to a paragraph, and a one-line box is an invitation to write less than you mean. What you write STAYS in the box: filters, tabs and a file that changed under you all repaint this page, and none of them take your words. Line breaks become spaces (the item is one markdown line). Ctrl+Enter adds it, Enter is just a newline.">${C.esc(cap.text)}</textarea>
                 <div class="pj-bl-capf">
                     <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
-                    <select id="bl-type" title="Work type">
-                        <option value=""${cap.type ? '' : ' selected'}>— type —</option>
-                        ${BL_TYPES.map(t => `<option value="${t.id}"${t.id === cap.type ? ' selected' : ''}>${C.esc(t.label)}</option>`).join('')}
-                    </select>
+                    ${window.AFTip.wrap(
+                        `<select id="bl-type">
+                            <option value=""${cap.type ? '' : ' selected'}>— type —</option>
+                            ${BL_TYPES.map(t => `<option value="${t.id}"${t.id === cap.type ? ' selected' : ''} title="${C.esc(t.desc)}">${C.esc(t.label)}</option>`).join('')}
+                        </select>`,
+                        'Work type · Canonical #tags',
+                        BL_TYPES_TIP_BODY + '\n\nOptional. Leave empty for inbox / unclassified.',
+                        '',
+                        'data-aftip-open="1000"'
+                    )}
                     <select id="bl-prio" title="Priority">
                         ${PRIO_ORDER.slice().reverse().map(p =>
             `<option value="${p}"${p === (cap.prio || 'normal') ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
@@ -4531,9 +4551,7 @@
                     ${!i.code ? `<span class="pj-bl-mw"><button class="pj-bl-badge filed" data-blfile
                         title="Not filed — no code, no area. Pick one and it gets the next free number in it, permanently, and it joins the queue.">🗂</button>
                         ${blMenuHtml('area', key, blAreaRows(areas), '')}</span>` : ''}
-                    <span class="pj-bl-mw"><button class="pj-bl-kind settable${type ? ' t-' + C.esc(type) : ' none'}" data-bltype
-                        title="Work type — ${type ? C.esc(blTypeLabel(type)) : 'not set'}. Pick one; your own tags are left alone.">${type ? '#' + C.esc(type) : 'type?'}</button>
-                        ${blMenuHtml('type', key, blTypeRows(), type)}</span>
+                    <span class="pj-bl-mw">${blTypeButtonHtml(type, key)}${blMenuHtml('type', key, blTypeRows(), type)}</span>
                     ${others.join('')}
                     <span class="pj-bl-mw"><button class="pj-bl-badge" data-blprio
                         title="Priority — ${C.esc(i.priority || 'normal')}. Click to pick.">${PRIO_ICON[i.priority] || '·'}</button>
