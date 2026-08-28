@@ -231,5 +231,59 @@ const base = (over) => Object.assign({
         V.removeCustomVoice(list, 'u-nope').ok === false);
 }
 
+// ---------------------------------------------------------------------------
+// A-18 step 3 — WHO ARMS AN EDGE: the session's own selection, and the global
+// switch, and they ADD rather than gate.
+// ---------------------------------------------------------------------------
+{
+    const plan = (event, actions, on) => T.alertPlan(event, actions, on);
+
+    ok('‼️ NOTHING IS ARMED OUT OF THE BOX — an install that was never'
+        + ' configured makes no new noise on any of the five',
+        V.ALERT_EVENTS.every(e => plan(e, [], {}).actions.length === 0));
+
+    // ‼️ THE REGRESSION THIS SHAPE EXISTS TO PREVENT. `alerts.on` ships all-off;
+    // had it been a GATE, every install that has been playing turn-ready for
+    // months would have gone silent on upgrade with nothing saying why.
+    ok('an all-off setting cannot silence a session that armed itself',
+        JSON.stringify(plan('turn-ready', ['sound', 'toast'], {}).actions) === '["sound","toast"]');
+    ok('…and an absent setting object is the same as an empty one',
+        JSON.stringify(plan('turn-ready', ['sound'], undefined).actions) === '["sound"]');
+
+    ok('the item\'s OTHER event is armed by the same control',
+        JSON.stringify(plan('question', ['sound', 'modal'], {}).actions) === '["sound","modal"]');
+
+    // ‼️ AND ONLY THOSE TWO. A control whose whole text is about turns must not
+    // start beeping when a session ENDS.
+    ok('a swim-lane selection does not arm ended / stalled / error',
+        ['stalled', 'ended', 'error'].every(e => plan(e, ['sound', 'modal'], {}).actions.length === 0));
+    ok('…and the two it does arm are named, not guessed',
+        JSON.stringify([...T.SESSION_ALERT_EVENTS]) === '["turn-ready","question"]');
+
+    // The global switch is how the other three are ever heard.
+    ok('the global switch arms an event no session control reaches',
+        JSON.stringify(plan('ended', [], { ended: true }).actions) === '["sound"]');
+    ok('‼️ …and it arms the SOUND ONLY — turning on a setting called "alert'
+        + ' sounds" must not open modal dialogs across the whole fleet',
+        JSON.stringify(plan('stalled', ['modal', 'focus'], { stalled: true }).actions) === '["sound"]');
+
+    // Union, not override: neither authority can take away what the other set.
+    const both = plan('turn-ready', ['toast'], { 'turn-ready': true });
+    ok('the two authorities add up', JSON.stringify(both.actions) === '["sound","toast"]');
+    ok('…and each says it was there, so the page can answer "why did that ring?"',
+        both.fromSession === true && both.fromSettings === true);
+    ok('a session that armed nothing is not reported as an authority',
+        plan('turn-ready', [], { 'turn-ready': true }).fromSession === false);
+
+    ok('the same action from both sides is still one action',
+        JSON.stringify(plan('question', ['sound'], { question: true }).actions) === '["sound"]');
+    ok('a setting that is off is not a setting that is on',
+        plan('ended', [], { ended: false }).actions.length === 0);
+    ok('…and neither is anything else somebody wrote in that box',
+        plan('ended', [], { ended: 'yes' }).actions.length === 0);
+    ok('rubbish in the session selection is dropped rather than run',
+        JSON.stringify(plan('turn-ready', ['sound', 'explode'], {}).actions) === '["sound"]');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

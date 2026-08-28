@@ -175,6 +175,25 @@ export function resolveEffectivePermission(
  * and it stays for exactly that — it is never allowed to stand in for a bypass
  * that was actually asked for, which is the substitution that produced K-22.
  */
+/**
+ * ‼️ K-22 — the decision for a mode that was CHOSEN OUTRIGHT, with no settings
+ * layer to consult: a headless task's stored permission mode, where there is no
+ * picker and no `Default` to resolve.
+ *
+ * It exists so that no caller has to hand-build an `EffectivePermission` just to
+ * ask `permissionFlags` how bypass is spelled. Every place that spells it by
+ * itself is a place that can disagree, and the whole of K-22 is one such
+ * disagreement.
+ */
+export function chosenPermission(mode: string): EffectivePermission {
+    const m = (mode ?? '').trim();
+    return {
+        requested: m, fromSettings: '', settingsFile: '', effective: m,
+        bypass: m === BYPASS,
+        why: m ? `${m} was chosen` : 'Default — the CLI asks, as configured'
+    };
+}
+
 export function permissionFlags(
     decision: EffectivePermission
 ): { launch: string[]; mode: string[] } {

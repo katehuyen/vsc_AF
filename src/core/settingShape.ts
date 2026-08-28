@@ -53,6 +53,17 @@ export interface ShapeField {
     description: string;
     /** The values it will accept, when the schema names them. */
     allowed?: string[];
+    /**
+     * ‼️ A-18 — WHAT HAPPENS IF YOU LEAVE IT EMPTY, when the schema says.
+     *
+     * An empty field in a form is not "nothing": the field is left out of the
+     * object and its own default stays in charge, which is the whole reason
+     * these boxes are three-way rather than two. The box could therefore say
+     * what that default IS — and where the schema declares one, this carries it
+     * so the page can put it in the placeholder (MIRROR) instead of repeating
+     * the label that is already six pixels to the left.
+     */
+    default?: string;
 }
 
 /**
@@ -160,7 +171,14 @@ function fieldsOf(node: SchemaNode | undefined): ShapeField[] {
         type: readableType(sub),
         required: required.has(name),
         description: describe(sub),
-        ...(Array.isArray(sub.enum) ? { allowed: sub.enum.map(String) } : {})
+        ...(Array.isArray(sub.enum) ? { allowed: sub.enum.map(String) } : {}),
+        // Only a value a box can actually show. An object or array default has
+        // no one-line form, and a placeholder that says `[object Object]` is
+        // worse than the field's name.
+        ...(sub.default !== undefined && sub.default !== null
+            && (typeof sub.default === 'string' || typeof sub.default === 'number'
+                || typeof sub.default === 'boolean')
+            ? { default: String(sub.default) } : {})
     }));
 }
 

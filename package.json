@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.300.0",
+  "version": "3.301.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8408,6 +8408,87 @@
           "type": "boolean",
           "default": false,
           "description": "Show a notification every time an agent finishes its turn."
+        },
+        "agentFarm.permissionAnswerKeys": {
+          "type": "object",
+          "description": "What Allow / Reject actually TYPE into a session's terminal when you answer a permission prompt from Needs You. Leave a field empty for the built-in. ‼️ What a permission prompt accepts belongs to the CLI, not to Agent Farm, and it has worn more than one shape — so it is a setting rather than a constant: if the prompt does not move when you press Allow, put the key your CLI wants here instead of waiting for a release. Nothing here can read the prompt back, so the message you get says which keys were sent and never that the tool was allowed. Escape sequences are literal characters: use \\u001b for ESC and \\r for Enter.",
+          "default": {},
+          "properties": {
+            "allow": {
+              "type": "string",
+              "default": "1",
+              "description": "Allow this once. Default \"1\" — the first entry of the CLI's chooser."
+            },
+            "allowAlways": {
+              "type": "string",
+              "default": "2",
+              "description": "Allow and stop asking for this. Default \"2\" — the second entry."
+            },
+            "deny": {
+              "type": "string",
+              "default": "",
+              "description": "Reject / cancel. Default ESC — the same key Interrupt sends, and the one answer here that is measured rather than reasoned."
+            }
+          }
+        },
+        "agentFarm.alerts.on": {
+          "type": "object",
+          "description": "Play the alert SOUND on these events, for every session. This is not the same switch as notifyTurnEnd / notifyPermission above: those are VS Code notifications, these are sounds — a sound you turned off here would still leave a notification arriving, and the two are kept apart so that complaint cannot happen. Every entry is off out of the box; a single session can also be armed on its own from the ♪ control in its Live Timeline row, and the two add up rather than overriding each other.",
+          "default": {},
+          "properties": {
+            "turn-ready": {
+              "type": "boolean",
+              "description": "The turn finished and control is back with you."
+            },
+            "question": {
+              "type": "boolean",
+              "description": "The agent stopped to ask you something — a tool waiting for permission, or a question it needs answered. The turn is still open."
+            },
+            "stalled": {
+              "type": "boolean",
+              "description": "The session was working and has said nothing for longer than stuckThresholdSeconds."
+            },
+            "ended": {
+              "type": "boolean",
+              "description": "The session closed."
+            },
+            "error": {
+              "type": "boolean",
+              "description": "A critical error. Nothing emits this edge yet; the voice is settable so it is ready when something does."
+            }
+          }
+        },
+        "agentFarm.alerts.voices": {
+          "type": "object",
+          "description": "Which sound each event plays. Leave one empty and it uses its built-in default — 'turn-ready' and 'question' deliberately differ, so the two can be told apart from another room without configuring anything. Built-in ids: chime-soft · chime-bright · ask-double · ask-rise · low-pulse · tick-dry · bell-far · close-fall · error-buzz · alarm-urgent, plus any of your own (`u-…`). A voice whose file is missing does not silence the alert: it falls through to the next answer and reports the step it passed over.",
+          "default": {},
+          "properties": {
+            "turn-ready": {
+              "type": "string",
+              "default": "chime-soft",
+              "description": "Voice for a finished turn. Default: chime-soft."
+            },
+            "question": {
+              "type": "string",
+              "default": "ask-double",
+              "description": "Voice for an agent asking you something. Default: ask-double."
+            },
+            "stalled": {
+              "type": "string",
+              "default": "low-pulse",
+              "description": "Voice for a stalled session. Default: low-pulse."
+            },
+            "ended": {
+              "type": "string",
+              "default": "close-fall",
+              "description": "Voice for a closed session. Default: close-fall."
+            },
+            "error": {
+              "type": "string",
+              "default": "error-buzz",
+              "description": "Voice for a critical error. Default: error-buzz."
+            }
+          }
         },
         "agentFarm.taskExtraArgs": {
           "type": "string",

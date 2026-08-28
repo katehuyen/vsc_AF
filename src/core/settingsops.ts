@@ -160,6 +160,14 @@ const CATEGORY_OF: Record<string, string> = {
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
     notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
+    // ‼️ A-18 — beside the notification switches ON PURPOSE, because the two are
+    // constantly confused: those open a VS Code notification, these play a
+    // sound. Filed apart, "I turned the sound off and a notification still
+    // arrives" reads as a bug rather than as the two settings it is.
+    'alerts.on': 'live', 'alerts.voices': 'live',
+    // U-119 — what Allow/Reject type into a blocked session's terminal. It sits
+    // with the live monitor because that is what notices the block.
+    permissionAnswerKeys: 'live',
     maxTranscriptMessages: 'live', contextWindowTokens: 'live',
     // cost & budgets
     pricing: 'cost', budgets: 'cost', budgetsUnlimited: 'cost', windowTokenLimit: 'cost',

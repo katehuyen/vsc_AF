@@ -145,7 +145,9 @@ import {
 import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
-import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
+import {
+    describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
+} from './core/interrupt';
 import {
     ENGINE_ENUM, ENGINE_ENUM_SPACED, ENGINES, engineChangeNote, engineModeNote, engineNote,
     engineOf, enginePermissionSetting, engineQuotesPrice, enginesWithoutEffort, engineTakesEffort,
@@ -308,7 +310,9 @@ import {
     describePlannerLaunch, plannerCommand, PlannerLaunch, PlannerSettingsLayer,
     resolvePlannerLaunch
 } from './core/plannerLaunch';
-import { permissionLayerPaths } from './core/permissionmode';
+import {
+    EffectivePermission, permissionLayerPaths, resolveEffectivePermission
+} from './core/permissionmode';
 import { expandUserPath, standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
@@ -350,7 +354,8 @@ import {
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
-    playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, soundCandidates, SoundResult,
+    alertPlan, playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SESSION_ALERT_EVENTS,
+    soundCandidates, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
 } from './core/turnAlerts';
 import {
@@ -1240,18 +1245,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ended: l => `${l} — session ended`,
         error: l => `${l} — error`
     };
-    /**
-     * ‼️ WHICH EVENTS A SESSION'S OWN SELECTION ANSWERS TO — the item's two,
-     * and only those.
-     *
-     * The other three edges (`stalled`, `ended`, `error`) are emitted by the
-     * live monitor and ride this same mechanism for free, but arming them for
-     * every session that ever ticked `♪` would be a change nobody asked for:
-     * an ended session would start making a noise on a setting whose whole text
-     * says "your turn". They ship silent and get their own switch with the
-     * settings surface (design §6 · `agentFarm.alerts.on`).
-     */
-    const DISPATCHED_EVENTS: readonly AlertEvent[] = ['turn-ready', 'question'];
+    /** `agentFarm.alerts.on` — the global "play the sound on this kind of
+     *  event" switch, every entry off out of the box. */
+    const alertsOn = (): Partial<Record<AlertEvent, boolean>> =>
+        cfg().get<Partial<Record<AlertEvent, boolean>>>('alerts.on', {}) ?? {};
     /** An event named by a caller — refused BY NAME rather than quietly
      *  answered about `turn-ready`, which would look like the call worked. */
     const wantEvent = (args: Record<string, unknown>): AlertEvent => {
@@ -1366,9 +1363,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * twice on one crossing.
      */
     function fireAttention(s: LiveSession, event: AlertEvent): void {
-        if (!DISPATCHED_EVENTS.includes(event)) { return; }
-        // ‼️ THE SESSION IS THE KEY, AND THERE IS NO FALLBACK BEHIND IT.
-        const actions = turnAlerts.actionsFor(s.sessionId);
+        // ‼️ THE SESSION IS THE KEY, AND THERE IS NO FALLBACK BEHIND IT — but
+        // there is a second AUTHORITY beside it, and the two ADD rather than
+        // gate each other (`alertPlan`).
+        const { actions } = alertPlan(event, turnAlerts.actionsFor(s.sessionId), alertsOn());
         if (!actions.length) { return; }
         // One turn = one alert. The key is the session's own prompt ordinal, so
         // the `Notification(waiting)` and the `Stop` that follows it are the
@@ -3981,6 +3979,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * once for X-84 and not re-derived here, because two lists of the same
      * files is how they drift.
      */
+    /**
+     * ‼️ K-22 — WHAT A TERMINAL LAUNCH'S PERMISSION MODE REALLY MEANS.
+     *
+     * The Console has resolved this since 3.135.1 and a terminal launch never
+     * did, which left the contract half-kept: `--permission-mode
+     * bypassPermissions` is read through a branch the CLI guards and `gad()`
+     * can downgrade, so a terminal "bypass" session still asked — and a
+     * `Default` that the user's own settings resolve to bypass was not even
+     * looked at. The visible failure is a `[y/n]` on a tty nobody is watching,
+     * with the session parked on it until somebody goes looking.
+     *
+     * One call site's worth of disk reading around the pure resolver, exactly
+     * like `plannerLayersFor` beside it — the rule and its precedence belong to
+     * `permissionmode.ts`, and two places deciding is how they drift.
+     */
+    const resolveLaunchPermission = (requested: string | undefined, dir: string): EffectivePermission =>
+        resolveEffectivePermission((requested ?? '').trim(),
+            permissionLayerPaths(dir || os.homedir(), os.homedir()).map(l => {
+                try { return { ...l, text: fs.readFileSync(l.file, 'utf8') }; } catch { return l; }
+            }));
+
     const plannerLayersFor = (dir: string): PlannerSettingsLayer[] =>
         permissionLayerPaths(dir, os.homedir()).map(l => {
             let text: string | undefined;
@@ -8567,6 +8586,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'sessions.answerPermission',
+            describe: '‼️ U-119 — ANSWER A SESSION THAT IS BLOCKED ON A PERMISSION PROMPT, without going to find its terminal. A conversation Agent Farm hosts is answered properly, through the option id the CLI published; a session running in a terminal has its answer TYPED IN, on the same channel the interrupt has always used. ‼️ AND THE CLAIM IS EXACTLY THAT: nothing here can see the prompt or read the answer back, so the result says WHICH KEYS were sent and never that the tool was allowed — a "done" over a prompt that did not move would be the same false promise as the old "go and look in the terminal" button. If your CLI wants different keys, agentFarm.permissionAnswerKeys is one setting rather than a release. An external OS terminal is refused by name (nobody can type into someone else\'s window). args: sessionId (required, full id or 8-char prefix), answer? (allow | allowAlways | deny — default allow; allowAlways is "and stop asking for this", deny is ESC)',
+            handler: (args) => {
+                const raw = argStr(args, 'sessionId').trim();
+                const s = live.sessions().find(x => x.sessionId === raw || x.sessionId.startsWith(raw));
+                need(!!s, `no live session matches "${raw}"`);
+                const wanted = (optStr(args, 'answer') || 'allow').trim();
+                need(['allow', 'allowAlways', 'deny'].includes(wanted),
+                    `"${wanted}" is not an answer — allow · allowAlways · deny`);
+                const r = answerSessionPermission(
+                    s!.sessionId, wanted as PermissionAnswer, s!.agentName);
+                return {
+                    sessionId: s!.sessionId, label: live.labelOf(s!), answer: wanted,
+                    status: s!.status,
+                    // ‼️ Said out loud, because a caller that reads `sent: true`
+                    // as "allowed" would go on to report a tool ran that never did.
+                    sent: r.ok, how: r.how, keys: r.keys ?? null,
+                    note: r.ok
+                        ? 'the keystrokes were delivered — whether the prompt accepted them is only visible in the terminal'
+                        : 'nothing was sent'
+                };
+            }
+        },
+        {
             op: 'live.versions',
             describe: '‼️ WHAT EACH AGENT FARM BUILD ACTUALLY SAW — the op that closes a "the extension went deaf in version N" argument with a measurement instead of an argument. One pass over live-events.jsonl, grouped by the `af` stamp every event now carries: per version, when it ran (`from`/`to`), how many sessions it watched, how many events of each kind, and `perActiveHour` — events per hour OF SESSION ACTIVITY, not per calendar hour, because a version installed over a quiet weekend is not a version that captured less. Compare THAT number between two versions; the raw totals are there but they answer a different question. A row with an empty `version` is the part of the log written before the stamp existed: reported as unknown rather than attributed to whatever happened to be installed, which is the indirect evidence this replaced. args: none',
             handler: () => {
@@ -8704,11 +8747,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...r,
                     sessionId: s?.sessionId ?? null,
                     label: s ? live.labelOf(s) : null,
-                    // ‼️ Whether this event would alert AT ALL today. A resolution
-                    // that names a sound for an event nothing dispatches would
-                    // read as "it is armed", which is the opposite of true.
-                    dispatched: DISPATCHED_EVENTS.includes(event)
+                    // ‼️ WOULD IT ACTUALLY RING? A resolution that names a sound
+                    // for an event nothing is armed on reads as "it is set up",
+                    // which is the opposite of true — so the plan comes back
+                    // with it, saying WHICH authority put each thing in it.
+                    plan: alertPlan(event,
+                        s ? turnAlerts.actionsFor(s.sessionId) : [], alertsOn())
                 };
+            }
+        },
+        {
+            op: 'alerts.on',
+            describe: '‼️ WHICH EVENTS PLAY A SOUND, FOR EVERY SESSION (`agentFarm.alerts.on`) — read it with no args, set one with `event` + `enabled`. Every entry is off out of the box. ‼️ This ADDS to a session\'s own ♪ selection, it does not gate it: a gate defaulting to off would have silenced the turn-ready sound every install has had for months, on upgrade, with nothing on any page saying why. It arms the SOUND and nothing else — nobody turning on a setting called "alert sounds" is asking for modal dialogs across the whole fleet. Not the same switch as notifyTurnEnd/notifyPermission, which are VS Code notifications. args: event? ('
+                + ALERT_EVENTS.join('|') + '), enabled? (default true)',
+            handler: async (args) => {
+                const raw = optStr(args, 'event')?.trim();
+                const now = { ...alertsOn() };
+                if (raw) {
+                    const event = wantEvent(args);
+                    now[event] = (args as { enabled?: unknown }).enabled === undefined
+                        ? true : !!(args as { enabled?: unknown }).enabled;
+                    await cfg().update('alerts.on', now, vscode.ConfigurationTarget.Global);
+                }
+                const on = alertsOn();
+                return {
+                    on: Object.fromEntries(ALERT_EVENTS.map(e => [e, on[e] === true])),
+                    // ‼️ Named beside it, because "off here" does NOT mean silent:
+                    // these two events also ring for any session armed on its own.
+                    alsoFromSessionControls: [...SESSION_ALERT_EVENTS],
+                    changed: raw ? wantEvent(args) : null
+                };
+            }
+        },
+        {
+            op: 'alerts.voice.set',
+            describe: '‼️ WHICH SOUND AN EVENT PLAYS (`agentFarm.alerts.voices`) — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. Today the only writable step is `settings` (everybody); the session and agent steps above it are set from their own surfaces. An empty `voice` CLEARS the choice and the event falls back to its built-in default rather than to silence. A voice id nothing knows is refused by name, and so is one whose file this machine cannot play — accepting it would promise a sound that never arrives. args: event (required, '
+                + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings, the only one this op writes)',
+            handler: async (args) => {
+                const event = wantEvent(args);
+                const scope = (optStr(args, 'scope')?.trim() || 'settings');
+                if (scope !== 'settings') {
+                    throw new Error(`this op writes the "settings" step of the chain; `
+                        + `"${scope}" is set from that session's own ♪ control`);
+                }
+                const voice = argStr(args, 'voice').trim();
+                const deps = voiceDeps();
+                if (voice) {
+                    const all = builtinVoices(deps.soundsDir)
+                        .concat((deps.custom ?? []).map(v => ({ ...v, builtin: false })));
+                    const hit = all.find(v => v.id === voice);
+                    if (!hit) { throw new Error(`there is no sound called "${voice}" — try alerts.voices`); }
+                    if (!deps.exists(hit.file)) { throw new Error(`${voice} has no file at ${hit.file}`); }
+                    if (!playableOn(deps, hit.file).ok) {
+                        throw new Error(`nothing on this machine plays ${hit.file}`);
+                    }
+                }
+                const now = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
+                if (voice) { now[event] = voice; } else { delete now[event]; }
+                await cfg().update('alerts.voices', now, vscode.ConfigurationTarget.Global);
+                return { event, scope, voice: voice || null, resolved: resolveAlertVoice(event) };
             }
         },
         {
@@ -14591,6 +14688,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
                     { sessionId: item.ref.sessionId });
                 break;
+            // ‼️ U-119 — the two that make this row an ANSWER rather than a
+            // signpost. Reported with the exact keys, because nothing here can
+            // read the prompt back and claiming otherwise would be the same
+            // false promise in a better font.
+            case 'permission-allow':
+            case 'permission-deny': {
+                const answer: PermissionAnswer = actionId === 'permission-deny' ? 'deny' : 'allow';
+                const r = answerSessionPermission(item.ref.sessionId, answer, item.agentName);
+                if (r.ok) {
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: ${item.agentName} — ${r.how}. Watch the terminal: if the prompt`
+                        + ' did not move, this CLI wants different keys (agentFarm.permissionAnswerKeys).');
+                } else {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: could not answer for ${item.agentName} — ${r.how}.`
+                        + ' Use ⌨ Terminal and answer it there.');
+                }
+                break;
+            }
             case 'interrupt':
                 // agentName is resolved from the live monitor inside the command —
                 // a needs row can carry a session-id stub instead of a real agent.
@@ -15325,7 +15441,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         project?: string
     ): string | undefined => {
         const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
-        const errors = validateLaunch(merged);
+        // ‼️ K-22 — WHAT THE PERMISSION MODE REALLY MEANS, resolved against this
+        // session's own folder (two of the four settings layers are the
+        // folder's), BEFORE anything is validated or spawned. A bypass that
+        // cannot be enforced is refused here rather than discovered later at a
+        // `[y/n]` on a tty nobody is watching.
+        const launchCwd = merged.cwd ?? cwd ?? agent.dir;
+        const permission = resolveLaunchPermission(merged.permissionMode, launchCwd);
+        const errors = validateLaunch({ ...merged, permission });
         if (errors.length) {
             void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
             return undefined;
@@ -15357,7 +15480,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (`--add-dir`), so the same directory the terminal opens in has to be on
         // the command line too (see LaunchOptions.cwd).
         const command = buildLaunchCommand(spec.exe, {
-            ...merged, projectContextFile: contextFile, cwd: merged.cwd ?? cwd ?? agent.dir
+            ...merged, permission, projectContextFile: contextFile, cwd: launchCwd
         });
         // ‼️ …EXCEPT ON AN ENGINE WITH NO SYSTEM-PROMPT CHANNEL, WHICH SAYS SO.
         // `codex` takes no `--append-system-prompt-file` (measured against its
@@ -15905,7 +16028,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const spec = engineOf(merged.engine);
             // The preview line has to be the line that will run, `--add-dir`
             // included, or the launcher shows one command and starts another.
-            const command = buildLaunchCommand(spec.exe, { ...merged, cwd: merged.cwd ?? agent.dir });
+            // ‼️ K-22 — the permission flags included: a preview that shows
+            // `--permission-mode bypassPermissions` over a launch that really
+            // sends `--dangerously-skip-permissions` is a preview that lies
+            // about the one dimension this item is about.
+            const previewCwd = merged.cwd ?? agent.dir;
+            const command = buildLaunchCommand(spec.exe, {
+                ...merged, cwd: previewCwd,
+                permission: resolveLaunchPermission(merged.permissionMode, previewCwd)
+            });
             const d = launchDefaults();
             const inherited = (own: string | undefined, def: string | undefined) =>
                 !own?.trim() && def?.trim() ? ' (from your defaults)' : '';
@@ -21630,6 +21761,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             `Agent Farm: no terminal found for ${who} — ${target.how}.`);
     };
 
+    /**
+     * ‼️ U-119 — ANSWER THE PERMISSION PROMPT FROM HERE.
+     *
+     * The same channel the interrupt has always used, in the other direction:
+     * `resolveInterrupt` already answers "which terminal is this session's?",
+     * and re-deriving that would be a second answer to a question that has to
+     * have one. A hosted session is not this — it has a real permission card
+     * with real options, and `consoleHost.answer` is how that is settled.
+     *
+     * ‼️ THE RESULT IS REPORTED WITH THE EXACT KEYS AND THE TERMINAL IS SHOWN.
+     * We cannot see the prompt and we cannot read the answer back: the honest
+     * claim is "these keystrokes were typed there", never "it was allowed". A
+     * button that said "allowed" over a prompt that did not move would be the
+     * same lie the ⌨ signpost was, wearing a better label.
+     */
+    const answerSessionPermission = (
+        sessionId: string | undefined, answer: PermissionAnswer, agentName?: string
+    ): { ok: boolean; how: string; keys?: string; where?: string } => {
+        const hosted = sessionId
+            ? consoleHost.list().find(s => s.sessionId === sessionId)
+            : undefined;
+        if (hosted?.pendingAsk) {
+            // A hosted conversation has the real thing — an option id the CLI
+            // published — and typing into a terminal it does not have would
+            // answer nothing at all.
+            const ok = consoleHost.answer(hosted.id, answer === 'deny'
+                ? { kind: 'deny', message: 'Rejected from Agent Farm.' }
+                : { kind: 'allow', always: answer === 'allowAlways' });
+            return { ok, how: ok ? 'answered in the Console' : 'the Console had nothing to answer' };
+        }
+        const openTerms = vscode.window.terminals;
+        const records: TermRecord[] = termBindings.map(b => ({
+            title: b.title, sessionId: b.sessionId,
+            hasTerminal: !!b.term && openTerms.includes(b.term),
+            terminalIndex: b.term ? openTerms.indexOf(b.term) : undefined
+        }));
+        const target = resolveInterrupt({
+            sessionId, agentName, bindings: records, terminalNames: openTerms.map(t => t.name)
+        });
+        const { keys, fromSetting } = permissionKeys(
+            answer, cfg().get<Record<string, unknown>>('permissionAnswerKeys', {}));
+        if (target.kind !== 'integrated') {
+            return { ok: false, how: target.how, keys };
+        }
+        const term = openTerms[target.terminalIndex];
+        // Shown BEFORE the keys go in, so the user is looking at the prompt when
+        // it moves — and at the prompt that did not move, when it does not.
+        term.show();
+        term.sendText(keys, false);   // keypresses, not a line
+        return {
+            ok: true, keys, where: target.how,
+            how: `typed ${describeKeys(keys)} into ${target.how}`
+                + (fromSetting ? ' (your agentFarm.permissionAnswerKeys)' : '')
+        };
+    };
+
     /** Shared picker for the session-level commands: a given id wins, otherwise ask. */
     const pickLiveSessionId = async (
         given: string | undefined, placeHolder: string
@@ -22253,6 +22440,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 launchClaudeTerminal(`${spec.exe}: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
                     buildLaunchCommand(spec.exe, {
                         ...merged,
+                        // ‼️ K-22 — a RESUME is a spawn too, and a resumed
+                        // bypass session that quietly starts asking is the same
+                        // failure with a longer fuse.
+                        permission: resolveLaunchPermission(merged.permissionMode, cwd ?? ''),
                         projectContextFile: systemPromptFileFor(own || undefined, 'session',
                             superpowersOnFor(s.agentName))
                     }),
@@ -26475,6 +26666,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!id || !!(all as Record<string, unknown>)[id],
                     `no engine called "${id}" — try ${ENGINE_ENUM_SPACED}`);
                 return id ? { [id]: (all as Record<string, unknown>)[id] } : all;
+            }
+        },
+        {
+            op: 'launch.permission',
+            describe: '‼️ K-22 — WHAT A LAUNCH IN THIS FOLDER WOULD REALLY RUN IN, and the exact command line it would produce. Three separate facts, and collapsing any two of them is how this contract broke twice: `requested` (what the picker asked for — "" is the Default entry), `fromSettings` (what Claude\'s own layers make Default mean, with the file that said it), and `effective` + `bypass` (the mode the process will actually be in). ‼️ "Default" is NOT "asks": settings that say bypassPermissions make a Default launch a real bypass launch, and this is where you check that rather than finding out at a `[y/n]` on a terminal nobody is watching. Bypass is spelled `--dangerously-skip-permissions` because that is the flag that ENFORCES it; `--allow-dangerously-skip-permissions` only permits it to be chosen later and is never allowed to stand in for it. `blocked` set = a policy forbids bypass, and such a launch is REFUSED rather than started under a label it cannot keep. args: agent? (name — its folder is the cwd whose .claude layers are read), cwd? (a folder outright; beats agent), mode? (the permission mode to test, "" = Default)',
+            handler: (args) => {
+                const wantAgent = optStr(args, 'agent')?.trim();
+                const hit = wantAgent ? agents.find(a => a.name === wantAgent) : undefined;
+                need(!wantAgent || !!hit, `no agent called "${wantAgent}"`);
+                const dir = optStr(args, 'cwd')?.trim() || hit?.dir || os.homedir();
+                const mode = optStr(args, 'mode') ?? '';
+                const permission = resolveLaunchPermission(mode, dir);
+                return {
+                    cwd: dir,
+                    layers: permissionLayerPaths(dir, os.homedir())
+                        .map(l => ({ ...l, onDisk: fs.existsSync(l.file) })),
+                    permission,
+                    refusedBecause: validateLaunch({ permissionMode: mode, permission }),
+                    command: buildLaunchCommand('claude', { permissionMode: mode, permission })
+                };
             }
         },
         {

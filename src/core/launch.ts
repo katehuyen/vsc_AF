@@ -15,6 +15,7 @@
  */
 
 import { engineFirstPromptFlag, engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
+import { EffectivePermission, permissionFlags } from './permissionmode';
 
 /** One offered value of a launch dimension. `id: ''` is always "leave it alone". */
 export interface LaunchChoice {
@@ -38,6 +39,30 @@ export interface LaunchOptions {
     effort?: string;
     /** --permission-mode; '' = default (ask) */
     permissionMode?: string;
+    /**
+     * ‼️ K-22 — WHAT THAT PERMISSION MODE ACTUALLY MEANS, resolved against
+     * Claude's own settings layers before the command line is built.
+     *
+     * The Console has done this since 3.135.1; a TERMINAL launch never did, and
+     * that is the half of the contract that was still broken. Two things went
+     * wrong without it:
+     *
+     *   · **`--permission-mode bypassPermissions` does not enforce bypass.** It
+     *     is read through a branch the CLI guards, and `gad()` can downgrade it
+     *     to `default` when `bypassPermissionsModeAccepted` was never set. The
+     *     flag that enforces is `--dangerously-skip-permissions`, which short-
+     *     circuits at the top — measured out of the binary for K-22, and the
+     *     reason `permissionFlags` exists rather than a string built here.
+     *   · **`Default` was never resolved at all.** A user whose own settings say
+     *     `permissions.defaultMode: bypassPermissions` got an asking session,
+     *     and the first `rm -f` parked the whole terminal on a `[y/n]` nobody
+     *     was watching.
+     *
+     * Absent means "nobody resolved it", and then the old spelling is emitted
+     * exactly as before — so every caller and test written before this keeps
+     * its command line to the character.
+     */
+    permission?: EffectivePermission;
     /** -n: display name shown in the prompt box, the /resume picker and the terminal title */
     name?: string;
     /** first prompt, passed as the positional argument */
@@ -154,7 +179,11 @@ export const EFFORT_CHOICES: LaunchChoice[] = [
 ];
 
 export const PERMISSION_CHOICES: LaunchChoice[] = [
-    { id: '', label: 'Default', detail: 'no --permission-mode flag — asks before acting, as configured' },
+    // ‼️ K-22 — "Default" IS NOT "asks". It means "whatever your own Claude
+    // settings say", and when those say bypassPermissions this launch really is
+    // a bypass launch. The row used to promise asking, which is how a user with
+    // bypass in their settings could believe a terminal would stop for them.
+    { id: '', label: 'Default', detail: 'no --permission-mode flag — whatever your Claude settings say (which may be bypass)' },
     { id: 'plan', label: 'plan', detail: 'plans only, changes nothing until you approve' },
     { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved, everything else still asks' },
     { id: 'auto', label: 'auto', detail: 'the CLI decides what is safe to run unattended' },
@@ -246,7 +275,25 @@ export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
     else if (o.continueLast) { parts.push('--continue'); }
     if (o.model?.trim()) { parts.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { parts.push('--effort', o.effort.trim()); }
-    if (o.permissionMode?.trim()) { parts.push('--permission-mode', o.permissionMode.trim()); }
+    // ‼️ K-22 — ONE PLACE DECIDES HOW BYPASS IS SPELLED, and it is
+    // `permissionFlags`, shared with the Console. A terminal launch that spelled
+    // it its own way is how "the card says bypass and the process asks" came
+    // back on the CLI side after the Console half was fixed.
+    //
+    // Only the bypass case changes shape. Every other mode keeps the command
+    // line it has always had, to the character: this item is about bypass being
+    // REAL, and widening it into "every terminal launch gains a flag" would be
+    // a change nobody asked for on a surface people use all day.
+    if (o.permission?.bypass) {
+        parts.push(...permissionFlags(o.permission).launch);
+    } else if (o.permission?.blocked) {
+        // ‼️ BYPASS WAS WANTED AND A POLICY FORBIDS IT. Emitting
+        // `--permission-mode bypassPermissions` here would produce exactly the
+        // state the item rejects — a session labelled bypass that then asks.
+        // The flag is left off and `validateLaunch` refuses the launch outright.
+    } else if (o.permissionMode?.trim()) {
+        parts.push('--permission-mode', o.permissionMode.trim());
+    }
     // The project context rides on EVERY launch, resumes included — the flag
     // does not survive --resume (measured; see consoleproto.hostArgs). Quoted
     // with plain quotes rather than quoteArg: quoteArg collapses whitespace,
@@ -412,6 +459,16 @@ export function validateLaunch(o: LaunchOptions): string[] {
     }
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');
+    }
+    // ‼️ K-22 — A SESSION THAT CANNOT KEEP ITS LABEL DOES NOT START. The
+    // tempting alternative is to open the terminal in the ordinary asking mode
+    // and let the user find out at the first `[y/n]`; that IS the failure this
+    // item is about, and it is worse in a terminal than in the Console because
+    // nothing draws a card — the prompt sits on a tty nobody is watching.
+    if (o.permission?.blocked) {
+        errors.push(`bypassPermissions cannot be enforced here — ${o.permission.blocked.why}`
+            + ` (${o.permission.blocked.file}). Starting anyway would label the session bypass`
+            + ' and then stop it on a permission prompt, which is the one outcome this refuses.');
     }
     // ‼️ M-22 — REFUSED, NOT RANKED. Ranking them is what the runner already
     // does, and that is the bug: the loser is not reported anywhere, so a

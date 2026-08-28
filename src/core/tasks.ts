@@ -19,6 +19,7 @@ import {
 } from './media';
 import { InteractiveClose, InteractiveTarget, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
+import { chosenPermission, permissionFlags } from './permissionmode';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
 } from './opencoderun';
@@ -2902,7 +2903,18 @@ export class TaskManager implements vscode.Disposable {
         const effort = bare(task.effort);
         const perm = bare(task.permissionMode);
         if (effort) { parts.push(`--effort ${effort}`); }
-        if (perm) { parts.push(`--permission-mode ${perm}`); }
+        // ‼️ K-22 — AND BYPASS IS SPELLED THE WAY IT IS ENFORCED, HERE MOST OF
+        // ALL. `--permission-mode bypassPermissions` is read through a branch
+        // the CLI guards and can downgrade, and a headless run is the one place
+        // where nobody is watching at all: the prompt goes to a tty with no
+        // human on it and the run sits there until it times out. The spelling
+        // comes from `permissionFlags`, shared with the Console and the terminal
+        // launcher — three places spelling it themselves is what this item is.
+        if (perm) {
+            const decision = chosenPermission(perm);
+            if (decision.bypass) { parts.push(...permissionFlags(decision).launch); }
+            else { parts.push(`--permission-mode ${perm}`); }
+        }
         return parts.join(' ');
     }
 

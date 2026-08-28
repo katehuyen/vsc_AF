@@ -264,7 +264,14 @@ const base = read('src/panels/base.ts');
     // has to be the line that will actually run — otherwise it shows a command
     // that reads this repo and starts one that reads somewhere else.
     ok('…and builds the command line for THAT engine, not always claude\'s',
-        /const command = buildLaunchCommand\(spec\.exe, \{ \.\.\.merged, cwd: merged\.cwd \?\? agent\.dir \}\);/.test(ext));
+        /const previewCwd = merged\.cwd \?\? agent\.dir;/.test(ext)
+        && /const command = buildLaunchCommand\(spec\.exe, \{\s*\n\s*\.\.\.merged, cwd: previewCwd,/.test(ext));
+    // ‼️ K-22 — AND WITH THE PERMISSION FLAGS THE LAUNCH WILL REALLY CARRY. A
+    // preview printing `--permission-mode bypassPermissions` over a spawn that
+    // sends `--dangerously-skip-permissions` lies about the one dimension a
+    // user reads this line for.
+    ok('…and the preview resolves the permission mode the launch will enforce',
+        /permission: resolveLaunchPermission\(merged\.permissionMode, previewCwd\)/.test(ext));
     ok('…and can save it as the default for every session',
         /engine: spec\.id === 'claude' \? '' : spec\.id,/.test(ext));
 

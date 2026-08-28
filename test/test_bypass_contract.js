@@ -313,5 +313,92 @@ const LOCAL = 'D:\\repo\\.claude\\settings.local.json';
     fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// ---------------------------------------------------------------------------
+// 7. ‼️ THE OTHER HALF OF THE CONTRACT — A TERMINAL LAUNCH.
+//
+// The Console was fixed in 3.135.1 and the CLI path was left spelling bypass
+// its own way: `--permission-mode bypassPermissions`, which is read through a
+// branch the CLI guards and `gad()` can downgrade, and a `Default` that the
+// user's own settings resolve to bypass was never looked at at all. The visible
+// failure is worse than the Console's, because nothing draws a card: the CLI
+// parks on `Allow Bash to execute …? [y/n]` on a tty nobody is watching, and
+// the session sits there. Measured on session c54e5147, 2026-08-28 07:20 — an
+// `rm -f` in a compound command, 1.5 hours with no alert of any kind.
+// ---------------------------------------------------------------------------
+{
+    const { buildLaunchCommand, validateLaunch } = require(path.join(ROOT, 'out/core/launch.js'));
+    const resolve = (requested, layers) => resolveEffectivePermission(requested, layers);
+
+    // Nobody resolved it → the command line is EXACTLY what it always was.
+    ok('an unresolved launch is untouched, to the character',
+        buildLaunchCommand('claude', { permissionMode: 'acceptEdits' })
+        === 'claude --permission-mode acceptEdits');
+    ok('…including one that asks for bypass without resolving it',
+        buildLaunchCommand('claude', { permissionMode: BYPASS })
+        === `claude --permission-mode ${BYPASS}`);
+
+    // ‼️ CHOSEN BYPASS IS SPELLED THE WAY IT IS ENFORCED, and `--permission-mode`
+    // is NOT beside it: the CLI is never asked to reconcile two spellings of one
+    // instruction, which is the Console's measured answer and is shared here
+    // rather than re-derived.
+    const chosen = resolve(BYPASS, [layer('user', USER, {})]);
+    ok('chosen bypass reaches the terminal as --dangerously-skip-permissions',
+        buildLaunchCommand('claude', { permissionMode: BYPASS, permission: chosen })
+        === 'claude --dangerously-skip-permissions');
+    ok('…and the flag that only PERMITS bypass is not what carries it',
+        !buildLaunchCommand('claude', { permissionMode: BYPASS, permission: chosen })
+            .includes('--allow-dangerously-skip-permissions'));
+
+    // ‼️ AND `Default` IS RESOLVED. This is the case that produced the incident:
+    // the user's own settings said bypass, the launcher said "Default", and the
+    // terminal started asking.
+    const inherited = resolve('', [
+        layer('managed', MANAGED, undefined),
+        layer('user', USER, { permissions: { defaultMode: BYPASS } })
+    ]);
+    ok('Default that resolves to bypass really starts in bypass',
+        inherited.bypass === true
+        && buildLaunchCommand('claude', { permission: inherited })
+        === 'claude --dangerously-skip-permissions');
+    ok('…and says where that came from, not just that it happened',
+        inherited.settingsFile === USER && /through/.test(inherited.why));
+
+    // Every other mode keeps the line it has always had.
+    const plain = resolve('plan', [layer('user', USER, {})]);
+    ok('a non-bypass resolution changes nothing about the command line',
+        buildLaunchCommand('claude', { permissionMode: 'plan', permission: plain })
+        === 'claude --permission-mode plan');
+    ok('…and a resolved Default still emits no permission flag at all',
+        buildLaunchCommand('claude', { permission: resolve('', [layer('user', USER, {})]) })
+        === 'claude');
+
+    // ‼️ A LABEL THAT CANNOT BE KEPT DOES NOT START. Starting in the asking mode
+    // under a bypass label IS the failure, and in a terminal it is invisible.
+    const forbidden = resolve(BYPASS, [
+        layer('managed', MANAGED, { permissions: { disableBypassPermissionsMode: 'disable' } })
+    ]);
+    ok('policy-blocked bypass is refused before anything spawns',
+        forbidden.bypass === false && !!forbidden.blocked
+        && validateLaunch({ permissionMode: BYPASS, permission: forbidden })
+            .some(e => /cannot be enforced/.test(e)));
+    ok('…and the refusal names the file and the reason',
+        validateLaunch({ permissionMode: BYPASS, permission: forbidden })
+            .some(e => e.includes(MANAGED) && /disableBypassPermissionsMode/.test(e)));
+    ok('‼️ …and NOTHING labels it bypass on the command line either — a blocked'
+        + ' launch that still carried the flag would ask under a bypass name',
+        buildLaunchCommand('claude', { permissionMode: BYPASS, permission: forbidden })
+        === 'claude');
+
+    // The flags travel with everything else, in the CLI's own order.
+    ok('bypass sits with the rest of the line, resume included',
+        buildLaunchCommand('claude', {
+            resume: 'abc-123', model: 'opus', permissionMode: BYPASS, permission: chosen
+        }) === 'claude --resume abc-123 --model opus --dangerously-skip-permissions');
+    // Another engine has its own command builder and never sees these flags.
+    ok('a non-claude engine is not handed Claude permission flags',
+        !buildLaunchCommand('codex', { engine: 'codex', permission: chosen })
+            .includes('skip-permissions'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

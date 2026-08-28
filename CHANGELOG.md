@@ -2,6 +2,80 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.301.0 - K-22 · U-118 · U-119: a blocked session stops being a dead end (2026-08-28)
+
+Three items around one failure, reported the same morning: a session asked for
+permission on a terminal nobody was watching and sat there for an hour and a
+half. Every layer had a way of not helping.
+
+### K-22 — bypass on the card has to mean bypass in the process (the CLI half)
+
+The Console half was fixed in 3.135.1. **The terminal and headless paths were
+still spelling bypass their own way**, and the spelling they used does not
+enforce it: `--permission-mode bypassPermissions` is read through a branch the
+CLI guards and `gad()` can downgrade, while `--dangerously-skip-permissions`
+short-circuits at the top. Three places spelling one instruction is what this
+item has been about from the start, so all three now go through
+`permissionFlags`.
+
+**And `Default` was never resolved at all.** A user whose own settings say
+`permissions.defaultMode: bypassPermissions` got an asking terminal session —
+the picker even promised it would ask. The layers are read before the command
+line is built, exactly as the Console reads them, and the launcher's preview
+shows the flags the launch will really carry. **A bypass that a policy forbids
+refuses to start** rather than opening under a label it cannot keep: in a
+terminal that failure is invisible, because nothing draws a card.
+
+`launch.permission` on the bridge answers "what would a launch in this folder
+really run in", with the three facts kept apart — requested, from settings,
+enforced.
+
+### U-118 — the queue can finally show what the agent said
+
+Needs You drew `lastPrompt`, which the live monitor cuts to **ninety
+characters** for a card, and then cut it again with an ellipsis. So the one page
+a person opens to find out what the farm is stuck on could not show the question
+it was stuck on: the answer was four thousand characters deep in
+`lastPromptFull` and was thrown away one field before it was drawn.
+
+**A row is a line and an opened row is the text.** Every row kind goes through
+one reading standard now — a caret and a selectable block that keeps its line
+breaks, plus an AFTip carrying the whole thing so the common case needs no click
+at all. **The caret is drawn only when there is more behind it**: a triangle
+that opens onto the sentence already on the row teaches a reader in two clicks
+that opening rows tells them nothing. Opening one posts nothing and marks
+nothing — a blocker is not a message. Queue, Tasks and the Timeline already
+carried their full text; Needs You was the outlier.
+
+### U-119 — answer it from the page
+
+The row's offer was "⌨ Terminal": a signpost. Agent Farm knew an agent was
+blocked ON THE USER and its best answer was to send them looking for a window.
+Esc has been typed into these terminals since the interrupt was built, so the
+channel was always there — only the other half was missing.
+
+**Allow and Reject on the row**, and on the bridge as
+`sessions.answerPermission`. A hosted conversation is answered properly through
+the option id the CLI published; a terminal session has its answer typed in, on
+the same resolution the interrupt uses (two answers to "which terminal is this
+session's?" is how they drift, and typing an allow into the wrong window is
+worse than typing an Esc into it). An external OS window is refused by name.
+
+**‼️ And the claim is exactly what is known.** Nothing here can see the prompt
+or read an answer back, so every path reports WHICH KEYS were sent and never
+that the tool was allowed — the terminal is brought forward first, so the user
+is looking at the prompt when it moves, and at the prompt that did not move when
+it does not. **The keystroke is a setting** (`agentFarm.permissionAnswerKeys`),
+because what a prompt accepts belongs to the CLI and has worn more than one
+shape: a hard-coded key a later build stops honouring would make this button do
+nothing, silently.
+
+Also: a form field that declares a default now uses it as its placeholder
+instead of repeating the label six pixels to its left.
+
+**Tests:** `test_permission_answer.js` (27), `test_needs_reading.js` (23),
+`test_bypass_contract.js` +13. 231 files · 15 147 assertions.
+
 ## 3.300.0 - A-20 (step 2): the farm says WHICH kind of attention it wants (2026-08-28)
 
 **Step two of the auditory cockpit (A-18).** Step one built the ten voices and

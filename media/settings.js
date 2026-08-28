@@ -289,14 +289,21 @@
             return `<select ${a}>${opt('', '(not set)', text)}${opt('true', 'yes', text)
                 }${opt('false', 'no', text)}</select>`;
         }
+        // ‼️ AN EMPTY BOX SAYS WHAT WILL HAPPEN IF IT STAYS EMPTY (MIRROR).
+        // Leaving a field out is not "nothing" — the field's own default stays
+        // in charge — so where the schema declares that default the placeholder
+        // is it. Repeating the field's NAME there, six pixels from the label
+        // that already says it, told the reader nothing at all.
         if (f.type === 'number' || f.type === 'integer') {
-            return `<input type="number" ${a} value="${C.esc(text)}" placeholder="a number">`;
+            return `<input type="number" ${a} value="${C.esc(text)}" placeholder="${
+                C.esc(f.default !== undefined ? f.default : 'a number')}">`;
         }
         if (f.type !== 'string') {
             return `<input type="text" ${a} value="${C.esc(text)}"
                 placeholder="${C.esc(f.type)} — as JSON">`;
         }
-        return `<input type="text" ${a} value="${C.esc(text)}" placeholder="${C.esc(f.name)}">`;
+        return `<input type="text" ${a} value="${C.esc(text)}" placeholder="${
+            C.esc(f.default !== undefined ? f.default : f.name)}">`;
     }
 
     /** A field's stored value as the text its box shows. */

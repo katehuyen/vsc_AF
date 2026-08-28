@@ -45,7 +45,24 @@ export interface NeedItem {
     kind: NeedKind;
     agentName: string;
     title: string;
+    /** ‼️ THE ROW'S LINE, and only that. It is cut to a row on purpose. */
     detail: string;
+    /**
+     * ‼️ U-118 — THE SAME THING WHOLE: what an opened row and a hover panel
+     * carry.
+     *
+     * The queue was drawing `lastPrompt`, which the live monitor cuts to NINETY
+     * CHARACTERS for a card, and then cutting it again with an ellipsis. So the
+     * one page whose entire job is "what is the farm stuck on" could not show
+     * what the agent had actually said — the answer existed four thousand
+     * characters deep in `lastPromptFull` and was thrown away one field before
+     * it was drawn.
+     *
+     * Absent when the row's whole content already fits its line: a body that
+     * repeats the detail is a caret that opens on nothing, and a reader learns
+     * in two clicks not to trust the caret at all.
+     */
+    body?: string;
     ts: number;
     ref: NeedRef;
     actions: NeedAction[];
@@ -117,6 +134,10 @@ export interface NeedsInput {
         agentName?: string;
         status: string;
         lastPrompt?: string;
+        /** ‼️ U-118 — the same prompt WHOLE (LiveSession.lastPromptFull). The
+         *  row draws `lastPrompt`; the opened body draws this. Reading only the
+         *  first was the defect. */
+        lastPromptFull?: string;
         currentTool?: string;
         lastEventTs: number;
         transcriptPath?: string;
@@ -150,6 +171,44 @@ export interface NeedsInput {
     }[];
 }
 
+/**
+ * ‼️ U-118 — THE BODY IS WHAT THE ROW CANNOT SAY, or nothing at all.
+ *
+ * A caret that opens onto the same sentence the row already shows is worse than
+ * no caret: the reader learns in two clicks that opening a row tells them
+ * nothing, and then stops opening the ones that would have. So a body is kept
+ * only when it genuinely carries more than the line — longer, or holding a line
+ * break the row flattened away.
+ */
+function bodyOf(line: string, whole: string | undefined): string | undefined {
+    const full = (whole ?? '').trim();
+    if (!full) { return undefined; }
+    const shown = (line ?? '').trim();
+    return full !== shown && (full.length > shown.length || /[\r\n]/.test(full))
+        ? full : undefined;
+}
+
+/** How much of a detail a ROW is allowed to be. Long enough to recognise the
+ *  thing, short enough that ten blocked rows still read as a list. */
+const ROW_DETAIL = 140;
+
+/**
+ * ‼️ U-118 — ONE READING STANDARD ON EVERY ROW, not just the two that were
+ * reported.
+ *
+ * A queue row is a LINE and an opened row is the TEXT, and which of the six
+ * kinds a row happens to be must not change that: the user's own instruction
+ * was "if we do it on one side, do not let the other side differ". So every
+ * detail goes through here — a line for the row, the whole thing for the body,
+ * and no body at all when the line already IS the whole thing.
+ */
+function split(text: string): { detail: string; body?: string } {
+    const full = (text ?? '').trim();
+    const flat = full.replace(/\s*[\r\n]+\s*/g, ' ');
+    if (flat.length <= ROW_DETAIL && flat === full) { return { detail: full }; }
+    return { detail: flat.length > ROW_DETAIL ? flat.slice(0, ROW_DETAIL - 1) + '…' : flat, body: full };
+}
+
 export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
     const items: NeedItem[] = [];
 
@@ -162,11 +221,21 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 agentName,
                 title: `${agentName} is waiting for permission`,
                 detail: s.lastPrompt ?? '',
+                body: bodyOf(s.lastPrompt ?? '', s.lastPromptFull),
                 ts: s.lastEventTs,
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
                 actions: [
-                    // the answer to a permission dialog lives in the terminal —
-                    // jumping there is the fastest way to unblock the agent
+                    // ‼️ U-119 — ANSWER IT FROM HERE. This row used to offer
+                    // "⌨ Terminal": a signpost. The queue knew an agent was
+                    // blocked ON THE USER and its best offer was to send them
+                    // looking for a window — which is how a session sat blocked
+                    // for an hour and a half on 2026-08-28 with nothing said.
+                    { id: 'permission-allow', label: '✅ Allow' },
+                    { id: 'permission-deny', label: '❌ Reject' },
+                    // The signpost stays BEHIND them, and it is not redundant:
+                    // an external OS terminal is not ours to type into, and a
+                    // prompt that does not take the keys we send still has to
+                    // be answerable by hand.
                     { id: 'focus-terminal', label: '⌨ Terminal' },
                     { id: 'open-session', label: 'Open Session' },
                     { id: 'open-timeline', label: 'Timeline' }
@@ -179,6 +248,12 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 agentName,
                 title: `${agentName} looks stalled`,
                 detail: (s.currentTool ? `last tool: ${s.currentTool}` : s.lastPrompt ?? ''),
+                // ‼️ A STALLED ROW SHOWS THE TOOL, so the prompt behind it is
+                // the thing the reader is missing — the body carries it either
+                // way, and with the tool on the line the whole prompt is new.
+                body: s.currentTool
+                    ? (s.lastPromptFull ?? s.lastPrompt ?? '').trim() || undefined
+                    : bodyOf(s.lastPrompt ?? '', s.lastPromptFull),
                 ts: s.lastEventTs,
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
                 actions: [
@@ -201,7 +276,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             title: m.flavor === 'question'
                 ? `Mission "${m.missionTitle}" has a question`
                 : `Mission "${m.missionTitle}" was interrupted`,
-            detail: m.detail,
+            ...split(m.detail),
             ts: m.ts,
             ref: { missionRunId: m.runId },
             actions: m.flavor === 'question'
@@ -218,7 +293,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             kind: 'browser-approval',
             agentName: isStep ? 'workflow' : 'browser',
             title: isStep ? `Approval needed — "${a.title}"` : `Browser step "${a.title}" wants to run`,
-            detail: isStep ? (a.goal || 'waiting for your approval') : `${a.url} — ${a.goal}`,
+            ...split(isStep ? (a.goal || 'waiting for your approval') : `${a.url} — ${a.goal}`),
             ts: a.createdAt,
             ref: { approvalId: a.id },
             actions: [
@@ -238,7 +313,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 kind: 'conflict',
                 agentName: ins.agentName,
                 title: `Antigravity conflict — ${ins.agentName}`,
-                detail: ins.message,
+                ...split(ins.message),
                 ts: 0,
                 ref: { agentId: ins.agentId, filePath: ins.filePath },
                 actions: [{ id: 'sync-antigravity', label: 'Reconcile…' }]

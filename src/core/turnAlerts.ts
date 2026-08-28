@@ -29,6 +29,8 @@
  *   session, so the same turn is one alert however many events announce it.
  */
 
+import type { AlertEvent } from './alertVoices';
+
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
 
@@ -598,6 +600,60 @@ export async function runTurnAlerts(
     };
     const settled = await Promise.all(TURN_ALERT_ACTIONS.map(one));
     return settled;
+}
+
+// -------------------------------------------------- what an edge actually runs
+
+/**
+ * ‼️ A-18 — THE TWO EVENTS A SESSION'S OWN SELECTION ANSWERS TO.
+ *
+ * The four controls in a swim lane say "YOUR TURN" from end to end, and the
+ * item that opened them widened that to the other half of the same news: the
+ * session that stopped to ASK you something. Those two, and no more — arming
+ * `ended` off a control whose whole text is about turns would make a closed
+ * session start beeping at somebody who never asked for it.
+ *
+ * The other three ride the same mechanism through `agentFarm.alerts.on`, which
+ * is a deliberate choice made in Settings rather than a side effect of a
+ * checkbox in a timeline row.
+ */
+export const SESSION_ALERT_EVENTS: readonly AlertEvent[] = ['turn-ready', 'question'];
+
+export interface AlertPlan {
+    actions: TurnAlertAction[];
+    /** Which authority put something in the plan — the page has to be able to
+     *  answer "why did this ring?" and "why did it not?" (MIRROR). */
+    fromSession: boolean;
+    fromSettings: boolean;
+}
+
+/**
+ * ‼️ TWO AUTHORITIES, AND THEY ADD RATHER THAN OVERRIDE.
+ *
+ * A session's own selection is "alert me about THIS conversation, in these
+ * ways". `agentFarm.alerts.on` is "play the sound for this KIND of event, on
+ * every session" — the global switch, every entry off out of the box, so a
+ * fleet that has never been configured behaves today exactly as it did
+ * yesterday.
+ *
+ * A gate would have been the wrong shape: with `on` defaulting to all-false and
+ * gating, the turn-ready sound that installs have had for months would go
+ * silent on upgrade, and nothing on the page would say why. A union cannot do
+ * that — the worst an empty setting can do is nothing.
+ */
+export function alertPlan(
+    event: AlertEvent,
+    sessionActions: readonly unknown[] | undefined,
+    on?: Partial<Record<AlertEvent, boolean>>
+): AlertPlan {
+    const fromSession = SESSION_ALERT_EVENTS.includes(event);
+    const picked = fromSession ? normalizeActions(sessionActions) : [];
+    const fromSettings = on?.[event] === true;
+    // ‼️ The global switch arms the SOUND and nothing else. It is the setting a
+    // user reaches for having read the words "alert sounds"; turning it on must
+    // not start opening modal dialogs across the whole fleet.
+    const actions = fromSettings ? normalizeActions(picked.concat('sound')) : picked;
+    return { actions, fromSession: fromSession && picked.length > 0, fromSettings };
 }
 
 /**

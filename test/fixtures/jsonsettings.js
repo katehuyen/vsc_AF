@@ -26,6 +26,12 @@
  *                          names and whose `*` is the whole fleet (U-110).
  *   · `superpowersDefaults` — name → BOOLEAN, and NO wildcard: the three maps
  *                          do not agree, which is why each declares its own.
+ *   · `alerts.voices`    — A-18: a FORM whose fields are STRINGS rather than
+ *                          the checkboxes and numbers `taskRetry` is made of.
+ *                          The same derivation drew it the day the setting was
+ *                          declared, with nobody editing the page — which is
+ *                          the whole claim, and is only proved by a shape it
+ *                          had not seen before.
  */
 const path = require('path');
 const S = require(path.join(__dirname, '..', '..', 'out', 'core', 'settingsops.js'));
@@ -38,7 +44,8 @@ const SHOWN = [
     'agentFarm.taskRetry',
     'agentFarm.livingChecks',
     'agentFarm.budgets',
-    'agentFarm.superpowersDefaults'
+    'agentFarm.superpowersDefaults',
+    'agentFarm.alerts.voices'
 ];
 
 /**

@@ -21,6 +21,73 @@
  *  no newline, exactly as a keypress arrives. */
 export const INTERRUPT_KEY = '\u001b';
 
+/**
+ * ‼️ U-119 — ANSWERING A PERMISSION PROMPT WITHOUT GOING TO FIND THE TERMINAL.
+ *
+ * A CLI session that stops for permission stops on its own tty. Agent Farm knew
+ * about it — the live monitor puts the lane in `waiting-permission` and Needs
+ * You draws a row — and then offered "⌨ Terminal": a signpost. So the farm's
+ * answer to "an agent is blocked on you" was to send you looking for a window,
+ * which on 2026-08-28 meant a session sat blocked for an hour and a half with
+ * no alert of any kind.
+ *
+ * Esc has been typed into these terminals since the interrupt was built, so the
+ * channel was always there. Only the other half of it was missing.
+ *
+ * ‼️ AND THE KEYSTROKE IS A SETTING, NOT A CONSTANT. What a permission prompt
+ * accepts belongs to the CLI, not to us, and it has worn more than one shape (a
+ * y/n line, a numbered chooser). A hard-coded key a later build stops honouring
+ * would make this button do NOTHING, silently — the worst possible failure for
+ * a control whose whole promise is "answered". So: the default is stated here,
+ * the user can correct it in one setting, and every send reports the exact keys
+ * AND brings the terminal forward, so a wrong key is visible in one second
+ * rather than being a mystery.
+ */
+export type PermissionAnswer = 'allow' | 'allowAlways' | 'deny';
+
+/**
+ * The defaults, and why each one:
+ *   · `allow` — `1`, the first entry of the CLI's chooser, which is the plain
+ *     "yes, this once". A number selects outright, and there is no Enter behind
+ *     it: an Enter arriving at an already-answered prompt lands in the prompt
+ *     box instead, and that is a keystroke nobody asked for.
+ *   · `allowAlways` — `2`, "yes, and stop asking for this". A different
+ *     decision, not a faster one, so it is a different button.
+ *   · `deny` — ESC. The one answer here that is measured rather than reasoned:
+ *     it is the same key the interrupt has sent since it was built.
+ */
+export const PERMISSION_KEYS: Record<PermissionAnswer, string> = {
+    allow: '1',
+    allowAlways: '2',
+    deny: INTERRUPT_KEY
+};
+
+/**
+ * What to type, given whatever the user has put in the setting.
+ *
+ * A blank or absent entry means "the built-in", never "send nothing": a control
+ * that quietly sent an empty string would report success and answer nothing,
+ * which is exactly the shape of failure this feature exists to end.
+ */
+export function permissionKeys(
+    answer: PermissionAnswer, override?: Record<string, unknown>
+): { keys: string; fromSetting: boolean } {
+    const raw = override ? override[answer] : undefined;
+    const keys = typeof raw === 'string' ? raw : '';
+    return keys ? { keys, fromSetting: true } : { keys: PERMISSION_KEYS[answer], fromSetting: false };
+}
+
+/** Keys as a person reads them back — `ESC`, `Ctrl-C`, `1`. A message that said
+ *  "sent ESC" would be reporting a byte, not an answer. */
+export function describeKeys(keys: string): string {
+    return String(keys ?? '').split('').map(ch => {
+        if (ch === INTERRUPT_KEY) { return 'ESC'; }
+        if (ch === '\r' || ch === '\n') { return 'Enter'; }
+        if (ch < ' ') { return `Ctrl-${String.fromCharCode(ch.charCodeAt(0) + 64)}`; }
+        return ch;
+    }).join(' ');
+}
+
 /** A launch record, reduced to what the resolver needs. */
 export interface TermRecord {
     /** pinned launch title ("claude: dev #7") — how an external window is found */
