@@ -28,6 +28,10 @@ import {
     resolveRetry, RetryPolicy, retryDecision, RunProgress
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
+import {
+    normalizeRounds, planNextRound, refuseNextRound, TaskRound, totalRounds
+} from './taskRounds';
+export type { TaskRound } from './taskRounds';
 import { archiveMonths, readArchive } from './taskstats';
 import { openExternalTerminal } from './extTerminal';
 import { extractJson, sanitizePrompt } from './util';
@@ -122,6 +126,33 @@ export interface FarmTask {
     projectId?: string;
     /** Set when this task is a mission delegation (Missions panel links through it). */
     missionId?: string;
+    /**
+     * ‼️ M-27 — THE PROMPTS STILL TO BE SENT, in order, each with its own wait.
+     *
+     * Round 1 is `prompt` — that is every task ever written and none of them
+     * change. This list holds rounds 2..N, and it SHRINKS as the chain runs:
+     * the row that opens round 3 carries only what comes after round 3, so the
+     * chain moves itself forward through the store instead of living in a
+     * closure that closing the window would throw away. Rules: core/taskRounds.
+     */
+    rounds?: TaskRound[];
+    /**
+     * ‼️ M-27 — WHICH ROUND THIS RUN IS. Absent means 1.
+     *
+     * A RETRY DOES NOT MOVE IT. A retry is this same round attempted again
+     * because the run did not survive; only an answered round opens the next
+     * one. Counting them together would make the badge lie on every task that
+     * ever met a usage limit.
+     */
+    round?: number;
+    /**
+     * ‼️ M-27 — how many rounds were asked for, written once at creation. It is
+     * the only moment it is knowable: by round 3 the list has been eaten down
+     * and nothing left on the row could say what the user originally wanted.
+     */
+    roundsTotal?: number;
+    /** ‼️ M-27 — the task that opened the chain, so its rounds can be found together. */
+    roundOf?: string;
     /** Explicit model for THIS task (e.g. a mission's per-member override).
      *  Beats the model-policy engine; empty = policy/agent default. */
     model?: string;
@@ -2110,7 +2141,8 @@ export class TaskManager implements vscode.Disposable {
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
             | 'interactiveTarget' | 'interactiveClose'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
-            | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'>>
+            | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
+            | 'rounds' | 'round' | 'roundsTotal' | 'roundOf'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -2139,6 +2171,16 @@ export class TaskManager implements vscode.Disposable {
             ...extra
         };
         if (projectId) { task.projectId = projectId; } else { delete task.projectId; }
+        // ‼️ M-27 — A CHAIN IS SETTLED WHEN THE TASK IS MADE, not when it runs.
+        // The list is cleaned here so a blank row left in a form and a delay
+        // read out of somebody's JSON can never reach a timer, and the
+        // denominator is stamped here because this is the only moment it is
+        // knowable — by round 3 the list has been eaten down. A round the chain
+        // itself opens states all of this explicitly and is left alone.
+        const chain = normalizeRounds(task.rounds);
+        if (chain.length) { task.rounds = chain; } else { delete task.rounds; }
+        if (task.roundsTotal === undefined && chain.length) { task.roundsTotal = totalRounds(chain); }
+        if (task.roundsTotal !== undefined && task.round === undefined) { task.round = 1; }
         // The first line of the task's own record, and the only one that can say
         // where the run came from — by the time it starts, `fromSchedule` is an
         // id and the schedule may have been renamed or deleted.
@@ -2363,10 +2405,16 @@ export class TaskManager implements vscode.Disposable {
         // correctly look like a fault. What IS news is the ceiling it meets
         // when that wait ends, and that arrives here as a changed reason.
         if (task.notBefore && Date.now() < task.notBefore) { return; }
+        // ‼️ M-27 — A ROUND IS UNATTENDED TOO. The rule here is "announce a park
+        // nobody is sitting in front of", and round 4 of a chain that has been
+        // running since this morning is exactly that: the person who typed it
+        // left hours ago. Round 1 is not — they pressed the button and watched.
         if (!task.fromSchedule && !task.fromTrigger
-            && task.workflowId === undefined && !task.retryAttempt) { return; }
+            && task.workflowId === undefined && !task.retryAttempt
+            && (task.round ?? 1) < 2) { return; }
         const source = task.fromSchedule ? 'schedule' : task.fromTrigger ? 'trigger'
-            : task.workflowId !== undefined ? 'workflow' : 'retry policy';
+            : task.workflowId !== undefined ? 'workflow'
+                : task.retryAttempt ? 'retry policy' : 'the task\'s own rounds';
         this.opts.announce?.({
             // ‼️ M-7 (V3) — ONE KEY FOR ONE PARK. The farm-news scan announces
             // the same event for tasks nobody is unattended about, and it used
@@ -3095,6 +3143,11 @@ export class TaskManager implements vscode.Disposable {
         this.save();
         this.pump();
         if (status === 'failed') { this.maybeScheduleRetry(task); }
+        // ‼️ M-27 — AND AN ANSWERED ROUND OPENS THE NEXT ONE. Before the
+        // workflow branch below, because a task with rounds is never a workflow
+        // step (planNextRound refuses one) and putting it after would make the
+        // reader hunt through three early returns to find out.
+        if (status === 'done') { this.openNextRound(task); }
 
         // Workflow chaining takes precedence over plain queue auto-advance.
         if (task.workflowId !== undefined && task.stepIndex !== undefined) {
@@ -3119,6 +3172,94 @@ export class TaskManager implements vscode.Disposable {
                 this.startTask(next);
             }
         }
+    }
+
+    /**
+     * ‼️ M-27 — THE NEXT ROUND OF A TASK THAT HAS JUST BEEN ANSWERED.
+     *
+     * It is a ROW, not a timer. Everything M-3 learned about retries applies
+     * here for the same reasons: a `setTimeout` holding round 3 is thrown away
+     * when the window closes, cannot be seen, and cannot be cancelled. So the
+     * round is created immediately, in the queue, carrying the moment it may
+     * start (`notBefore`) — and the pump launches it then, exactly as it
+     * launches anything else a ceiling was holding. Which means a chain with a
+     * two-hour wait survives a restart, shows up on the board as a row that
+     * says when, and can be cancelled by the person who is tired of it.
+     *
+     * The whole decision is `planNextRound`, which is pure and tested; this is
+     * the part that needs the store.
+     */
+    private openNextRound(task: FarmTask): void {
+        const refusal = refuseNextRound(task);
+        if (refusal) {
+            // The one silence worth breaking: rounds were waiting and cannot be
+            // sent. Everything else planNextRound declines is already on the
+            // board as what it is.
+            noteTaskEvent(task, 'finished', `no next round — ${refusal}`);
+            this.save();
+            return;
+        }
+        const next = planNextRound(task, Date.now());
+        if (!next) { return; }
+        const agent = this.getAgents().find(a => a.id === task.agentId);
+        if (!agent) {
+            noteTaskEvent(task, 'finished',
+                `no round ${next.round} — the agent "${task.agentName}" is not in the fleet any more`);
+            this.save();
+            return;
+        }
+        // The title carries the round rather than a fresh name, so the board
+        // reads as one piece of work going deeper and not as N unrelated tasks.
+        const baseTitle = task.title.replace(/\s*\((?:limit-)?(?:retry|continue) \d+\)\s*$/, '')
+            .replace(/\s*·\s*R\d+$/, '');
+        try {
+            const wrote = this.inOneWrite(() => {
+                noteTaskEvent(task, 'finished',
+                    `round ${next.round} of ${task.roundsTotal ?? '?'} queued`
+                    + (next.delayMin > 0 ? `, starting in ${next.delayMin} min` : ''));
+                this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {
+                    projectId: task.projectId,
+                    round: next.round,
+                    rounds: next.rest,
+                    roundsTotal: task.roundsTotal,
+                    roundOf: task.roundOf ?? task.id,
+                    // ‼️ THE ROUND IS A REPLY, so it goes into the conversation
+                    // that was answered — not a new one. `planNextRound` has
+                    // already refused the case where there is none to go into.
+                    resumeSessionId: next.resumeSessionId,
+                    resumedFrom: task.title,
+                    ...(task.engine ? { engine: task.engine, resumedEngine: task.engine } : {}),
+                    ...(next.notBefore > Date.now() ? {
+                        notBefore: next.notBefore,
+                        notBeforeWhy: `round ${next.round} waits ${next.delayMin} min after the previous answer`
+                    } : {}),
+                    ...(task.model ? { model: task.model } : {}),
+                    ...(task.effort ? { effort: task.effort } : {}),
+                    ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
+                    ...(task.cli ? { cli: task.cli } : {}),
+                    ...(task.workDir ? { workDir: task.workDir } : {}),
+                    ...(task.priority ? { priority: task.priority } : {}),
+                    ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
+                    // The retry policy rides with the chain: a round that meets
+                    // a usage limit deserves the same second chance the first
+                    // one had, and losing it here would make round 2 of a
+                    // careful task more fragile than round 1.
+                    ...(task.retry ? { retry: task.retry } : {}),
+                    ...(task.interactiveTarget ? { interactiveTarget: task.interactiveTarget } : {}),
+                    ...(task.interactiveClose ? { interactiveClose: task.interactiveClose } : {}),
+                    ...(task.missionId ? { missionId: task.missionId } : {}),
+                    ...(task.outputContract ? { outputContract: task.outputContract } : {})
+                }).autoStart = true;
+            }, true);
+            if (!wrote) {
+                // The row is in memory and the pump will still run it in this
+                // window; what it will not do is come back after a restart —
+                // which matters more here than for a retry, because a round may
+                // be waiting hours. Said on the answered run's own record.
+                noteTaskEvent(task, 'finished',
+                    `round ${next.round} could not be saved — it runs only while this window stays open`);
+            }
+        } catch { /* the round is not on the board; the event above is the trace */ }
     }
 
     /**
@@ -3274,6 +3415,19 @@ export class TaskManager implements vscode.Disposable {
                     } : {}),
                     retryOf: task.retryOf ?? task.id,
                     retryAttempt: d.attempt,
+                    // ‼️ M-27 — THE CHAIN SURVIVES THE RETRY, AND THE ROUND DOES
+                    // NOT MOVE. A retry is this same round attempted again; if
+                    // the rounds were dropped here a task that met a usage limit
+                    // would quietly lose everything the user still had to say,
+                    // and if `round` were incremented the badge would count
+                    // failures as progress. The retry that finally succeeds is
+                    // the run that opens the next round — from exactly here.
+                    ...(task.roundsTotal !== undefined ? {
+                        round: task.round,
+                        roundsTotal: task.roundsTotal,
+                        ...(task.rounds?.length ? { rounds: task.rounds } : {}),
+                        ...(task.roundOf ? { roundOf: task.roundOf } : {})
+                    } : {}),
                     // ‼️ M-10 — A RESET-AWARE RETRY CARRIES THE MOMENT ITSELF.
                     // The ordinary path is "a minute from now at the earliest,
                     // plus whatever the policy waits"; the reset path already

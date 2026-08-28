@@ -19,6 +19,7 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
+import { normalizeRounds } from '../core/taskRounds';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
@@ -196,6 +197,12 @@ interface RunRow {
     title: string;
     agentName: string;
     mode: string;
+    /** ‼️ M-27 — where this run is in its chain. `roundsTotal: 0` means there
+     *  is no chain, which is what every ordinary task says. */
+    round: number;
+    roundsTotal: number;
+    roundsLeft: number;
+    roundNextWaitMin: number;
     status: string;
     /** where it came from: schedule / trigger / workflow / manual */
     source: string;
@@ -600,6 +607,13 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
                         : ['manual', 'you'];
         return {
             id: t.id, title: t.title, agentName: t.agentName, mode: t.mode,
+            // ‼️ M-27 — WHERE THIS RUN IS IN ITS CHAIN, and nothing at all when
+            // there is no chain: `roundsTotal` is unset on every ordinary task,
+            // and a badge reading "1 of 1" would be noise on every board.
+            round: t.round ?? 1,
+            roundsTotal: t.roundsTotal ?? 0,
+            roundsLeft: (t.rounds ?? []).length,
+            roundNextWaitMin: (t.rounds ?? [])[0]?.delayMin ?? 0,
             status: t.status === 'queued' && t.autoStart ? 'parked' : t.status,
             source, sourceKind,
             when: t.endedAt ?? t.startedAt ?? t.createdAt,
@@ -2008,6 +2022,11 @@ export class TasksPanel {
                     // means the user's default, which is why it is not filled in
                     // with a resolved policy here.
                     ...(normalizeRetry(t.retry) ? { retry: normalizeRetry(t.retry) as RetryPolicy } : {}),
+                    // ‼️ M-27 — the prompts AFTER the first one, cleaned by the
+                    // same function the bridge uses. An empty row left in the
+                    // form is dropped rather than refused: it is what a
+                    // half-typed thought looks like, not a mistake to shout at.
+                    ...(normalizeRounds(t.rounds).length ? { rounds: normalizeRounds(t.rounds) } : {}),
                     // ‼️ S-19 — last, so the conversation's own engine and folder
                     // beat whatever the form's pickers happened to be showing.
                     ...resumeExtra

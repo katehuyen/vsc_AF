@@ -263,6 +263,7 @@ import {
     describeRetry, normalizeRetry, RETRY_DEFAULT_SAFETY_MIN, RETRY_MAX_ATTEMPTS,
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
+import { normalizeRounds, ROUND_DELAY_MAX_MIN } from './core/taskRounds';
 import {
     addGuidance, allowedAgents, buildResumeMessage, DEFAULT_AUTONOMY, DEFAULT_MISSION_LIMITS,
     deleteTrace, describeDelegateRun, isAdaptive, resolveDelegateRun,
@@ -5796,7 +5797,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'still held by a live Console card or CLI process the task PARKS with that as its visible '
                 + 'reason and launches by itself when the holder lets go — a second writer on one transcript '
                 + 'is never opened. Cost is the DIFFERENCE this turn made, not the conversation\'s total. '
-                + 'Read `resume` and `resumedFrom` in the answer, and `sessions.recent` / `sessions.find` for ids)',
+                + 'Read `resume` and `resumedFrom` in the answer, and `sessions.recent` / `sessions.find` for ids), '
+                // ‼️ M-27 — MORE THAN ONE TURN, WHICH IS WHAT AN UNATTENDED SESSION
+                // usually needs and could not be asked for.
+                + 'rounds? (‼️ M-27 — THE PROMPTS AFTER THE FIRST ONE, as an array, in order: '
+                + '[{prompt, delayMin?}, …] (a bare string is the same thing with no wait). `prompt` is '
+                + 'round 1; each of these is sent into the SAME conversation once the round before it has '
+                + 'been ANSWERED, so this is one session going several turns deep rather than N unrelated '
+                + 'runs — round 2 wakes up knowing everything round 1 did. `delayMin` waits that many '
+                + 'minutes after the previous answer lands before sending (0/omitted = at once, max '
+                + ROUND_DELAY_MAX_MIN + '). Each round becomes its own visible task row when its turn '
+                + 'comes, carrying the moment it may start, so a long wait survives a restart and can be '
+                + 'cancelled. ‼️ A RETRY IS NOT A ROUND: a failed run that is retried re-attempts the SAME '
+                + 'round with the same words and consumes nothing — the retry that finally succeeds is what '
+                + 'opens the next one. A round is a REPLY, so a run with no conversation bound to it (see '
+                + 'sessions.bindings) opens none and says so on the record rather than starting a fresh '
+                + 'conversation with a prompt written for a context it does not have; a failed or cancelled '
+                + 'run ends the chain. Read `round` / `rounds` / `roundsLeft` in the answer)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -5901,6 +5918,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // function the form uses. Absent leaves the user's own
                         // default in charge, which is not the same as {max:0}.
                         ...(normalizeRetry(args.retry) ? { retry: normalizeRetry(args.retry) as RetryPolicy } : {}),
+                        // ‼️ M-27 — the prompts AFTER the first one. Cleaned by
+                        // the same function the form uses, so a blank row and a
+                        // nonsense wait are refused identically at both doors.
+                        ...(normalizeRounds(args.rounds).length
+                            ? { rounds: normalizeRounds(args.rounds) } : {}),
                         // ‼️ S-19 — LAST, so the session's own engine and folder
                         // beat anything the caller stated about them.
                         ...resumeExtra
@@ -5952,6 +5974,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     projectId: task.projectId ?? null, cli: task.cli ?? null,
                     priority: task.priority ?? 0,
                     ignoreBudget: !!task.ignoreBudget,
+                    // ‼️ M-27 — how deep this run goes. `rounds: 1` is every
+                    // task that ever existed and is not a chain at all.
+                    round: task.round ?? 1,
+                    rounds: task.roundsTotal ?? 1,
+                    roundsLeft: (task.rounds ?? []).map(r => ({
+                        prompt: r.prompt, delayMin: r.delayMin ?? 0
+                    })),
                     // ‼️ M-3 — what will happen if it fails, said back in words.
                     // `retry: null` means the user's default is in charge, and
                     // `retryPolicy` spells out what that resolves to TODAY, so

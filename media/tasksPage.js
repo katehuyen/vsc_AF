@@ -34,6 +34,10 @@
     window.AFSnippets.init(vscode);
     const SNIP_HINT = window.AFSnippets.HINT;
     const SNIP_BOXES = ['nt-prompt', 'nt-retryprompt', 'nt-continuationprompt', 'nt-st-prompt'];
+    // ‼️ M-27 — the same ceiling core/taskRounds.ts clamps to (seven days). The
+    // box refuses it here so the user sees the limit rather than typing a number
+    // that is silently cut down on the way in.
+    const ROUND_DELAY_MAX_MIN = 7 * 24 * 60;
 
     let tab = DATA.tab || saved.tab || 'plan';
     let cmdText = '';
@@ -1129,6 +1133,10 @@
             kind: kind || 'task', mode2: 'new', id: '',
             agent: (DATA.agents || [])[0] || '',
             title: '', prompt: '', mode: 'headless',
+            // ‼️ M-27 — the prompts AFTER the first one. Empty is not a missing
+            // answer, it is the ordinary one-turn task every other field here
+            // was written for.
+            rounds: [],
             // The launcher's own defaults are the starting point, exactly as
             // they would be for a session started by hand.
             engine: d.engine || '',
@@ -1184,6 +1192,9 @@
         };
         const draft = Object.assign(base, seed || {});
         if (!Array.isArray(draft.steps)) { draft.steps = []; }
+        // A seed from "run that one again" or from a stored task can carry
+        // anything; a rounds list that is not a list is no rounds.
+        if (!Array.isArray(draft.rounds)) { draft.rounds = []; }
         // `agentfarm.addWorkflowStep` / `editWorkflowStep` arrive with the card
         // already asked for; a card with nothing in it has nothing to read.
         if (draft.stepIdx === undefined) { draft.stepIdx = null; }
@@ -1760,6 +1771,59 @@
         return { icon: k.icon, hint: k.label, who: who, flags: flags };
     }
 
+    /**
+     * ‼️ M-27 — THE PROMPTS AFTER THE FIRST ONE.
+     *
+     * The box above is round 1. Each row here is one more turn of the SAME
+     * conversation, sent once the round before it has been answered — which is
+     * the thing an unattended session usually needs and could not be asked for
+     * at all: three prompts meant three tasks, and the second of them woke up
+     * knowing nothing about the first.
+     *
+     * Drawn only for a run (a schedule and a trigger reach this through the
+     * task they make), and drawn EMPTY as a single line of prose with one
+     * button. A form that opens with a stack of empty round boxes would charge
+     * every ordinary one-prompt task for a feature it is not using — and a
+     * control with no referent is a bug (docs/CONVENTIONS.md).
+     */
+    function roundsHtml(c) {
+        const rounds = Array.isArray(c.rounds) ? c.rounds : [];
+        const rows = rounds.map((r, i) => {
+            const n = i + 2;   // round 1 is the prompt box above
+            const wait = Number(r.delayMin) || 0;
+            return `<div class="ntround" data-ri="${i}">
+                <span class="ntrn" title="${C.esc(
+                'Round ' + n + ' — sent into the same conversation once round ' + (n - 1)
+                + ' has been ANSWERED. A retry is not a round: a failed run re-attempts the same '
+                + 'round with the same words and consumes nothing.')}">R${n}</span>
+                <textarea id="nt-round-${i}" rows="2"
+                    placeholder="What to say once round ${n - 1} has answered">${C.esc(r.prompt || '')}</textarea>
+                <label class="ntrw" title="${C.esc(
+                (wait > 0
+                    ? 'Waits ' + wait + ' min after round ' + (n - 1) + ' answers before this one is sent.'
+                    : 'Sent as soon as round ' + (n - 1) + ' answers.')
+                + '\n\nMinutes to wait AFTER the previous answer lands. 0 sends it at once. '
+                + 'The wait is a real queued row that says when it starts, so it survives a '
+                + 'restart and can be cancelled.')}"><span>wait</span>
+                    <input type="number" id="nt-roundw-${i}" min="0" max="${ROUND_DELAY_MAX_MIN}"
+                        step="1" value="${C.esc(String(wait))}"><span class="muted small">min</span></label>
+                <button class="mini secondary" data-rnd="del" data-i="${i}" title="remove round ${n}">✕</button>
+            </div>`;
+        }).join('');
+        return `<div class="ntf wide ntrounds"><span title="${C.esc(
+            'A round is one prompt sent into the SAME conversation, once the round before it has '
+            + 'been answered — so round 2 wakes up knowing everything round 1 did. Add as many as '
+            + 'the work needs; each becomes its own queued row when its turn comes.'
+            + '\n\nA RETRY IS NOT A ROUND. A run that fails and is retried re-attempts the same '
+            + 'round with the same words and consumes none of these; the retry that finally '
+            + 'succeeds is what opens the next one.')}">More rounds <em>optional</em></span>
+            ${rounds.length ? `<div class="ntroundlist">${rows}</div>`
+                : `<div class="muted small">One prompt, one turn. Add a round to keep the same
+                    conversation going — the next prompt is sent once this one has been answered.</div>`}
+            <div class="ctl-row"><button class="secondary mini" id="nt-roundadd"
+                title="Add one more prompt to this conversation.">+ another prompt</button></div></div>`;
+    }
+
     function workflowHtml(c) {
         const last = c.steps.length - 1;
         const list = c.steps.map((s, i) => {
@@ -2244,7 +2308,8 @@
             + 'its own: name the files, say what "done" looks like, and say where the answer goes.'
             + '\n' + SNIP_HINT)}"><span>Prompt <em>required</em></span>
                     <textarea id="nt-prompt" rows="4"
-                        placeholder="What should the agent do? Ctrl+Enter saves it.">${C.esc(c.prompt)}</textarea></label>` : ''}
+                        placeholder="What should the agent do? Ctrl+Enter saves it.">${C.esc(c.prompt)}</textarea></label>
+                ${roundsHtml(c)}` : ''}
                 <label class="ntf wide"><span>${c.kind === 'task' ? 'Title' : 'Name'}${c.kind === 'task' ? '' : ' <em>required</em>'}</span>
                     <input type="text" id="nt-title" value="${C.esc(c.title)}"
                         placeholder="${c.kind === 'task' ? '(optional — the prompt\'s first line otherwise)' : 'What is this called?'}"></label>
@@ -2370,6 +2435,21 @@
             if (el) { composer[key] = !!el.checked; }
         };
         v('prompt', 'prompt'); v('title', 'title'); v('agent', 'agent'); v('mode', 'mode');
+        // ‼️ M-27 — the rounds are read BY INDEX off the draft's own list rather
+        // than by scraping the DOM for them: the row is the truth about how many
+        // there are (adding and removing act on the draft, so Cancel really
+        // cancels), and a box that is not on the page — the form is on another
+        // kind, or read-only — leaves what was typed alone.
+        if (Array.isArray(composer.rounds)) {
+            composer.rounds = composer.rounds.map((r, i) => {
+                const box = document.getElementById('nt-round-' + i);
+                const wait = document.getElementById('nt-roundw-' + i);
+                return {
+                    prompt: box ? String(box.value) : String(r.prompt || ''),
+                    delayMin: wait ? Math.max(0, Number(wait.value) || 0) : (Number(r.delayMin) || 0)
+                };
+            });
+        }
         v('engine', 'engine');
         v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
         // ‼️ M-26 — drawn only on an interactive run, and `v()` skips what is not
@@ -2562,6 +2642,32 @@
         return t.length > 34 ? t.slice(0, 33).trim() + '…' : t;
     }
 
+    /**
+     * ‼️ M-27 — HOW DEEP THIS RUN IS, in the shortest unambiguous form
+     * (SHORTHAND, docs/CONVENTIONS.md): `R2/4` on the row, the whole sentence in
+     * the hover. Nothing at all for a one-prompt task, which is nearly every
+     * task there has ever been — a badge that says "1 of 1" on nine rows to
+     * explain the tenth is exactly the noise the rule exists to prevent.
+     */
+    function roundBadge(r) {
+        const total = Number(r.roundsTotal) || 0;
+        if (total < 2) { return ''; }
+        const at = Number(r.round) || 1;
+        const left = Number(r.roundsLeft) || 0;
+        const wait = Number(r.roundNextWaitMin) || 0;
+        const after = left
+            ? (wait > 0
+                ? ` The next one is sent ${wait} min after this answer lands.`
+                : ' The next one is sent as soon as this answer lands.')
+            : ' This is the last one.';
+        return ` · <span class="rnd" title="${C.esc(
+            `Round ${at} of ${total} — one prompt sent into the SAME conversation, once the round `
+            + 'before it has been answered.'
+            + '\nA RETRY IS NOT A ROUND: a run that fails and is retried re-attempts this same '
+            + 'round with the same words and does not move the count.'
+            + after)}">R${at}/${total}</span>`;
+    }
+
     function runRows(d) {
         const v = runView;
         // …and so is this one
@@ -2748,7 +2854,7 @@
                   panel (docs/CONVENTIONS.md): the run's identity belongs to this
                   cell, the reason it is not moving belongs to its status. */''}
             <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
-                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}</div>`,
+                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}</div>`,
             `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
             window.AFTip.lines([
                 r.prompt || '(no prompt)',
@@ -3055,6 +3161,28 @@
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
+                /* ‼️ M-27 — THE ROUNDS. One row per prompt, and the row is read
+                   left to right: which round it is, what it says, how long it
+                   waits first. The prompt box takes every pixel the other three
+                   do not need — flex:1 1 auto WITH min-width:0, because a
+                   textarea inside a flex row otherwise keeps its 20-column
+                   default and squeezes the row into a slit, which is exactly
+                   what the first picture of this showed. */
+                /* The chain badge on a run row. Same weight as the agent and
+                   the mode beside it — it is one more fact about the row, not
+                   a warning. */
+                .rnd { cursor:help; opacity:.9; font-variant-numeric:tabular-nums; }
+                .ntrounds { gap:5px; }
+                .ntroundlist { display:flex; flex-direction:column; gap:6px; }
+                .ntround { display:flex; align-items:flex-start; gap:7px; }
+                .ntrn { flex:0 0 auto; margin-top:5px; font-size:11px; font-weight:600;
+                    opacity:.8; cursor:help; min-width:2.1em; }
+                .ntround textarea { flex:1 1 auto; min-width:0; font-family:inherit;
+                    font-size:13px; padding:5px 7px; resize:vertical; min-height:44px; }
+                .ntrw { flex:0 0 auto; display:flex; align-items:center; gap:4px;
+                    margin-top:4px; font-size:11px; opacity:.85; cursor:help; }
+                .ntrw input { width:4.4em; padding:3px 5px; }
+                .ntround > button { flex:0 0 auto; margin-top:3px; }
                 .ntmsg { font-size:12px; margin:6px 0; padding:5px 10px; border-radius:5px;
                     background:var(--vscode-editorWidget-background, rgba(128,128,128,.08)); }
                 .ntmsg.warn { color:var(--vscode-editorWarning-foreground,#cca700);
@@ -3530,6 +3658,24 @@
                     ev.preventDefault();
                     submitComposer(false);
                 }
+            });
+            // ‼️ M-27 — adding and removing a round act on the DRAFT, for the
+            // same reason the workflow's steps do: Cancel has to really cancel,
+            // and there is no stored object to act on until the form is saved.
+            byId('nt-roundadd', 'click', () => {
+                readComposer();
+                composer.rounds.push({ prompt: '', delayMin: 0 });
+                render();
+                // The new box is the thing the user just asked for, so it is
+                // where the cursor goes.
+                const box = document.getElementById('nt-round-' + (composer.rounds.length - 1));
+                if (box) { box.focus(); }
+            });
+            click('[data-rnd]', e => {
+                readComposer();
+                const i = Number(e.currentTarget.dataset.i);
+                if (i >= 0 && i < composer.rounds.length) { composer.rounds.splice(i, 1); }
+                render();
             });
         }
 

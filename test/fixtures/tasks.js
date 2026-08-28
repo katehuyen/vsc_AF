@@ -326,6 +326,32 @@ const variants = () => ([
     // ‼️ M-3 — the form with the retry block OPEN, which is the only state the
     // four numbers exist in. A picture of it shut would say nothing about the
     // row it adds, and the row is the change.
+    // ‼️ M-27 — the form with a CHAIN in it, which is the only state the new
+    // block exists in. Shut, the form shows one line of prose and a button; the
+    // change is the rows, their round labels and the wait beside each one, and
+    // none of that is drawn until somebody presses the button twice.
+    {
+        id: 'tasks-rounds',
+        label: 'Tasks → the New-task form, with three rounds of one conversation',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-prompt': 'X-130 ölçümünü tekrarla ve sayıları yaz.' }, 'nt-prompt');
+            r.query('#nt-roundadd')[0].click();
+            r.query('#nt-roundadd')[0].click();
+            // ‼️ Fired on `nt-start`, not on a round box. A textarea shows its
+            // CHILD TEXT, not its `.value`, so driving the boxes alone paints a
+            // picture of three placeholders. `nt-start` is the one control that
+            // re-reads the whole form and repaints it, which is what puts the
+            // typed words into the markup the camera sees.
+            drive(r, {
+                'nt-round-0': 'Şimdi testleri koş ve düşen varsa kök nedeni söyle.',
+                'nt-roundw-0': '0',
+                'nt-round-1': 'Temizse paketle, kur ve extensions.json sürümünü doğrula.',
+                'nt-roundw-1': '15'
+            }, 'nt-start');
+        }
+    },
     {
         id: 'tasks-retry', label: 'Tasks → the New-task form, with a retry policy set',
         data: data(),

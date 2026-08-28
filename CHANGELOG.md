@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.292.0 - M-27: a task can go as many rounds as the work needs (2026-08-28)
+
+**A task carried exactly one prompt, and that is not the shape of the work.**
+"Read the file, then write the patch, then run the tests" is three turns of ONE
+conversation; the only way to say it was to queue three tasks — three runs,
+three separate conversations, and the second of them woke up knowing nothing
+about the first. So the thing an unattended session usually needs could not be
+asked for at all.
+
+A ROUND is one prompt sent into the same conversation once the round before it
+has been ANSWERED. The prompt box is round 1 — that is every task ever written
+and none of them change. Under it, **+ another prompt** adds as many more as the
+work needs, each with its own **wait** in minutes measured from the moment the
+previous answer lands (0 = at once, up to seven days). Each round becomes its
+own visible task row when its turn comes, carrying the moment it may start, so a
+two-hour wait survives a restart, says when it will go, and can be cancelled —
+the same lesson retries taught: a chain held in a closure is a chain the window
+closing throws away.
+
+**‼️ A RETRY IS NOT A ROUND.** A retry is the same round attempted again because
+the run did not survive; a round is the next thing to say because the previous
+one was answered. The retry carries the whole chain forward and does not move
+the count — otherwise "round 3 of 5" would be a lie on any task that ever met a
+usage limit, and a flaky network would silently eat the rounds the user paid
+for. The retry that finally succeeds is the run that opens the next round.
+
+A round is a REPLY, so a run with no conversation bound to it opens none and
+says why on its own record, rather than starting a fresh conversation with a
+prompt written for a context it does not have. A failed or cancelled run ends
+the chain; a workflow step opens no round of its own, because the workflow
+already owns what happens next.
+
+On the board a chained run says `R2/4` beside its agent, with the whole sentence
+in the hover — and nothing at all on a one-prompt task. On the bridge,
+`tasks.add` takes `rounds: [{prompt, delayMin?}, …]` and reads back `round`,
+`rounds` and `roundsLeft`. A round waiting on a ceiling now announces itself the
+way a retry does: by round 4 the person who typed it left hours ago.
+
 ## 3.291.0 - X-130: the backlog is read once per change, not three times (2026-08-28)
 
 **A backlog mutation cost two full parses of a document that never shrinks.**

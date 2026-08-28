@@ -1,0 +1,257 @@
+// M-27 — a task that goes several rounds deep (compiled core/taskRounds.js, pure).
+//
+// What is actually being defended here:
+//   - a RETRY IS NOT A ROUND. It is the same round attempted again, and if the
+//     two were ever counted together then "round 3 of 5" would be a lie on any
+//     task that hit a usage limit, and a flaky network would silently eat the
+//     rounds the user paid for.
+//   - a round is a REPLY. Without a conversation to resume there is nothing to
+//     reply to, and sending round 2 into a brand new session — which is what
+//     "just run it anyway" would do — answers nothing and looks like it worked.
+//   - the chain stops when the run does. A failure is the retry policy's
+//     subject and a cancellation is a person saying stop.
+//   - the denominator survives. By round 3 the list has been eaten down, so
+//     what the user originally asked for is only knowable at creation.
+const path = require('path');
+
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+
+const R = require(path.join(__dirname, '..', 'out', 'core', 'taskRounds.js'));
+
+const NOW = new Date(2026, 7, 28, 11, 0).getTime();
+const MIN = 60 * 1000;
+const done = (over) => Object.assign({ status: 'done', runSessionId: 'sess-1' }, over);
+
+// ---------------------------------------------------------------------------
+// normalizeRounds — what a form, a bridge call and a stored task all hand in
+// ---------------------------------------------------------------------------
+{
+    ok('a list that is not a list is no rounds at all',
+        R.normalizeRounds(undefined).length === 0 && R.normalizeRounds('nope').length === 0
+        && R.normalizeRounds(null).length === 0);
+
+    const cleaned = R.normalizeRounds([
+        { prompt: '  now the tests  ', delayMin: 5 },
+        { prompt: '   ' },
+        { prompt: 'and the changelog' },
+        { prompt: '' }
+    ]);
+    ok('a blank row is DROPPED, not refused — that is what a half-filled form looks like',
+        cleaned.length === 2);
+    ok('…and the prompt is trimmed',
+        cleaned[0].prompt === 'now the tests' && cleaned[1].prompt === 'and the changelog');
+    ok('a wait of zero is not written down — absent already means "as soon as the answer lands"',
+        cleaned[1].delayMin === undefined && cleaned[0].delayMin === 5);
+
+    ok('a bare string is a round with no wait — the shorthand JSON by hand reaches for',
+        R.normalizeRounds(['carry on']).length === 1
+        && R.normalizeRounds(['carry on'])[0].prompt === 'carry on'
+        && R.normalizeRounds(['carry on'])[0].delayMin === undefined);
+
+    ok('‼️ a wait is CLAMPED, never trusted: an unbounded one is a task that never'
+        + ' finishes and never says why',
+        R.normalizeRounds([{ prompt: 'x', delayMin: 999999 }])[0].delayMin === R.ROUND_DELAY_MAX_MIN);
+    ok('…and a negative or nonsense wait is no wait',
+        R.normalizeRounds([{ prompt: 'x', delayMin: -30 }])[0].delayMin === undefined
+        && R.normalizeRounds([{ prompt: 'x', delayMin: 'soon' }])[0].delayMin === undefined
+        && R.normalizeRounds([{ prompt: 'x', delayMin: NaN }])[0].delayMin === undefined);
+    ok('…and a fractional wait is floored rather than carried into the timer',
+        R.normalizeRounds([{ prompt: 'x', delayMin: 2.9 }])[0].delayMin === 2);
+}
+
+// ---------------------------------------------------------------------------
+// planNextRound — the four things that must all be true
+// ---------------------------------------------------------------------------
+{
+    const task = done({ round: 1, rounds: [{ prompt: 'now the tests' }, { prompt: 'then commit', delayMin: 10 }] });
+    const next = R.planNextRound(task, NOW);
+    ok('the next round is the first thing still unsaid', next && next.prompt === 'now the tests');
+    ok('…numbered exactly one higher', next.round === 2);
+    ok('…resuming THIS run\'s own conversation, because a round is a reply',
+        next.resumeSessionId === 'sess-1');
+    ok('…startable at once when no wait was asked for', next.notBefore === NOW && next.delayMin === 0);
+    ok('‼️ …and carrying what is LEFT, so the chain moves itself forward rather than'
+        + ' being held in a closure that a reload would throw away',
+        next.rest.length === 1 && next.rest[0].prompt === 'then commit');
+
+    const second = R.planNextRound(done({ round: 2, rounds: next.rest }), NOW);
+    ok('the round after that waits the minutes its own row asked for',
+        second.round === 3 && second.delayMin === 10 && second.notBefore === NOW + 10 * MIN);
+    ok('…and it is the last: nothing is left after it', second.rest.length === 0);
+
+    ok('a chain with nothing left ends',
+        R.planNextRound(done({ round: 3, rounds: [] }), NOW) === undefined);
+    ok('…and a task that never asked for rounds is not a chain at all',
+        R.planNextRound(done({}), NOW) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ the run has to have ENDED WELL
+// ---------------------------------------------------------------------------
+{
+    const rounds = [{ prompt: 'now the tests' }];
+    ok('‼️ a FAILED run opens no round — a round is a reply and there is no answer'
+        + ' to reply to; failure is the retry policy\'s subject',
+        R.planNextRound({ status: 'failed', runSessionId: 's', rounds }, NOW) === undefined);
+    ok('‼️ a CANCELLED run opens no round — that is a person saying stop, and sending'
+        + ' them the next prompt would be the opposite of it',
+        R.planNextRound({ status: 'cancelled', runSessionId: 's', rounds }, NOW) === undefined);
+    ok('a run still going opens nothing yet',
+        R.planNextRound({ status: 'running', runSessionId: 's', rounds }, NOW) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ there has to be a CONVERSATION, and the refusal is said out loud
+// ---------------------------------------------------------------------------
+{
+    const orphan = { status: 'done', round: 1, rounds: [{ prompt: 'a' }, { prompt: 'b' }] };
+    ok('‼️ no bound session, no round: round 2 sent into a NEW conversation would be a'
+        + ' prompt written for a context it does not have',
+        R.planNextRound(orphan, NOW) === undefined);
+    const why = R.refuseNextRound(orphan);
+    ok('…and that silence is the one case narrated, with the count that was dropped',
+        typeof why === 'string' && /round 2/.test(why) && /2 round\(s\) dropped/.test(why));
+
+    ok('a chain that simply ran out is NOT narrated — nothing happened is not news',
+        R.refuseNextRound(done({ round: 3, rounds: [] })) === undefined);
+    ok('…nor is a failure, which is already on the board as what it is',
+        R.refuseNextRound({ status: 'failed', rounds: [{ prompt: 'a' }] }) === undefined);
+    ok('…nor a chain that is about to run perfectly well',
+        R.refuseNextRound(done({ rounds: [{ prompt: 'a' }] })) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ a workflow step's "what happens next" is the workflow's
+// ---------------------------------------------------------------------------
+{
+    ok('‼️ a workflow step opens no round of its own — the workflow already owns'
+        + ' branching, verification and handoff, and two mechanisms answering'
+        + ' "what next" would race for the same task',
+        R.planNextRound(done({ workflowId: 'w1', rounds: [{ prompt: 'a' }] }), NOW) === undefined);
+    ok('…and that is not narrated as a refusal either',
+        R.refuseNextRound(done({ workflowId: 'w1', rounds: [{ prompt: 'a' }] })) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ A RETRY IS NOT A ROUND — the distinction the whole file exists to keep
+// ---------------------------------------------------------------------------
+{
+    // A retry carries the chain forward untouched: same round, same rounds left.
+    // What is asserted is that nothing in this module MOVES the count except
+    // planNextRound, so a retry that copies the fields lands on the same round.
+    const attempt1 = { status: 'failed', round: 2, rounds: [{ prompt: 'c' }], runSessionId: 's' };
+    const retry = { status: 'done', round: attempt1.round, rounds: attempt1.rounds, runSessionId: 's' };
+    ok('‼️ the retry of round 2 is still round 2', R.roundOf(retry) === 2);
+    const after = R.planNextRound(retry, NOW);
+    ok('‼️ …and when it finally succeeds THAT run opens round 3, not round 4 —'
+        + ' the failed attempt consumed nothing',
+        after.round === 3 && after.prompt === 'c');
+    ok('…and it consumed no prompt either: the chain is exactly where it was',
+        after.rest.length === 0);
+
+    ok('a task written before M-27 is round 1 by definition', R.roundOf({}) === 1);
+    ok('…and so is one whose round is nonsense',
+        R.roundOf({ round: 0 }) === 1 && R.roundOf({ round: -4 }) === 1 && R.roundOf({ round: 'two' }) === 1);
+}
+
+// ---------------------------------------------------------------------------
+// what the board says about it
+// ---------------------------------------------------------------------------
+{
+    ok('the denominator counts round 1, which is the task\'s own prompt',
+        R.totalRounds([{ prompt: 'a' }, { prompt: 'b' }]) === 3 && R.totalRounds([]) === 1);
+
+    ok('‼️ a plain one-round task gets NO badge — "1 of 1" is noise on every board',
+        R.describeRound({ round: 1, roundsTotal: 1 }) === undefined
+        && R.describeRound({}) === undefined);
+    ok('…a chain says where it is, in the shortest unambiguous form',
+        R.describeRound({ round: 2, roundsTotal: 4 }) === 'R2/4');
+
+    const long = R.explainRound({ round: 2, roundsTotal: 4, rounds: [{ prompt: 'c', delayMin: 15 }] });
+    ok('…and the panel opens with the long form of that shorthand',
+        /^Round 2 of 4/.test(long));
+    ok('‼️ …and says the thing the number cannot: that a retry does not move it',
+        /retry is not a round/.test(long));
+    ok('…and what the next one is waiting for', /waits 15 min/.test(long));
+    ok('…or that it is not waiting at all',
+        / as soon as this answer lands/.test(
+            R.explainRound({ round: 2, roundsTotal: 4, rounds: [{ prompt: 'c' }] })));
+    ok('…and the last round says it is the last',
+        /This is the last one/.test(R.explainRound({ round: 4, roundsTotal: 4, rounds: [] })));
+    ok('a one-round task has nothing to explain', R.explainRound({ round: 1 }) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// the wiring, which lives in the manager and the page and has no unit seam
+// ---------------------------------------------------------------------------
+{
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.ts'), 'utf8');
+
+    const finish = src.slice(src.indexOf('private finish(task: FarmTask'),
+        src.indexOf('private openNextRound'));
+    ok('‼️ the next round is opened when a run ENDS WELL, from finish()',
+        /if \(status === 'done'\) \{ this\.openNextRound\(task\); \}/.test(finish));
+
+    const open = src.slice(src.indexOf('private openNextRound'),
+        src.indexOf('private maybeScheduleRetry'));
+    ok('‼️ the round is a ROW, not a setTimeout: a closure holding round 3 is thrown'
+        + ' away when the window closes, cannot be seen and cannot be cancelled',
+        /this\.addTask\(/.test(open) && !/setTimeout/.test(open));
+    ok('…carrying the moment it may start, so the pump launches it like anything else held',
+        /notBefore: next\.notBefore/.test(open));
+    ok('…and resuming the conversation that was answered', /resumeSessionId: next\.resumeSessionId/.test(open));
+    ok('‼️ …and the refusal is said on the record rather than passed over in silence',
+        /refuseNextRound\(task\)/.test(open) && /no next round/.test(open));
+    ok('…and a write the store would not keep is admitted, because a round may wait hours',
+        /could not be saved/.test(open));
+    ok('‼️ …and the retry policy rides with the chain — losing it would make round 2'
+        + ' of a careful task more fragile than round 1',
+        /task\.retry \? \{ retry: task\.retry \}/.test(open));
+
+    const retry = src.slice(src.indexOf('const nextTitle = `${baseTitle}'),
+        src.indexOf('// ‼️ M-10 — HELD BECAUSE NOBODY CAN SAY WHETHER WORK HAPPENED'));
+    ok('‼️ A RETRY CARRIES THE CHAIN AND DOES NOT MOVE THE ROUND: dropping the rounds'
+        + ' here would make a task that met a usage limit quietly lose everything'
+        + ' the user still had to say',
+        /round: task\.round,/.test(retry) && /roundsTotal: task\.roundsTotal,/.test(retry)
+        && /rounds: task\.rounds/.test(retry));
+    ok('…and nothing in that block increments it', !/round: \(?task\.round \?\? 1\)? \+ 1/.test(retry));
+
+    const add = src.slice(src.indexOf('const chain = normalizeRounds(task.rounds)'),
+        src.indexOf('// The first line of the task\'s own record'));
+    ok('‼️ the list is cleaned at CREATION, so a blank form row and a delay read out of'
+        + ' somebody\'s JSON can never reach a timer',
+        /normalizeRounds\(task\.rounds\)/.test(add));
+    ok('‼️ …and the denominator is stamped there, the only moment it is knowable',
+        /task\.roundsTotal = totalRounds\(chain\)/.test(add));
+    ok('…while a round the chain itself opens states all of it and is left alone',
+        /task\.roundsTotal === undefined/.test(add) && /task\.round === undefined/.test(add));
+
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
+    ok('the form draws a row per round, with the round it is and the wait before it',
+        /id="nt-round-\$\{i\}"/.test(page) && /id="nt-roundw-\$\{i\}"/.test(page));
+    ok('‼️ …and adding or removing one acts on the DRAFT, so Cancel really cancels',
+        /composer\.rounds\.push\(/.test(page) && /composer\.rounds\.splice\(i, 1\)/.test(page));
+    ok('…the empty form is one line of prose and a button, not a stack of empty boxes',
+        /One prompt, one turn\./.test(page));
+    ok('‼️ …the row badge is drawn only for a real chain — "1 of 1" is noise on every board',
+        /if \(total < 2\) \{ return ''; \}/.test(page));
+    ok('…and its hover says the thing the number cannot',
+        /A RETRY IS NOT A ROUND/.test(page));
+    ok('…and the box refuses the same ceiling the core clamps to',
+        /const ROUND_DELAY_MAX_MIN = 7 \* 24 \* 60;/.test(page));
+
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+    ok('the page\'s form and the bridge clean the list with the SAME function',
+        /normalizeRounds\(t\.rounds\)/.test(panel));
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ …and so does tasks.add, or the two doors would build different objects',
+        /normalizeRounds\(args\.rounds\)/.test(ext));
+    ok('…and the op says what it takes and reads it back',
+        /rounds\? \(‼️ M-27/.test(ext) && /roundsLeft: \(task\.rounds \?\? \[\]\)/.test(ext));
+}
+
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
