@@ -11,17 +11,7 @@ dist/render/
 dist/measure/
 par.out
 
-# Scratch a session writes and does not keep: the commit message it feeds to
-# `git commit -F`, the one-shot bridge payloads, a dumped catalog. The reusable
-# tools in .tmp/ (bridge.js, cut.js, quota.js, the *-post.js recipes) stay
-# tracked on purpose.
-#
-# The rule is by KIND, not by name. It used to list `.tmp/msg.txt` and
-# `.tmp/payload*.json` literally, which meant a session that called its message
-# file anything else - `commitmsg.txt` - put its own scratch in the commit and
-# had to be told so as a trap. Scratch is anything here that is not a tool.
-.tmp/*
-!.tmp/*.js
-# same rule, the other scratch folder a session may reach for. The reusable
-# bridge/measurement tools live in .tmp/ and are the ones that are kept.
+# Scratch a session writes and does not keep: temporary files, one-shot test scripts, commit messages
+.tmp/
 scratchpad/
+
