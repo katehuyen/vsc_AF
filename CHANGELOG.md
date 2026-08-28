@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.298.0 - U-110: a set of name → value pairs is a row editor (2026-08-28)
+
+**Three settings are a free-form object** — `budgets`, `superpowersDefaults`,
+`agentEngineDefaults`. Nothing can list their keys, which is why all three were
+left as a JSON textarea, and it is the wrong conclusion: **the key is free, the
+pair is not.** Setting a budget meant hand-writing `{"developer": 20}` including
+the brace, the quote and the colon, and getting the agent's name right from
+memory — with a misfiled name failing silently for ever.
+
+One row per pair now: **a name box, an arrow, a value box, a ✕**, `+ add`, and
+**Save the pairs**. The name box **suggests and does not constrain** — the fleet
+the page is already holding is offered, and a name nobody has yet is still
+typeable, because `*` is a real key and so is an agent created tomorrow.
+
+**The three maps are not the same shape, and each now says so.** `budgets` is
+name → **number** and gets number boxes; `superpowersDefaults` is name →
+**boolean** and gets a yes/no picker that can still say "not set";
+`agentEngineDefaults` declares nothing about its values and keeps their JSON,
+honestly, in one cell. All read off `additionalProperties`. **Where the names
+come from is a manifest fact too** (`x-af-keys`), because the three differ:
+`budgets` takes agent names and `*` for the whole fleet, `superpowersDefaults`
+takes names with **no wildcard at all** (it is an exact match), and
+`agentEngineDefaults` is keyed by an agent's folder. One guessed list for all
+three would have offered `*` where it does nothing.
+
+**Four refusals a pair editor owes, all in words:** a value with no name, a name
+with no value (writing `""` would file a budget of nothing under a real agent —
+set-looking and inert), the same name twice, and a figure typed in words. The
+draft is a **list** of pairs rather than an object, so a pair being renamed does
+not jump around under the hand.
+
+With this and U-109, **U-89 is closed: no setting on that page is a bare JSON
+box any more.**
+
 ## 3.297.0 - U-109: the settings whose fields the manifest already declared (2026-08-28)
 
 **Fifteen settings name every field of their value, type it, say which ones are

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.297.0",
+  "version": "3.298.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8597,6 +8597,7 @@
         "agentFarm.agentEngineDefaults": {
           "type": "object",
           "default": {},
+          "x-af-keys": "agentDir",
           "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine."
         },
         "agentFarm.agyHome": {
@@ -9064,6 +9065,7 @@
         },
         "agentFarm.budgets": {
           "type": "object",
+          "x-af-keys": "agentOrAll",
           "additionalProperties": {
             "type": "number"
           },
@@ -9194,6 +9196,7 @@
         "agentFarm.superpowersDefaults": {
           "type": "object",
           "default": {},
+          "x-af-keys": "agent",
           "additionalProperties": {
             "type": "boolean"
           },

@@ -33,6 +33,10 @@
      */
     const formDraft = {};          // key -> { field: text } being edited
     const rowsDraft = {};          // key -> [ { field: text } ] being edited
+    /** U-110 — the free-form maps: [ { k, v } ] in the order shown, because a
+     *  pair being renamed must not jump around under the hand, and an object
+     *  cannot hold two rows that are briefly called the same thing. */
+    const mapDraft = {};           // key -> [ { k, v } ] being edited
     const jsonMode = {};           // key -> the user asked for the raw box
     /**
      * ‼️ THE TEXT IN THE JSON BOX, whenever the page has a reason to keep it.
@@ -104,7 +108,10 @@
         if (!s) { return ''; }
         const KIND = {
             list: 'a plain list', rows: 'a list of entries', form: 'one object',
-            map: 'name → value pairs', free: 'free-form JSON'
+            // U-110 — the chip says what a VALUE is where the schema knows: the
+            // three maps disagree, and "value" told the reader nothing about
+            // which of them they were looking at.
+            map: `name → ${s.valueType || 'value'} pairs`, free: 'free-form JSON'
         };
         const lines = [s.summary];
         if (s.fields && s.fields.length) {
@@ -624,6 +631,116 @@
         </div>`;
     }
 
+    // ---- U-110 — the settings that are a set of name → value pairs ----
+
+    /**
+     * ‼️ U-110 — THE NAMES THIS PAGE ALREADY KNOWS.
+     *
+     * A map's keys are the user's, so nothing can list them — but a budget
+     * filed under a misspelled agent name is a budget that never applies and
+     * never says why, and the page is holding the fleet the whole time. So the
+     * name box SUGGESTS and still accepts anything typed.
+     *
+     * ‼️ WHICH list is a fact of the MANIFEST (`x-af-keys`), because the three
+     * maps disagree: `budgets` is keyed by agent name and `*` means the whole
+     * fleet, `superpowersDefaults` is keyed by name with NO wildcard (an exact
+     * match — see superpowersDefaultsKey), and `agentEngineDefaults` is keyed
+     * by an agent's folder. One guessed list for all three would offer `*`
+     * where it does nothing at all.
+     */
+    function keyHints(source) {
+        const reports = (DATA.folders && DATA.folders.reports) || [];
+        const agents = reports.filter(r => !r.duplicate)
+            .reduce((a, r) => a.concat(r.candidates || []), []);
+        if (source === 'agentDir') { return agents.map(c => c.dir).filter(Boolean); }
+        const names = agents.map(c => c.name).filter(Boolean);
+        if (source === 'agent') { return names; }
+        // The wildcard first, because it is the answer a fleet-wide figure wants
+        // and the one nobody guesses is available.
+        if (source === 'agentOrAll') { return ['*'].concat(names); }
+        return [];
+    }
+
+    /** The pairs this key is showing: the draft being edited, or what is stored. */
+    function mapPairs(it) {
+        if (mapDraft[it.key]) { return mapDraft[it.key]; }
+        const v = (it.value && typeof it.value === 'object' && !Array.isArray(it.value)) ? it.value : {};
+        const f = mapField(it.shape);
+        return Object.keys(v).map(k => ({ k, v: fieldText(f, v[k]) }));
+    }
+
+    /** One value of a map, described as a field — so the box that draws it is
+     *  the SAME box a form field and a table cell get. */
+    function mapField(s) {
+        return {
+            name: 'value', type: s.valueType || 'object', required: false, description: '',
+            ...(s.valueAllowed && s.valueAllowed.length ? { allowed: s.valueAllowed } : {})
+        };
+    }
+
+    /** ‼️ Read the boxes before anything structural happens — the same lesson
+     *  the list, the form and the table all keep. */
+    function readMap(key) {
+        const id = shortKey(key);
+        const out = [];
+        for (let i = 0; ; i++) {
+            const name = document.getElementById(`m-${id}-${i}-k`);
+            if (!name) { break; }
+            const val = document.getElementById(`m-${id}-${i}-v`);
+            out.push({ k: String(name.value), v: val ? String(val.value) : '' });
+        }
+        mapDraft[key] = out;
+        return out;
+    }
+
+    /**
+     * ‼️ U-110 — A SET OF NAME → VALUE PAIRS IS A ROW EDITOR.
+     *
+     * Three settings are a free-form object: `budgets`, `superpowersDefaults`,
+     * `agentEngineDefaults`. Nothing can list their keys, which is exactly why
+     * they were left as a JSON textarea — and it is the wrong conclusion. The
+     * KEY is free; the PAIR is not. Setting a budget meant hand-writing
+     * `{"developer": 20}` including the brace, the quote and the colon, and
+     * getting the agent's name right from memory, with a misfiled name failing
+     * silently for ever.
+     *
+     * ‼️ A NAME BOX THAT SUGGESTS BUT DOES NOT CONSTRAIN. `*` is a real key,
+     * an agent that does not exist yet is a real key, and a picker would have
+     * refused both. The suggestions come from the fleet the page is already
+     * holding; the list a map draws on is declared in the schema.
+     */
+    function mapHtml(it) {
+        const id = shortKey(it.key);
+        const pairs = mapPairs(it);
+        const f = mapField(it.shape);
+        const hints = keyHints(it.shape.keySource);
+        const listId = `dl-${id}`;
+        const one = (p, i) => `<div class="setmrow">
+            <input type="text" id="m-${id}-${i}-k" data-mrow="${C.esc(it.key)}"
+                value="${C.esc(p.k)}" placeholder="a name"${hints.length ? ` list="${listId}"` : ''}
+                title="${C.esc(p.k || 'The name this value applies to.')}">
+            <span class="setmarrow">→</span>
+            ${fieldBox(f, `m-${id}-${i}-v`, p.v, `data-mrow="${C.esc(it.key)}"`)}
+            <button class="mini secondary" data-mdel="${C.esc(it.key)}" data-mi="${i}"
+                title="Remove this pair. Nothing is saved until you press Save the pairs.">✕</button>
+        </div>`;
+        return `<div class="setlist">
+            ${hints.length ? `<datalist id="${listId}">${hints.map(h =>
+            `<option value="${C.esc(h)}"></option>`).join('')}</datalist>` : ''}
+            ${pairs.length ? pairs.map(one).join('')
+                : '<div class="muted small">Empty — nothing is set. Add a pair below.</div>'}
+            <div class="setjrow">
+                <button class="secondary small" data-madd="${C.esc(it.key)}"
+                    title="Add one more name → value pair.">+ add</button>
+                <button class="secondary small" data-mapply="${C.esc(it.key)}"
+                    title="Save these pairs. Until you press it, nothing here has changed the setting.">Save the pairs</button>
+                <a href="#" class="setljson" data-mjson="${C.esc(it.key)}"
+                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
+                ${shapeHtml(it, true)}
+            </div>
+        </div>`;
+    }
+
     /** The way back out of the JSON box, per shape: [attribute, phrase, noun].
      *  A shape with no editor of its own (`map`, `free`) has no way back and
      *  gets no link — a "Back to the …" that led nowhere would be a dead
@@ -631,7 +748,8 @@
     const BACK = {
         list: ['llist', 'one box per entry', 'list'],
         form: ['fform', 'one box per field', 'form'],
-        rows: ['rtable', 'one row per entry', 'table']
+        rows: ['rtable', 'one row per entry', 'table'],
+        map: ['mpairs', 'one row per pair', 'pairs']
     };
 
     function controlHtml(it) {
@@ -653,6 +771,7 @@
             if (it.shape.kind === 'list') { return listHtml(it); }
             if (it.shape.kind === 'form') { return formHtml(it); }
             if (it.shape.kind === 'rows') { return rowsHtml(it); }
+            if (it.shape.kind === 'map') { return mapHtml(it); }
         }
         if (it.type === 'array' || it.type === 'object') {
             let text = '';
@@ -1463,6 +1582,14 @@
                 .setlrow { display:flex; align-items:center; gap:6px; }
                 .setlrow input, .setlrow select { flex:1 1 auto; min-width:0; }
                 .setljson { font-size:11px; opacity:.85; }
+                /* U-110 — a pair reads left to right: the name, the arrow that
+                   says which way it points, the value, the ✕. The name box is
+                   the wider of the two: an agent folder is long and a budget is
+                   three digits. */
+                .setmrow { display:flex; align-items:center; gap:6px; max-width:760px; }
+                .setmrow input:first-of-type { flex:2 1 0; min-width:0; }
+                .setmrow > input:last-of-type, .setmrow > select { flex:1 1 0; min-width:0; }
+                .setmarrow { color:var(--vscode-descriptionForeground); font-size:11px; }
                 /* ‼️ U-109 — the form and the table. The form is read once and
                    carefully, so every field keeps its own sentence beside it;
                    the table is read across, so the sentence lives on the column
@@ -1871,6 +1998,89 @@
                 delete jsonMode[key];
                 render();
             }));
+        /** ‼️ U-110 — the pair editor. Same discipline again: read first, and
+         *  nothing saves except the button that says it saves. */
+        document.querySelectorAll('[data-mrow]').forEach(el =>
+            el.addEventListener('change', () => readMap(el.dataset.mrow)));
+        document.querySelectorAll('[data-madd]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.madd;
+                readMap(key).push({ k: '', v: '' });
+                render();
+            }));
+        document.querySelectorAll('[data-mdel]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.mdel;
+                const i = Number(btn.dataset.mi);
+                const pairs = readMap(key);
+                if (i >= 0 && i < pairs.length) { pairs.splice(i, 1); }
+                render();
+            }));
+        document.querySelectorAll('[data-mapply]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.mapply;
+                delete errors[key];
+                const item = allItems().find(i => i.key === key);
+                const f = mapField(item.shape);
+                const out = {};
+                for (const p of readMap(key)) {
+                    const name = String(p.k).trim();
+                    const r = readField(f, p.v);
+                    // A row with neither a name nor a value is what pressing +
+                    // leaves behind; dropping it is kinder than refusing.
+                    if (!name && r.skip) { continue; }
+                    if (!name) {
+                        errors[key] = 'a value needs a name — fill the left box in, or remove the row';
+                        render(); return;
+                    }
+                    if (r.err) { errors[key] = `${name}: ${r.err.replace(/^value /, '')}`; render(); return; }
+                    if (r.skip) {
+                        // ‼️ A NAME WITH NO VALUE IS NOT A PAIR, and writing it
+                        // as "" would file a budget of nothing under a real
+                        // agent — a setting that looks set and does nothing.
+                        errors[key] = `${name} has no value — give it one, or remove the row`;
+                        render(); return;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(out, name)) {
+                        errors[key] = `${name} is in the list twice — an object cannot hold the same name twice`;
+                        render(); return;
+                    }
+                    out[name] = r.v;
+                }
+                delete mapDraft[key];
+                vscode.postMessage({ type: 'set', key, value: out });
+            }));
+        document.querySelectorAll('[data-mjson]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.mjson;
+                const item = allItems().find(i => i.key === key);
+                const f = mapField(item.shape);
+                const loose = {};
+                for (const p of readMap(key)) {
+                    const name = String(p.k).trim();
+                    if (!name) { continue; }
+                    const r = readField(f, p.v);
+                    loose[name] = r.skip ? '' : (r.err ? String(p.v) : r.v);
+                }
+                jsonDraft[key] = boxText(loose);
+                jsonMode[key] = true;
+                render();
+            }));
+        document.querySelectorAll('[data-mpairs]').forEach(el =>
+            el.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const key = el.dataset.mpairs;
+                const v = parseBox(key, 'object');
+                if (v === undefined) { render(); return; }
+                const item = allItems().find(i => i.key === key);
+                const f = mapField(item.shape);
+                mapDraft[key] = Object.keys(v).map(k => ({ k, v: fieldText(f, v[k]) }));
+                delete errors[key];
+                delete jsonDraft[key];
+                delete jsonMode[key];
+                render();
+            }));
         document.querySelectorAll('[data-json]').forEach(el =>
             el.addEventListener('change', () => { jsonDraft[el.dataset.json] = String(el.value); }));
         document.querySelectorAll('[data-apply]').forEach(btn =>
@@ -1907,6 +2117,7 @@
                 delete listDraft[key];
                 delete formDraft[key];
                 delete rowsDraft[key];
+                delete mapDraft[key];
                 vscode.postMessage({ type: 'reset', key });
             }));
         // The host opens the native dialog and saves what comes back — the page

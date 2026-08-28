@@ -22,8 +22,10 @@
  *                          schema does not flatten (`when`), which keeps its
  *                          JSON in a single cell rather than pretending to be
  *                          a text field.
- *   · `budgets`          — a free-form map: nothing can list the keys, so the
- *                          example is built from the shipped default.
+ *   · `budgets`          — a set of name → NUMBER pairs, whose names are agent
+ *                          names and whose `*` is the whole fleet (U-110).
+ *   · `superpowersDefaults` — name → BOOLEAN, and NO wildcard: the three maps
+ *                          do not agree, which is why each declares its own.
  */
 const path = require('path');
 const S = require(path.join(__dirname, '..', '..', 'out', 'core', 'settingsops.js'));
@@ -35,8 +37,29 @@ const SHOWN = [
     'agentFarm.agentRoots',
     'agentFarm.taskRetry',
     'agentFarm.livingChecks',
-    'agentFarm.budgets'
+    'agentFarm.budgets',
+    'agentFarm.superpowersDefaults'
 ];
+
+/**
+ * ‼️ U-110 — THE FLEET, because the name box SUGGESTS out of it.
+ *
+ * A budget filed under a misspelled agent name never applies and never says
+ * why, so the page offers the names it is already holding. A fixture with no
+ * fleet would photograph a suggestion list that is empty for a reason nobody
+ * could see.
+ */
+const FOLDERS = {
+    excludes: [],
+    reports: [{
+        root: 'D:/zone/agent/ajanlar', kind: 'nest', duplicate: false,
+        candidates: [
+            { name: 'developer', dir: 'D:/zone/agent/ajanlar/developer', excluded: false },
+            { name: 'asistan', dir: 'D:/zone/agent/ajanlar/asistan', excluded: false },
+            { name: 'psikolog', dir: 'D:/zone/agent/ajanlar/psikolog', excluded: false }
+        ]
+    }]
+};
 
 // What the user has actually put in each box. A live value beside a derived
 // shape is the whole reading: "this is what is in there, this is what may be".
@@ -60,7 +83,8 @@ const VALUES = {
             level: 'warn'
         }
     ],
-    'agentFarm.budgets': {}
+    'agentFarm.budgets': { developer: 20, '*': 50 },
+    'agentFarm.superpowersDefaults': { developer: true, asistan: false }
 };
 
 const model = () => {
@@ -83,7 +107,7 @@ const model = () => {
 };
 
 const data = () => ({
-    focus: '', profiles: [], prompts: null, docOpen: null, folders: null,
+    focus: '', profiles: [], prompts: null, docOpen: null, folders: FOLDERS,
     claude: null, engines: null, engineModels: null, wiki: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
     categories: model(),

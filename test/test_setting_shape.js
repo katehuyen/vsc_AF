@@ -380,9 +380,9 @@ const PROPS = manifest.contributes.configuration.properties;
         + ' of braces',
         /does not parse, so it cannot be shown as fields/.test(page));
     ok('‼️ a shape with no editor of its own gets NO way back — a "Back to the …"'
-        + ' that led nowhere would be the dead control this change removes',
-        /BACK\[it\.shape\.kind\]/.test(page)
-        && !/map: \[/.test(page) && !/free: \[/.test(page));
+        + ' that led nowhere would be the dead control this change removes.'
+        + ' `free` is the only one left, and it is the honest case',
+        /BACK\[it\.shape\.kind\]/.test(page) && !/^\s*free: \[/m.test(page));
 
     // docs/CONVENTIONS.md — a column is defined once, on its <th>. The same
     // sentence repeated in twenty cells is not density, it is noise.
@@ -403,6 +403,80 @@ const PROPS = manifest.contributes.configuration.properties;
         /const mirror = \[text, f\.description, note\]\.filter\(Boolean\)\.join\('\\n\\n'\)/.test(page));
     ok('…and a required field is marked where it is asked for, in both',
         /f\.required \? '<b class="req">\*<\/b>' : ''/.test(page));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ U-110 — THE THREE SETS OF NAME → VALUE PAIRS.
+//
+// `budgets`, `superpowersDefaults` and `agentEngineDefaults` are free-form
+// objects: nothing can list their keys, which is exactly why they were left as
+// a JSON textarea — and it is the wrong conclusion. The KEY is free; the PAIR
+// is not, and the three do not even agree on what a value is.
+// ---------------------------------------------------------------------------
+{
+    const fs4 = require('fs');
+    const page = fs4.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const of = (k) => S.shapeOf(PROPS['agentFarm.' + k]);
+
+    ok('the three maps are still the three maps, and this test is about them',
+        Object.values(PROPS).map(p => S.shapeOf(p)).filter(s => s && s.kind === 'map').length === 3);
+
+    // ‼️ THEY ARE NOT THE SAME SHAPE, and the schema says so on each of them.
+    ok('‼️ a map reads what ONE VALUE is off `additionalProperties` — the three'
+        + ' disagree, and the page drew the same empty box over all of them',
+        of('budgets').valueType === 'number'
+        && of('superpowersDefaults').valueType === 'boolean'
+        && of('agentEngineDefaults').valueType === undefined);
+    ok('…and says it in the sentence beside the box, rather than "value"',
+        /name → number pairs/.test(of('budgets').summary)
+        && /name → boolean pairs/.test(of('superpowersDefaults').summary));
+    ok('…and on the CHIP too, which is the line that decides whether the reader'
+        + ' opens anything at all',
+        /map: `name → \$\{s\.valueType \|\| 'value'\} pairs`/.test(page));
+
+    // ‼️ AND THEY DO NOT AGREE ON WHERE THE NAMES COME FROM. A page that guessed
+    // one list for all three would offer `*` to a setting that matches names
+    // exactly (superpowersDefaultsKey) — a suggestion that does nothing.
+    ok('‼️ where a map’s names come from is a fact of the MANIFEST (`x-af-keys`),'
+        + ' because the three differ: a fleet wildcard, a bare name, a folder',
+        of('budgets').keySource === 'agentOrAll'
+        && of('superpowersDefaults').keySource === 'agent'
+        && of('agentEngineDefaults').keySource === 'agentDir');
+    ok('…and a map that declares nothing gets no suggestions rather than wrong ones',
+        S.shapeOf({ type: 'object' }).keySource === undefined);
+
+    ok('‼️ the page chooses the pair editor from the SHAPE, like every other one',
+        /it\.shape\.kind === 'map'\) \{ return mapHtml\(it\); \}/.test(page));
+    ok('…and it is not a key list: no setting is named in the code of it',
+        (() => {
+            const body = page.slice(page.indexOf('function keyHints'),
+                page.indexOf('function mapHtml'))
+                .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+            return !/budgets|superpowersDefaults|agentEngineDefaults/.test(body);
+        })());
+    ok('‼️ the name box SUGGESTS and does not constrain — `*` is a real key and'
+        + ' so is an agent that does not exist yet, and a picker refuses both',
+        /<datalist id="\$\{listId\}"/.test(page)
+        && /list="\$\{listId\}"/.test(page)
+        && /<input type="text" id="m-\$\{id\}-\$\{i\}-k"/.test(page));
+    ok('…and the value box is the SAME box a form field and a table cell get',
+        /fieldBox\(f, `m-\$\{id\}-\$\{i\}-v`/.test(page)
+        && /function mapField/.test(page));
+
+    ok('‼️ add and ✕ act on a draft, and every gesture reads the boxes first',
+        /const mapDraft = \{\}/.test(page)
+        && /readMap\(key\)\.push\(\{ k: '', v: '' \}\)/.test(page)
+        && /delete mapDraft\[key\]/.test(page));
+    ok('‼️ …and the draft is a LIST of pairs, not an object: a pair being renamed'
+        + ' must not jump around under the hand, and an object cannot hold two'
+        + ' rows briefly called the same thing',
+        /out\.push\(\{ k: String\(name\.value\), v: val \? String\(val\.value\) : '' \}\)/.test(page));
+    ok('…so the same name twice is refused in words rather than one silently'
+        + ' eating the other',
+        /is in the list twice/.test(page));
+    ok('‼️ …and a name with no value is refused too — writing "" would file a'
+        + ' budget of nothing under a real agent, which looks set and does nothing',
+        /has no value — give it one, or remove the row/.test(page));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

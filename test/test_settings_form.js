@@ -244,5 +244,119 @@ const btn = (p, attr, key) =>
         el(p, 'l-browserAllowHosts-0').value === 'yazildi.ama.kaydedilmedi');
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ U-110 — THE THREE SETS OF NAME → VALUE PAIRS, DRIVEN.
+//
+// Nothing can list a map's keys, which is why all three were left as a JSON
+// textarea — and it is the wrong conclusion. The KEY is free; the PAIR is not.
+// Setting a budget meant hand-writing `{"developer": 20}` including the brace,
+// the quote and the colon, and getting the agent's name right from memory, with
+// a misfiled name failing silently for ever.
+// ---------------------------------------------------------------------------
+{
+    const p = open();
+    const html = p.html();
+    ok('budgets is drawn as pairs, not as a JSON box',
+        /id="m-budgets-0-k"/.test(html) && /id="m-budgets-0-v"/.test(html)
+        && !/id="c-budgets"/.test(html));
+    ok('the stored pairs are IN the boxes',
+        el(p, 'm-budgets-0-k').value === 'developer'
+        && el(p, 'm-budgets-0-v').value === '20'
+        && el(p, 'm-budgets-1-k').value === '*'
+        && el(p, 'm-budgets-1-v').value === '50');
+
+    // ‼️ THE THREE MAPS DO NOT AGREE, and each box proves its own schema read.
+    ok('‼️ a name → NUMBER map gets number boxes',
+        /id="m-budgets-0-v"[^>]*type="number"|<input type="number" id="m-budgets-0-v"/.test(html));
+    ok('‼️ …while a name → BOOLEAN map gets a yes/no picker, and it can still say'
+        + ' "not set"',
+        /<select id="m-superpowersDefaults-0-v"/.test(html)
+        && el(p, 'm-superpowersDefaults-0-v').value === 'true'
+        && el(p, 'm-superpowersDefaults-1-v').value === 'false');
+
+    // ‼️ THE NAME BOX SUGGESTS AND DOES NOT CONSTRAIN.
+    ok('‼️ the fleet the page is already holding is offered as suggestions',
+        /<datalist id="dl-budgets">[\s\S]*?<option value="developer">/.test(html)
+        && /<option value="asistan">/.test(html));
+    ok('‼️ …with `*` offered where it MEANS something, and only there — the'
+        + ' superpowers map is an exact name match and a `*` in it does nothing',
+        /<datalist id="dl-budgets"><option value="\*">/.test(html)
+        && !/<datalist id="dl-superpowersDefaults"><option value="\*">/.test(html));
+    ok('…and the box is a text input, so a name nobody has yet is still typeable',
+        /<input type="text" id="m-budgets-0-k"[^>]*list="dl-budgets"/.test(html));
+
+    el(p, 'm-budgets-0-v').value = '35';
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    const sent = p.last();
+    ok('‼️ Save the pairs sends a REAL OBJECT, keyed by what was typed',
+        sent.type === 'set' && sent.key === 'agentFarm.budgets'
+        && sent.value.developer === 35 && sent.value['*'] === 50);
+    ok('…with the number typed, not left as text',
+        typeof sent.value.developer === 'number');
+}
+
+// the refusals a pair editor owes: a nameless value, a valueless name, a name twice
+{
+    const p = open();
+    btn(p, 'madd', 'agentFarm.budgets').click();
+    ok('‼️ + add saves nothing and leaves an empty pair in the draft',
+        !p.posted.some(m => m.type === 'set') && !!el(p, 'm-budgets-2-k'));
+    ok('…and the edit that was in flight survived the redraw',
+        el(p, 'm-budgets-0-k').value === 'developer');
+
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    ok('…an empty pair is dropped rather than refused — it is what + leaves behind',
+        p.last().value && Object.keys(p.last().value).length === 2);
+}
+{
+    const p = open();
+    el(p, 'm-budgets-0-k').value = '';
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    ok('‼️ a value with no name is refused', !p.posted.some(m => m.type === 'set'));
+    ok('…in words the reader can act on', /a value needs a name/.test(p.html()));
+}
+{
+    const p = open();
+    el(p, 'm-budgets-0-v').value = '';
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    ok('‼️ a name with no value is refused too — "" would file a budget of nothing'
+        + ' under a real agent, which looks set and does nothing',
+        !p.posted.some(m => m.type === 'set')
+        && /developer has no value/.test(p.html()));
+}
+{
+    const p = open();
+    el(p, 'm-budgets-1-k').value = 'developer';
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    ok('‼️ the same name twice is refused rather than one silently eating the other',
+        !p.posted.some(m => m.type === 'set')
+        && /developer is in the list twice/.test(p.html()));
+}
+{
+    const p = open();
+    el(p, 'm-budgets-0-v').value = 'yirmi';
+    btn(p, 'mapply', 'agentFarm.budgets').click();
+    ok('…and a figure typed in words is refused, naming the pair',
+        !p.posted.some(m => m.type === 'set')
+        && /developer: has to be a number/.test(p.html()));
+}
+
+// …and the JSON box, both ways, carrying what is on screen
+{
+    const p = open();
+    el(p, 'm-budgets-0-v').value = '77';
+    btn(p, 'mjson', 'agentFarm.budgets').click();
+    ok('‼️ a map switched to JSON carries what was typed, rather than replacing it'
+        + ' with what was last saved',
+        /"developer": 77/.test(el(p, 'c-budgets').value));
+    ok('…and looking at it saved nothing', !p.posted.some(m => m.type === 'set'));
+
+    el(p, 'c-budgets').value = '{"asistan": 5}';
+    btn(p, 'mpairs', 'agentFarm.budgets').click();
+    ok('…and it comes back as pairs, carrying what the box said',
+        el(p, 'm-budgets-0-k').value === 'asistan'
+        && el(p, 'm-budgets-0-v').value === '5');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

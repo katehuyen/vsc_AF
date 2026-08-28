@@ -93,6 +93,33 @@ export interface SettingShape {
      * answerable on the page and being answerable only in the guide.
      */
     itemAllowed?: string[];
+    /**
+     * ‼️ U-110 — for a `map`: what ONE VALUE is, read off `additionalProperties`.
+     *
+     * The three maps this manifest ships are not the same shape at all —
+     * `budgets` is name → number, `superpowersDefaults` is name → boolean, and
+     * `agentEngineDefaults` is name → a nested object. The schema says so on
+     * each of them, and the page drew the same empty JSON textarea over all
+     * three. With this, a map gets a NUMBER box or a yes/no picker the day it
+     * declares one, and a map that declares nothing keeps its JSON honestly.
+     */
+    valueType?: string;
+    /** For a `map` whose values are a closed set: the values. */
+    valueAllowed?: string[];
+    /**
+     * ‼️ U-110 — for a `map`: WHERE THE NAMES COME FROM (`x-af-keys`).
+     *
+     * The keys are the user's, so nothing can list them — but the page knows
+     * the fleet, and typing an agent's name by hand is where the silent
+     * mismatch comes from: a budget under a misspelled name is a budget that
+     * never applies and never says why. Which list a map draws on is a fact of
+     * the MANIFEST, because the three differ: `budgets` is keyed by agent name
+     * and `*` means the whole fleet, `superpowersDefaults` is keyed by name
+     * with no wildcard at all (it is an exact match, see superpowersDefaultsKey)
+     * and `agentEngineDefaults` is keyed by an agent's FOLDER. A page that
+     * guessed one list for all three would offer `*` where it does nothing.
+     */
+    keySource?: string;
     fields: ShapeField[];
     /** A complete, valid value with one entry in it. `undefined` when the
      *  schema says too little to build one honestly — see `free`. */
@@ -238,11 +265,22 @@ export function shapeOf(node: SchemaNode | undefined): SettingShape | undefined 
     // real pair says more about the shape than any sentence.
     const def = isObj(node.default) ? node.default : undefined;
     const firstKey = def ? Object.keys(def)[0] : undefined;
+    // ‼️ U-110 — READ OFF `additionalProperties` AND `x-af-keys`, so a map can
+    // stop being a JSON box too. Both are schema facts and neither is a key
+    // list: a map that declares its value type gets the right box, and one that
+    // declares where its names come from gets them offered, the day it is added.
+    const vals = (node as { additionalProperties?: SchemaNode }).additionalProperties;
+    const valueType = isObj(vals) ? readableType(vals) : '';
+    const keySource = (node as { 'x-af-keys'?: unknown })['x-af-keys'];
     return {
         kind: 'map',
-        summary: 'A set of name → value pairs. The names are yours (an agent, an engine, a '
-            + 'label); a name that is not listed simply uses the ordinary default.',
+        summary: `A set of name → ${valueType || 'value'} pairs. The names are yours (an agent, `
+            + 'an engine, a label); a name that is not listed simply uses the ordinary default.',
         fields: [],
+        ...(valueType ? { valueType } : {}),
+        ...(isObj(vals) && Array.isArray(vals.enum) && vals.enum.length
+            ? { valueAllowed: vals.enum.map(String) } : {}),
+        ...(typeof keySource === 'string' && keySource ? { keySource } : {}),
         ...(firstKey !== undefined
             ? { example: { [firstKey]: def![firstKey] } }
             : { example: {} })
