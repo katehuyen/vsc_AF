@@ -2,6 +2,63 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.300.0 - A-20 (step 2): the farm says WHICH kind of attention it wants (2026-08-28)
+
+**Step two of the auditory cockpit (A-18).** Step one built the ten voices and
+the chain that picks one, and nothing was wired to it. This wires it: the live
+monitor now reports every edge that wants the user, carrying the event that
+names what happened, and the alert dispatch takes that event all the way to the
+sound, the modal and the toast.
+
+**`waiting-input` was two different endings wearing one status.** A turn that
+finished hands control back; a turn parked on an `AskUserQuestion` is still open
+and wants an ANSWER. They were the same beep and the same "your turn" modal, so
+the only way to tell them apart was to walk back and look — which is the whole
+thing the sound was for. `LiveConfig.pendingAskOf` is injected, because only the
+host knows: a hosted conversation's pending ask lives in the Console, and the
+monitor keeps its promise never to reach outside itself.
+
+**Four edges, one emit site.** `waiting-permission` → `question`,
+`waiting-input` → `question` or `turn-ready` depending on the parked ask,
+`SessionEnd` → `ended`, the stall sweep → `stalled`. **Once per crossing**,
+exactly as before: the "waiting" Notification and the `Stop` behind it are one
+edge, and a session parked in a state does not keep ringing. `onTurnReady`
+survives unchanged as the narrow view of the same emit — wire one or the other,
+never both.
+
+**A second permission ask in the same turn is no longer silent.** The dedupe key
+was the prompt ordinal alone, so a question asked mid-turn would have swallowed
+the turn's own ending, and a second tool approval would have made no noise at
+all — precisely the case somebody is away from the screen for. The key now
+carries the event and the tool ordinal too, and neither counter moves between
+the two events that announce one turn ending, so that collapse still holds.
+
+**A hosted lane's parked question reaches the timeline at last.** The turn stays
+open while a Console ask is pending, so no status change ever carried it: the
+card showed the question, the timeline showed a turn still working, and a user
+in another room was told nothing at all. A permission ask now parks the lane on
+`waiting-permission`, an `AskUserQuestion` on `waiting-input` where the injected
+`pendingAskOf` names it a question rather than a finished turn. **And the agent
+speaking unparks the lane** — without that the turn's real ending was no
+crossing at all and rang nothing. Only Agent Farm's own mirrored event can do
+this, so no CLI lane is touched by it.
+
+**Only the item's two events dispatch.** `stalled`, `ended` and `error` are
+emitted and ride the same mechanism for free, but arming them for every session
+that ever ticked `♪` would make an ended session start beeping on a setting
+whose whole text says "your turn". They ship silent and get their own switch
+with the settings surface.
+
+**Bridge:** `alerts.voices` (the ten plus the user's, each with whether THIS
+machine can play it — answered from the player's own format table, never a list
+kept beside it) and `alerts.resolve` (why that sound: the winning step, and
+every step passed over with its reason). `live.alerts.test` takes an `event` and
+reports the voice it resolved and where that choice came from.
+
+**Tests:** `test_live_edges.js` (21 assertions) — every edge, once per crossing,
+both endings of `waiting-input`, a second ask in one turn, a host that throws,
+and nothing wired at all. `test_turnready.js` is untouched and green.
+
 ## 3.299.0 - A-20 (step 1): ten alert voices, and which one plays (2026-08-28)
 
 **The first step of the auditory cockpit (A-18), and nothing is wired to it

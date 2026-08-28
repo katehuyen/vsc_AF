@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { FIRST_PROMPT_MAX } from './sessions';
 import { truncate } from './util';
+import type { AlertEvent } from './alertVoices';
 
 export type LiveStatus =
     | 'working'            // processing a prompt
@@ -155,8 +156,39 @@ export interface LiveConfig {
      * Fires once when a session crosses INTO 'waiting-input' (turn done / YOUR
      * TURN). The host decides which per-agent actions (sound/focus/modal/toast)
      * to run — see the swim-lane toggles in the timeline panel.
+     *
+     * ‼️ A-18 — THE NARROW VIEW OF `onAttention`, and there is only ONE emit
+     * site behind both. Kept because "the turn ended" is a different question
+     * from "the session wants you", and a subscriber that only cares about the
+     * first should not have to filter. **Wire one or the other, never both:**
+     * the extension listens on `onAttention`, and a host that arms this as well
+     * would alert twice on the same edge.
      */
     onTurnReady?: (s: LiveSession) => void;
+    /**
+     * ‼️ A-18 — EVERY EDGE THAT WANTS THE USER, WITH WHICH KIND OF WANTING.
+     *
+     * The farm could only say "your turn". Away from the screen that is the
+     * wrong half of the news: the session that stopped to ASK you something is
+     * the one worth walking back for, and it made the same noise as one that
+     * simply finished. The event travels with the edge so the host can choose a
+     * different sound per kind (`alertVoices.resolveVoice`) rather than
+     * rediscovering what happened from a status it was handed too late.
+     *
+     * Once per edge, exactly as `onTurnReady` has always been — a session
+     * PARKED in a state must not keep ringing.
+     */
+    onAttention?: (s: LiveSession, event: AlertEvent) => void;
+    /**
+     * ‼️ A-18 — IS THIS SESSION'S TURN PARKED ON A QUESTION? `waiting-input`
+     * means two different things: a turn that ended, and a turn still open that
+     * is waiting for an answer. Only the host knows which — a hosted
+     * conversation's `pendingAsk` lives in the console, not here — so it is
+     * injected exactly like `spareOf`, and this module keeps its promise never
+     * to reach outside itself. Absent means "turn ended", which is the old
+     * behaviour precisely.
+     */
+    pendingAskOf?: (sessionId: string) => boolean;
     /**
      * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a
      * daemon spare / background worker, `false` somebody's session, `undefined`
@@ -901,6 +933,16 @@ export class LiveMonitor implements vscode.Disposable {
             case 'AssistantMessage': {
                 const said = truncate((payload.message ?? '').trim(), SAID);
                 if (said) { this.push(s, 'say', undefined, said); }
+                // ‼️ A-18 — THE AGENT IS SPEAKING, SO IT IS NOT WAITING FOR YOU.
+                // A hosted turn parks on a question mid-turn and resumes when
+                // the answer lands; without this the lane stayed on the parked
+                // status until the next TOOL, so the turn's real ending was no
+                // edge at all and rang nothing. Safe by construction: this event
+                // is only ever Agent Farm's own mirror (see above), never a
+                // Claude hook, so no CLI lane can be moved by it.
+                if (s.status === 'waiting-permission' || s.status === 'waiting-input') {
+                    s.status = 'working';
+                }
                 break;
             }
             case 'Stop': {
@@ -934,14 +976,49 @@ export class LiveMonitor implements vscode.Disposable {
                 this.push(s, 'notify', undefined, payload.hook_event_name);
         }
 
-        // Edge into YOUR TURN: fire the per-agent turn-ready actions once per
-        // transition (covers both the Stop and the "waiting" Notification paths).
-        if (s.status === 'waiting-input' && prevStatus !== 'waiting-input') {
-            try { cfg.onTurnReady?.(s); } catch { /* best effort — never break event handling */ }
+        // ‼️ A-18 — THE EDGES THAT WANT THE USER. One emit per TRANSITION, never
+        // per event: the "waiting" Notification and the Stop right behind it are
+        // one crossing into waiting-input, and a session parked in a state must
+        // not keep ringing. `turn-ready` covers both of today's paths exactly as
+        // it always has.
+        if (s.status !== prevStatus) {
+            if (s.status === 'waiting-permission') {
+                // A tool is asking to run. From another room this is the same
+                // news as a question, and it is the one A-18 exists for: the
+                // session stopped, and it stopped ON you.
+                this.emitAttention(cfg, s, 'question');
+            } else if (s.status === 'waiting-input') {
+                // ‼️ TWO DIFFERENT ENDINGS ON ONE STATUS. A turn that finished
+                // hands control back; a turn parked on an `AskUserQuestion` is
+                // still open and wants an ANSWER. Same status, different sound.
+                this.emitAttention(cfg, s,
+                    this.askPending(cfg, s) ? 'question' : 'turn-ready');
+            } else if (s.status === 'ended') {
+                this.emitAttention(cfg, s, 'ended');
+            }
         }
 
         this.prune(now);
         this.onDidUpdateEmitter.fire();
+    }
+
+    /**
+     * ‼️ A-18 — THE ONE EMIT SITE. Both callbacks are fed from here, so
+     * `onTurnReady` can never disagree with `onAttention` about whether an edge
+     * happened; each is guarded on its own, because a subscriber that throws
+     * must not swallow the other one or break event handling.
+     */
+    private emitAttention(cfg: LiveConfig, s: LiveSession, event: AlertEvent): void {
+        try { cfg.onAttention?.(s, event); } catch { /* best effort */ }
+        if (event === 'turn-ready') {
+            try { cfg.onTurnReady?.(s); } catch { /* best effort */ }
+        }
+    }
+
+    /** Injected, and a host that throws is simply "no question pending" —
+     *  never a broken timeline. */
+    private askPending(cfg: LiveConfig, s: LiveSession): boolean {
+        try { return cfg.pendingAskOf?.(s.sessionId) === true; } catch { return false; }
     }
 
     private prune(now: number): void {
@@ -1041,6 +1118,10 @@ export class LiveMonitor implements vscode.Disposable {
                 changed = true;
                 if (!s.notifiedStuck) {
                     s.notifiedStuck = true;
+                    // ‼️ A-18 — the crossing INTO stalled, once. The status is
+                    // rewritten on every sweep while it stays stuck, so the edge
+                    // is this flag and not the assignment above.
+                    this.emitAttention(cfg, s, 'stalled');
                     cfg.forward?.('stalled',
                         `${this.labelOf(s)} looks stalled` +
                         (s.currentTool ? ` (last tool: ${s.currentTool})` : ''));

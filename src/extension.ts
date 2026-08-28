@@ -350,9 +350,13 @@ import {
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
-    playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SoundResult,
+    playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, soundCandidates, SoundResult,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
 } from './core/turnAlerts';
+import {
+    AlertEvent, ALERT_EVENTS, builtinVoices, CustomVoice, playableOn, ResolveDeps,
+    ResolvedVoice, resolveVoice
+} from './core/alertVoices';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
@@ -1011,6 +1015,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let postFarmNews: () => void = () => { };
 
     let triggerManagerRef: TriggerManager | undefined;
+    /**
+     * ‼️ A-18 — IS THAT LANE'S TURN PARKED ON A QUESTION?
+     *
+     * `waiting-input` is two different endings wearing one status: a turn that
+     * finished, and a turn still open waiting for an answer. Only the Console
+     * knows which, and it is built far below this point — so it is late-bound
+     * exactly like `triggerManagerRef`, and "not yet" answers `false`, which is
+     * the old behaviour precisely.
+     *
+     * ‼️ THE LOOKUP IS BY THE ENGINE'S THREAD ID, not the host's own. A lane is
+     * keyed on `ConsoleSessionState.sessionId` (that is what `mirrorConsoleToLive`
+     * writes); the host's map is keyed on the id it minted itself, and asking it
+     * the wrong question would quietly always answer "no question pending".
+     */
+    let consoleHostRef: { list(): { sessionId?: string; pendingAsk?: unknown }[] } | undefined;
+    const pendingAskOf = (sessionId: string): boolean => {
+        const id = String(sessionId || '').trim();
+        if (!id || !consoleHostRef) { return false; }
+        return consoleHostRef.list().some(s => s.sessionId === id && !!s.pendingAsk);
+    };
     // cwd → agent mapping, shared by the live monitor and the external-CLI
     // transcript sources (E3b). Pure extraction — behavior unchanged.
     const resolveAgentByCwd = (cwd: string | undefined): { agentId?: string; agentName?: string } => {
@@ -1060,7 +1084,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
             notifyTurnEnd: cfg().get<boolean>('notifyTurnEnd', false),
             forward: postForward,
-            onTurnReady: fireTurnReady
+            // ‼️ A-18 — `onAttention`, NOT `onTurnReady`. One emit site feeds
+            // both, so wiring the two would ring twice on the same edge.
+            onAttention: fireAttention,
+            pendingAskOf
         }),
         resolveAgentByCwd,
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
@@ -1165,7 +1192,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const turnSoundAsset = vscode.Uri.joinPath(
         context.extensionUri, 'media', 'sounds', 'turn-ready.wav').fsPath;
     const soundFailureLimit = new RateLimit();
-    const alertSound = (): Promise<SoundResult> => playTurnSound(turnSoundAsset);
+    /**
+     * ‼️ A-18 — WHICH SOUND, ANSWERED IN ONE PLACE AND NEVER HERE.
+     *
+     * Everything this function does is hand `alertVoices.resolveVoice` the
+     * stores it cannot reach by itself: where the built-in sounds live, what
+     * this platform's players can open, and the user's own list. The chain
+     * itself — session, agent, settings, default — is `alertVoices`' and stays
+     * there, because the moment a second place works it out "I set the sound
+     * and the old one played" becomes a bug nobody can find.
+     */
+    const ALERT_VOICES_KEY = 'agentfarm.alertVoices';
+    const soundsDir = vscode.Uri.joinPath(context.extensionUri, 'media', 'sounds').fsPath;
+    const voiceDeps = (): ResolveDeps => ({
+        soundsDir,
+        exists: p => { try { return fs.existsSync(p); } catch { return false; } },
+        // ‼️ THE FORMAT TABLE IS THE PLAYER'S OWN. A hand-kept list here would
+        // let the page promise an `.mp3` the backend cannot open, and the alert
+        // would be silence with no error anywhere.
+        backends: soundCandidates(process.platform, '')
+            .map(c => ({ backend: c.backend, formats: c.formats })),
+        custom: context.globalState.get<CustomVoice[]>(ALERT_VOICES_KEY, []),
+        // The user's answer for everybody. The session and agent steps above it
+        // arrive with the surfaces that set them (design §10.5); until then the
+        // chain simply falls through them, which is what it is built to do.
+        settings: () => cfg().get<Record<string, string>>('alerts.voices', {})
+    });
+    const resolveAlertVoice = (event: AlertEvent, s?: LiveSession): ResolvedVoice =>
+        resolveVoice(event, voiceDeps(),
+            { sessionId: s?.sessionId, agentName: s?.agentName });
+    const alertSound = (event: AlertEvent, s?: LiveSession): Promise<SoundResult> => {
+        const picked = resolveAlertVoice(event, s);
+        // ‼️ NEVER SILENCE ON A BROKEN PICK. `resolveVoice` already fell through
+        // every step it could not honour; if even the default is missing from
+        // the install, the committed asset is still on disk and is better than
+        // nothing — a sound nobody chose is heard and reported, and silence is
+        // indistinguishable from an alert that never fired.
+        return playTurnSound(picked.file || turnSoundAsset);
+    };
+    /** What the modal and the toast SAY. The four alert branches used to state
+     *  one fact ("your turn") because there was one edge; a permission ask
+     *  announced as "your turn" is the misreport A-18 exists to end. */
+    const ATTENTION_LINE: Record<AlertEvent, (label: string) => string> = {
+        'turn-ready': l => `${l} — your turn`,
+        question: l => `${l} — waiting for your answer`,
+        stalled: l => `${l} — looks stalled`,
+        ended: l => `${l} — session ended`,
+        error: l => `${l} — error`
+    };
+    /**
+     * ‼️ WHICH EVENTS A SESSION'S OWN SELECTION ANSWERS TO — the item's two,
+     * and only those.
+     *
+     * The other three edges (`stalled`, `ended`, `error`) are emitted by the
+     * live monitor and ride this same mechanism for free, but arming them for
+     * every session that ever ticked `♪` would be a change nobody asked for:
+     * an ended session would start making a noise on a setting whose whole text
+     * says "your turn". They ship silent and get their own switch with the
+     * settings surface (design §6 · `agentFarm.alerts.on`).
+     */
+    const DISPATCHED_EVENTS: readonly AlertEvent[] = ['turn-ready', 'question'];
+    /** An event named by a caller — refused BY NAME rather than quietly
+     *  answered about `turn-ready`, which would look like the call worked. */
+    const wantEvent = (args: Record<string, unknown>): AlertEvent => {
+        const raw = optStr(args, 'event')?.trim();
+        if (!raw) { return 'turn-ready'; }
+        if (!(ALERT_EVENTS as readonly string[]).includes(raw)) {
+            throw new Error(`"${raw}" is not an alert event — ${ALERT_EVENTS.join(' · ')}`);
+        }
+        return raw as AlertEvent;
+    };
     /**
      * ‼️ THE ONE FUNCTION EVERY DOOR GOES THROUGH — the live turn edge, the
      * row's "test in 3 seconds", and the `live.alerts.test` bridge op. The
@@ -1173,10 +1269,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * modal or making a noise.
      */
     const dispatchAlerts = async (
-        sessionId: string, actions: TurnAlertAction[], label: string, transcript?: string
+        sessionId: string, actions: TurnAlertAction[], label: string, transcript?: string,
+        // ‼️ A-18 — WHAT HAPPENED travels with the dispatch. Defaulted to the
+        // one edge that existed before it, so every caller that has not learned
+        // about events yet keeps behaving exactly as it did.
+        event: AlertEvent = 'turn-ready'
     ): Promise<TurnAlertBranch[]> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        const line = ATTENTION_LINE[event](label);
         const branches = await runTurnAlerts(actions, {
-            sound: alertSound,
+            sound: () => alertSound(event, s),
             focus: () => {
                 // Focus means what it always meant: bring the Timeline forward
                 // inside this window. VS Code offers no way to raise the WINDOW
@@ -1189,7 +1291,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             modal: () => {
                 const buttons = transcript ? ['Open Transcript'] : [];
                 void vscode.window.showInformationMessage(
-                    `Agent Farm — Your turn: ${label}`, { modal: true }, ...buttons
+                    `Agent Farm — ${line}`, { modal: true }, ...buttons
                 ).then(choice => {
                     if (choice === 'Open Transcript' && transcript) {
                         void vscode.commands.executeCommand('agentfarm.openSession', transcript);
@@ -1198,7 +1300,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             toast: () => {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: ${label} — your turn`, 'Open Timeline'
+                    `Agent Farm: ${line}`, 'Open Timeline'
                 ).then(choice => {
                     if (choice === 'Open Timeline') { showTimeline(); }
                 });
@@ -1210,7 +1312,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const bad = branches.find(b => b.action === 'sound' && b.status === 'failed');
         if (bad && soundFailureLimit.allow()) {
             void vscode.window.showWarningMessage(
-                `Agent Farm: the YOUR TURN sound did not play — ${bad.detail ?? 'no detail'}. `
+                `Agent Farm: the ${event} alert sound did not play — ${bad.detail ?? 'no detail'}. `
                 + 'The other alerts still ran.', 'Open Timeline'
             ).then(c => { if (c === 'Open Timeline') { showTimeline(); } });
         }
@@ -1232,10 +1334,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** Run a session's selected alerts on purpose, after a countdown. */
     const testSessionAlert = async (
-        sessionId: string, delayMs = 3000
+        sessionId: string, delayMs = 3000, event: AlertEvent = 'turn-ready'
     ): Promise<{
         ok: boolean; error?: string; sessionId: string; label?: string;
         actions?: TurnAlertAction[]; at?: number; branches?: TurnAlertBranch[];
+        event?: AlertEvent; voice?: ResolvedVoice;
     }> => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
         if (!s) { return { ok: false, sessionId, error: `no live session ${sessionId || '(empty)'}` }; }
@@ -1246,10 +1349,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const wait = Math.max(0, Math.min(30_000, Number(delayMs) || 0));
         if (wait) { await new Promise(r => setTimeout(r, wait)); }
         const branches = await dispatchAlerts(
-            sessionId, actions, live.labelOf(s), s.transcriptPath);
-        return { ok: true, sessionId, label: live.labelOf(s), actions, at: Date.now(), branches };
+            sessionId, actions, live.labelOf(s), s.transcriptPath, event);
+        return {
+            ok: true, sessionId, label: live.labelOf(s), actions, at: Date.now(), branches,
+            // ‼️ The test says WHICH SOUND it just played and where that choice
+            // came from — a test that only reports "ok" cannot answer the one
+            // question somebody runs it to answer.
+            event, voice: resolveAlertVoice(event, s)
+        };
     };
-    function fireTurnReady(s: LiveSession): void {
+    /**
+     * ‼️ A-18 — ONE DOOR FOR EVERY EDGE THAT WANTS THE USER.
+     *
+     * `onTurnReady` is deliberately NOT wired beside this: both callbacks fire
+     * off the same emit site in `LiveMonitor`, so arming the two would alert
+     * twice on one crossing.
+     */
+    function fireAttention(s: LiveSession, event: AlertEvent): void {
+        if (!DISPATCHED_EVENTS.includes(event)) { return; }
         // ‼️ THE SESSION IS THE KEY, AND THERE IS NO FALLBACK BEHIND IT.
         const actions = turnAlerts.actionsFor(s.sessionId);
         if (!actions.length) { return; }
@@ -1258,8 +1375,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // same turn and ring once — while a genuinely new turn that ends a
         // second later has a new key and rings again, which the old 3-second
         // cooldown swallowed.
-        if (!turnDedupe.shouldFire(s.sessionId, String(s.prompts))) { return; }
-        void dispatchAlerts(s.sessionId, actions, live.labelOf(s), s.transcriptPath);
+        //
+        // ‼️ A-18 — THE EVENT AND THE TOOL ORDINAL ARE PART OF THE KEY. Without
+        // the event a question asked mid-turn would swallow the turn's own
+        // ending; without the tool count a SECOND permission ask in the same
+        // turn would be silent, which is precisely the case the user is away
+        // from the screen for. Neither counter moves between the two events
+        // that announce one turn ending, so that collapse still holds.
+        if (!turnDedupe.shouldFire(s.sessionId, `${event}:${s.prompts}:${s.toolCalls}`)) { return; }
+        void dispatchAlerts(s.sessionId, actions, live.labelOf(s), s.transcriptPath, event);
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -8528,7 +8652,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'live.alerts.test',
-            describe: '‼️ RUN A SESSION\'S SELECTED ALERTS ON PURPOSE AND SAY WHAT EACH ONE DID — the same "test in 3 seconds" the swim lane offers. Every branch is reported separately as ok|failed|skipped, so a dead branch cannot hide behind a working one; the sound branch also carries its backend, exit code, stderr, duration and whether it was killed on the timeout. ‼️ `exit 0` means THE PLAYER ACCEPTED THE FILE — that a human heard it is not something any of this can claim, and the result says so. A session with nothing selected is refused rather than reported as a silent success. args: sessionId (required, full id or 8-char prefix of a live session), delayMs? (0-30000, default 3000 — the countdown exists so you can switch windows and watch focus work)',
+            describe: '‼️ RUN A SESSION\'S SELECTED ALERTS ON PURPOSE AND SAY WHAT EACH ONE DID — the same "test in 3 seconds" the swim lane offers. Every branch is reported separately as ok|failed|skipped, so a dead branch cannot hide behind a working one; the sound branch also carries its backend, exit code, stderr, duration and whether it was killed on the timeout. ‼️ `exit 0` means THE PLAYER ACCEPTED THE FILE — that a human heard it is not something any of this can claim, and the result says so. A session with nothing selected is refused rather than reported as a silent success. ‼️ `event` picks WHICH KIND of alert to rehearse and the result names the voice it resolved and where that choice came from (`voice.origin`), so "your turn" and "it is asking you something" can be told apart from the next room before either has really happened. args: sessionId (required, full id or 8-char prefix of a live session), delayMs? (0-30000, default 3000 — the countdown exists so you can switch windows and watch focus work), event? ('
+                + ALERT_EVENTS.join('|') + ', default turn-ready)',
             handler: async (args) => {
                 const raw = argStr(args, 'sessionId').trim();
                 const s = live.sessions().find(x =>
@@ -8536,9 +8661,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!s) { throw new Error(`no live session matches "${raw}"`); }
                 const delay = (args as { delayMs?: unknown }).delayMs;
                 const result = await testSessionAlert(s.sessionId,
-                    typeof delay === 'number' ? delay : 3000);
+                    typeof delay === 'number' ? delay : 3000, wantEvent(args));
                 if (!result.ok) { throw new Error(result.error ?? 'refused'); }
                 return result;
+            }
+        },
+        {
+            op: 'alerts.voices',
+            describe: '‼️ THE SOUNDS THIS INSTALL CAN MAKE, and which of them this machine can actually play. Ten built-in tones plus whatever the user added, each with its id, label, file and `playable` — and `playable` is answered from the PLAYER\'S OWN format table, not a list kept beside it, so a row can never promise an .mp3 that the backend cannot open. `backends` names the players that would be tried here, in order. ‼️ A voice whose file is missing is reported `exists: false` rather than dropped: a sound that vanished is a thing to fix, and a list that quietly omits it says nothing happened. args: none',
+            handler: () => {
+                const deps = voiceDeps();
+                const rows = builtinVoices(deps.soundsDir)
+                    .concat((deps.custom ?? []).map(v => ({ ...v, builtin: false })))
+                    .map(v => {
+                        const play = playableOn(deps, v.file);
+                        return {
+                            id: v.id, label: v.label, file: v.file, builtin: v.builtin,
+                            exists: deps.exists(v.file),
+                            playable: play.ok && deps.exists(v.file),
+                            backend: play.backend || null
+                        };
+                    });
+                return {
+                    events: [...ALERT_EVENTS],
+                    voices: rows,
+                    backends: deps.backends.map(b => ({ backend: b.backend, formats: [...b.formats] }))
+                };
+            }
+        },
+        {
+            op: 'alerts.resolve',
+            describe: '‼️ WHY THAT SOUND — the machine answer to the one question a sound feature has to be able to answer. Names the voice an event would play, WHICH STEP chose it (`origin`: session > agent > settings > default), the file, and whether it can be played here. `skipped` lists the steps that had an answer and were passed over WITH THE REASON — a missing file falls through to the step below rather than going silent, and a skip nobody reported is indistinguishable from a step nobody had set. Reads only; nothing is played. args: event? (' + ALERT_EVENTS.join('|') + ', default turn-ready), sessionId? (full id or 8-char prefix of a live session — resolves that lane\'s own choice and its agent\'s)',
+            handler: (args) => {
+                const raw = optStr(args, 'sessionId')?.trim();
+                const s = raw
+                    ? live.sessions().find(x => x.sessionId === raw || x.sessionId.startsWith(raw))
+                    : undefined;
+                if (raw && !s) { throw new Error(`no live session matches "${raw}"`); }
+                const event = wantEvent(args);
+                const r = resolveAlertVoice(event, s);
+                return {
+                    ...r,
+                    sessionId: s?.sessionId ?? null,
+                    label: s ? live.labelOf(s) : null,
+                    // ‼️ Whether this event would alert AT ALL today. A resolution
+                    // that names a sound for an event nothing dispatches would
+                    // read as "it is armed", which is the opposite of true.
+                    dispatched: DISPATCHED_EVENTS.includes(event)
+                };
             }
         },
         {
@@ -16299,6 +16469,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // created on the first OpenCode card and stopped when the last one goes
         // — the 383 MB measurement is the whole argument for the shape.
         nodeOpencodeIo(() => ENGINES.opencode.exe));
+    // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
+    // answered from here, and could not be until now (see `pendingAskOf`).
+    consoleHostRef = consoleHost;
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
     const externalTranscriptFile = (sessionId: string): string =>
         path.join(farmExternalTranscriptDir, `${sessionId.replace(/[^a-z0-9._-]/gi, '_')}.json`);
@@ -16393,7 +16566,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *   · **The engine is stated** (`HookPayload.engine`), because a hosted
      *     thread id is minted by the engine and cannot be parsed for one.
      */
-    const liveMirror = new Map<string, { status: string; msgs: number; openTool?: string; said?: string }>();
+    const liveMirror = new Map<string,
+        { status: string; msgs: number; openTool?: string; said?: string; ask?: string }>();
     const mirrorConsoleToLive = (id: string): void => {
         const s = consoleHost.get(id);
         if (!s) { return; }
@@ -16446,6 +16620,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
         seen.msgs = s.messages.length;
+        // ‼️ A-18 — A PARKED QUESTION IS AN EVENT, and until now it was the one
+        // thing a hosted lane never reported: the card showed the question, the
+        // timeline showed a turn still working, and a user in another room was
+        // told nothing at all. The turn STAYS OPEN while an ask is pending, so
+        // no status change would ever have carried this.
+        //
+        // Which notification depends on what is being asked, and the difference
+        // is the CLI's own flag rather than a guess: a permission ask parks the
+        // lane on `waiting-permission`, an `AskUserQuestion` on `waiting-input`
+        // where `pendingAskOf` names it a question rather than a finished turn.
+        const askId = s.pendingAsk?.requestId;
+        if (askId !== seen.ask) {
+            seen.ask = askId;
+            if (s.pendingAsk) {
+                const what = (s.pendingAsk.detail || s.pendingAsk.displayName
+                    || s.pendingAsk.tool || '').trim().slice(0, 160);
+                live.handle({
+                    ...base, hook_event_name: 'Notification',
+                    message: s.pendingAsk.interactive
+                        ? `waiting for your answer${what ? `: ${what}` : ''}`
+                        : `permission needed${what ? `: ${what}` : ''}`
+                });
+            }
+        }
         if (s.status !== seen.status) {
             if (s.status === 'ended' || s.status === 'error') {
                 closeTool();
